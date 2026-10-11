@@ -4492,6 +4492,9 @@ async function replWithBudget(config, opts, flags, budget) {
           case 'continuation-retry':
             process.stdout.write(`${c.yellow(`· stream dropped (${ev.reason}) — retry ${ev.attempt}/${3}`)}\n`);
             break;
+          case 'warning':
+            process.stdout.write(`${c.yellow(`! ${ev.text ?? ev.message}`)}\n`);
+            break;
           case 'continued':
             process.stdout.write(`${c.dim(`· output truncated by length — auto-continued (round ${ev.round})`)}\n`);
             break;
@@ -5493,7 +5496,7 @@ async function replWithBudget(config, opts, flags, budget) {
           } else if (ev.type === 'error') {
             console.log(c.red(`✗ ${ev.error}`));
           } else if (ev.type === 'warning') {
-            console.log(c.yellow(`! ${ev.message}`));
+            console.log(c.yellow(`! ${ev.text ?? ev.message}`));
           }
         }
         return;

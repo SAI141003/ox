@@ -82,8 +82,14 @@ export function classifyProviderError(message) {
   if (/unauthorized|forbidden|invalid api key|authentication/.test(low) || hasStatus(401) || hasStatus(403)) {
     return 'auth';
   }
+  // Checked before not-found: Ollama phrases it "<model> does not support tools".
+  if (/does not support tools|tools? (are|is) not supported|tool[_ ]?(use|calling|choice).{0,30}not supported/.test(low)) {
+    return 'no-tools';
+  }
   if (/not found|no such model/.test(low) || hasStatus(404)) return 'not-found';
   if (/\bhttp\s*5\d\d\b/.test(low)) return 'server';
+  // Any other 400 is a malformed request: resending it byte-identical cannot help.
+  if (hasStatus(400) || hasStatus(422)) return 'bad-request';
   return null;
 }
 
@@ -1169,6 +1175,9 @@ async function* runAgentLoop(opts = {}) {
   // free_only refuses every configured fallback: say so loudly rather than
   // quietly running on the primary.
   let freeOnlyWarned = false;
+  // Targets (by label) whose model rejected the tools array. Small local models
+  // often cannot call tools; instead of dying they keep working chat-only.
+  const toolessTargets = new Set();
   // The candidate list is policy-filtered, so compute it once per turn.
   let fallbackListCache = null;
   const resolveFallbackList = () => {
@@ -1612,7 +1621,8 @@ async function* runAgentLoop(opts = {}) {
           prompt: originalUserText.slice(0, 2000),
         }, false);
         yield* flushHookEvents();
-        for await (const raw of streamVia(activeTarget, { model: am, messages: history, tools, signal })) {
+        const offered = toolessTargets.has(targetLabel(activeTarget)) ? [] : tools;
+        for await (const raw of streamVia(activeTarget, { model: am, messages: history, tools: offered, signal })) {
           const ev = normalizeStreamEvent(raw);
           if (!ev) continue;
           if (ev.kind === 'text') {
@@ -1731,7 +1741,19 @@ async function* runAgentLoop(opts = {}) {
           } catch {}
           return out;
         };
-        if ((cls === 'auth' || cls === 'not-found') && fbList.length) {
+        if (cls === 'no-tools' && tools.length && !toolessTargets.has(targetLabel(activeTarget))) {
+          toolessTargets.add(targetLabel(activeTarget));
+          yield {
+            type: 'warning',
+            text: `${targetLabel(activeTarget)} cannot call tools — continuing chat-only (no file edits or shell). Use a tool-capable model for agent work.`,
+          };
+          continue;
+        }
+        if (cls === 'bad-request' && !fbList.length) {
+          yield { type: 'error', error: `provider rejected the request (not retried): ${reason}` };
+          break outer;
+        }
+        if ((cls === 'auth' || cls === 'not-found' || cls === 'no-tools' || cls === 'bad-request') && fbList.length) {
           yield* bounceEvents(doBounce());
           continue;
         }

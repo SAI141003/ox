@@ -498,6 +498,9 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
             case 'continuation-retry':
               console.log(c.yellow(`· stream dropped (${ev.reason}) — retry ${ev.attempt}/3`));
               break;
+            case 'warning':
+              console.log(c.yellow(`! ${ev.text ?? ev.message}`));
+              break;
             case 'continued':
               console.log(c.dim(`· output truncated by length — auto-continued (round ${ev.round})`));
               break;

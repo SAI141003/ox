@@ -23,6 +23,10 @@ test('every preset resolves to its expected provider+model', () => {
     'ox-minimax': ['minimax', 'minimax-01', 'https://api.minimax.chat/v1'],
     'ox-yi': ['yi', 'yi-34b-chat', 'https://api.lingyiwanwu.com/v1'],
     'ox-stepfun': ['stepfun', 'step-2', 'https://api.stepfun.com/v1'],
+    'ox-lmstudio': ['lmstudio', 'auto', null],
+    'ox-llamacpp': ['llamacpp', 'auto', null],
+    'ox-vllm': ['vllm', 'auto', null],
+    'ox-mistral': ['mistral', 'mistral-large-latest', null],
   };
   assert.deepEqual(Object.keys(expected).sort(), Object.keys(BOTS).filter((b) => b !== 'ox-openrouter').sort());
   for (const [name, [provider, model, baseUrl]] of Object.entries(expected)) {

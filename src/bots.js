@@ -17,6 +17,13 @@ export const KEY_ENV = Object.freeze({
   ollama: null,
   custom: 'OX_API_KEY',
   backboard: 'BACKBOARD_API_KEY',
+  mistral: 'MISTRAL_API_KEY',
+  together: 'TOGETHER_API_KEY',
+  fireworks: 'FIREWORKS_API_KEY',
+  cerebras: 'CEREBRAS_API_KEY',
+  lmstudio: null,
+  llamacpp: null,
+  vllm: null,
 });
 
 export const PROVIDERS = Object.freeze(Object.keys(KEY_ENV));
@@ -36,6 +43,10 @@ export const BOTS = {
   'ox-deepseek': { provider: 'deepseek', model: 'deepseek-v4-pro', desc: 'DeepSeek V4 Pro' },
   'ox-ollama': { provider: 'ollama', model: 'qwen2.5:0.5b', desc: 'local Ollama (no key needed)' },
   'ox-openrouter': { provider: 'openrouter', model: null, desc: 'any OpenRouter model; explicit model required' },
+  'ox-lmstudio': { provider: 'lmstudio', model: 'auto', desc: 'local LM Studio server (no key; uses the loaded model)' },
+  'ox-llamacpp': { provider: 'llamacpp', model: 'auto', desc: 'local llama.cpp server (no key; uses the loaded model)' },
+  'ox-vllm': { provider: 'vllm', model: 'auto', desc: 'local vLLM server (no key; uses the served model)' },
+  'ox-mistral': { provider: 'mistral', model: 'mistral-large-latest', desc: 'Mistral Large (latest alias)' },
   'ox-backboard': { provider: 'backboard', model: 'backboard-routing', baseUrl: 'https://api.backboard.io/v1', desc: 'Backboard.io model routing + memory' },
   'ox-glm': { provider: 'zhipu', model: 'glm-4.5', desc: 'Zhipu GLM-4.5' },
   'ox-glm-turbo': { provider: 'zhipu', model: 'glm-4.5-turbo', desc: 'Zhipu GLM-4.5 Turbo' },

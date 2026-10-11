@@ -106,6 +106,11 @@ test('classifyProviderError buckets provider failure strings', () => {
   assert.equal(classifyProviderError('ox[anthropic]: HTTP 503 Service Unavailable'), 'server');
   assert.equal(classifyProviderError('HTTP 500 Internal Server Error'), 'server');
   assert.equal(classifyProviderError('fetch failed / socket hang up'), null, 'generic network death is unclassified');
+  assert.equal(
+    classifyProviderError('ox[ollama]: HTTP 400 Bad Request: {"error":{"message":"registry.ollama.ai/library/tinyllama:1.1b does not support tools"}}'),
+    'no-tools'
+  );
+  assert.equal(classifyProviderError('ox[openai]: HTTP 400 Bad Request: invalid schema'), 'bad-request');
 });
 
 // ---------- F2 bounce behavior ----------

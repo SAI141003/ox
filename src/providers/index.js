@@ -24,6 +24,20 @@ export const PROVIDERS = {
     keyEnv: 'GEMINI_API_KEY',
   },
   backboard: { kind: 'openai-compat', baseUrl: 'https://api.backboard.io/v1', keyEnv: 'BACKBOARD_API_KEY' },
+  mistral: { kind: 'openai-compat', baseUrl: 'https://api.mistral.ai/v1', keyEnv: 'MISTRAL_API_KEY' },
+  together: { kind: 'openai-compat', baseUrl: 'https://api.together.xyz/v1', keyEnv: 'TOGETHER_API_KEY' },
+  fireworks: { kind: 'openai-compat', baseUrl: 'https://api.fireworks.ai/inference/v1', keyEnv: 'FIREWORKS_API_KEY' },
+  cerebras: { kind: 'openai-compat', baseUrl: 'https://api.cerebras.ai/v1', keyEnv: 'CEREBRAS_API_KEY' },
+  zhipu: { kind: 'openai-compat', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', keyEnv: 'ZHIPU_API_KEY' },
+  moonshot: { kind: 'openai-compat', baseUrl: 'https://api.moonshot.cn/v1', keyEnv: 'MOONSHOT_API_KEY' },
+  baichuan: { kind: 'openai-compat', baseUrl: 'https://api.baichuan-ai.com/v1', keyEnv: 'BAICHUAN_API_KEY' },
+  minimax: { kind: 'openai-compat', baseUrl: 'https://api.minimax.chat/v1', keyEnv: 'MINIMAX_API_KEY' },
+  yi: { kind: 'openai-compat', baseUrl: 'https://api.lingyiwanwu.com/v1', keyEnv: 'YI_API_KEY' },
+  stepfun: { kind: 'openai-compat', baseUrl: 'https://api.stepfun.com/v1', keyEnv: 'STEPFUN_API_KEY' },
+  // Local OpenAI-compatible servers: no key, no bill. Ports are each tool's default.
+  lmstudio: { kind: 'openai-compat', baseUrl: 'http://localhost:1234/v1', keyEnv: null },
+  llamacpp: { kind: 'openai-compat', baseUrl: 'http://localhost:8080/v1', keyEnv: null },
+  vllm: { kind: 'openai-compat', baseUrl: 'http://localhost:8000/v1', keyEnv: null },
   custom: { kind: 'openai-compat', baseUrl: null, keyEnv: 'OX_API_KEY' },
 };
 
@@ -51,6 +65,39 @@ export function getProvider(name) {
   return { name, ...cfg, streamChat: adapterFor(name, cfg) };
 }
 
+// One lookup per endpoint per process: a local server's loaded model does not
+// change mid-run, and re-asking every turn would add a round trip to each call.
+const LOCAL_MODEL_CACHE = new Map();
+
+export async function discoverLocalModel(baseUrl, signal) {
+  const key = String(baseUrl).replace(/\/+$/, '');
+  if (LOCAL_MODEL_CACHE.has(key)) return LOCAL_MODEL_CACHE.get(key);
+  let ids = [];
+  try {
+    const res = await fetch(`${key}/models`, { signal });
+    if (res.ok) ids = ((await res.json())?.data ?? []).map((m) => m?.id).filter(Boolean);
+  } catch (err) {
+    throw new Error(`ox: no model named and the local server at ${key} did not answer /models (${err?.message ?? err}) — is it running?`);
+  }
+  if (!ids.length) {
+    throw new Error(`ox: no model named and the local server at ${key} reports no loaded models — load one or pass --model <provider>:<model>`);
+  }
+  // An agent needs tool calling. Ollama publishes per-model capabilities on
+  // /api/tags; prefer a tools-capable model when the server says which are.
+  let pick = ids[0];
+  try {
+    const origin = key.replace(/\/v1$/, '');
+    const res = await fetch(`${origin}/api/tags`, { signal });
+    if (res.ok) {
+      const tagged = ((await res.json())?.models ?? []).filter((m) => Array.isArray(m?.capabilities));
+      const capable = tagged.find((m) => m.capabilities.includes('tools') && ids.includes(m.name ?? m.model));
+      if (capable) pick = capable.name ?? capable.model;
+    }
+  } catch { /* not Ollama, or no capability data: keep the first model */ }
+  LOCAL_MODEL_CACHE.set(key, pick);
+  return pick;
+}
+
 export async function* streamVia(target, opts = {}) {
   const pname = target?.provider;
   const cfg = pname ? PROVIDERS[pname] : undefined;
@@ -72,7 +119,12 @@ export async function* streamVia(target, opts = {}) {
   }
   const streamChat = adapterFor(pname, cfg);
   const budget = currentCostBudget();
-  const model = opts.model ?? target.model;
+  let model = opts.model ?? target.model;
+  // Keyless local server with no model named (or 'auto'): ask it what is loaded.
+  if (keyEnv === null && (!model || model === 'auto')) {
+    model = await discoverLocalModel(baseUrl, opts.signal);
+    opts = { ...opts, model };
+  }
   // keyEnv null means there is no key and no bill: ollama and friends can never
   // charge. A --max-cost cap is not a meaningful guard against a model that
   // cannot spend, so it is skipped for this target instead of failing the whole
