@@ -175,6 +175,7 @@ import { DEFAULT_APPROVAL_TIMEOUT_MS, controlReply, createIpcServer, socketPathF
 import { WATCH_DEFAULT_FPS, runWatch } from './ipc-watch.js';
 import { islandRunning } from './island.js';
 import { expandCommand, listCustomCommands } from './plugins.js';
+import { createLedger, renderLedger } from './ledger.js';
 import {createSelfImproveLoop} from './self-improve-loop.js';
 import {createVerifier, formatVerificationReport} from './verify-loop.js';
 import {createSpecTracker} from './spec-tracker.js';
@@ -4298,6 +4299,7 @@ async function runSubcommand(cmd, args) {
       for (const m of candidates.slice(0, 15)) {
         console.log(`  ${m.model} ${c.dim('(' + (m.bot ?? 'n/a') + ' \u00b7 ' + (m.provider ?? 'n/a') + ')')}`);
       }
+      console.log(c.dim('find open models that fit this machine: ox models recommend [--task code|general|small] \u00b7 ox models hw \u00b7 ox models search <q> \u00b7 ox models pull <repo>'));
       return;
     }
     case 'bench': {
@@ -4433,6 +4435,8 @@ async function replWithBudget(config, opts, flags, budget) {
   // terminal lines are counting.
   const subagentTicker = new SubagentTicker();
 
+  // Every agent's tokens and cost across this REPL session (/cost).
+  const sessionLedger = createLedger();
   const state = {
     busy: false,
     exiting: false,
@@ -4605,6 +4609,7 @@ async function replWithBudget(config, opts, flags, budget) {
     const ac = new AbortController();
     state.currentAbort = ac;
     state.lastEventWasError = false;
+    const turnLedger = createLedger();
     let extraGuidance = '';
     if (state.maxMode > 1) {
       try {
@@ -4645,6 +4650,8 @@ async function replWithBudget(config, opts, flags, budget) {
         ...(state.goalContract ? { goalContract: state.goalContract } : {}),
         ...(state.goal ? { goal: state.goal } : {}),
       })) {
+        turnLedger.feed(ev);
+        sessionLedger.feed(ev);
         switch (ev.type) {
           case 'text-delta':
             streamText(ev.text);
@@ -4851,6 +4858,8 @@ async function replWithBudget(config, opts, flags, budget) {
     } finally {
       state.currentAbort = null;
     }
+    // Delegated turns end with who spent what (/cost shows the whole session).
+    if (turnLedger.hasSubagents()) process.stdout.write(`${renderLedger(turnLedger, { dim: c.dim, bold: c.bold })}\n`);
     // The agent reports the FULL payload it sends; measuring `messages` here
     // ignored the tool schemas (and the system message) and under-reported.
     const estTokens = state.contextTokens ?? estimateTokens(JSON.stringify(messages));
@@ -4920,6 +4929,8 @@ async function replWithBudget(config, opts, flags, budget) {
         console.log(
           `${est} est context tokens${schemaNote} · in ${state.tokensIn} / out ${state.tokensOut} tok${spend}${auxSpend} · ${currentBotLabel()}`
         );
+        // Per-agent breakdown once there is more than the main agent to show.
+        if (sessionLedger.rows().length > 1) console.log(renderLedger(sessionLedger, { dim: c.dim, bold: c.bold }));
         return;
       }
       case '/soul': {

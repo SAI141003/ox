@@ -508,7 +508,7 @@ export function loadConfig(overrides = {}) {
   // Cost routing: subagents do most of the reading, so running them on a cheap
   // or local model ("ollama:auto", "ox-flash", "groq:...") while the main agent
   // keeps the strong one is where most tokens are saved.
-  const subagentBot = firstDefined(env.OX_SUBAGENT_BOT, subagentCfg.bot) || null;
+  const subagentBot = firstDefined(env.OX_SUBAGENT_BOT, subagentCfg.bot) || 'auto';
 
   return {
     cwd,

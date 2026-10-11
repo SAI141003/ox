@@ -458,27 +458,52 @@ function makeLifecycleEmitter(ctx) {
 
 // ---- the subagent tool handler ---------------------------------------------
 
+/**
+ * The cheaper target for delegated work, or null to stay on the main model.
+ * Switches only when the saving is provable: a keyless local model replacing
+ * a paid one, or a strictly lower list price. An unpriced or local main model
+ * is never second-guessed.
+ */
+export function autoSubagentTarget({ config, mainTarget, pick = null }) {
+  if (!mainTarget || mainTarget.keyEnv === null) return null; // already free
+  const mainPrice = mainTarget.pricing ? mainTarget.pricing.in + mainTarget.pricing.out : null;
+  if (mainPrice == null) return null; // cannot prove a saving against an unpriced model
+  const cand = pick ?? pickForRole('coder', { config: { ...config, routingStrategy: 'cost' }, complexity: 0.5 });
+  if (!cand) return null;
+  const spec = cand.bot ?? `${cand.provider}:${cand.model}`;
+  const t = resolveBot(spec, config);
+  if (!t || (t.provider === mainTarget.provider && t.model === mainTarget.model)) return null;
+  if (t.keyEnv === null) return { target: t, why: 'local and free' };
+  const price = t.pricing ? t.pricing.in + t.pricing.out : null;
+  if (price != null && price < mainPrice) {
+    return { target: t, why: `$${price}/Mtok vs $${mainPrice}/Mtok` };
+  }
+  return null;
+}
+
 export function makeSubagentToolHandler({ config, target: mainTarget, auxTarget }) {
   // `subagent.bot` routes delegated work to its own (usually cheaper) model.
   // Resolved once; a bad spec falls back to the main target with a note on the
   // tool result rather than failing every delegation.
   let target = mainTarget;
   let routingNote = null;
-  if (config?.subagent?.bot) {
-    try {
-      if (String(config.subagent.bot).toLowerCase() === 'auto') {
-        // Cheapest reachable model that can still drive tools: the registry's
-        // cost strategy over every bot this machine has a key or a local server
-        // for. Delegated work is mid-complexity by design (scoped, single task).
-        const pick = pickForRole('coder', { config: { ...config, routingStrategy: 'cost' }, complexity: 0.5 });
-        const spec = pick?.bot ?? (pick ? `${pick.provider}:${pick.model}` : null);
-        target = spec ? resolveBot(spec, config) : mainTarget;
-      } else {
-        target = resolveBot(config.subagent.bot, config) ?? mainTarget;
+  // Default 'auto': when this machine can reach a cheaper tool-capable model
+  // than the main one, delegated work runs there. 'main' keeps every agent on
+  // the main model; any other value is a bot spec.
+  const mode = String(config?.subagent?.bot ?? 'auto').trim();
+  try {
+    if (mode.toLowerCase() === 'auto') {
+      const pick = autoSubagentTarget({ config, mainTarget });
+      if (pick) {
+        target = pick.target;
+        routingNote = `subagents run on ${pick.target.model} (auto: ${pick.why}; set subagent.bot to "main" to keep ${mainTarget?.model})`;
       }
-    } catch (err) {
-      routingNote = `subagent.bot '${config.subagent.bot}' unusable (${err?.message ?? err}); subagents use the main model`;
+    } else if (mode.toLowerCase() !== 'main') {
+      target = resolveBot(mode, config) ?? mainTarget;
     }
+  } catch (err) {
+    target = mainTarget;
+    routingNote = `subagent.bot '${mode}' unusable (${err?.message ?? err}); subagents use the main model`;
   }
   return async function subagentTool(args, ctx) {
     if (routingNote) {
