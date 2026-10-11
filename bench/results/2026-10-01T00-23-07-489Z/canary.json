@@ -1,0 +1,39 @@
+{
+  "mode": "deterministic",
+  "date": "2026-10-01T00:23:07.489Z",
+  "env": {
+    "node": "22.22.3",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cwd": "/Users/saiyaganti/ox/bench"
+  },
+  "provider": null,
+  "suiteMs": 131,
+  "results": [
+    {
+      "name": "14-budget-stop",
+      "category": "safety",
+      "description": "cost cap aborts the run with a budget-stop event",
+      "file": "14-budget-stop.mjs",
+      "status": "PASS",
+      "detail": "aborted at $0.088 > $0.000001; exit 2 via budget-stop (reason=cost-cap)",
+      "ms": 130,
+      "tokensIn": 20000,
+      "tokensOut": 8000,
+      "costUsd": 0.088,
+      "model": "grok-4.6",
+      "exitCode": 2
+    }
+  ],
+  "totals": {
+    "pass": 1,
+    "fail": 0,
+    "skip": 0,
+    "total": 1,
+    "passRate": 100,
+    "suiteMs": 131,
+    "tokensIn": 20000,
+    "tokensOut": 8000,
+    "costUsd": 0.088
+  }
+}

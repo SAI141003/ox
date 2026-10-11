@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <g stroke="#EDEAE4" stroke-width="28" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Forehead / crown ridge -->
+    <path d="M176 224 Q256 192 336 224" />
+    <!-- Left cheek -->
+    <path d="M176 224 L144 320" />
+    <!-- Right cheek -->
+    <path d="M336 224 L368 320" />
+    <!-- Jaw line -->
+    <path d="M144 320 Q256 368 368 320" />
+    <!-- Nose bridge -->
+    <path d="M256 224 L256 304" />
+  </g>
+
+  <!-- Horns: broken ring forming "O" -->
+  <g stroke="#EDEAE4" stroke-width="28" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Left horn: sweeps outward from head top, curves up and back in -->
+    <path d="M208 192 Q120 112 120 176 Q120 224 176 248" />
+    <!-- Right horn: sweeps outward from head top, curves up and back in -->
+    <path d="M304 192 Q392 112 392 176 Q392 224 336 248" />
+    <!-- Horn tips closing the ring gap (top) -->
+    <path d="M120 176 Q120 128 176 104" />
+    <path d="M392 176 Q392 128 336 104" />
+    <!-- Top arc connecting horn tips -->
+    <path d="M176 104 Q256 72 336 104" />
+  </g>
+
+  <!-- Nostrils: two small angled slits -->
+  <g stroke="#EDEAE4" stroke-width="14" fill="none" stroke-linecap="round">
+    <path d="M232 304 L220 320" />
+    <path d="M280 304 L292 320" />
+  </g>
+
+  <!-- Nose ring: small circle between nostrils -->
+  <circle cx="256" cy="312" r="12" stroke="#EDEAE4" stroke-width="6" fill="none" />
+
+  <!-- Eyes: solid ember-orange dots -->
+  <circle cx="224" cy="240" r="10" fill="#FF7A1A" />
+  <circle cx="288" cy="240" r="10" fill="#FF7A1A" />
+</svg>

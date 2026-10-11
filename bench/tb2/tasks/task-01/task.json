@@ -1,0 +1,7 @@
+{
+  "task_id": "tb2-01",
+  "task_name": "Read and Echo",
+  "task_description": "Read the contents of message.txt and echo its exact content in the reply.",
+  "difficulty": "easy",
+  "category": "file-io"
+}

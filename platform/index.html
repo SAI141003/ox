@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ox Platform</title>
+  <link rel="stylesheet" href="/platform/assets/style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-left">
+        <a href="/platform/" class="logo">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            <path d="M2 12h20"/>
+            <path d="M12 2a15.3 15.3 0 0 0-4 10 15.3 15.3 0 0 0 4 10 15.3 15.3 0 0 0 4-10 15.3 15.3 0 0 0-4-10z"/>
+          </svg>
+          <span>ox Platform</span>
+        </a>
+        <nav class="nav-tabs" role="tablist">
+          <a href="/platform/" class="nav-tab" role="tab" data-page="dashboard">Dashboard</a>
+          <a href="/platform/pages/models.html" class="nav-tab" role="tab" data-page="models">Models</a>
+          <a href="/platform/pages/agents.html" class="nav-tab" role="tab" data-page="agents">Agents</a>
+          <a href="/platform/pages/tasks.html" class="nav-tab" role="tab" data-page="tasks">Tasks</a>
+          <a href="/platform/pages/settings.html" class="nav-tab" role="tab" data-page="settings">Settings</a>
+        </nav>
+      </div>
+      <div class="header-right">
+        <button class="btn-icon" id="themeToggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"/>
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+          </svg>
+          <svg class="icon-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+        <div class="status-indicator" id="connectionStatus">
+          <span class="status-dot"></span>
+          <span class="status-text">Connecting...</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="main" id="mainContent">
+      <div class="page-dashboard">
+        <div class="page-header">
+          <h1>Dashboard</h1>
+          <p class="page-subtitle">Overview of models, agents, and tasks</p>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon models">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <path d="M8 21h8M12 17v4"/>
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-value" id="statModels">-</span>
+              <span class="stat-label">Models</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon agents">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-value" id="statAgents">-</span>
+              <span class="stat-label">Agents Running</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon tasks">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 11l3 3L22 4"/>
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7"/>
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-value" id="statTasks">-</span>
+              <span class="stat-label">Tasks Completed</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon cost">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="1" x2="12" y2="23"/>
+                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-value" id="statCost">$0.00</span>
+              <span class="stat-label">Total Cost</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="dashboard-grid">
+          <section class="card">
+            <div class="card-header">
+              <h2>Recent Agents</h2>
+              <a href="/platform/pages/agents.html" class="btn-link">View all</a>
+            </div>
+            <div class="card-body" id="recentAgents">
+              <div class="loading">Loading agents...</div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-header">
+              <h2>Recent Tasks</h2>
+              <a href="/platform/pages/tasks.html" class="btn-link">View all</a>
+            </div>
+            <div class="card-body" id="recentTasks">
+              <div class="loading">Loading tasks...</div>
+            </div>
+          </section>
+
+          <section class="card full-width">
+            <div class="card-header">
+              <h2>Model Status</h2>
+              <a href="/platform/pages/models.html" class="btn-link">Manage models</a>
+            </div>
+            <div class="card-body">
+              <div class="model-status-grid" id="modelStatus">
+                <div class="loading">Loading models...</div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span>ox Platform — <span id="serverVersion">v0.1.0</span></span>
+      <span class="footer-links">
+        <a href="https://github.com/ox-agent/ox" target="_blank">GitHub</a>
+        <a href="https://ox.ai/docs" target="_blank">Docs</a>
+      </span>
+    </footer>
+  </div>
+
+  <script type="module" src="/platform/assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "task_id": "tb2-06",
+  "task_name": "MCP Allow",
+  "task_description": "Call the MCP tool mcp__t__echo with msg 'TB2-MCP-8821' under allow-listed policy.",
+  "difficulty": "easy",
+  "category": "mcp"
+}

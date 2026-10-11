@@ -1,0 +1,146 @@
+@custom-media --xs (width >= 36em);
+@custom-media --sm (width >= 42em);
+@custom-media --md (width >= 48em);
+@custom-media --lg (width >= 64em);
+@custom-media --xl (width >= 80em);
+@custom-media --2xl (width >= 96em);
+
+@custom-state --collapsed;
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222.2 47.4% 11.2%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 47.4% 11.2%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 47.4% 11.2%;
+
+  --primary: 262.1 83.3% 57.8%;
+  --primary-foreground: 210 40% 98%;
+
+  --secondary: 210 40% 98%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+
+  --muted: 210 40% 96%;
+  --muted-foreground: 215.4 16.3% 56.9%;
+
+  --accent: 210 40% 98%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+
+  --border: 214.3 32.3% 91.2%;
+  --input: 214.3 32.3% 91.2%;
+  --ring: 262.1 83.3% 57.8%;
+
+  --radius: 0.5rem;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+@theme in html {
+  --font-family: var(--font-sans);
+}
+
+/* ===== Keyframe definitions (extracted from target site) ===== */
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-down {
+  from { opacity: 0; transform: translateY(-30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slide-left {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0px hsl(var(--primary)); }
+  50% { box-shadow: 0 0 0 12px hsl(var(--primary) / 0); }
+}
+
+/* ===== Base styles ===== */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-background text-foreground;
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+/* ===== Scrollbar (Webkit) ===== */
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 4px;
+}
+
+/* ===== Utility classes ===== */
+
+.section {
+  @apply w-full py-16 sm:py-20 md:py-24 lg:py-28;
+  @apply px-4 sm:px-6 lg:px-8;
+}
+
+.container {
+  @apply w-full max-w-7xl mx-auto;
+}
+
+/* ===== Lenis scrollbar override ===== */
+
+.lenis-smooth {
+  scroll-behavior: auto;
+}
+
+.lenis-smooth iframe {
+  display: block;
+}
+
+.lenis-scrollbar-trigger {
+  overflow: hidden;
+}
+
+/* ===== Staggered animation helpers ===== */
+
+[data-animate] {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+
+[data-animate].visible {
+  opacity: 1;
+  transform: translateY(0);
+}

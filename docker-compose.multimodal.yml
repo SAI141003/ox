@@ -1,0 +1,174 @@
+# docker-compose.multimodal.yml
+# ox multimodal — local voice + video pipeline orchestration
+#
+# Usage:
+#   docker-compose -f docker-compose.multimodal.yml up -d
+#   docker-compose -f docker-compose.multimodal.yml logs -f
+#
+# Hardware notes:
+#   - NVIDIA GPU: add `--gpus all` (shown below) and ensure nvidia-container-toolkit
+#     is installed:  https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/
+#   - Apple Silicon: use `comfyui` with `--platform linux/amd64` under Rosetta,
+#     or prefer running natively on the host (see scripts/install-video.sh)
+#   - CPU-only: omit `deploy:` section and the `--gpus` flag; generation will be slow
+#
+# Model volumes:
+#   - /ox-models/whisper  → whisper.cpp models (ggml-*.bin)
+#   - /ox-models/kokoro   → Kokoro TTS checkpoints + voices
+#   - /ox-models/comfyui  → ComfyUI + model checkpoints + custom_nodes
+#   - /ox-video/output    → generated videos
+#   - /ox-voice/output    → generated audio / transcripts
+#
+# Security:
+#   - All services bind to localhost only (no public ports exposed)
+#   - No service has write access to the host filesystem outside its volume
+#   - whisper.cpp and Kokoro run without network access (network_mode: none)
+#     unless a cloud backend is explicitly enabled via env
+
+services:
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # ComfyUI — video generation orchestration (node-based pipeline editor)
+  #
+  # Access the web UI at http://localhost:7860 after startup (~30s)
+  # Recommended VRAM: 12GB+ for LTX-Video, 16GB+ for Wan2.1, 24GB+ for Open-Sora
+  # ─────────────────────────────────────────────────────────────────────────────
+  comfyui:
+    image: comfyui/comfyui:latest
+    container_name: ox-comfyui
+    ports:
+      - "127.0.0.1:7860:7860"  # Web UI — localhost only
+    volumes:
+      - comfyui-code:/opt/comfyui           # ComfyUI application code
+      - comfyui-models:/opt/comfyui/models  # Model checkpoints (diffusion, VAE, LoRA)
+      - ./ox-video/output:/outputs          # Generated videos persist here
+    environment:
+      - HF_HOME=/opt/comfyui/hf_cache       # HuggingFace cache
+      - TORCH_HOME=/opt/comfyui/torch_cache # PyTorch model cache
+    deploy:
+      resources:
+        reservations:
+          # GPU passthrough — requires nvidia-container-toolkit on the host:
+          #   Linux:  apt install nvidia-container-toolkit && systemctl restart docker
+          #   macOS:  GPU passthrough not supported in Docker Desktop; run ComfyUI natively
+          #   Windows: WDDM + WSL2 GPU passthrough (Docker Desktop 3.4+)
+          #
+          # Comment out the devices section if running CPU-only
+          # (video generation will work but slowly):
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+          # VRAM-based model selection hint:
+          #   gpu-memory-8gb  → LTX-Video @ 512×512, 480p
+          #   gpu-memory-16gb → Wan2.1 @ 720p, CogVideoX
+          #   gpu-memory-24gb → Open-Sora @ 1080p
+          #   gpu-memory-40gb → HunyuanVideo @ 1080p
+    command: ["python", "main.py", "--listen", "--port", "7860"]
+    restart: unless-stopped
+    networks:
+      - ox-net
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # whisper.cpp — speech-to-text (offline, CPU-friendly)
+  #
+  # API endpoint: POST http://localhost:8080/inference
+  #   { "audio": "/data/audio.wav", "language": "en", "model": "base.en" }
+  #
+  # Recommended for: offline transcription, dictation, meeting notes
+  # whisper.cpp runs on CPU with SIMD; Core ML builds available for Apple Silicon
+  # ─────────────────────────────────────────────────────────────────────────────
+  whisper:
+    image: ghcr.io/ggerganov/whisper.cpp:latest
+    container_name: ox-whisper-cpp
+    ports:
+      - "127.0.0.1:8080:8080"  # REST API — localhost only
+    volumes:
+      - whisper-models:/models               # whisper.cpp GGUF models
+      - ./ox-voice/output:/outputs            # Transcripts persist here
+    command: ["-m", "/models/ggml-base.en.bin", "--host", "0.0.0.0", "--port", "8080", "--diarize", "--output_txt", "--output_json"]
+    restart: unless-stopped
+    networks:
+      - ox-net
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Kokoro — lightweight text-to-speech (CPU-friendly)
+  #
+  # API endpoint: POST http://localhost:8025/tts
+  #   { "text": "Hello world", "voice": "default", "format": "wav" }
+  #
+  # Kokoro is ~50MB, supports ~50 voices across 8 languages,
+  # generates speech in <1s on modern CPUs.
+  # ─────────────────────────────────────────────────────────────────────────────
+  kokoro:
+    image: kijtra/kokoro-tts:latest
+    container_name: ox-kokoro
+    ports:
+      - "127.0.0.1:8025:8025"  # TTS API — localhost only
+    volumes:
+      - kokoro-models:/app/kokoro/weights  # Kokoro model checkpoints
+      - ./ox-voice/output:/outputs          # Generated audio persists here
+    environment:
+      - KOKORO_MODEL_DIR=/app/kokoro/weights
+      - KOKORO_DEFAULT_VOICE=af_bella
+      - KOKORO_DEFAULT_LANG=en
+    restart: unless-stopped
+    networks:
+      - ox-net
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Ollama — local LLM routing for voice agents and multimodal reasoning
+  #
+    # API endpoint: http://localhost:11434
+    #
+    # Used by the Pipecat voice agent framework for real-time conversation.
+    # Pull a model after startup:  ollama pull qwen3:4b
+    #
+    # Optional: remove this service if you only need STT/TTS/video.
+    # ─────────────────────────────────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ox-ollama
+    ports:
+      - "127.0.0.1:11434:11434"  # Ollama API — localhost only
+    volumes:
+      - ollama-data:/root/.ollama  # Models persist here
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_KEEP_ALIVE=60m      # Keep models loaded for 60 min
+      # Uncomment to limit parallel threads on shared machines:
+      # - OLLAMA_NUM_PARALLEL=1
+      # - OLLAMA_BATCH_SIZE=512
+    # GPU passthrough for faster LLM inference:
+    deploy:
+      resources:
+        reservations:
+          # Apple Silicon: remove this block (Ollama uses Metal natively on host)
+          # CPU-only: remove this block (slower but works)
+          # NVIDIA: requires nvidia-container-toolkit
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - ox-net
+
+# ─────────────────────────────────────────────────────────────────────────────────
+# Named volumes — persist model downloads across container restarts
+# ─────────────────────────────────────────────────────────────────────────────────
+volumes:
+  comfyui-code:
+  comfyui-models:
+  whisper-models:
+  kokoro-models:
+  ollama-data:
+
+# ─────────────────────────────────────────────────────────────────────────────────
+# Isolated network — services talk to each other but are not publicly exposed
+# ─────────────────────────────────────────────────────────────────────────────────
+networks:
+  ox-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.host_binding_ipv4: "127.0.0.1"

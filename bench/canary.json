@@ -1,0 +1,1716 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-01T02:30:38.725Z",
+  "baselineCreated": false,
+  "baselineExists": true,
+  "exitCode": 0,
+  "outcomeProblems": [],
+  "runner": {
+    "mode": "deterministic",
+    "suiteMs": 15307,
+    "totals": {
+      "pass": 25,
+      "fail": 0,
+      "skip": 0,
+      "total": 25,
+      "passRate": 100,
+      "suiteMs": 15307,
+      "tokensIn": 73800,
+      "tokensOut": 18380,
+      "costUsd": 0.25788
+    }
+  },
+  "counts": {
+    "baselineScenarios": 25,
+    "currentScenarios": 25,
+    "passed": 25,
+    "failed": 0,
+    "regressions": 0,
+    "newScenarios": 0,
+    "persistentFailures": 0
+  },
+  "regressions": [],
+  "newScenarios": [],
+  "persistentFailures": [],
+  "baseline": {
+    "01-basic-read": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 153,
+      "tokensIn": 1400,
+      "tokensOut": 80,
+      "costUsd": 0.00328
+    },
+    "02-exact-edit": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 135,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "03-fuzzy-edit": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 131,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "04-multi-file-refactor": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 175,
+      "tokensIn": 2400,
+      "tokensOut": 480,
+      "costUsd": 0.00768
+    },
+    "05-test-fix-loop": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 242,
+      "tokensIn": 2400,
+      "tokensOut": 480,
+      "costUsd": 0.00768
+    },
+    "06-bad-edit-recovery": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 148,
+      "tokensIn": 1800,
+      "tokensOut": 360,
+      "costUsd": 0.00576
+    },
+    "07-decline-compliance": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 135,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "08-compaction-integrity": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 268,
+      "tokensIn": 22500,
+      "tokensOut": 5200,
+      "costUsd": 0.0762
+    },
+    "09-resume-pairing": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 103,
+      "tokensIn": 600,
+      "tokensOut": 120,
+      "costUsd": 0.00192
+    },
+    "10-mcp-end-to-end": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 2641,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "11-skills-disclosure": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 155,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "12-memory-recall": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 236,
+      "tokensIn": 600,
+      "tokensOut": 120,
+      "costUsd": 0.00192
+    },
+    "13-plan-mode-compliance": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 147,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "14-budget-stop": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 96,
+      "tokensIn": 20000,
+      "tokensOut": 8000,
+      "costUsd": 0.088
+    },
+    "15-overhead-profile": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 592,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "16-goal-verifier": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 129,
+      "tokensIn": 1500,
+      "tokensOut": 300,
+      "costUsd": 0.0048
+    },
+    "17-skill-add-safety": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 122,
+      "tokensIn": 0,
+      "tokensOut": 0,
+      "costUsd": 0
+    },
+    "18-max-mode-planning": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 123,
+      "tokensIn": 2800,
+      "tokensOut": 600,
+      "costUsd": 0.0092
+    },
+    "19-mcp-policy": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 270,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "20-subagent-round-trip": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 151,
+      "tokensIn": 1800,
+      "tokensOut": 360,
+      "costUsd": 0.00576
+    },
+    "21-trust-strict-blocks-writes": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 131,
+      "tokensIn": 1400,
+      "tokensOut": 80,
+      "costUsd": 0.00328
+    },
+    "22-trust-yolo-allows-all": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 140,
+      "tokensIn": 1400,
+      "tokensOut": 80,
+      "costUsd": 0.00328
+    },
+    "23-repo-map-in-context": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 106,
+      "tokensIn": 800,
+      "tokensOut": 40,
+      "costUsd": 0.00184
+    },
+    "24-plan-first-saves-plan": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 145,
+      "tokensIn": 700,
+      "tokensOut": 40,
+      "costUsd": 0.00164
+    },
+    "25-procedural-memory-recall": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 139,
+      "tokensIn": 2100,
+      "tokensOut": 120,
+      "costUsd": 0.00492
+    }
+  },
+  "current": {
+    "01-basic-read": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 581,
+      "tokensIn": 1400,
+      "tokensOut": 80,
+      "costUsd": 0.00328
+    },
+    "02-exact-edit": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 809,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "03-fuzzy-edit": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 471,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "04-multi-file-refactor": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 617,
+      "tokensIn": 2400,
+      "tokensOut": 480,
+      "costUsd": 0.00768
+    },
+    "05-test-fix-loop": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 848,
+      "tokensIn": 2400,
+      "tokensOut": 480,
+      "costUsd": 0.00768
+    },
+    "06-bad-edit-recovery": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 472,
+      "tokensIn": 1800,
+      "tokensOut": 360,
+      "costUsd": 0.00576
+    },
+    "07-decline-compliance": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 449,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "08-compaction-integrity": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 1023,
+      "tokensIn": 22500,
+      "tokensOut": 5200,
+      "costUsd": 0.0762
+    },
+    "09-resume-pairing": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 331,
+      "tokensIn": 600,
+      "tokensOut": 120,
+      "costUsd": 0.00192
+    },
+    "10-mcp-end-to-end": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 3046,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "11-skills-disclosure": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 262,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "12-memory-recall": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 604,
+      "tokensIn": 600,
+      "tokensOut": 120,
+      "costUsd": 0.00192
+    },
+    "13-plan-mode-compliance": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 384,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "14-budget-stop": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 273,
+      "tokensIn": 20000,
+      "tokensOut": 8000,
+      "costUsd": 0.088
+    },
+    "15-overhead-profile": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 1330,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "16-goal-verifier": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 342,
+      "tokensIn": 1500,
+      "tokensOut": 300,
+      "costUsd": 0.0048
+    },
+    "17-skill-add-safety": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 275,
+      "tokensIn": 0,
+      "tokensOut": 0,
+      "costUsd": 0
+    },
+    "18-max-mode-planning": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 314,
+      "tokensIn": 2800,
+      "tokensOut": 600,
+      "costUsd": 0.0092
+    },
+    "19-mcp-policy": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 670,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384
+    },
+    "20-subagent-round-trip": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 399,
+      "tokensIn": 1800,
+      "tokensOut": 360,
+      "costUsd": 0.00576
+    },
+    "21-trust-strict-blocks-writes": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 326,
+      "tokensIn": 1400,
+      "tokensOut": 80,
+      "costUsd": 0.00328
+    },
+    "22-trust-yolo-allows-all": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 377,
+      "tokensIn": 1400,
+      "tokensOut": 80,
+      "costUsd": 0.00328
+    },
+    "23-repo-map-in-context": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 286,
+      "tokensIn": 800,
+      "tokensOut": 40,
+      "costUsd": 0.00184
+    },
+    "24-plan-first-saves-plan": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 373,
+      "tokensIn": 700,
+      "tokensOut": 40,
+      "costUsd": 0.00164
+    },
+    "25-procedural-memory-recall": {
+      "pass": true,
+      "status": "pass",
+      "duration_ms": 363,
+      "tokensIn": 2100,
+      "tokensOut": 120,
+      "costUsd": 0.00492
+    }
+  },
+  "scenarios": [
+    {
+      "name": "01-basic-read",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 581,
+      "tokensIn": 1400,
+      "tokensOut": 80,
+      "costUsd": 0.00328,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 153,
+        "tokensIn": 1400,
+        "tokensOut": 80,
+        "costUsd": 0.00328
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 581,
+        "tokensIn": 1400,
+        "tokensOut": 80,
+        "costUsd": 0.00328
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 428,
+        "percent": 279.73856209150324,
+        "before": 153,
+        "now": 581
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 1480,
+        "now": 1480
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00328,
+        "now": 0.00328
+      }
+    },
+    {
+      "name": "02-exact-edit",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 809,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 135,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 809,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 674,
+        "percent": 499.2592592592593,
+        "before": 135,
+        "now": 809
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 1440,
+        "now": 1440
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00384,
+        "now": 0.00384
+      }
+    },
+    {
+      "name": "03-fuzzy-edit",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 471,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 131,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 471,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 340,
+        "percent": 259.5419847328244,
+        "before": 131,
+        "now": 471
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 1440,
+        "now": 1440
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00384,
+        "now": 0.00384
+      }
+    },
+    {
+      "name": "04-multi-file-refactor",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 617,
+      "tokensIn": 2400,
+      "tokensOut": 480,
+      "costUsd": 0.00768,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 175,
+        "tokensIn": 2400,
+        "tokensOut": 480,
+        "costUsd": 0.00768
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 617,
+        "tokensIn": 2400,
+        "tokensOut": 480,
+        "costUsd": 0.00768
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 442,
+        "percent": 252.57142857142858,
+        "before": 175,
+        "now": 617
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 2880,
+        "now": 2880
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00768,
+        "now": 0.00768
+      }
+    },
+    {
+      "name": "05-test-fix-loop",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 848,
+      "tokensIn": 2400,
+      "tokensOut": 480,
+      "costUsd": 0.00768,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 242,
+        "tokensIn": 2400,
+        "tokensOut": 480,
+        "costUsd": 0.00768
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 848,
+        "tokensIn": 2400,
+        "tokensOut": 480,
+        "costUsd": 0.00768
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 606,
+        "percent": 250.41322314049586,
+        "before": 242,
+        "now": 848
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 2880,
+        "now": 2880
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00768,
+        "now": 0.00768
+      }
+    },
+    {
+      "name": "06-bad-edit-recovery",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 472,
+      "tokensIn": 1800,
+      "tokensOut": 360,
+      "costUsd": 0.00576,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 148,
+        "tokensIn": 1800,
+        "tokensOut": 360,
+        "costUsd": 0.00576
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 472,
+        "tokensIn": 1800,
+        "tokensOut": 360,
+        "costUsd": 0.00576
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 324,
+        "percent": 218.9189189189189,
+        "before": 148,
+        "now": 472
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 2160,
+        "now": 2160
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00576,
+        "now": 0.00576
+      }
+    },
+    {
+      "name": "07-decline-compliance",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 449,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 135,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 449,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 314,
+        "percent": 232.5925925925926,
+        "before": 135,
+        "now": 449
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 1440,
+        "now": 1440
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00384,
+        "now": 0.00384
+      }
+    },
+    {
+      "name": "08-compaction-integrity",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 1023,
+      "tokensIn": 22500,
+      "tokensOut": 5200,
+      "costUsd": 0.0762,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 268,
+        "tokensIn": 22500,
+        "tokensOut": 5200,
+        "costUsd": 0.0762
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 1023,
+        "tokensIn": 22500,
+        "tokensOut": 5200,
+        "costUsd": 0.0762
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 755,
+        "percent": 281.7164179104478,
+        "before": 268,
+        "now": 1023
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 27700,
+        "now": 27700
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.0762,
+        "now": 0.0762
+      }
+    },
+    {
+      "name": "09-resume-pairing",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 331,
+      "tokensIn": 600,
+      "tokensOut": 120,
+      "costUsd": 0.00192,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 103,
+        "tokensIn": 600,
+        "tokensOut": 120,
+        "costUsd": 0.00192
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 331,
+        "tokensIn": 600,
+        "tokensOut": 120,
+        "costUsd": 0.00192
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 228,
+        "percent": 221.35922330097085,
+        "before": 103,
+        "now": 331
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 720,
+        "now": 720
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00192,
+        "now": 0.00192
+      }
+    },
+    {
+      "name": "10-mcp-end-to-end",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 3046,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 2641,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 3046,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 405,
+        "percent": 15.33510034078001,
+        "before": 2641,
+        "now": 3046
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 1440,
+        "now": 1440
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00384,
+        "now": 0.00384
+      }
+    },
+    {
+      "name": "11-skills-disclosure",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 262,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 155,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 262,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 107,
+        "percent": 69.03225806451613,
+        "before": 155,
+        "now": 262
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 1440,
+        "now": 1440
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00384,
+        "now": 0.00384
+      }
+    },
+    {
+      "name": "12-memory-recall",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 604,
+      "tokensIn": 600,
+      "tokensOut": 120,
+      "costUsd": 0.00192,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 236,
+        "tokensIn": 600,
+        "tokensOut": 120,
+        "costUsd": 0.00192
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 604,
+        "tokensIn": 600,
+        "tokensOut": 120,
+        "costUsd": 0.00192
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 368,
+        "percent": 155.9322033898305,
+        "before": 236,
+        "now": 604
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 720,
+        "now": 720
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00192,
+        "now": 0.00192
+      }
+    },
+    {
+      "name": "13-plan-mode-compliance",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 384,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 147,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 384,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 237,
+        "percent": 161.22448979591837,
+        "before": 147,
+        "now": 384
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 1440,
+        "now": 1440
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00384,
+        "now": 0.00384
+      }
+    },
+    {
+      "name": "14-budget-stop",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 273,
+      "tokensIn": 20000,
+      "tokensOut": 8000,
+      "costUsd": 0.088,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 96,
+        "tokensIn": 20000,
+        "tokensOut": 8000,
+        "costUsd": 0.088
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 273,
+        "tokensIn": 20000,
+        "tokensOut": 8000,
+        "costUsd": 0.088
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 177,
+        "percent": 184.375,
+        "before": 96,
+        "now": 273
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 28000,
+        "now": 28000
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.088,
+        "now": 0.088
+      }
+    },
+    {
+      "name": "15-overhead-profile",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 1330,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 592,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 1330,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 738,
+        "percent": 124.66216216216218,
+        "before": 592,
+        "now": 1330
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 1440,
+        "now": 1440
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00384,
+        "now": 0.00384
+      }
+    },
+    {
+      "name": "16-goal-verifier",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 342,
+      "tokensIn": 1500,
+      "tokensOut": 300,
+      "costUsd": 0.0048,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 129,
+        "tokensIn": 1500,
+        "tokensOut": 300,
+        "costUsd": 0.0048
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 342,
+        "tokensIn": 1500,
+        "tokensOut": 300,
+        "costUsd": 0.0048
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 213,
+        "percent": 165.11627906976744,
+        "before": 129,
+        "now": 342
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 1800,
+        "now": 1800
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.0048,
+        "now": 0.0048
+      }
+    },
+    {
+      "name": "17-skill-add-safety",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 275,
+      "tokensIn": 0,
+      "tokensOut": 0,
+      "costUsd": 0,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 122,
+        "tokensIn": 0,
+        "tokensOut": 0,
+        "costUsd": 0
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 275,
+        "tokensIn": 0,
+        "tokensOut": 0,
+        "costUsd": 0
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 153,
+        "percent": 125.40983606557377,
+        "before": 122,
+        "now": 275
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": null,
+        "before": 0,
+        "now": 0
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": null,
+        "before": 0,
+        "now": 0
+      }
+    },
+    {
+      "name": "18-max-mode-planning",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 314,
+      "tokensIn": 2800,
+      "tokensOut": 600,
+      "costUsd": 0.0092,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 123,
+        "tokensIn": 2800,
+        "tokensOut": 600,
+        "costUsd": 0.0092
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 314,
+        "tokensIn": 2800,
+        "tokensOut": 600,
+        "costUsd": 0.0092
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 191,
+        "percent": 155.28455284552845,
+        "before": 123,
+        "now": 314
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 3400,
+        "now": 3400
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.0092,
+        "now": 0.0092
+      }
+    },
+    {
+      "name": "19-mcp-policy",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 670,
+      "tokensIn": 1200,
+      "tokensOut": 240,
+      "costUsd": 0.00384,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 270,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 670,
+        "tokensIn": 1200,
+        "tokensOut": 240,
+        "costUsd": 0.00384
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 400,
+        "percent": 148.14814814814815,
+        "before": 270,
+        "now": 670
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 1440,
+        "now": 1440
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00384,
+        "now": 0.00384
+      }
+    },
+    {
+      "name": "20-subagent-round-trip",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 399,
+      "tokensIn": 1800,
+      "tokensOut": 360,
+      "costUsd": 0.00576,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 151,
+        "tokensIn": 1800,
+        "tokensOut": 360,
+        "costUsd": 0.00576
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 399,
+        "tokensIn": 1800,
+        "tokensOut": 360,
+        "costUsd": 0.00576
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 248,
+        "percent": 164.23841059602648,
+        "before": 151,
+        "now": 399
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 2160,
+        "now": 2160
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00576,
+        "now": 0.00576
+      }
+    },
+    {
+      "name": "21-trust-strict-blocks-writes",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 326,
+      "tokensIn": 1400,
+      "tokensOut": 80,
+      "costUsd": 0.00328,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 131,
+        "tokensIn": 1400,
+        "tokensOut": 80,
+        "costUsd": 0.00328
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 326,
+        "tokensIn": 1400,
+        "tokensOut": 80,
+        "costUsd": 0.00328
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 195,
+        "percent": 148.85496183206106,
+        "before": 131,
+        "now": 326
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 1480,
+        "now": 1480
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00328,
+        "now": 0.00328
+      }
+    },
+    {
+      "name": "22-trust-yolo-allows-all",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 377,
+      "tokensIn": 1400,
+      "tokensOut": 80,
+      "costUsd": 0.00328,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 140,
+        "tokensIn": 1400,
+        "tokensOut": 80,
+        "costUsd": 0.00328
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 377,
+        "tokensIn": 1400,
+        "tokensOut": 80,
+        "costUsd": 0.00328
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 237,
+        "percent": 169.28571428571428,
+        "before": 140,
+        "now": 377
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 1480,
+        "now": 1480
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00328,
+        "now": 0.00328
+      }
+    },
+    {
+      "name": "23-repo-map-in-context",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 286,
+      "tokensIn": 800,
+      "tokensOut": 40,
+      "costUsd": 0.00184,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 106,
+        "tokensIn": 800,
+        "tokensOut": 40,
+        "costUsd": 0.00184
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 286,
+        "tokensIn": 800,
+        "tokensOut": 40,
+        "costUsd": 0.00184
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 180,
+        "percent": 169.81132075471697,
+        "before": 106,
+        "now": 286
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 840,
+        "now": 840
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00184,
+        "now": 0.00184
+      }
+    },
+    {
+      "name": "24-plan-first-saves-plan",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 373,
+      "tokensIn": 700,
+      "tokensOut": 40,
+      "costUsd": 0.00164,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 145,
+        "tokensIn": 700,
+        "tokensOut": 40,
+        "costUsd": 0.00164
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 373,
+        "tokensIn": 700,
+        "tokensOut": 40,
+        "costUsd": 0.00164
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 228,
+        "percent": 157.24137931034483,
+        "before": 145,
+        "now": 373
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 740,
+        "now": 740
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00164,
+        "now": 0.00164
+      }
+    },
+    {
+      "name": "25-procedural-memory-recall",
+      "status": "pass",
+      "pass": true,
+      "duration_ms": 363,
+      "tokensIn": 2100,
+      "tokensOut": 120,
+      "costUsd": 0.00492,
+      "accuracy": {
+        "before": "pass",
+        "now": "pass",
+        "regression": false
+      },
+      "baseline": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 139,
+        "tokensIn": 2100,
+        "tokensOut": 120,
+        "costUsd": 0.00492
+      },
+      "current": {
+        "pass": true,
+        "status": "pass",
+        "duration_ms": 363,
+        "tokensIn": 2100,
+        "tokensOut": 120,
+        "costUsd": 0.00492
+      },
+      "result": "✅ passed before and now",
+      "kind": "stable",
+      "regression": false,
+      "latency": {
+        "absolute": 224,
+        "percent": 161.15107913669064,
+        "before": 139,
+        "now": 363
+      },
+      "tokens": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 2220,
+        "now": 2220
+      },
+      "cost": {
+        "absolute": 0,
+        "percent": 0,
+        "before": 0.00492,
+        "now": 0.00492
+      }
+    }
+  ]
+}

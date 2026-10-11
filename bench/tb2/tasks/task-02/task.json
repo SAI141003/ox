@@ -1,0 +1,7 @@
+{
+  "task_id": "tb2-02",
+  "task_name": "Edit File",
+  "task_description": "Edit config.txt: replace 'debug = false' with 'debug = true'.",
+  "difficulty": "easy",
+  "category": "file-editing"
+}

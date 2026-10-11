@@ -1,0 +1,17 @@
+{
+  "name": "ox-agent",
+  "version": "0.1.0",
+  "description": "the featherweight coding agent",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "ox": "./bin/ox.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=2 test/*.test.js",
+    "start": "node bin/ox.js"
+  }
+}

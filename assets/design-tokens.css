@@ -1,0 +1,184 @@
+/* ============================================================
+   OX Design System — Design Tokens
+   ============================================================ */
+
+:root {
+  /* --- Color: Dark Theme (default) --- */
+  --bg-obsidian: #0A0A0C;
+  --bg-surface: #121216;
+  --bg-elevated: #1A1A20;
+
+  --ember: #FF7A1A;
+  --blood: #E5484D;
+  --bone: #EDEAE4;
+  --steel: #8A8A93;
+  --success: #3DD68C;
+  --warning: #F0B429;
+  --info: #3B9EFF;
+
+  /* --- Semantic Colors --- */
+  --bg-primary: var(--bg-obsidian);
+  --bg-surface: var(--bg-surface);
+  --bg-elevated: var(--bg-elevated);
+  --text-primary: var(--bone);
+  --text-secondary: var(--steel);
+  --accent: var(--ember);
+  --danger: var(--blood);
+  --success: var(--success);
+  --warning: var(--warning);
+  --info: var(--info);
+
+  /* --- Typography --- */
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-20: 20px;
+  --fs-28: 28px;
+  --fs-40: 40px;
+
+  --lh-default: 1.45;
+
+  /* --- Spacing (4/8 grid) --- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+
+  /* --- Radius --- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  /* --- Depth --- */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.5);
+  --shadow-glow: 0 0 20px rgba(255,122,26,0.15);
+  --border-subtle: 1px solid rgba(255,255,255,0.08);
+  --glass-blur: blur(16px);
+
+  /* --- Motion --- */
+  --dur-micro: 120ms;
+  --dur-component: 200ms;
+  --dur-panel: 320ms;
+  --dur-max: 500ms;
+  --easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* --- Component Tokens --- */
+  --btn-bg: var(--bg-elevated);
+  --btn-bg-hover: var(--bg-surface);
+  --btn-text: var(--text-primary);
+  --btn-border: var(--border-subtle);
+  --btn-radius: var(--radius-sm);
+  --btn-padding-y: var(--sp-2);
+  --btn-padding-x: var(--sp-4);
+
+  --card-bg: var(--bg-surface);
+  --card-border: var(--border-subtle);
+  --card-radius: var(--radius-md);
+  --card-shadow: var(--shadow-md);
+  --card-padding: var(--sp-4);
+
+  --input-bg: var(--bg-obsidian);
+  --input-border: var(--border-subtle);
+  --input-border-focus: var(--accent);
+  --input-text: var(--text-primary);
+  --input-radius: var(--radius-sm);
+
+  --modal-bg: var(--bg-elevated);
+  --modal-border: var(--border-subtle);
+  --modal-radius: var(--radius-lg);
+  --modal-shadow: var(--shadow-lg);
+
+  --tooltip-bg: var(--bg-elevated);
+  --tooltip-text: var(--text-primary);
+  --tooltip-radius: var(--radius-sm);
+
+  --toast-bg: var(--bg-elevated);
+  --toast-text: var(--text-primary);
+  --toast-border: var(--border-subtle);
+  --toast-shadow: var(--shadow-lg);
+
+  --scrollbar-thumb: var(--bg-elevated);
+  --scrollbar-track: var(--bg-obsidian);
+
+  --selection-bg: rgba(255,122,26,0.3);
+
+  /* --- Z-index layers --- */
+  --z-base: 1;
+  --z-elevated: 10;
+  --z-overlay: 50;
+  --z-toast: 100;
+  --z-tooltip: 200;
+  --z-modal: 300;
+  --z-clicky: 9000;
+}
+
+[data-theme="light"] {
+  --bg-obsidian: #F5F2ED;
+  --bg-surface: #EDEAE4;
+  --bg-elevated: #E2DED7;
+
+  --bg-primary: var(--bg-obsidian);
+  --bg-surface: var(--bg-surface);
+  --bg-elevated: var(--bg-elevated);
+
+  --text-primary: #1A1A20;
+  --text-secondary: #5A5A63;
+
+  --accent: var(--ember);
+  --danger: var(--blood);
+  --success: var(--success);
+  --warning: var(--warning);
+  --info: var(--info);
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.15);
+  --shadow-glow: 0 0 20px rgba(255,122,26,0.1);
+
+  --btn-bg: var(--bg-elevated);
+  --btn-bg-hover: var(--bg-surface);
+
+  --card-bg: var(--bg-obsidian);
+
+  --input-bg: var(--bg-obsidian);
+
+  --scrollbar-thumb: #C0BAB1;
+  --scrollbar-track: var(--bg-obsidian);
+}
+
+@media (max-width: 640px) {
+  :root {
+    --fs-28: 24px;
+    --fs-40: 32px;
+    --sp-8: 24px;
+    --sp-10: 32px;
+    --sp-12: 40px;
+    --sp-16: 48px;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  :root { --fs-40: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

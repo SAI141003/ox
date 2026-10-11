@@ -1,0 +1,7 @@
+{
+  "task_id": "tb2-05",
+  "task_name": "Memory Persistence",
+  "task_description": "Store a fact via memory_add, then in a fresh invocation recall it.",
+  "difficulty": "easy",
+  "category": "memory"
+}

@@ -1,0 +1,2 @@
+Create a file called `solution.js` that exports a function `solve(n)` which returns `n * n`. After creating it, verify it works by running:
+`node -e "const {solve}=require('./solution.js'); console.log(solve(6))"`

@@ -1,0 +1,39 @@
+{
+  "mode": "deterministic",
+  "date": "2026-10-01T00:25:52.072Z",
+  "env": {
+    "node": "22.22.3",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cwd": "/Users/saiyaganti/ox/bench"
+  },
+  "provider": null,
+  "suiteMs": 149,
+  "results": [
+    {
+      "name": "16-goal-verifier",
+      "category": "verification",
+      "description": "goal verifier detects a missing element, forces continuation, then approves",
+      "file": "16-goal-verifier.mjs",
+      "status": "PASS",
+      "detail": "2 rounds, verifier incomplete→complete; totals 1500in/300out include judge tokens",
+      "ms": 148,
+      "tokensIn": 1500,
+      "tokensOut": 300,
+      "costUsd": 0.0048,
+      "model": "grok-4.6",
+      "exitCode": 0
+    }
+  ],
+  "totals": {
+    "pass": 1,
+    "fail": 0,
+    "skip": 0,
+    "total": 1,
+    "passRate": 100,
+    "suiteMs": 149,
+    "tokensIn": 1500,
+    "tokensOut": 300,
+    "costUsd": 0.0048
+  }
+}

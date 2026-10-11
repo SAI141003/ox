@@ -1,0 +1,7 @@
+{
+  "task_id": "tb2-03",
+  "task_name": "Create and Verify",
+  "task_description": "Create a JavaScript file that exports a solve function and verify it returns n*n for input 6.",
+  "difficulty": "easy",
+  "category": "code-creation"
+}

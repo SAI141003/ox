@@ -1,0 +1,37 @@
+{
+  "name": "website-clone",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck && npm run build"
+  },
+  "dependencies": {
+    "@radix-ui/react-icons": "^1.3.1",
+    "@radix-ui/react-slot": "^1.1.2",
+    "@tailwindcss/postcss7-plugin": "^4.0.0",
+    "clsx": "^2.1.1",
+    "embla-carousel-auto-scroll": "^8.0.0",
+    "embla-carousel-react": "^8.0.0",
+    "framer-motion": "^11.13.22",
+    "lenis": "^1.3.0",
+    "lucide-react": "^0.469.0",
+    "next": "15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-intersection-observer": "^9.10.0",
+    "tailwind-merge": "^2.5.0",
+    "tailwindcss": "^4.0.0",
+    "tailwindcss-animate": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.0"
+  }
+}

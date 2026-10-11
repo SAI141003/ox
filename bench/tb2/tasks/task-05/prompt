@@ -1,0 +1,2 @@
+Phase 1: Store the fact \"The sky is BLUE-8821\" in project memory using memory_add.
+Phase 2: In a fresh invocation, recall project memory and state the fact about the sky.

@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+.claude/worktrees/
+.remember/
+.agent/
+.ox-backups/
+desktop/src-tauri/target/
+desktop/dist/
+*.log

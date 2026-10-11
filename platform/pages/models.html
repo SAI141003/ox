@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Models - ox Platform</title>
+  <link rel="stylesheet" href="/platform/assets/style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-left">
+        <a href="/platform/" class="logo">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M2 12h20"/>
+          </svg>
+          <span>ox Platform</span>
+        </a>
+        <nav class="nav-tabs" role="tablist">
+          <a href="/platform/" class="nav-tab" role="tab">Dashboard</a>
+          <a href="/platform/pages/models.html" class="nav-tab active" role="tab">Models</a>
+          <a href="/platform/pages/agents.html" class="nav-tab" role="tab">Agents</a>
+          <a href="/platform/pages/tasks.html" class="nav-tab" role="tab">Tasks</a>
+          <a href="/platform/pages/settings.html" class="nav-tab" role="tab">Settings</a>
+        </nav>
+      </div>
+      <div class="header-right">
+        <button class="btn-icon" id="themeToggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"/>
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+          </svg>
+          <svg class="icon-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+        <div class="status-indicator" id="connectionStatus">
+          <span class="status-dot"></span>
+          <span class="status-text">Connecting...</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      <div class="page-header">
+        <h1>Models</h1>
+        <p class="page-subtitle">Available language models and providers</p>
+      </div>
+
+      <div class="model-status-grid" id="modelStatus">
+        <div class="loading">Loading models...</div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span>ox Platform — <span id="serverVersion">v0.1.0</span></span>
+      <span class="footer-links">
+        <a href="https://github.com/ox-agent/ox" target="_blank">GitHub</a>
+        <a href="https://ox.ai/docs" target="_blank">Docs</a>
+      </span>
+    </footer>
+  </div>
+
+  <script type="module" src="/platform/assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+Call the MCP tool `mcp__t__echo` with argument `msg: "TB2-MCP-8821"`. The MCP policy is allow-listed in .ox.json.

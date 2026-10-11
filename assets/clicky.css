@@ -1,0 +1,138 @@
+/* ============================================================
+   Clicky — Guide Cursor Styles
+   ============================================================ */
+
+.clicky-ring {
+  position: fixed;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--ember, #FF7A1A);
+  pointer-events: none;
+  z-index: var(--z-clicky, 9000);
+  transform: translate(-50%, -50%);
+  animation: clickyPulse 1.5s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes clickyPulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1);   opacity: 0.7; }
+  50%      { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+}
+
+/* Horn accents on the ring */
+.clicky-horn {
+  position: absolute;
+  width: 0; height: 0;
+  pointer-events: none;
+  z-index: calc(var(--z-clicky, 9000) - 1);
+}
+.clicky-horn::before,
+.clicky-horn::after {
+  content: '';
+  position: absolute;
+  width: 0; height: 0;
+  border-style: solid;
+}
+.clicky-horn .horn-left {
+  top: -4px; left: 8px;
+  border-width: 0 4px 8px 4px;
+  border-color: transparent transparent var(--ember, #FF7A1A) transparent;
+}
+.clicky-horn .horn-right {
+  top: -4px; right: 8px;
+  border-width: 0 4px 8px 4px;
+  border-color: transparent transparent var(--ember, #FF7A1A) transparent;
+}
+
+/* Target highlight */
+.clicky-target {
+  outline: 2px solid var(--ember, #FF7A1A);
+  outline-offset: 3px;
+  box-shadow: 0 0 12px rgba(255,122,26,0.4), inset 0 0 12px rgba(255,122,26,0.1);
+  position: relative;
+}
+.clicky-target::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255,122,26,0.06);
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Speech bubble */
+.clicky-bubble {
+  position: fixed;
+  font-family: var(--font-body, 'Inter'), sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--bone, #EDEAE4);
+  background: rgba(26,26,32,0.85);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--radius-sm, 8px);
+  padding: 8px 14px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  pointer-events: none;
+  z-index: calc(var(--z-clicky, 9000) + 1);
+  white-space: nowrap;
+  will-change: transform, opacity;
+  animation: clickyBubbleArc 0.5s cubic-bezier(0.2,0.8,0.2,1);
+}
+@keyframes clickyBubbleArc {
+  0%   { opacity: 0; transform: translateY(6px) scale(0.9); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.clicky-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -6px; left: 50%; transform: translateX(-50%);
+  width: 0; height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 6px solid rgba(26,26,32,0.85);
+}
+
+/* Overlay */
+.clicky-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: calc(var(--z-clicky, 9000) - 2);
+  pointer-events: auto;
+}
+
+/* Ignite animation for ring */
+.clicky-ignite {
+  animation: clickyIgnite 0.6s ease-out forwards;
+}
+@keyframes clickyIgnite {
+  0%   { border-color: var(--ember, #FF7A1A); box-shadow: 0 0 4px rgba(255,122,26,0.3); }
+  50%  { border-color: #fff; box-shadow: 0 0 24px rgba(255,200,100,0.9); }
+  100% { border-color: var(--ember, #FF7A1A); box-shadow: 0 0 12px rgba(255,122,26,0.5); }
+}
+
+/* Mode variants */
+.clicky-guide .clicky-ring {
+  border-color: var(--ember, #FF7A1A);
+  animation: clickyPulse 1.5s ease-in-out infinite;
+}
+.clicky-assist .clicky-ring {
+  border-color: var(--info, #3B9EFF);
+  animation: clickyPulse 1.5s ease-in-out infinite;
+}
+.clicky-autopilot .clicky-ring {
+  border-color: var(--success, #3DD68C);
+  animation: clickyPulse 1.5s ease-in-out infinite;
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .clicky-ring,
+  .clicky-bubble,
+  .clicky-ignite {
+    animation: none !important;
+    transition: none !important;
+  }
+}
