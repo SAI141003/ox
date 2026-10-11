@@ -15,7 +15,7 @@
 //
 //   client -> server
 //     { type:'ready', clientId }
-//     { type:'approval-answer', id, decision }   // 'allow'|'deny'|'ask'
+//     { type:'approval-answer', id, decision }   // 'allow'|'deny'|'ask'|'always' (allow + rest of session)
 //     { type:'ping' }
 //
 // The four design rules this module exists to enforce:
@@ -45,7 +45,7 @@ import { EventEmitter } from 'node:events';
 
 export const IPC_VERSION = 1;
 
-export const APPROVAL_DECISIONS = Object.freeze(['allow', 'deny', 'ask']);
+export const APPROVAL_DECISIONS = Object.freeze(['allow', 'deny', 'ask', 'always']);
 
 // The one verdict every failure path converges on. See rule 2 above.
 export const DECLINE = 'ask';

@@ -52,6 +52,31 @@ for sig in [SIGINT, SIGTERM] {
     }
 }
 
+// Dev aid: `OxIsland --render-mascot <dir>` writes one PNG per mood and exits,
+// so the character can be reviewed (and diffed) without running the island.
+if let i = CommandLine.arguments.firstIndex(of: "--render-mascot"), i + 1 < CommandLine.arguments.count {
+    let dir = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let moods: [(String, Mood)] = [("sleeping", .sleeping), ("idle", .idle), ("thinking", .thinking),
+                                   ("working", .working("bash")), ("needs-you", .needsYou), ("done", .done), ("error", .error("x"))]
+    MainActor.assumeIsolated {
+        for (name, mood) in moods {
+            let view = Canvas { ctx, size in
+                OxPainter(mood: mood, t: 0.5, look: CGVector(dx: 0.3, dy: 0.2)).paint(&ctx, size: size)
+            }
+            .frame(width: 240, height: 240)
+            .background(Color.black)
+            let r = ImageRenderer(content: view)
+            r.scale = 2
+            if let img = r.nsImage, let tiff = img.tiffRepresentation,
+               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                try? png.write(to: dir.appendingPathComponent("\(name).png"))
+            }
+        }
+    }
+    exit(0)
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

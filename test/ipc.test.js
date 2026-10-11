@@ -115,7 +115,7 @@ async function pair(t, opts = {}) {
 
 test('ipc: IPC_VERSION and APPROVAL_DECISIONS are the documented values', () => {
   assert.equal(IPC_VERSION, 1);
-  assert.deepEqual([...APPROVAL_DECISIONS], ['allow', 'deny', 'ask']);
+  assert.deepEqual([...APPROVAL_DECISIONS], ['allow', 'deny', 'ask', 'always']);
 });
 
 test('ipc: DEFAULT_SOCKET_DIR is the tmpdir', () => {

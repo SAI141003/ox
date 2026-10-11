@@ -204,7 +204,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -379,6 +379,8 @@ function usage() {
     '      (default: <tmpdir>/ox-ipc-default.sock; --approval-timeout caps how long a connected',
     '       client may hold an approval before ox gives up and falls back to declining)',
     '  ox ipc status [--socket <path>]  report whether a bridge is listening (exit 1 when it is not)',
+    '  ox island [start|stop|status|build]  OX Island: live runs + approvals in the MacBook notch (macOS;',
+    '      every ox run auto-connects while it is running; OX_ISLAND=0 opts a run out)',
     '  ox ipc watch [--socket <path>] [--fps <n>] [--plain]',
     '      live dashboard in this terminal: session, current tool, turns/tokens/cost, and a',
     '      keyboard approval panel (a = allow, d = deny, s = fall back to the terminal prompt,',
@@ -3064,7 +3066,10 @@ function ipcMeta(cwd, spec) {
     const target = resolveBot(spec ?? defaultBotSpec(config), config);
     if (target) {
       meta.bot = target.bot ?? null;
-      meta.model = target.model ?? null;
+      // A bare provider spec ("custom") resolves with the provider name as its
+      // model; the model actually sent is OX_MODEL / config.model.
+      const bare = !target.model || target.model === target.provider;
+      meta.model = (bare ? process.env.OX_MODEL || config.model : null) || target.model || null;
       meta.provider = target.provider ?? null;
     }
   } catch { /* no usable bot configured: the bridge still serves events */ }
@@ -3546,6 +3551,11 @@ async function runSubcommand(cmd, args) {
           console.log(c.dim('  Or set VOICE_LOCAL_ONLY=0 for cloud STT'));
         }
       }
+      return;
+    }
+    case 'island': {
+      const { cmdIsland } = await import('./island.js');
+      process.exitCode = await cmdIsland(args);
       return;
     }
     case 'clicky': {

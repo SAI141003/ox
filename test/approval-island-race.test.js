@@ -40,6 +40,14 @@ test('island allow resolves the terminal prompt', withFakeTTY(async () => {
   assert.deepEqual(g.calls.cancel, ['answered-in-terminal']);
 }));
 
+test('island always allows now and every later request without asking again', withFakeTTY(async () => {
+  const g = gui('always');
+  const approve = makeApprover({ external: g });
+  assert.equal(await approve('bash', { command: 'rm -rf build' }), true);
+  assert.equal(await approve('bash', { command: 'rm -rf dist' }), true);
+  assert.equal(g.calls.ask, 1, 'the second request never reached the island');
+}));
+
 test('island deny declines', withFakeTTY(async () => {
   const approve = makeApprover({ external: gui('deny') });
   assert.equal(await approve('bash', { command: 'rm -rf build' }), false);

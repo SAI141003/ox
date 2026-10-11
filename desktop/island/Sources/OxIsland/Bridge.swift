@@ -52,7 +52,7 @@ final class OxBridge: ObservableObject {
     private var timer: Timer?
 
     var pendingSession: AgentSession? { sessions.first { $0.pending != nil } }
-    var expanded: Bool { hovering || pinnedOpen || pendingSession != nil }
+    var expanded: Bool { hovering || pinnedOpen || pendingSession != nil || peeking }
 
     /// The face the notch shows: the most urgent state across all runs.
     var headlineMood: Mood {
@@ -171,6 +171,7 @@ final class OxBridge: ObservableObject {
                 if s.pending == nil { s.mood = .thinking; s.activity = "thinking" }
             case "tool-start":
                 let name = ev["name"] as? String ?? "tool"
+                s.lastText = "" // the next reply is a new message, not a continuation
                 s.toolCount += 1
                 s.mood = .working(name)
                 s.activity = Self.describe(tool: name, preview: ev["argsPreview"] as? String ?? "")
@@ -199,6 +200,11 @@ final class OxBridge: ObservableObject {
                 break
             }
         }
+        // Surface endings without being asked: a finished or failed turn peeks.
+        if let s = sessions.first(where: { $0.id == path }), s.pending == nil {
+            if case .error = s.mood, type == "error" { peek(for: 6) }
+            if s.mood == .done, type == "turn-end" || type == "final" { peek() }
+        }
     }
 
     private func closed(path: String) {
@@ -213,14 +219,42 @@ final class OxBridge: ObservableObject {
 
     // MARK: actions
 
-    func answer(_ session: AgentSession, allow: Bool) {
+    enum Decision: String { case allow, deny, always }
+
+    func answer(_ session: AgentSession, _ decision: Decision) {
         guard let p = session.pending, let conn = connections[session.id] else { return }
-        conn.send(["type": "approval-answer", "id": p.id, "decision": allow ? "allow" : "deny"])
+        conn.send(["type": "approval-answer", "id": p.id, "decision": decision.rawValue])
         update(session.id) { s in
             s.pending = nil
-            s.mood = allow ? .working(p.tool) : .thinking
-            s.activity = allow ? "running \(p.tool)" : "denied \(p.tool)"
+            switch decision {
+            case .deny:
+                s.mood = .thinking
+                s.activity = "you denied \(p.tool)"
+            case .allow, .always:
+                s.mood = .working(p.tool)
+                s.activity = "running \(p.tool)"
+            }
         }
+    }
+
+    // MARK: peek
+
+    /// A run that finishes or fails opens the island briefly, then it settles.
+    @Published private(set) var peekUntil: Date = .distantPast
+    var peeking: Bool { Date() < peekUntil }
+
+    private func peek(for seconds: TimeInterval = 4) {
+        peekUntil = Date().addingTimeInterval(seconds)
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.05) { [weak self] in
+            self?.objectWillChange.send()
+        }
+    }
+
+    static let palette = ["#60A5FA", "#F472B6", "#34D399", "#FBBF24", "#A78BFA", "#22D3EE"]
+
+    func color(of session: AgentSession) -> String {
+        let i = sessions.firstIndex(where: { $0.id == session.id }) ?? 0
+        return Self.palette[i % Self.palette.count]
     }
 
     /// "Answer in terminal": decline to decide; ox keeps its terminal prompt.

@@ -118,6 +118,10 @@ export function makeApprover({ mode = 'default', yolo = false, sandbox = null, m
         answer = null; // a throwing bridge is silence, and silence declines
       }
       const decision = String(answer?.decision ?? '').trim().toLowerCase();
+      if (decision === 'always') {
+        acceptAll = true;
+        return true;
+      }
       if (decision === 'allow') return true;
       if (decision === 'deny') {
         const who = String(answer?.clientId ?? '').trim() || 'unknown client';
@@ -164,7 +168,10 @@ export function makeApprover({ mode = 'default', yolo = false, sandbox = null, m
           .then(() => gui.ask({ tool: name, args, detail, cwd: process.cwd() }))
           .then((answer) => {
             const d = String(answer?.decision ?? '').trim().toLowerCase();
-            if (d === 'allow') finish(true, '(allowed from OX Island)');
+            if (d === 'always') {
+              acceptAll = true;
+              finish(true, '(allowed for the rest of this session from OX Island)');
+            } else if (d === 'allow') finish(true, '(allowed from OX Island)');
             else if (d === 'deny') finish(false, '(denied from OX Island)');
             // anything else: the terminal prompt keeps waiting
           })
