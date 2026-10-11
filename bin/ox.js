@@ -19,11 +19,13 @@ async function main() {
   let cli = null;
   try {
     cli = await import('../src/cli.js');
-  } catch {
-    cli = null;
+  } catch (err) {
+    // Never mask a load failure: a syntax error in any module must name itself.
+    console.error(`ox: failed to load CLI — ${err?.stack ?? err}`);
+    process.exit(1);
   }
-  if (!cli || typeof cli.main !== 'function') {
-    console.error('ox: interface layer not built yet');
+  if (typeof cli.main !== 'function') {
+    console.error('ox: src/cli.js does not export main()');
     process.exit(1);
   }
   try {

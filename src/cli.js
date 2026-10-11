@@ -2669,28 +2669,26 @@ async function cmdSkillPurge(args = []) {
     `${c.green(`✓ purged '${res.name}'`)} — ${res.removedArchives.length} archived cop(y/ies) + ${res.removedSnapshots.length} old snapshot(s) deleted`
   );
   console.log(c.dim(`final safety snapshot kept: ${res.keptSnapshot}`));
+}
 
 function cmdSkillLearn(args = []) {
   const sessionFile = args.find((a) => !String(a).startsWith('-')) ?? null;
   const target = sessionFile ?? process.env.OX_SESSION_FILE ?? null;
   if (!target) {
-    process.stderr.write('usage: ox skill learn [session-file]\\n');
+    process.stderr.write('usage: ox skill learn [session-file]\n');
     process.exitCode = 3;
     return;
   }
   const abs = path.resolve(process.cwd(), target);
   const result = learnFromSession({ sessionFile: abs });
   if (!result.ok) {
-    process.stderr.write(`${c.red(`✗ ${result.message}`)}\\n`);
+    process.stderr.write(`${c.red(`✗ ${result.message}`)}\n`);
     process.exitCode = result.kind === 'not-learned' ? 1 : 3;
     return;
   }
   console.log(`${c.green('✓ learned')} ${c.bold(result.name)} from ${path.basename(abs)}`);
   console.log(c.dim(`  lesson: "${result.message}"`));
   console.log(c.dim(`  skill:  ${result.file}`));
-}
-
-function cmdEpisode(args) {
 }
 
 function cmdEpisode(args) {
@@ -5771,27 +5769,28 @@ async function replWithBudget(config, opts, flags, budget) {
         console.log(c.dim(`  types: ${JSON.stringify(stats.byType)}`));
         console.log(c.dim(`  last consolidated: ${stats.lastConsolidated || 'never'}`));
         return;
-
-case '/learn': {
-  const target = rest.trim() || process.env.OX_SESSION_FILE || '';
-  if (!target) {
-    console.log(c.dim('usage: /learn [session-file] — distill the latest session into a verified skill'));
-    console.log(c.dim('  (session-file: absolute path, or a recent session id/name)'));
-    return;
-  }
-  const abs = target.startsWith('/') ? target : path.resolve(config.cwd, target);
-  const result = learnFromSession({ sessionFile: abs });
-  if (!result.ok) {
-    console.log(`${c.red('✗')} ${result.message}`);
-    return;
-  }
-  console.log(`${c.green('✓ learned')} ${c.bold(result.name)} from ${path.basename(abs)}`);
-  console.log(c.dim(`  lesson: "${result.message}"`));
-  console.log(c.dim(`  skill:  ${result.file}`));
-  break;
-}
-case '/brain': {
       }
+
+      // `/learn [session-file]` -- distill a finished session into a verified skill.
+      case '/learn': {
+        const target = rest.trim() || process.env.OX_SESSION_FILE || '';
+        if (!target) {
+          console.log(c.dim('usage: /learn [session-file] — distill the latest session into a verified skill'));
+          console.log(c.dim('  (session-file: absolute path, or a recent session id/name)'));
+          return;
+        }
+        const abs = target.startsWith('/') ? target : path.resolve(config.cwd, target);
+        const result = learnFromSession({ sessionFile: abs });
+        if (!result.ok) {
+          console.log(`${c.red('✗')} ${result.message}`);
+          return;
+        }
+        console.log(`${c.green('✓ learned')} ${c.bold(result.name)} from ${path.basename(abs)}`);
+        console.log(c.dim(`  lesson: "${result.message}"`));
+        console.log(c.dim(`  skill:  ${result.file}`));
+        return;
+      }
+
       case '/brain': {
         const parts = rest.trim().split(/\s+/);
         const action = (parts[0] ?? '').toLowerCase();
