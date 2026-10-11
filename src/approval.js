@@ -97,9 +97,14 @@ export function makeApprover({ mode = 'default', yolo = false, sandbox = null, m
     // Fall through to interactive prompt only on 'ask'.
     if (mode === 'accept-edits' && isWriteTool(name)) return true;
 
-    // 2. A TTY always wins: the human at the terminal is the primary approver
-    // and the out-of-band seam is a fallback, never an override.
-    if (process.stdin.isTTY) return promptTerminal(name, args, detail);
+    // 2. A TTY: the human at the terminal is the primary approver. When a GUI
+    // client (OX Island) is also connected, both are asked at once and the
+    // FIRST answer wins -- but only a literal 'allow' from the GUI can allow;
+    // its 'ask'/timeout/disconnect leaves the terminal prompt waiting.
+    if (process.stdin.isTTY) {
+      const live = external && typeof external.hasClient === 'function' && typeof external.ask === 'function' && external.hasClient() === true;
+      return promptTerminal(name, args, detail, live ? external : null);
+    }
 
     // 3. No TTY: give a connected external approver exactly one chance, and
     //    only when a client is actually there to answer. Everything except a
@@ -130,25 +135,45 @@ export function makeApprover({ mode = 'default', yolo = false, sandbox = null, m
     return false;
   };
 
-  async function promptTerminal(name, args, detail) {
+  async function promptTerminal(name, args, detail, gui = null) {
     const preview = renderDetail(name, args, detail);
     if (preview) process.stdout.write(`${preview}\n`);
 
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    let settled = false;
     const verdict = await new Promise((resolve) => {
-      rl.on('close', () => resolve(false));
-      rl.on('error', () => resolve(false));
+      const finish = (value, note) => {
+        if (settled) return;
+        settled = true;
+        if (note) process.stdout.write(`\n${c.dim(note)}\n`);
+        resolve(value);
+      };
+      rl.on('close', () => finish(false));
+      rl.on('error', () => finish(false));
       rl.question(`Allow ${name}? [y]es / [n]o / [a]lways this session: `, (answer) => {
         const choice = String(answer ?? '').trim().toLowerCase();
         if (choice === 'a' || choice === 'always') {
           acceptAll = true;
-          resolve(true);
+          finish(true);
         } else {
-          resolve(choice === 'y' || choice === 'yes');
+          finish(choice === 'y' || choice === 'yes');
         }
       });
+      if (gui) {
+        Promise.resolve()
+          .then(() => gui.ask({ tool: name, args, detail, cwd: process.cwd() }))
+          .then((answer) => {
+            const d = String(answer?.decision ?? '').trim().toLowerCase();
+            if (d === 'allow') finish(true, '(allowed from OX Island)');
+            else if (d === 'deny') finish(false, '(denied from OX Island)');
+            // anything else: the terminal prompt keeps waiting
+          })
+          .catch(() => { /* a broken bridge is silence */ });
+      }
     });
     rl.close();
+    // Answered here first: withdraw the GUI's copy so it cannot linger.
+    if (gui && typeof gui.cancel === 'function') gui.cancel('answered-in-terminal');
     return verdict;
   }
 }

@@ -7,3 +7,6 @@ node_modules/
 desktop/src-tauri/target/
 desktop/dist/
 *.log
+.ox-verify/
+desktop/island/.build/
+bench/results/2026-10-1*/

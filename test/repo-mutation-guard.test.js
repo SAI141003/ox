@@ -116,7 +116,7 @@ describe('the suite must not mutate the repository', () => {
   // Proof of mechanism. A deliberately polluting child writes into the real
   // .agent/notes/archive; the guard must see it, and must then clean up after
   // itself so the proof is not itself pollution.
-  test('the detector reports a file that writes into .agent/notes', () => {
+  test('the detector reports a file that writes into .agent/notes', (t) => {
     const planted = path.join(AGENT, 'notes', 'archive', 'ZZ-GUARD-PROOF-polluter.md');
     const relative = path.relative(ROOT, planted);
     const polluter = path.join(tmpHome, 'deliberate-polluter.mjs');
@@ -128,6 +128,19 @@ describe('the suite must not mutate the repository', () => {
       `fs.writeFileSync(${JSON.stringify(planted)}, 'planted by repo-mutation-guard\\n');`,
       '',
     ].join('\n'));
+
+    // .agent/ is gitignored, so a fresh checkout has no notes/archive dir for
+    // the polluter to write into. Create what is missing; remove it after.
+    const createdDirs = [];
+    for (const dir of [AGENT, path.join(AGENT, 'notes'), path.dirname(planted)]) {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir);
+        createdDirs.push(dir);
+      }
+    }
+    t.after(() => {
+      for (const dir of createdDirs.reverse()) fs.rmSync(dir, { recursive: true, force: true });
+    });
 
     const notesBefore = noteCounts();
     const before = snapshot();

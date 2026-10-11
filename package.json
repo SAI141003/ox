@@ -12,6 +12,9 @@
   },
   "scripts": {
     "test": "node --test --test-concurrency=2 test/*.test.js",
-    "start": "node bin/ox.js"
+    "start": "node bin/ox.js",
+    "verify": "node scripts/verify.mjs",
+    "verify:quick": "node scripts/verify.mjs --quick",
+    "verify:loop": "node scripts/verify.mjs --loop"
   }
 }

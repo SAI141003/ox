@@ -329,6 +329,18 @@ export function createIpcServer(opts = {}) {
     const verdict = APPROVAL_DECISIONS.includes(decision) ? decision : DECLINE;
     try { p.resolve(verdict, reason); } catch { /* consumer threw: still cleared */ }
     emitter.emit('approval-resolved', { id: p.id, tool: p.tool, decision: verdict, reason });
+    // Tell ready clients the request is gone, so a GUI never shows a stale
+    // Allow button for a decision the terminal (or a timeout) already made.
+    for (const cl of clients) {
+      if (!cl.ready) continue;
+      try { cl.send({ type: 'approval-resolved', id: p.id, decision: verdict, reason }); } catch { /* best effort */ }
+    }
+  }
+
+  // Withdraw the pending request without a client answer (e.g. the human
+  // answered at the terminal first). Resolves 'ask', never 'allow'.
+  function cancelApproval(reason = 'cancelled') {
+    resolvePending(DECLINE, reason);
   }
 
   function requestApproval({ tool, args = {}, cwd = process.cwd(), preview } = {}) {
@@ -705,6 +717,7 @@ export function createIpcServer(opts = {}) {
     meta,
     clients,
     requestApproval,
+    cancelApproval,
     broadcast,
     close,
     server,
@@ -888,6 +901,9 @@ export function createIpcApprover(server) {
         preview: detail,
       });
       return { decision, clientId: readyClient()?.clientId ?? lastClientId ?? null, reason: 'ipc' };
+    },
+    cancel: (reason) => {
+      try { server.cancelApproval?.(reason); } catch { /* nothing pending */ }
     },
   };
 }

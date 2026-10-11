@@ -40,6 +40,12 @@ test('keyless local server with model "auto" uses the loaded model', async () =>
       res.end(JSON.stringify({ data: [{ id: 'my-local-q4' }] }));
       return;
     }
+    if (req.method !== 'POST') {
+      // e.g. the Ollama capability probe (/api/tags): not this server.
+      res.statusCode = 404;
+      res.end();
+      return;
+    }
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', () => {

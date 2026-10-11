@@ -173,6 +173,7 @@ import { createResearchBrain, ResearchSession } from './brain-research.js';
 import { startServer } from './serve.js';
 import { DEFAULT_APPROVAL_TIMEOUT_MS, controlReply, createIpcServer, socketPathFor } from './ipc.js';
 import { WATCH_DEFAULT_FPS, runWatch } from './ipc-watch.js';
+import { islandRunning } from './island.js';
 import {createSelfImproveLoop} from './self-improve-loop.js';
 import {createVerifier, formatVerificationReport} from './verify-loop.js';
 import {createSpecTracker} from './spec-tracker.js';
@@ -3186,6 +3187,22 @@ async function startIpcBridge({ socketPath, cwd, spec, foreground = false, appro
     closeIpcBridgeNow = installIpcLifecycle(server);
   }
   return server;
+}
+
+// Resolve once a client has announced 'ready', or after timeoutMs regardless.
+function waitForReadyClient(server, timeoutMs) {
+  const ready = () => [...(server.clients ?? [])].some((cl) => cl?.ready);
+  if (ready()) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const done = (v) => {
+      clearTimeout(timer);
+      server.removeListener?.('client-connected', onConnect);
+      resolve(v);
+    };
+    const onConnect = () => done(true);
+    const timer = setTimeout(() => done(ready()), timeoutMs);
+    server.on?.('client-connected', onConnect);
+  });
 }
 
 // Liveness uses the protocol's own 'probe' frame, which the server tears down
@@ -6544,10 +6561,20 @@ export async function main(argv = []) {
   // before the first model call (a client must be able to attach and be ready
   // for the first approval) and closed on every exit path, SIGINT included.
   let ipcServer = null;
+  // OX Island is running: give this run its own socket so it shows up in the
+  // notch (and can be approved from there) without the user passing --ipc.
+  let forIsland = false;
+  if (!flags.ipc && !flags.daemonWorker && islandRunning()) {
+    flags.ipc = socketPathFor(`run-${process.pid}`);
+    forIsland = true;
+  }
   if (flags.ipc) {
     const socketPath = path.resolve(flags.ipc === true ? ipcDefaultSocketPath() : flags.ipc);
     try {
       ipcServer = await startIpcBridge({ socketPath, cwd: config.cwd, spec: flags.bot || flags.model || undefined });
+      // The island discovers sockets asynchronously; give it a moment to say
+      // 'ready' so the very first approval of a fast run can reach the notch.
+      if (forIsland) await waitForReadyClient(ipcServer, 2000);
     } catch (err) {
       process.stderr.write(`${c.red(`✗ ${err?.message ?? err}`)}\n`);
       process.exitCode = 4;
