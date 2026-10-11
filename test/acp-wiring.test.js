@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   AcpSession,
   createAcpServer,
@@ -13,7 +14,7 @@ import {
   ACP_PROTOCOL_VERSION,
 } from '../src/acp.js';
 
-const oxDir = '/Users/saiyaganti/ox';
+const oxDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 test('toolKindOf maps ox tool names onto ACP tool kinds', () => {
   assert.equal(toolKindOf('read_file'), 'read');
@@ -229,7 +230,7 @@ test('initialize/authenticate/session/new over stdio match the Zed wire format',
     assert.equal(update.method, 'session/update');
     assert.equal(update.params.update.sessionUpdate, 'current_mode_update');
     assert.equal(update.params.update.currentModeId, 'plan');
-    assert.deepEqual(update.params._meta, { 'com.ox.event': { type: 'mode', mode: 'plan' } });
+    assert.deepEqual(update.params.update._meta, { 'com.ox.event': { type: 'mode', mode: 'plan' } });
     const setMode = await nextLine(child, state);
     assert.deepEqual(setMode.result, {});
 

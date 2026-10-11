@@ -17,7 +17,7 @@ function gitInfo(cwd) {
       const status = execSync('git status --porcelain', opts).toString().trim();
       if (status) dirty = `${status.split('\n').length} changed file(s)`;
     } catch {}
-    return `git branch ${branch}, working tree ${dirty}`;
+    return `branch ${branch}, ${dirty}`;
   } catch {
     return 'not a git repository';
   }

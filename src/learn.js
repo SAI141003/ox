@@ -50,10 +50,12 @@ export function extractLesson(sessionEvents) {
       results.set(ev.callId, ev);
     }
   }
-  // Walk the transcript so the most recent successful call wins.
-  for (const ev of sessionEvents) {
+  // Walk the transcript newest-first so the most recent successful call wins.
+  for (let i = sessionEvents.length - 1; i >= 0; i--) {
+    const ev = sessionEvents[i];
     if (ev.t === 'assistant' && Array.isArray(ev.tool_calls)) {
-      for (const tc of ev.tool_calls) {
+      for (let j = ev.tool_calls.length - 1; j >= 0; j--) {
+        const tc = ev.tool_calls[j];
         const name = tc.function?.name;
         if (name && results.has(tc.id)) {
           const result = results.get(tc.id);

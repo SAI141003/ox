@@ -27,7 +27,8 @@ const AGENT = path.join(ROOT, '.agent');
 
 // VCS and dependency trees are not the repo's own source, and a guard that
 // flagged them would be noise rather than signal.
-const IGNORED = new Set(['node_modules', '.git']);
+// .claude holds agent worktrees (whole separate checkouts), never this tree.
+const IGNORED = new Set(['node_modules', '.git', '.claude']);
 
 function walk(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

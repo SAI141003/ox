@@ -249,7 +249,12 @@ test('the prompt did not get longer: the reorder is byte-neutral, not merely sma
   // landed. Measured, not assumed -- the old and new clause lengths differ by
   // exactly 104, so nothing else in the prompt moved. The pin still guards the
   // NEXT change; it just no longer forbids this one.
-  assert.equal(sum.totalBytes, 2061, 'pinned: the reorder is byte-neutral');
+  //
+  // The ENVIRONMENT layer carries the live cwd path and git state, so its size
+  // depends on where the suite runs (a worktree path is longer than a checkout).
+  // Pin everything else -- the text a change to ox can actually grow.
+  const envBytes = Buffer.byteLength(layers.find((l) => l.name === 'environment').text);
+  assert.equal(sum.totalBytes - envBytes, 1927, 'pinned: the reorder is byte-neutral');
 
   // The pinned number alone would still pass if a line were added AND another
   // dropped. Rebuild the exact byte sequence the flat string used to emit -- the
