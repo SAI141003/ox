@@ -248,7 +248,10 @@ export function resolveBot(nameOrSpec, config = {}, env = process.env) {
   // keyless local server with nothing configured, 'auto' asks it what is loaded.
   if (PROVIDERS.includes(spec)) {
     const configured = config?.model ?? env?.OX_MODEL ?? null;
-    const model = configured || (KEY_ENV[spec] === null ? 'auto' : null);
+    // Nothing configured: a keyless local server reports its own model; a
+    // custom endpoint keeps its historical behaviour (the name is passed
+    // through, which servers that serve one model simply ignore).
+    const model = configured || (KEY_ENV[spec] === null ? 'auto' : spec === 'custom' ? 'custom' : null);
     if (!model) fail(`provider '${spec}' needs a model: use --bot ${spec}:<model> or set OX_MODEL`);
     return build({ name: null, provider: spec, model, desc: `${spec} (configured model)`, config, env });
   }
