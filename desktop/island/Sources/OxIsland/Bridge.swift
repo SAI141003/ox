@@ -23,6 +23,19 @@ struct PendingApproval: Equatable {
     let deadline: Date
 }
 
+/// One delegated worker inside a run (ox's `subagent` tool), for the office view.
+struct SubAgent: Identifiable, Equatable {
+    enum Phase: Equatable { case starting, working, thinking, done, failed }
+    let id: String
+    var label: String
+    var model: String = ""
+    var phase: Phase = .starting
+    var tool: String = ""
+    var tokens: Int = 0
+    var costUsd: Double = 0
+    var endedAt: Date?
+}
+
 struct AgentSession: Identifiable, Equatable {
     let id: String          // socket path
     var cwd: String = ""
@@ -37,6 +50,7 @@ struct AgentSession: Identifiable, Equatable {
     var toolCount: Int = 0
     var pending: PendingApproval?
     var closedAt: Date?
+    var agents: [SubAgent] = []
 
     var project: String {
         cwd.isEmpty ? "ox" : (cwd as NSString).lastPathComponent
@@ -46,13 +60,17 @@ struct AgentSession: Identifiable, Equatable {
 final class OxBridge: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = []
     @Published var hovering = false
+    /// True for the one launch animation at app start (LaunchScene).
+    @Published var launching = true
     @Published var pinnedOpen = false
 
     private var connections: [String: SocketConnection] = [:]
     private var timer: Timer?
 
     var pendingSession: AgentSession? { sessions.first { $0.pending != nil } }
-    var expanded: Bool { hovering || pinnedOpen || pendingSession != nil || peeking }
+    /// A team at work is the moment the office exists for, so it opens by itself.
+    var teamWorking: Bool { sessions.contains { $0.closedAt == nil && $0.agents.contains { $0.endedAt == nil } } }
+    var expanded: Bool { hovering || pinnedOpen || pendingSession != nil || peeking || teamWorking }
 
     /// The face the notch shows: the most urgent state across all runs.
     var headlineMood: Mood {
@@ -196,6 +214,31 @@ final class OxBridge: ObservableObject {
                 if msg != "aborted" { s.mood = .error(msg); s.activity = msg }
             case "compaction":
                 s.activity = "compacting context"
+            case "subagent-spawn", "subagent-start":
+                let id = ev["id"] as? String ?? UUID().uuidString
+                let label = (ev["description"] as? String) ?? (ev["task"] as? String) ?? "subagent"
+                if let i = s.agents.firstIndex(where: { $0.id == id }) {
+                    if let m = ev["model"] as? String { s.agents[i].model = m }
+                    s.agents[i].phase = .thinking
+                } else {
+                    s.agents.append(SubAgent(id: id, label: Self.shortLabel(label), model: ev["model"] as? String ?? "", phase: .starting))
+                }
+                s.activity = "\(s.agents.filter { $0.endedAt == nil }.count) agents working"
+            case "subagent-progress":
+                guard let id = ev["id"] as? String, let i = s.agents.firstIndex(where: { $0.id == id }) else { break }
+                let tool = ev["currentTool"] as? String ?? ""
+                s.agents[i].tool = tool
+                s.agents[i].phase = tool.isEmpty ? .thinking : .working
+            case "subagent-end", "subagent-cancelled":
+                guard let id = ev["id"] as? String, let i = s.agents.firstIndex(where: { $0.id == id }) else { break }
+                let status = ev["status"] as? String ?? ""
+                // ox's terminal statuses: done | failed | cancelled.
+                s.agents[i].phase = status == "done" ? .done : .failed
+                s.agents[i].tokens = (ev["inputTokens"] as? Int ?? 0) + (ev["outputTokens"] as? Int ?? 0)
+                s.agents[i].costUsd = ev["costUsd"] as? Double ?? 0
+                if let m = ev["model"] as? String, !m.isEmpty { s.agents[i].model = m }
+                s.agents[i].tool = ""
+                s.agents[i].endedAt = Date()
             default:
                 break
             }
@@ -262,6 +305,16 @@ final class OxBridge: ObservableObject {
         guard let p = session.pending, let conn = connections[session.id] else { return }
         conn.send(["type": "approval-answer", "id": p.id, "decision": "ask"])
         update(session.id) { s in s.pending = nil; s.activity = "waiting in terminal" }
+    }
+
+    static func shortLabel(_ s: String) -> String {
+        let one = s.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+        return one.count > 26 ? String(one.prefix(25)) + "…" : one
+    }
+
+    /// The session whose team the office shows: the one with the most agents.
+    var officeSession: AgentSession? {
+        sessions.filter { !$0.agents.isEmpty }.max { $0.agents.count < $1.agents.count }
     }
 
     static func describe(tool: String, preview: String) -> String {

@@ -24,24 +24,29 @@ struct NotchMetrics: Equatable {
 /// Every size the island can take, in one place, so the SwiftUI shape and the
 /// AppKit hit-test always agree on where the island is.
 enum IslandLayout {
-    static let panel = CGSize(width: 720, height: 250)
+    static let panel = CGSize(width: 720, height: 330)
     static let wing: CGFloat = 46
     static let ear: CGFloat = 12
     static let expanded = CGSize(width: 640, height: 168)
+    /// Extra height for the agent office when a run has delegated work.
+    static let officeHeight: CGFloat = 132
 
-    enum Phase { case hidden, compact, expanded }
+    enum Phase { case launch, hidden, compact, expanded }
+    static let launchSize = CGSize(width: 520, height: 150)
 
     static func phase(_ bridge: OxBridge) -> Phase {
+        if bridge.launching { return .launch }
         if bridge.expanded { return .expanded }
         return bridge.sessions.isEmpty ? .hidden : .compact
     }
 
     /// width, height, bottom corner radius, top radius (<0 = concave ears)
-    static func shape(_ phase: Phase, _ m: NotchMetrics) -> (w: CGFloat, h: CGFloat, corner: CGFloat, top: CGFloat) {
+    static func shape(_ phase: Phase, _ m: NotchMetrics, office: Bool = false) -> (w: CGFloat, h: CGFloat, corner: CGFloat, top: CGFloat) {
         switch phase {
+        case .launch: return (launchSize.width, launchSize.height, 30, -ear)
         case .hidden: return (m.width, m.height, 10, 0)
         case .compact: return (m.width + 2 * wing + 2 * ear, m.height, 12, -ear)
-        case .expanded: return (expanded.width, expanded.height, 26, -ear)
+        case .expanded: return (expanded.width, expanded.height + (office ? officeHeight : 0), 26, -ear)
         }
     }
 }
@@ -106,7 +111,7 @@ final class IslandPanel: NSPanel {
         let f = frame
         let local = CGPoint(x: mouse.x - f.minX, y: f.maxY - mouse.y) // top-down
         let m = NotchMetrics.current()
-        let s = IslandLayout.shape(IslandLayout.phase(bridge), m)
+        let s = IslandLayout.shape(IslandLayout.phase(bridge), m, office: bridge.officeSession != nil)
         let island = CGRect(x: (f.width - s.w) / 2, y: 0, width: s.w, height: s.h)
         let inside = island.insetBy(dx: -6, dy: -4).contains(local)
 

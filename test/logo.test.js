@@ -100,9 +100,11 @@ test('the ramp is not the washed-out 2-stop lavender at the midpoint', async () 
   // rows, bleaching the eye/nostril band. Anything under 0.80 keeps the mark's
   // negative space legible; this is a regression guard, not a taste call.
   assert.ok(mids < 0.80, `mid-row luma ${mids.toFixed(3)} should stay under 0.80`);
-  // Monotonic-ish descent in green: the sweep must still read as one motion.
-  assert.ok(rgb[0][1] > rgb.at(-1)[1], 'starts green, ends magenta');
-  assert.ok(rgb[0][0] < rgb.at(-1)[0], 'red rises along the sweep');
+  // Brand ramp: light horns to dark muzzle. The sweep must read as one motion,
+  // so lightness descends monotonically from the first row to the last.
+  const lumas = rgb.map(luma);
+  assert.ok(lumas[0] > lumas.at(-1), 'starts light (ivory horn), ends dark (hide)');
+  for (let i = 1; i < lumas.length; i++) assert.ok(lumas[i] <= lumas[i - 1] + 1e-9, `row ${i} is not darker than row ${i - 1}`);
 });
 
 test('banner color:false equals banner color:true with escapes stripped', async () => {
@@ -193,10 +195,12 @@ test('the intro draws whole lines, not one escape-wrapped line per character', a
   for (const chunk of drawn) {
     // Strip the full SGR colour sequence (started with a single \x1b, not one
     // character), then drop everything else we never cared about.
-    const body = chunk.replace(/^\x1b\[[0-9;]*m/, '');
+    // Visible text only (every CSI sequence removed). The intro is the charge
+    // (pane, cracks, shards, mini ox, mark), or the swarm under OX_INTRO=swarm.
+    const visible = chunk.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
     assert.ok(
-      body === '' || body.includes('█') || body.includes('·') || body.includes('˙') || body.includes('ox'),
-      `a draw chunk should be a full line, not a fragment: ${JSON.stringify(body.slice(0, 24))}`,
+      visible.trim() === '' || /[█·˙│╱╲─▀▄◆◢◣◤◥▴*]|ox/.test(visible),
+      `a draw chunk should be a full line, not a fragment: ${JSON.stringify(visible.slice(0, 24))}`,
     );
   }
   // The last drawn frame must be the mark itself, in colour, 15 rows tall.

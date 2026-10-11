@@ -11,7 +11,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test --test-concurrency=2 test/*.test.js",
+    "test": "OX_ISLAND=0 OX_NO_BUILTIN_SKILLS=1 OX_NO_PLUGINS=1 node --test --test-concurrency=2 test/*.test.js",
     "start": "node bin/ox.js",
     "verify": "node scripts/verify.mjs",
     "verify:quick": "node scripts/verify.mjs --quick",

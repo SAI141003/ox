@@ -19,7 +19,16 @@ export const DENYLIST = [
   { id: 'rm-rf-destructive', pattern: /rm\s+-rf?\s+(\/|~|\*)/, scope: 'all', why: 'destructive recursive delete' },
   { id: 'ssh-aws-access', pattern: /\.(ssh|aws)\b/, scope: 'all', why: 'touches credential stores' },
   { id: 'prompt-injection', pattern: /ignore\s+(all\s+)?previous\s+instructions/i, scope: 'all', why: 'prompt-injection phrasing' },
-  { id: 'secret-literal', pattern: /(api[_-]?key|secret|token|password)\s*[:=]/i, scope: 'all', why: 'looks like a hardcoded credential' },
+  // A literal VALUE must follow: 6+ chars containing a digit (real keys do;
+  // `'generated-fallback'` does not), quoted or .env-style, never `sk_test_...`. Variable
+  // reads (`TOKEN = generateToken()`, `apiKey: process.env.X`) and empty
+  // assignments (`BOT_TOKEN=` in setup docs) are not credentials.
+  {
+    id: 'secret-literal',
+    pattern: /(?:api[_-]?key|secret|token|password)\w*\s*[:=]\s*(?:(["'`])(?!\$\{|<|your|xxx)(?=[^"'`\s]*\d)(?![^"'`\s]*\.\.\.)[^"'`\s]{6,}\1|(?=[^\s"'`]*\d)(?![^\s"'`]*\.\.\.)[A-Za-z0-9_\-./+]{6,}(?![A-Za-z0-9_\-./+(]))/i,
+    scope: 'all',
+    why: 'looks like a hardcoded credential',
+  },
   { id: 'node-subprocess', pattern: /child_process|execSync|spawnSync/, scope: 'scripts', why: 'script spawns subprocesses' },
 ];
 
@@ -47,7 +56,7 @@ function walkFiles(dir, baseRel = '') {
   return out;
 }
 
-function scanText(relPath, text, baseLine = 0) {
+export function scanText(relPath, text, baseLine = 0) {
   const findings = [];
   const lines = String(text ?? '').split(/\r?\n/);
   for (const entry of DENYLIST) {

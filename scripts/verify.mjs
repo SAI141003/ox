@@ -113,7 +113,7 @@ const STAGES = {
       plain: false,
       // The per-file repo guard reruns the whole suite; the dedicated full run
       // (`npm test`) still covers it. Here we want the fast inner loop.
-      env: { OX_SKIP_REPO_GUARD: '1' },
+      env: { OX_SKIP_REPO_GUARD: '1', OX_NO_BUILTIN_SKILLS: '1', OX_NO_PLUGINS: '1', OX_ISLAND: '0' },
     });
     const num = (k) => Number((r.out.match(new RegExp(`^# ${k} (\\d+)`, 'm')) ?? [])[1] ?? NaN);
     const pass = num('pass');

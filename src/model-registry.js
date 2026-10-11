@@ -36,10 +36,10 @@ export const MODEL_CATALOG = Object.freeze({
   'grok-build-0.1':         { tier: 'fast',      strengths: ['code','summarizer'],                  maxComplexity: 0.6, vision: false },
   'claude-sonnet-5':        { tier: 'flagship',  strengths: ['code','reasoning','reviewer'],         maxComplexity: 0.95, vision: true },
   'claude-opus-5':          { tier: 'flagship',  strengths: ['reasoning','code','reviewer'],         maxComplexity: 1.0, vision: true },
-  'claude-haiku-4-5':       { tier: 'fast',      strengths: ['summarizer','title','reviewer'],       maxComplexity: 0.5, vision: true },
+  'claude-haiku-4-5':       { tier: 'fast',      strengths: ['code','summarizer','title','reviewer'],       maxComplexity: 0.5, vision: true },
   'gpt-5.6-sol':            { tier: 'flagship',  strengths: ['code','reasoning'],                    maxComplexity: 0.95, vision: true },
   'gemini-3.1-pro-preview': { tier: 'flagship',  strengths: ['longContext','reasoning','code'],      maxComplexity: 0.9,  vision: true },
-  'gemini-3.7-flash':       { tier: 'fast',      strengths: ['summarizer','title'],                  maxComplexity: 0.4,  vision: true },
+  'gemini-3.7-flash':       { tier: 'fast',      strengths: ['code','summarizer','title'],           maxComplexity: 0.5,  vision: true },
   'moonshotai/kimi-k2-instruct-0905': { tier: 'fast', strengths: ['code','title'],                maxComplexity: 0.5,  vision: false },
   'deepseek-v4-pro':        { tier: 'flagship',  strengths: ['code','reasoning'],                    maxComplexity: 0.85, vision: false },
 });

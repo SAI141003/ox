@@ -2,7 +2,9 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { screenReadLines, screenReadTexts } from './memory.js';
+import { pluginSkillRoots } from './plugins.js';
 
 export const MAX_INDEX_SKILLS = 25;
 export const MAX_DESCRIPTION_CHARS = 1024;
@@ -199,10 +201,16 @@ export function renderSkillIndex(skills, cap = MAX_INDEX_SKILLS) {
   return lines.join('\n');
 }
 
-export function discoverSkills({ cwd = process.cwd(), home = os.homedir() } = {}) {
+// ox's own skills ship in <repo>/skills. Scanned FIRST so that any user or
+// project skill with the same name overrides the built-in one. OX_NO_BUILTIN_SKILLS=1
+// turns them off (tests that count skills exactly use it).
+export const BUILTIN_SKILLS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'skills');
+
+export function discoverSkills({ cwd = process.cwd(), home = os.homedir(), builtin = process.env.OX_NO_BUILTIN_SKILLS !== '1' } = {}) {
   const warnings = [];
   const byName = new Map();
-  for (const dir of skillScanDirs({ cwd, home })) {
+  const roots = builtin ? [BUILTIN_SKILLS_DIR, ...skillScanDirs({ cwd, home })] : skillScanDirs({ cwd, home });
+  for (const dir of roots) {
     let dirents;
     try {
       dirents = fs.readdirSync(dir, { withFileTypes: true });
@@ -223,7 +231,34 @@ export function discoverSkills({ cwd = process.cwd(), home = os.homedir() } = {}
         warnings.push(`${skillMd}: skipped — ${parsed.warning}`);
         continue;
       }
-      byName.set(parsed.skill.name, parsed.skill);
+      byName.set(parsed.skill.name, dir === BUILTIN_SKILLS_DIR ? { ...parsed.skill, builtin: true } : parsed.skill);
+    }
+  }
+  // Plugin skills (src/plugins.js): namespaced `<plugin>:<skill>` so a plugin
+  // can never shadow one of your own, and read-only (no usage sidecars).
+  for (const { plugin, dir } of pluginSkillRoots(home)) {
+    let dirents;
+    try {
+      dirents = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const ent of dirents) {
+      if (!ent.isDirectory()) continue;
+      const skillMd = path.join(dir, ent.name, 'SKILL.md');
+      let raw;
+      try {
+        raw = fs.readFileSync(skillMd, 'utf8');
+      } catch {
+        continue;
+      }
+      const parsed = parseSkillMd(raw, skillMd);
+      if (!parsed.ok) {
+        warnings.push(`${skillMd}: skipped — ${parsed.warning}`);
+        continue;
+      }
+      const name = `${plugin}:${parsed.skill.name}`;
+      if (!byName.has(name)) byName.set(name, { ...parsed.skill, name, plugin });
     }
   }
   const skills = [...byName.values()];
@@ -251,9 +286,12 @@ export function readSkillBody(skillOrName, list = []) {
   }
   if (body == null) return null;
   const dir = skill.dir ?? path.dirname(skill.path);
-  try {
-    recordSkillUse(skill.name ?? '', dir);
-  } catch {}
+  // Plugin skill folders belong to the plugin (often Claude Code's own cache).
+  if (!skill.plugin && !skill.builtin) {
+    try {
+      recordSkillUse(skill.name ?? '', dir);
+    } catch {}
+  }
   return body;
 }
 

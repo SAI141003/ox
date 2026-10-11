@@ -99,9 +99,13 @@ const TWINKLE_RATE = 0.06;
 // where the eyes and nostrils are cut out of the silhouette, so the mark
 // washed out through its own face. Routing the sweep through a violet keeps
 // the mid rows saturated and under 73% lightness, so the negative space reads.
-const GRAD_FROM = [34, 211, 238];
-const GRAD_MID = [124, 110, 240];
-const GRAD_TO = [232, 121, 249];
+//
+// Brand ramp (shared with OX Island): ivory at the horn tips, toffee hide
+// through the face, deep hide at the muzzle. Mid-row luma ~0.69, so the
+// eye/nostril negative space still reads.
+const GRAD_FROM = [255, 246, 230]; // #FFF6E6 horn
+const GRAD_MID = [233, 166, 107]; // #E9A66B hide
+const GRAD_TO = [189, 113, 59]; // #BD713B hide shade
 
 function clamp(n, lo, hi) {
   return n < lo ? lo : n > hi ? hi : n;
@@ -470,6 +474,147 @@ export function renderSwarmFrame({ small = false, progress = 1, seed = null, col
   return rows;
 }
 
+// ---------------------------------------------------------------------------
+// The charge: the launch moment shared with OX Island. A small ox charges in
+// from the left, hits a pane of glass at centre, the glass shatters into
+// shards, and the full mark resolves where the pane was. ~1.7 s at 45 ms.
+// ---------------------------------------------------------------------------
+
+export const CHARGE_SECONDS = 1.7;
+const IMPACT_AT = 0.7;
+const MINI_OX = [
+  '▀▄      ▄▀',
+  ' ▀█▄▄▄▄█▀ ',
+  '  █▀██▀█  ',
+  '  ▀█▄▄█▀  ',
+  '   ▀██▀   ',
+];
+const SHARD_GLYPHS = ['◢', '◣', '◤', '◥', '▴', '◆', '·', '*'];
+const HORN = [255, 246, 230];
+const HIDE = [233, 166, 107];
+const GLASS = [190, 225, 245];
+
+function easeIn3(x) {
+  return x * x * x;
+}
+function easeOutExpo(x) {
+  return x >= 1 ? 1 : 1 - 2 ** (-10 * x);
+}
+
+/**
+ * One frame of the charge at time t (seconds) as an array of lines. Pure and
+ * deterministic for a seed. At t >= CHARGE_SECONDS it returns exactly
+ * renderLogo(), so the handoff to the banner is seamless.
+ */
+export function renderChargeFrame({ small = false, t = 0, seed = 7, color = true } = {}) {
+  if (t >= CHARGE_SECONDS) return renderLogo({ small, color }).split('\n');
+  const art = linesFor(small);
+  const W = logoWidth(art);
+  const H = art.length;
+  const grid = Array.from({ length: H }, () => Array.from({ length: W }, () => ({ ch: ' ', r: 0, g: 0, b: 0 })));
+  const put = (x, y, ch, [r, g, b], k = 1) => {
+    x = Math.round(x);
+    y = Math.round(y);
+    if (y < 0 || y >= H || x < 0 || x >= W) return;
+    const f = clamp(k, 0, 1);
+    grid[y][x] = { ch, r: Math.round(r * f), g: Math.round(g * f), b: Math.round(b * f) };
+  };
+  const px = Math.floor(W / 2);
+  const mid = Math.floor(H / 2);
+  const since = t - IMPACT_AT;
+
+  // The pane, intact until the hit.
+  if (since < 0) {
+    const glint = Math.floor((t / IMPACT_AT) * H);
+    for (let y = 0; y < H; y++) put(px, y, '│', GLASS, y === glint ? 0.95 : 0.45);
+  }
+
+  // Cracks race out from the hit point for a few frames.
+  if (since >= 0 && since < 0.25) {
+    const rand = mulberry32(seed ^ 0x51ab);
+    const grow = easeOutExpo(clamp(since / 0.1, 0, 1));
+    const fade = 1 - clamp((since - 0.1) / 0.15, 0, 1);
+    for (let ray = 0; ray < 8; ray++) {
+      const a = (ray / 8) * Math.PI * 2 + (rand() - 0.5) * 0.4;
+      const len = Math.round((3 + rand() * 4) * grow);
+      for (let s = 1; s <= len; s++) {
+        const x = px + Math.cos(a) * s * 2;
+        const y = mid + Math.sin(a) * s;
+        const ch = Math.abs(Math.sin(a)) < 0.38 ? '─' : Math.abs(Math.cos(a)) < 0.38 ? '│' : Math.sin(a) * Math.cos(a) > 0 ? '╲' : '╱';
+        put(x, y, ch, [255, 255, 255], fade);
+      }
+    }
+  }
+
+  // Shards: blown forward and outward, falling, fading.
+  if (since >= 0 && since < 0.6) {
+    const rand = mulberry32(seed);
+    for (let i = 0; i < 26; i++) {
+      const vx = 8 + rand() * 34; // cells / s, mostly forward
+      const vy = (rand() - 0.5) * 22;
+      const back = rand() < 0.25 ? -1 : 1;
+      const glyph = SHARD_GLYPHS[Math.floor(rand() * SHARD_GLYPHS.length)];
+      const x = px + back * vx * since * 2;
+      const y = mid + vy * since + 0.5 * 28 * since * since;
+      put(x, y, glyph, GLASS, 1 - since / 0.6);
+    }
+  }
+
+  // The mini ox: charges (ease-in), recoils, then gives way to the full mark.
+  // Gone before the mark resolves, so it never shows through the eye holes.
+  const oxAlpha = t < 0.95 ? 1 : 1 - clamp((t - 0.95) / 0.1, 0, 1);
+  if (oxAlpha > 0) {
+    const k = since < 0 ? easeIn3(clamp((t - 0.1) / (IMPACT_AT - 0.1), 0, 1)) : 1;
+    const recoil = since >= 0 ? Math.round(2 * (1 - easeOutExpo(clamp(since / 0.4, 0, 1)))) : 0;
+    const ox0 = Math.round(-10 + (px - 10 + 10) * k) - recoil;
+    const oy = mid - 2;
+    MINI_OX.forEach((row, r) => {
+      [...row].forEach((ch, c) => {
+        if (ch !== ' ') put(ox0 + c, oy + r, ch, r === 0 ? HORN : HIDE, oxAlpha);
+      });
+    });
+    // Dust trail while charging.
+    if (since < 0.15 && t > 0.2) for (let d = 1; d <= 4; d++) put(ox0 - d * 2, oy + 4, '·', [189, 113, 59], 0.6 - d * 0.12);
+  }
+
+  // Impact flash: one bright frame on the pane line.
+  if (since >= 0 && since < 0.05) for (let y = 0; y < H; y++) put(px, y, '█', [255, 255, 255], 0.9);
+
+  // Reveal: the full mark resolves row by row, top to bottom.
+  const rv = clamp((t - 1.05) / 0.55, 0, 1);
+  if (rv > 0) {
+    art.forEach((line, y) => {
+      const rowK = clamp(rv * 1.6 - (y / H) * 0.6, 0, 1);
+      if (rowK <= 0) return;
+      const rgb = blend(H > 1 ? y / (H - 1) : 0);
+      [...line].forEach((ch, x) => {
+        if (ch !== ' ') put(x, y, ch, rgb, easeOutExpo(rowK));
+      });
+    });
+  }
+
+  const paint = colorsOn(color);
+  const rows = [];
+  for (let y = 0; y < H; y++) rows.push(composeRow(grid, y, 0, W, paint));
+  return rows;
+}
+
+async function animateCharge({ small, stream, seed }) {
+  const write = (s) => stream.write(s);
+  write(HIDE_CURSOR);
+  try {
+    const frames = Math.ceil((CHARGE_SECONDS * 1000) / FRAME_MS);
+    for (let f = 0; f <= frames; f++) {
+      const t = Math.min(CHARGE_SECONDS, (f * FRAME_MS) / 1000);
+      write(CLEAR);
+      for (const line of renderChargeFrame({ small, t, seed: seed ?? 7 })) write(`${line}${CLEAR_LINE}\n`);
+      if (f < frames) await sleep(FRAME_MS);
+    }
+  } finally {
+    write(SHOW_CURSOR);
+  }
+}
+
 // The intro: a dispersed swarm of glyph particles flies in and converges into
 // the mark. Particles carry a pseudo-random z that fakes 2.5D depth — low z is
 // near, bright, and lands early; high z is far, dim, and trails in.
@@ -517,7 +662,9 @@ export async function intro({
     return;
   }
   try {
-    await animateLogo({ small, stream: out, seed });
+    // OX_INTRO=swarm keeps the previous particle-swarm intro.
+    if (process.env.OX_INTRO === 'swarm') await animateLogo({ small, stream: out, seed });
+    else await animateCharge({ small, stream: out, seed });
   } catch {
     // Never leave the terminal mid-frame if the animation blows up.
     write(CLEAR);

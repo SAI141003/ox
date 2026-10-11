@@ -174,6 +174,7 @@ import { startServer } from './serve.js';
 import { DEFAULT_APPROVAL_TIMEOUT_MS, controlReply, createIpcServer, socketPathFor } from './ipc.js';
 import { WATCH_DEFAULT_FPS, runWatch } from './ipc-watch.js';
 import { islandRunning } from './island.js';
+import { expandCommand, listCustomCommands } from './plugins.js';
 import {createSelfImproveLoop} from './self-improve-loop.js';
 import {createVerifier, formatVerificationReport} from './verify-loop.js';
 import {createSpecTracker} from './spec-tracker.js';
@@ -204,7 +205,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -2674,6 +2675,177 @@ async function cmdSkillPurge(args = []) {
   console.log(c.dim(`final safety snapshot kept: ${res.keptSnapshot}`));
 }
 
+// `ox models hw|recommend|search|pull` — find, fit and fetch open models.
+async function cmdModelHub(sub, args = []) {
+  const H = await import('./model-hub.js');
+  const hw = H.detectHardware();
+  const where = hw.kind === 'apple-unified' ? `${hw.chip}, ${hw.ramGB} GB unified memory`
+    : hw.kind === 'nvidia' ? `${hw.gpu}, ${hw.vramGB} GB VRAM` : `CPU only, ${hw.ramGB} GB RAM`;
+  const header = () => console.log(c.dim(`${where} · model budget ${hw.budgetGB} GB · ~${hw.bandwidthGBs} GB/s`));
+  const table = (rows) => {
+    if (!rows.length) {
+      console.log(c.dim('nothing fits this machine — try `ox models recommend --task small`'));
+      return;
+    }
+    for (const r of rows) {
+      const fit = r.fit === 'comfortable' ? c.green(r.fit) : r.fit === 'tight' ? c.yellow(r.fit) : r.fit;
+      console.log(`${c.bold(r.repo)}\n  ${r.quant} · ${r.sizeGB} GB · ${fit} · ~${r.tokensPerSec} tok/s (estimate)${r.license ? c.dim(` · ${r.license}`) : ''}\n  ${c.dim(r.pull)}`);
+    }
+  };
+  try {
+    if (sub === 'hw' || sub === 'hardware') {
+      header();
+      return 0;
+    }
+    if (sub === 'recommend') {
+      const ti = args.indexOf('--task');
+      const task = ti >= 0 ? args[ti + 1] : 'code';
+      header();
+      console.log(c.dim(`searching Hugging Face for ${task} models that fit…`));
+      table(await H.recommend({ task, hw }));
+      return 0;
+    }
+    if (sub === 'search') {
+      const q = args.filter((a) => !a.startsWith('--')).join(' ');
+      if (!q) {
+        process.stderr.write('usage: ox models search <query>\n');
+        return 3;
+      }
+      header();
+      const repos = await H.searchModels(q, { limit: 10 });
+      const rows = [];
+      for (const r of repos) {
+        const d = await H.repoQuants(r.repo).catch(() => null);
+        if (!d) continue;
+        const pick = H.pickQuant(d.sizes, hw.budgetGB);
+        if (pick) rows.push({ repo: r.repo, ...pick, fit: H.fitLabel(pick.sizeGB, hw.budgetGB), tokensPerSec: H.estimateTokensPerSec(pick.sizeGB, hw), pull: H.pullCommand(r.repo, pick.quant), license: d.license });
+        else console.log(c.dim(`${r.repo}: no quant fits ${hw.budgetGB} GB`));
+      }
+      table(rows);
+      return 0;
+    }
+    if (sub === 'pull') {
+      const ref = args.find((a) => !a.startsWith('--'));
+      if (!ref) {
+        process.stderr.write('usage: ox models pull <owner/repo>[:QUANT]\n');
+        return 3;
+      }
+      let [repo, quant] = ref.split(':');
+      if (!quant) {
+        const d = await H.repoQuants(repo);
+        quant = H.pickQuant(d.sizes, hw.budgetGB)?.quant;
+        if (!quant) {
+          console.log(c.red(`✗ no quant of ${repo} fits ${hw.budgetGB} GB`));
+          return 1;
+        }
+        console.log(c.dim(`picked ${quant} for this machine`));
+      }
+      const { spawnSync } = await import('node:child_process');
+      const r = spawnSync('ollama', ['pull', `hf.co/${repo}:${quant}`], { stdio: 'inherit' });
+      if (r.error) {
+        console.log(c.red('✗ ollama is not installed — get it from https://ollama.com, or in LM Studio search for ' + repo));
+        return 1;
+      }
+      if (r.status === 0) console.log(`${c.green('✓')} ready: ox --model ollama:hf.co/${repo}:${quant}`);
+      return r.status ?? 1;
+    }
+  } catch (err) {
+    console.log(c.red(`✗ ${err?.message ?? err}`));
+    return 1;
+  }
+  return 3;
+}
+
+// `ox plugin ls|add|rm|enable|disable|import-claude` — Claude Code plugins in ox.
+async function cmdPlugin(args = []) {
+  const P = await import('./plugins.js');
+  const sub = String(args[0] ?? 'ls').toLowerCase();
+  const force = args.includes('--force');
+  const target = args.slice(1).find((a) => !String(a).startsWith('-'));
+  const printFindings = (findings) => {
+    for (const f of findings.slice(0, 20)) {
+      console.log(`  ${c.red('✗')} ${f.file}:${f.line}  ${c.bold(f.pattern)}  ${c.dim(f.why ?? '')}`);
+    }
+    if (findings.length > 20) console.log(c.dim(`  … ${findings.length - 20} more`));
+  };
+  const describe = (p) =>
+    `${p.skills.length} skills, ${p.commands.length} commands, ${Object.keys(p.mcpServers).length} MCP servers` +
+    (p.hasHooks ? c.dim(' (hooks not run by ox)') : '');
+
+  if (sub === 'ls' || sub === 'list') {
+    const reg = P.readRegistry();
+    const names = Object.keys(reg.plugins).sort();
+    if (!names.length) {
+      console.log('no plugins — try: ox plugin import-claude, ox plugin add owner/repo, or ox plugin add name@owner/marketplace');
+      return 0;
+    }
+    for (const name of names) {
+      const rec = reg.plugins[name];
+      const p = P.readPlugin(rec.path);
+      const state = rec.enabled === false ? c.dim('disabled') : c.green('on');
+      const mcpNote = p && Object.keys(p.mcpServers).length && rec.mcp === false ? c.dim(' (MCP off: ox plugin mcp ' + name + ' on)') : '';
+      console.log(`${c.bold(name.padEnd(24))} ${state.padEnd(10)} ${p ? describe(p) : c.red('missing on disk')}${mcpNote}  ${c.dim(rec.kind)}`);
+    }
+    return 0;
+  }
+  if (sub === 'add' || sub === 'install') {
+    if (!target) {
+      process.stderr.write('usage: ox plugin add <folder | owner/repo[/path] | plugin@owner/marketplace> [--force]\n');
+      return 3;
+    }
+    console.log(c.dim(`fetching ${target}…`));
+    try {
+      const res = await P.addPlugin(target, { force });
+      if (!res.ok) {
+        console.log(`${c.red('✗')} ${res.message}`);
+        if (res.findings) printFindings(res.findings);
+        if (res.kind === 'unsafe') console.log(c.dim('  review the files, then re-run with --force to install anyway'));
+        return res.kind === 'unsafe' ? 4 : 1;
+      }
+      console.log(`${c.green('✓')} ${res.message}: ${describe(res.plugin)}`);
+      if (res.plugin.skills.length) console.log(c.dim(`  skills: ${res.plugin.skills.map((s) => `${res.plugin.name}:${s}`).join(', ')}`));
+      if (res.plugin.commands.length) console.log(c.dim(`  commands: ${res.plugin.commands.map((s) => `/${res.plugin.name}:${s}`).join(', ')}`));
+      return 0;
+    } catch (err) {
+      console.log(`${c.red('✗')} ${err?.message ?? err}`);
+      return 1;
+    }
+  }
+  if (sub === 'import-claude') {
+    const out = await P.importClaudePlugins({ force });
+    for (const p of out.linked) console.log(`${c.green('✓')} linked ${c.bold(p.name)}: ${describe(p)}`);
+    for (const w of out.warned) {
+      const kinds = [...new Set(w.findings.map((f) => f.pattern))].join(', ');
+      console.log(`${c.yellow('!')} ${w.name}: ${w.findings.length} scanner warning(s) (${kinds}) — linked because you installed it in Claude Code`);
+    }
+    if (!out.linked.length) console.log('no Claude Code plugins found in ~/.claude/plugins');
+    console.log(c.dim('linked plugins are read in place; ox never modifies them'));
+    return 0;
+  }
+  if (sub === 'rm' || sub === 'remove' || sub === 'uninstall') {
+    const res = P.removePlugin(target ?? '');
+    console.log(`${res.ok ? c.green('✓') : c.red('✗')} ${res.message}`);
+    return res.ok ? 0 : 1;
+  }
+  if (sub === 'mcp') {
+    const on = String(args[2] ?? '').toLowerCase();
+    if (!target || !['on', 'off'].includes(on)) {
+      process.stderr.write('usage: ox plugin mcp <name> on|off\n');
+      return 3;
+    }
+    const res = P.setPluginMcp(target, on === 'on');
+    console.log(`${res.ok ? c.green('✓') : c.red('✗')} ${res.message}`);
+    return res.ok ? 0 : 1;
+  }
+  if (sub === 'enable' || sub === 'disable') {
+    const res = P.setPluginEnabled(target ?? '', sub === 'enable');
+    console.log(`${res.ok ? c.green('✓') : c.red('✗')} ${res.message}`);
+    return res.ok ? 0 : 1;
+  }
+  process.stderr.write(`ox: unknown plugin subcommand '${sub}' (ls, add, rm, enable, disable, mcp, import-claude)\n`);
+  return 3;
+}
+
 function cmdSkillLearn(args = []) {
   const sessionFile = args.find((a) => !String(a).startsWith('-')) ?? null;
   const target = sessionFile ?? process.env.OX_SESSION_FILE ?? null;
@@ -3558,6 +3730,11 @@ async function runSubcommand(cmd, args) {
       process.exitCode = await cmdIsland(args);
       return;
     }
+    case 'plugin':
+    case 'plugins': {
+      process.exitCode = await cmdPlugin(args);
+      return;
+    }
     case 'clicky': {
       const action = String(args[0] ?? '').trim().toLowerCase();
       if (action === 'onboard') {
@@ -4104,6 +4281,11 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'models': {
+      const hubSub = String(args[0] ?? '').toLowerCase();
+      if (['hw', 'hardware', 'recommend', 'search', 'pull'].includes(hubSub)) {
+        process.exitCode = await cmdModelHub(hubSub, args.slice(1));
+        return;
+      }
       const candidates = listCandidates({}, process.env);
       console.log(c.bold('models'));
       // Same shape bug as `ox model list`: listCandidates() yields
@@ -6122,6 +6304,17 @@ async function replWithBudget(config, opts, flags, budget) {
         console.log(renderRefineCommand(rest, { cwd: config.cwd, color: c }));
         return;
       }
+      case '/commands': {
+        const all = [...listCustomCommands({ cwd: config.cwd }).entries()];
+        if (!all.length) {
+          console.log(c.dim('no custom commands — add .claude/commands/<name>.md or install a plugin (ox plugin add)'));
+          return;
+        }
+        for (const [name, meta] of all.sort(([a], [b]) => a.localeCompare(b))) {
+          console.log(`  /${name}  ${c.dim(meta.source)}`);
+        }
+        return;
+      }
       case '/self-improve': {
         const loop = createSelfImproveLoop(config.cwd, createResearchBrain(config.cwd));
         const status = loop.getStatus();
@@ -6130,8 +6323,17 @@ async function replWithBudget(config, opts, flags, budget) {
         console.log(c.dim('  run with: ox self-improve run'));
         return;
       }
-      default:
-        console.log(c.dim(`unknown command '${cmd}' — try /help`));
+      default: {
+        // Custom commands: Claude Code-format prompt templates from
+        // ~/.claude/commands, ./.claude/commands and plugins (/plugin:cmd).
+        const custom = listCustomCommands({ cwd: config.cwd }).get(cmd.slice(1));
+        if (custom) {
+          console.log(c.dim(`· /${cmd.slice(1)} (${custom.source})`));
+          await runTurn(expandContextRefs(expandCommand(custom.file, rest), config.cwd));
+          return;
+        }
+        console.log(c.dim(`unknown command '${cmd}' — try /help or /commands`));
+      }
     }
   }
 

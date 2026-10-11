@@ -243,6 +243,16 @@ export function resolveBot(nameOrSpec, config = {}, env = process.env) {
     });
   }
 
+  // A bare provider name ("custom", "ollama", "lmstudio") means that provider
+  // with the configured model -- never a model literally named "custom". For a
+  // keyless local server with nothing configured, 'auto' asks it what is loaded.
+  if (PROVIDERS.includes(spec)) {
+    const configured = config?.model ?? env?.OX_MODEL ?? null;
+    const model = configured || (KEY_ENV[spec] === null ? 'auto' : null);
+    if (!model) fail(`provider '${spec}' needs a model: use --bot ${spec}:<model> or set OX_MODEL`);
+    return build({ name: null, provider: spec, model, desc: `${spec} (configured model)`, config, env });
+  }
+
   const baseUrl = env?.OX_BASE_URL || config?.oxBaseUrl || config?.baseUrl || null;
   if (!baseUrl) {
     fail(

@@ -73,7 +73,7 @@ struct IslandRoot: View {
 
     var body: some View {
         let phase = IslandLayout.phase(bridge)
-        let s = IslandLayout.shape(phase, metrics)
+        let s = IslandLayout.shape(phase, metrics, office: bridge.officeSession != nil)
         // Top-centred, like the notch. Every child is laid out in the island's
         // own width; the shape both paints the black and clips the content.
         ZStack(alignment: .top) {
@@ -83,6 +83,9 @@ struct IslandRoot: View {
 
             Group {
                 switch phase {
+                case .launch:
+                    LaunchView(size: CGSize(width: s.w, height: s.h)) { bridge.launching = false }
+                        .transition(.opacity)
                 case .hidden:
                     Color.clear
                 case .compact:
@@ -97,7 +100,7 @@ struct IslandRoot: View {
         }
         .frame(width: IslandLayout.panel.width, height: IslandLayout.panel.height, alignment: .top)
         .clipShape(IslandShape(width: s.w, height: s.h, corner: s.corner, top: s.top))
-        .animation(phase == .expanded ? open : close, value: phase)
+        .animation(phase == .expanded || phase == .launch ? open : close, value: phase)
         .animation(.easeInOut(duration: 0.2), value: bridge.pendingSession?.pending?.id)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             metrics = NotchMetrics.current()
@@ -201,6 +204,13 @@ struct ExpandedContent: View {
             .padding(.horizontal, IslandLayout.ear + 10)
             .overlay(alignment: .bottom) {
                 if let p = bridge.pendingSession?.pending { Countdown(deadline: p.deadline).padding(.horizontal, 40) }
+            }
+            if let team = bridge.officeSession {
+                PixelOffice(bridge: bridge, session: team)
+                    .padding(.horizontal, IslandLayout.ear + 18)
+                    .padding(.top, 10)
+                    .frame(height: IslandLayout.officeHeight, alignment: .top)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
             Spacer(minLength: 0)
         }

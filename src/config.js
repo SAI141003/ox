@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { resolveBot, defaultBotSpec } from './bots.js';
 import { pickForRole, STRATEGIES } from './model-registry.js';
 import { resolveMaxCostUsd } from './cost.js';
+import { pluginMcpServers } from './plugins.js';
 
 export const CONFIG_DIR = path.join(os.homedir(), '.ox');
 
@@ -287,7 +288,12 @@ export function loadConfig(overrides = {}) {
   const cwd = firstDefined(ov.cwd) || process.cwd();
 
   const project = readJsonFile(path.join(cwd, '.mcp.json')) || {};
-  const mcpServers = expandVars({ ...obj(file.mcpServers), ...obj(project.mcpServers) });
+  // Plugin-contributed servers rank lowest: your own config always wins a name.
+  let fromPlugins = {};
+  try {
+    fromPlugins = pluginMcpServers(path.dirname(CONFIG_DIR));
+  } catch { /* a broken plugin registry must never break config */ }
+  const mcpServers = expandVars({ ...fromPlugins, ...obj(file.mcpServers), ...obj(project.mcpServers) });
 
   const apiKeys = {};
   for (const key of API_KEY_ENV_VARS) {
@@ -499,6 +505,10 @@ export function loadConfig(overrides = {}) {
     const n = Number(firstDefined(subagentCfg.max_iterations, subagentCfg.maxIterations, 25));
     return Number.isFinite(n) ? Math.max(5, Math.min(40, Math.round(n))) : 25;
   })();
+  // Cost routing: subagents do most of the reading, so running them on a cheap
+  // or local model ("ollama:auto", "ox-flash", "groq:...") while the main agent
+  // keeps the strong one is where most tokens are saved.
+  const subagentBot = firstDefined(env.OX_SUBAGENT_BOT, subagentCfg.bot) || null;
 
   return {
     cwd,
@@ -529,7 +539,7 @@ export function loadConfig(overrides = {}) {
     compactionModel,
     strictSchemas,
     tools: { narrow: toolsNarrow, strictSchemas: toolsStrictSchemas },
-    subagent: { maxDepth: subagentMaxDepth, maxIterations: subagentMaxIterations },
+    subagent: { maxDepth: subagentMaxDepth, maxIterations: subagentMaxIterations, bot: subagentBot },
     reversibleCache,
     contextOptimize,
     apiKeys,

@@ -19,6 +19,7 @@ import {
 } from './ui.js';
 import { loadHooksConfig } from './hooks.js';
 import { createEventBroadcaster, createIpcApprover } from './ipc.js';
+import { createLedger, renderLedger } from './ledger.js';
 
 const AUTO_MAX_ITERATIONS = 80;
 
@@ -354,6 +355,7 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
       budget.assert();
       if (mm.plan) extraGuidance = `[SELECTED PLAN]\n${mm.plan}`;
     }
+    const ledger = createLedger();
     try {
       for await (const ev of runAgent({
         target,
@@ -368,6 +370,7 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
         ...(opts.auto ? { maxIterations: AUTO_MAX_ITERATIONS } : {}),
         ...(opts.goalContract ? { goalContract: opts.goalContract } : {}),
       })) {
+        ledger.feed(ev);
         if (ev.type === 'error') failed = true;
         if (ev.type === 'usage-total') {
           Object.assign(ev, budget.snapshot());
@@ -587,6 +590,12 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
         failed = true;
         console.error(renderError(err));
       }
+    }
+    // Which agent spent what. Printed when work was delegated; always in --json.
+    if (opts.json) {
+      if (ledger.rows().length) console.log(JSON.stringify({ t: 'ledger', agents: ledger.rows(), totals: ledger.totals() }));
+    } else if (ledger.hasSubagents()) {
+      console.log(renderLedger(ledger, { dim: c.dim, bold: c.bold }));
     }
     const skipped = budget.skippedModels;
     if (skipped.length) {

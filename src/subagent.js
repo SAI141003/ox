@@ -17,6 +17,8 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 
 import { runAgent } from './agent.js';
+import { resolveBot } from './bots.js';
+import { pickForRole } from './model-registry.js';
 import { screenPersistText, screenReadLines, shortWithheldNotice } from './memory.js';
 import {
   registerSubagent, markSubagentStarted, updateSubagent, recordInnerTool,
@@ -456,8 +458,33 @@ function makeLifecycleEmitter(ctx) {
 
 // ---- the subagent tool handler ---------------------------------------------
 
-export function makeSubagentToolHandler({ config, target, auxTarget }) {
+export function makeSubagentToolHandler({ config, target: mainTarget, auxTarget }) {
+  // `subagent.bot` routes delegated work to its own (usually cheaper) model.
+  // Resolved once; a bad spec falls back to the main target with a note on the
+  // tool result rather than failing every delegation.
+  let target = mainTarget;
+  let routingNote = null;
+  if (config?.subagent?.bot) {
+    try {
+      if (String(config.subagent.bot).toLowerCase() === 'auto') {
+        // Cheapest reachable model that can still drive tools: the registry's
+        // cost strategy over every bot this machine has a key or a local server
+        // for. Delegated work is mid-complexity by design (scoped, single task).
+        const pick = pickForRole('coder', { config: { ...config, routingStrategy: 'cost' }, complexity: 0.5 });
+        const spec = pick?.bot ?? (pick ? `${pick.provider}:${pick.model}` : null);
+        target = spec ? resolveBot(spec, config) : mainTarget;
+      } else {
+        target = resolveBot(config.subagent.bot, config) ?? mainTarget;
+      }
+    } catch (err) {
+      routingNote = `subagent.bot '${config.subagent.bot}' unusable (${err?.message ?? err}); subagents use the main model`;
+    }
+  }
   return async function subagentTool(args, ctx) {
+    if (routingNote) {
+      process.stderr.write(`! ${routingNote}\n`);
+      routingNote = null;
+    }
     const task = String(args?.task ?? '').trim();
     if (!task) return { content: "subagent: 'task' is required.", isError: true };
     const cwd = ctx?.cwd ?? process.cwd();
@@ -777,6 +804,9 @@ async function runSubagent({ id, task, args, ctx, config, target, auxTarget, des
     ? Number(ctx._subagentBatch.perAgentCostCeilingUsd)
     : null;
   let agentCostUsd = 0;
+  // Per-agent token ledger (cost alone hides local models, which are free).
+  let agentTokensIn = 0;
+  let agentTokensOut = 0;
   let ceilingTripped = false;
 
   let finalText = '';
@@ -799,6 +829,7 @@ async function runSubagent({ id, task, args, ctx, config, target, auxTarget, des
   emitter.emit({
     type: 'subagent-start',
     id,
+    model: target?.model ?? null,
     task: desc.task || task,
     description: desc.description || desc.task || task,
     depth: desc.depth,
@@ -858,6 +889,8 @@ async function runSubagent({ id, task, args, ctx, config, target, auxTarget, des
       extraGuidance,
     })) {
       if (ev.type === 'usage') {
+        agentTokensIn += Number(ev.inputTokens) || 0;
+        agentTokensOut += Number(ev.outputTokens) || 0;
         // The nested loop prices every model call it makes and reports it, so
         // the agent's own spend is available without instrumenting the budget.
         const c = Number(ev.costUsd);
@@ -1112,6 +1145,9 @@ async function runSubagent({ id, task, args, ctx, config, target, auxTarget, des
     // the run's own numbers restated; under a fan-out they are the only place a
     // single agent's spend is visible at all.
     costUsd: Number(agentCostUsd.toFixed(6)),
+    model: target?.model ?? null,
+    inputTokens: agentTokensIn,
+    outputTokens: agentTokensOut,
     ...(ceiling != null ? { costCeilingUsd: ceiling, costCeilingTripped: ceilingTripped } : {}),
     progressEmitted: emitter.progressQueued,
     progressSuppressed: emitter.progressDropped,

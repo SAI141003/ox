@@ -77,6 +77,26 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-mascot"), i + 1 < Comm
     exit(0)
 }
 
+// Dev aid: `OxIsland --render-launch <dir>` writes key frames of the launch scene.
+if let i = CommandLine.arguments.firstIndex(of: "--render-launch"), i + 1 < CommandLine.arguments.count {
+    let dir = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let size = CGSize(width: 520, height: 150)
+    let scene = LaunchScene(size: size)
+    MainActor.assumeIsolated {
+        for t in [0.25, 0.5, 0.66, 0.72, 0.8, 0.95, 1.15, 1.7] {
+            let view = Canvas { g, sz in scene.draw(&g, size: sz, t: t) }.frame(width: size.width, height: size.height)
+            let r = ImageRenderer(content: view)
+            r.scale = 2
+            if let img = r.nsImage, let tiff = img.tiffRepresentation,
+               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                try? png.write(to: dir.appendingPathComponent(String(format: "t%.2f.png", t)))
+            }
+        }
+    }
+    exit(0)
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

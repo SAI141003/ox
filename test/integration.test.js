@@ -232,7 +232,7 @@ describe('Explicit test composition: real local verification → skill promotion
     assert.match(report.checks[0].output, /verified: 2 \+ 3 = 5/);
     assert.equal(report.summary, 'PASS addition fixture');
     assert.equal(existsSync(join(home, '.agents', 'skills')), false);
-    assert.equal(discoverSkills().length, 0);
+    assert.equal(discoverSkills({ builtin: false }).length, 0);
 
     const promote = t.mock.fn(autoCreateSkill);
     const skill = promoteVerifiedFixture(store, report, promote);
@@ -242,7 +242,7 @@ describe('Explicit test composition: real local verification → skill promotion
     const solution = `${report.result}\n${report.checks[0].output.trim()}`;
     const body = `# ${report.task}\n\n## Reusable procedure\n\n${solution}`;
     assert.equal(readFileSync(skill.file, 'utf8'), `---\nname: ${skill.name}\ndescription: Reusable procedure for ${skill.name}\n---\n\n${body}\n`);
-    const loaded = discoverSkills();
+    const loaded = discoverSkills({ builtin: false });
     assert.deepEqual(loaded.warnings, []);
     assert.equal(loaded.length, 1);
     assert.equal(loaded[0].name, skill.name);
@@ -275,7 +275,7 @@ describe('Explicit test composition: real local verification → skill promotion
     assert.equal(promote.mock.callCount(), 0);
     assert.equal(existsSync(join(home, '.agents', 'skills')), false);
     assert.equal(existsSync(join(home, '.ox', 'skills')), false);
-    assert.equal(discoverSkills().length, 0);
+    assert.equal(discoverSkills({ builtin: false }).length, 0);
     assert.equal(readFileSync(store.file, 'utf8'), memoryBefore);
     assert.equal(createMemoryStore(tempDir).stats().byType.skill, 0);
   });
@@ -297,7 +297,7 @@ describe('Explicit test composition: real local verification → skill promotion
     assert.equal(existsSync(join(home, '.agents', 'skills')), false);
     assert.equal(existsSync(store.file), false);
     assert.deepEqual(store.entries, []);
-    assert.equal(discoverSkills().length, 0);
+    assert.equal(discoverSkills({ builtin: false }).length, 0);
 
     const result = autoCreateSkill(store, 'test task', 'test solution', { verified: true });
     assert.ok(result.name);
@@ -319,7 +319,7 @@ describe('Explicit test composition: real local verification → skill promotion
       const created = autoCreateSkill(store, task, solution, { verified: true });
       assert.equal(created.name, name);
       assert.equal(created.file, join(home, '.agents', 'skills', name, 'SKILL.md'));
-      const loaded = discoverSkills();
+      const loaded = discoverSkills({ builtin: false });
       assert.deepEqual(loaded.warnings, []);
       const skill = loaded.find((item) => item.name === name);
       assert.ok(skill);
