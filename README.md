@@ -67,10 +67,88 @@ line yourself, Ctrl-C once interrupts a turn / twice within 3s quits. Other
 flags: `--max-cost <usd>`, `--verify`, `--max-mode <n>`, `--yes-edits`, `-y`,
 `--plan`, `--cwd <dir>`.
 
-On an interactive terminal ox prints the logo above and plays a converging
-particle-swarm intro; piped and CI output stays plain ASCII with no escape codes,
-so `ox --version` is exactly `ox 0.1.0` under a pipe. Set `NO_COLOR=1` or
-`OX_NO_ANIM=1` to drop the logo and the animation entirely.
+On an interactive terminal ox plays its launch: a small ox charges a pane of
+glass, the glass shatters, and the mark resolves where it stood
+(`OX_INTRO=swarm` brings back the older particle swarm). Piped and CI output
+stays plain ASCII with no escape codes, so `ox --version` is exactly `ox 0.1.0`
+under a pipe. Set `NO_COLOR=1` or `OX_NO_ANIM=1` to drop the logo and the
+animation entirely.
+
+## Run any model, pay for fewer tokens
+
+**Find a model that fits your machine.** ox reads your hardware (Apple unified
+memory, NVIDIA VRAM, or CPU RAM), checks the real file size of every
+quantisation on Hugging Face, and estimates speed from memory bandwidth:
+
+```bash
+ox models hw                      # what fits: e.g. "Apple M3, 16 GB · budget 8.2 GB"
+ox models recommend --task code   # ranked picks with quant, size, ~tok/s, pull command
+ox models search "qwen coder"     # any query, fitted to this machine
+ox models pull Qwen/Qwen2.5-Coder-7B-Instruct-GGUF   # picks the quant, pulls via Ollama
+```
+
+Local servers need no key: `--bot ox-ollama`, `ox-lmstudio`, `ox-llamacpp` or
+`ox-vllm`, and a model of `auto` uses whatever the server has loaded (tool-
+capable models preferred). A model that cannot call tools keeps working in
+chat-only mode instead of failing.
+
+**Cheaper agents by default.** Subagents do most of the reading, so ox runs
+them on the cheapest model you can reach that can still use tools — but only
+when the saving is provable (a free local model, or a lower list price than
+your main model). It says so once per run. Pin it with `subagent.bot` in
+`~/.ox/config.json` (or `OX_SUBAGENT_BOT`): `"main"`, `"auto"`, or any bot spec.
+
+**See who spent what.** Every run that delegated ends with a ledger (example output):
+
+```
+cost by agent
+  main agent           claude-opus-5     12.4k in   1.1k out   $0.0895  41%
+  ↳ audit auth module  grok-build-0.1     8.2k in    900 out   $0.0100  28%
+  ↳ map API routes     qwen2.5-coder:7b   7.9k in    700 out   free/unpriced  26%
+```
+
+`/cost` in the REPL shows the whole session; `--json` emits `{t:"ledger"}`.
+
+## OX Island (macOS notch)
+
+```bash
+ox island          # builds once (~10 s on an idle Mac), then lives in your notch
+```
+
+Every ox run shows up in the notch while the island runs — no flags. Approvals
+appear there with **Deny / Allow / Always** (or answer in the terminal; first
+answer wins, and only an explicit allow ever allows). When a run delegates,
+the island opens an **office**: one desk per agent with its task, current tool,
+model and tokens. Finished or failed runs peek briefly, then the ox goes back
+to sleep. `ox island stop|status`; `OX_ISLAND=0` keeps a run out of it.
+
+## Skills and Claude Code plugins
+
+ox ships 14 short built-in skills (`skills/`): plan-first, test-first,
+root-cause-debugging, verify-before-done, code-review, security-review,
+brainstorm-design, git-hygiene, frontend-craft, refactor-safely,
+research-sources, token-economy, parallel-delegation, write-docs. A skill of
+yours with the same name always wins.
+
+Claude Code plugins run unchanged:
+
+```bash
+ox plugin import-claude              # link the plugins you already installed in Claude Code
+ox plugin add owner/repo             # any GitHub repo, or name@owner/marketplace
+ox plugin ls                         # skills, commands, MCP servers per plugin
+```
+
+Plugin skills appear as `plugin:skill`, commands as `/plugin:command`, and MCP
+servers as `plugin-server` (off for imported plugins until `ox plugin mcp <name> on`).
+Plugin hooks are never executed. Every install passes the same safety scan as
+`ox skill add`.
+
+## Verify loop
+
+```bash
+npm run verify        # syntax → CLI smoke → unit tests → agent bench → live local model
+npm run verify:loop   # re-run on every change in src/ bin/ test/
+```
 
 ## v0.2 capabilities
 
