@@ -55,6 +55,9 @@ struct AgentDesk: View {
     var kind: Kind = .sub
     /// The last poke (art/CHARACTERS.md "Touch reactions"): when, and how many in a row.
     @State private var poke = Poke()
+    /// When this helper first appeared (it walks in) and when it finished (it walks out).
+    var endedAt: Date? = nil
+    @State private var arrivedAt = Date().timeIntervalSinceReferenceDate
 
     struct Poke { var at: Double = 0; var count = 0 }
 
@@ -63,6 +66,7 @@ struct AgentDesk: View {
             TimelineView(.animation(minimumInterval: 1 / 12)) { ctx in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 Canvas { g, size in draw(&g, size: size, t: t) }
+                    .onAppear { arrivedAt = Date().timeIntervalSinceReferenceDate }
             }
             .frame(width: 84, height: 66)
             .contentShape(Rectangle())
@@ -104,7 +108,10 @@ struct AgentDesk: View {
     }
 
     private func draw(_ g: inout GraphicsContext, size: CGSize, t: Double) {
-        if let person, PixelCast.has(person) { drawHelper(&g, person: person, t: t, poke: poke); return }
+        if let person, PixelCast.has(person) {
+            drawHelper(&g, person: person, t: t, poke: poke, arrivedAt: arrivedAt, endedAt: endedAt?.timeIntervalSinceReferenceDate)
+            return
+        }
         let working = phase == .working || phase == .starting
         // Floor shadow + desk.
         g.fill(Path(roundedRect: CGRect(x: 6, y: 52, width: 72, height: 8), cornerRadius: 2), with: .color(Color(hex: "#5B3A24")))
@@ -156,8 +163,13 @@ struct AgentDesk: View {
 extension AgentDesk {
     /// A helper at a desk, Pixel-Agents style: seen from behind at the
     /// monitor, typing or reading by tool; standing to cheer or slump at the end.
-    func drawHelper(_ g: inout GraphicsContext, person: String, t: Double, poke: Poke = Poke()) {
+    func drawHelper(_ g: inout GraphicsContext, person: String, t: Double, poke: Poke = Poke(),
+                    arrivedAt: Double = 0, endedAt: Double? = nil) {
         let poked = t - poke.at < 1.8
+        // Walking in to the desk (1.4 s after appearing) or away from it (3 s
+        // after finishing, once the cheer or slump has played).
+        let walkIn = t - arrivedAt < 1.4 ? (t - arrivedAt) / 1.4 : nil
+        let walkOut: Double? = endedAt.map { t - $0 - 3 }.flatMap { $0 > 0 ? min(1, $0 / 1.4) : nil }
         let wood = Color(hex: "#8A5A3B"), woodDark = Color(hex: "#5E3C26")
         // Floor shadow, desk with legs, monitor.
         g.fill(Path(ellipseIn: CGRect(x: 14, y: 58, width: 56, height: 7)), with: .color(.black.opacity(0.35)))
@@ -180,6 +192,15 @@ extension AgentDesk {
         let w = px * 18, h = px * 26
         let tool = detail.lowercased()
         let reading = ["read", "grep", "glob", "list", "search", "fetch", "web"].contains { tool.contains($0) }
+        if let p = walkIn ?? walkOut {
+            // Side-on walk: in from the left edge to the chair, or out to the right.
+            let fromX: CGFloat = walkIn != nil ? -w : 42 - w / 2
+            let toX: CGFloat = walkIn != nil ? 42 - w / 2 : 90
+            let x = fromX + (toX - fromX) * CGFloat(p)
+            if walkOut != nil && p >= 1 { return }   // gone: an empty desk remains
+            PixelCast.draw(&g, person, PixelPose(dir: .side, pose: "walk", frame: Int(t * 8) % 4), at: CGPoint(x: x, y: 66 - h), px: px)
+            return
+        }
         switch phase {
         case _ where poked:
             // Poked: turns round in the chair to face you.
@@ -256,7 +277,7 @@ struct PixelOffice: View {
                     ForEach(Array(session.agents.enumerated()), id: \.element.id) { i, a in
                         AgentDesk(name: a.label, person: PixelCast.helpers[i % PixelCast.helpers.count],
                                   detail: detail(a), model: a.model, tokens: a.tokens,
-                                  phase: a.phase, tint: Color(hex: Self.tints[(i + 1) % Self.tints.count]))
+                                  phase: a.phase, tint: Color(hex: Self.tints[(i + 1) % Self.tints.count]), endedAt: a.endedAt)
                     }
                 }
             }
