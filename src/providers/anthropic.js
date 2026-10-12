@@ -1,3 +1,5 @@
+import { imagesAt, lastImageIndex, withNote } from './images.js';
+
 const trimBase = (b) => String(b).replace(/\/+$/, '');
 
 function endpoint(baseUrl) {
@@ -22,6 +24,7 @@ export function buildAnthropicBody({ model, messages, tools, maxTokens }) {
     i++;
   }
   const conv = [];
+  const lastImage = lastImageIndex(messages);
   while (i < messages.length) {
     const m = messages[i];
     i++;
@@ -50,7 +53,14 @@ export function buildAnthropicBody({ model, messages, tools, maxTokens }) {
       }
       conv.push({ role: 'user', content: results });
     } else {
-      conv.push({ role: 'user', content: [{ type: 'text', text: String(m.content ?? '') }] });
+      const { images, note } = imagesAt(messages, i - 1, lastImage);
+      conv.push({
+        role: 'user',
+        content: [
+          ...images.map((im) => ({ type: 'image', source: { type: 'base64', media_type: im.mediaType, data: im.data } })),
+          { type: 'text', text: withNote(String(m.content ?? ''), note) || '(see image)' },
+        ],
+      });
     }
   }
   const body = { model, messages: conv, max_tokens: maxTokens || 4096, stream: true };

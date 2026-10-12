@@ -1,3 +1,4 @@
+import { imagesAt, lastImageIndex, withNote } from './images.js';
 // Some OpenAI-compatible providers (vLLM, llama.cpp, DeepInfra) report a
 // mid-stream provider fault as finish_reason 'error' with an empty message
 // instead of failing the HTTP request. Treating that as a normal stop turns a
@@ -161,9 +162,22 @@ export function createOpenAICompatParser({ name = 'openai-compat' } = {}) {
   };
 }
 
-function toWireMessages(messages) {
-  return (messages ?? []).map((m) => {
+export function toWireMessages(messages) {
+  const list = messages ?? [];
+  const lastImage = lastImageIndex(list);
+  return list.map((m, idx) => {
     const wire = { role: m.role ?? 'user', content: m.content ?? null };
+    if ((m.role ?? 'user') === 'user') {
+      const { images, note } = imagesAt(list, idx, lastImage);
+      if (note) wire.content = withNote(String(m.content ?? ''), note);
+      if (images.length) {
+        // Chat Completions vision parts; Ollama, LM Studio and vLLM accept the same shape.
+        wire.content = [
+          { type: 'text', text: String(m.content ?? '') || '(see image)' },
+          ...images.map((im) => ({ type: 'image_url', image_url: { url: `data:${im.mediaType};base64,${im.data}` } })),
+        ];
+      }
+    }
     if (m.name != null) wire.name = m.name;
     if (m.tool_call_id != null) wire.tool_call_id = m.tool_call_id;
     if (Array.isArray(m.tool_calls) && m.tool_calls.length) {

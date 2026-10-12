@@ -229,12 +229,12 @@ test('pruneToolSchemas no-op when schemas fit comfortably; input untouched', () 
 test('small forced window clips descriptions to 160 chars and drops non-required properties', () => {
   const schemas = listToolSchemas({});
   // The prune budget floors at 8000 (cap 2000 tok) and the built-ins fit under
-  // it, so pad with fat filler tools to create real pressure. Three, not four:
-  // each builtin added since this was written eats into the ~130 tokens of
-  // headroom the stage-1 pass had under the 2000 cap, and the count below is the
-  // largest that still leaves stage 1 to clip and keep every tool. Recompute if
-  // you add another tool.
-  for (let i = 0; i < 3; i++) {
+  // it, so pad with fat filler tools to create real pressure. Two, not three:
+  // each builtin added since this was written eats into the headroom the
+  // stage-1 pass has under the 2000 cap (show_ui took the third filler's
+  // share), and the count below is the largest that still leaves stage 1 to
+  // clip and keep every tool. Recompute if you add another tool.
+  for (let i = 0; i < 2; i++) {
     schemas.push({
       name: `mcp__pad__filler${i}`,
       description: 'f'.repeat(1200),

@@ -1,3 +1,4 @@
+import { imagesAt, lastImageIndex, withNote } from './images.js';
 export function sanitizeSchema(value) {
   if (Array.isArray(value)) return value.map(sanitizeSchema);
   if (value && typeof value === 'object') {
@@ -35,7 +36,8 @@ function toolNameFor(messages, toolMsg) {
 export function buildGeminiBody({ messages, tools, maxTokens }) {
   const sys = [];
   const contents = [];
-  for (const m of messages) {
+  const lastImage = lastImageIndex(messages);
+  for (const [idx, m] of messages.entries()) {
     if (m.role === 'system') {
       sys.push(String(m.content ?? ''));
       continue;
@@ -66,7 +68,14 @@ export function buildGeminiBody({ messages, tools, maxTokens }) {
       });
       continue;
     }
-    contents.push({ role: 'user', parts: [{ text: String(m.content ?? '') }] });
+    const { images, note } = imagesAt(messages, idx, lastImage);
+    contents.push({
+      role: 'user',
+      parts: [
+        ...images.map((im) => ({ inlineData: { mimeType: im.mediaType, data: im.data } })),
+        { text: withNote(String(m.content ?? ''), note) || '(see image)' },
+      ],
+    });
   }
   const body = { contents, generationConfig: { maxOutputTokens: maxTokens || 4096 } };
   if (sys.length) body.systemInstruction = { parts: [{ text: sys.join('\n') }] };

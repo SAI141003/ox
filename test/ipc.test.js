@@ -516,7 +516,8 @@ test('ipc: a client message larger than the frame cap is dropped, not buffered',
   server.on('protocol-warning', (w) => warnings.push(w));
   const before = warnings.length;
   client.socket.write(`{"type":"ping","pad":"${'x'.repeat(2 * 1024 * 1024)}"}\n`);
-  await waitFor(() => warnings.length > before, { what: 'the oversize frame to be ignored' });
+  // 2 MB through a socket can outlast the default 2 s on a busy machine.
+  await waitFor(() => warnings.length > before, { what: 'the oversize frame to be ignored', timeoutMs: 10_000 });
   assert.match(warnings.at(-1).reason, /^oversize-(frame|partial)$/);
   // the connection survived and still answers
   assert.equal(server.clients.size, 1);

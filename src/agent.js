@@ -79,7 +79,8 @@ export function classifyProviderError(message) {
   const low = s.toLowerCase();
   const hasStatus = (code) => new RegExp(`\\bhttp\\s*${code}\\b`).test(low);
   if (/rate.?limit|too many requests|quota/.test(low) || hasStatus(429)) return 'rate-limit';
-  if (/unauthorized|forbidden|invalid api key|authentication/.test(low) || hasStatus(401) || hasStatus(403)) {
+  // "Missing API key" is local configuration: no retry can make a key appear.
+  if (/unauthorized|forbidden|invalid api key|missing api key|no api key|authentication/.test(low) || hasStatus(401) || hasStatus(403)) {
     return 'auth';
   }
   // Checked before not-found: Ollama phrases it "<model> does not support tools".

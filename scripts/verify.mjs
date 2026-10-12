@@ -120,8 +120,14 @@ const STAGES = {
     const fail = num('fail');
     const cancelled = num('cancelled');
     const failing = [...r.out.matchAll(/^not ok \d+ - (.+)$/gm)].map((m) => m[1]).slice(0, 20);
+    const list = failing.length ? `\n  - ${failing.join('\n  - ')}` : '';
+    if (Number.isNaN(pass)) {
+      // No summary: the run never finished (killed at the ceiling, or crashed).
+      const why = r.code === 124 ? `timed out after ${Math.round(2_400_000 / 60_000)} min (is the machine overloaded?)` : `exited ${r.code} before its summary`;
+      return { ok: false, detail: `the suite ${why}; failures seen so far: ${failing.length}${list}` };
+    }
     const ok = r.code === 0 && fail === 0 && !cancelled;
-    return { ok, detail: `${pass} pass · ${fail} fail · ${cancelled} cancelled${failing.length ? `\n  - ${failing.join('\n  - ')}` : ''}` };
+    return { ok, detail: `${pass} pass · ${fail} fail · ${cancelled} cancelled${list}` };
   },
 
   async bench() {

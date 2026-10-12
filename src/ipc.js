@@ -16,6 +16,7 @@
 //   client -> server
 //     { type:'ready', clientId }
 //     { type:'approval-answer', id, decision }   // 'allow'|'deny'|'ask'|'always' (allow + rest of session)
+//     { type:'user-message', text, imagePaths?, voice? } // ask the run something (island voice / screen)
 //     { type:'ping' }
 //
 // The four design rules this module exists to enforce:
@@ -508,6 +509,24 @@ export function createIpcServer(opts = {}) {
           return;
         }
         resolvePending(decision, 'client-answer');
+        return;
+      }
+      case 'user-message': {
+        // The island's voice / "ask about my screen" input. Text is capped like
+        // every other frame; screenshots travel as paths (a PNG outgrows the
+        // 1 MB frame cap) and only image files in the temp dir are accepted, so
+        // a client cannot make ox read and upload an arbitrary file.
+        const text = String(msg.text ?? '').slice(0, 4000).trim();
+        if (!text) {
+          emitter.emit('protocol-warning', { reason: 'empty-user-message', detail: '' });
+          return;
+        }
+        const tmp = path.resolve(os.tmpdir());
+        const imagePaths = (Array.isArray(msg.imagePaths) ? msg.imagePaths : [])
+          .slice(0, 2)
+          .map((p) => path.resolve(String(p)))
+          .filter((p) => (p.startsWith(`${tmp}${path.sep}`) || p.startsWith('/private/tmp/') || p.startsWith('/tmp/')) && /\.(png|jpe?g)$/i.test(p));
+        emitter.emit('user-message', { client, text, imagePaths, voice: msg.voice === true });
         return;
       }
       default: {

@@ -464,8 +464,11 @@ function makeLifecycleEmitter(ctx) {
  * a paid one, or a strictly lower list price. An unpriced or local main model
  * is never second-guessed.
  */
-export function autoSubagentTarget({ config, mainTarget, pick = null }) {
+export function autoSubagentTarget({ config, mainTarget, pick = null, env = process.env }) {
   if (!mainTarget || mainTarget.keyEnv === null) return null; // already free
+  // OX_BASE_URL pins every provider to one endpoint: the user chose where all
+  // traffic goes, so delegation must not wander to a different model there.
+  if (env.OX_BASE_URL || config?.oxBaseUrl || config?.baseUrl) return null;
   const mainPrice = mainTarget.pricing ? mainTarget.pricing.in + mainTarget.pricing.out : null;
   if (mainPrice == null) return null; // cannot prove a saving against an unpriced model
   const cand = pick ?? pickForRole('coder', { config: { ...config, routingStrategy: 'cost' }, complexity: 0.5 });
@@ -473,6 +476,8 @@ export function autoSubagentTarget({ config, mainTarget, pick = null }) {
   const spec = cand.bot ?? `${cand.provider}:${cand.model}`;
   const t = resolveBot(spec, config);
   if (!t || (t.provider === mainTarget.provider && t.model === mainTarget.model)) return null;
+  // Only a model this machine can actually call: its key must be present.
+  if (t.keyEnv && !env[t.keyEnv]) return null;
   if (t.keyEnv === null) return { target: t, why: 'local and free' };
   const price = t.pricing ? t.pricing.in + t.pricing.out : null;
   if (price != null && price < mainPrice) {

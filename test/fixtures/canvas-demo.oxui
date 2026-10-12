@@ -1,0 +1,16 @@
+root = Stack([title, kpis, card, todos, actions])
+title = Header("Repo health", "ox on claude/ox-repair")
+kpis = Row([Stat("Tests", 1840, 12), Stat("Failing", 3, -2), Stat("Cost today", "$0.42")])
+card = Card("Slowest suites", [chart, tbl], "warning")
+chart = BarChart(["agent", "cli", "island", "ipc"], [41.2, 22.5, 9.1, 3.3], "seconds")
+tbl = Table([Col("Suite", names), Col("Time", secs, "number"), Col("State", states, "status")])
+names = ["agent", "cli", "island"]
+secs = [41.2, 22.5, 9.1]
+states = ["pass", "fail", "pass"]
+todos = Card("TODOs in src: " + @Count(hits.lines), [List(@Sort(hits.lines))])
+hits = Query("grep", {pattern: "TODO\\(ox\\)", path: "src"}, {lines: []})
+$scope = "src"
+scope = Select("scope", $scope, [Option("src", "Source"), Option("test", "Tests")])
+actions = Buttons([Button("Fix the failing test", Action([@ToAssistant("fix the failing cli test")]), "primary"), Button("Re-scan", Action([@Run(hits)])), Button("Clean build", Action([@Run(clean)]), "danger")])
+clean = Mutation("bash", {command: "rm -rf build"})
+broken = Crad("x", [])

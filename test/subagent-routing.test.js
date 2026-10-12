@@ -30,6 +30,14 @@ test('a local keyless model replaces a paid main model', () => withEnv(() => {
   assert.equal(r.why, 'local and free');
 }));
 
+test('never routes to a model whose key is missing, or while OX_BASE_URL pins the endpoint', () => withEnv(() => {
+  // Regression: with only an Anthropic key, auto once picked Gemini Flash and every subagent failed.
+  const noGemini = { ...process.env };
+  delete noGemini.GEMINI_API_KEY;
+  assert.equal(autoSubagentTarget({ config: {}, mainTarget: opus, pick: { bot: 'ox-flash' }, env: noGemini }), null, 'missing key');
+  assert.equal(autoSubagentTarget({ config: {}, mainTarget: opus, pick: { bot: 'ox-grok-fast' }, env: { ...process.env, OX_BASE_URL: 'http://127.0.0.1:9/v1' } }), null, 'pinned endpoint');
+}));
+
 test('never switches to a pricier model, the same model, or away from an unpriced/local main', () => withEnv(() => {
   const haiku = { provider: 'anthropic', model: 'claude-haiku-4-5', keyEnv: 'ANTHROPIC_API_KEY', pricing: { in: 1, out: 5 } };
   assert.equal(autoSubagentTarget({ config: {}, mainTarget: haiku, pick: { bot: 'ox-opus' } }), null, 'pricier');

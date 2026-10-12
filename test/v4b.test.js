@@ -102,6 +102,8 @@ test('classifyProviderError buckets provider failure strings', () => {
   assert.equal(classifyProviderError('quota exceeded for project'), 'rate-limit');
   assert.equal(classifyProviderError('ox[xai]: HTTP 401 Unauthorized: bad key'), 'auth');
   assert.equal(classifyProviderError('ox[gemini]: HTTP 403 Forbidden'), 'auth');
+  // A missing key is configuration: terminal, never retried.
+  assert.equal(classifyProviderError('Missing API key for custom: set OX_API_KEY (no silent fallback)'), 'auth');
   assert.equal(classifyProviderError('HTTP 404 model not found'), 'not-found');
   assert.equal(classifyProviderError('ox[anthropic]: HTTP 503 Service Unavailable'), 'server');
   assert.equal(classifyProviderError('HTTP 500 Internal Server Error'), 'server');

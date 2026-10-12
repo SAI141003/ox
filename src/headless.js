@@ -1,3 +1,6 @@
+import { expandLlmsRefs } from './llms-txt.js';
+import path from 'node:path';
+import { loadImage } from './providers/images.js';
 import { runAgent, draftTitle } from './agent.js';
 import { makeApprover } from './approval.js';
 import { buildContext, expandContextRefs } from './context.js';
@@ -271,11 +274,13 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
     }
     // F4: expand @file / @dir/ / @git.diff references before the prompt is
     // appended to the session or sent to the model.
-    full = expandContextRefs(full, config.cwd);
+    full = await expandLlmsRefs(expandContextRefs(full, config.cwd));
     const messages = [
       ...(Array.isArray(initialMessages) ? initialMessages : []),
     ];
-    if (full.trim()) messages.push({ role: 'user', content: full });
+    // --image: attached to the prompt, sent to the model as vision input.
+    const images = (opts.images ?? []).map((f) => loadImage(path.resolve(config.cwd ?? process.cwd(), f)));
+    if (full.trim() || images.length) messages.push({ role: 'user', content: full, ...(images.length ? { images } : {}) });
     if (session && full.trim()) {
       try {
         // Wave5a D: a user message beginning a turn drops a rewind point.
@@ -475,6 +480,7 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
             }
             case 'tool-end':
               console.log(renderToolEnd(ev.name, { content: `${ev.ms}ms · ${ev.bytes}b` }, ev.isError));
+              if (ev.name === 'show_ui' && ev.meta?.canvas?.text) console.log(`\n${ev.meta.canvas.text}\n`);
               break;
             // Subagent lifecycle. Under `--json` these fall through to the
             // NDJSON branch above untouched, which is the point: one event

@@ -119,8 +119,70 @@ Every ox run shows up in the notch while the island runs — no flags. Approvals
 appear there with **Deny / Allow / Always** (or answer in the terminal; first
 answer wins, and only an explicit allow ever allows). When a run delegates,
 the island opens an **office**: one desk per agent with its task, current tool,
-model and tokens. Finished or failed runs peek briefly, then the ox goes back
-to sleep. `ox island stop|status`; `OX_ISLAND=0` keeps a run out of it.
+model and tokens. Finished or failed runs peek briefly. With nothing running,
+the bull lives on a little pasture: it grazes, wanders and looks around, gets
+the zoomies now and then, and a farmer sometimes walks by to wave.
+
+`ox island off` turns the island off everywhere (runs stay in the terminal)
+until `ox island on`; the island's right-click menu has the same switch, and
+`/island on|off` works in the REPL. `ox island stop|status`; `OX_ISLAND=0`
+keeps a single run out of it.
+
+### OX Buddy: talk to ox about your screen
+
+Hold **⌃⌥Space** (or click the mic in the island) and ask out loud: "why is
+this test red?", "where do I turn on dark mode?". The island listens with
+on-device speech recognition and takes a screenshot when you start speaking.
+The live ox run answers, and your avatar (Ox, Ava or Kai; right-click to
+choose) speaks the reply with lip-sync, expressions and hand gestures. When the
+answer names a place on screen, a pointer flies there.
+
+From the terminal, `/screen <question>` does the same with a screenshot, and
+`ox -p "…" --image shot.png` attaches any image. Every provider gets the image
+(Anthropic, Gemini, OpenAI-compatible including Ollama/LM Studio/vLLM vision
+models). Only the newest screenshot in a conversation is sent, so long voice
+sessions pay for one image, not all of them.
+
+## OX Canvas: answers as live UI
+
+When a table, chart or dashboard says it better than prose, ox draws one with
+the `show_ui` tool, in your terminal and in the notch:
+
+```
+root = Stack([k, t, b])
+k = Row([Stat("Tests", 1840, 12), Stat("Failing", 3, -2)])
+t = Table([Col("Suite", ["agent", "cli"]), Col("Time", [41.2, 22.5], "number")])
+b = Buttons([Button("Fix the failing test", Action([@ToAssistant("fix it")]))])
+```
+
+The syntax is compatible with OpenUI Lang (one `name = Component(args)` per
+line), and on the benchmark dashboard it costs 255 tokens, against 350 for
+compact JSON and 1,094 for pretty-printed JSON. It is built for an agent:
+
+- **Repair without a gateway:** bad lines are dropped and reported back to the
+  model in a few tokens ("unknown component Crad (use Card)"), and the model
+  re-sends only those lines (`patch: true`).
+- **Live data under ox's rules:** `Query("grep", {…})` runs only read-only tools.
+  A `Mutation` never runs without you.
+- **Buttons that cost nothing:** type a button's number in the REPL. Changing a
+  `$value` or re-running a query redraws locally without calling the model.
+- **Cheap to offer:** the tool ships only on turns that ask for a table, chart,
+  status or similar, and its full syntax is fetched only when needed.
+
+`/ui` redraws the last canvas.
+
+## Library docs for agents: `@llms:`
+
+Many UI and API libraries publish `/llms.txt`, docs written for agents. Mention
+one in a prompt and ox reads it:
+
+```bash
+ox "add a liquid-glass carousel to the hero using @llms:componentry.dev"
+```
+
+ox fetches it once (cached for a day in `~/.ox/cache/llms`) and inserts the
+overview plus only the sections that match your request, capped at about
+1.5k tokens, instead of the whole 10–50 KB file.
 
 ## Skills and Claude Code plugins
 
@@ -706,6 +768,9 @@ code in the workspace the agent left): [docs/REAL_BENCH.md](docs/REAL_BENCH.md).
 | `/max [n]` | Max Mode: N planning passes judged before each run (off ≤1, cap 5) |
 | `/yolo` | toggle approval skipping |
 | `/doctor` | environment checks |
+| `/screen [question]` | ask about what is on your screen (attaches a screenshot) |
+| `/ui` · `1`, `2`, … | redraw the last OX Canvas · press its buttons |
+| `/island on\|off\|status` | turn the notch island on or off (remembered) |
 | `/exit`, `/quit` | save episode and leave |
 
 `/refine` has **four** target categories and no free-form path: `supplemental-prompt`

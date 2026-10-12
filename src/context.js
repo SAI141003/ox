@@ -1036,6 +1036,8 @@ export function expandContextRefs(text, cwd = process.cwd()) {
         }
         return token;
       }
+    } else if (label.startsWith('llms:')) {
+      return token; // expanded by src/llms-txt.js
     } else if (label) {
       const abs = path.resolve(root, label.replace(/\/+$/, '') || '/');
       let st = null;

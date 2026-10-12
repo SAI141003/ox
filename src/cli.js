@@ -1,3 +1,6 @@
+import { expandLlmsRefs } from './llms-txt.js';
+import { buddyTurn, captureScreen } from './buddy.js';
+import { getCanvas, hasCanvas, canvasWidth, readOnlyRunner } from './tools/canvas.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -184,7 +187,7 @@ import {createRegressionGuard} from './regression-guard.js';
 import {createCodeReviewer, formatReviewReport} from './code-review.js';
 import {createTeamWorkflows} from './team-workflows.js';
 import {pickModel, listCandidates, makeTask, ollamaReachability} from './model-registry.js';
-import {listTasks, addTask, getTask, updateTask, deleteTask, runTask} from './tasks.js';
+import { listTasks, addTask, getTask, updateTask, deleteTask, runTask, claimTask, releaseTask, completeTask, approveTask, rejectTask, nextTask, goalChain, taskBrief, addSpend, taskActivity } from './tasks.js';
 import {
   createLocalRunner, LOCAL_MODELS, recommendLocalModel,
   scanLocalEndpoints, approveEndpoint, forgetEndpoint, readTrustRecords,
@@ -215,6 +218,9 @@ const SLASH_HELP = [
   '  /auxbot [name]        show or set the auxiliary bot used for cheap calls (compaction, verifier, max-mode)',
   '  /soul                 persona sources (~/.ox/soul.md, ./SOUL.md): paths + status',
   '  /cost                 token + spend totals',
+  '  /ui                   redraw the last canvas (type a number to press its buttons)',
+  '  /screen [question]    ask about what is on your screen (attaches a screenshot)',
+  '  /island on|off|status turn the notch island on or off (remembered across runs)',
   '  /compact              summarize older history to shrink context',
   '  /context              per-segment context breakdown: system / tool schemas / history / latest input',
   '  /clear                wipe in-memory context (session file kept)',
@@ -448,6 +454,7 @@ function usage() {
   '      --model <spec>             provider:model override',
   '      --aux-bot <name>           auxiliary bot for cheap calls: compaction, verifier, max-mode',
     '      --max-cost <usd>           stop subsequent work at this spend (0 disables paid work)',
+    '      --image <file>             attach an image (png/jpg/gif/webp) to the prompt; repeatable',
     '      --verify                   independent goal verifier audits final answers',
       '      --repo-map                include repo structure map in system prompt',
       '      --context                print the per-segment context breakdown and exit (no model call)',
@@ -1766,6 +1773,13 @@ function parseAutoFlags(args, { allowInstallFlags = false } = {}) {
         else flags.cwd = v;
         break;
       }
+      case '--image': {
+        const v = needValue(a, i);
+        if (v === null) return null;
+        i++;
+        (flags.images ??= []).push(v);
+        break;
+      }
       case '--max-cost': {
         const v = needValue(a, i);
         if (v === null) return null;
@@ -3003,6 +3017,81 @@ async function cmdClone(args = []) {
   }
 }
 
+// The board verbs: who holds what, review gates, the activity log. Returns
+// undefined when `sub` is not one of them.
+async function taskBoardVerb(sub, rest) {
+  // Positional args, skipping each flag's value (`--limit 6` is not a task id).
+  const VALUED = new Set(['--as', '--note', '--limit', '--usd']);
+  const positional = rest.filter((a, i) => !String(a).startsWith('--') && !VALUED.has(rest[i - 1]));
+  const id = positional[0];
+  const flag = (name) => { const i = rest.indexOf(name); return i >= 0 ? rest[i + 1] : undefined; };
+  const as = flag('--as');
+  const note = flag('--note');
+  const fail = (msg) => { process.stderr.write(`${c.red(`✗ ${msg}`)}\n`); process.exitCode = 1; return true; };
+  const need = () => { process.stderr.write(`usage: ox task ${sub} <id>\n`); process.exitCode = 3; return true; };
+  // A CLI claim is a lease (no process to watch): pid null.
+  const who = { pid: null, ...(as ? { owner: as, actor: as } : {}) };
+  switch (sub) {
+    case 'claim': {
+      if (!id) return need();
+      const r = claimTask(id, who);
+      if (!r.ok) return fail(r.reason);
+      console.log(`${c.green('✓ claimed')} ${id} as ${r.task.assignee}`);
+      return true;
+    }
+    case 'release': {
+      if (!id) return need();
+      const r = releaseTask(id, { ...who, force: rest.includes('--force') });
+      return r.ok ? (console.log(`${c.green('✓ released')} ${id}`), true) : fail(r.reason);
+    }
+    case 'done': {
+      if (!id) return need();
+      const r = completeTask(id, { ...who, note, failed: rest.includes('--failed') });
+      if (!r.ok) return fail(r.reason);
+      console.log(r.task.status === 'in_review' ? `${c.yellow('◐ submitted for review')} ${id}` : `${c.green(`✓ ${r.task.status}`)} ${id}`);
+      return true;
+    }
+    case 'approve':
+    case 'reject': {
+      if (!id) return need();
+      const r = sub === 'approve' ? approveTask(id, { ...who, note }) : rejectTask(id, { ...who, note });
+      if (!r.ok) return fail(r.reason);
+      console.log(sub === 'approve' ? `${c.green('✓ approved')} ${id}` : `${c.yellow('↺ sent back')} ${id}${note ? `: ${note}` : ''}`);
+      return true;
+    }
+    case 'next': {
+      const t = nextTask(who);
+      if (!t) { console.log(c.dim('nothing ready (every open task is claimed, blocked or in review)')); return true; }
+      console.log(`${c.green('✓ claimed')} ${t.id}: ${t.title}`);
+      const brief = taskBrief(t.id);
+      if (brief) console.log(c.dim(brief));
+      return true;
+    }
+    case 'brief': {
+      if (!id) return need();
+      const b = taskBrief(id);
+      return b ? (console.log(b), true) : fail(`task not found: ${id}`);
+    }
+    case 'log': {
+      const rows = taskActivity({ id, limit: Number(flag('--limit')) || 30 });
+      if (!rows.length) { console.log(c.dim('(no activity)')); return true; }
+      for (const e of rows) {
+        const extra = e.fields ? ` ${e.fields.join(', ')}` : e.note ? `: ${e.note}` : '';
+        console.log(`${(e.at ?? '').slice(0, 19)}  ${padCell(e.by ?? '?', 10)}  ${e.action}${extra}  ${c.dim(e.task)}`);
+      }
+      return true;
+    }
+    case 'spend': {
+      const usd = Number(flag('--usd') ?? positional[1]);
+      if (!id || !Number.isFinite(usd)) { process.stderr.write('usage: ox task spend <id> <usd>\n'); process.exitCode = 3; return true; }
+      const r = addSpend(id, usd, who);
+      return r.ok ? (console.log(`${c.green('✓ recorded')} $${usd} → $${r.spentUsd}`), true) : fail(r.reason === 'over budget' ? `over budget ($${r.spentUsd}): task blocked` : r.reason);
+    }
+    default:
+      return undefined;
+  }
+}
+
 async function cmdTask(args = []) {
   const sub = String(args[0] ?? '').trim().toLowerCase();
   const rest = args.slice(1);
@@ -3019,27 +3108,50 @@ async function cmdTask(args = []) {
       console.log('(no tasks)');
       return;
     }
-    const w = { id: 4, title: 30, status: 8 };
-    console.log(`${padCell('ID', w.id)}  ${padCell('TITLE', w.title)}  ${padCell('STATUS', w.status)}  CREATED`);
+    const w = { id: Math.max(2, ...tasks.map((t) => String(t.id).length)), title: 30, status: 9, owner: 10 };
+    console.log(`${padCell('ID', w.id)}  ${padCell('TITLE', w.title)}  ${padCell('STATUS', w.status)}  ${padCell('OWNER', w.owner)}  CREATED`);
     for (const t of tasks) {
-      console.log(`${padCell(t.id, w.id)}  ${padCell(t.title, w.title)}  ${padCell(t.status, w.status)}  ${(t.createdAt ?? '').slice(0, 19)}`);
+      const extra = [
+        (() => { const n = (t.blockedBy ?? []).filter((x) => getTask(x)?.status !== 'done').length; return n ? `blocked by ${n}` : ''; })(),
+        t.budgetUsd != null ? `$${Number(t.spentUsd ?? 0).toFixed(2)}/$${Number(t.budgetUsd).toFixed(2)}` : '',
+        t.review ? 'review' : '',
+      ].filter(Boolean).join(' · ');
+      console.log(`${padCell(t.id, w.id)}  ${padCell(t.title, w.title)}  ${padCell(t.status, w.status)}  ${padCell(t.assignee ?? '-', w.owner)}  ${(t.createdAt ?? '').slice(0, 19)}${extra ? `  ${c.dim(extra)}` : ''}`);
     }
     return;
   }
   if (sub === 'add') {
     const title = rest.find((a) => !String(a).startsWith('--'));
     if (!title) {
-      process.stderr.write('usage: ox task add <title> [--description <desc>] [--tags <tag1,tag2>] [--cron <cron>]\n');
+      process.stderr.write('usage: ox task add <title> [--description <desc>] [--tags <a,b>] [--cron <cron>] [--parent <id>] [--blocked-by <id,id>] [--budget <usd>] [--review]\n');
       process.exitCode = 3;
       return;
     }
-    let description = '', tags = [], cron = null;
+    let description = '', tags = [], cron = null, parentId = null, blockedBy = [], budgetUsd = null, review = false;
     for (let i = 0; i < rest.length; i++) {
       if (rest[i] === '--description' && rest[i + 1]) { description = rest[i + 1]; i++; }
       else if (rest[i] === '--tags' && rest[i + 1]) { tags = rest[i + 1].split(',').map(s => s.trim()).filter(Boolean); i++; }
       else if (rest[i] === '--cron' && rest[i + 1]) { cron = rest[i + 1]; i++; }
+      else if (rest[i] === '--parent' && rest[i + 1]) { parentId = rest[i + 1]; i++; }
+      else if (rest[i] === '--blocked-by' && rest[i + 1]) { blockedBy = rest[i + 1].split(',').map(s => s.trim()).filter(Boolean); i++; }
+      else if (rest[i] === '--budget' && rest[i + 1]) {
+        budgetUsd = Number(rest[i + 1]);
+        i++;
+        if (!Number.isFinite(budgetUsd) || budgetUsd < 0) {
+          process.stderr.write(`${c.red('✗ --budget needs a dollar amount')}\n`);
+          process.exitCode = 3;
+          return;
+        }
+      } else if (rest[i] === '--review') review = true;
     }
-    const task = addTask({ title, description, tags, cron });
+    let task;
+    try {
+      task = addTask({ title, description, tags, cron, parentId, blockedBy, budgetUsd, review });
+    } catch (err) {
+      process.stderr.write(`${c.red(`✗ ${err.message}`)}\n`);
+      process.exitCode = 3;
+      return;
+    }
     console.log(`${c.green('✓ task added')} ${task.id}: ${task.title}`);
     return;
   }
@@ -3062,6 +3174,14 @@ async function cmdTask(args = []) {
     console.log(`  status: ${task.status}`);
     console.log(`  tags: ${task.tags?.length ? task.tags.join(', ') : '(none)'}`);
     console.log(`  cron: ${task.cron || '(none)'}`);
+    console.log(`  owner: ${task.assignee ?? '(unclaimed)'}`);
+    if (task.parentId) console.log(`  why: ${goalChain(task.id).slice(1).map((g) => g.title).join(' ← ')}`);
+    const open = task.blockedBy.filter((x) => getTask(x)?.status !== 'done');
+    if (open.length) console.log(`  blocked by: ${open.join(', ')}`);
+    if (task.budgetUsd != null) console.log(`  budget: $${task.spentUsd.toFixed(4)} of $${Number(task.budgetUsd).toFixed(2)}`);
+    if (task.review) console.log(`  review: required${task.approvedBy ? ` (approved by ${task.approvedBy})` : ''}`);
+    if (task.blockedReason) console.log(`  blocked: ${task.blockedReason}`);
+    for (const n of task.comments.slice(-5)) console.log(`  note (${n.by}): ${n.text}`);
     console.log(`  created: ${task.createdAt}`);
     console.log(`  updated: ${task.updatedAt}`);
     return;
@@ -3079,8 +3199,10 @@ async function cmdTask(args = []) {
       process.exitCode = 3;
       return;
     }
+    const pi = rest.indexOf('--prompt');
+    const prompt = pi >= 0 ? rest[pi + 1] : undefined;
     console.log(c.dim(`running task ${id}: ${task.title}`));
-    const result = await runTask(id);
+    const result = await runTask(id, { prompt });
     if (result.success) {
       console.log(c.green('✓ task completed'));
     } else {
@@ -3125,7 +3247,9 @@ async function cmdTask(args = []) {
     console.log(ok ? c.green(`✓ deleted task ${id}`) : c.red(`✗ task not found: ${id}`));
     return;
   }
-  process.stderr.write(`ox: unknown task subcommand '${args[0] ?? ''}' (use list | add | get | run | update | delete)\n`);
+  const board = await taskBoardVerb(sub, rest);
+  if (board !== undefined) return;
+  process.stderr.write(`ox: unknown task subcommand '${args[0] ?? ''}' (use list | add | get | run | update | delete | claim | release | done | approve | reject | next | brief | log | spend)\n`);
   process.exitCode = 3;
 }
 
@@ -4598,19 +4722,19 @@ async function replWithBudget(config, opts, flags, budget) {
     console.log(c.dim(`compacted ${before} → ${after} tokens`));
   }
 
-  async function runTurn(text) {
+  async function runTurn(text, extra = {}) {
     if (state.firstUser == null) state.firstUser = text;
     // Wave5a D: a user message beginning a turn drops a rewind point.
     try {
       appendEvent(session, { t: 'rewind-point', id: nextRewindId(session.file), label: String(text).slice(0, 40) });
     } catch {}
     appendEvent(session, { t: 'user', text });
-    messages.push({ role: 'user', content: text });
+    messages.push({ role: 'user', content: text, ...(extra.images?.length ? { images: extra.images } : {}) });
     const ac = new AbortController();
     state.currentAbort = ac;
     state.lastEventWasError = false;
     const turnLedger = createLedger();
-    let extraGuidance = '';
+    let extraGuidance = extra.guidance ?? '';
     if (state.maxMode > 1) {
       try {
         const mm = await runMaxModePlanning({
@@ -4634,7 +4758,7 @@ async function replWithBudget(config, opts, flags, budget) {
             `${c.dim(`· max-mode: ${mm.candidates} plans considered, using #${mm.chosen}`)}\n`
           );
         }
-        if (mm.plan) extraGuidance = `[SELECTED PLAN]\n${mm.plan}`;
+        if (mm.plan) extraGuidance = [extraGuidance, `[SELECTED PLAN]\n${mm.plan}`].filter(Boolean).join('\n\n');
       } catch {}
     }
     try {
@@ -4668,6 +4792,10 @@ async function replWithBudget(config, opts, flags, budget) {
           case 'tool-end': {
             const snip = `${ev.ms}ms · ${ev.bytes}b`;
             process.stdout.write(`${renderToolEnd(ev.name, { content: snip }, ev.isError)}\n`);
+            if (ev.name === 'show_ui' && ev.meta?.canvas?.text) {
+              process.stdout.write(`\n${ev.meta.canvas.text}\n`);
+              if (ev.meta.canvas.actions?.length) process.stdout.write(`${c.dim('  type a number to press a button · /ui to redraw')}\n`);
+            }
             appendEvent(session, {
               t: 'tool-result',
               callId: ev.id,
@@ -6340,7 +6468,7 @@ async function replWithBudget(config, opts, flags, budget) {
         const custom = listCustomCommands({ cwd: config.cwd }).get(cmd.slice(1));
         if (custom) {
           console.log(c.dim(`· /${cmd.slice(1)} (${custom.source})`));
-          await runTurn(expandContextRefs(expandCommand(custom.file, rest), config.cwd));
+          await runTurn(await expandLlmsRefs(expandContextRefs(expandCommand(custom.file, rest), config.cwd)));
           return;
         }
         console.log(c.dim(`unknown command '${cmd}' — try /help or /commands`));
@@ -6348,7 +6476,82 @@ async function replWithBudget(config, opts, flags, budget) {
     }
   }
 
+  // OX Canvas buttons: a bare number presses button N of the last canvas.
+  // State changes and query re-runs redraw locally for zero tokens; asks and
+  // mutations go back to the agent, so approvals still apply.
+  async function pressCanvasButton(n) {
+    const canvas = getCanvas(ctx.sessionId);
+    const width = canvasWidth(ctx);
+    const colors = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+    const action = canvas.render({ width, colors }).actions[n - 1];
+    if (!action) return false;
+    console.log(c.dim(`· ${action.label}`));
+    const out = await canvas.act(action, readOnlyRunner(ctx));
+    if (out.rerender) console.log(`\n${canvas.render({ width, colors }).text}\n`);
+    if (out.open) console.log(c.dim(`open: ${out.open}`));
+    if (out.ask) await runTurn(out.ask);
+    else if (out.mutation) {
+      await runTurn(`On the canvas I pressed "${action.label}". Run ${out.mutation.tool} with ${JSON.stringify(out.mutation.args)}, then refresh the canvas with show_ui (patch: true).`);
+    }
+    return true;
+  }
+
+  // OX Buddy: a question about the screen, typed (/screen) or spoken in the island.
+  async function askBuddy(text, { imagePaths = [], voice = false } = {}) {
+    let turn;
+    try {
+      turn = buddyTurn(text, { imagePaths, voice });
+    } catch (err) {
+      console.log(c.red(`✗ ${err?.message ?? err}`));
+      return;
+    }
+    if (turn.images.length) console.log(c.dim(`· with your screen (${turn.images.length} image)`));
+    await runTurn(text, turn);
+  }
+
+  if (opts.ipcServer) {
+    opts.ipcServer.on('user-message', ({ text, imagePaths, voice }) => {
+      if (state.exiting) return;
+      if (state.busy) {
+        process.stdout.write(`${c.dim(`\n(island: "${truncate(text, 60)}" waits until this turn ends — ask again then)`)}\n`);
+        return;
+      }
+      process.stdout.write(`\n${c.bold(voice ? '🎙 you (island)' : 'you (island)')} ${text}\n`);
+      state.busy = true;
+      Promise.resolve(askBuddy(text, { imagePaths, voice }))
+        .catch((err) => process.stdout.write(`${renderError(err)}\n`))
+        .finally(() => {
+          state.busy = false;
+          if (!state.exiting) rl.prompt();
+        });
+    });
+  }
+
   async function handleInput(line) {
+    if (line === '/island' || line.startsWith('/island ')) {
+      const { cmdIsland } = await import('./island.js');
+      await cmdIsland(line.split(/\s+/).slice(1).length ? line.split(/\s+/).slice(1) : ['status']);
+      return;
+    }
+    if (line === '/screen' || line.startsWith('/screen ')) {
+      const q = line.slice('/screen'.length).trim() || 'What am I looking at, and what should I do next?';
+      let file;
+      try {
+        file = captureScreen();
+      } catch (err) {
+        console.log(c.red(`✗ ${err?.message ?? err}`));
+        return;
+      }
+      await askBuddy(q, { imagePaths: [file] });
+      try { fs.unlinkSync(file); } catch {}
+      return;
+    }
+    if (/^\d{1,2}$/.test(line) && hasCanvas(ctx.sessionId) && (await pressCanvasButton(Number(line)))) return;
+    if (line === '/ui' || line === '/canvas') {
+      if (!hasCanvas(ctx.sessionId)) console.log(c.dim('no canvas yet: ask ox to show you something (a table, chart or dashboard)'));
+      else console.log(`\n${getCanvas(ctx.sessionId).render({ width: canvasWidth(ctx), colors: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR }).text}\n`);
+      return;
+    }
     if (line.startsWith('/')) return slashCommand(line);
     if (line.startsWith('!')) {
       const shellCmd = line.slice(1).trim();
@@ -6362,7 +6565,7 @@ async function replWithBudget(config, opts, flags, budget) {
     }
     // F4: expand @file / @dir/ / @git.diff references before the turn runs
     // (and before the user text is appended to the session).
-    await runTurn(expandContextRefs(line, config.cwd));
+    await runTurn(await expandLlmsRefs(expandContextRefs(line, config.cwd)));
   }
 
   if (process.stdout.isTTY && !process.env.OX_NO_BANNER) {
@@ -6818,6 +7021,7 @@ export async function main(argv = []) {
   }
   const opts = {
     ipcServer,
+    images: flags.images ?? [],
     json: flags.json,
     yolo: flags.yolo,
     verify: flags.verify || config.defaultVerify === true,

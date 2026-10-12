@@ -17,6 +17,7 @@ import {
 import { webFetchTool, webSearchTool, WEB_TOOL_SCHEMAS, WEB_TOOLS } from './web.js';
 import { webTaskTool, WEB_TASK_TOOL_SCHEMAS, WEB_TASK_TOOLS } from './web-task.js';
 import { critiqueTool, CRITIQUE_TOOL_SCHEMAS, CRITIQUE_TOOLS } from './critique.js';
+import { showUiTool, CANVAS_TOOL_SCHEMAS, CANVAS_TOOLS, CANVAS_KEYWORDS } from './canvas.js';
 import { agentMessagingToolSchemas, AGENT_MESSAGE_TOOLS } from '../agent-teams.js';
 
 export const TOOL_IMPLS = {
@@ -39,9 +40,10 @@ export const TOOL_IMPLS = {
   web_search: webSearchTool,
   critique: critiqueTool,
   web_task: webTaskTool,
+  show_ui: showUiTool,
 };
 
-const PLAN_READ_ONLY = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write'];
+const PLAN_READ_ONLY = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'show_ui'];
 
 export const BUILTIN_SCHEMAS = [
   ...OPERATOR_TOOL_SCHEMAS,
@@ -235,6 +237,9 @@ export function listToolSchemas(ctx = {}, strictSchemas = false) {
       }
     } catch {}
   }
+  // OX Canvas rides after the user's own MCP and memory tools, so in the capped
+  // "not offered this turn" inventory their names come first.
+  for (const s of CANVAS_TOOL_SCHEMAS) if (!schemas.some((x) => x.name === s.name)) schemas.push(s);
   // Wave 6b: subagent tool — available unless explicitly disabled for this ctx.
   if (ctx.enableSubagents !== false && !schemas.some((x) => x.name === 'subagent')) {
     schemas.push(subagentToolSchema());
@@ -532,7 +537,7 @@ export function relevantSkillToolNames({ skillIndex = '', message = '', availabl
 // True when the candidate cut would drop a tool from a group this message is
 // about. Such a cut is refused — a dropped tool the request needs is silently
 // unsatisfiable, which is worse than carrying the bytes.
-function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, critiqueOn, agentOn, skillNames }) {
+function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, critiqueOn, agentOn, canvasOn, skillNames }) {
   const kept = new Set(filtered.map((s) => s?.name));
   const skillSet = new Set(skillNames);
   for (const s of schemas) {
@@ -544,6 +549,7 @@ function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, web
     if (webTaskOn && WEB_TASK_TOOLS.includes(n)) return true;
     if (critiqueOn && CRITIQUE_TOOLS.includes(n)) return true;
     if (agentOn && AGENT_MESSAGE_TOOLS.includes(n)) return true;
+    if (canvasOn && CANVAS_TOOLS.includes(n)) return true;
     if (skillSet.has(n)) return true;
   }
   return false;
@@ -575,6 +581,7 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
   // a subagent turn, which runSubagent's `always` set already pays for.
   const isSubagentOffer = names.includes('report_result');
   const agentOn = isSubagentOffer || keywordSignal(message, AGENT_KEYWORDS) !== null;
+  const canvasOn = keywordSignal(message, CANVAS_KEYWORDS) !== null;
   const keep = new Set(NARROW_CORE_TOOLS);
   for (const t of skillNames) keep.add(t);
   for (const n of names) {
@@ -584,11 +591,12 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
     if (webTaskOn && WEB_TASK_TOOLS.includes(n)) keep.add(n);
     if (critiqueOn && CRITIQUE_TOOLS.includes(n)) keep.add(n);
     if (agentOn && AGENT_MESSAGE_TOOLS.includes(n)) keep.add(n);
+    if (canvasOn && CANVAS_TOOLS.includes(n)) keep.add(n);
   }
   const filtered = schemas.filter((s) => typeof s?.name === 'string' && keep.has(s.name));
   if (filtered.length < NARROW_FLOOR) return schemas;
   if (filtered.length === schemas.length) return schemas;
-  if (dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, critiqueOn, agentOn, skillNames })) return schemas;
+  if (dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, critiqueOn, agentOn, canvasOn, skillNames })) return schemas;
   const saved =
     estimateTokens(JSON.stringify(schemas)) - estimateTokens(JSON.stringify(filtered));
   if (saved < NARROW_MIN_SAVING) return schemas;
