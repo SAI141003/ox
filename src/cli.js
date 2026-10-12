@@ -6752,11 +6752,16 @@ async function replWithBudget(config, opts, flags, budget) {
     await runTurn(text, turn);
   }
 
+  // Lines typed while a turn runs (see rl.on('line') below).
+  const queue = [];
   if (opts.ipcServer) {
-    opts.ipcServer.on('user-message', ({ text, imagePaths, audioPath, voice }) => {
+    opts.ipcServer.on('user-message', function onIslandMessage(msg) {
+      const { text, imagePaths, audioPath, voice } = msg;
       if (state.exiting) return;
       if (state.busy) {
-        process.stdout.write(`${c.dim(`\n(island: "${truncate(text, 60)}" waits until this turn ends — ask again then)`)}\n`);
+        // Queued like typed lines: a spoken question is never lost.
+        queue.push(() => onIslandMessage(msg));
+        process.stdout.write(`${c.dim(`\n(island question queued: runs when this turn ends)`)}\n`);
         return;
       }
       state.busy = true;
@@ -6772,7 +6777,7 @@ async function replWithBudget(config, opts, flags, budget) {
         .catch((err) => process.stdout.write(`${renderError(err)}\n`))
         .finally(() => {
           state.busy = false;
-          if (!state.exiting) rl.prompt();
+          if (!state.exiting) afterTurn();
         });
     });
   }
@@ -6852,8 +6857,8 @@ async function replWithBudget(config, opts, flags, budget) {
   // Type-ahead: a line typed while a turn runs is queued, not dropped, and runs
   // when the turn ends (in order). Ctrl-C stops the current turn; the queue
   // then continues.
-  const queue = [];
-  const runLine = (line) => {
+  queue.length = 0;
+  function runLine(line) {
     state.busy = true;
     Promise.resolve(handleInput(line))
       .catch((err) => {
@@ -6861,16 +6866,22 @@ async function replWithBudget(config, opts, flags, budget) {
       })
       .finally(() => {
         state.busy = false;
-        if (state.exiting) return;
-        const next = queue.shift();
-        if (next !== undefined) {
-          process.stdout.write(`${c.dim(`▸ ${truncate(next, 80)}`)}\n`);
-          runLine(next);
-        } else {
-          rl.prompt();
-        }
+        if (!state.exiting) afterTurn();
       });
-  };
+  }
+  // Every turn (typed, or asked from the island) ends here: run the next
+  // queued line, or give the prompt back.
+  function afterTurn() {
+    const next = queue.shift();
+    if (typeof next === 'function') {
+      next();
+    } else if (next !== undefined) {
+      process.stdout.write(`${c.dim(`▸ ${truncate(next, 80)}`)}\n`);
+      runLine(next);
+    } else {
+      rl.prompt();
+    }
+  }
   rl.on('line', (raw) => {
     const line = raw.trim();
     if (state.exiting) return;
