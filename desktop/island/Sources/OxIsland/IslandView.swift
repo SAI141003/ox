@@ -16,6 +16,7 @@ enum Ink {
     static let amber = Color(hex: "#F5A524")
     static let green = Color(hex: "#34D399")
     static let red = Color(hex: "#F4505E")
+    static let gold = Color(hex: "#E9A66B")
 }
 
 // MARK: - Shape
@@ -73,7 +74,7 @@ struct IslandRoot: View {
 
     var body: some View {
         let phase = IslandLayout.phase(bridge)
-        let s = IslandLayout.shape(phase, metrics, office: bridge.officeSession != nil)
+        let s = IslandLayout.shape(phase, metrics, office: bridge.hasExtraPanel)
         // Top-centred, like the notch. Every child is laid out in the island's
         // own width; the shape both paints the black and clips the content.
         ZStack(alignment: .top) {
@@ -100,6 +101,7 @@ struct IslandRoot: View {
         }
         .frame(width: IslandLayout.panel.width, height: IslandLayout.panel.height, alignment: .top)
         .clipShape(IslandShape(width: s.w, height: s.h, corner: s.corner, top: s.top))
+        .contextMenu { IslandMenu(buddy: bridge.buddy) }
         .animation(phase == .expanded || phase == .launch ? open : close, value: phase)
         .animation(.easeInOut(duration: 0.2), value: bridge.pendingSession?.pending?.id)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
@@ -124,11 +126,23 @@ struct CompactBar: View {
         let oxSize = metrics.height + 2
         let lead = IslandLayout.ear + 8
         HStack(spacing: 0) {
-            OxMascot(mood: bridge.headlineMood, size: oxSize,
-                   anchor: panelPoint(islandWidth: w, x: lead + oxSize / 2, y: metrics.height / 2))
+            OxWalker(mood: bridge.headlineMood, height: oxSize * 0.95)
+                .frame(width: oxSize * 1.3)
             Spacer(minLength: 0)
-            StatusGlyph(bridge: bridge)
-                .frame(width: 26)
+            if let team = bridge.officeSession, team.agents.contains(where: { $0.endedAt == nil }) {
+                // The notch crew: tiny helpers pace the right wing while a team works.
+                let active = Array(team.agents.enumerated().filter { $0.element.endedAt == nil }.prefix(2))
+                ZStack {
+                    ForEach(active, id: \.element.id) { i, _ in
+                        PixelWalker(person: PixelCast.helpers[i % PixelCast.helpers.count], height: metrics.height * 0.92,
+                                    phaseOffset: Double(i) * 1.7)
+                    }
+                }
+                .frame(width: 40)
+            } else {
+                StatusGlyph(bridge: bridge)
+                    .frame(width: 26)
+            }
         }
         .padding(.leading, lead)
         .padding(.trailing, IslandLayout.ear + 10)
@@ -182,7 +196,7 @@ struct ExpandedContent: View {
     @ObservedObject var bridge: OxBridge
     let metrics: NotchMetrics
 
-    static let oxSize: CGFloat = 60
+    static let oxSize: CGFloat = 84
 
     var body: some View {
         let w = IslandLayout.expanded.width
@@ -193,11 +207,20 @@ struct ExpandedContent: View {
                 .frame(height: headerH)
             Card(wash: wash) {
                 HStack(alignment: .center, spacing: 16) {
-                    OxMascot(mood: oxMood, size: Self.oxSize,
-                           anchor: panelPoint(islandWidth: w, x: IslandLayout.ear + 10 + 18 + Self.oxSize / 2,
-                                              y: headerH + cardH / 2))
-                    body(for: focus)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if bridge.buddyActive {
+                        // OX Buddy: your avatar listens, thinks and talks here.
+                        BuddyLane(buddy: bridge.buddy, mood: oxMood)
+                            .frame(width: 120, height: Self.oxSize + 18)
+                        BuddyBody(buddy: bridge.buddy)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        // The ox lives in its own lane: it walks back and forth while
+                        // work runs, grazes while it waits, stamps for an approval.
+                        OxWalker(mood: oxMood, height: Self.oxSize, roam: true)
+                            .frame(width: 190, height: Self.oxSize)
+                        body(for: focus)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
             .frame(height: cardH)
@@ -209,6 +232,13 @@ struct ExpandedContent: View {
                 PixelOffice(bridge: bridge, session: team)
                     .padding(.horizontal, IslandLayout.ear + 18)
                     .padding(.top, 10)
+                    .frame(height: IslandLayout.officeHeight, alignment: .top)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else if let canvas = bridge.canvasSession?.canvas {
+                // What the agent chose to show: its OX Canvas, drawn natively.
+                CanvasView(root: canvas)
+                    .padding(.horizontal, IslandLayout.ear + 10)
+                    .padding(.top, 8)
                     .frame(height: IslandLayout.officeHeight, alignment: .top)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -289,6 +319,8 @@ struct Header: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Ink.muted)
                 .lineLimit(1)
+            MicButton(buddy: bridge.buddy)
+                .padding(.leading, 10)
         }
         .padding(.horizontal, IslandLayout.ear + 20)
     }

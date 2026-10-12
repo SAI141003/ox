@@ -7,7 +7,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let bridge = OxBridge()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // `ox island off` (or the island's own menu) keeps it off until `ox island on`.
+        guard IslandSwitch.enabled || CommandLine.arguments.contains("--force") else {
+            NSApp.terminate(nil)
+            return
+        }
         writePresence()
+        let buddy = bridge.buddy
+        BuddyHotKey.install(press: { buddy.startListening() }, release: { buddy.stopListening() })
         let panel = IslandPanel(bridge: bridge)
         panel.orderFrontRegardless()
         self.panel = panel
@@ -92,6 +99,76 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-launch"), i + 1 < Comm
                let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
                 try? png.write(to: dir.appendingPathComponent(String(format: "t%.2f.png", t)))
             }
+        }
+    }
+    exit(0)
+}
+
+// Dev aid: `OxIsland --render-avatar <dir>` writes one sheet per Buddy character:
+// expressions across, each with a different mouth shape and gesture.
+if let i = CommandLine.arguments.firstIndex(of: "--render-avatar"), i + 1 < CommandLine.arguments.count {
+    let dir = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let poses: [(Expression, Viseme, Gesture)] = [
+        (.neutral, .rest, .rest), (.happy, .open, .beat(2)), (.thinking, .closed, .think),
+        (.surprised, .round, .open), (.worried, .small, .rest), (.listening, .wide, .point), (.happy, .teeth, .wave),
+    ]
+    MainActor.assumeIsolated {
+        for kind in AvatarKind.allCases {
+            let cell: CGFloat = 160
+            let view = Canvas { ctx, _ in
+                for (n, pose) in poses.enumerated() {
+                    var c = ctx
+                    c.translateBy(x: CGFloat(n) * cell, y: 0)
+                    if kind == .ox {
+                        AvatarPainter(kind: kind, look: AvatarLook.of(kind), expression: pose.0, mouth: pose.1,
+                                      gesture: pose.2, level: 0, gaze: CGVector(dx: 0.3, dy: 0), t: 1.0)
+                            .paint(&c, CGSize(width: cell, height: cell))
+                    } else {
+                        let p = PixelBuddy.pose(expression: pose.0, mouth: pose.1, gesture: pose.2, t: 1.0)
+                        PixelCast.draw(&c, kind.rawValue, p, at: CGPoint(x: (cell - 5 * 18) / 2, y: cell - 5 * 26), px: 5)
+                    }
+                }
+            }
+            .frame(width: cell * CGFloat(poses.count), height: cell)
+            .background(Color(hex: "#141518"))
+            let r = ImageRenderer(content: view)
+            r.scale = 2
+            if let img = r.nsImage, let tiff = img.tiffRepresentation,
+               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                try? png.write(to: dir.appendingPathComponent("avatar-\(kind.rawValue).png"))
+            }
+        }
+    }
+    exit(0)
+}
+
+// Dev aid: `OxIsland --render-office <dir>` writes the office with one desk per
+// phase (lead, typing, reading, thinking, done, failed) plus the pasture farmer.
+if let i = CommandLine.arguments.firstIndex(of: "--render-office"), i + 1 < CommandLine.arguments.count {
+    let dir = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    MainActor.assumeIsolated {
+        let desks: [(String, String?, String, SubAgent.Phase, String)] = [
+            ("lead", nil, "thinking", .thinking, "#E9A66B"), ("auth fix", "mira", "edit_file", .working, "#EC4899"),
+            ("find usages", "theo", "grep", .working, "#10B981"), ("plan", "ade", "thinking", .thinking, "#F59E0B"),
+            ("tests", "lin", "done", .done, "#8B5CF6"), ("deploy", "sol", "failed", .failed, "#06B6D4"),
+        ]
+        let view = HStack(alignment: .top, spacing: 4) {
+            ForEach(Array(desks.enumerated()), id: \.offset) { _, d in
+                AgentDesk(name: d.0, person: d.1, detail: d.2, model: "haiku", tokens: 1234, phase: d.3, tint: Color(hex: d.4),
+                          kind: d.1 == nil ? .lead : .sub)
+            }
+            PixelPersonView(person: "farmer", pose: PixelPose(dir: .front, pose: "wave", mouth: "smile"), height: 66)
+            PixelPersonView(person: "farmer", pose: PixelPose(dir: .side, pose: "walk", frame: 1), height: 66)
+        }
+        .padding(10)
+        .background(Color(hex: "#141518"))
+        let r = ImageRenderer(content: view)
+        r.scale = 2
+        if let img = r.nsImage, let tiff = img.tiffRepresentation,
+           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: dir.appendingPathComponent("office.png"))
         }
     }
     exit(0)

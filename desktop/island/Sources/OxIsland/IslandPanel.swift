@@ -28,7 +28,7 @@ enum IslandLayout {
     static let wing: CGFloat = 46
     static let ear: CGFloat = 12
     static let expanded = CGSize(width: 640, height: 168)
-    /// Extra height for the agent office when a run has delegated work.
+    /// Extra height under the card: the agent office, or the run's OX Canvas.
     static let officeHeight: CGFloat = 132
 
     enum Phase { case launch, hidden, compact, expanded }
@@ -37,7 +37,9 @@ enum IslandLayout {
     static func phase(_ bridge: OxBridge) -> Phase {
         if bridge.launching { return .launch }
         if bridge.expanded { return .expanded }
-        return bridge.sessions.isEmpty ? .hidden : .compact
+        // The ox always lives in the wings: asleep when nothing runs (OX_ISLAND_HIDE_IDLE=1 hides it).
+        if bridge.sessions.isEmpty && ProcessInfo.processInfo.environment["OX_ISLAND_HIDE_IDLE"] == "1" { return .hidden }
+        return .compact
     }
 
     /// width, height, bottom corner radius, top radius (<0 = concave ears)
@@ -111,7 +113,7 @@ final class IslandPanel: NSPanel {
         let f = frame
         let local = CGPoint(x: mouse.x - f.minX, y: f.maxY - mouse.y) // top-down
         let m = NotchMetrics.current()
-        let s = IslandLayout.shape(IslandLayout.phase(bridge), m, office: bridge.officeSession != nil)
+        let s = IslandLayout.shape(IslandLayout.phase(bridge), m, office: bridge.hasExtraPanel)
         let island = CGRect(x: (f.width - s.w) / 2, y: 0, width: s.w, height: s.h)
         let inside = island.insetBy(dx: -6, dy: -4).contains(local)
 

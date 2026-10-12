@@ -150,8 +150,32 @@ struct LaunchScene {
         og.translateBy(x: oxSize / 2, y: oxSize / 2)
         og.rotate(by: .degrees(tilt))
         og.translateBy(x: -oxSize / 2, y: -oxSize / 2)
-        let mood: Mood = t < Self.impactAt ? .working("charge") : .idle
-        OxPainter(mood: mood, t: t, look: CGVector(dx: t < Self.impactAt ? 1 : 0.2, dy: 0)).paint(&og, size: CGSize(width: oxSize, height: oxSize))
+        if !OxFrames.frames(.walk).isEmpty {
+            // The real ox: a full gallop for the charge, then the stamp once
+            // it has broken through the glass.
+            let charging = t < Self.impactAt
+            let frames = OxFrames.frames(charging ? .gallop : .alert)
+            let idx = Int(t * (charging ? 30 : 24)) % frames.count
+            let h = oxSize
+            let w = h * 4 / 3
+            og.draw(Image(nsImage: frames[idx]), in: CGRect(x: -(w - h) / 2, y: 0, width: w, height: h))
+        } else if let img = OxArt.body {
+            // The rendered toy, with eyes fixed on where it is going.
+            let box = CGRect(x: 0, y: 0, width: oxSize, height: oxSize)
+            og.draw(Image(nsImage: img), in: box)
+            let a = OxArt.anchors
+            let r = CGFloat(a.radius) * oxSize
+            let lookX: CGFloat = t < Self.impactAt ? r * 0.35 : 0
+            for p in [a.left, a.right] {
+                let c = CGPoint(x: CGFloat(p[0]) * oxSize + lookX, y: CGFloat(p[1]) * oxSize)
+                let e = CGRect(x: c.x - r * 0.75, y: c.y - r * 1.05, width: r * 1.5, height: r * 2.1)
+                og.fill(Path(ellipseIn: e), with: .color(Color(red: 0.1, green: 0.08, blue: 0.07)))
+                og.fill(Path(ellipseIn: CGRect(x: e.minX + e.width * 0.18, y: e.minY + e.height * 0.14, width: e.width * 0.42, height: e.width * 0.42)), with: .color(.white))
+            }
+        } else {
+            let mood: Mood = t < Self.impactAt ? .working("charge") : .idle
+            OxPainter(mood: mood, t: t, look: CGVector(dx: t < Self.impactAt ? 1 : 0.2, dy: 0)).paint(&og, size: CGSize(width: oxSize, height: oxSize))
+        }
 
         // Impact flash.
         if sinceImpact >= 0 && sinceImpact < 0.09 {

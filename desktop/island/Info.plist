@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>dev.ox.island</string>
+	<key>CFBundleName</key>
+	<string>OX Island</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>OX Buddy listens while you hold ⌃⌥Space so you can talk to ox instead of typing.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>OX Buddy turns what you say into a question for ox, on this Mac when possible.</string>
+</dict>
+</plist>

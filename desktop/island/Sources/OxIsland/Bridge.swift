@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 
 // Talks ox's IPC protocol (src/ipc.js): newline-delimited JSON over a Unix
@@ -51,6 +52,12 @@ struct AgentSession: Identifiable, Equatable {
     var pending: PendingApproval?
     var closedAt: Date?
     var agents: [SubAgent] = []
+    /// The last OX Canvas the agent drew with `show_ui`.
+    var canvas: CanvasNode?
+    var canvasAt: Date?
+    /// A spoken question is in flight on this run: collect the reply to speak it.
+    var buddyAsk = false
+    var buddyReply = ""
 
     var project: String {
         cwd.isEmpty ? "ox" : (cwd as NSString).lastPathComponent
@@ -67,10 +74,15 @@ final class OxBridge: ObservableObject {
     private var connections: [String: SocketConnection] = [:]
     private var timer: Timer?
 
+    /// OX Buddy: voice in, avatar talking out. Its changes redraw the island.
+    let buddy: Buddy = MainActor.assumeIsolated { Buddy() }
+    private var buddySink: AnyCancellable?
+
     var pendingSession: AgentSession? { sessions.first { $0.pending != nil } }
     /// A team at work is the moment the office exists for, so it opens by itself.
     var teamWorking: Bool { sessions.contains { $0.closedAt == nil && $0.agents.contains { $0.endedAt == nil } } }
-    var expanded: Bool { hovering || pinnedOpen || pendingSession != nil || peeking || teamWorking }
+    var expanded: Bool { hovering || pinnedOpen || pendingSession != nil || peeking || teamWorking || buddyActive }
+    var buddyActive: Bool { MainActor.assumeIsolated { buddy.active } }
 
     /// The face the notch shows: the most urgent state across all runs.
     var headlineMood: Mood {
@@ -86,6 +98,8 @@ final class OxBridge: ObservableObject {
     private var dirWatch: DispatchSourceFileSystemObject?
 
     func start() {
+        buddySink = MainActor.assumeIsolated { buddy.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() } }
+        MainActor.assumeIsolated { buddy.send = { [weak self] text, shots in self?.ask(text, imagePaths: shots) ?? false } }
         scan()
         // Instant discovery: a new ox socket is a write to $TMPDIR. The slow
         // timer remains as a backstop and for expiring ended runs.
@@ -184,17 +198,25 @@ final class OxBridge: ObservableObject {
         update(path) { s in
             switch type {
             case "text-delta":
+                if s.buddyAsk { s.buddyReply += ev["text"] as? String ?? "" }
                 let t = (s.lastText + (ev["text"] as? String ?? ""))
                 s.lastText = String(t.suffix(240))
                 if s.pending == nil { s.mood = .thinking; s.activity = "thinking" }
             case "tool-start":
                 let name = ev["name"] as? String ?? "tool"
                 s.lastText = "" // the next reply is a new message, not a continuation
+                s.buddyReply = "" // only the final answer is spoken, not the narration
                 s.toolCount += 1
                 s.mood = .working(name)
                 s.activity = Self.describe(tool: name, preview: ev["argsPreview"] as? String ?? "")
             case "tool-end":
                 if (ev["isError"] as? Bool) == true { s.activity = "\(ev["name"] as? String ?? "tool") failed — recovering" }
+                if ev["name"] as? String == "show_ui",
+                   let canvas = ((ev["meta"] as? [String: Any])?["canvas"] as? [String: Any]).flatMap({ CanvasNode($0["tree"]) }) {
+                    s.canvas = canvas
+                    s.canvasAt = Date()
+                    s.activity = "showing you a canvas"
+                }
                 if s.pending == nil { s.mood = .thinking }
             case "usage":
                 s.tokensIn += ev["inputTokens"] as? Int ?? 0
@@ -243,6 +265,19 @@ final class OxBridge: ObservableObject {
                 break
             }
         }
+        // A spoken question's turn is over: the avatar says the answer.
+        if type == "turn-end" || type == "final" || type == "error",
+           let i = sessions.firstIndex(where: { $0.id == path }), sessions[i].buddyAsk {
+            let stop = ev["stopReason"] as? String ?? ""
+            if type != "turn-end" || !["tool_calls", "tool_use"].contains(stop) {
+                let reply = type == "error" ? "Sorry, that run hit an error: \(ev["error"] as? String ?? "unknown")." : sessions[i].buddyReply
+                sessions[i].buddyAsk = false
+                sessions[i].buddyReply = ""
+                MainActor.assumeIsolated { buddy.speak(reply) }
+            }
+        }
+        // A fresh canvas is something the agent wants you to see: open for it.
+        if type == "tool-end", ev["name"] as? String == "show_ui" { peek(for: 10) }
         // Surface endings without being asked: a finished or failed turn peeks.
         if let s = sessions.first(where: { $0.id == path }), s.pending == nil {
             if case .error = s.mood, type == "error" { peek(for: 6) }
@@ -258,6 +293,8 @@ final class OxBridge: ObservableObject {
             s.activity = "session ended"
             s.closedAt = Date()
         }
+        // A run that ends shows its finish (the ox grazes) without a hover.
+        peek(for: 5)
     }
 
     // MARK: actions
@@ -300,6 +337,19 @@ final class OxBridge: ObservableObject {
         return Self.palette[i % Self.palette.count]
     }
 
+    /// Send a spoken question (and the screenshot) to the newest live run.
+    /// False when no ox run is connected.
+    func ask(_ text: String, imagePaths: [String]) -> Bool {
+        guard let s = sessions.last(where: { $0.closedAt == nil && $0.pending == nil }), let conn = connections[s.id] else { return false }
+        conn.send(["type": "user-message", "text": text, "imagePaths": imagePaths, "voice": true])
+        update(s.id) { s in
+            s.buddyAsk = true
+            s.buddyReply = ""
+            s.activity = "you asked: \(Self.shortLabel(text))"
+        }
+        return true
+    }
+
     /// "Answer in terminal": decline to decide; ox keeps its terminal prompt.
     func deferToTerminal(_ session: AgentSession) {
         guard let p = session.pending, let conn = connections[session.id] else { return }
@@ -311,6 +361,14 @@ final class OxBridge: ObservableObject {
         let one = s.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
         return one.count > 26 ? String(one.prefix(25)) + "…" : one
     }
+
+    /// The run whose canvas the island shows: the most recently drawn one.
+    var canvasSession: AgentSession? {
+        sessions.filter { $0.canvas != nil }.max { ($0.canvasAt ?? .distantPast) < ($1.canvasAt ?? .distantPast) }
+    }
+
+    /// The office (a team at work) or a canvas extends the expanded island.
+    var hasExtraPanel: Bool { officeSession != nil || canvasSession != nil }
 
     /// The session whose team the office shows: the one with the most agents.
     var officeSession: AgentSession? {

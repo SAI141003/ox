@@ -45,6 +45,8 @@ private let BODY_B = [
 struct AgentDesk: View {
     enum Kind { case lead, sub }
     let name: String
+    /// The pixel helper sitting at this desk (nil = the lead's pixel ox).
+    var person: String? = nil
     let detail: String
     let model: String
     let tokens: Int
@@ -92,6 +94,7 @@ struct AgentDesk: View {
     }
 
     private func draw(_ g: inout GraphicsContext, size: CGSize, t: Double) {
+        if let person, PixelCast.has(person) { drawHelper(&g, person: person, t: t); return }
         let working = phase == .working || phase == .starting
         // Floor shadow + desk.
         g.fill(Path(roundedRect: CGRect(x: 6, y: 52, width: 72, height: 8), cornerRadius: 2), with: .color(Color(hex: "#5B3A24")))
@@ -140,6 +143,63 @@ struct AgentDesk: View {
     }
 }
 
+extension AgentDesk {
+    /// A helper at a desk, Pixel-Agents style: seen from behind at the
+    /// monitor, typing or reading by tool; standing to cheer or slump at the end.
+    func drawHelper(_ g: inout GraphicsContext, person: String, t: Double) {
+        let wood = Color(hex: "#8A5A3B"), woodDark = Color(hex: "#5E3C26")
+        // Floor shadow, desk with legs, monitor.
+        g.fill(Path(ellipseIn: CGRect(x: 14, y: 58, width: 56, height: 7)), with: .color(.black.opacity(0.35)))
+        g.fill(Path(roundedRect: CGRect(x: 8, y: 28, width: 68, height: 10), cornerRadius: 2), with: .color(wood))
+        g.fill(Path(CGRect(x: 8, y: 36, width: 68, height: 2)), with: .color(woodDark))
+        g.fill(Path(CGRect(x: 11, y: 38, width: 3, height: 10)), with: .color(woodDark))
+        g.fill(Path(CGRect(x: 70, y: 38, width: 3, height: 10)), with: .color(woodDark))
+        let busy = phase == .working || phase == .starting
+        g.fill(Path(roundedRect: CGRect(x: 27, y: 6, width: 30, height: 20), cornerRadius: 2), with: .color(Color(hex: "#D8D4CC")))
+        g.fill(Path(CGRect(x: 29, y: 8, width: 26, height: 15)), with: .color(Color(hex: busy ? "#1F3B2C" : "#22252B")))
+        if busy {
+            for i in 0..<4 {
+                let w = CGFloat(5 + (Int(t * 6) + i * 3) % 14)
+                g.fill(Path(CGRect(x: 31, y: 10 + CGFloat(i) * 3.2, width: w, height: 1.4)), with: .color(tint.opacity(0.9)))
+            }
+        }
+        g.fill(Path(CGRect(x: 40, y: 26, width: 4, height: 3)), with: .color(Color(hex: "#9C978E")))
+
+        let px: CGFloat = 1.55
+        let w = px * 18, h = px * 26
+        let tool = detail.lowercased()
+        let reading = ["read", "grep", "glob", "list", "search", "fetch", "web"].contains { tool.contains($0) }
+        switch phase {
+        case .done, .failed:
+            // Stands up beside the desk: arms up if it worked, a flat mouth if not.
+            let pose = phase == .done ? PixelPose(dir: .front, pose: "open", mouth: "smile")
+                                      : PixelPose(dir: .front, pose: "stand", mouth: "closed")
+            PixelCast.draw(&g, person, pose, at: CGPoint(x: 42 - w / 2, y: 66 - h), px: px)
+        default:
+            // Seated with its back to us; the chair hides the legs.
+            let pose = phase == .thinking || !busy
+                ? PixelPose(dir: .back, pose: "read")
+                : PixelPose(dir: .back, pose: reading ? "read" : "type", frame: Int(t * 6) % 2)
+            g.fill(Path(roundedRect: CGRect(x: 30, y: 52, width: 24, height: 9), cornerRadius: 3), with: .color(tint.opacity(0.75)))
+            PixelCast.draw(&g, person, pose, at: CGPoint(x: 42 - w / 2, y: 64 - h + 6), px: px)
+        }
+
+        // Speech bubbles, as in Pixel Agents: thinking dots, done, failed.
+        func bubble(_ text: String, _ color: Color) {
+            let r = CGRect(x: 56, y: 0, width: 24, height: 13)
+            g.fill(Path(roundedRect: r, cornerRadius: 4), with: .color(.white))
+            g.fill(Path(CGRect(x: 59, y: 12, width: 3, height: 3)), with: .color(.white))
+            g.draw(Text(text).font(.system(size: 9, weight: .heavy)).foregroundColor(color), at: CGPoint(x: r.midX, y: r.midY))
+        }
+        switch phase {
+        case .thinking: bubble(String(repeating: ".", count: 1 + Int(t * 3) % 3), .black)
+        case .done: bubble("✓", Ink.green)
+        case .failed: bubble("!", Ink.red)
+        default: break
+        }
+    }
+}
+
 struct PixelOffice: View {
     @ObservedObject var bridge: OxBridge
     let session: AgentSession
@@ -162,7 +222,8 @@ struct PixelOffice: View {
                               tokens: session.tokensIn + session.tokensOut,
                               phase: leadPhase, tint: Color(hex: bridge.color(of: session)), kind: .lead)
                     ForEach(Array(session.agents.enumerated()), id: \.element.id) { i, a in
-                        AgentDesk(name: a.label, detail: detail(a), model: a.model, tokens: a.tokens,
+                        AgentDesk(name: a.label, person: PixelCast.helpers[i % PixelCast.helpers.count],
+                                  detail: detail(a), model: a.model, tokens: a.tokens,
                                   phase: a.phase, tint: Color(hex: Self.tints[(i + 1) % Self.tints.count]))
                     }
                 }
