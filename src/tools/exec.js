@@ -4,6 +4,7 @@ import { prepareSandbox, appendSandboxEvent } from '../sandbox.js';
 import { sanitizeEnv } from '../env-sanitize.js';
 import { ensureSession, execArgv, interruptSession } from '../docker-backend.js';
 import { gitToplevel } from '../git-fast.js';
+import { redactSecrets } from '../memory.js';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_CHARS = 25_000;
@@ -17,19 +18,23 @@ const CATASTROPHIC = [
   { re: /(?<![\w-])mkfs(?:\.[a-z0-9]+)?\b/, reason: 'mkfs filesystem destruction' },
   { re: /(?<![\w-])dd\b[^|;&]*\bof=\/dev\//, reason: 'dd writing to a raw device' },
   { re: /(?<![\w-])find\b[^|;&]*\s-delete\b/, reason: 'find … -delete bulk deletion' },
-];
-
-// EXTENDED: lifted when ctx.yolo === true.
-const EXTENDED = [
-  { re: /(?<![\w-])sudo(?![\w-])/, reason: 'use of sudo' },
+  // Running code nobody has seen is how an injected instruction becomes code
+  // execution, so these hold even under -y (bench/compare-features.mjs: Hermes
+  // and ox both ran `curl … | sh` in permissive mode). Download the script to a
+  // file, read it, then run it: three visible steps instead of one blind one.
   {
     re: /(?<![\w-])(?:curl|wget)\b[^|;&]*\|\s*(?:sudo\s+)?(?:ba|z|da|fi)?sh\b/,
-    reason: 'piping remote content into a shell (curl/wget | sh)',
+    reason: 'piping remote content into a shell (curl/wget | sh) — save it to a file and read it before running it',
   },
   {
     re: /(?<![\w-])(?:base64|xxd|openssl\s+enc)\b[^|;&]*\|\s*(?:sudo\s+)?(?:ba|z|da|fi)?sh\b/,
     reason: 'decoded content piped into a shell (base64/hex | sh)',
   },
+];
+
+// EXTENDED: lifted when ctx.yolo === true.
+const EXTENDED = [
+  { re: /(?<![\w-])sudo(?![\w-])/, reason: 'use of sudo' },
   {
     re: /(?<![\w-])base64\b[^|;&]*(?:-d|--decode)[^|;&]*\|\s*(?:python3?|node)\b/,
     reason: 'decoded content piped into an interpreter (base64 -d | python/node)',
@@ -534,5 +539,8 @@ export async function bashTool(args = {}, ctx = {}) {
   if (capped.truncated) {
     content += TRUNCATION_MARK;
   }
+  // A key printed by the command (cat .env, env, a config dump) never reaches the model.
+  const red = redactSecrets(content);
+  if (red.count) content = `${red.text}\n[ox: ${red.count} credential(s) redacted from this output]`;
   return { content, isError: exit.code !== 0 || timedOut || aborted };
 }

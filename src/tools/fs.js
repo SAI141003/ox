@@ -2,6 +2,7 @@ import { constants as fsConstants, promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
+import { redactSecrets } from '../memory.js';
 
 const MAX_READ_CHARS = 100_000;
 const MAX_LIST_ENTRIES = 500;
@@ -417,6 +418,9 @@ export async function readFileTool(args = {}, ctx = {}) {
   } else if (head.length + body.length > MAX_READ_CHARS) {
     body = body.slice(0, MAX_READ_CHARS - head.length) + '\n[truncated] — output capped at 100,000 characters';
   }
+  // Credentials are replaced by [REDACTED: ...] so a key in .env never reaches the model.
+  const red = redactSecrets(body);
+  if (red.count) body = `${red.text}\n[ox: ${red.count} credential(s) redacted; the file on disk is unchanged]`;
   return ok(head + body);
 }
 
@@ -1015,5 +1019,6 @@ export async function grepTool(args = {}, ctx = {}) {
   if (!matches.length) return ok(`No matches for /${pattern}/ under ${displayPath(base, ctx)}.`);
   let text = matches.join('\n');
   if (truncated) text += `\n… [capped at ${MAX_GREP_MATCHES} matches — results truncated]`;
-  return ok(text);
+  const red = redactSecrets(text);
+  return ok(red.count ? `${red.text}\n[ox: ${red.count} credential(s) redacted]` : text);
 }

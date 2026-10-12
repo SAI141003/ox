@@ -138,6 +138,41 @@ const INJECTION_PATTERNS = [
   },
 ];
 
+/**
+ * Replace every credential in `text` with `[REDACTED: <what it was>]`, keeping
+ * the rest (the variable name, the line, the file's shape) so the agent still
+ * knows the setting exists. For a `name = value` match only the value goes;
+ * a PEM private key loses its whole body. Returns { text, count }.
+ *
+ * Used on what tools hand back to the model (read_file, grep, bash): a key in
+ * .env must never travel to a provider (bench/compare-features.mjs found ox
+ * sending it; Hermes redacts). OX_ALLOW_SECRET_READS=1 turns it off.
+ */
+export function redactSecrets(text, env = process.env) {
+  let out = String(text ?? '');
+  if (env?.OX_ALLOW_SECRET_READS === '1' || !out) return { text: out, count: 0 };
+  let count = 0;
+  // PEM private keys: the whole block.
+  out = out.replace(/-----BEGIN ([A-Z0-9 ]*PRIVATE KEY)-----[\s\S]*?(?:-----END \1-----|$)/g, (_, kind) => {
+    count++;
+    return `[REDACTED: a PEM ${kind.toLowerCase()} block]`;
+  });
+  for (const { re, label, guard } of SECRET_PATTERNS) {
+    if (/PEM/.test(label)) continue;
+    const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
+    out = out.replace(g, (...m) => {
+      const match = m[0];
+      const groups = m.slice(1, -2);
+      if (guard && !guard([match, ...groups])) return match;
+      count++;
+      const value = groups.find((x) => typeof x === 'string' && x.length >= 8);
+      const tag = `[REDACTED: ${label.replace(/\s*\(.*\)$/, '')}]`;
+      return value && match.endsWith(value) ? match.slice(0, match.length - value.length) + tag : tag;
+    });
+  }
+  return { text: out, count };
+}
+
 // Returns null when the text is safe, otherwise `{ kind, label }` describing the
 // class that matched. The offending text is never included, so a caller can
 // surface the reason without leaking the secret into the transcript.
