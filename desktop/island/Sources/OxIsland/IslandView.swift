@@ -126,7 +126,7 @@ struct CompactBar: View {
         let oxSize = metrics.height + 2
         let lead = IslandLayout.ear + 8
         HStack(spacing: 0) {
-            OxWalker(mood: bridge.headlineMood, height: oxSize * 0.95)
+            OxWalker(mood: bridge.headlineMood, height: oxSize * 0.95, roam: true)
                 .frame(width: oxSize * 1.3)
             Spacer(minLength: 0)
             if let team = bridge.officeSession, team.agents.contains(where: { $0.endedAt == nil }) {

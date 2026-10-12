@@ -137,8 +137,10 @@ final class Pasture {
         switch r {
         case ..<0.35: act = .graze; until = t + Double.random(in: 6...10)
         case ..<0.60:
+            // No room to walk (the compact notch): look around in place instead.
+            guard lane >= 8 else { act = .look; until = t + Double.random(in: 4...6); return }
             act = .wander
-            target = lane < 8 ? x : CGFloat.random(in: 0...lane)
+            target = CGFloat.random(in: 0...lane)
             if abs(target - x) < lane * 0.15 { target = x < lane / 2 ? lane * 0.85 : lane * 0.15 }
         case ..<0.75: act = .look; until = t + Double.random(in: 4...6)
         case ..<0.90: act = .stand; until = t + Double.random(in: 3...5)
@@ -213,6 +215,9 @@ struct OxWalker: View {
                     .interpolation(.high)
                     .frame(width: width, height: height)
                     .scaleEffect(x: right ? 1 : -1, y: 1)
+                    // A soft warm rim so the graphite hide reads on the black notch.
+                    .shadow(color: Color(hex: "#E9C27B").opacity(0.35), radius: 1.2)
+                    .shadow(color: .white.opacity(0.18), radius: 3)
                     .offset(x: x)
             }
             if forced == nil, roam, let v = pasture.visitor {
