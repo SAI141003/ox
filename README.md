@@ -158,6 +158,24 @@ other OpenAI clients ignore, and only the tool's name and a short preview leave
 the server, never its output. With `OX_SERVE_API_KEY` set, the page asks for
 the key and the API stays locked without it.
 
+## Run the agent's commands in a container
+
+```bash
+ox --backend docker                     # node:22-bookworm
+ox --backend docker:python:3.12-slim    # any image
+ox --backend docker:alpine:offline      # no network inside the container
+ox backend list                         # what is available right now
+```
+
+With `--backend docker`, every command the agent runs goes into one container
+for the session (started on the first command and removed when ox exits), with
+your project mounted at `/workspace`. ox's file edits and the container see the
+same files, but nothing else from your machine is inside: not your home folder,
+not `~/.ssh`, not your environment variables. Subagents share the session's
+container. Timeouts and Ctrl-C also stop the processes inside it. Set it for
+every run with `"backend": "docker"` in `~/.ox/config.json` or `OX_BACKEND`;
+`OX_DOCKER_BIN=podman` uses Podman.
+
 ## Reading JavaScript-only pages
 
 Many sites (React, Next, Vue) send an empty `<div id="root">` and build the page

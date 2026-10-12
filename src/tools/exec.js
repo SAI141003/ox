@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { prepareSandbox, appendSandboxEvent } from '../sandbox.js';
 import { sanitizeEnv } from '../env-sanitize.js';
+import { ensureSession, execArgv, interruptSession } from '../docker-backend.js';
+import { gitToplevel } from '../git-fast.js';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_CHARS = 25_000;
@@ -396,10 +398,22 @@ export async function bashTool(args = {}, ctx = {}) {
     include: sandboxProfile?.env_include,
   });
   const shellPath = process.env.SHELL || '/bin/zsh';
-  const argv =
+  let argv =
     runner && !runner.degraded && Array.isArray(runner.argvPrefix)
       ? [...runner.argvPrefix, shellPath, '-lc', command]
       : [shellPath, '-lc', command];
+
+  // --backend docker: the command runs in the session container (the
+  // container is the sandbox); the project is mounted there at /workspace.
+  const docker = ctx.backend?.kind === 'docker' ? ctx.backend : null;
+  if (docker) {
+    try {
+      await ensureSession(docker, gitToplevel(cwd) ?? cwd);
+    } catch (e) {
+      return err(`bash (docker backend): ${e?.message ?? e}`);
+    }
+    argv = execArgv(docker, cwd, command);
+  }
 
   let child;
   try {
@@ -429,6 +443,7 @@ export async function bashTool(args = {}, ctx = {}) {
     timedOut = true;
     killedWith = 'SIGTERM';
     killGroup(child, 'SIGTERM');
+    if (docker) interruptSession(docker);
     setTimeout(() => {
       if (!settled) {
         killedWith = 'SIGKILL';
@@ -461,6 +476,7 @@ export async function bashTool(args = {}, ctx = {}) {
         aborted = true;
         killedWith = 'SIGTERM';
         killGroup(child, 'SIGTERM');
+        if (docker) interruptSession(docker);
         if (!settled) {
           settled = true;
           resolve({ code: null, signal: 'SIGTERM' });

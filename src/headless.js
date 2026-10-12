@@ -153,6 +153,7 @@ export async function assembleCtx({ config, target, opts = {}, auxTarget = null 
     fallbackTargets,
     // Wave5a A: effective OS sandbox profile (kind 'off' when unset).
     sandbox: opts.sandbox ?? null,
+    backend: opts.backend ?? null,
     // Wave5b K: read-only auto-approve ladder kill switch.
     strictApprovals,
     // Wave 6b: subagent delegation handler + tool inventory for nesting.

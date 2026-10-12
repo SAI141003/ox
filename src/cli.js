@@ -1,4 +1,5 @@
 import { expandLlmsRefs } from './llms-txt.js';
+import { parseBackendSpec } from './docker-backend.js';
 import { buddyTurn, captureScreen } from './buddy.js';
 import { getCanvas, hasCanvas, canvasWidth, readOnlyRunner } from './tools/canvas.js';
 import fs from 'node:fs';
@@ -455,6 +456,7 @@ function usage() {
   '      --aux-bot <name>           auxiliary bot for cheap calls: compaction, verifier, max-mode',
     '      --max-cost <usd>           stop subsequent work at this spend (0 disables paid work)',
     '      --image <file>             attach an image (png/jpg/gif/webp) to the prompt; repeatable',
+    '      --backend <where>          run the agent\'s commands: local (default) | docker | docker:<image>[:offline]',
     '      --verify                   independent goal verifier audits final answers',
       '      --repo-map                include repo structure map in system prompt',
       '      --context                print the per-segment context breakdown and exit (no model call)',
@@ -4216,11 +4218,14 @@ async function runSubcommand(cmd, args) {
     case 'backend': {
       const action = String(args[0] ?? '').trim().toLowerCase();
       const manager = createBackendManager(process.cwd());
-      if (action === 'list') {
-        console.log(c.bold('available backends'));
-        for (const [name, info] of Object.entries(BACKENDS)) {
-          console.log(`  ${name}: ${info.description} ${info.available ? c.green('✓') : c.dim('✗')}`);
-        }
+      if (action === 'list' || action === '') {
+        const { dockerProblem, DEFAULT_DOCKER_IMAGE } = await import('./docker-backend.js');
+        const problem = dockerProblem();
+        console.log(c.bold('where the agent\'s commands run (--backend)'));
+        console.log(`  ${c.green('✓')} local   on this machine (default)`);
+        console.log(problem
+          ? `  ${c.dim('✗')} docker  ${c.dim(problem)}`
+          : `  ${c.green('✓')} docker  in a container with this project at /workspace (default image ${DEFAULT_DOCKER_IMAGE}; docker:<image>, docker:<image>:offline)`);
         return;
       }
       console.log(c.dim('usage: ox backend list'));
@@ -4550,6 +4555,7 @@ async function replWithBudget(config, opts, flags, budget) {
   }
   // Wave5a A: the sandbox profile travels in ctx so tool spawns enforce it.
   if (opts.sandbox && !ctx.sandbox) ctx.sandbox = opts.sandbox;
+  if (opts.backend && !ctx.backend) ctx.backend = opts.backend;
   // Wave5a F: audit rows carry the session id.
   ctx.sessionId = session.id;
 
@@ -6896,6 +6902,13 @@ export async function main(argv = []) {
         i++;
         break;
       }
+      case '--backend': {
+        const v = needValue(a, i);
+        if (v === null) return;
+        flags.backend = v;
+        i++;
+        break;
+      }
       case '--rewind': {
         const v = needValue(a, i);
         if (v === null) return;
@@ -7019,8 +7032,18 @@ export async function main(argv = []) {
     process.exitCode = 3;
     return;
   }
+  // --backend (or config "backend"): where the agent's commands run.
+  let backend = null;
+  try {
+    backend = parseBackendSpec(flags.backend ?? config.backend ?? process.env.OX_BACKEND);
+  } catch (e) {
+    process.stderr.write(`ox: ${e.message}\n`);
+    process.exitCode = 3;
+    return;
+  }
   const opts = {
     ipcServer,
+    backend,
     images: flags.images ?? [],
     json: flags.json,
     yolo: flags.yolo,
