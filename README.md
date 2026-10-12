@@ -133,9 +133,27 @@ keeps a single run out of it.
 Hold **⌃⌥Space** (or click the mic in the island) and ask out loud: "why is
 this test red?", "where do I turn on dark mode?". The island listens with
 on-device speech recognition and takes a screenshot when you start speaking.
-The live ox run answers, and your avatar (Ox, Ava or Kai; right-click to
-choose) speaks the reply with lip-sync, expressions and hand gestures. When the
-answer names a place on screen, a pointer flies there.
+The live ox run answers, and your avatar (the Ox or one of the pixel cast;
+right-click to choose) speaks the reply with lip-sync, expressions and hand
+gestures. When the answer names a place on screen, a pointer flies there.
+
+What you say arrives the way you meant it:
+
+- **Accurate:** the island records your question while you hold the key and,
+  with whisper.cpp installed (`brew install whisper-cpp`, then
+  `ox voice setup` for a 142 MB model or `ox voice setup small.en` for a
+  466 MB one), ox transcribes the recording on your Mac. Without whisper it
+  uses Apple's on-device recognizer, with automatic punctuation. It waits for
+  the recognizer's final result, so the last word isn't cut off.
+- **Clean:** "um" and "uh" are removed, repeated words ("the the") collapse,
+  spacing and punctuation are fixed, sentences are capitalized, and "new line"
+  and "new paragraph" work.
+- **Your project's names:** "package dot json" becomes `package.json`, "use
+  state" becomes `useState`, and "read me" becomes `README.md`, matched only
+  against names that exist in this project.
+
+`ox voice status` shows what is in use, and `ox voice test --text "um so open
+package dot json"` shows the cleanup on typed text.
 
 From the terminal, `/screen <question>` does the same with a screenshot, and
 `ox -p "…" --image shot.png` attaches any image. Every provider gets the image

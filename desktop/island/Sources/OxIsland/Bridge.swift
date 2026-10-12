@@ -99,7 +99,7 @@ final class OxBridge: ObservableObject {
 
     func start() {
         buddySink = MainActor.assumeIsolated { buddy.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() } }
-        MainActor.assumeIsolated { buddy.send = { [weak self] text, shots in self?.ask(text, imagePaths: shots) ?? false } }
+        MainActor.assumeIsolated { buddy.send = { [weak self] text, shots, audio in self?.ask(text, imagePaths: shots, audioPath: audio) ?? false } }
         scan()
         // Instant discovery: a new ox socket is a write to $TMPDIR. The slow
         // timer remains as a backstop and for expiring ended runs.
@@ -345,9 +345,11 @@ final class OxBridge: ObservableObject {
 
     /// Send a spoken question (and the screenshot) to the newest live run.
     /// False when no ox run is connected.
-    func ask(_ text: String, imagePaths: [String]) -> Bool {
+    func ask(_ text: String, imagePaths: [String], audioPath: String? = nil) -> Bool {
         guard let s = sessions.last(where: { $0.closedAt == nil && $0.pending == nil }), let conn = connections[s.id] else { return false }
-        conn.send(["type": "user-message", "text": text, "imagePaths": imagePaths, "voice": true])
+        var msg: [String: Any] = ["type": "user-message", "text": text, "imagePaths": imagePaths, "voice": true]
+        if let audioPath { msg["audioPath"] = audioPath }
+        conn.send(msg)
         update(s.id) { s in
             s.buddyAsk = true
             s.buddyReply = ""

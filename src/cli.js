@@ -1,6 +1,7 @@
 import { expandLlmsRefs } from './llms-txt.js';
 import { parseBackendSpec } from './docker-backend.js';
 import { buddyTurn, captureScreen } from './buddy.js';
+import { dictate, whisperModel, whisperBinary, WHISPER_MODELS, MODELS_DIR, transcribeFile, projectVocabulary, cleanTranscript, correctVocabulary } from './dictation.js';
 import { getCanvas, hasCanvas, canvasWidth, readOnlyRunner } from './tools/canvas.js';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -3192,6 +3193,92 @@ async function taskBoardVerb(sub, rest) {
   }
 }
 
+// `ox voice status|setup|test`: OX Buddy's dictation (src/dictation.js).
+async function cmdVoiceDictation(action, rest) {
+  const bin = whisperBinary();
+  const model = whisperModel();
+  if (action === 'status') {
+    console.log(c.bold('OX Buddy dictation'));
+    console.log(`  recognizer   ${bin ? c.green(`whisper.cpp (${bin})`) : c.dim('Apple speech (install whisper.cpp for better accuracy: brew install whisper-cpp)')}`);
+    console.log(`  model        ${model ? c.green(path.basename(model)) : c.dim(`none: ox voice setup  (base.en ${WHISPER_MODELS['base.en'].mb} MB, small.en ${WHISPER_MODELS['small.en'].mb} MB)`)}`);
+    console.log(`  cleanup      ${c.green('on')} ${c.dim('fillers, stutters, punctuation, spacing, "new line"')}`);
+    console.log(`  names        ${c.green('on')} ${c.dim(`${projectVocabulary(process.cwd()).length} names from this project (package dot json -> package.json)`)}`);
+    return true;
+  }
+  if (action === 'test') {
+    const file = rest.find((a) => !a.startsWith('--'));
+    if (!file) {
+      // Without audio: show what cleanup and correction do to typed text.
+      process.stderr.write('usage: ox voice test <audio file>   or   ox voice test --text "um so open package dot json"\n');
+      process.exitCode = 3;
+      return true;
+    }
+    const ti = rest.indexOf('--text');
+    if (ti >= 0) {
+      const vocab = projectVocabulary(process.cwd());
+      console.log(correctVocabulary(cleanTranscript(rest[ti + 1] ?? ''), vocab));
+      return true;
+    }
+    const d = await dictate({ audioPath: path.resolve(file), cwd: process.cwd() });
+    if (d.via !== 'whisper') {
+      process.stderr.write(`${c.red('✗ whisper is not available')} — ${!bin ? 'install whisper.cpp (brew install whisper-cpp)' : 'run: ox voice setup'}\n`);
+      process.exitCode = 1;
+      return true;
+    }
+    console.log(d.text);
+    return true;
+  }
+  // setup: download a whisper model, after saying what and how big.
+  const name = rest.find((a) => !a.startsWith('--')) ?? 'base.en';
+  const spec = WHISPER_MODELS[name];
+  if (!spec) {
+    process.stderr.write(`ox: unknown model '${name}' (choose ${Object.keys(WHISPER_MODELS).join(', ')})\n`);
+    process.exitCode = 3;
+    return true;
+  }
+  const dest = path.join(MODELS_DIR, spec.file);
+  if (fs.existsSync(dest)) {
+    console.log(`${c.green('✓')} ${spec.file} is already installed (${dest})`);
+    return true;
+  }
+  const url = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${spec.file}`;
+  console.log(`Download ${c.bold(spec.file)} (~${spec.mb} MB) from huggingface.co/ggerganov/whisper.cpp to ${dest}`);
+  if (!rest.includes('--yes')) {
+    if (!process.stdin.isTTY) {
+      process.stderr.write('ox: confirm with --yes to download in a non-interactive shell\n');
+      process.exitCode = 3;
+      return true;
+    }
+    const readline = await import('node:readline/promises');
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const answer = (await rl.question('Download it now? [y/N] ')).trim().toLowerCase();
+    rl.close();
+    if (answer !== 'y' && answer !== 'yes') { console.log(c.dim('cancelled')); return true; }
+  }
+  fs.mkdirSync(MODELS_DIR, { recursive: true });
+  const res = await fetch(url, { redirect: 'follow' });
+  if (!res.ok || !res.body) {
+    process.stderr.write(`${c.red('✗ download failed')}: HTTP ${res.status}\n`);
+    process.exitCode = 1;
+    return true;
+  }
+  const total = Number(res.headers.get('content-length')) || spec.mb * 1048576;
+  const tmp = `${dest}.part`;
+  const out = fs.createWriteStream(tmp);
+  let got = 0;
+  let shown = -1;
+  for await (const chunk of res.body) {
+    out.write(chunk);
+    got += chunk.length;
+    const pct = Math.floor((got / total) * 100);
+    if (pct !== shown && process.stdout.isTTY) { shown = pct; process.stdout.write(`\r  ${pct}%  ${(got / 1048576).toFixed(0)} MB`); }
+  }
+  await new Promise((r) => out.end(r));
+  fs.renameSync(tmp, dest);
+  console.log(`\n${c.green('✓')} installed ${spec.file}. OX Buddy now transcribes with whisper.`);
+  return true;
+}
+
 async function cmdTask(args = []) {
   const sub = String(args[0] ?? '').trim().toLowerCase();
   const rest = args.slice(1);
@@ -4014,6 +4101,10 @@ async function runSubcommand(cmd, args) {
     }
     case 'voice': {
       const action = String(args[0] ?? '').trim().toLowerCase();
+      if (action === '' || action === 'status' || action === 'setup' || action === 'test') {
+        const done = await cmdVoiceDictation(action || 'status', args.slice(1));
+        if (done) return;
+      }
       if (action === 'start' || action === 'stop' || action === 'status') {
         const vm = createVoiceMode(process.cwd());
         if (action === 'start') {
@@ -6621,15 +6712,22 @@ async function replWithBudget(config, opts, flags, budget) {
   }
 
   if (opts.ipcServer) {
-    opts.ipcServer.on('user-message', ({ text, imagePaths, voice }) => {
+    opts.ipcServer.on('user-message', ({ text, imagePaths, audioPath, voice }) => {
       if (state.exiting) return;
       if (state.busy) {
         process.stdout.write(`${c.dim(`\n(island: "${truncate(text, 60)}" waits until this turn ends — ask again then)`)}\n`);
         return;
       }
-      process.stdout.write(`\n${c.bold(voice ? '🎙 you (island)' : 'you (island)')} ${text}\n`);
       state.busy = true;
-      Promise.resolve(askBuddy(text, { imagePaths, voice }))
+      // Spoken: whisper on the recording when installed, then cleanup and
+      // project-name correction (src/dictation.js), before the agent sees it.
+      Promise.resolve(voice ? dictate({ text, audioPath, cwd: config.cwd }) : { text, via: null })
+        .then((d) => {
+          if (audioPath) fs.rm(audioPath, { force: true }, () => {});
+          const said = d.text || text;
+          process.stdout.write(`\n${c.bold(voice ? '🎙 you (island)' : 'you (island)')} ${said}${d.via === 'whisper' ? c.dim('  · whisper') : ''}\n`);
+          return askBuddy(said, { imagePaths, voice });
+        })
         .catch((err) => process.stdout.write(`${renderError(err)}\n`))
         .finally(() => {
           state.busy = false;

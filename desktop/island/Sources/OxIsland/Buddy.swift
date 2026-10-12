@@ -53,7 +53,12 @@ final class Buddy: NSObject, ObservableObject {
     }
 
     /// Sends a question to a live ox run; false when none is running.
-    var send: ((String, [String]) -> Bool)?
+    /// Sends (text, screenshots, recording) to the live ox run; false when none is running.
+    var send: ((String, [String], String?) -> Bool)?
+    /// The question as audio, for whisper on the ox side (src/dictation.js).
+    private var recording: AVAudioFile?
+    private var recordingURL: URL?
+    private var finalHeard = false
 
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private let audio = AVAudioEngine()
@@ -103,13 +108,23 @@ final class Buddy: NSObject, ObservableObject {
         guard let recognizer, recognizer.isAvailable else { show("Speech recognition is not available right now."); return }
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
+        // Dictation quality: punctuation, the dictation model, on-device when possible.
+        req.addsPunctuation = true
+        req.taskHint = .dictation
         if recognizer.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }
         request = req
+        finalHeard = false
         let input = audio.inputNode
         let format = input.outputFormat(forBus: 0)
+        // Keep the audio too: whisper on the ox side hears more than the live preview.
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("ox-voice-\(Int(Date().timeIntervalSince1970 * 1000)).caf")
+        recording = try? AVAudioFile(forWriting: url, settings: format.settings)
+        recordingURL = recording == nil ? nil : url
+        let file = recording
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buf, _ in
             req.append(buf)
+            try? file?.write(from: buf)
             guard let ch = buf.floatChannelData?[0] else { return }
             let n = Int(buf.frameLength)
             var sum: Float = 0
@@ -119,7 +134,12 @@ final class Buddy: NSObject, ObservableObject {
         }
         task = recognizer.recognitionTask(with: req) { [weak self] result, _ in
             guard let result else { return }
-            DispatchQueue.main.async { self?.heard = result.bestTranscription.formattedString }
+            let text = result.bestTranscription.formattedString
+            let final = result.isFinal
+            DispatchQueue.main.async {
+                self?.heard = text
+                if final { self?.finalHeard = true }
+            }
         }
         do {
             audio.prepare()
@@ -137,21 +157,29 @@ final class Buddy: NSObject, ObservableObject {
         audio.inputNode.removeTap(onBus: 0)
         request?.endAudio()
         level = 0
-        // Give the recognizer a moment to finalize the last word.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+        recording = nil   // closes the file
+        let audioPath = recordingURL?.path
+        // Wait for the recognizer's FINAL result (the last word included), at most 1.5 s.
+        waitForFinal(deadline: Date().addingTimeInterval(1.5)) { [weak self] in
             guard let self else { return }
             self.task?.finish()
             self.task = nil
             self.request = nil
             let text = self.heard.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { self.show("I didn't catch that. Hold ⌃⌥Space and talk."); return }
-            guard self.send?(text, self.shot.map { [$0] } ?? []) == true else {
+            // Nothing heard live, but there is audio: whisper may still hear it.
+            guard !text.isEmpty || audioPath != nil else { self.show("I didn't catch that. Hold ⌃⌥Space and talk."); return }
+            guard self.send?(text, self.shot.map { [$0] } ?? [], audioPath) == true else {
                 self.show("Start ox in a terminal, then ask me again.")
                 return
             }
             self.phase = .thinking
             self.gesture = .think
         }
+    }
+
+    private func waitForFinal(deadline: Date, then: @escaping () -> Void) {
+        if finalHeard || Date() >= deadline { then(); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.waitForFinal(deadline: deadline, then: then) }
     }
 
     // MARK: speaking

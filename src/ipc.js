@@ -526,7 +526,11 @@ export function createIpcServer(opts = {}) {
           .slice(0, 2)
           .map((p) => path.resolve(String(p)))
           .filter((p) => (p.startsWith(`${tmp}${path.sep}`) || p.startsWith('/private/tmp/') || p.startsWith('/tmp/')) && /\.(png|jpe?g)$/i.test(p));
-        emitter.emit('user-message', { client, text, imagePaths, voice: msg.voice === true });
+        // The spoken question's recording, for whisper (src/dictation.js): same temp-dir rule.
+        const audio = msg.audioPath ? path.resolve(String(msg.audioPath)) : null;
+        const audioPath = audio && (audio.startsWith(`${tmp}${path.sep}`) || audio.startsWith('/private/tmp/') || audio.startsWith('/tmp/'))
+          && /\.(caf|wav|m4a)$/i.test(audio) ? audio : null;
+        emitter.emit('user-message', { client, text, imagePaths, audioPath, voice: msg.voice === true });
         return;
       }
       default: {
