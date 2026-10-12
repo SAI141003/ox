@@ -311,6 +311,41 @@ const SLASH_HELP = [
   '  /aas audit <dir>      audit a skill directory for safety signals',
 ].join('\n');
 
+// `/help` in the chat: the everyday commands on one screen; `/help all` for the
+// full list, `/help <word>` for the lines that mention it.
+export function slashHelp(arg = '') {
+  const q = String(arg).trim().toLowerCase();
+  if (q === 'all') return SLASH_HELP;
+  if (q) {
+    const hits = SLASH_HELP.split('\n').filter((l) => l.toLowerCase().includes(q));
+    return hits.length ? hits.join('\n') : c.dim(`no command mentions '${q}' — /help all lists everything`);
+  }
+  const row = (cmd, what) => `  ${cmd.padEnd(22)}${c.dim(what)}`;
+  return [
+    c.bold('Talk and switch'),
+    row('/model <spec>', 'switch model, conversation kept (/bot for presets)'),
+    row('/screen [question]', 'ask about what is on your screen'),
+    row('/plan', 'read-only mode: look and plan, change nothing'),
+    row('/yolo', 'skip approvals (dangerous commands stay blocked)'),
+    c.bold('Context and cost'),
+    row('/cost', 'tokens and spend so far'),
+    row('/context', 'what fills the context window'),
+    row('/compact', 'summarize older history'),
+    row('/clear', 'start fresh (the session file is kept)'),
+    c.bold('Goals and agents'),
+    row('/goal <text>', 'a goal ox keeps working toward and proves'),
+    row('/agents', 'live subagents: cancel or steer them'),
+    row('/rewind [n]', 'go back to an earlier turn'),
+    c.bold('This session'),
+    row('/session', 'id and file; /resume <id>, /fork'),
+    row('/ui', 'redraw the last canvas; type 1, 2… to press its buttons'),
+    row('/island on|off', 'the notch island'),
+    row('/exit', 'save and leave'),
+    '',
+    c.dim('/help all for everything · /help <word> to search (e.g. /help schedule)'),
+  ].join('\n');
+}
+
 // `ox help` / `ox --help`: what you can do, on one screen. Every flag and
 // subcommand detail lives in usageAll() (`ox help all`), and one section of it
 // is `ox help <topic>`.
@@ -5236,7 +5271,7 @@ async function replWithBudget(config, opts, flags, budget) {
     const rest = rawLine.slice(cmd.length).trim();
     switch (cmd) {
       case '/help':
-        console.log(SLASH_HELP);
+        console.log(slashHelp(rest));
         return;
       case '/bot':
       case '/model': {
@@ -6814,18 +6849,11 @@ async function replWithBudget(config, opts, flags, budget) {
   rl.on('close', () => {
     void finalizeAndExit();
   });
-  rl.on('line', (raw) => {
-    const line = raw.trim();
-    if (state.exiting) return;
-    if (state.busy) {
-      process.stdout.write(`${c.dim('\n(busy — ctrl-c twice within 3s to stop)')}\n`);
-      rl.prompt();
-      return;
-    }
-    if (!line) {
-      rl.prompt();
-      return;
-    }
+  // Type-ahead: a line typed while a turn runs is queued, not dropped, and runs
+  // when the turn ends (in order). Ctrl-C stops the current turn; the queue
+  // then continues.
+  const queue = [];
+  const runLine = (line) => {
     state.busy = true;
     Promise.resolve(handleInput(line))
       .catch((err) => {
@@ -6833,8 +6861,29 @@ async function replWithBudget(config, opts, flags, budget) {
       })
       .finally(() => {
         state.busy = false;
-        if (!state.exiting) rl.prompt();
+        if (state.exiting) return;
+        const next = queue.shift();
+        if (next !== undefined) {
+          process.stdout.write(`${c.dim(`▸ ${truncate(next, 80)}`)}\n`);
+          runLine(next);
+        } else {
+          rl.prompt();
+        }
       });
+  };
+  rl.on('line', (raw) => {
+    const line = raw.trim();
+    if (state.exiting) return;
+    if (!line) {
+      if (!state.busy) rl.prompt();
+      return;
+    }
+    if (state.busy) {
+      queue.push(line);
+      process.stdout.write(`${c.dim(`\n(queued${queue.length > 1 ? ` ×${queue.length}` : ''}: runs when this turn ends · ctrl-c stops the turn)`)}\n`);
+      return;
+    }
+    runLine(line);
   });
 }
 
