@@ -54,7 +54,7 @@ enum OxFrames {
 final class Pasture {
     static let shared = Pasture()
 
-    enum Act { case graze, wander, look, stand, zoomies, kick, doze }
+    enum Act { case graze, wander, look, stand, zoomies, kick, doze, goHome }
 
     /// A speech bubble over the bull (art/CHARACTERS.md, "Touch reactions").
     struct Bubble { enum Tone { case plain, angry, sleepy, busy }; let text: String; let tone: Tone; let until: Double }
@@ -73,6 +73,31 @@ final class Pasture {
     static let dozeAfter: Double = 90
 
     var dozing: Bool { act == .doze }
+    /// Asleep in its home (the barn; the notch in the compact view): not drawn.
+    var home: Bool { act == .doze }
+
+    // 360° turns: the way the bull is DRAWN facing lags `right` while it turns
+    // through the 16 turntable views (art/bull_render.py turn).
+    private(set) var facingRight = true
+    private var turnStart: Double?
+    private var turnToRight = true
+    static let turnSeconds = 0.55
+    /// Facing you (turntable view 5 of 16) until this time: hover and the farmer.
+    private(set) var faceCameraUntil: Double = 0
+
+    /// The turntable frame to show now, or nil when not turning or facing you.
+    /// Index 0 faces right, 4 faces the camera, 8 faces left, 12 faces away.
+    func turnIndex(now t: Double) -> Int? {
+        if let s = turnStart {
+            let p = min(1, (t - s) / Self.turnSeconds)
+            // Right -> left turns through the camera (0...8); left -> right
+            // continues round the back (8...16), so it is a full 360° loop.
+            let from = turnToRight ? 8.0 : 0.0
+            return Int((from + 8 * p).rounded()) % 16
+        }
+        if t < faceCameraUntil { return 4 }
+        return nil
+    }
 
     struct Visitor {
         enum Step { case walkIn, wave, walkOut }
@@ -94,10 +119,10 @@ final class Pasture {
     init() { nextVisit = Date().timeIntervalSinceReferenceDate + Double.random(in: 40...80) }
 
     var cycle: OxCycle {
-        if let beatCycle { return beatCycle }
+        if act == .goHome { return .walk }
         switch act {
         case .graze: return .graze
-        case .wander: return .walk
+        case .wander, .goHome: return .walk
         case .look: return .look
         case .stand: return .idle
         case .zoomies: return .gallop
@@ -125,8 +150,8 @@ final class Pasture {
         default:
             break
         }
-        if act == .doze {
-            // Woken up: a jolt, a kick, a shout, then a grumble back to grazing.
+        if act == .doze || act == .goHome {
+            // Woken up (out of the barn, or on the way): a jolt, a kick, a shout, a grumble.
             run([Beat(cycle: .kick, seconds: 1.0, bubble: ("MOO!!", .angry)),
                  Beat(cycle: .alert, seconds: 1.0, bubble: nil),
                  Beat(cycle: .idle, seconds: 1.6, bubble: ("zzz… rude", .sleepy))], t, then: .graze)
@@ -143,9 +168,11 @@ final class Pasture {
     func hover(_ on: Bool, now t: Double) {
         guard on else { return }
         lastTouch = t
-        if script.isEmpty, beatCycle == nil, act == .graze || act == .stand {
+        if script.isEmpty, beatCycle == nil, act != .doze, act != .goHome, act != .zoomies {
+            if act == .wander { act = .stand }
             act = .look
             until = t + 3
+            faceCameraUntil = t + 1.6   // turns to look straight at you
         }
     }
 
@@ -167,13 +194,25 @@ final class Pasture {
         if let (text, tone) = b.bubble { say(text, tone, t, b.seconds + 0.4) }
     }
 
-    func step(now t: Double, lane: CGFloat, height: CGFloat, farmerWidth: CGFloat, allowVisitors: Bool, allowDoze: Bool = false) {
+    func step(now t: Double, lane: CGFloat, height: CGFloat, farmerWidth: CGFloat, allowVisitors: Bool, allowDoze: Bool = false, homeWidth: CGFloat = 0) {
+        // Wandering stays clear of the home (the barn); going home walks to `lane`.
+        let roam = max(0, lane - homeWidth)
         let dt = min(0.1, max(0, t - (last ?? t)))
         last = t
         if x < 0 { x = lane / 2 }
         x = min(max(0, x), lane)
         let pace = max(14, height * 0.75)
         if let b = bubble, t >= b.until { bubble = nil }
+
+        // A direction change plays the 360° turn; the bull holds still meanwhile.
+        if let s = turnStart {
+            if t - s >= Self.turnSeconds { turnStart = nil; facingRight = turnToRight } else { return }
+        }
+        if right != facingRight, act != .doze {
+            turnStart = t
+            turnToRight = right
+            return
+        }
 
         // A reaction in progress holds the bull in place until its beats end.
         if beatCycle != nil {
@@ -183,7 +222,7 @@ final class Pasture {
                 act = then
                 switch then {
                 case .zoomies:
-                    if lane > 30 { target = x < lane / 2 ? lane : 0 } else { act = .stand; until = t + 2 }
+                    if roam > 30 { target = x < roam / 2 ? roam : 0 } else { act = .stand; until = t + 2 }
                 default:
                     until = t + Double.random(in: 2...4)
                 }
@@ -191,13 +230,21 @@ final class Pasture {
             return
         }
 
-        // Nobody around and nothing running: lie down for a doze.
-        if allowDoze, act != .doze, visitor == nil, t - lastTouch > Self.dozeAfter {
-            act = .doze
+        // Nobody around and nothing running: walk home (the far end of the lane,
+        // the barn or the notch) and sleep in there.
+        if allowDoze, act != .doze, act != .goHome, visitor == nil, t - lastTouch > Self.dozeAfter {
+            act = .goHome
+        }
+        if act == .goHome {
+            if !allowDoze { act = .stand; until = t + 2; lastTouch = t; return }
+            let d = lane - x
+            right = true
+            if d <= pace * dt { x = lane; act = .doze } else { x += pace * 0.8 * dt }
             return
         }
         if act == .doze {
-            if !allowDoze { act = .stand; until = t + 2; lastTouch = t }
+            // A run starting brings it out of the barn at a trot.
+            if !allowDoze { act = .wander; target = lane * 0.4; lastTouch = t }
             return
         }
 
@@ -206,9 +253,9 @@ final class Pasture {
             let speed = act == .zoomies ? pace * 3.2 : pace
             let d = target - x
             right = d >= 0
-            if abs(d) <= speed * dt { x = target; pick(t, lane: lane) } else { x += (d > 0 ? 1 : -1) * speed * dt }
+            if abs(d) <= speed * dt { x = target; pick(t, lane: roam) } else { x += (d > 0 ? 1 : -1) * speed * dt }
         default:
-            if t >= until && visitor == nil { pick(t, lane: lane) }
+            if t >= until && visitor == nil { pick(t, lane: roam) }
         }
 
         // The farmer: in from the far side, a wave, then off the other edge.
@@ -226,6 +273,7 @@ final class Pasture {
                     v.until = t + 2.8
                     act = .look            // the bull turns to look at them
                     right = !v.right
+                    faceCameraUntil = 0
                     until = t + 3.4
                 } else {
                     v.x += (v.right ? 1 : -1) * speed * dt
@@ -273,6 +321,9 @@ struct OxWalker: View {
     var roam = false
     /// Called when the bull is poked (the notch uses it to open the island).
     var onPoke: (() -> Void)? = nil
+    /// Draw the barn at the right end (the expanded island). Without it, the
+    /// far end of the lane is home: in the notch, the camera housing.
+    var barn = false
     @State private var start = Date()
     private var pasture: Pasture { .shared }
 
@@ -296,6 +347,7 @@ struct OxWalker: View {
         let lane = max(0, size.width - width)
         let farmerH = height * 0.62
         let farmerW = farmerH * 18 / 26
+        let barnW = barn ? height * 1.15 : 0
         let forced = OxCycle.forMood(mood)
         let (cycle, x, right): (OxCycle, CGFloat, Bool) = {
             if let forced {
@@ -309,13 +361,19 @@ struct OxWalker: View {
                 return (.walk, CGFloat(goingRight ? leg / period : 2 - leg / period) * lane, goingRight)
             }
             if roam {
-                pasture.step(now: now, lane: lane, height: height, farmerWidth: farmerW, allowVisitors: true, allowDoze: mood == .sleeping)
-                return (pasture.cycle, pasture.x, pasture.right)
+                pasture.step(now: now, lane: lane, height: height, farmerWidth: farmerW, allowVisitors: true,
+                             allowDoze: mood == .sleeping, homeWidth: barnW * 0.9)
+                return (pasture.cycle, pasture.x, pasture.facingRight)
             }
             return (.graze, lane / 2, true)
         }()
-        let frames = OxFrames.frames(cycle)
-        let idx = frames.isEmpty ? 0 : Int(t * 24) % frames.count
+        // Turning (or facing you) plays the 360° turntable instead of the cycle.
+        let turn = forced == nil && roam ? pasture.turnIndex(now: now) : nil
+        let turnFrames = Frames.load("ox/turn")
+        let frames = turn != nil && turnFrames.count == 16 ? turnFrames : OxFrames.frames(cycle)
+        let idx = frames.isEmpty ? 0 : (turn != nil && turnFrames.count == 16 ? turn! : Int(t * 24) % frames.count)
+        let flip = turn == nil && !right
+        let hidden = forced == nil && roam && pasture.home
 
         ZStack(alignment: .bottomLeading) {
             if cycle == .graze { Grass(width: width * 0.5, height: height * 0.16, t: t).offset(x: x + (right ? width * 0.55 : width * -0.05), y: 0) }
@@ -323,12 +381,12 @@ struct OxWalker: View {
                 .fill(RadialGradient(colors: [.black.opacity(0.45), .clear], center: .center, startRadius: 0, endRadius: width * 0.4))
                 .frame(width: width * 0.8, height: height * 0.12)
                 .offset(x: x + width * 0.1, y: -height * 0.02)
-            if !frames.isEmpty {
+            if !frames.isEmpty, !hidden {
                 Image(nsImage: frames[idx])
                     .resizable()
                     .interpolation(.high)
                     .frame(width: width, height: height)
-                    .scaleEffect(x: right ? 1 : -1, y: 1)
+                    .scaleEffect(x: flip ? -1 : 1, y: 1)
                     // A soft warm rim so the graphite hide reads on the black notch.
                     .shadow(color: Color(hex: "#E9C27B").opacity(0.35), radius: 1.2)
                     .shadow(color: .white.opacity(0.18), radius: 3)
@@ -341,7 +399,23 @@ struct OxWalker: View {
                     .onHover { pasture.hover($0, now: Date().timeIntervalSinceReferenceDate) }
                     .offset(x: x)
             }
-            if cycle == .doze { Snore(t: t, size: height * 0.22).offset(x: x + width * (right ? 0.78 : 0.06), y: -height * 0.62) }
+            if barn {
+                // Home: the bull walks behind it (drawn on top) and sleeps inside.
+                Barn(sleeping: hidden, t: t)
+                    .frame(width: barnW, height: height * 0.95)
+                    .offset(x: size.width - barnW)
+                    .onTapGesture {
+                        if hidden { pasture.poke(now: Date().timeIntervalSinceReferenceDate, mood: mood) }
+                    }
+                    .help(hidden ? "the bull is asleep in its barn (poke to wake it)" : "the barn")
+            }
+            if hidden {
+                // Asleep at home: "z" drifting from the barn window, or from the notch's edge.
+                Snore(t: t, size: height * 0.22)
+                    .offset(x: barn ? size.width - barnW * 0.45 : max(0, size.width - width - 4), y: -height * (barn ? 0.72 : 0.4))
+            } else if cycle == .doze {
+                Snore(t: t, size: height * 0.22).offset(x: x + width * (right ? 0.78 : 0.06), y: -height * 0.62)
+            }
             if let b = pasture.bubble, now < b.until {
                 SpeechBubble(bubble: b, size: max(8.5, height * 0.15))
                     .fixedSize()
@@ -378,6 +452,44 @@ struct Farmer: View {
                 .frame(width: height * 0.5, height: height * 0.07)
             PixelPersonView(person: "farmer", pose: pose, flip: step != .wave && !right, height: height)
         }
+    }
+}
+
+/// The bull's barn: red planks, a white-trimmed roof and door, a warm window
+/// that dims when the bull is asleep inside.
+struct Barn: View {
+    let sleeping: Bool
+    let t: Double
+
+    var body: some View {
+        Canvas { g, size in
+            let w = size.width, h = size.height
+            let red = Color(hex: "#A8382E"), dark = Color(hex: "#7A2620"), trim = Color(hex: "#F1E6D2")
+            // Body and roof.
+            let body = CGRect(x: w * 0.08, y: h * 0.38, width: w * 0.84, height: h * 0.62)
+            g.fill(Path(body), with: .linearGradient(Gradient(colors: [red, dark]), startPoint: CGPoint(x: 0, y: body.minY), endPoint: CGPoint(x: 0, y: body.maxY)))
+            for i in 1..<6 { g.fill(Path(CGRect(x: body.minX + body.width * CGFloat(i) / 6, y: body.minY, width: 0.8, height: body.height)), with: .color(dark.opacity(0.6))) }
+            var roof = Path()
+            roof.move(to: CGPoint(x: 0, y: h * 0.42))
+            roof.addLine(to: CGPoint(x: w * 0.5, y: h * 0.06))
+            roof.addLine(to: CGPoint(x: w, y: h * 0.42))
+            roof.closeSubpath()
+            g.fill(roof, with: .color(Color(hex: "#3A2A22")))
+            g.stroke(roof, with: .color(trim), lineWidth: 1.4)
+            // Hay-loft window: warm light; dim when the bull is asleep.
+            let win = CGRect(x: w * 0.42, y: h * 0.2, width: w * 0.16, height: h * 0.13)
+            g.fill(Path(win), with: .color(Color(hex: "#F5C76B").opacity(sleeping ? 0.25 + 0.1 * sin(t * 1.5) : 0.85)))
+            g.stroke(Path(win), with: .color(trim), lineWidth: 1)
+            // Door with the white X.
+            let door = CGRect(x: w * 0.3, y: h * 0.56, width: w * 0.4, height: h * 0.44)
+            g.fill(Path(door), with: .color(Color(hex: "#2A1512")))
+            g.stroke(Path(door), with: .color(trim), lineWidth: 1.2)
+            var x = Path()
+            x.move(to: CGPoint(x: door.minX, y: door.minY)); x.addLine(to: CGPoint(x: door.maxX, y: door.maxY))
+            x.move(to: CGPoint(x: door.maxX, y: door.minY)); x.addLine(to: CGPoint(x: door.minX, y: door.maxY))
+            g.stroke(x, with: .color(trim.opacity(0.8)), lineWidth: 1)
+        }
+        .accessibilityLabel(sleeping ? "The bull is asleep in its barn" : "The bull's barn")
     }
 }
 

@@ -254,11 +254,35 @@ def render_cycle(name):
     print("OX_CYCLE_DONE", name, n, act, (f0, f1))
 
 
+def render_turntable(steps=16):
+    """The bull standing, turned through 360 degrees in `steps` views
+    (turn_0001 faces right like every cycle, then it turns toward the camera
+    and on round). The island plays these to turn around instead of flipping."""
+    use_action(CFG["still"])
+    scene.frame_set(1)
+    d = os.path.join(OUT, "turn")
+    os.makedirs(d, exist_ok=True)
+    root = arm.parent or arm
+    # glTF imports use quaternion rotation, where rotation_euler is ignored.
+    root.rotation_mode = "XYZ"
+    base = root.rotation_euler.copy()
+    # Turn about the bull's own middle, not the world origin.
+    for i in range(steps):
+        root.rotation_euler = base.copy()
+        root.rotation_euler.z = base.z - 2 * math.pi * i / steps
+        scene.render.filepath = os.path.join(d, f"turn_{i + 1:04d}.png")
+        bpy.ops.render.render(write_still=True)
+    root.rotation_euler = base
+    print("OX_CYCLE_DONE turn", steps)
+
+
 if MODE == "still":
     use_action(CFG["still"])
     scene.frame_set(1)
     scene.render.filepath = os.path.join(OUT, f"{PROFILE}-still.png")
     bpy.ops.render.render(write_still=True)
+elif MODE == "turn":
+    render_turntable()
 else:
     for name in (CYCLES if MODE == "all" else [MODE]):
         render_cycle(name)

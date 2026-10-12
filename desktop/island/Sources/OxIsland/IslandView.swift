@@ -126,8 +126,11 @@ struct CompactBar: View {
         let oxSize = metrics.height + 2
         let lead = IslandLayout.ear + 8
         HStack(spacing: 0) {
+            // The lane runs from the wing into the notch, whose camera housing
+            // hides the far end: the bull patrols in and out, and sleeps in there.
+            let wing = max(0, (w - metrics.width) / 2 - lead)
             OxWalker(mood: bridge.headlineMood, height: oxSize * 0.95, roam: true, onPoke: { bridge.showReaction() })
-                .frame(width: oxSize * 1.3)
+                .frame(width: wing + oxSize * 0.95 * 4 / 3 + 4)
             Spacer(minLength: 0)
             if let team = bridge.officeSession, team.agents.contains(where: { $0.endedAt == nil }) {
                 // The notch crew: tiny helpers pace the right wing while a team works.
@@ -216,7 +219,7 @@ struct ExpandedContent: View {
                     } else {
                         // The ox lives in its own lane: it walks back and forth while
                         // work runs, grazes while it waits, stamps for an approval.
-                        OxWalker(mood: oxMood, height: Self.oxSize, roam: true)
+                        OxWalker(mood: oxMood, height: Self.oxSize, roam: true, barn: true)
                             .frame(width: 190, height: Self.oxSize)
                         body(for: focus)
                             .frame(maxWidth: .infinity, alignment: .leading)

@@ -74,7 +74,7 @@ the office and its row in the ledger.
 
 | ox event (Bridge) | Ox does | Crew does | Duration / exit |
 |---|---|---|---|
-| no session (`sleeping`) | lies down with its head low (`Idle_Headlow`) and slowly breathes, with a small "z" floating up every 4 s | nobody on stage | until a session starts |
+| no session (`sleeping`) | grazes and wanders on the pasture; after 90 s walks home into the barn (the notch in compact view) and sleeps, "z" puffs drifting out | the farmer may visit | until a session starts |
 | session `hello` / launch | gallops in from the left edge (`Gallop`), skids to a stop at the centre-left and shakes its head | — | 1.2 s, then idle |
 | `idle` (waiting for you to type) | stands, swishes its tail and sometimes looks around (`Idle`, `Idle_2`) | anyone still on stage waves and walks off | loop |
 | `thinking` (`text-delta` streaming) | walks slowly, back and forth along its lane (`Walk`) | — | loop while streaming |
@@ -96,12 +96,28 @@ the office and its row in the ledger.
 | hover over the island | looks toward the cursor | everyone stops for a second | — |
 | click on a character | — | it jumps and shows its tool and file in a tooltip | — |
 
-## The pasture (nothing running)
+## The pasture and the barn (nothing running)
 
-No house and no sleeping. When ox is idle, the bull lives on a little pasture
-along the island floor and keeps itself busy with small, unhurried
-animations. It never jumps: each activity starts where the last one ended,
-and the bull turns to face the way it moves.
+When ox is idle the bull lives on a little pasture along the island floor,
+with **its barn at the right end**. It keeps itself busy with small,
+unhurried animations; after a while with nothing running it walks home, goes
+into the barn and sleeps there. Every character is always moving: nothing
+stands frozen for more than a few seconds.
+
+**Turning is a real 360° turn.** The bull is rendered from 16 angles
+(`bull_render.py ... turn`); when it changes direction it turns through them
+(toward you, then round) in about half a second instead of flipping. It also
+turns to face you when you hover over it, and to face the farmer.
+
+**Going home.** No runs for 90 s and nobody around: the bull walks to the
+barn door, turns, walks in and disappears; "z z z" drifts out of the barn
+window. A poke on the barn wakes it: it bursts out with "MOO!!", stamps, and
+grumbles. A run starting brings it out at a trot to get to work.
+
+**In the notch** there is no room for a barn, so the notch itself is home: the
+bull patrols the left wing, walks in behind the camera housing (out of
+sight), and comes back out; when it is time to sleep it stays in there, with
+"z" puffs at the notch's edge.
 
 | Activity | Bull cycle | Weight | Length | What you see |
 |---|---|---|---|---|
