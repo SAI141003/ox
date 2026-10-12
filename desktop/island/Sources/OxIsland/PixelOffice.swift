@@ -53,6 +53,10 @@ struct AgentDesk: View {
     let phase: SubAgent.Phase
     let tint: Color
     var kind: Kind = .sub
+    /// The last poke (art/CHARACTERS.md "Touch reactions"): when, and how many in a row.
+    @State private var poke = Poke()
+
+    struct Poke { var at: Double = 0; var count = 0 }
 
     var body: some View {
         VStack(spacing: 3) {
@@ -61,6 +65,12 @@ struct AgentDesk: View {
                 Canvas { g, size in draw(&g, size: size, t: t) }
             }
             .frame(width: 84, height: 66)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                let now = Date().timeIntervalSinceReferenceDate
+                poke = Poke(at: now, count: now - poke.at < 2 ? poke.count + 1 : 1)
+            }
+            .help(person == nil ? "the lead agent" : "poke \(name)")
             Text(name)
                 .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(Ink.text)
@@ -94,7 +104,7 @@ struct AgentDesk: View {
     }
 
     private func draw(_ g: inout GraphicsContext, size: CGSize, t: Double) {
-        if let person, PixelCast.has(person) { drawHelper(&g, person: person, t: t); return }
+        if let person, PixelCast.has(person) { drawHelper(&g, person: person, t: t, poke: poke); return }
         let working = phase == .working || phase == .starting
         // Floor shadow + desk.
         g.fill(Path(roundedRect: CGRect(x: 6, y: 52, width: 72, height: 8), cornerRadius: 2), with: .color(Color(hex: "#5B3A24")))
@@ -146,7 +156,8 @@ struct AgentDesk: View {
 extension AgentDesk {
     /// A helper at a desk, Pixel-Agents style: seen from behind at the
     /// monitor, typing or reading by tool; standing to cheer or slump at the end.
-    func drawHelper(_ g: inout GraphicsContext, person: String, t: Double) {
+    func drawHelper(_ g: inout GraphicsContext, person: String, t: Double, poke: Poke = Poke()) {
+        let poked = t - poke.at < 1.8
         let wood = Color(hex: "#8A5A3B"), woodDark = Color(hex: "#5E3C26")
         // Floor shadow, desk with legs, monitor.
         g.fill(Path(ellipseIn: CGRect(x: 14, y: 58, width: 56, height: 7)), with: .color(.black.opacity(0.35)))
@@ -170,6 +181,15 @@ extension AgentDesk {
         let tool = detail.lowercased()
         let reading = ["read", "grep", "glob", "list", "search", "fetch", "web"].contains { tool.contains($0) }
         switch phase {
+        case _ where poked:
+            // Poked: turns round in the chair to face you.
+            let angry = poke.count >= 3
+            let pose = PixelPose(dir: .front, pose: angry ? "open" : "stand",
+                                 mouth: angry ? "wide" : phase == .done ? "smile" : phase == .failed ? "closed" : "open")
+            if phase != .done && phase != .failed {
+                g.fill(Path(roundedRect: CGRect(x: 30, y: 52, width: 24, height: 9), cornerRadius: 3), with: .color(tint.opacity(0.75)))
+            }
+            PixelCast.draw(&g, person, pose, at: CGPoint(x: 42 - w / 2, y: 66 - h), px: px)
         case .done, .failed:
             // Stands up beside the desk: arms up if it worked, a flat mouth if not.
             let pose = phase == .done ? PixelPose(dir: .front, pose: "open", mouth: "smile")
@@ -185,11 +205,23 @@ extension AgentDesk {
         }
 
         // Speech bubbles, as in Pixel Agents: thinking dots, done, failed.
-        func bubble(_ text: String, _ color: Color) {
-            let r = CGRect(x: 56, y: 0, width: 24, height: 13)
-            g.fill(Path(roundedRect: r, cornerRadius: 4), with: .color(.white))
-            g.fill(Path(CGRect(x: 59, y: 12, width: 3, height: 3)), with: .color(.white))
+        func bubble(_ text: String, _ color: Color, fill: Color = .white, width: CGFloat = 24) {
+            let r = CGRect(x: 80 - width, y: 0, width: width, height: 13)
+            g.fill(Path(roundedRect: r, cornerRadius: 4), with: .color(fill))
+            g.fill(Path(CGRect(x: r.minX + 3, y: 12, width: 3, height: 3)), with: .color(fill))
             g.draw(Text(text).font(.system(size: 9, weight: .heavy)).foregroundColor(color), at: CGPoint(x: r.midX, y: r.midY))
+        }
+        if poked {
+            if poke.count >= 3 { bubble("stop that!", .white, fill: Ink.red, width: 52) }
+            else {
+                switch phase {
+                case .working, .starting: bubble("busy!", .black, fill: Ink.amber, width: 34)
+                case .thinking: bubble("hmm…", .black, width: 34)
+                case .done: bubble("yay!", Ink.green, width: 30)
+                case .failed: bubble("ugh", Ink.red, width: 26)
+                }
+            }
+            return
         }
         switch phase {
         case .thinking: bubble(String(repeating: ".", count: 1 + Int(t * 3) % 3), .black)

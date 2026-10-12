@@ -6,10 +6,31 @@ import SwiftUI
 struct BuddyLane: View {
     @ObservedObject var buddy: Buddy
     let mood: Mood
+    /// A poke: a surprised face and "hey!"; a third poke in two seconds gets a grump.
+    @State private var poke = AgentDesk.Poke()
 
     var body: some View {
-        AvatarView(kind: buddy.character, expression: Expression.of(mood, buddy: buddy.phase),
-                   mouth: buddy.mouth, gesture: buddy.gesture, level: buddy.level)
+        TimelineView(.periodic(from: .now, by: 0.2)) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate
+            let poked = t - poke.at < 1.4 && buddy.phase != .speaking
+            let grumpy = poked && poke.count >= 3
+            ZStack(alignment: .top) {
+                AvatarView(kind: buddy.character,
+                           expression: poked ? (grumpy ? .worried : .surprised) : Expression.of(mood, buddy: buddy.phase),
+                           mouth: poked ? (grumpy ? .wide : .round) : buddy.mouth,
+                           gesture: poked ? (grumpy ? .open : .wave) : buddy.gesture,
+                           level: buddy.level)
+                if poked {
+                    SpeechBubble(bubble: .init(text: grumpy ? "quit it!" : "hey!", tone: grumpy ? .angry : .plain, until: .infinity), size: 10)
+                        .offset(x: 30, y: -2)
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            let now = Date().timeIntervalSinceReferenceDate
+            poke = .init(at: now, count: now - poke.at < 2 ? poke.count + 1 : 1)
+        }
     }
 }
 

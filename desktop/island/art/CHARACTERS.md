@@ -120,6 +120,32 @@ way. A farmer visit never happens while ox is working.
 Work moods override the pasture straight away: working or thinking walks the
 lane, an approval makes it stamp (`Attack_Headbutt`), and done makes it graze.
 
+## Touch reactions
+
+Every character reacts to the cursor. Poking a character in the compact notch
+opens the island for a moment, so its reaction is visible up close.
+
+**The bull** (`Pasture.poke` / `Pasture.hover` in `OxWalker.swift`):
+
+| You | The bull is | It does |
+|---|---|---|
+| hover over it | grazing or standing | lifts its head and looks round at you |
+| poke once | idle on the pasture | a startled kick and a "Moo?" bubble |
+| poke 3 times in 2 s | idle | headbutts with a red "MOO! 💢" and gallops to the far side (stamps in place in the notch) |
+| poke it | dozing (no runs and no one around for 90 s; head low, "z z z") | jolts awake: kick + "MOO!!", stamp, "zzz… rude", then back to grazing |
+| poke it | working (walking the lane) | an amber "busy!" bubble, and it keeps working |
+| poke it | stamping for an approval | "↓ needs you" |
+| poke it | stopped by an error | "ouch…" |
+
+**Office helpers** (`AgentDesk`): a poke turns them round in the chair to face
+you: "busy!" while working, "hmm…" while thinking, "yay!" when done, "ugh" when
+failed. A third poke within 2 s gets a red "stop that!" and a shout.
+
+**Buddy:** a poke gives a surprised face, a wave and "hey!"; a third poke gets a
+worried face and "quit it!". Never while it is speaking an answer.
+
+`OxIsland --render-reactions <dir>` draws all of these for review.
+
 ## Motion rules
 
 - Motion uses the renders' own animation cycles at 24 fps. Characters move

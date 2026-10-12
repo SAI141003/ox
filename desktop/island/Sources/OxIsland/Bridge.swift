@@ -323,6 +323,12 @@ final class OxBridge: ObservableObject {
     @Published private(set) var peekUntil: Date = .distantPast
     var peeking: Bool { Date() < peekUntil }
 
+    /// A character was poked in the notch: open the island so its reaction shows.
+    func showReaction() {
+        peek(for: 4)
+        objectWillChange.send()
+    }
+
     private func peek(for seconds: TimeInterval = 4) {
         peekUntil = Date().addingTimeInterval(seconds)
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.05) { [weak self] in

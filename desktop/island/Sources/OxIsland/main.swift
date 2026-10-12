@@ -174,6 +174,64 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-office"), i + 1 < Comm
     exit(0)
 }
 
+// Dev aid: `OxIsland --render-reactions <dir>` draws the touch reactions
+// (art/CHARACTERS.md): the bull's bubbles and doze, and poked helpers.
+if let i = CommandLine.arguments.firstIndex(of: "--render-reactions"), i + 1 < CommandLine.arguments.count {
+    let dir = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    MainActor.assumeIsolated {
+        func bull(_ cycle: OxCycle, _ bubble: Pasture.Bubble?) -> some View {
+            let frames = OxFrames.frames(cycle)
+            return ZStack(alignment: .bottomLeading) {
+                if let f = frames.first { Image(nsImage: f).resizable().frame(width: 112, height: 84) }
+                if cycle == .doze { Snore(t: 1.3, size: 18).offset(x: 86, y: -52) }
+                if let bubble { SpeechBubble(bubble: bubble, size: 12).fixedSize().offset(x: 56, y: -70) }
+            }
+            .frame(width: 150, height: 120, alignment: .bottomLeading)
+        }
+        let poked = { (count: Int, phase: SubAgent.Phase, who: String) in
+            AgentDesk(name: who, person: who, detail: "edit_file", model: "", tokens: 0, phase: phase, tint: Color(hex: "#EC4899"))
+        }
+        let view = VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .bottom, spacing: 8) {
+                bull(.kick, .init(text: "Moo?", tone: .plain, until: .infinity))
+                bull(.alert, .init(text: "MOO! 💢", tone: .angry, until: .infinity))
+                bull(.doze, nil)
+                bull(.kick, .init(text: "MOO!!", tone: .angry, until: .infinity))
+                bull(.idle, .init(text: "zzz… rude", tone: .sleepy, until: .infinity))
+                bull(.walk, .init(text: "busy!", tone: .busy, until: .infinity))
+            }
+            HStack(spacing: 6) {
+                ForEach(Array([(1, SubAgent.Phase.working, "mira"), (1, .thinking, "theo"), (1, .done, "ade"), (1, .failed, "lin"), (3, .working, "rui")].enumerated()), id: \.offset) { _, p in
+                    PokedDesk(desk: poked(p.0, p.1, p.2), count: p.0)
+                }
+            }
+        }
+        .padding(14)
+        .background(Color(hex: "#141518"))
+        let r = ImageRenderer(content: view)
+        r.scale = 2
+        if let img = r.nsImage, let tiff = img.tiffRepresentation,
+           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: dir.appendingPathComponent("reactions.png"))
+        }
+    }
+    exit(0)
+}
+
+/// Renders a desk as if it had just been poked `count` times (dev aid only).
+struct PokedDesk: View {
+    let desk: AgentDesk
+    let count: Int
+    var body: some View {
+        Canvas { g, _ in
+            desk.drawHelper(&g, person: desk.person ?? "mira", t: Date().timeIntervalSinceReferenceDate,
+                            poke: .init(at: Date().timeIntervalSinceReferenceDate, count: count))
+        }
+        .frame(width: 84, height: 66)
+    }
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

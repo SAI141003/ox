@@ -8,7 +8,7 @@ import SwiftUI
 // around, gets the zoomies, and now and then a farmer walks by and waves.
 
 enum OxCycle: String, CaseIterable {
-    case walk, graze, alert, idle, look, gallop, kick
+    case walk, graze, alert, idle, look, gallop, kick, doze
 
     /// The cycle a work mood demands, or nil when the pasture decides.
     static func forMood(_ m: Mood) -> OxCycle? {
@@ -41,7 +41,7 @@ enum OxFrames {
     static func frames(_ c: OxCycle) -> [NSImage] {
         let f = Frames.load("ox/\(c.rawValue)")
         // Older bundles lack the pasture cycles: fall back to what exists.
-        if f.isEmpty, c != .walk, c != .graze { return Frames.load(c == .gallop ? "ox/walk" : "ox/graze") }
+        if f.isEmpty, c != .walk, c != .graze { return Frames.load(c == .gallop ? "ox/walk" : c == .doze ? "ox/idle" : "ox/graze") }
         return f
     }
     static var available: Bool { !frames(.walk).isEmpty }
@@ -49,8 +49,30 @@ enum OxFrames {
 
 /// The pasture routine: a small state machine advanced by the frame clock.
 /// Positions are in points along the lane (0 = left edge of the bull's box).
+/// One pasture is shared by the notch and the expanded island, so a bull you
+/// poke in the notch is the same bull you then see react up close.
 final class Pasture {
-    enum Act { case graze, wander, look, stand, zoomies, kick }
+    static let shared = Pasture()
+
+    enum Act { case graze, wander, look, stand, zoomies, kick, doze }
+
+    /// A speech bubble over the bull (art/CHARACTERS.md, "Touch reactions").
+    struct Bubble { enum Tone { case plain, angry, sleepy, busy }; let text: String; let tone: Tone; let until: Double }
+
+    /// One beat of a reaction: show `cycle` for `seconds`, optionally with a bubble.
+    private struct Beat { let cycle: OxCycle; let seconds: Double; let bubble: (String, Bubble.Tone)? }
+
+    private(set) var bubble: Bubble?
+    private var script: [Beat] = []
+    private var beatUntil: Double = 0
+    private var beatCycle: OxCycle?
+    private var afterScript: Act?
+    private var pokes: [Double] = []
+    private var lastTouch = Date().timeIntervalSinceReferenceDate
+    /// No runs and nobody around for this long: the bull lies down for a doze.
+    static let dozeAfter: Double = 90
+
+    var dozing: Bool { act == .doze }
 
     struct Visitor {
         enum Step { case walkIn, wave, walkOut }
@@ -72,6 +94,7 @@ final class Pasture {
     init() { nextVisit = Date().timeIntervalSinceReferenceDate + Double.random(in: 40...80) }
 
     var cycle: OxCycle {
+        if let beatCycle { return beatCycle }
         switch act {
         case .graze: return .graze
         case .wander: return .walk
@@ -79,15 +102,104 @@ final class Pasture {
         case .stand: return .idle
         case .zoomies: return .gallop
         case .kick: return .kick
+        case .doze: return .doze
         }
     }
 
-    func step(now t: Double, lane: CGFloat, height: CGFloat, farmerWidth: CGFloat, allowVisitors: Bool) {
+    // MARK: touch reactions
+
+    /// A click on the bull. `working` is the run's mood when one forces a cycle.
+    func poke(now t: Double, mood: Mood) {
+        lastTouch = t
+        pokes = pokes.filter { t - $0 < 2 } + [t]
+        switch mood {
+        case .working, .thinking:
+            say("busy!", .busy, t, 1.6)
+            return
+        case .needsYou:
+            say("↓ needs you", .busy, t, 2.0)
+            return
+        case .error:
+            say("ouch…", .plain, t, 1.6)
+            return
+        default:
+            break
+        }
+        if act == .doze {
+            // Woken up: a jolt, a kick, a shout, then a grumble back to grazing.
+            run([Beat(cycle: .kick, seconds: 1.0, bubble: ("MOO!!", .angry)),
+                 Beat(cycle: .alert, seconds: 1.0, bubble: nil),
+                 Beat(cycle: .idle, seconds: 1.6, bubble: ("zzz… rude", .sleepy))], t, then: .graze)
+        } else if pokes.count >= 3 {
+            pokes = []
+            run([Beat(cycle: .alert, seconds: 1.0, bubble: ("MOO! 💢", .angry)),
+                 Beat(cycle: .alert, seconds: 0.8, bubble: nil)], t, then: .zoomies)
+        } else {
+            run([Beat(cycle: .kick, seconds: 1.0, bubble: ("Moo?", .plain))], t, then: .look)
+        }
+    }
+
+    /// The cursor over the bull: it lifts its head and looks round at you.
+    func hover(_ on: Bool, now t: Double) {
+        guard on else { return }
+        lastTouch = t
+        if script.isEmpty, beatCycle == nil, act == .graze || act == .stand {
+            act = .look
+            until = t + 3
+        }
+    }
+
+    private func say(_ text: String, _ tone: Bubble.Tone, _ t: Double, _ seconds: Double) {
+        bubble = Bubble(text: text, tone: tone, until: t + seconds)
+    }
+
+    private func run(_ beats: [Beat], _ t: Double, then: Act) {
+        script = beats
+        afterScript = then
+        nextBeat(t)
+    }
+
+    private func nextBeat(_ t: Double) {
+        guard !script.isEmpty else { beatCycle = nil; return }
+        let b = script.removeFirst()
+        beatCycle = b.cycle
+        beatUntil = t + b.seconds
+        if let (text, tone) = b.bubble { say(text, tone, t, b.seconds + 0.4) }
+    }
+
+    func step(now t: Double, lane: CGFloat, height: CGFloat, farmerWidth: CGFloat, allowVisitors: Bool, allowDoze: Bool = false) {
         let dt = min(0.1, max(0, t - (last ?? t)))
         last = t
         if x < 0 { x = lane / 2 }
         x = min(max(0, x), lane)
         let pace = max(14, height * 0.75)
+        if let b = bubble, t >= b.until { bubble = nil }
+
+        // A reaction in progress holds the bull in place until its beats end.
+        if beatCycle != nil {
+            if t >= beatUntil { nextBeat(t) }
+            if beatCycle == nil, let then = afterScript {
+                afterScript = nil
+                act = then
+                switch then {
+                case .zoomies:
+                    if lane > 30 { target = x < lane / 2 ? lane : 0 } else { act = .stand; until = t + 2 }
+                default:
+                    until = t + Double.random(in: 2...4)
+                }
+            }
+            return
+        }
+
+        // Nobody around and nothing running: lie down for a doze.
+        if allowDoze, act != .doze, visitor == nil, t - lastTouch > Self.dozeAfter {
+            act = .doze
+            return
+        }
+        if act == .doze {
+            if !allowDoze { act = .stand; until = t + 2; lastTouch = t }
+            return
+        }
 
         switch act {
         case .wander, .zoomies:
@@ -159,8 +271,10 @@ struct OxWalker: View {
     var height: CGFloat
     /// Use the whole width: walk the lane while working, live on the pasture otherwise.
     var roam = false
+    /// Called when the bull is poked (the notch uses it to open the island).
+    var onPoke: (() -> Void)? = nil
     @State private var start = Date()
-    @State private var pasture = Pasture()
+    private var pasture: Pasture { .shared }
 
     var body: some View {
         if OxFrames.available {
@@ -195,7 +309,7 @@ struct OxWalker: View {
                 return (.walk, CGFloat(goingRight ? leg / period : 2 - leg / period) * lane, goingRight)
             }
             if roam {
-                pasture.step(now: now, lane: lane, height: height, farmerWidth: farmerW, allowVisitors: true)
+                pasture.step(now: now, lane: lane, height: height, farmerWidth: farmerW, allowVisitors: true, allowDoze: mood == .sleeping)
                 return (pasture.cycle, pasture.x, pasture.right)
             }
             return (.graze, lane / 2, true)
@@ -218,7 +332,21 @@ struct OxWalker: View {
                     // A soft warm rim so the graphite hide reads on the black notch.
                     .shadow(color: Color(hex: "#E9C27B").opacity(0.35), radius: 1.2)
                     .shadow(color: .white.opacity(0.18), radius: 3)
+                    // Poke it, hover it: art/CHARACTERS.md "Touch reactions".
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        pasture.poke(now: Date().timeIntervalSinceReferenceDate, mood: mood)
+                        onPoke?()
+                    }
+                    .onHover { pasture.hover($0, now: Date().timeIntervalSinceReferenceDate) }
                     .offset(x: x)
+            }
+            if cycle == .doze { Snore(t: t, size: height * 0.22).offset(x: x + width * (right ? 0.78 : 0.06), y: -height * 0.62) }
+            if let b = pasture.bubble, now < b.until {
+                SpeechBubble(bubble: b, size: max(8.5, height * 0.15))
+                    .fixedSize()
+                    .offset(x: x + width * (right ? 0.5 : 0.1), y: -height * 0.8)
+                    .transition(.scale.combined(with: .opacity))
             }
             if forced == nil, roam, let v = pasture.visitor {
                 Farmer(step: v.step, right: v.right, t: t, height: farmerH)
@@ -250,6 +378,50 @@ struct Farmer: View {
                 .frame(width: height * 0.5, height: height * 0.07)
             PixelPersonView(person: "farmer", pose: pose, flip: step != .wave && !right, height: height)
         }
+    }
+}
+
+/// A small speech bubble: plain, angry (red), sleepy (dim) or busy (amber).
+struct SpeechBubble: View {
+    let bubble: Pasture.Bubble
+    let size: CGFloat
+
+    var body: some View {
+        let (bg, fg): (Color, Color) = {
+            switch bubble.tone {
+            case .plain: return (.white, .black)
+            case .angry: return (Ink.red, .white)
+            case .sleepy: return (Color.white.opacity(0.8), Color.black.opacity(0.7))
+            case .busy: return (Ink.amber, .black)
+            }
+        }()
+        Text(bubble.text)
+            .font(.system(size: size, weight: .heavy, design: .rounded))
+            .foregroundStyle(fg)
+            .padding(.horizontal, size * 0.55).padding(.vertical, size * 0.25)
+            .background(Capsule().fill(bg))
+            .rotationEffect(.degrees(bubble.tone == .angry ? -4 : 0))
+            .accessibilityLabel("The bull says \(bubble.text)")
+    }
+}
+
+/// "z z z" drifting up while the bull dozes.
+struct Snore: View {
+    let t: Double
+    let size: CGFloat
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            ForEach(0..<3, id: \.self) { i in
+                let phase = (t * 0.45 + Double(i) / 3).truncatingRemainder(dividingBy: 1)
+                Text("z")
+                    .font(.system(size: size * (0.6 + 0.4 * phase), weight: .heavy, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.9 * (1 - phase)))
+                    .offset(x: size * 0.6 * phase, y: -size * 2.2 * phase)
+            }
+        }
+        .frame(width: size * 2, height: size * 2.4, alignment: .bottomLeading)
+        .allowsHitTesting(false)
     }
 }
 

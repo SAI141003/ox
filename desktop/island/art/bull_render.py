@@ -39,6 +39,7 @@ PROFILES = {
             "look": ("Idle_2", 40),
             "gallop": ("Gallop", 14),
             "kick": ("Attack_Kick", 24),
+            "doze": ("Idle_Headlow", 40),
         },
         # Graphite hide, warm belly, brand-gold horns.
         "look": {
