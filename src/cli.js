@@ -310,7 +310,98 @@ const SLASH_HELP = [
   '  /aas audit <dir>      audit a skill directory for safety signals',
 ].join('\n');
 
+// `ox help` / `ox --help`: what you can do, on one screen. Every flag and
+// subcommand detail lives in usageAll() (`ox help all`), and one section of it
+// is `ox help <topic>`.
 function usage() {
+  const row = (cmd, what) => `  ${cmd.padEnd(34)}${c.dim(what)}`;
+  console.log([
+    `${c.bold(`ox ${VERSION}`)} — a fast, frugal coding agent`,
+    `usage: ox [-p "<task>"] [flags]   ·   ox <command> [args]`,
+    '',
+    c.bold('Start'),
+    row('ox', 'chat with ox in this project'),
+    row('ox -p "fix the failing test"', 'one task, then exit (--image, --max-cost, --json)'),
+    row('ox auto "<goal>"', 'a long run with checkpoints and verification'),
+    row('ox serve', 'OpenAI-compatible API + web chat on 127.0.0.1:8080'),
+    '',
+    c.bold('Tasks and teams'),
+    row('ox task', 'the task board: add, next, claim, done, approve, log'),
+    row('ox schedule', 'recurring runs (opt-in), ox heartbeat, ox cron'),
+    row('ox daemon', 'keep agents running in the background; ox agents, ox attach'),
+    '',
+    c.bold('Models and cost'),
+    row('ox models', 'browse and switch models; ox model, ox bots, ox local'),
+    row('ox bench', 'benchmark models on your machine'),
+    row('ox doctor', 'check keys, providers, tools and the environment'),
+    '',
+    c.bold('Extend'),
+    row('ox skill', 'skills: ls, add, new, curate'),
+    row('ox plugin', 'Claude Code plugins: add, import-claude, ls'),
+    row('ox mcp', 'MCP servers: add, test, remove'),
+    row('ox agent', 'saved agent presets'),
+    '',
+    c.bold('History and memory'),
+    row('ox sessions', 'past sessions; ox history <query>, ox episode'),
+    row('ox mem', 'what ox remembers about this project'),
+    '',
+    c.bold('Mac'),
+    row('ox island', 'live runs, approvals and OX Buddy in the notch (on, off)'),
+    row('ox backend', 'where commands run: local or a Docker container'),
+    '',
+    c.bold('Check'),
+    row('ox verify', 'syntax, smoke, unit, bench and live checks'),
+    row('ox prompt', 'the exact system prompt ox sends, layer by layer'),
+    '',
+    `  ox <subcommand>   ${c.dim('version | help | task | serve | skill | mcp | plugin | island | backend | doctor')}`,
+    '',
+    `${c.dim('Details:')} ox help <topic> ${c.dim('(task, serve, skill, mcp, autonomy, ipc, sessions, flags, …)')} · ox help all`,
+    `${c.dim('In the chat:')} /help`,
+  ].join('\n'));
+}
+
+/** The real subcommand closest to a typo (edit distance <= 2), or null. */
+export function closestCommand(word) {
+  const w = String(word ?? '').toLowerCase();
+  const dist = (a, b) => {
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+    for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) {
+      for (let j = 1; j <= b.length; j++) {
+        d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      }
+    }
+    return d[a.length][b.length];
+  };
+  let best = null;
+  for (const c of SUBCOMMANDS) {
+    const n = dist(w, c);
+    if (n <= 2 && (!best || n < best.n)) best = { c, n };
+  }
+  return best?.c ?? null;
+}
+
+// The section of usageAll() whose header matches `topic` ("tasks:" for "task").
+function usageTopic(topic) {
+  const full = captureUsageAll();
+  const want = String(topic).toLowerCase().replace(/s$/, '');
+  const lines = full.split('\n');
+  const start = lines.findIndex((l) => /^[a-z][a-z /&-]*:$/.test(l) && l.slice(0, -1).replace(/s$/, '') === want);
+  if (start < 0) return false;
+  const end = lines.findIndex((l, i) => i > start && /^[a-z][a-z /&-]*:$/.test(l));
+  console.log(lines.slice(start, end < 0 ? undefined : end).join('\n').trimEnd());
+  return true;
+}
+
+function captureUsageAll() {
+  const log = console.log;
+  let out = '';
+  console.log = (s) => { out += `${s}\n`; };
+  try { usageAll(); } finally { console.log = log; }
+  return out;
+}
+
+function usageAll() {
   const lines = [
     `ox ${VERSION} — featherweight coding agent`,
     '',
@@ -364,12 +455,18 @@ function usage() {
     '  ox agent delete <name> [--yes]  delete a saved agent',
     '',
     'tasks:',
-    '  ox task list [--status <status>]   list tasks (status: pending|running|done|failed)',
-    '  ox task add <title> [--description <desc>] [--tags <tag1,tag2>] [--cron <cron>]  add task',
-    '  ox task get <id>                  show task details',
-    '  ox task run <id>                  run task',
-    '  ox task update <id> [--status <status>] [--title <t>] [--desc <d>]  update task',
-    '  ox task delete <id>               delete task',
+    '  ox task list [--status <s>]       the board: owner, budget, blockers (pending|running|in_review|blocked|done|failed)',
+    '  ox task add <title>               add a task; --parent <id> puts it under a goal, --blocked-by <id,id>,',
+    '      [--budget <usd>] [--review]     --budget is a hard spend cap, --review requires an approval to finish',
+    '      [--description <d>] [--tags <a,b>] [--cron <cron>]',
+    '  ox task next [--as <name>]        claim the oldest ready task and print its brief (goal chain, budget, notes)',
+    '  ox task claim|release <id> [--as <name>]   take or give back a task (one owner at a time)',
+    '  ox task done <id> [--note <text>] [--failed]   finish it (goes to review when --review was set)',
+    '  ox task approve|reject <id> [--note <text>]   decide a task in review',
+    '  ox task brief <id>                what an agent is told: the task, the goals above it, notes',
+    '  ox task spend <id> <usd>          record spend; past the budget the task is blocked',
+    '  ox task log [<id>] [--limit n]    activity: who did what, when',
+    '  ox task get|run|update|delete <id>',
     '',
     'serve:',
     '  ox serve [--port <port>] [--host <host>] [--api-key]   start HTTP server (OpenAI-compatible API)',
@@ -388,8 +485,9 @@ function usage() {
     '      (default: <tmpdir>/ox-ipc-default.sock; --approval-timeout caps how long a connected',
     '       client may hold an approval before ox gives up and falls back to declining)',
     '  ox ipc status [--socket <path>]  report whether a bridge is listening (exit 1 when it is not)',
-    '  ox island [start|stop|status|build]  OX Island: live runs + approvals in the MacBook notch (macOS;',
-    '      every ox run auto-connects while it is running; OX_ISLAND=0 opts a run out)',
+    '  ox island [start|stop|on|off|status|build]  OX Island: live runs, approvals and OX Buddy in the',
+    '      MacBook notch (macOS). Every ox run connects while it runs; OX_ISLAND=0 opts one run out,',
+    '      `ox island off` turns it off until `ox island on`',
     '  ox ipc watch [--socket <path>] [--fps <n>] [--plain]',
     '      live dashboard in this terminal: session, current tool, turns/tokens/cost, and a',
     '      keyboard approval panel (a = allow, d = deny, s = fall back to the terminal prompt,',
@@ -3726,9 +3824,16 @@ async function runSubcommand(cmd, args) {
     case 'version':
       printVersion();
       return;
-    case 'help':
-      usage();
+    case 'help': {
+      const topic = String(args[0] ?? '').trim().toLowerCase();
+      if (!topic) usage();
+      else if (topic === 'all') usageAll();
+      else if (!usageTopic(topic)) {
+        process.stderr.write(`ox: no help topic '${topic}'. Try: task, serve, skill, mcp, autonomy, ipc, sessions, flags, or all\n`);
+        process.exitCode = 3;
+      }
       return;
+    }
     case 'bots':
       cmdBots();
       return;
@@ -6708,7 +6813,8 @@ export async function main(argv = []) {
       await runSubcommand(sub, args.slice(1));
       return;
     }
-    process.stderr.write(`ox: unknown command '${sub}'\n\n`);
+    const near = closestCommand(sub);
+    process.stderr.write(`ox: unknown command '${sub}'${near ? ` (did you mean 'ox ${near}'?)` : ''}\n\n`);
     usage();
     process.exitCode = 3;
     return;
