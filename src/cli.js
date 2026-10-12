@@ -1,7 +1,7 @@
 import { expandLlmsRefs } from './llms-txt.js';
 import { parseBackendSpec } from './docker-backend.js';
 import { buddyTurn, captureScreen } from './buddy.js';
-import { dictate, whisperModel, whisperBinary, WHISPER_MODELS, MODELS_DIR, transcribeFile, projectVocabulary, cleanTranscript, correctVocabulary } from './dictation.js';
+import { dictate, verifyModel, whisperModel, whisperBinary, WHISPER_MODELS, MODELS_DIR, transcribeFile, projectVocabulary, cleanTranscript, correctVocabulary } from './dictation.js';
 import { getCanvas, hasCanvas, canvasWidth, readOnlyRunner } from './tools/canvas.js';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -3274,6 +3274,12 @@ async function cmdVoiceDictation(action, rest) {
     if (pct !== shown && process.stdout.isTTY) { shown = pct; process.stdout.write(`\r  ${pct}%  ${(got / 1048576).toFixed(0)} MB`); }
   }
   await new Promise((r) => out.end(r));
+  if (!verifyModel(tmp, spec)) {
+    fs.rmSync(tmp, { force: true });
+    process.stderr.write(`\n${c.red('✗ checksum mismatch')}: the download is not ox's pinned ${spec.file} (sha1 ${spec.sha1}); nothing was installed\n`);
+    process.exitCode = 1;
+    return true;
+  }
   fs.renameSync(tmp, dest);
   console.log(`\n${c.green('✓')} installed ${spec.file}. OX Buddy now transcribes with whisper.`);
   return true;

@@ -29,6 +29,17 @@ test('spoken file and code names become the real names', () => {
   assert.equal(correctVocabulary('Edit the notes dot txt file.', vocab), 'Edit the notes.txt file.', 'unknown files still join');
 });
 
+test('a model file that is not the pinned one is refused', async () => {
+  const { verifyModel, WHISPER_MODELS } = await import('../src/dictation.js');
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-model-')), 'ggml-base.en.bin');
+  fs.writeFileSync(f, 'not a whisper model');
+  assert.equal(verifyModel(f, WHISPER_MODELS['base.en']), false);
+  for (const spec of Object.values(WHISPER_MODELS)) assert.match(spec.sha1, /^[0-9a-f]{40}$/);
+});
+
 test('ordinary words are left alone', () => {
   assert.equal(correctVocabulary('We should use state machines here.', vocab), 'We should use state machines here.'.replace('use state', 'useState'),
     'a project identifier spelled out is corrected even mid-sentence');

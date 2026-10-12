@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 // ---- 2. cleanup ---------------------------------------------------------------
 
@@ -139,18 +140,41 @@ export function correctVocabulary(text, vocab = []) {
 // ---- 1. whisper.cpp ------------------------------------------------------------
 
 export const MODELS_DIR = path.join(os.homedir(), '.ox', 'models');
+// ox's pinned speech models: open weights (MIT) that run entirely on this Mac,
+// no service and no account. Each is pinned by its SHA-1 (whisper.cpp's
+// published table, models/README.md); a file that does not match is refused,
+// so nothing upstream can swap the model ox listens with.
 export const WHISPER_MODELS = {
-  'base.en': { file: 'ggml-base.en.bin', mb: 142 },
-  'small.en': { file: 'ggml-small.en.bin', mb: 466 },
-  'medium.en': { file: 'ggml-medium.en.bin', mb: 1500 },
+  'base.en': { file: 'ggml-base.en.bin', mb: 142, sha1: '137c40403d78fd54d454da0f9bd998f78703390c' },
+  'small.en': { file: 'ggml-small.en.bin', mb: 466, sha1: 'db8a495a91d927739e50b3fc1cc4c6b8f6c2d022' },
+  'medium.en': { file: 'ggml-medium.en.bin', mb: 1500, sha1: '8c30f0e44ce9560643ebd10bbe50cd20eafd3723' },
 };
+
+const verified = new Map();
+/** True when `file` is byte-for-byte the pinned model (hashed once per process). */
+export function verifyModel(file, spec) {
+  if (!spec?.sha1) return true;
+  const key = `${file}:${fs.statSync(file).mtimeMs}`;
+  if (verified.has(key)) return verified.get(key);
+  const h = createHash('sha1');
+  const fd = fs.openSync(file, 'r');
+  const buf = Buffer.alloc(8 * 1024 * 1024);
+  try {
+    for (let n; (n = fs.readSync(fd, buf, 0, buf.length, null)) > 0;) h.update(buf.subarray(0, n));
+  } finally {
+    fs.closeSync(fd);
+  }
+  const ok = h.digest('hex') === spec.sha1;
+  verified.set(key, ok);
+  return ok;
+}
 
 /** The installed whisper model to use (OX_WHISPER_MODEL, else the best in ~/.ox/models), or null. */
 export function whisperModel(env = process.env) {
   if (env.OX_WHISPER_MODEL) return fs.existsSync(env.OX_WHISPER_MODEL) ? env.OX_WHISPER_MODEL : null;
   for (const name of ['medium.en', 'small.en', 'base.en']) {
     const f = path.join(MODELS_DIR, WHISPER_MODELS[name].file);
-    if (fs.existsSync(f)) return f;
+    if (fs.existsSync(f) && verifyModel(f, WHISPER_MODELS[name])) return f;
   }
   return null;
 }
