@@ -208,7 +208,7 @@ function claimTask(id, opts = {}) {
   const body = JSON.stringify({ owner, pid, at: new Date().toISOString(), ...(pid == null ? { leaseMs: opts.leaseMs ?? CLAIM_LEASE_MS } : {}) });
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      fs.writeFileSync(file, body, { flag: 'wx' });
+      createLockAtomically(file, body);
       const t = updateTask(id, { status: 'running', assignee: owner }, { ...opts, actor: owner });
       logActivity(dir, { task: id, by: owner, action: 'claimed' });
       return { ok: true, task: t };
@@ -224,6 +224,21 @@ function claimTask(id, opts = {}) {
     }
   }
   return { ok: false, reason: 'lost the race' };
+}
+
+// The lock must never be visible half-written: with `wx`, the file exists for
+// a moment before its body does, another claimer reads it empty, takes it for
+// stale and breaks a live lock. So the full body is written to a private temp
+// file and hard-linked into place; link() is atomic and fails with EEXIST if a
+// lock is already there, exactly like `wx`.
+function createLockAtomically(file, body) {
+  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  fs.writeFileSync(tmp, body);
+  try {
+    fs.linkSync(tmp, file);
+  } finally {
+    try { fs.unlinkSync(tmp); } catch {}
+  }
 }
 
 function breakStaleLock(file) {

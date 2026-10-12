@@ -150,7 +150,8 @@ test('cli --plan: non-TTY WITH -y proceeds (plan built, saved, agent started)', 
   assert.equal(plansIn(work).length, 1, `-y should have saved the plan, got ${JSON.stringify(plansIn(work))}`);
   // It went on to actually run the agent, which dies on the absent API key —
   // that is the sandbox, not the gate.
-  assert.match(r.all, /stream died after 3 retries/, r.all);
+  // A missing key is terminal (not retried), so the run stops on the first attempt.
+  assert.match(r.all, /provider auth failure: Missing API key/, r.all);
   assertNoFalseClaim(r.all, 'non-TTY with -y');
 });
 
@@ -314,6 +315,7 @@ test('cli --plan: TTY still gates — "a" approves and applies', async (t) => {
   assert.ok(!/--plan refused/.test(r.stdout), r.stdout);
   assert.equal(plansIn(work).length, 1, `an approved plan must be saved; stdout=${r.stdout}`);
   // It went on to run the agent, which dies on the absent API key — sandbox, not gate.
-  assert.match(r.all, /stream died after 3 retries/, r.all);
+  // A missing key is terminal (not retried), so the run stops on the first attempt.
+  assert.match(r.all, /provider auth failure: Missing API key/, r.all);
   assert.ok(!/non-interactive/i.test(r.stdout), r.stdout);
 });

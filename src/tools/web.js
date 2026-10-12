@@ -50,6 +50,7 @@ import { screenMatch, screenReadLines } from '../memory.js';
 // The single egress decision (profile.restrict_network + network_allow) lives in
 // src/sandbox.js; this module owns only the prose of a refusal.
 import { networkPolicyFor } from '../sandbox.js';
+import { findBrowser, looksClientRendered, renderPage } from '../web-render.js';
 // The capability layer: ordered backend chains selected by REAL probe. This module
 // owns the BACKENDS; src/capability.js owns the chain walk, the probe cache and
 // the verdict/record split. The dependency runs one way on purpose, so the
@@ -829,10 +830,29 @@ export async function webFetchTool(args = {}, ctx = {}) {
   const isHtml = !looksJson && /html|xml/i.test(doc.contentType);
   let title = '';
   let text;
+  let renderedNote = '';
   if (isHtml) {
     const converted = htmlToText(doc.body);
     title = converted.title;
     text = converted.text;
+    // A client-rendered shell (empty #root, __NEXT_DATA__, "enable JavaScript")
+    // is rendered HERE with a local headless browser instead of being handed to
+    // a third-party reader. Not under a network-restricting sandbox: the page's
+    // own scripts and assets would reach hosts the allow-list never named.
+    if (args?.render !== false && !ctx?.sandbox?.restrict_network && looksClientRendered(doc.body, text)) {
+      const browser = findBrowser(env);
+      if (browser) {
+        const rendered = await renderPage(doc.url, { browser, timeoutMs, maxBytes, signal: ctx?.signal ?? null });
+        if (rendered.ok) {
+          const again = htmlToText(rendered.body);
+          if (again.text.length > text.length) {
+            title = again.title || title;
+            text = again.text;
+            renderedNote = `${rendered.via}: the served HTML was a JavaScript shell`;
+          }
+        }
+      }
+    }
   } else {
     text = collapseWhitespace(doc.body);
   }
@@ -857,7 +877,8 @@ export async function webFetchTool(args = {}, ctx = {}) {
       (doc.truncated
         ? ` (STOPPED at the ${doc.capBytes}-byte cap; the remainder was never buffered)`
         : '') +
-      (doc.hops ? ` | redirects: ${doc.hops}` : ''),
+      (doc.hops ? ` | redirects: ${doc.hops}` : '') +
+      (renderedNote ? ` | ${renderedNote}` : ''),
     capped.truncated ? `[web_fetch] text truncated at ${WEB_MAX_TEXT_CHARS} characters` : '',
   ]
     .filter(Boolean)

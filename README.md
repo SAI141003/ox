@@ -158,6 +158,19 @@ other OpenAI clients ignore, and only the tool's name and a short preview leave
 the server, never its output. With `OX_SERVE_API_KEY` set, the page asks for
 the key and the API stays locked without it.
 
+## Reading JavaScript-only pages
+
+Many sites (React, Next, Vue) send an empty `<div id="root">` and build the page
+in the browser, so a plain fetch reads nothing. When `web_fetch` gets such a
+shell, it renders the page **on your machine** with the Chrome, Edge, Brave or
+Chromium you already have: headless, with a throwaway profile, no extensions,
+a time limit and the usual size cap. Nothing goes to a third-party reader, and
+it works for your own `localhost` apps too. The result says
+`rendered locally (Google Chrome)` when this happened. `OX_BROWSER=<path>`
+picks the browser and `OX_BROWSER=off` turns rendering off. Under a sandbox
+that restricts the network it never renders, because the page's own scripts
+would reach hosts the allow-list didn't name.
+
 ## OX Canvas: answers as live UI
 
 When a table, chart or dashboard says it better than prose, ox draws one with
