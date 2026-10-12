@@ -24,6 +24,16 @@ enum OxCycle: String, CaseIterable {
 enum Frames {
     /// Decoded once per folder; empty when that render is not bundled.
     private static var cache: [String: [NSImage]] = [:]
+    private static var single: [String: NSImage] = [:]
+
+    /// One bundled PNG ("barn/open"), decoded once.
+    static func loadOne(_ name: String) -> NSImage? {
+        if let i = single[name] { return i }
+        guard let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "Resources"),
+              let img = NSImage(contentsOf: url) else { return nil }
+        single[name] = img
+        return img
+    }
 
     static func load(_ sub: String) -> [NSImage] {
         if let f = cache[sub] { return f }
@@ -70,9 +80,42 @@ final class Pasture {
     private var pokes: [Double] = []
     private var lastTouch = Date().timeIntervalSinceReferenceDate
     /// No runs and nobody around for this long: the bull lies down for a doze.
-    static let dozeAfter: Double = 90
+    static var dozeAfter: Double = 90
+
+    /// Dev aid (--render-story): run the pasture on a simulated clock.
+    func resetClock(_ t: Double) { lastTouch = t; last = nil; nextVisit = t + 10_000 }
 
     var dozing: Bool { act == .doze }
+
+    // The barn exists only around sleep (art/CHARACTERS.md storyboard): it rises
+    // when the bull heads home, its door closes and the lantern glows while it
+    // sleeps, and when the bull leaves (poke or a run) the door opens, the bull
+    // comes out and the barn sinks away.
+    private(set) var barnShownAt: Double?
+    private(set) var barnLeaveAt: Double?
+    private(set) var dozeStart: Double = 0
+
+    /// What to draw for the barn now: scale (0...1, springing up or sinking),
+    /// which render ("open", "closed", "closed_lit"), and a dust puff (0...1).
+    func barnState(now t: Double) -> (scale: CGFloat, image: String, dust: Double)? {
+        if let leave = barnLeaveAt {
+            let e = t - leave
+            if e < 1.3 { return (1, "open", 0) }
+            if e < 1.8 { return (CGFloat(1 - (e - 1.3) / 0.5), "open", (e - 1.3) / 0.5) }
+            return nil
+        }
+        guard let shown = barnShownAt else { return nil }
+        let e = t - shown
+        // Springs up out of the ground with a little overshoot.
+        let p = min(1, e / 0.5)
+        let scale = CGFloat(p >= 1 ? 1 : 1 + 0.12 * sin(p * .pi) - pow(1 - p, 3))
+        let image = act == .doze ? (t - dozeStart < 3.5 ? "closed_lit" : "closed") : "open"
+        return (max(0, scale), image, e < 0.7 ? e / 0.7 : 0)
+    }
+
+    private func leaveHome(_ t: Double) {
+        if barnShownAt != nil, barnLeaveAt == nil { barnLeaveAt = t }
+    }
     /// Asleep in its home (the barn; the notch in the compact view): not drawn.
     var home: Bool { act == .doze }
 
@@ -151,10 +194,13 @@ final class Pasture {
             break
         }
         if act == .doze || act == .goHome {
-            // Woken up (out of the barn, or on the way): a jolt, a kick, a shout, a grumble.
+            leaveHome(t)
+            // Woken up: it bursts out of the doorway (visible at once), kicks,
+            // shouts, grumbles, then walks off into the pasture.
+            act = .stand
             run([Beat(cycle: .kick, seconds: 1.0, bubble: ("MOO!!", .angry)),
                  Beat(cycle: .alert, seconds: 1.0, bubble: nil),
-                 Beat(cycle: .idle, seconds: 1.6, bubble: ("zzz… rude", .sleepy))], t, then: .graze)
+                 Beat(cycle: .idle, seconds: 1.6, bubble: ("zzz… rude", .sleepy))], t, then: .wander)
         } else if pokes.count >= 3 {
             pokes = []
             run([Beat(cycle: .alert, seconds: 1.0, bubble: ("MOO! 💢", .angry)),
@@ -203,6 +249,7 @@ final class Pasture {
         x = min(max(0, x), lane)
         let pace = max(14, height * 0.75)
         if let b = bubble, t >= b.until { bubble = nil }
+        if let leave = barnLeaveAt, t - leave > 1.8 { barnLeaveAt = nil; barnShownAt = nil }
 
         // A direction change plays the 360° turn; the bull holds still meanwhile.
         if let s = turnStart {
@@ -223,6 +270,8 @@ final class Pasture {
                 switch then {
                 case .zoomies:
                     if roam > 30 { target = x < roam / 2 ? roam : 0 } else { act = .stand; until = t + 2 }
+                case .wander:
+                    target = roam * CGFloat.random(in: 0.3...0.6)
                 default:
                     until = t + Double.random(in: 2...4)
                 }
@@ -234,17 +283,20 @@ final class Pasture {
         // the barn or the notch) and sleep in there.
         if allowDoze, act != .doze, act != .goHome, visitor == nil, t - lastTouch > Self.dozeAfter {
             act = .goHome
+            barnShownAt = t
+            barnLeaveAt = nil
         }
         if act == .goHome {
-            if !allowDoze { act = .stand; until = t + 2; lastTouch = t; return }
+            if !allowDoze { act = .stand; until = t + 2; lastTouch = t; leaveHome(t); return }
             let d = lane - x
             right = true
-            if d <= pace * dt { x = lane; act = .doze } else { x += pace * 0.8 * dt }
+            if d <= pace * dt { x = lane; act = .doze; dozeStart = t } else { x += pace * 0.8 * dt }
             return
         }
         if act == .doze {
             // A run starting brings it out of the barn at a trot.
-            if !allowDoze { act = .wander; target = lane * 0.4; lastTouch = t }
+            // A run starting: the door opens, the bull trots out, the barn sinks.
+            if !allowDoze { act = .wander; target = lane * 0.4; lastTouch = t; leaveHome(t) }
             return
         }
 
@@ -399,18 +451,19 @@ struct OxWalker: View {
                     .onHover { pasture.hover($0, now: Date().timeIntervalSinceReferenceDate) }
                     .offset(x: x)
             }
-            if barn {
-                // Home: the bull walks behind it (drawn on top) and sleeps inside.
-                Barn(sleeping: hidden, t: t)
-                    .frame(width: barnW, height: height * 0.95)
-                    .offset(x: size.width - barnW)
+            if barn, roam, let b = pasture.barnState(now: now) {
+                // Only around sleep: rises, the bull walks in (drawn on top of
+                // it), the door closes; a poke or a run opens it and it sinks.
+                BarnSprite(image: b.image, scale: b.scale, dust: b.dust)
+                    .frame(width: barnW, height: barnW * 0.9)
+                    .offset(x: size.width - barnW, y: height * 0.04)
                     .onTapGesture {
                         if hidden { pasture.poke(now: Date().timeIntervalSinceReferenceDate, mood: mood) }
                     }
                     .help(hidden ? "the bull is asleep in its barn (poke to wake it)" : "the barn")
             }
             if hidden {
-                // Asleep at home: "z" drifting from the barn window, or from the notch's edge.
+                // Asleep at home: "z" drifting from the hay loft, or from the notch's edge.
                 Snore(t: t, size: height * 0.22)
                     .offset(x: barn ? size.width - barnW * 0.45 : max(0, size.width - width - 4), y: -height * (barn ? 0.72 : 0.4))
             } else if cycle == .doze {
@@ -419,7 +472,7 @@ struct OxWalker: View {
             if let b = pasture.bubble, now < b.until {
                 SpeechBubble(bubble: b, size: max(8.5, height * 0.15))
                     .fixedSize()
-                    .offset(x: x + width * (right ? 0.5 : 0.1), y: -height * 0.8)
+                    .offset(x: min(x + width * (right ? 0.5 : 0.1), max(0, size.width - height * 1.35)), y: -height * 0.8)
                     .transition(.scale.combined(with: .opacity))
             }
             if forced == nil, roam, let v = pasture.visitor {
@@ -455,41 +508,31 @@ struct Farmer: View {
     }
 }
 
-/// The bull's barn: red planks, a white-trimmed roof and door, a warm window
-/// that dims when the bull is asleep inside.
-struct Barn: View {
-    let sleeping: Bool
-    let t: Double
+/// The barn, rendered in Blender like the bull (art/barn_render.py): open,
+/// closed, or closed with the lantern lit. Grows from the ground and sinks
+/// back into it, with a dust puff at its feet.
+struct BarnSprite: View {
+    let image: String
+    let scale: CGFloat
+    let dust: Double
 
     var body: some View {
-        Canvas { g, size in
-            let w = size.width, h = size.height
-            let red = Color(hex: "#A8382E"), dark = Color(hex: "#7A2620"), trim = Color(hex: "#F1E6D2")
-            // Body and roof.
-            let body = CGRect(x: w * 0.08, y: h * 0.38, width: w * 0.84, height: h * 0.62)
-            g.fill(Path(body), with: .linearGradient(Gradient(colors: [red, dark]), startPoint: CGPoint(x: 0, y: body.minY), endPoint: CGPoint(x: 0, y: body.maxY)))
-            for i in 1..<6 { g.fill(Path(CGRect(x: body.minX + body.width * CGFloat(i) / 6, y: body.minY, width: 0.8, height: body.height)), with: .color(dark.opacity(0.6))) }
-            var roof = Path()
-            roof.move(to: CGPoint(x: 0, y: h * 0.42))
-            roof.addLine(to: CGPoint(x: w * 0.5, y: h * 0.06))
-            roof.addLine(to: CGPoint(x: w, y: h * 0.42))
-            roof.closeSubpath()
-            g.fill(roof, with: .color(Color(hex: "#3A2A22")))
-            g.stroke(roof, with: .color(trim), lineWidth: 1.4)
-            // Hay-loft window: warm light; dim when the bull is asleep.
-            let win = CGRect(x: w * 0.42, y: h * 0.2, width: w * 0.16, height: h * 0.13)
-            g.fill(Path(win), with: .color(Color(hex: "#F5C76B").opacity(sleeping ? 0.25 + 0.1 * sin(t * 1.5) : 0.85)))
-            g.stroke(Path(win), with: .color(trim), lineWidth: 1)
-            // Door with the white X.
-            let door = CGRect(x: w * 0.3, y: h * 0.56, width: w * 0.4, height: h * 0.44)
-            g.fill(Path(door), with: .color(Color(hex: "#2A1512")))
-            g.stroke(Path(door), with: .color(trim), lineWidth: 1.2)
-            var x = Path()
-            x.move(to: CGPoint(x: door.minX, y: door.minY)); x.addLine(to: CGPoint(x: door.maxX, y: door.maxY))
-            x.move(to: CGPoint(x: door.maxX, y: door.minY)); x.addLine(to: CGPoint(x: door.minX, y: door.maxY))
-            g.stroke(x, with: .color(trim.opacity(0.8)), lineWidth: 1)
+        ZStack(alignment: .bottom) {
+            if let img = Frames.loadOne("barn/\(image)") {
+                Image(nsImage: img).resizable().interpolation(.high)
+                    .scaleEffect(x: 1, y: max(0.001, scale), anchor: .bottom)
+                    .opacity(Double(min(1, scale * 3)))
+            }
+            if dust > 0 && dust < 1 {
+                // A dust puff where it meets the ground.
+                ForEach(0..<5, id: \.self) { i in
+                    Circle().fill(Color(hex: "#B8A58A").opacity(0.55 * (1 - dust)))
+                        .frame(width: 10 + 18 * dust, height: 10 + 18 * dust)
+                        .offset(x: CGFloat(i - 2) * (8 + 14 * dust), y: -4 - 4 * dust)
+                }
+            }
         }
-        .accessibilityLabel(sleeping ? "The bull is asleep in its barn" : "The bull's barn")
+        .allowsHitTesting(scale > 0.5)
     }
 }
 

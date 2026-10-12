@@ -219,6 +219,68 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-reactions"), i + 1 < C
     exit(0)
 }
 
+// Dev aid: `OxIsland --render-story <dir>` runs the pasture on a simulated
+// clock through the barn storyboard and draws the key moments in one strip.
+if let i = CommandLine.arguments.firstIndex(of: "--render-story"), i + 1 < CommandLine.arguments.count {
+    let dir = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    MainActor.assumeIsolated {
+        let p = Pasture()
+        Pasture.dozeAfter = 20
+        p.resetClock(0)
+        let height: CGFloat = 84, width = height * 4 / 3, laneW: CGFloat = 420
+        let lane = laneW - width, barnW = height * 1.15
+        var t = 0.0
+        var shots: [(String, Double)] = []
+        func run(to end: Double) {
+            while t < end { t += 1.0 / 24; p.step(now: t, lane: lane, height: height, farmerWidth: 40, allowVisitors: false, allowDoze: true, homeWidth: barnW * 0.9) }
+        }
+        func snap(_ label: String) -> some View {
+            let turn = p.turnIndex(now: t)
+            let frames = turn != nil ? Frames.load("ox/turn") : OxFrames.frames(p.cycle)
+            let img = frames.isEmpty ? nil : frames[turn ?? 0]
+            return VStack(spacing: 4) {
+                ZStack(alignment: .bottomLeading) {
+                    Rectangle().fill(Color(hex: "#141518"))
+                    if !p.home, let img {
+                        Image(nsImage: img).resizable().frame(width: width, height: height)
+                            .scaleEffect(x: turn == nil && !p.facingRight ? -1 : 1, y: 1).offset(x: p.x)
+                    }
+                    if let b = p.barnState(now: t) {
+                        BarnSprite(image: b.image, scale: b.scale, dust: b.dust)
+                            .frame(width: barnW, height: barnW * 0.9).offset(x: laneW - barnW, y: height * 0.04)
+                    }
+                    if p.home { Snore(t: t, size: height * 0.22).offset(x: laneW - barnW * 0.45, y: -height * 0.72) }
+                    if let b = p.bubble, t < b.until { SpeechBubble(bubble: b, size: 13).fixedSize().offset(x: min(p.x + width * 0.5, laneW - height * 1.35), y: -height * 0.8) }
+                }
+                .frame(width: laneW, height: height * 1.5)
+                Text(label).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+            }
+        }
+        var views: [AnyView] = []
+        run(to: 3); views.append(AnyView(snap("1. grazing, no barn")))
+        run(to: 20.3); views.append(AnyView(snap("2. quiet: the barn rises")))
+        run(to: 22.5); views.append(AnyView(snap("3. walking home")))
+        while !p.home && t < 60 { run(to: t + 0.2) }
+        run(to: t + 0.6); views.append(AnyView(snap("4. inside: door shut, lantern lit")))
+        run(to: t + 5); views.append(AnyView(snap("5. asleep")))
+        p.poke(now: t, mood: .sleeping)
+        run(to: t + 0.4); views.append(AnyView(snap("6. poked: door bursts open")))
+        run(to: t + 1.1); views.append(AnyView(snap("7. the barn sinks")))
+        run(to: t + 1.0); views.append(AnyView(snap("8. the barn is gone")))
+        run(to: t + 3.0); views.append(AnyView(snap("9. back to the pasture")))
+        let sheet = VStack(alignment: .leading, spacing: 10) { ForEach(0..<views.count, id: \.self) { views[$0] } }
+            .padding(12).background(Color.black)
+        let r = ImageRenderer(content: sheet)
+        r.scale = 1.5
+        if let img = r.nsImage, let tiff = img.tiffRepresentation,
+           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: dir.appendingPathComponent("story.png"))
+        }
+    }
+    exit(0)
+}
+
 /// Renders a desk as if it had just been poked `count` times (dev aid only).
 struct PokedDesk: View {
     let desk: AgentDesk
