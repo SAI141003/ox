@@ -19,6 +19,7 @@ import { webTaskTool, WEB_TASK_TOOL_SCHEMAS, WEB_TASK_TOOLS } from './web-task.j
 import { critiqueTool, CRITIQUE_TOOL_SCHEMAS, CRITIQUE_TOOLS } from './critique.js';
 import { showUiTool, CANVAS_TOOL_SCHEMAS, CANVAS_TOOLS, CANVAS_KEYWORDS } from './canvas.js';
 import { agentMessagingToolSchemas, AGENT_MESSAGE_TOOLS } from '../agent-teams.js';
+import { taskBoardTool, TASK_BOARD_TOOL_SCHEMAS, TASK_BOARD_TOOLS, currentTaskId } from './task-board.js';
 
 export const TOOL_IMPLS = {
   read_file: readFileTool,
@@ -41,6 +42,7 @@ export const TOOL_IMPLS = {
   critique: critiqueTool,
   web_task: webTaskTool,
   show_ui: showUiTool,
+  task_board: taskBoardTool,
 };
 
 const PLAN_READ_ONLY = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'show_ui'];
@@ -240,6 +242,8 @@ export function listToolSchemas(ctx = {}, strictSchemas = false) {
   // OX Canvas rides after the user's own MCP and memory tools, so in the capped
   // "not offered this turn" inventory their names come first.
   for (const s of CANVAS_TOOL_SCHEMAS) if (!schemas.some((x) => x.name === s.name)) schemas.push(s);
+  // The task board, only for an agent started for a task (ox task run).
+  if (currentTaskId(ctx)) for (const s of TASK_BOARD_TOOL_SCHEMAS) if (!schemas.some((x) => x.name === s.name)) schemas.push(s);
   // Wave 6b: subagent tool — available unless explicitly disabled for this ctx.
   if (ctx.enableSubagents !== false && !schemas.some((x) => x.name === 'subagent')) {
     schemas.push(subagentToolSchema());
@@ -584,6 +588,7 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
   const canvasOn = keywordSignal(message, CANVAS_KEYWORDS) !== null;
   const keep = new Set(NARROW_CORE_TOOLS);
   for (const t of skillNames) keep.add(t);
+  for (const t of TASK_BOARD_TOOLS) if (names.includes(t)) keep.add(t);
   for (const n of names) {
     if (memoryOn && n.startsWith('memory_')) keep.add(n);
     if (operatorOn && OPERATOR_TOOLS.includes(n)) keep.add(n);

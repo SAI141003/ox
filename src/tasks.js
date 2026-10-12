@@ -392,7 +392,8 @@ function runTask(id, opts = {}) {
   return new Promise((resolve) => {
     const args = ['-p', [brief, opts.prompt].filter(Boolean).join('\n\n')];
     execFile(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js'), ...args],
-      { timeout: 300000 }, (error, stdout, stderr) => {
+      // OX_TASK_ID offers the run its task_board tool (src/tools/task-board.js).
+      { timeout: 300000, env: { ...process.env, OX_TASK_ID: id, OX_AGENT_NAME: 'ox-run' } }, (error, stdout, stderr) => {
         if (error) {
           completeTask(id, { ...opts, owner: 'ox-run', failed: true, note: error.message.slice(0, 300) });
           resolve({ success: false, error: error.message, stdout, stderr });

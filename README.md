@@ -171,6 +171,31 @@ compact JSON and 1,094 for pretty-printed JSON. It is built for an agent:
 
 `/ui` redraws the last canvas.
 
+## Task board: many agents, no collisions
+
+`ox task` is a board that agents and people share:
+
+```bash
+ox task add "Ship v1"                                   # a goal
+ox task add "Design schema" --parent <goal> --budget 1  # work under it, $1 cap
+ox task add "Build API" --parent <goal> --blocked-by <schema> --review
+ox task next --as mira        # claims the oldest ready task, prints its brief
+ox task done <id> --note "schema in db/schema.sql"
+ox task approve <id>          # or: ox task reject <id> --note "add pagination"
+ox task log                   # who did what, when
+```
+
+- **One owner per task.** Claiming takes an exclusive lock, so two agents
+  racing for the same task can't both win. An agent's claim ends with its
+  process; a claim made from the command line holds for 4 hours.
+- **Blockers and goals.** A task is ready only when its blockers are done, and
+  a goal isn't handed out while tasks under it are still open. The agent gets
+  the chain of goals above its task as the "why".
+- **Budgets are hard stops.** Spend past a task's budget is refused, and the
+  task is blocked with the reason.
+- **Review gates.** With `--review`, finishing a task sends it for review;
+  only an approval marks it done.
+
 ## Library docs for agents: `@llms:`
 
 Many UI and API libraries publish `/llms.txt`, docs written for agents. Mention
