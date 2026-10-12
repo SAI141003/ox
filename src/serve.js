@@ -364,6 +364,13 @@ function tallyUsage(total, event) {
 // carrying `content`, so a handler waiting for one matched nothing and every
 // completion came back as an empty string inside a 200 that looked like an
 // answer. These two read the events that actually exist.
+// Only names and a short preview leave the server: never tool output.
+function oxToolEvent(event) {
+  return event.type === 'tool-start'
+    ? { type: 'tool-start', id: event.id ?? null, name: String(event.name ?? 'tool'), preview: String(event.argsPreview ?? '').slice(0, 120) }
+    : { type: 'tool-end', id: event.id ?? null, name: String(event.name ?? 'tool'), isError: event.isError === true };
+}
+
 function textDelta(event) {
   if (event.type === 'text-delta' && typeof event.text === 'string' && event.text) return event.text;
   return '';
@@ -445,6 +452,10 @@ async function handleChatCompletions(req, res) {
           sendSSE(res, createChatCompletionChunk(targetModel, last));
         } else if (event.type === 'usage') {
           tallyUsage(totalUsage, event);
+        } else if (event.type === 'tool-start' || event.type === 'tool-end') {
+          // What the agent is doing, as an `ox` extension on an empty chunk:
+          // OpenAI clients ignore the unknown field, the web chat draws it.
+          sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: oxToolEvent(event) });
         }
       }
       sendSSE(res, createChatCompletionChunk(targetModel, '', true, totalUsage));
@@ -879,6 +890,29 @@ async function serveStaticFile(req, res, platformRoot) {
   }
 }
 
+// The web chat (src/web/chat.html): one static page, no data in it. It is not
+// part of the OpenAI route table, and every API call it makes carries the same
+// bearer key as any other client.
+let chatPage = null;
+async function serveChatPage(res) {
+  try {
+    chatPage ??= await readFile(new URL('./web/chat.html', import.meta.url));
+  } catch {
+    sendError(res, 404, 'The web chat is not bundled with this install.', 'invalid_request_error', 'not_found', null);
+    return;
+  }
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Length': chatPage.length,
+    'Cache-Control': 'no-cache',
+    // The page talks only to this server and loads nothing else.
+    'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+  });
+  res.end(chatPage);
+}
+
 async function handleRequest(req, res) {
   let url;
   try {
@@ -890,6 +924,10 @@ async function handleRequest(req, res) {
   const path = url.pathname;
   const PLATFORM_ROOT = resolve(process.cwd(), 'platform');
   if (await serveStaticFile(req, res, PLATFORM_ROOT)) return;
+  if (req.method === 'GET' && (path === '/' || path === '/chat')) {
+    await serveChatPage(res);
+    return;
+  }
 
 
   let pathExists = false;
@@ -928,6 +966,7 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       }
       reportExposure(exposure);
       console.log(`[serve] listening on http://${host}:${port}`);
+      console.log(`[serve] web chat: http://${host.includes(':') ? `[${host}]` : host}:${port}/`);
       resolve({
         close: () => new Promise((resolveClose) => server.close(() => resolveClose()))
       });

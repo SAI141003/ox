@@ -143,6 +143,21 @@ From the terminal, `/screen <question>` does the same with a screenshot, and
 models). Only the newest screenshot in a conversation is sent, so long voice
 sessions pay for one image, not all of them.
 
+## Web chat
+
+```bash
+ox serve        # then open http://127.0.0.1:8080/
+```
+
+`ox serve` includes a chat page, so ox works in a browser with nothing else to
+install: conversations kept in the browser, a model picker, streaming answers,
+code blocks with copy buttons, light and dark themes, and a phone layout. While
+the agent works, each tool it runs appears in the reply (for example
+`read_file src/app.js`). The stream carries this as an extra `ox` field that
+other OpenAI clients ignore, and only the tool's name and a short preview leave
+the server, never its output. With `OX_SERVE_API_KEY` set, the page asks for
+the key and the API stays locked without it.
+
 ## OX Canvas: answers as live UI
 
 When a table, chart or dashboard says it better than prose, ox draws one with
