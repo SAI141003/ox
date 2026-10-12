@@ -410,7 +410,9 @@ test('ipc: a second approval supersedes the first, resolving it ask', async (t) 
 // ---------------------------------------------------------------------------
 
 test('ipc: an invalid decision is ignored and the approval stays pending', async (t) => {
-  const { server, client, messages } = await pair(t, { approvalTimeoutMs: 300 });
+  // Long enough that the six invalid answers always land while it is pending,
+  // even on a busy machine; the test ends it with an explicit deny.
+  const { server, client, messages } = await pair(t, { approvalTimeoutMs: 10_000 });
   const warnings = [];
   server.on('protocol-warning', (w) => warnings.push(w));
 

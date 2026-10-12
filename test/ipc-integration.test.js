@@ -155,7 +155,7 @@ async function connectWhenReady(socketPath, { clientId = 'gui-1', tries = 120, i
 // yet eligible to hold an approval, and every approval test would flake.
 async function handshake(client) {
   await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('no pong from the ipc server')), 3000);
+    const timer = setTimeout(() => reject(new Error('no pong from the ipc server')), 15_000); // a busy machine can take seconds to schedule the server
     const onMessage = (msg) => {
       if (msg?.type !== 'pong') return;
       clearTimeout(timer);
