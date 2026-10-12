@@ -108,7 +108,9 @@ const STAGES = {
 
   async unit() {
     const files = fs.readdirSync(path.join(ROOT, 'test')).filter((f) => f.endsWith('.test.js')).map((f) => path.join('test', f));
-    const r = await run(process.execPath, ['--test', '--test-concurrency=4', ...files], {
+    // TAP explicitly: newer Node prints its "spec" summary (ℹ pass N) to a pipe,
+    // and the counts below are parsed from TAP's "# pass N".
+    const r = await run(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=4', ...files], {
       timeoutMs: 2_400_000,
       plain: false,
       // The per-file repo guard reruns the whole suite; the dedicated full run

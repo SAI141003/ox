@@ -1,4 +1,5 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import { gitBranch } from './git-fast.js';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -9,18 +10,17 @@ import { HISTORY_STATUS, degradedHistoryNotice, lastHistoryLoad } from './sessio
 import { DEFAULT_SUBAGENT_CONCURRENCY, MAX_SUBAGENT_CONCURRENCY } from './resource-class.js';
 
 function gitInfo(cwd) {
-  const opts = { cwd, stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 };
+  // Branch from .git directly; only the dirty count needs git, run without a shell.
+  const branch = gitBranch(cwd);
+  if (!branch) return 'not a git repository';
+  let dirty = 'clean';
   try {
-    const branch = execSync('git rev-parse --abbrev-ref HEAD', opts).toString().trim();
-    let dirty = 'clean';
-    try {
-      const status = execSync('git status --porcelain', opts).toString().trim();
-      if (status) dirty = `${status.split('\n').length} changed file(s)`;
-    } catch {}
-    return `branch ${branch}, ${dirty}`;
-  } catch {
-    return 'not a git repository';
-  }
+    const status = execFileSync('git', ['--no-optional-locks', 'status', '--porcelain'], {
+      cwd, stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000,
+    }).toString().trim();
+    if (status) dirty = `${status.split('\n').length} changed file(s)`;
+  } catch {}
+  return `branch ${branch}, ${dirty}`;
 }
 
 export const PERSONA_MAX_CHARS = 4000;

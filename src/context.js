@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { screenReadLines, shortWithheldNotice } from './memory.js';
+import { gitToplevel } from './git-fast.js';
 
 // ONE cap for every project-instruction source, nested or not. Every layer
 // draws from this single accumulator, so a nested file can never bypass it.
@@ -100,16 +101,9 @@ function findInstructionRoot(cwd) {
 }
 
 function resolveInstructionRoot(cwd) {
-  try {
-    const out = execSync('git rev-parse --show-toplevel', {
-      cwd,
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 2000,
-    })
-      .toString()
-      .trim();
-    if (out) return path.resolve(out);
-  } catch {}
+  // The repo root, read from the filesystem: no `git` subprocess at startup.
+  const top = gitToplevel(cwd);
+  if (top) return top;
   let best = path.resolve(cwd);
   for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
     if (ROOT_MARKERS.some((m) => fs.existsSync(path.join(dir, m)))) best = dir;
