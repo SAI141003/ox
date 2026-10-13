@@ -17,13 +17,19 @@ import path from 'node:path';
 const err = (content) => ({ content, isError: true });
 const EMAIL = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
 
-const ACCOUNTS_SCRIPT = [
+// Indexed loops on purpose: `repeat with x in` hands Mail lazy references it
+// then refuses to turn into text (-1700), checked against the real Mail app.
+export const ACCOUNTS_SCRIPT = [
   'tell application "Mail"',
   'set out to ""',
-  'repeat with a in every account',
+  'set accts to every account',
+  'repeat with i from 1 to count of accts',
+  'set a to item i of accts',
   'if enabled of a then',
-  'repeat with e in (email addresses of a)',
-  'set out to out & (name of a) & tab & e & linefeed',
+  'set nm to name of a',
+  'set addrs to email addresses of a',
+  'repeat with j from 1 to count of addrs',
+  'set out to out & nm & tab & (item j of addrs) & linefeed',
   'end repeat',
   'end if',
   'end repeat',

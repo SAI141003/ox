@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readConfigDoc, saveConfigDoc } from './config.js';
 
 export const islandFile = (home = os.homedir()) => path.join(home, '.ox', 'island.json');
@@ -119,7 +120,10 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
     }
     if (action === 'build') return 0;
   }
-  const child = spawn(bin, [], { detached: true, stdio: 'ignore' });
+  // The island runs ox itself for its shelf (ask about a dropped file, email
+  // it), so it is told exactly which node and which ox started it.
+  const oxCli = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
+  const child = spawn(bin, [], { detached: true, stdio: 'ignore', env: { ...process.env, OX_NODE: process.execPath, OX_CLI: oxCli } });
   child.unref();
   // Wait for the presence file so an `ox` started right after this connects.
   for (let i = 0; i < 30 && !live(); i++) await new Promise((r) => setTimeout(r, 100));

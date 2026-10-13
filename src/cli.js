@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -363,6 +363,7 @@ function usage() {
     row('ox auto "<goal>"', 'a long run with checkpoints and verification'),
     row('ox serve', 'OpenAI-compatible API + web chat on 127.0.0.1:8080'),
     row('ox connect', 'use a plan you already pay for: Claude, ChatGPT, Gemini, Qwen, Kimi, ...'),
+    row('ox mail draft --from --to', 'an email draft in Mail, from the account you name'),
     '',
     c.bold('Tasks and teams'),
     row('ox task', 'the task board: add, next, claim, done, approve, log'),
@@ -4493,6 +4494,53 @@ async function runSubcommand(cmd, args) {
         return;
       }
       console.log(c.dim('usage: ox kanban [list] | ox kanban add <title>   (the same board as: ox task)'));
+      return;
+    }
+    case 'mail': {
+      // The same checks as the agent's mail tool; from here it only ever makes
+      // a draft, so sending stays a click in Mail.
+      const { mail_accounts, mail_compose, parseAccounts, ACCOUNTS_SCRIPT } = await import('./tools/mail.js');
+      const action = String(args[0] ?? '').toLowerCase();
+      const json = args.includes('--json');
+      if (action === 'accounts') {
+        if (json) {
+          const { spawnSync: run } = await import('node:child_process');
+          const r = run('osascript', ACCOUNTS_SCRIPT.flatMap((l) => ['-e', l]), { encoding: 'utf8', timeout: 60_000 });
+          if (r.status !== 0) { console.log(JSON.stringify({ error: (r.stderr || 'osascript failed').trim() })); process.exitCode = 1; return; }
+          console.log(JSON.stringify({ accounts: parseAccounts(r.stdout) }));
+          return;
+        }
+        const r = await mail_accounts({}, {});
+        console.log(r.content);
+        if (r.isError) process.exitCode = 1;
+        return;
+      }
+      if (action === 'draft') {
+        const opt = { to: [], attachments: [] };
+        for (let i = 1; i < args.length; i++) {
+          const a = args[i];
+          const v = args[i + 1];
+          if (a === '--json') continue;
+          if (v === undefined) { console.log(c.red(`${a} needs a value`)); process.exitCode = 3; return; }
+          if (a === '--from') opt.from = v;
+          else if (a === '--to') opt.to.push(...v.split(','));
+          else if (a === '--subject') opt.subject = v;
+          else if (a === '--body') opt.body = v;
+          else if (a === '--attach') opt.attachments.push(v);
+          else { console.log(c.red(`unknown flag ${a}`)); process.exitCode = 3; return; }
+          i++;
+        }
+        const r = await mail_compose({ ...opt, send: false }, { cwd: process.cwd() });
+        if (json) console.log(JSON.stringify({ ok: !r.isError, message: r.content }));
+        else console.log(r.isError ? c.red(r.content) : r.content);
+        if (r.isError) process.exitCode = 1;
+        return;
+      }
+      console.log(`${c.bold('ox mail')} — email through the Mail app, from the account you name`);
+      console.log(c.dim('  ox mail accounts [--json]'));
+      console.log(c.dim('  ox mail draft --from <your address> --to <a,b> [--subject s] [--body t] [--attach file]...'));
+      console.log(c.dim('  drafts only: you press Send in Mail. In chat, ox can send after you approve.'));
+      if (action && action !== 'help' && action !== '--help') process.exitCode = 3;
       return;
     }
     case 'connect': {
