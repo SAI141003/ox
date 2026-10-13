@@ -88,6 +88,12 @@
   textarea { flex: 1; border: 0; outline: 0; background: none; resize: none; max-height: 220px; padding: 6px 0; line-height: 1.5; }
   .send { width: 36px; height: 36px; border-radius: 10px; border: 0; background: var(--gold); color: var(--gold-ink); display: grid; place-items: center; flex: none; }
   .send:disabled { opacity: .35; cursor: default; }
+  .tool-btn { flex: none; align-self: flex-end; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); display: grid; place-items: center; }
+  .tool-btn:hover { color: var(--text); }
+  .tool-btn.live { color: var(--gold-ink); background: var(--gold); border-color: var(--gold); }
+  .attached { max-width: 780px; margin: 0 auto 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .attached span { font: 12px var(--mono); padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .attached button { border: 0; background: none; color: var(--dim); margin-left: 4px; cursor: pointer; }
   .mode { flex: none; align-self: flex-end; height: 36px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--muted); padding: 0 8px; font-size: 12.5px; }
   .mode:focus { outline: 0; border-color: var(--gold); color: var(--text); }
   .routed { display: inline-block; margin: 0 0 8px; font-size: 12px; color: var(--dim); }
@@ -132,6 +138,7 @@
   </header>
   <div class="thread" id="thread"><div class="inner" id="inner"></div></div>
   <div class="composer">
+    <div class="attached" id="attached"></div>
     <div class="box">
       <select class="mode" id="mode" aria-label="Mode" title="What kind of help: enforced, not just a hint">
         <option value="auto">Auto</option>
@@ -141,7 +148,14 @@
         <option value="debug">Debug</option>
         <option value="orchestrate">Orchestrate</option>
       </select>
+      <button class="tool-btn" id="attach" aria-label="Attach a file" title="Attach text or code files (read in this browser, added to your message)">
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 4.5 5.8 9.2a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4l-5.2 5.2a4.2 4.2 0 0 0 6 6L13 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+      <input type="file" id="file" multiple hidden>
       <textarea id="input" rows="1" placeholder="Ask ox to read, change or explain this project…" aria-label="Message"></textarea>
+      <button class="tool-btn" id="mic" aria-label="Talk" title="Talk instead of typing" hidden>
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
       <button class="send" id="send" aria-label="Send" disabled>
         <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
@@ -352,8 +366,9 @@
   // ---------- send / stream
   async function send() {
     const input = $('input');
-    const text = input.value.trim();
     if (busy) { busy.abort(); return; }
+    const files = window.oxTakeAttachments ? window.oxTakeAttachments() : '';
+    const text = (input.value.trim() || (files ? 'Here are the files:' : '')) + files;
     if (!text) return;
     if (!convo()) newConvo();
     const c = convo();
@@ -432,6 +447,56 @@
   $('input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
   $('send').onclick = send;
   $('new').onclick = newConvo;
+
+  // ---------- attachments: text files, read here, added to the next message
+  let attachments = [];
+  const MAX_FILE = 200_000;
+  function showAttachments() {
+    $('attached').innerHTML = attachments.map((a, i) => `<span>${esc(a.name)}<button data-i="${i}" aria-label="Remove">✕</button></span>`).join('');
+    $('attached').querySelectorAll('button').forEach((b) => (b.onclick = () => { attachments.splice(Number(b.dataset.i), 1); showAttachments(); }));
+    if (!busy) $('send').disabled = !$('input').value.trim() && !attachments.length;
+  }
+  $('attach').onclick = () => $('file').click();
+  $('file').onchange = async () => {
+    for (const f of $('file').files) {
+      if (f.size > MAX_FILE) { alert(`${f.name} is over 200 KB; attach a smaller file or point ox at it by path.`); continue; }
+      const text = await f.text();
+      if (/\u0000/.test(text)) { alert(`${f.name} is not a text file.`); continue; }
+      attachments.push({ name: f.name, text });
+    }
+    $('file').value = '';
+    showAttachments();
+  };
+  // Folded into the message the moment it is sent.
+  window.oxTakeAttachments = () => {
+    const out = attachments.map((a) => `\n\n\`${a.name}\`:\n\`\`\`\n${a.text}\n\`\`\``).join('');
+    attachments = [];
+    showAttachments();
+    return out;
+  };
+
+  // ---------- talk: the browser's own speech recognition, where it has one
+  const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (Speech) {
+    $('mic').hidden = false;
+    let rec = null;
+    $('mic').onclick = () => {
+      if (rec) { rec.stop(); return; }
+      rec = new Speech();
+      rec.interimResults = true;
+      rec.lang = navigator.language || 'en-US';
+      const start = $('input').value;
+      rec.onresult = (e) => {
+        const said = [...e.results].map((r) => r[0].transcript).join('');
+        $('input').value = (start ? `${start} ` : '') + said;
+        resize();
+      };
+      rec.onend = () => { rec = null; $('mic').classList.remove('live'); $('input').focus(); };
+      rec.onerror = () => {};
+      $('mic').classList.add('live');
+      rec.start();
+    };
+  }
 
   loadModels();
   render();
