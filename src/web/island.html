@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ox island</title>
+<style>
+  :root {
+    --text: #F5F6F8; --muted: #8E939C; --dim: #6B7079; --card: #141518;
+    --amber: #F5A524; --green: #34D399; --red: #F4505E;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #000; color: var(--text); font: 13px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; user-select: none; }
+  .island { background: #000; border-radius: 0 0 22px 22px; padding: 10px 16px 12px; min-height: 100vh; }
+  .bar { display: flex; align-items: center; gap: 10px; height: 26px; }
+  .mark { font-weight: 800; letter-spacing: .2px; }
+  .dots { display: flex; gap: 5px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .status { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status.amber { color: var(--amber); } .status.red { color: var(--red); } .status.green { color: var(--green); }
+  .timer { font-variant-numeric: tabular-nums; color: var(--amber); font-weight: 600; }
+  .tabs { display: flex; gap: 4px; }
+  .tab { border: 0; border-radius: 999px; padding: 3px 10px; background: rgba(255,255,255,.07); color: var(--muted); font: inherit; font-size: 11.5px; cursor: pointer; }
+  .tab.on { background: var(--text); color: #000; }
+  .panel { margin-top: 10px; background: var(--card); border-radius: 16px; padding: 12px 14px; display: none; border: 1px solid rgba(255,255,255,.04); }
+  .open .panel { display: block; }
+  .row { display: flex; gap: 8px; align-items: center; padding: 3px 0; }
+  .who { font-weight: 600; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .act { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .num { color: var(--dim); font-variant-numeric: tabular-nums; font-size: 11.5px; }
+  .ask { background: radial-gradient(120% 140% at 50% 140%, rgba(245,165,36,.35), transparent 60%), var(--card); }
+  pre { margin: 6px 0; padding: 6px 10px; background: rgba(255,255,255,.07); border-radius: 10px; font: 12px ui-monospace, Consolas, monospace; white-space: pre-wrap; max-height: 64px; overflow: auto; }
+  .btns { display: flex; gap: 8px; }
+  button.pill { border: 0; border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 12.5px; cursor: pointer; background: rgba(255,255,255,.09); color: var(--text); }
+  button.pill.primary { background: var(--text); color: #000; }
+  button.pill:disabled { opacity: .5; cursor: default; }
+  .muted { color: var(--muted); } .small { font-size: 11.5px; }
+  .drop { border: 1px dashed rgba(255,255,255,.18); border-radius: 12px; padding: 10px; text-align: center; color: var(--muted); }
+  .drop.hot { border-color: var(--text); color: var(--text); }
+  input[type=text] { flex: 1; background: rgba(255,255,255,.07); border: 0; border-radius: 8px; padding: 6px 9px; color: var(--text); font: inherit; font-size: 12px; outline: none; }
+  .answer { margin-top: 8px; white-space: pre-wrap; max-height: 110px; overflow: auto; color: rgba(245,246,248,.9); font-size: 12px; user-select: text; }
+  .file { cursor: pointer; } .file.sel .who { color: var(--text); } .file:not(.sel) .who { color: var(--muted); font-weight: 500; }
+  .x { background: none; border: 0; color: var(--dim); cursor: pointer; }
+  .big { font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="island" id="island">
+  <div class="bar">
+    <span class="mark">ox</span>
+    <span class="dots" id="dots"></span>
+    <span class="status" id="status">starting…</span>
+    <span class="timer" id="wingTimer"></span>
+    <span class="tabs" id="tabs"></span>
+  </div>
+  <div class="panel" id="panel"></div>
+</div>
+<script>
+'use strict';
+const token = new URLSearchParams(location.search).get('t') || '';
+const api = (p, opts = {}) => fetch(p, { ...opts, headers: { 'x-ox-token': token, ...(opts.headers || {}) } }).then((r) => r.json());
+const el = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const COLORS = ['#7AA2F7', '#F7768E', '#9ECE6A', '#E0AF68', '#BB9AF7', '#2AC3DE'];
+
+let state = { runs: [], shelf: [] };
+let tab = null;            // null | 'runs' | 'shelf' | 'focus'
+let hovering = false;
+let selected = null;       // shelf file name
+let asking = false;
+let answer = '';
+const focus = { minutes: Number(localStorage.getItem('ox.focus.minutes') || 25), endsAt: null, left: null };
+
+// Window: centred at the top, small when quiet, taller when open.
+function place() {
+  const open = isOpen();
+  const w = 520, h = open ? 300 : 52;
+  try { window.resizeTo(w + (window.outerWidth - window.innerWidth), h + (window.outerHeight - window.innerHeight)); } catch {}
+  try { window.moveTo(Math.round((screen.availWidth - window.outerWidth) / 2) + (screen.availLeft || 0), screen.availTop || 0); } catch {}
+  el('island').classList.toggle('open', open);
+}
+function pending() { return state.runs.flatMap((r) => r.approvals.map((a) => ({ run: r, a }))); }
+function isOpen() { return hovering || tab !== null || pending().length > 0; }
+
+function headline() {
+  const p = pending();
+  if (p.length) return { text: `${p[0].run.project} wants to run ${p[0].a.tool}`, tone: 'amber' };
+  const err = state.runs.find((r) => r.phase === 'error');
+  if (err) return { text: `${err.project}: ${err.lastError || 'stopped with an error'}`, tone: 'red' };
+  if (!state.runs.length) return { text: 'nothing running — start ox in any terminal', tone: '' };
+  if (state.runs.length === 1) { const r = state.runs[0]; return { text: `${r.project} · ${r.activity}`, tone: r.phase === 'done' ? 'green' : '' }; }
+  return { text: `${state.runs.length} runs`, tone: '' };
+}
+
+function render() {
+  el('dots').innerHTML = state.runs.slice(0, 5).map((r, i) => `<span class="dot" style="background:${COLORS[i % COLORS.length]}"></span>`).join('');
+  const h = headline();
+  const s = el('status'); s.textContent = h.text; s.className = `status ${h.tone}`;
+  el('tabs').innerHTML = [['runs', 'Runs'], ['shelf', 'Shelf'], ['focus', 'Focus']]
+    .map(([k, t]) => `<button class="tab ${tab === k ? 'on' : ''}" data-tab="${k}">${t}</button>`).join('');
+  const p = el('panel');
+  const ap = pending();
+  if (ap.length) {
+    const { run, a } = ap[0];
+    p.className = 'panel ask';
+    p.innerHTML = `<div class="row"><span class="who">${esc(run.project)}</span><span class="act">wants to run ${esc(a.tool)}</span></div>
+      <pre>${esc(a.preview || a.tool)}</pre>
+      <div class="btns"><button class="pill" data-ans="deny">Deny</button><button class="pill primary" data-ans="allow">Allow</button>
+      <span class="muted small" style="align-self:center">or answer in the terminal</span></div>`;
+    p.dataset.sock = run.socket; p.dataset.id = a.id;
+  } else if (tab === 'shelf') {
+    p.className = 'panel';
+    const files = state.shelf;
+    if (!selected && files.length) selected = files[0].name;
+    p.innerHTML = `<div class="drop" id="drop">Drop files here — then ask ox about one</div>
+      ${files.map((f) => `<div class="row file ${f.name === selected ? 'sel' : ''}" data-file="${esc(f.name)}"><span class="who">${esc(f.name)}</span><span class="act"></span><button class="x" data-rm="${esc(f.name)}">✕</button></div>`).join('')}
+      ${files.length ? `<div class="row"><input type="text" id="q" placeholder="Ask ox about ${esc(selected)}…"><button class="pill primary" id="askBtn" ${asking ? 'disabled' : ''}>${asking ? '…' : 'Ask'}</button></div>` : ''}
+      <div class="answer">${esc(asking ? 'ox is reading it…' : answer)}</div>`;
+  } else if (tab === 'focus') {
+    p.className = 'panel';
+    p.innerHTML = `<div class="row" style="gap:18px"><span class="big" id="clock">${clock(left())}</span>
+      <div><div class="btns">${[15, 25, 50].map((m) => `<button class="pill ${focus.minutes === m && !active() ? 'primary' : ''}" data-min="${m}">${m}m</button>`).join('')}</div>
+      <div class="btns" style="margin-top:8px"><button class="pill primary" id="go">${focus.endsAt ? 'Pause' : active() ? 'Resume' : 'Start'}</button>${active() ? '<button class="pill" id="reset">Reset</button>' : ''}</div></div></div>`;
+  } else {
+    p.className = 'panel';
+    p.innerHTML = state.runs.length
+      ? state.runs.map((r, i) => `<div class="row"><span class="dot" style="background:${COLORS[i % COLORS.length]}"></span><span class="who">${esc(r.project)}</span><span class="act">${esc(r.activity)}</span><span class="num">${r.tokens == null ? '' : r.tokens >= 1000 ? (r.tokens / 1000).toFixed(1) + 'k' : r.tokens}${r.model ? ' · ' + esc(r.model) : ''}</span></div>`).join('')
+      : '<div style="font-weight:600">Nothing running</div><div class="muted small">Start ox in any terminal and it shows up here. Approvals land here too.</div>';
+  }
+  el('wingTimer').textContent = active() ? clock(left()) : '';
+  place();
+}
+
+// Focus timer (kept in this window; it does not need ox).
+const active = () => focus.endsAt !== null || focus.left !== null;
+const left = () => focus.endsAt ? Math.max(0, (focus.endsAt - Date.now()) / 1000) : focus.left ?? focus.minutes * 60;
+const clock = (t) => { const s = Math.ceil(t); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+setInterval(() => {
+  if (focus.endsAt && Date.now() >= focus.endsAt) { focus.endsAt = null; focus.left = null; try { new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=').play(); } catch {} document.title = 'ox island'; }
+  if (active()) { el('wingTimer').textContent = clock(left()); const c = el('clock'); if (c) c.textContent = clock(left()); }
+}, 500);
+
+document.addEventListener('click', async (e) => {
+  const t = e.target.closest('button, .file');
+  if (!t) return;
+  if (t.dataset.tab) { tab = tab === t.dataset.tab ? null : t.dataset.tab; render(); return; }
+  if (t.dataset.ans) {
+    const p = el('panel');
+    t.disabled = true;
+    await api('/api/answer', { method: 'POST', body: JSON.stringify({ socket: p.dataset.sock, id: p.dataset.id, decision: t.dataset.ans }) });
+    return poll();
+  }
+  if (t.dataset.rm) { await api('/api/shelf/remove', { method: 'POST', body: JSON.stringify({ name: t.dataset.rm }) }); if (selected === t.dataset.rm) selected = null; return poll(); }
+  if (t.dataset.file) { selected = t.dataset.file; answer = ''; render(); return; }
+  if (t.id === 'askBtn') return ask();
+  if (t.dataset.min) { focus.endsAt = null; focus.left = null; focus.minutes = Number(t.dataset.min); localStorage.setItem('ox.focus.minutes', focus.minutes); render(); return; }
+  if (t.id === 'go') { if (focus.endsAt) { focus.left = left(); focus.endsAt = null; } else { focus.endsAt = Date.now() + left() * 1000; focus.left = null; } render(); return; }
+  if (t.id === 'reset') { focus.endsAt = null; focus.left = null; render(); }
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'q') ask(); });
+
+async function ask() {
+  if (!selected || asking) return;
+  const q = el('q')?.value || '';
+  asking = true; answer = ''; render();
+  try { const r = await api('/api/ask', { method: 'POST', body: JSON.stringify({ name: selected, question: q }) }); answer = r.answer || r.error || ''; }
+  catch (err) { answer = String(err); }
+  asking = false; render();
+}
+
+// Files dropped anywhere on the island go to the shelf.
+document.addEventListener('dragover', (e) => { e.preventDefault(); hovering = true; if (tab !== 'shelf') { tab = 'shelf'; render(); } el('drop')?.classList.add('hot'); });
+document.addEventListener('dragleave', () => el('drop')?.classList.remove('hot'));
+document.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  for (const f of e.dataTransfer.files) {
+    await fetch('/api/shelf', { method: 'POST', headers: { 'x-ox-token': token, 'x-file-name': encodeURIComponent(f.name) }, body: f });
+    selected = f.name;
+  }
+  answer = '';
+  poll();
+});
+document.addEventListener('mouseenter', () => { hovering = true; render(); });
+document.addEventListener('mouseleave', () => { hovering = false; setTimeout(render, 250); });
+
+async function poll() {
+  try { state = await api('/api/state'); } catch { state = { runs: [], shelf: [] }; }
+  // Keep the input's text while redrawing.
+  const q = el('q')?.value; render(); if (q && el('q')) el('q').value = q;
+}
+setInterval(() => { if (document.activeElement?.id !== 'q') poll(); }, 1000);
+poll();
+</script>
+</body>
+</html>

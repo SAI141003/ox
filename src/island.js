@@ -82,7 +82,6 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
   if (action === 'on') {
     setIslandEnabled(true);
     log('OX Island is on');
-    if (process.platform !== 'darwin') return 0;
     return cmdIsland(['start'], { log, err });
   }
   if (action === 'stop') {
@@ -95,17 +94,41 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
       return 1;
     }
   }
-  if (action !== 'start' && action !== 'build') {
-    err(`ox: unknown island action '${action}' (use start, stop, on, off, status, build)\n`);
-    return 3;
+  // The web island: runs in the foreground until stopped (on any OS; it is
+  // what `ox island start` launches in the background off macOS).
+  if (action === 'web' || action === 'serve') {
+    if (!islandEnabled()) {
+      log('OX Island is turned off. Turn it on with: ox island on');
+      return 1;
+    }
+    const { runWebIsland } = await import('./island-web.js');
+    await runWebIsland({ log, open: !args.includes('--no-open') });
+    await new Promise(() => {}); // until SIGINT/SIGTERM
   }
-  if (process.platform !== 'darwin') {
-    err('ox: OX Island is a macOS notch app; elsewhere use `ox ipc watch` for the same live view\n');
+  if (action !== 'start' && action !== 'build') {
+    err(`ox: unknown island action '${action}' (use start, stop, on, off, status, build, web)\n`);
     return 3;
   }
   if (action === 'start' && !islandEnabled()) {
     log('OX Island is turned off. Turn it on with: ox island on');
     return 1;
+  }
+  if (process.platform !== 'darwin') {
+    if (action === 'build') {
+      log('nothing to build here: off macOS the island is the web island (ox island web)');
+      return 0;
+    }
+    if (live()) {
+      log('OX Island is already running');
+      return 0;
+    }
+    // Windows/Linux: the web island, detached so this command returns.
+    const oxCli = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
+    const child = spawn(process.execPath, [oxCli, 'island', 'web'], { detached: true, stdio: 'ignore', windowsHide: true });
+    child.unref();
+    for (let i = 0; i < 50 && !live(); i++) await new Promise((r) => setTimeout(r, 100));
+    log(live() ? 'OX Island is live at the top of your screen — every ox run now shows up there' : 'OX Island is starting');
+    return 0;
   }
   if (action === 'start' && live()) {
     log('OX Island is already running');
