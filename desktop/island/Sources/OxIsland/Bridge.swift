@@ -78,6 +78,13 @@ final class OxBridge: ObservableObject {
     let buddy: Buddy = MainActor.assumeIsolated { Buddy() }
     private var buddySink: AnyCancellable?
 
+    /// The tray under the island (Tray.swift): which tool is open, and the tools.
+    @Published var tray: TrayTab?
+    let shelf = Shelf()
+    let focus = FocusTimer()
+    let clips = ClipHistory()
+    private var traySinks = Set<AnyCancellable>()
+
     var pendingSession: AgentSession? { sessions.first { $0.pending != nil } }
     /// A team at work is the moment the office exists for, so it opens by itself.
     var teamWorking: Bool { sessions.contains { $0.closedAt == nil && $0.agents.contains { $0.endedAt == nil } } }
@@ -99,6 +106,9 @@ final class OxBridge: ObservableObject {
 
     func start() {
         buddySink = MainActor.assumeIsolated { buddy.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() } }
+        // The focus countdown shows in the wing, so its changes redraw the island too.
+        focus.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &traySinks)
+        clips.start()
         MainActor.assumeIsolated { buddy.send = { [weak self] text, shots, audio in self?.ask(text, imagePaths: shots, audioPath: audio) ?? false } }
         scan()
         // Instant discovery: a new ox socket is a write to $TMPDIR. The slow
@@ -376,7 +386,15 @@ final class OxBridge: ObservableObject {
     }
 
     /// The office (a team at work) or a canvas extends the expanded island.
-    var hasExtraPanel: Bool { officeSession != nil || canvasSession != nil }
+    var hasExtraPanel: Bool { tray != nil || officeSession != nil || canvasSession != nil }
+
+    /// Files dropped on the notch land on the shelf, and the shelf opens.
+    func receive(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        shelf.add(urls)
+        tray = .shelf
+        pinnedOpen = true
+    }
 
     /// The session whose team the office shows: the one with the most agents.
     var officeSession: AgentSession? {

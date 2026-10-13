@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 extension Color {
     init(hex: String) {
@@ -102,6 +103,20 @@ struct IslandRoot: View {
         .frame(width: IslandLayout.panel.width, height: IslandLayout.panel.height, alignment: .top)
         .clipShape(IslandShape(width: s.w, height: s.h, corner: s.corner, top: s.top))
         .contextMenu { IslandMenu(buddy: bridge.buddy) }
+        // Drop files on the notch: they land on the shelf.
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            var urls: [URL] = []
+            let group = DispatchGroup()
+            for p in providers {
+                group.enter()
+                _ = p.loadObject(ofClass: URL.self) { url, _ in
+                    if let url { DispatchQueue.main.async { urls.append(url) } }
+                    group.leave()
+                }
+            }
+            group.notify(queue: .main) { bridge.receive(urls) }
+            return true
+        }
         .animation(phase == .expanded || phase == .launch ? open : close, value: phase)
         .animation(.easeInOut(duration: 0.2), value: bridge.pendingSession?.pending?.id)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
@@ -142,6 +157,9 @@ struct CompactBar: View {
                     }
                 }
                 .frame(width: 40)
+            } else if bridge.focus.active, bridge.sessions.isEmpty || bridge.headlineMood == .idle {
+                FocusWing(timer: bridge.focus)
+                    .frame(width: 40)
             } else {
                 StatusGlyph(bridge: bridge)
                     .frame(width: 26)
@@ -231,7 +249,14 @@ struct ExpandedContent: View {
             .overlay(alignment: .bottom) {
                 if let p = bridge.pendingSession?.pending { Countdown(deadline: p.deadline).padding(.horizontal, 40) }
             }
-            if let team = bridge.officeSession {
+            if bridge.tray != nil {
+                // A tool the person opened wins over the ambient office/canvas.
+                TrayPanel(bridge: bridge)
+                    .padding(.horizontal, IslandLayout.ear + 10)
+                    .padding(.top, 8)
+                    .frame(height: IslandLayout.officeHeight, alignment: .top)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else if let team = bridge.officeSession {
                 PixelOffice(bridge: bridge, session: team)
                     .padding(.horizontal, IslandLayout.ear + 18)
                     .padding(.top, 10)
@@ -322,8 +347,10 @@ struct Header: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Ink.muted)
                 .lineLimit(1)
-            MicButton(buddy: bridge.buddy)
+            TrayButtons(bridge: bridge)
                 .padding(.leading, 10)
+            MicButton(buddy: bridge.buddy)
+                .padding(.leading, 8)
         }
         .padding(.horizontal, IslandLayout.ear + 20)
     }
