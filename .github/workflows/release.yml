@@ -1,0 +1,51 @@
+# Desktop downloads for every release: push a tag like v0.1.0 and each
+# platform builds its package with scripts/package.mjs and attaches it to the
+# GitHub release (macOS OX.app zip, Windows zip, Linux tarball).
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14        # Apple Silicon
+          - os: macos-13        # Intel
+          - os: windows-latest
+          - os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Unit tests
+        shell: bash
+        run: OX_ISLAND=0 OX_LEARN=0 OX_NO_PLUGINS=1 OX_NO_BUILTIN_SKILLS=1 node scripts/verify.mjs --only unit
+      - name: Package
+        shell: bash
+        run: node scripts/package.mjs --out dist
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "ox $GITHUB_REF_NAME" --notes "Downloads: OX.app for macOS, a zip for Windows, a tarball for Linux. See the README."
+          gh release upload "$GITHUB_REF_NAME" dist/ox-*.zip dist/ox-*.tar.gz --clobber 2>/dev/null || gh release upload "$GITHUB_REF_NAME" dist/ox-* --clobber
+      - name: Keep the build (manual runs)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ox-${{ matrix.os }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz

@@ -112,6 +112,26 @@ cost by agent
 
 `/cost` in the REPL shows the whole session; `--json` emits `{t:"ledger"}`.
 
+## Download the app
+
+Every release has desktop downloads (Releases page), nothing else to install:
+
+| | download | open it |
+|---|---|---|
+| macOS | `ox-mac-arm64.zip` / `ox-mac-x64.zip` | unzip, drag **OX.app** to Applications, open it (first time: right-click › Open) |
+| Windows | `ox-windows-x64.zip` | unzip, double-click **OX.vbs**; `ox.cmd` is the terminal command |
+| Linux | `ox-linux-x64.tar.gz` | unpack, run `./install.sh`: `ox` in the terminal and in your app menu |
+
+Each carries its own Node and ox. The app and the terminal are the same ox:
+same agents, sessions and approvals. OX Island comes with it; switch it on or
+off in the app's **Settings** (or `ox island on|off`). On a Mac, **ox ›
+Install Command-Line Tool** puts `ox` in your terminal, and **File › Open
+Folder** picks the project. From source: `ox app` opens the same window.
+
+Building the downloads yourself: `node scripts/package.mjs` (on each platform);
+pushing a `v*` tag runs `.github/workflows/release.yml`, which builds all three
+and attaches them to the release.
+
 ## Modes and auto-routing
 
 ```bash

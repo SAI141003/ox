@@ -46,6 +46,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         showMessage("Starting ox…")
         DispatchQueue.global().async {
             let url = Self.askOxForURL()
+            // The island comes with ox: started here when it is switched on (Settings).
+            _ = Self.ox(["island", "start"])
             DispatchQueue.main.async {
                 if let url { self.web.load(URLRequest(url: url)) }
                 else { self.showMessage("Could not start ox. Run  ox app  once in a terminal, then open OX again.") }
@@ -53,20 +55,90 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
     }
 
-    /// `ox app --print-url` starts the server if needed and prints where it is.
-    static func askOxForURL() -> URL? {
-        let env = ProcessInfo.processInfo.environment
-        let saved = (try? String(contentsOfFile: NSHomeDirectory() + "/.ox/app.json", encoding: .utf8)) ?? ""
-        func field(_ k: String) -> String? {
-            guard let r = saved.range(of: "\"\(k)\":\"") else { return nil }
-            let rest = saved[r.upperBound...]
-            return rest.firstIndex(of: "\"").map { String(rest[..<$0]) }
+    /// File › Open Folder…: ox works in the folder you pick.
+    @objc func openFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = "Work here"
+        panel.beginSheetModal(for: window) { r in
+            guard r == .OK, let dir = panel.url?.path else { return }
+            self.showMessage("Opening \((dir as NSString).lastPathComponent)…")
+            DispatchQueue.global().async {
+                let url = Self.askOxForURL(cwd: dir)
+                DispatchQueue.main.async {
+                    if let url { self.web.load(URLRequest(url: url)) }
+                    self.window.title = "ox — \((dir as NSString).lastPathComponent)"
+                }
+            }
         }
-        guard let node = env["OX_NODE"] ?? field("node"), let cli = env["OX_CLI"] ?? field("cli") else { return nil }
+    }
+
+    /// Put `ox` on the command line: a small script in ~/.local/bin that runs
+    /// the ox inside this app (no administrator password needed).
+    @objc func installCommand() {
+        guard let (node, cli) = Self.oxPaths() else { return }
+        let dir = NSHomeDirectory() + "/.local/bin"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let script = "#!/bin/sh\nexec \"\(node)\" \"\(cli)\" \"$@\"\n"
+        let path = dir + "/ox"
+        let a = NSAlert()
+        do {
+            try script.write(toFile: path, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
+            let onPath = (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").contains { $0 == Substring(dir) }
+            a.messageText = "Installed: ox"
+            a.informativeText = onPath ? "Open a terminal and type  ox" : "Installed at \(path). Add ~/.local/bin to your PATH, then type  ox  in a terminal."
+        } catch {
+            a.messageText = "Could not install the ox command"
+            a.informativeText = error.localizedDescription
+        }
+        a.beginSheetModal(for: window)
+    }
+
+    /// The ox to run: the one inside this app (a downloaded release carries its
+    /// own Node and ox), else the one that last opened it.
+    static func oxPaths() -> (node: String, cli: String)? {
+        let env = ProcessInfo.processInfo.environment
+        if let n = env["OX_NODE"], let c = env["OX_CLI"] { return (n, c) }
+        if let res = Bundle.main.resourceURL {
+            let n = res.appendingPathComponent("node").path, c = res.appendingPathComponent("ox/bin/ox.js").path
+            if FileManager.default.isExecutableFile(atPath: n), FileManager.default.fileExists(atPath: c) { return (n, c) }
+        }
+        let saved = savedState()
+        if let n = saved["node"], let c = saved["cli"] { return (n, c) }
+        return nil
+    }
+
+    static func savedState() -> [String: String] {
+        guard let d = FileManager.default.contents(atPath: NSHomeDirectory() + "/.ox/app.json"),
+              let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
+        return j.compactMapValues { $0 as? String }
+    }
+
+    /// Run one ox command (in `cwd`) and return its last line of output.
+    static func ox(_ args: [String], cwd: String? = nil) -> String? {
+        guard let (node, cli) = oxPaths() else { return nil }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: node)
+        p.arguments = [cli] + args
+        p.currentDirectoryURL = URL(fileURLWithPath: cwd ?? savedState()["cwd"] ?? NSHomeDirectory())
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return nil }
+        p.waitUntilExit()
+        let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        return out.split(separator: "\n").last.map { String($0).trimmingCharacters(in: .whitespaces) }
+    }
+
+    /// `ox app --print-url` starts the server if needed and prints where it is.
+    static func askOxForURL(cwd: String? = nil) -> URL? {
+        guard let (node, cli) = oxPaths() else { return nil }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: node)
         p.arguments = [cli, "app", "--print-url"]
-        if let cwd = field("cwd") { p.currentDirectoryURL = URL(fileURLWithPath: cwd) }
+        p.currentDirectoryURL = URL(fileURLWithPath: cwd ?? savedState()["cwd"] ?? NSHomeDirectory())
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = FileHandle.nullDevice
@@ -113,9 +185,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "About ox", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Install Command-Line Tool…", action: #selector(installCommand), keyEquivalent: "")
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide ox", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(withTitle: "Quit ox", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
+
+        let fileItem = NSMenuItem(); main.addItem(fileItem)
+        let file = NSMenu(title: "File")
+        file.addItem(withTitle: "Open Folder…", action: #selector(openFolder), keyEquivalent: "o")
+        fileItem.submenu = file
 
         let editItem = NSMenuItem(); main.addItem(editItem)
         let edit = NSMenu(title: "Edit")
