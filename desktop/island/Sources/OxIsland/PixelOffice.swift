@@ -296,7 +296,14 @@ struct PixelOffice: View {
     private func detail(_ a: SubAgent) -> String {
         switch a.phase {
         case .starting: return "starting"
-        case .working: return a.tool.isEmpty ? "working" : a.tool
+        case .working:
+            // Teamwork reads as teamwork: an agent looking at the others' progress.
+            switch a.tool {
+            case "agent_status": return "checking on the team"
+            case "agent_message.send": return "messaging a teammate"
+            case "agent_observe": return "reading team mail"
+            default: return a.tool.isEmpty ? "working" : a.tool
+            }
         case .thinking: return "thinking"
         case .done: return a.costUsd > 0 ? String(format: "done $%.3f", a.costUsd) : "done"
         case .failed: return "failed"
