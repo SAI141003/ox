@@ -164,7 +164,9 @@ test('delayed reply rejects after callTimeoutMs and sends notifications/cancelle
 test('stdout frame buffer >10MB kills the child, marks overflow and rejects pending calls', async () => {
   overflowHub = new McpHub(
     { o: { command: process.execPath, args: [fixture, 'overflow'] } },
-    { startupTimeoutMs: 5000, callTimeoutMs: 15000 }
+    // Generous: this tests the overflow, not speed, and writing 10MB through a
+    // pipe on a loaded machine has taken longer than 15s.
+    { startupTimeoutMs: 20000, callTimeoutMs: 60000 }
   );
   await overflowHub.start();
   assert.equal(overflowHub.status()[0].status, 'ok');

@@ -40,7 +40,15 @@ export const LOCAL_SCHEMA_VERSION = '1.0.0';
 //     result with a guess.
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_PROBE_TIMEOUT_MS = 700;
+// 700ms on an idle machine, stretched by how busy the CPUs are (capped at 5s):
+// a machine at load 400 answered a local server too slowly for 700ms and a
+// running Ollama was reported as absent. OX_PROBE_TIMEOUT_MS overrides.
+export const DEFAULT_PROBE_TIMEOUT_MS = (() => {
+  const set = Number(process.env.OX_PROBE_TIMEOUT_MS);
+  if (Number.isFinite(set) && set > 0) return set;
+  const busy = os.loadavg()[0] / Math.max(1, os.cpus().length);
+  return Math.round(Math.min(5000, 700 * Math.max(1, busy)));
+})();
 export const DEFAULT_SCAN_DEADLINE_MS = 2500;
 export const DEFAULT_CHAT_TIMEOUT_MS = 120_000;
 

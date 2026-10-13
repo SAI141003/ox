@@ -511,7 +511,10 @@ test('ox local --no-prompt reports the finding and exits 0 without prompting', a
     const res = require_spawn([path.join(REPO, 'bin', 'ox.js'), 'local', '--no-prompt'], { HOME: dir });
     assert.equal(res.status, 0, `expected exit 0, got ${res.status}: ${res.stderr}`);
     assert.match(res.stdout, /local inference/);
-    assert.match(res.stdout, /not connected/i);
+    // The real ports on this machine decide which of the two honest reports
+    // appears: a server found but not approved, or none found at all. Either
+    // way nothing is asked and nothing is written, which is what this tests.
+    assert.match(res.stdout, /not connected|no local model server identified/i);
     assert.equal(fs.existsSync(path.join(dir, '.ox', 'config.json')), false, 'nothing written');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
