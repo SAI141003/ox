@@ -33,6 +33,7 @@ import { readFile } from 'fs/promises';
 import { join, resolve, extname } from 'path';
 import { createReadStream } from 'fs';
 import { stat } from 'fs/promises';
+import { resolveTurnMode } from './modes.js';
 
 // Read at request time, not at module load: a supervisor (or a test) that sets
 // the key after this module is imported must not silently get the old answer.
@@ -430,7 +431,11 @@ async function handleChatCompletions(req, res) {
   } catch {
     target = { model: targetModel, temperature: temperature0 };
   }
-  const ctx = { cwd: process.cwd() };
+  // `ox_mode` is an ox extension (other OpenAI clients never send it): the
+  // mode is enforced at the tool gate, and auto's pick is reported back.
+  const lastUser = [...messages].reverse().find((m) => m?.role === 'user');
+  const turnMode = resolveTurnMode(body.ox_mode ?? 'code', typeof lastUser?.content === 'string' ? lastUser.content : '');
+  const ctx = { cwd: process.cwd(), mode: turnMode.mode };
   const config = { maxTokens: max_tokens };
 
   if (stream) {
@@ -442,6 +447,7 @@ async function handleChatCompletions(req, res) {
 
     let fullContent = '';
     const totalUsage = usageTally();
+    if (body.ox_mode) sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'mode', mode: turnMode.mode, routed: turnMode.routed, reason: turnMode.reason } });
 
     try {
       for await (const event of runAgent({ target, messages, ctx, config, maxIterations: 40 })) {

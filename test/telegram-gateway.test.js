@@ -82,7 +82,10 @@ test('pair, ignore strangers, run from a message, approve with a button, get the
   const logs = [];
   const ac = new AbortController();
   const api = telegramApi('TEST-TOKEN', { base: `http://127.0.0.1:${tg.address().port}` });
-  const gw = runTelegramGateway({ token: 'TEST-TOKEN', cwd, stateFile, env, log: (s) => logs.push(s), signal: ac.signal, pollTimeoutSec: 1, api });
+  // A private socket dir: a real OX Island on this machine watches the temp
+  // dir and would otherwise take the approval this test means to answer.
+  const socketDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-tg-sock-'));
+  const gw = runTelegramGateway({ token: 'TEST-TOKEN', cwd, stateFile, env, log: (s) => logs.push(s), signal: ac.signal, pollTimeoutSec: 1, api, socketDir });
 
   const code = (await until(() => logs.find((l) => /\/pair \d{6}/.test(l)), 'a pairing code')).match(/\/pair (\d{6})/)[1];
   assert.equal(JSON.parse(fs.readFileSync(stateFile, 'utf8')).token, 'TEST-TOKEN');

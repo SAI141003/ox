@@ -19,7 +19,7 @@ import { generateCritique, reflect as reflectSession } from './self-improve.js';
 import { recordDecision, recordOutcome } from './audit.js';
 import { createVerifier } from './verify-loop.js';
 import { fireHooks, formatHookOutputs, hooksFor, loadHooksConfig } from './hooks.js';
-import { modeBlock } from './modes.js';
+import { modeBlock, modeRefusal } from './modes.js';
 import { runSubscriptionTurn } from './subscriptions.js';
 
 const SUMMARY_PREFIX = '[ox: summary of earlier conversation turns]\n';
@@ -1958,8 +1958,16 @@ async function* runAgentLoop(opts = {}) {
       // Wave5a F audit plumbing for this call.
       let gateActor = 'policy';
       let gateRule = 'auto-allow';
+      // The mode is checked before any approval: asking someone to approve a
+      // write that Ask or Plan mode will refuse anyway is a question with no
+      // point, and with no one to ask it reads as "declined" instead of why.
+      const modeNo = modeRefusal(toolCtx.mode, name, args, toolCtx.cwd ?? cwd);
       if (signal?.aborted) {
         result = { content: '[aborted]', isError: true };
+        neutral = true;
+      } else if (modeNo) {
+        recordDecision({ session: toolCtx.sessionId, tool: name, args, detail: approvalDetail(name, args), decision: 'deny', rule: `mode:${toolCtx.mode}`, actor: 'policy' });
+        result = { content: modeNo, isError: true };
         neutral = true;
       } else if (doomCount >= 3) {
         yield { type: 'doom-loop', key: doomKey, count: doomCount };

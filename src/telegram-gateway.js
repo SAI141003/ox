@@ -94,6 +94,10 @@ export async function runTelegramGateway({
   signal = null,
   pollTimeoutSec = 25,
   api = telegramApi(token),
+  // Where run sockets go. The default temp dir is where the island looks, so
+  // the island can answer a phone run's approval too; a private dir keeps a
+  // run to this gateway alone.
+  socketDir = undefined,
 } = {}) {
   if (!token) throw new Error('a bot token is needed: create one with @BotFather, then ox gateway telegram --token <token>');
   const state = { mode: 'auto', fresh: true, ...loadState(stateFile), cwd };
@@ -113,7 +117,7 @@ export async function runTelegramGateway({
 
   async function startRun(chat, text) {
     const id = crypto.randomBytes(4).toString('hex');
-    const sock = socketPathFor(`tg-${id}`);
+    const sock = socketDir ? socketPathFor(`tg-${id}`, socketDir) : socketPathFor(`tg-${id}`);
     const args = [OX_CLI, '-p', text, `--ipc=${sock}`, '--mode', state.mode || 'auto', ...(agent ? ['--agent', agent] : []), ...(state.fresh ? [] : ['-c'])];
     const status = await say(chat, '⏳ working…');
     // A phone is slower to answer than a desk: approvals wait 10 minutes
