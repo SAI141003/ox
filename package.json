@@ -7,6 +7,18 @@
   "bin": {
     "ox": "./bin/ox.js"
   },
+  "files": [
+    "bin/",
+    "src/",
+    "skills/",
+    "docs/",
+    "desktop/island/Package.swift",
+    "desktop/island/Info.plist",
+    "desktop/island/Sources/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": ["coding-agent", "ai", "llm", "cli", "agent", "mcp", "ollama", "anthropic", "openai"],
   "engines": {
     "node": ">=18"
   },

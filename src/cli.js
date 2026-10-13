@@ -4145,19 +4145,12 @@ async function runSubcommand(cmd, args) {
         const done = await cmdVoiceDictation(action || 'status', args.slice(1));
         if (done) return;
       }
-      if (action === 'start' || action === 'stop' || action === 'status') {
-        const vm = createVoiceMode(process.cwd());
-        if (action === 'start') {
-          await vm.start({ platform: 'cli' });
-          console.log(c.green('✓ voice mode started'));
-          return;
-        }
-        if (action === 'stop') {
-          vm.stop();
-          console.log(c.green('✓ voice mode stopped'));
-          return;
-        }
-        console.log(c.dim(`voice mode: ${vm.isRunning() ? c.green('running') : c.dim('stopped')}`));
+      if (action === 'start' || action === 'stop') {
+        // Talking to ox is OX Buddy in the island (hold Ctrl-Option-Space), with
+        // the dictation pipeline in src/dictation.js. There is no separate
+        // background voice process to start or stop.
+        console.log(`${c.bold('Talk to ox:')} start ox in a project, then hold ⌃⌥Space (or click the mic in the notch island).`);
+        console.log(c.dim('  island not running? ox island · accuracy: ox voice setup · what is in use: ox voice status'));
         return;
       }
       const tmpl = getTemplate('voice');
@@ -4583,19 +4576,9 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'voice-mode': {
-      const action = String(args[0] ?? '').trim().toLowerCase();
-      const vm = createVoiceMode(process.cwd());
-      if (action === 'start') {
-        await vm.start({ platform: 'cli' });
-        console.log(c.green('✓ voice mode started'));
-        return;
-      }
-      if (action === 'stop') {
-        vm.stop();
-        console.log(c.green('✓ voice mode stopped'));
-        return;
-      }
-      console.log(c.dim(`voice mode: ${vm.isRunning() ? c.green('running') : c.dim('stopped')}`));
+      // The old name: the same as ox voice.
+      const done = await cmdVoiceDictation('status', []);
+      if (done) console.log(c.dim('\nTalk to ox: hold ⌃⌥Space with the island running (ox island).'));
       return;
     }
     case 'refine': {
