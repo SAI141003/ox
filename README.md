@@ -20,9 +20,12 @@
 
 A zero-dependency terminal coding agent for Node ≥ 18: reads your code, edits
 files behind approval gates, runs shell commands through a denylist, remembers
-what it learns across sessions, and talks to nine LLM providers — xAI, Anthropic,
-OpenAI, Gemini, Groq, DeepSeek, Backboard, OpenRouter, and local Ollama — plain
-ES modules, no `npm install`, no telemetry, no accounts.
+what it learns across sessions, and talks to 22 LLM providers (Anthropic,
+OpenAI, Gemini, xAI, Groq, DeepSeek, Mistral, OpenRouter, Together, Fireworks,
+Cerebras, Moonshot/Kimi, Zhipu, MiniMax, Baichuan, Yi, StepFun, local Ollama,
+LM Studio, llama.cpp, vLLM and more) or to the coding plan you already pay for
+(`ox connect`). Plain ES modules, no `npm install`, no telemetry, no accounts.
+Runs on macOS, Linux and Windows.
 
 ```
 node bin/ox.js            # start the REPL right now — nothing to install
@@ -109,6 +112,81 @@ cost by agent
 
 `/cost` in the REPL shows the whole session; `--json` emits `{t:"ledger"}`.
 
+## Modes and auto-routing
+
+```bash
+ox --mode ask -p "how does the router pick a model?"   # answers, changes nothing
+/mode            # in chat: list the modes; /mode debug to switch
+```
+
+| mode | what it may do |
+|---|---|
+| `code` (default) | read, edit and run, under your approval settings |
+| `ask` | read and answer; every write or command is refused |
+| `plan` | look and plan; it can write only `.agent/plans/*.md` |
+| `debug` | reproduce, test one cause at a time, smallest fix, re-run |
+| `orchestrate` | split the work across subagents, then check and merge |
+| `auto` | picks one of the above per message and prints which, and why |
+
+The limits are enforced where tools run, not just described to the model:
+`ask` cannot edit a file even under `-y`.
+
+## Your own agents
+
+```bash
+ox agent new reviewer --bot claude-plan --mode ask --prompt "Review diffs for bugs. Cite file:line."
+ox --agent reviewer -p "review the last commit"
+ox agent list
+```
+
+An agent is a bot (any model, or a plan you pay for), a mode, and standing
+instructions. Flags on the command line still win over the agent's.
+
+## Bring your own subscription
+
+Already paying for Claude, ChatGPT, Gemini, Qwen, Kimi, Copilot or Cursor? ox
+hands the turn to that vendor's own signed-in CLI and streams its work back:
+
+```bash
+ox connect                       # what is installed and working here, and how to fix the rest
+ox --bot claude-plan             # Claude Code on your Pro/Max plan
+ox --bot chatgpt-plan:gpt-5 -p "fix the failing test"   # Codex on your ChatGPT plan
+```
+
+Supported: Claude Code, Codex, Gemini CLI, Qwen Code, Kimi CLI, Copilot CLI,
+Cursor CLI, and the open-source opencode, aider, goose, Crush, OpenHands, iFlow,
+plus Amp, Droid and Auggie. Add any other in config:
+`"subscriptions": { "mine": { "bin": "mycli", "args": ["run", "{prompt}"] } }`.
+ox never reads or copies your logins: the vendor's program does the talking,
+under the vendor's terms. Tools then run inside that CLI with its own
+permission rules; ox maps `-y`, `--yes-edits` and the read-only modes onto them.
+
+## Email, from the right account
+
+`mail_compose` (for the agent) and `ox mail draft` (for you) write through the
+Mail app. With several accounts signed in, the sending account is never guessed:
+`from` must be exactly one of the addresses Mail has, the default is a visible
+draft, sending always asks you (even under `-y`), and Mail's chosen sender is
+read back before sending; on any mismatch nothing is sent. macOS only for now.
+
+## Small tasks with no AI and no internet
+
+```bash
+ox do "open notes"      ox do "timer 25 minutes"      ox do "what is 18% of 240"
+ox do "search ramen"    ox do "note call the bank"    ox do "volume 30"
+```
+
+A rules parser (no model, no network) handles short requests and says so when
+something is bigger. The island's voice falls back to it when no ox run is live.
+
+## Keep the computer awake
+
+ox holds the machine awake while it works (`caffeinate` on macOS,
+`systemd-inhibit` on Linux, `SetThreadExecutionState` on Windows), and lets go
+when it stops. `ox awake 2h` holds it for a while, `ox awake off` releases it,
+`ox awake --lid` explains what each OS needs to keep running with the lid closed.
+`OX_NO_AWAKE=1` turns it off.
+
 ## OX Island (macOS notch)
 
 ```bash
@@ -122,6 +200,18 @@ the island opens an **office**: one desk per agent with its task, current tool,
 model and tokens. Finished or failed runs peek briefly. With nothing running,
 the bull lives on a little pasture: it grazes, wanders and looks around, gets
 the zoomies now and then, and a farmer sometimes walks by to wave.
+
+The header has a small **tray**: **Shelf** (drop files on the notch, then ask
+ox about one or start an email with it attached, from the account you pick),
+**Focus** (a focus timer whose countdown rides in the notch wing) and **Clips**
+(what you copied recently, kept in memory only and never anything a password
+manager marks as secret).
+
+**Windows and Linux** get the same island as a slim bar at the top of the
+screen (an Edge/Chrome app window): live runs, approvals, the shelf and the
+focus timer. `ox island` starts it there. It listens on 127.0.0.1 only and every
+request needs the per-launch token, so another web page cannot answer your
+approvals.
 
 `ox island off` turns the island off everywhere (runs stay in the terminal)
 until `ox island on`; the island's right-click menu has the same switch, and
