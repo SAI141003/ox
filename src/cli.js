@@ -4043,6 +4043,7 @@ const SUB_USAGE = {
   island: 'usage: ox island [start | stop | status | on | off | build | web]',
   plugin: 'usage: ox plugin ls | add | rm | enable | disable | mcp | import-claude',
   plugins: 'usage: ox plugin ls | add | rm | enable | disable | mcp | import-claude',
+  verify: 'usage: ox verify  — run this project\'s tests (npm test, or test:unit) and report what passed',
 };
 
 async function runSubcommand(cmd, args) {
