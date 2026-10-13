@@ -109,7 +109,24 @@ final class OxBridge: ObservableObject {
         // The focus countdown shows in the wing, so its changes redraw the island too.
         focus.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &traySinks)
         clips.start()
-        MainActor.assumeIsolated { buddy.send = { [weak self] text, shots, audio in self?.ask(text, imagePaths: shots, audioPath: audio) ?? false } }
+        MainActor.assumeIsolated {
+            buddy.send = { [weak self] text, shots, audio in
+                guard let self else { return false }
+                if self.ask(text, imagePaths: shots, audioPath: audio) { return true }
+                // No live run: small tasks (open an app, a timer, a note, math)
+                // still work, offline and with no model, through `ox do`.
+                guard OxRunner.available, !text.isEmpty else { return false }
+                OxRunner.run(["do", "--json", text], cwd: FileManager.default.homeDirectoryForCurrentUser) { [weak self] _, out in
+                    struct R: Decodable { let handled: Bool; let message: String? }
+                    let line = out.split(separator: "\n").last.map(String.init) ?? ""
+                    let r = try? JSONDecoder().decode(R.self, from: Data(line.utf8))
+                    let reply = (r?.handled == true ? r?.message : nil)
+                        ?? "That one needs ox with a model. Start ox in a terminal, then ask me again."
+                    MainActor.assumeIsolated { self?.buddy.speak(reply) }
+                }
+                return true
+            }
+        }
         scan()
         // Instant discovery: a new ox socket is a write to $TMPDIR. The slow
         // timer remains as a backstop and for expiring ended runs.

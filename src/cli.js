@@ -212,7 +212,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -366,6 +366,7 @@ function usage() {
     row('ox connect', 'use a plan you already pay for: Claude, ChatGPT, Gemini, Qwen, Kimi, ...'),
     row('ox mail draft --from --to', 'an email draft in Mail, from the account you name'),
     row('ox awake [2h|off|--lid]', 'keep the computer awake for your agents (automatic while ox works)'),
+    row('ox do "open notes"', 'small tasks offline, no AI needed: apps, search, timers, notes, math'),
     '',
     c.bold('Tasks and teams'),
     row('ox task', 'the task board: add, next, claim, done, approve, log'),
@@ -4496,6 +4497,29 @@ async function runSubcommand(cmd, args) {
         return;
       }
       console.log(c.dim('usage: ox kanban [list] | ox kanban add <title>   (the same board as: ox task)'));
+      return;
+    }
+    case 'do': {
+      // Small tasks with no AI and no internet (src/offline.js).
+      const { doOffline } = await import('./offline.js');
+      const json = args.includes('--json');
+      const dryRun = args.includes('--dry-run');
+      const text = args.filter((a) => a !== '--json' && a !== '--dry-run').join(' ').trim();
+      if (!text || text === '--help') {
+        console.log(`${c.bold('ox do')} — small tasks, no AI and no internet needed`);
+        console.log(c.dim('  ox do "open notes"           ox do "search best ramen near me"'));
+        console.log(c.dim('  ox do "timer 25 minutes"     ox do "remind me in 10 minutes to stretch"'));
+        console.log(c.dim('  ox do "note buy milk"        ox do "what is 18% of 240"'));
+        console.log(c.dim('  ox do "screenshot"           ox do "volume 30"   ox do "mute"   ox do "time"'));
+        console.log(c.dim('  anything bigger needs a model: ox -p "..."'));
+        if (!text) process.exitCode = 3;
+        return;
+      }
+      const r = doOffline(text, { dryRun });
+      if (json) console.log(JSON.stringify(r));
+      else console.log(r.handled ? (r.ok === false ? c.red(r.message) : r.message) : c.dim(r.message));
+      if (!r.handled) process.exitCode = 2;
+      else if (r.ok === false) process.exitCode = 1;
       return;
     }
     case 'awake': {
