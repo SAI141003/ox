@@ -20,6 +20,7 @@ import { recordDecision, recordOutcome } from './audit.js';
 import { createVerifier } from './verify-loop.js';
 import { fireHooks, formatHookOutputs, hooksFor, loadHooksConfig } from './hooks.js';
 import { modeBlock } from './modes.js';
+import { runSubscriptionTurn } from './subscriptions.js';
 
 const SUMMARY_PREFIX = '[ox: summary of earlier conversation turns]\n';
 const VERIFY_MAX_ROUNDS = 2;
@@ -2734,6 +2735,9 @@ export function runAgent(opts = {}) {
   // synchronously at the runAgent() call site, with the caller on the
   // stack, instead of surfacing later as a rejected event stream.
   resolveRunCwd(opts);
+  if (opts?.target?.provider === 'subscription') {
+    return withIpcBroadcast(opts, runSubscriptionTurn({ ...opts, ctx: { ...(opts.ctx ?? {}), cwd: resolveRunCwd(opts) } }));
+  }
   return withIpcBroadcast(opts, runAgentLoop(opts));
 }
 

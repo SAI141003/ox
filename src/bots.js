@@ -1,3 +1,4 @@
+import { subscriptionTarget } from './subscriptions.js';
 import { lookupModel, resolveModelWindow } from './cost.js';
 
 export const KEY_ENV = Object.freeze({
@@ -204,6 +205,10 @@ export function defaultBotSpec(config = {}, env = process.env) {
 export function resolveBot(nameOrSpec, config = {}, env = process.env) {
   if (typeof nameOrSpec !== 'string' || !nameOrSpec.trim()) fail('no bot specified');
   const spec = nameOrSpec.trim();
+  // `claude-plan`, `chatgpt-plan:gpt-5`, ...: a turn run by the vendor's own
+  // signed-in CLI on the user's subscription (src/subscriptions.js).
+  const sub = subscriptionTarget(spec, config);
+  if (sub) return sub;
   const customBots = obj(config.bots);
   const colon = spec.indexOf(':');
 

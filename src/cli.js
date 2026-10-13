@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -362,6 +362,7 @@ function usage() {
     row('ox -p "fix the failing test"', 'one task, then exit (--image, --max-cost, --json)'),
     row('ox auto "<goal>"', 'a long run with checkpoints and verification'),
     row('ox serve', 'OpenAI-compatible API + web chat on 127.0.0.1:8080'),
+    row('ox connect', 'use a plan you already pay for: Claude, ChatGPT, Gemini, Qwen, Kimi, ...'),
     '',
     c.bold('Tasks and teams'),
     row('ox task', 'the task board: add, next, claim, done, approve, log'),
@@ -4441,6 +4442,43 @@ async function runSubcommand(cmd, args) {
         return;
       }
       console.log(c.dim('usage: ox kanban [list] | ox kanban add <title>   (the same board as: ox task)'));
+      return;
+    }
+    case 'connect': {
+      const { checkAll, checkCli, allClis } = await import('./subscriptions.js');
+      let config = {};
+      try { config = loadConfig(); } catch {}
+      const id = String(args[0] ?? '').toLowerCase().replace(/-plan$/, '');
+      if (id === '--help' || id === 'help') {
+        console.log(`${c.bold('ox connect')} — use a subscription you already pay for`);
+        console.log(c.dim('  ox hands the turn to the vendor\'s own signed-in CLI; it never reads or copies your login.'));
+        console.log(c.dim('  ox connect            every supported CLI and whether it works here'));
+        console.log(c.dim('  ox connect <name>     one of them, with what to do next'));
+        return;
+      }
+      if (id && !allClis(config)[id]) {
+        console.log(c.red(`no CLI '${id}' — one of: ${Object.keys(allClis(config)).join(', ')}`));
+        console.log(c.dim('add your own in config: subscriptions: { name: { bin, args: [..., "{prompt}"] } }'));
+        process.exitCode = 3;
+        return;
+      }
+      const rows = id ? [checkCli(id, config)] : checkAll(config);
+      if (!id) console.log(c.bold('plans you can use with ox') + c.dim('  (ox runs the vendor\'s own CLI; your login stays with it)'));
+      for (const r of rows) {
+        const name = `${r.id}-plan`.padEnd(16);
+        if (r.works) console.log(`${c.green('●')} ${name}${r.label} ${c.dim(r.version ?? '')}`);
+        else if (r.installed) console.log(`${c.yellow('○')} ${name}${r.label} ${c.yellow('installed but not working')}`);
+        else console.log(`${c.dim('·')} ${c.dim(name + r.label)}`);
+        if (id || r.installed) {
+          if (r.works) console.log(c.dim(`    use: ox --bot ${r.id}-plan   (or /bot ${r.id}-plan in chat) · not signed in yet? ${r.login}`));
+          else if (r.installed) console.log(c.dim(`    ${r.problem} → ${r.fix}`));
+          else console.log(c.dim(`    install: ${r.fix} · then ${r.login}`));
+        }
+      }
+      if (!id) {
+        const n = rows.filter((r) => r.works).length;
+        console.log(c.dim(`\n${n} ready. ox connect <name> shows how to install or fix one.`));
+      }
       return;
     }
     case 'arena': {
