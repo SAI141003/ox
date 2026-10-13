@@ -5,6 +5,7 @@ import { sanitizeEnv } from '../env-sanitize.js';
 import { ensureSession, execArgv, interruptSession } from '../docker-backend.js';
 import { gitToplevel } from '../git-fast.js';
 import { redactSecrets } from '../memory.js';
+import { shellArgv } from '../shell.js';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_CHARS = 25_000;
@@ -402,11 +403,12 @@ export async function bashTool(args = {}, ctx = {}) {
     exclude: sandboxProfile?.env_exclude,
     include: sandboxProfile?.env_include,
   });
-  const shellPath = process.env.SHELL || '/bin/zsh';
+  // The OS's shell: $SHELL on macOS/Linux, Git Bash or PowerShell on Windows.
+  const shellCmd = shellArgv(command);
   let argv =
     runner && !runner.degraded && Array.isArray(runner.argvPrefix)
-      ? [...runner.argvPrefix, shellPath, '-lc', command]
-      : [shellPath, '-lc', command];
+      ? [...runner.argvPrefix, ...shellCmd]
+      : shellCmd;
 
   // --backend docker: the command runs in the session container (the
   // container is the sandbox); the project is mounted there at /workspace.

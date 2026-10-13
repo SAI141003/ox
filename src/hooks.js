@@ -63,6 +63,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { shellArgv } from './shell.js';
 
 export const HOOK_EVENTS = Object.freeze([
   'PreToolUse',
@@ -161,7 +162,9 @@ function safeStringify(v) {
 //   error:    stderr (capped). null if clean.
 function runHook({ command, cwd, env, timeoutMs }) {
   return new Promise((resolve) => {
-    const child = spawn('sh', ['-c', command], {
+    const argv = shellArgv(command, { login: false });
+    const child = spawn(argv[0], argv.slice(1), {
+      windowsHide: true,
       cwd,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],

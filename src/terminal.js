@@ -4,6 +4,7 @@
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { StringDecoder } from 'node:string_decoder';
+import { detectShell } from './shell.js';
 
 export const TERMINAL_SCHEMA_VERSION = '1.0.0';
 
@@ -33,7 +34,7 @@ export class TerminalSession extends EventEmitter {
     this.cwd = cwd || process.cwd();
     this.cols = opts.cols || DEFAULT_COLS;
     this.rows = opts.rows || DEFAULT_ROWS;
-    this.shell = opts.shell || process.env.SHELL || '/bin/sh';
+    this.shell = opts.shell || detectShell().path;
     this.outputBuffer = [];
     this._proc = null;
     this._state = null;

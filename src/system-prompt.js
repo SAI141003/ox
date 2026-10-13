@@ -8,6 +8,7 @@ import { formatProceduralContext, detectTaskType, proceduralStats } from './proc
 import { buildRepoMap, renderRepoMap } from './repo-map.js';
 import { HISTORY_STATUS, degradedHistoryNotice, lastHistoryLoad } from './session.js';
 import { DEFAULT_SUBAGENT_CONCURRENCY, MAX_SUBAGENT_CONCURRENCY } from './resource-class.js';
+import { shellNote } from './shell.js';
 
 function gitInfo(cwd) {
   // Branch from .git directly; only the dirty count needs git, run without a shell.
@@ -320,6 +321,7 @@ export async function buildPromptLayers({
     `- cwd: ${root}`,
     `- platform: ${process.platform} / ${os.type()} ${os.release()}`,
     `- git: ${gitInfo(root)}`,
+    ...(shellNote() ? [`- shell: ${shellNote()}`] : []),
   );
   if (historyBlock) {
     open('history', 'session');

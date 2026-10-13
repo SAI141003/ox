@@ -16,6 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { shellArgv } from './shell.js';
 
 const OX = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
 const git = (cwd, args, opts = {}) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024, ...opts });
@@ -66,7 +67,8 @@ function runIn(cwd, cmd, args, { env, timeoutMs }) {
 }
 
 function shell(cwd, command, timeoutMs) {
-  return runIn(cwd, process.env.SHELL || '/bin/sh', ['-lc', command], { env: process.env, timeoutMs });
+  const argv = shellArgv(command);
+  return runIn(cwd, argv[0], argv.slice(1), { env: process.env, timeoutMs });
 }
 
 /**
