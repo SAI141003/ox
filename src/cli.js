@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4544,6 +4544,32 @@ async function runSubcommand(cmd, args) {
         return;
       }
       console.log(c.dim('usage: ox kanban [list] | ox kanban add <title>   (the same board as: ox task)'));
+      return;
+    }
+    case 'speak': {
+      // ox's voice: the system voice, or VoxCPM when installed (src/tts.js).
+      const tts = await import('./tts.js');
+      const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+      if (args[0] === '--help' || args[0] === 'help') {
+        console.log(`${c.bold('ox speak')} — say something out loud`);
+        console.log(c.dim('  ox speak "hello"                          the system voice'));
+        console.log(c.dim('  ox speak "hello" --engine voxcpm          VoxCPM2 (natural, 30 languages) when installed'));
+        console.log(c.dim('  ox speak "hello" --voice me.wav           clone the voice in a reference clip (VoxCPM)'));
+        console.log(c.dim('  ox speak "hello" --out hello.wav          write a WAV instead of playing'));
+        console.log(c.dim('  ox speak --engines                        what is available here'));
+        return;
+      }
+      if (args[0] === '--engines') {
+        const e = tts.engines();
+        console.log(`system voice: ${e.system ? c.green(e.system) : c.red('none found')}`);
+        console.log(`VoxCPM:       ${e.voxcpm ? c.green('installed') : c.dim(`not installed — ${e.install.voxcpm}`)}`);
+        return;
+      }
+      const VALUED = new Set(['--engine', '--voice', '--out', '--model']);
+      const text = args.filter((a, i) => !a.startsWith('--') && !VALUED.has(args[i - 1])).join(' ');
+      const r = await tts.speak(text, { engine: flag('--engine') ?? 'auto', voice: flag('--voice') ?? null, out: flag('--out') ?? null, model: flag('--model') ?? null });
+      console.log(r.ok ? c.dim(`${r.message} (${r.engine})`) : c.red(r.message));
+      if (!r.ok) process.exitCode = 1;
       return;
     }
     case 'app': {

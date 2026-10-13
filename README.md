@@ -233,6 +233,20 @@ falls below a number — a desktop notification, and your phone if the Telegram
 gateway is paired. No model and no key: plain page fetches. One alert per
 change, and a failing page backs off instead of being hammered.
 
+## ox speaks
+
+```bash
+ox speak "the tests pass"                       # the system voice, nothing to install
+ox speak "the tests pass" --engine voxcpm       # VoxCPM2: natural voices, 30 languages
+ox speak "hello" --voice me.wav --out hi.wav    # clone a voice from a clip you provide
+ox speak --engines                              # what is available here
+```
+
+[VoxCPM2](https://github.com/OpenBMB/VoxCPM) (OpenBMB, Apache-2.0) is optional:
+`pip install voxcpm`. It is a 2B model its makers test on NVIDIA GPUs with
+about 8 GB; ox never installs or downloads it for you. Its usage policy forbids
+impersonation and fraud: clone only voices you have the right to use.
+
 ## Keep the computer awake
 
 ox holds the machine awake while it works (`caffeinate` on macOS,
