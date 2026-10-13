@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -360,6 +360,7 @@ function usage() {
     row('ox', 'chat with ox in this project'),
     row('ox -p "fix the failing test"', 'one task, then exit (--image, --max-cost, --json)'),
     row('ox auto "<goal>"', 'a long run with checkpoints and verification'),
+    row('ox app', 'ox in its own window (Mac app; app window on Windows/Linux)'),
     row('ox serve', 'OpenAI-compatible API + web chat on 127.0.0.1:8080'),
     row('ox connect', 'use a plan you already pay for: Claude, ChatGPT, Gemini, Qwen, Kimi, ...'),
     row('ox mail draft --from --to', 'an email draft in Mail, from the account you name'),
@@ -4543,6 +4544,35 @@ async function runSubcommand(cmd, args) {
         return;
       }
       console.log(c.dim('usage: ox kanban [list] | ox kanban add <title>   (the same board as: ox task)'));
+      return;
+    }
+    case 'app': {
+      // ox in its own window: the same ox as the terminal (src/app.js).
+      const a = await import('./app.js');
+      const action = String(args[0] ?? '').toLowerCase();
+      if (action === '--help' || action === 'help') {
+        console.log(`${c.bold('ox app')} — ox in its own window (macOS app; an app window on Windows/Linux)`);
+        console.log(c.dim('  ox app              open it, working in this folder'));
+        console.log(c.dim('  ox app install      macOS: put OX.app in ~/Applications (Spotlight, Launchpad, Dock)'));
+        console.log(c.dim('  ox app stop         stop the app\'s server'));
+        console.log(c.dim('  Same agents, modes, approvals and sessions as the terminal; runs show in the island.'));
+        return;
+      }
+      try {
+        if (action === '--print-url') { const st = await a.ensureServer({ cwd: process.cwd() }); console.log(st.url); return; }
+        if (action === 'stop') { console.log(a.stopServer() ? c.green('stopped') : c.dim('it was not running')); return; }
+        if (action === 'install') {
+          if (process.platform !== 'darwin') { console.log(c.dim('on Windows and Linux, ox app opens an app window; pin it to the taskbar from there')); return; }
+          const dest = a.installMacApp();
+          console.log(dest ? c.green(`installed: ${dest} — find "ox" in Spotlight or Launchpad`) : c.red('could not build OX.app (needs Xcode or the Command Line Tools: xcode-select --install)'));
+          if (!dest) process.exitCode = 1;
+          return;
+        }
+        await a.openApp({ cwd: process.cwd() });
+      } catch (e) {
+        console.log(c.red(String(e?.message ?? e)));
+        process.exitCode = 1;
+      }
       return;
     }
     case 'watch': {

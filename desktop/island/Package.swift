@@ -21,5 +21,10 @@ let package = Package(
                 .unsafeFlags(["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker", infoPlist]),
             ]
         ),
+        // OX.app: the desktop app window onto the same ox (`ox app`).
+        .executableTarget(
+            name: "OxApp",
+            path: "Sources/OxApp"
+        ),
     ]
 )
