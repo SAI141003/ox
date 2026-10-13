@@ -147,8 +147,11 @@ export const AGENT_MESSAGING_CLAUSES = [
 export const WITHHELD_LIST_CAP = 12;
 
 export function renderWithheldToolsLine(withheld) {
-  const names = (Array.isArray(withheld) ? withheld : []).filter((n) => typeof n === 'string' && n);
-  if (!names.length) return '';
+  const all = (Array.isArray(withheld) ? withheld : []).filter((n) => typeof n === 'string' && n);
+  if (!all.length) return '';
+  // The project's own MCP tools are named first: the model cannot guess they
+  // exist, while ox's built-ins are the same everywhere. Order is otherwise kept.
+  const names = [...all.filter((n) => n.startsWith('mcp__')), ...all.filter((n) => !n.startsWith('mcp__'))];
   const shown = names.slice(0, WITHHELD_LIST_CAP);
   const extra = names.length - shown.length;
   return `- Not offered this turn, available if asked: ${shown.join(', ')}${extra > 0 ? `, +${extra} more` : ''}`;
