@@ -115,7 +115,7 @@ const STAGES = {
       plain: false,
       // The per-file repo guard reruns the whole suite; the dedicated full run
       // (`npm test`) still covers it. Here we want the fast inner loop.
-      env: { OX_SKIP_REPO_GUARD: '1', OX_NO_BUILTIN_SKILLS: '1', OX_NO_PLUGINS: '1', OX_ISLAND: '0' },
+      env: { OX_SKIP_REPO_GUARD: '1', OX_NO_BUILTIN_SKILLS: '1', OX_NO_PLUGINS: '1', OX_ISLAND: '0', OX_LEARN: '0' },
     });
     const num = (k) => Number((r.out.match(new RegExp(`^# ${k} (\\d+)`, 'm')) ?? [])[1] ?? NaN);
     const pass = num('pass');
@@ -133,7 +133,7 @@ const STAGES = {
   },
 
   async bench() {
-    const r = await run(process.execPath, ['bench/runner.mjs'], { timeoutMs: 600_000, env: { OX_NO_BACKUPS: '1' } });
+    const r = await run(process.execPath, ['bench/runner.mjs'], { timeoutMs: 600_000, env: { OX_NO_BACKUPS: '1', OX_LEARN: '0' } });
     const totals = (r.out.match(/^.*\d+\/\d+ passed.*$/m) ?? r.out.match(/Totals?:?.*$/m) ?? [r.out.trim().split('\n').pop()])[0];
     return { ok: r.code === 0, detail: totals };
   },

@@ -181,7 +181,6 @@ import { WATCH_DEFAULT_FPS, runWatch } from './ipc-watch.js';
 import { islandRunning } from './island.js';
 import { expandCommand, listCustomCommands } from './plugins.js';
 import { createLedger, renderLedger } from './ledger.js';
-import {createSelfImproveLoop} from './self-improve-loop.js';
 import {createVerifier, formatVerificationReport} from './verify-loop.js';
 import {createSpecTracker} from './spec-tracker.js';
 import {createArchMemory, exportArchitectureContext} from './arch-memory.js';
@@ -4892,22 +4891,33 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'self-improve': {
-      const action = String(args[0] ?? '').trim().toLowerCase();
-      const loop = createSelfImproveLoop(process.cwd(), createResearchBrain(process.cwd()));
+      // The real learning loop (src/skill-drafts.js). It used to run a cycle
+      // that invented a proposal when it found none and counted "pending" as
+      // applied.
+      const sd = await import('./skill-drafts.js');
+      const action = String(args[0] ?? 'status').trim().toLowerCase();
+      const cwd = process.cwd();
       if (action === 'run') {
-        console.log(c.dim('self-improve cycle starting...'));
-        const result = await loop.runCycle({ maxProposals: 5 });
-        console.log(c.bold('self-improve cycle complete'));
-        console.log(`  gaps found: ${result.gapsFound}  proposals: ${result.proposals}  applied: ${result.applied}`);
+        const r = await sd.learnFromProject(cwd, { sessionsDir: path.join(os.homedir(), '.ox', 'sessions') });
+        console.log(`read ${r.read} session(s) from this project · ${r.lessons} new lesson(s) for procedural memory · ${r.drafted.length} skill draft(s)${r.drafted.length ? `: ${r.drafted.join(', ')}` : ''}`);
+        if (r.drafted.length) console.log(c.dim('review: ox self-improve drafts · keep one: ox self-improve accept <name>'));
         return;
       }
-      if (action === 'status') {
-        const status = loop.getStatus();
-        console.log(c.bold('self-improve status'));
-        console.log(`  cycles: ${status.cycles}  last: ${status.lastCycle || 'never'}`);
+      if (action === 'drafts' || action === 'status') {
+        const drafts = sd.listDrafts(cwd);
+        if (!drafts.length) console.log(c.dim('no skill drafts here — ox drafts one when a run finishes a task in several good steps (or: ox self-improve run)'));
+        for (const d of drafts) console.log(`  ${d.name}  ${c.dim(`${d.steps} steps · from session ${d.from} · .agent/skill-drafts/${d.name}/SKILL.md`)}`);
         return;
       }
-      console.log(c.dim('usage: ox self-improve run | ox self-improve status'));
+      if (action === 'accept' || action === 'reject') {
+        const name = args[1];
+        if (!name) { console.log(c.red(`usage: ox self-improve ${action} <name>`)); process.exitCode = 3; return; }
+        const ok = action === 'accept' ? sd.acceptDraft(cwd, name) : sd.rejectDraft(cwd, name);
+        console.log(ok ? c.green(action === 'accept' ? `kept: .agents/skills/${name} — ox loads it from now on` : `dropped ${name}`) : c.red(`no draft '${name}'`));
+        if (!ok) process.exitCode = 3;
+        return;
+      }
+      console.log(c.dim('usage: ox self-improve run | drafts | accept <name> | reject <name>'));
       return;
     }
     case 'verify': { const v = createVerifier(process.cwd()); const report = await v.verify('project verification', null, {}); console.log(formatVerificationReport(report)); return; }
@@ -7041,11 +7051,7 @@ async function replWithBudget(config, opts, flags, budget) {
         return;
       }
       case '/self-improve': {
-        const loop = createSelfImproveLoop(config.cwd, createResearchBrain(config.cwd));
-        const status = loop.getStatus();
-        console.log(c.bold('self-improve'));
-        console.log(`  cycles: ${status.cycles}  last: ${status.lastCycle || 'never'}`);
-        console.log(c.dim('  run with: ox self-improve run'));
+        await runSubcommand('self-improve', rest.trim() ? rest.trim().split(/\s+/) : ['drafts']);
         return;
       }
       default: {

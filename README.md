@@ -184,6 +184,21 @@ ox do "search ramen"    ox do "note call the bank"    ox do "volume 30"
 A rules parser (no model, no network) handles short requests and says so when
 something is bigger. The island's voice falls back to it when no ox run is live.
 
+## ox learns from its own work
+
+When a run finishes a task in several good steps, ox drafts a skill from the
+steps that actually worked (with how it was checked) into
+`.agent/skill-drafts/`. A draft is never used until you keep it:
+
+```bash
+ox self-improve drafts            # what it learned, and from which run
+ox self-improve accept <name>     # moves it to .agents/skills/, loaded from now on
+ox self-improve run               # re-read this project's chat sessions for lessons and drafts
+```
+
+Counts are real: nothing is proposed that was not seen, and nothing is called
+applied that was not. `OX_LEARN=0` turns drafting off.
+
 ## Watch a page
 
 ```bash

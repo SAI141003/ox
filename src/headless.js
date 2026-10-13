@@ -345,6 +345,7 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
     // summary. The descriptors are read back at the end, because that is where
     // the durable record (files, lessons, status) lives.
     const delegated = [];
+    const learnCalls = [];
     let toolCallCount = 0;
     let lastAssistantText = '';
     let titled = false;
@@ -415,6 +416,18 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
       })) {
         ledger.feed(ev);
         if (ev.type === 'error') failed = true;
+        // What this run did, for learning at the end (assistant turns carry the
+        // full tool arguments; tool-end says how each call went).
+        if (ev.type === 'assistant-turn' && Array.isArray(ev.message?.tool_calls)) {
+          for (const tc of ev.message.tool_calls) {
+            let args = {};
+            try { args = JSON.parse(tc.function?.arguments ?? '{}'); } catch {}
+            learnCalls.push({ id: tc.id, name: tc.function?.name ?? '?', args, ok: null });
+          }
+        } else if (ev.type === 'tool-end') {
+          const call = learnCalls.find((c) => c.id === ev.id && c.ok === null);
+          if (call) call.ok = !ev.isError;
+        }
         if (ev.type === 'usage-total') {
           Object.assign(ev, budget.snapshot());
         }
@@ -731,6 +744,17 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
         );
         if (session?.file) console.log(`session: ${session.file}`);
       }
+    }
+    // Learn from it: a task finished in several good steps becomes a draft
+    // skill (never used until accepted). OX_LEARN=0 turns this off.
+    if (code === 0 && process.env.OX_LEARN !== '0') {
+      try {
+        const { draftFromSession, draftFromRecord } = await import('./skill-drafts.js');
+        const drafted = session?.file
+          ? draftFromSession(session.file, config.cwd)
+          : draftFromRecord({ id: `run-${process.pid}-${Date.now()}`, task: String(prompt ?? ''), calls: learnCalls }, config.cwd);
+        if (drafted && !opts.json) process.stderr.write(dimYellow(`· learned: drafted the skill '${drafted}' from this run — review it with: ox self-improve drafts\n`));
+      } catch {}
     }
     return { code };
   } finally {

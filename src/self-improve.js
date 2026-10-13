@@ -128,7 +128,7 @@ export async function generateCritique({ failure, history = [], attempts = 1, co
 }
 
 // Heuristic pattern extraction from session events.
-function extractHeuristicPatterns(events) {
+export function extractHeuristicPatterns(events) {
   const patterns = [];
   const toolsUsed = new Set();
   const successSeq = [];
