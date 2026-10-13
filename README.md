@@ -125,6 +125,7 @@ ox --mode ask -p "how does the router pick a model?"   # answers, changes nothin
 | `ask` | read and answer; every write or command is refused |
 | `plan` | look and plan; it can write only `.agent/plans/*.md` |
 | `debug` | reproduce, test one cause at a time, smallest fix, re-run |
+| `data` | analysis as notebook cells in `.agent/data/`, run and read back; writes nowhere else |
 | `orchestrate` | split the work across subagents, then check and merge |
 | `auto` | picks one of the above per message and prints which, and why |
 

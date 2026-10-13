@@ -40,7 +40,7 @@ Agent faces use six fixed hues (`#60A5FA #F472B6 #34D399 #FBBF24 #A78BFA
 
 | | ox web chat | ox island chat | Kilo Code | Claude Code (desktop) |
 |---|---|---|---|---|
-| Mode picker | ✓ Auto/Code/Ask/Plan/Debug/Orchestrate, enforced by the server | — (Auto) | ✓ Code/Ask/Data/Debug/Orchestrator/Plan | ✓ Auto / plan |
+| Mode picker | ✓ Auto/Code/Ask/Plan/Debug/Data/Orchestrate, enforced by the server | — (Auto) | ✓ Code/Ask/Data/Debug/Orchestrator/Plan | ✓ Auto / plan |
 | Model / agent picker | ✓ your agents first, then models | ✓ agent faces | ✓ model | ✓ model + effort |
 | Attach | ✓ text/code files, read in the browser | drop files on the notch (shelf) | ✓ | ✓ (+) |
 | Talk | ✓ browser speech | ✓ ⌃⌥Space, on-device | ✓ mic | ✓ |
@@ -76,7 +76,7 @@ answer when it is done; `/status /stop /mode /new /where`.
 
 ## What others do that ox does not (yet)
 
-- Kilo's **Data** mode (notebook cells) has no ox equivalent.
+- (Kilo's **Data** mode now has an ox equivalent: cells in `.agent/data/`.)
 - Claude Code shows **effort** next to the model; ox has `--max-mode` but no
   picker for it in the web chat.
 - OpenDots and OpenMuse give each agent an **avatar picture and a timeline of

@@ -18,6 +18,7 @@ test('auto routes each message to the mode it reads as', () => {
   assert.equal(classifyMode('plan the migration to postgres').mode, 'plan');
   assert.equal(classifyMode('rename the helper in every package in parallel').mode, 'orchestrate');
   assert.equal(classifyMode('add a --verbose flag to the cli').mode, 'code');
+  assert.equal(classifyMode('analyze sales.csv and chart the monthly trend').mode, 'data');
   assert.deepEqual(resolveTurnMode('ask', 'fix the crash'), { mode: 'ask', routed: false, reason: null });
   assert.equal(resolveTurnMode('auto', 'fix the crash').routed, true);
   assert.equal(normalizeMode('Orchestrator'), 'orchestrate');
@@ -35,6 +36,9 @@ test('the tool gate: ask reads only, plan writes only .agent/plans/*.md', () => 
   assert.match(modeRefusal('plan', 'bash', {}, cwd), /read-only/);
   assert.equal(modeRefusal('debug', 'bash', {}, cwd), null);
   assert.equal(modeRefusal('code', 'write_file', {}, cwd), null);
+  assert.equal(modeRefusal('data', 'write_file', { path: '.agent/data/sales/01-load.py' }, cwd), null);
+  assert.match(modeRefusal('data', 'write_file', { path: 'src/app.js' }, cwd), /data mode writes only/);
+  assert.equal(modeRefusal('data', 'bash', { command: 'python3 .agent/data/sales/01-load.py' }, cwd), null);
 });
 
 // A model that always tries to write the file it is told about, then stops.

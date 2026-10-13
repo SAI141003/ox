@@ -45,6 +45,16 @@ export const MODES = Object.freeze({
       '4. Re-run the reproduction and show it now passes; add a regression test when the project has tests.',
     ].join('\n'),
   },
+  data: {
+    label: 'Data',
+    desc: 'analysis as notebook cells: each step a file in .agent/data/, run and read back',
+    block: [
+      '# Mode: data',
+      'Work like a notebook. Each step is a new numbered cell file in .agent/data/<analysis>/ (01-load.py, 02-clean.py, ...),',
+      'run with bash; read its output before writing the next cell. Print the numbers you rely on; never state a figure you did not compute.',
+      'Inputs are read where they are; the only files you write are cells and results under .agent/data/.',
+    ].join('\n'),
+  },
   orchestrate: {
     label: 'Orchestrate',
     desc: 'splits the work and hands parts to subagents, then checks and merges their results',
@@ -70,6 +80,7 @@ export function normalizeMode(name) {
 const RULES = [
   ['plan', /\b(plan|design|architect(ure)?|roadmap|approach|proposal|spec)\b(?!.*\b(fix|implement)\b)|^how (should|would) (i|we)\b/i, 'asks for a plan or design'],
   ['debug', /\b(bug|error|exception|crash(es|ed|ing)?|fail(s|ed|ing|ure)?|broken|doesn'?t work|not working|stack ?trace|traceback|regression|flaky|debug)\b/i, 'describes a failure'],
+  ['data', /\b(analy[sz]e|analysis|csv|dataset|spreadsheet|xlsx|chart|plot|statistics|average|median|correlat\w*|trend)\b/i, 'is a data analysis'],
   ['orchestrate', /\b(in parallel|parallel(ise|ize)?|across (all|every|the whole)|each (of the|module|package|file)|multiple (services|packages|repos)|whole (codebase|repo|project)|migrate (all|every|the whole))\b/i, 'spans many independent parts'],
   ['ask', /^(what|why|how|where|which|who|when|explain|describe|is|are|does|do|can|should)\b[^]*\?\s*$|^(explain|describe|summari[sz]e|what is|what does|how does|where is|why does)\b/i, 'is a question'],
 ];
@@ -95,6 +106,15 @@ export function modeBlock(mode) {
 
 // Tool gate. null = allowed; a string = why it is refused.
 export function modeRefusal(mode, name, args = {}, cwd = process.cwd()) {
+  if (mode === 'data') {
+    if (name === 'write_file' || name === 'edit_file') {
+      const p = String(args?.path ?? args?.file_path ?? '');
+      const abs = path.resolve(cwd, p);
+      const dir = path.resolve(cwd, '.agent', 'data');
+      return p && abs.startsWith(dir + path.sep) ? null : `${name}: data mode writes only cells and results under .agent/data/; switch with /mode code to change ${p || 'files'}.`;
+    }
+    return null;
+  }
   if (mode === 'ask') {
     return READ_TOOLS.includes(name) ? null : `${name}: ask mode only reads; switch with /mode code to make changes.`;
   }
