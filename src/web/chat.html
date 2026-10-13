@@ -99,6 +99,11 @@
   .routed { display: inline-block; margin: 0 0 8px; font-size: 12px; color: var(--dim); }
   .hint { max-width: 780px; margin: 6px auto 0; font-size: 11.5px; color: var(--dim); text-align: center; }
 
+  /* settings */
+  .setrow { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .setrow select { max-width: 200px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+  .setrow input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--gold); }
+  .muted { color: var(--muted); } .small { font-size: 12px; }
   /* key dialog */
   dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--raise); color: var(--text); padding: 20px; width: min(420px, 92vw); }
   dialog::backdrop { background: rgba(0,0,0,.5); }
@@ -126,7 +131,7 @@
   </div>
   <button class="new" id="new"><span aria-hidden="true">＋</span> New chat</button>
   <nav class="convos" id="convos" aria-label="Conversations"></nav>
-  <div class="foot"><span id="where">local</span><button id="theme" style="border:0;background:none;color:inherit">Theme</button></div>
+  <div class="foot"><span id="where">local</span><button id="settings" style="border:0;background:none;color:inherit">Settings</button><button id="theme" style="border:0;background:none;color:inherit">Theme</button></div>
 </aside>
 
 <main>
@@ -165,6 +170,14 @@
   </div>
 </main>
 
+<dialog id="setdlg" aria-labelledby="settitle">
+  <h3 id="settitle" style="margin:0 0 4px">Settings</h3>
+  <p class="muted small" style="margin:0 0 14px">The same settings the terminal uses (~/.ox/config.json).</p>
+  <label class="setrow"><span><b>OX Island</b><br><span class="muted small" id="islandnote">ox in your notch (Mac) or a slim bar at the top (Windows, Linux)</span></span><input type="checkbox" id="set-island"></label>
+  <label class="setrow"><span><b>Default model</b><br><span class="muted small" id="modelnote"></span></span><select id="set-model"></select></label>
+  <label class="setrow"><span><b>Keep the computer awake</b><br><span class="muted small">while ox works, so long runs are not cut off by sleep</span></span><input type="checkbox" id="set-awake"></label>
+  <div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="chip" id="setclose">Done</button></div>
+</dialog>
 <dialog id="keydlg">
   <form method="dialog">
     <strong>This server needs its API key</strong>
@@ -250,6 +263,13 @@
       }
       const saved = store.get('ox.model', null);
       if (saved && data.some((m) => m.id === saved)) sel.value = saved;
+      else {
+        // Nothing picked yet here: start on the model ox itself would use.
+        try {
+          const st = await (await api('/ox/settings')).json();
+          if (data.some((m) => m.id === st.model.defaultBot)) sel.value = st.model.defaultBot;
+        } catch {}
+      }
       if (!data.length) sel.innerHTML = '<option value="">no models configured</option>';
     } catch (e) {
       sel.innerHTML = '<option value="">server unreachable</option>';
@@ -448,6 +468,30 @@
   $('input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
   $('send').onclick = send;
   $('new').onclick = newConvo;
+
+  // ---------- settings
+  async function loadSettings() {
+    const st = await (await api('/ox/settings')).json();
+    $('set-island').checked = st.island.enabled;
+    $('islandnote').textContent = st.island.enabled
+      ? (st.island.running ? 'on and running' : 'on — starts with the next ox run, or now')
+      : 'off: runs stay in the terminal and the app';
+    const sel = $('set-model');
+    sel.innerHTML = st.model.bots.map((b) => `<option value="${esc(b.id)}">${esc(b.id)}${b.ready ? '' : ' (no key)'}</option>`).join('');
+    sel.value = st.model.defaultBot;
+    $('modelnote').textContent = st.model.source.startsWith('auto') ? `chosen for you — ${st.model.source.slice(6)}` : st.model.source === 'config' ? 'your choice' : 'nothing connected yet: add a key, or ox connect / ox local';
+    $('set-awake').checked = st.awake.on;
+  }
+  async function saveSetting(patch) {
+    const r = await api('/ox/settings', { method: 'POST', body: JSON.stringify(patch) });
+    if (!r.ok) alert((await r.json().catch(() => ({})))?.error?.message || `HTTP ${r.status}`);
+    await loadSettings();
+  }
+  $('settings').onclick = async () => { await loadSettings().catch(() => {}); $('setdlg').showModal(); };
+  $('setclose').onclick = () => $('setdlg').close();
+  $('set-island').onchange = () => saveSetting({ island: $('set-island').checked });
+  $('set-model').onchange = () => saveSetting({ defaultBot: $('set-model').value });
+  $('set-awake').onchange = () => saveSetting({ awake: $('set-awake').checked });
 
   // ---------- attachments: text files, read here, added to the next message
   let attachments = [];

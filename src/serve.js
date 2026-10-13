@@ -854,7 +854,58 @@ async function handleResponses(req, res) {
 // A table, so the whole surface is readable in one place and a known path with
 // the wrong verb answers 405 instead of pretending the path does not exist.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// /ox/settings — the app's settings: the island, the default model, keep-awake.
+// Same guard as everything else (loopback host, own-page origin, bearer token
+// when the server runs with --api-key).
+// ---------------------------------------------------------------------------
+
+async function settingsView() {
+  const { islandEnabled, islandRunning } = await import('./island.js');
+  const { readConfigDoc, loadConfig } = await import('./config.js');
+  const doc = readConfigDoc();
+  const config = loadConfig();
+  const bots = Object.entries(BOTS).filter(([, d]) => d.model).map(([id, d]) => {
+    const keyEnv = KEY_ENV[d.provider] ?? null;
+    return { id, provider: d.provider, desc: d.desc, ready: !keyEnv || !!process.env[keyEnv], key: keyEnv };
+  });
+  return {
+    island: { enabled: islandEnabled(), running: islandRunning({ env: {} }), platform: process.platform },
+    model: { defaultBot: config.defaultBot, source: config.defaultBotSource ?? 'config', bots },
+    awake: { on: doc.awake !== false && process.env.OX_NO_AWAKE !== '1' },
+  };
+}
+
+async function handleSettingsGet(req, res) {
+  if (!authorized(req)) { unauthorized(res); return; }
+  sendJson(res, 200, await settingsView());
+}
+
+async function handleSettingsPost(req, res) {
+  if (!authorized(req)) { unauthorized(res); return; }
+  let body;
+  try { body = await parseBody(req); } catch { sendInvalidJson(res); return; }
+  const { saveConfigDoc } = await import('./config.js');
+  if (typeof body.island === 'boolean') {
+    const { cmdIsland } = await import('./island.js');
+    await cmdIsland([body.island ? 'on' : 'off'], { log: () => {}, err: () => {} });
+  }
+  if (typeof body.defaultBot === 'string') {
+    try {
+      resolveBot(body.defaultBot);
+    } catch (e) {
+      sendError(res, 400, String(e?.message ?? e), 'invalid_request_error', 'invalid_bot', 'defaultBot');
+      return;
+    }
+    saveConfigDoc((doc) => { doc.defaultBot = body.defaultBot; });
+  }
+  if (typeof body.awake === 'boolean') saveConfigDoc((doc) => { doc.awake = body.awake; });
+  sendJson(res, 200, await settingsView());
+}
+
 const ROUTES = [
+  { method: 'GET', pattern: /^\/ox\/settings\/?$/, handler: handleSettingsGet },
+  { method: 'POST', pattern: /^\/ox\/settings\/?$/, handler: handleSettingsPost },
   { method: 'GET', pattern: /^\/health\/?$/, handler: handleHealth },
   { method: 'GET', pattern: /^\/v1\/models\/?$/, handler: handleModels },
   { method: 'GET', pattern: /^\/v1\/models\/(.+)$/, handler: (req, res, m) => handleModel(req, res, decodeURIComponent(m[1])) },
