@@ -12,16 +12,18 @@ function needsApproval(name) {
   return ['open_app', 'type_text', 'open_url', 'open_path', 'open_window', 'screenshot', 'notify'].includes(name);
 }
 
-function osCmd(action, target) {
+export function osCmd(action, target) {
   if (isMac()) {
     switch (action) {
       case 'open_app': return ['open', '-a', target];
       case 'open_url': return ['open', target];
-      case 'open_path': return ['open', target];
-      case 'open_window': return ['osascript', '-e', `tell application "System Events" to set frontmost of process "${target}" to true`];
+      case 'open_path': return ['open', target.startsWith('-') ? `./${target}` : target];
+      // Text reaches AppleScript as argv, never spliced into the script: a quote
+      // in a model-chosen string must not be able to become `do shell script`.
+      case 'open_window': return ['osascript', '-e', 'on run argv', '-e', 'tell application "System Events" to set frontmost of process (item 1 of argv) to true', '-e', 'end run', target];
       case 'screenshot': return ['screencapture', '-x', target];
-      case 'notify': return ['osascript', '-e', `display notification "${target}" with title "ox"`];
-      case 'type_text': return ['osascript', '-e', `tell application "System Events" to keystroke "${target}"`];
+      case 'notify': return ['osascript', '-e', 'on run argv', '-e', 'display notification (item 1 of argv) with title "ox"', '-e', 'end run', target];
+      case 'type_text': return ['osascript', '-e', 'on run argv', '-e', 'tell application "System Events" to keystroke (item 1 of argv)', '-e', 'end run', target];
     }
   }
   if (isLinux()) {
@@ -36,11 +38,16 @@ function osCmd(action, target) {
     }
   }
   if (isWindows()) {
+    // cmd.exe re-parses its command line, so metacharacters in a target would
+    // run as commands; refuse them rather than try to escape cmd's rules.
+    if (action !== 'notify' && action !== 'open_url' && /[&|<>^%"\r\n]/.test(target)) return null;
     switch (action) {
       case 'open_app': return ['cmd', '/c', `start`, '', target];
-      case 'open_url': return ['cmd', '/c', 'start', '', target];
+      // No cmd.exe in between, so a URL's `&` stays part of the URL.
+      case 'open_url': return ['rundll32', 'url.dll,FileProtocolHandler', target];
       case 'open_path': return ['cmd', '/c', 'start', '', target];
-      case 'notify': return ['cmd', '/c', 'powershell', '-Command', `[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms'); [System.Windows.Forms.MessageBox]::Show('${target}', 'ox')`];
+      // The text travels in an environment variable, not inside the command.
+      case 'notify': return ['powershell', '-NoProfile', '-Command', "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null; [System.Windows.Forms.MessageBox]::Show($env:OX_NOTIFY_TEXT, 'ox') | Out-Null"];
     }
   }
   return null;
@@ -146,12 +153,12 @@ export async function notify(args = {}, ctx = {}) {
   const message = args?.message || 'ox notification';
   const cmd = osCmd('notify', message);
   if (!cmd) return err(`No notify support on ${os.platform()}`);
-  return runCmd(cmd, `notify: ${message}`);
+  return runCmd(cmd, `notify: ${message}`, { OX_NOTIFY_TEXT: String(message) });
 }
 
-function runCmd(cmd, label) {
+function runCmd(cmd, label, env = {}) {
   return new Promise((resolve) => {
-    const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+    const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: { ...process.env, ...env } });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (d) => { stdout += d.toString(); });
