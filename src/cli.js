@@ -2111,6 +2111,13 @@ async function cmdAgent(args = []) {
     console.log(c.dim(`  modes: auto, ${MODE_NAMES.join(', ')} · bots: ox bots, or a plan you pay for (ox connect)`));
     return;
   }
+  if ((sub === 'list' || sub === 'ls') && rest.includes('--json')) {
+    // For the island: every agent, with what it runs on and its mode.
+    const agents = listAgents().map((n) => loadAgent(n)).filter(Boolean)
+      .map((a) => ({ name: a.name, bot: agentBotSpec(a), mode: a.mode ?? 'code', description: a.description || String(a.systemPrompt ?? '').split('\n')[0].slice(0, 80) }));
+    console.log(JSON.stringify({ agents }));
+    return;
+  }
   if (sub === 'list' || sub === 'ls' || !sub) {
     const names = listAgents();
     if (!names.length) {

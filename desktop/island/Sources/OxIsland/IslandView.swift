@@ -75,7 +75,7 @@ struct IslandRoot: View {
 
     var body: some View {
         let phase = IslandLayout.phase(bridge)
-        let s = IslandLayout.shape(phase, metrics, office: bridge.hasExtraPanel)
+        let s = IslandLayout.shape(phase, metrics, office: bridge.hasExtraPanel, idle: bridge.idleIsland)
         // Top-centred, like the notch. Every child is laid out in the island's
         // own width; the shape both paints the black and clips the content.
         ZStack(alignment: .top) {
@@ -222,7 +222,7 @@ struct ExpandedContent: View {
     var body: some View {
         let w = IslandLayout.expanded.width
         let headerH = metrics.height
-        let cardH = IslandLayout.expanded.height - headerH - 12
+        let cardH = IslandLayout.expanded.height - headerH - 12 - (bridge.buddyActive ? 0 : IslandLayout.floorHeight) - (bridge.idleIsland ? IslandLayout.idleCardTrim : 0)
         VStack(spacing: 0) {
             Header(bridge: bridge, metrics: metrics)
                 .frame(height: headerH)
@@ -235,10 +235,6 @@ struct ExpandedContent: View {
                         BuddyBody(buddy: bridge.buddy)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
-                        // The ox lives in its own lane: it walks back and forth while
-                        // work runs, grazes while it waits, stamps for an approval.
-                        OxWalker(mood: oxMood, height: Self.oxSize, roam: true, barn: true)
-                            .frame(width: 190, height: Self.oxSize)
                         body(for: focus)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -248,6 +244,16 @@ struct ExpandedContent: View {
             .padding(.horizontal, IslandLayout.ear + 10)
             .overlay(alignment: .bottom) {
                 if let p = bridge.pendingSession?.pending { Countdown(deadline: p.deadline).padding(.horizontal, 40) }
+            }
+            if !bridge.buddyActive {
+                // The island's floor: the ox walks its whole width under your
+                // cursor, and trots over to "press" whatever you click.
+                let floorPad = IslandLayout.ear + 10
+                OxWalker(mood: oxMood, height: Self.oxSize, roam: true, barn: true,
+                         follow: true, origin: (IslandLayout.panel.width - w) / 2 + floorPad)
+                    .frame(height: Self.oxSize)
+                    .padding(.horizontal, floorPad)
+                    .padding(.top, 4)
             }
             if bridge.tray != nil {
                 // A tool the person opened wins over the ambient office/canvas.
@@ -312,11 +318,9 @@ struct ExpandedContent: View {
                 Usage(session: s)
             }
         } else if bridge.sessions.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Nothing running").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.text)
-                Text("Start ox in any terminal and it shows up here. Approvals land here too.")
-                    .font(.system(size: 12)).foregroundStyle(Ink.muted)
-                    .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                Text("Nothing running").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Ink.text)
+                Text("· type or talk to ox, or start it in a terminal").font(.system(size: 12)).foregroundStyle(Ink.muted).lineLimit(1)
             }
         } else {
             VStack(alignment: .leading, spacing: 7) {
@@ -419,7 +423,7 @@ struct RunRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Circle().fill(Color(hex: bridge.color(of: session))).frame(width: 7, height: 7)
+            AgentFace(color: Color(hex: bridge.color(of: session)), mood: session.mood, size: 16)
             Text(session.project).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Ink.text).lineLimit(1)
                 .frame(maxWidth: 140, alignment: .leading)
             Text(session.activity).font(.system(size: 12)).foregroundStyle(activityColor)

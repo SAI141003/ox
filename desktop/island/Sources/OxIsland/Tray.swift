@@ -3,8 +3,9 @@ import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
-// The tray: three small tools under the island, opened from the header.
+// The tray: small tools under the island, opened from the header.
 //
+//   Chat   type to ox alongside voice: to a live run, or offline / in a folder
 //   Shelf  drop files on the notch; ask ox about one, or start an email with it
 //   Focus  a focus timer whose countdown rides in the notch wing
 //   Clips  the last things you copied, one click to copy again
@@ -14,10 +15,11 @@ import UniformTypeIdentifiers
 // (memory only, and never anything a password manager marks as secret).
 
 enum TrayTab: String, CaseIterable, Identifiable {
-    case shelf, focus, clips
+    case chat, shelf, focus, clips
     var id: String { rawValue }
     var icon: String {
         switch self {
+        case .chat: return "text.bubble"
         case .shelf: return "tray.and.arrow.down"
         case .focus: return "timer"
         case .clips: return "doc.on.clipboard"
@@ -35,7 +37,7 @@ enum OxRunner {
         return env["OX_NODE"] != nil && env["OX_CLI"] != nil
     }
 
-    static func run(_ args: [String], cwd: URL, completion: @escaping (Int32, String) -> Void) {
+    static func run(_ args: [String], cwd: URL, env extra: [String: String] = [:], completion: @escaping (Int32, String) -> Void) {
         let env = ProcessInfo.processInfo.environment
         guard let node = env["OX_NODE"], let cli = env["OX_CLI"] else {
             completion(127, "Start the island with `ox island start` so it knows which ox to run.")
@@ -46,6 +48,7 @@ enum OxRunner {
         p.arguments = [cli] + args
         p.currentDirectoryURL = cwd
         var e = env
+        for (k, v) in extra { e[k] = v }
         e["OX_ISLAND"] = "0"
         e["NO_COLOR"] = "1"
         p.environment = e
@@ -320,6 +323,7 @@ struct TrayPanel: View {
     var body: some View {
         Group {
             switch bridge.tray {
+            case .chat: ChatView(chat: bridge.chat, bridge: bridge)
             case .shelf: ShelfView(shelf: bridge.shelf)
             case .focus: FocusView(timer: bridge.focus)
             case .clips: ClipsView(history: bridge.clips)
@@ -500,5 +504,195 @@ struct FocusWing: View {
                 .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
                 .foregroundStyle(timer.running ? Ink.amber : Ink.muted)
         }
+    }
+}
+
+// MARK: - Chat
+
+/// Type to ox from the notch, alongside voice. With an ox run open, the text
+/// goes to it. Without one, small tasks are done offline (`ox do`), and
+/// anything bigger runs ox in the chosen folder, continuing the conversation.
+final class IslandChat: ObservableObject {
+    struct Line: Identifiable { let id = UUID(); let mine: Bool; let text: String; var who: String? = nil }
+    struct Agent: Decodable, Hashable { let name: String; let bot: String?; let mode: String; let description: String }
+    @Published private(set) var lines: [Line] = []
+    @Published private(set) var busy = false
+    /// Your agents (`ox agent new`), and which one you are talking to (nil = ox).
+    @Published private(set) var agents: [Agent] = []
+    @Published var agent: String? = UserDefaults.standard.string(forKey: "chat.agent") {
+        didSet { UserDefaults.standard.set(agent, forKey: "chat.agent") }
+    }
+    private var startedFor: Set<String> = []
+    @Published var folder: String {
+        didSet { UserDefaults.standard.set(folder, forKey: "chat.folder"); startedFor = [] }
+    }
+
+    init() {
+        folder = UserDefaults.standard.string(forKey: "chat.folder") ?? FileManager.default.homeDirectoryForCurrentUser.path
+    }
+
+    var folderName: String { (folder as NSString).lastPathComponent }
+
+    func loadAgents() {
+        OxRunner.run(["agent", "list", "--json"], cwd: FileManager.default.homeDirectoryForCurrentUser) { [weak self] _, out in
+            struct R: Decodable { let agents: [Agent] }
+            let line = out.split(separator: "\n").last.map(String.init) ?? ""
+            guard let self, let r = try? JSONDecoder().decode(R.self, from: Data(line.utf8)) else { return }
+            self.agents = r.agents
+            if let a = self.agent, !r.agents.contains(where: { $0.name == a }) { self.agent = nil }
+        }
+    }
+
+    /// A stable colour per agent name, from the island's palette.
+    static func color(for name: String) -> Color {
+        let sum = name.unicodeScalars.reduce(0) { $0 + Int($1.value) }
+        return Color(hex: OxBridge.palette[sum % OxBridge.palette.count])
+    }
+
+    /// Called with the answer, for the voice to speak it.
+    private var onReply: ((String) -> Void)?
+
+    func send(_ raw: String, bridge: OxBridge, onReply: ((String) -> Void)? = nil) {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !busy else { return }
+        self.onReply = onReply
+        lines.append(Line(mine: true, text: text))
+        if let name = agent {
+            run(text, extra: ["--agent", name], key: name, who: name)
+            return
+        }
+        if bridge.ask(text, imagePaths: [], audioPath: nil, voice: false) {
+            lines.append(Line(mine: false, text: "Sent to your ox run. Its answer shows in the island."))
+            return
+        }
+        busy = true
+        OxRunner.run(["do", "--json", text], cwd: URL(fileURLWithPath: folder)) { [weak self] _, out in
+            guard let self else { return }
+            struct R: Decodable { let handled: Bool; let message: String? }
+            let line = out.split(separator: "\n").last.map(String.init) ?? ""
+            if let r = try? JSONDecoder().decode(R.self, from: Data(line.utf8)), r.handled {
+                self.busy = false
+                self.reply(r.message ?? "done", who: nil)
+                return
+            }
+            // A real task: ox works on it in the folder, continuing this chat.
+            self.run(text, extra: ["--mode", "auto"], key: "ox", who: nil)
+        }
+    }
+
+    /// One turn in the folder, continuing that agent's conversation.
+    private func run(_ text: String, extra: [String], key: String, who: String?) {
+        busy = true
+        // Its own socket in the temp dir, where this island looks for runs: the
+        // run's approvals (open an app, run a command) appear here as
+        // Allow / Deny instead of being declined for want of a terminal.
+        let sock = (NSTemporaryDirectory() as NSString).appendingPathComponent("ox-ipc-island-\(UUID().uuidString.prefix(8)).sock")
+        let args = extra + ["--ipc=\(sock)", "-p", text] + (startedFor.contains(key) ? ["-c"] : [])
+        OxRunner.run(args, cwd: URL(fileURLWithPath: folder), env: ["OX_IPC_WAIT_CLIENT_MS": "4000"]) { [weak self] code, out in
+            guard let self else { return }
+            self.busy = false
+            self.startedFor.insert(key)
+            let answer = Shelf.clean(out)
+            self.reply(code == 0 ? (answer.isEmpty ? "Done." : answer) : "stopped: \(answer.isEmpty ? "exit \(code)" : answer)", who: who)
+        }
+    }
+
+    private func reply(_ text: String, who: String?) {
+        lines.append(Line(mine: false, text: text, who: who))
+        onReply?(text)
+        onReply = nil
+    }
+
+    func clear() { lines = []; startedFor = [] }
+
+    func pickFolder() {
+        NSApp.activate(ignoringOtherApps: true)
+        let p = NSOpenPanel()
+        p.canChooseDirectories = true
+        p.canChooseFiles = false
+        p.directoryURL = URL(fileURLWithPath: folder)
+        p.prompt = "Work here"
+        if p.runModal() == .OK, let u = p.url { folder = u.path }
+    }
+}
+
+struct ChatView: View {
+    @ObservedObject var chat: IslandChat
+    @ObservedObject var bridge: OxBridge
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Your agents, as faces: tap one to talk to it (ox is the default).
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    agentChip(name: nil, label: "ox", color: Ink.gold, help: "ox: your messages go to a live run, or run here")
+                    ForEach(chat.agents, id: \.self) { a in
+                        agentChip(name: a.name, label: a.name, color: IslandChat.color(for: a.name),
+                                  help: "\(a.name) · \(a.bot ?? "default bot") · \(a.mode)\(a.description.isEmpty ? "" : " — \(a.description)")")
+                    }
+                    if chat.agents.isEmpty {
+                        Text("make agents with  ox agent new <name>").font(.system(size: 10.5)).foregroundStyle(Ink.dim)
+                    }
+                }
+            }
+            .frame(height: 30)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 5) {
+                        if chat.lines.isEmpty {
+                            Text(bridge.sessions.contains { $0.closedAt == nil }
+                                 ? "Type to your ox run, or hold ⌃⌥Space to talk."
+                                 : "Ask anything. Small things (open an app, a timer, math) work offline; bigger ones run ox in \(chat.folderName).")
+                                .font(.system(size: 11.5)).foregroundStyle(Ink.muted)
+                        }
+                        ForEach(chat.lines) { l in
+                            Text(l.who.map { "\($0): \(l.text)" } ?? l.text)
+                                .font(.system(size: 12))
+                                .foregroundStyle(l.mine ? Color.black : Ink.text.opacity(0.92))
+                                .textSelection(.enabled)
+                                .padding(.horizontal, 9).padding(.vertical, 5)
+                                .background(RoundedRectangle(cornerRadius: 10).fill(l.mine ? Ink.text : Color.white.opacity(0.07)))
+                                .frame(maxWidth: .infinity, alignment: l.mine ? .trailing : .leading)
+                                .id(l.id)
+                        }
+                        if chat.busy {
+                            ActivityDots(count: 1).padding(.leading, 6)
+                        }
+                    }
+                }
+                .onChange(of: chat.lines.count) { withAnimation { proxy.scrollTo(chat.lines.last?.id, anchor: .bottom) } }
+            }
+            HStack(spacing: 6) {
+                Button { chat.pickFolder() } label: {
+                    Label(chat.folderName, systemImage: "folder").labelStyle(.titleAndIcon)
+                        .font(.system(size: 11)).foregroundStyle(Ink.muted).lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: 110, alignment: .leading)
+                .help("The folder ox works in when no run is open")
+                TextField("Message ox…", text: $draft)
+                    .modifier(FieldStyle())
+                    .focused($focused)
+                    .onSubmit { chat.send(draft, bridge: bridge); draft = "" }
+                PillButton(title: chat.busy ? "…" : "Send", primary: true) { chat.send(draft, bridge: bridge); draft = "" }
+            }
+        }
+        .onAppear { focused = true; chat.loadAgents() }
+    }
+
+    private func agentChip(name: String?, label: String, color: Color, help: String) -> some View {
+        let on = chat.agent == name
+        return Button { chat.agent = name } label: {
+            HStack(spacing: 5) {
+                AgentFace(color: color, mood: chat.busy && on ? .working("") : (on ? .idle : .sleeping), size: 18)
+                Text(label).font(.system(size: 11, weight: on ? .semibold : .regular)).foregroundStyle(on ? Ink.text : Ink.muted).lineLimit(1)
+            }
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(Capsule().fill(on ? Color.white.opacity(0.1) : .clear))
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 }

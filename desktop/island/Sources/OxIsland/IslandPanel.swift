@@ -24,10 +24,14 @@ struct NotchMetrics: Equatable {
 /// Every size the island can take, in one place, so the SwiftUI shape and the
 /// AppKit hit-test always agree on where the island is.
 enum IslandLayout {
-    static let panel = CGSize(width: 720, height: 330)
+    static let panel = CGSize(width: 720, height: 400)
     static let wing: CGFloat = 46
     static let ear: CGFloat = 12
-    static let expanded = CGSize(width: 640, height: 168)
+    /// The floor the (full-size) ox walks on, under the card.
+    static let floorHeight: CGFloat = 92
+    static let expanded = CGSize(width: 640, height: 168 + floorHeight)
+    /// With nothing running the card is one line, so the island is shorter.
+    static let idleCardTrim: CGFloat = 70
     /// Extra height under the card: the agent office, or the run's OX Canvas.
     static let officeHeight: CGFloat = 132
 
@@ -43,12 +47,12 @@ enum IslandLayout {
     }
 
     /// width, height, bottom corner radius, top radius (<0 = concave ears)
-    static func shape(_ phase: Phase, _ m: NotchMetrics, office: Bool = false) -> (w: CGFloat, h: CGFloat, corner: CGFloat, top: CGFloat) {
+    static func shape(_ phase: Phase, _ m: NotchMetrics, office: Bool = false, idle: Bool = false) -> (w: CGFloat, h: CGFloat, corner: CGFloat, top: CGFloat) {
         switch phase {
         case .launch: return (launchSize.width, launchSize.height, 30, -ear)
         case .hidden: return (m.width, m.height, 10, 0)
         case .compact: return (m.width + 2 * wing + 2 * ear, m.height, 12, -ear)
-        case .expanded: return (expanded.width, expanded.height + (office ? officeHeight : 0), 26, -ear)
+        case .expanded: return (expanded.width, expanded.height - (idle ? idleCardTrim : 0) + (office ? officeHeight : 0), 26, -ear)
         }
     }
 }
@@ -62,6 +66,7 @@ final class IslandPanel: NSPanel {
     private var pollInterval: TimeInterval = 0
     private var leaveWork: DispatchWorkItem?
     private var cancellables = Set<AnyCancellable>()
+    private var clickMonitor: Any?
 
     init(bridge: OxBridge) {
         self.bridge = bridge
@@ -82,9 +87,24 @@ final class IslandPanel: NSPanel {
         contentView = host
         reposition(animated: false)
         setPoll(1.0 / 10)
+        // Every click on the island, so the ox can trot over and "press" it too.
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] ev in
+            if let self, ev.window === self {
+                let p = ev.locationInWindow
+                Pointer.shared.lastClick = (CGPoint(x: p.x, y: self.frame.height - p.y), Date().timeIntervalSinceReferenceDate)
+            }
+            return ev
+        }
+        bridge.trayChanged = { [weak self] tab in
+            DispatchQueue.main.async {
+                if tab == .chat { self?.makeKeyAndOrderFront(nil) } else if self?.isKeyWindow == true { self?.resignKey() }
+            }
+        }
     }
 
-    override var canBecomeKey: Bool { false }
+    // Only while the chat is open: the island never takes keystrokes from the
+    // app you are typing in unless you opened its text box.
+    override var canBecomeKey: Bool { bridge.tray == .chat }
     override var canBecomeMain: Bool { false }
 
     func reposition(animated: Bool) {
@@ -113,7 +133,7 @@ final class IslandPanel: NSPanel {
         let f = frame
         let local = CGPoint(x: mouse.x - f.minX, y: f.maxY - mouse.y) // top-down
         let m = NotchMetrics.current()
-        let s = IslandLayout.shape(IslandLayout.phase(bridge), m, office: bridge.hasExtraPanel)
+        let s = IslandLayout.shape(IslandLayout.phase(bridge), m, office: bridge.hasExtraPanel, idle: bridge.idleIsland)
         let island = CGRect(x: (f.width - s.w) / 2, y: 0, width: s.w, height: s.h)
         let inside = island.insetBy(dx: -6, dy: -4).contains(local)
 
@@ -134,7 +154,7 @@ final class IslandPanel: NSPanel {
         }
 
         let p = Pointer.shared
-        if abs(p.local.x - local.x) > 0.5 || abs(p.local.y - local.y) > 0.5 { p.local = local }
+        if abs(p.local.x - local.x) > 0.5 || abs(p.local.y - local.y) > 0.5 { p.local = local; p.movedAt = Date().timeIntervalSinceReferenceDate }
 
         let near = island.insetBy(dx: -260, dy: -200).contains(local)
         setPoll(near || bridge.expanded ? 1.0 / 60 : 1.0 / 10)

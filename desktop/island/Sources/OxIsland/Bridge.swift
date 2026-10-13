@@ -80,6 +80,9 @@ final class OxBridge: ObservableObject {
 
     /// The tray under the island (Tray.swift): which tool is open, and the tools.
     @Published var tray: TrayTab?
+    /// Set by the panel: typing needs the panel to take keyboard focus.
+    var trayChanged: ((TrayTab?) -> Void)?
+    let chat = IslandChat()
     let shelf = Shelf()
     let focus = FocusTimer()
     let clips = ClipHistory()
@@ -108,20 +111,16 @@ final class OxBridge: ObservableObject {
         buddySink = MainActor.assumeIsolated { buddy.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() } }
         // The focus countdown shows in the wing, so its changes redraw the island too.
         focus.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &traySinks)
+        $tray.sink { [weak self] t in self?.trayChanged?(t) }.store(in: &traySinks)
         clips.start()
         MainActor.assumeIsolated {
             buddy.send = { [weak self] text, shots, audio in
                 guard let self else { return false }
                 if self.ask(text, imagePaths: shots, audioPath: audio) { return true }
-                // No live run: small tasks (open an app, a timer, a note, math)
-                // still work, offline and with no model, through `ox do`.
+                // No live run: the chat takes it. Small tasks are done offline; the
+                // rest runs ox with a model, whose approvals come to this island.
                 guard OxRunner.available, !text.isEmpty else { return false }
-                OxRunner.run(["do", "--json", text], cwd: FileManager.default.homeDirectoryForCurrentUser) { [weak self] _, out in
-                    struct R: Decodable { let handled: Bool; let message: String? }
-                    let line = out.split(separator: "\n").last.map(String.init) ?? ""
-                    let r = try? JSONDecoder().decode(R.self, from: Data(line.utf8))
-                    let reply = (r?.handled == true ? r?.message : nil)
-                        ?? "That one needs ox with a model. Start ox in a terminal, then ask me again."
+                self.chat.send(text, bridge: self) { [weak self] reply in
                     MainActor.assumeIsolated { self?.buddy.speak(reply) }
                 }
                 return true
@@ -372,9 +371,9 @@ final class OxBridge: ObservableObject {
 
     /// Send a spoken question (and the screenshot) to the newest live run.
     /// False when no ox run is connected.
-    func ask(_ text: String, imagePaths: [String], audioPath: String? = nil) -> Bool {
+    func ask(_ text: String, imagePaths: [String], audioPath: String? = nil, voice: Bool = true) -> Bool {
         guard let s = sessions.last(where: { $0.closedAt == nil && $0.pending == nil }), let conn = connections[s.id] else { return false }
-        var msg: [String: Any] = ["type": "user-message", "text": text, "imagePaths": imagePaths, "voice": true]
+        var msg: [String: Any] = ["type": "user-message", "text": text, "imagePaths": imagePaths, "voice": voice]
         if let audioPath { msg["audioPath"] = audioPath }
         conn.send(msg)
         update(s.id) { s in
@@ -404,6 +403,9 @@ final class OxBridge: ObservableObject {
 
     /// The office (a team at work) or a canvas extends the expanded island.
     var hasExtraPanel: Bool { tray != nil || officeSession != nil || canvasSession != nil }
+
+    /// Nothing to show but the ox: the island keeps its card to one line.
+    var idleIsland: Bool { sessions.isEmpty && tray == nil && !buddyActive }
 
     /// Files dropped on the notch land on the shelf, and the shelf opens.
     func receive(_ urls: [URL]) {

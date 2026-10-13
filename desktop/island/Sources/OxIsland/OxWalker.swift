@@ -158,6 +158,12 @@ final class Pasture {
     private var until: Double = 0
     private var last: Double?
     private var nextVisit: Double
+    /// The cursor to follow (lane coordinates), and a click to walk to and press.
+    private var followX: CGFloat?
+    private var pressX: CGFloat?
+
+    func follow(_ x: CGFloat?) { followX = x }
+    func press(_ x: CGFloat) { pressX = x }
 
     init() { nextVisit = Date().timeIntervalSinceReferenceDate + Double.random(in: 40...80) }
 
@@ -259,6 +265,42 @@ final class Pasture {
             turnStart = t
             turnToRight = right
             return
+        }
+
+        // On the island's floor: a click brings the bull at a gallop to press it,
+        // and otherwise it walks along under the cursor.
+        if beatCycle == nil, act != .doze, act != .goHome {
+            if let px = pressX.map({ min(max(0, $0), lane) }) {
+                lastTouch = t
+                let d = px - x
+                let sp = pace * 3.4
+                right = d >= 0
+                if abs(d) <= sp * dt {
+                    x = px
+                    pressX = nil
+                    act = .stand
+                    run([Beat(cycle: .kick, seconds: 0.7, bubble: ("click!", .plain))], t, then: .look)
+                } else {
+                    act = .zoomies
+                    x += (d > 0 ? 1 : -1) * sp * dt
+                }
+                return
+            }
+            if let fx = followX.map({ min(max(0, $0), lane) }) {
+                lastTouch = t
+                let d = fx - x
+                if abs(d) > 12 {
+                    right = d >= 0
+                    act = .wander
+                    target = fx
+                    x += (d > 0 ? 1 : -1) * min(abs(d), pace * 2.2 * dt)
+                } else if act == .wander || act == .zoomies {
+                    act = .look
+                    until = t + 3
+                    faceCameraUntil = t + 1.2
+                }
+                return
+            }
         }
 
         // A reaction in progress holds the bull in place until its beats end.
@@ -376,7 +418,12 @@ struct OxWalker: View {
     /// Draw the barn at the right end (the expanded island). Without it, the
     /// far end of the lane is home: in the notch, the camera housing.
     var barn = false
+    /// Walk under the cursor and answer clicks: the island's floor. `origin` is
+    /// this view's left edge in panel coordinates.
+    var follow = false
+    var origin: CGFloat = 0
     @State private var start = Date()
+    @State private var seenClick: Double = 0
     private var pasture: Pasture { .shared }
 
     var body: some View {
@@ -393,6 +440,20 @@ struct OxWalker: View {
         }
     }
 
+    /// Feed the cursor and any new click to the pasture (floor mode only).
+    private func trackPointer(now: Double, width: CGFloat, size: CGSize) -> Bool {
+        guard follow else { return false }
+        let p = Pointer.shared
+        let inside = p.local.y >= 0 && p.local.y <= IslandLayout.panel.height && p.local.x >= origin - width && p.local.x <= origin + size.width + width
+        let moving = now - p.movedAt < 2.5
+        pasture.follow(inside && moving ? p.local.x - origin - width / 2 : nil)
+        if let c = p.lastClick, c.at > seenClick, now - c.at < 1 {
+            DispatchQueue.main.async { seenClick = c.at }
+            pasture.press(c.point.x - origin - width / 2)
+        }
+        return true
+    }
+
     @ViewBuilder
     private func scene(t: Double, now: Double, size: CGSize) -> some View {
         let width = height * 4 / 3
@@ -400,7 +461,9 @@ struct OxWalker: View {
         let farmerH = height * 0.62
         let farmerW = farmerH * 18 / 26
         let barnW = barn ? height * 1.15 : 0
-        let forced = OxCycle.forMood(mood)
+        let _ = trackPointer(now: now, width: width, size: size)
+        // Following the cursor wins over a run's forced walk: you are right there.
+        let forced = follow ? nil : OxCycle.forMood(mood)
         let (cycle, x, right): (OxCycle, CGFloat, Bool) = {
             if let forced {
                 // Work: walk the lane ping-pong; other moods stand where the pasture left it.

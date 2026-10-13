@@ -6,6 +6,12 @@ import SwiftUI
 final class Pointer: ObservableObject {
     static let shared = Pointer()
     @Published var local: CGPoint = .zero
+    /// The last click on the island (panel coordinates) and when it happened.
+    /// Not published: the ox reads it on its own frame clock.
+    var lastClick: (point: CGPoint, at: Double)?
+    /// When the cursor last moved: the ox follows a moving cursor, and goes back
+    /// to its own life (grazing, the barn) once the cursor rests.
+    var movedAt: Double = 0
 }
 
 // Ox: OX Island's own character, drawn entirely in code. A toffee ox with
