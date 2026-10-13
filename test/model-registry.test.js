@@ -106,7 +106,7 @@ test('pickModel: pinned strategy returns the configured default bot exactly', ()
     strategy: STRATEGIES.pinned,
     env: { ANTHROPIC_API_KEY: 'sk-test' },
   });
-  assert.equal(p.model, 'claude-haiku-4-5');
+  assert.equal(p.model, 'claude-haiku-5-5');
 });
 
 test('pickModel: cost strategy prefers a fast model for low complexity', () => {

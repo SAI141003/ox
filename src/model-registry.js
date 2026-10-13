@@ -34,6 +34,10 @@ import { isEndpointApproved, normalizeEndpointUrl as normalizeOllamaKey, readTru
 export const MODEL_CATALOG = Object.freeze({
   'grok-4.6':               { tier: 'flagship',  strengths: ['code','reasoning','longContext'],     maxComplexity: 1.0, vision: false },
   'grok-build-0.1':         { tier: 'fast',      strengths: ['code','summarizer'],                  maxComplexity: 0.6, vision: false },
+  'claude-fable-5-1':       { tier: 'flagship',  strengths: ['reasoning','code','reviewer'],         maxComplexity: 1.0, vision: true },
+  'claude-opus-5-5':        { tier: 'flagship',  strengths: ['reasoning','code','reviewer'],         maxComplexity: 1.0, vision: true },
+  'claude-sonnet-5-5':      { tier: 'flagship',  strengths: ['code','reasoning','reviewer'],         maxComplexity: 0.95, vision: true },
+  'claude-haiku-5-5':       { tier: 'fast',      strengths: ['code','summarizer','title','reviewer'],       maxComplexity: 0.55, vision: true },
   'claude-sonnet-5':        { tier: 'flagship',  strengths: ['code','reasoning','reviewer'],         maxComplexity: 0.95, vision: true },
   'claude-opus-5':          { tier: 'flagship',  strengths: ['reasoning','code','reviewer'],         maxComplexity: 1.0, vision: true },
   'claude-haiku-4-5':       { tier: 'fast',      strengths: ['code','summarizer','title','reviewer'],       maxComplexity: 0.5, vision: true },

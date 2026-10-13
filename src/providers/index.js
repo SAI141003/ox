@@ -115,7 +115,10 @@ export async function* streamVia(target, opts = {}) {
   const keyEnv = target.keyEnv ?? cfg.keyEnv;
   const apiKey = keyEnv ? process.env[keyEnv] : undefined;
   if (keyEnv && !apiKey) {
-    throw new Error(`Missing API key for ${pname}: set ${keyEnv} (no silent fallback)`);
+    // Nothing connected at all: say every way in, not just this provider's key.
+    const anyKey = Object.values(PROVIDERS).some((p) => p.keyEnv && p.keyEnv !== 'OX_API_KEY' && process.env[p.keyEnv]);
+    const ways = anyKey ? '' : ' — or connect any model: a key such as ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY or OPENROUTER_API_KEY; a plan you already pay for (ox connect); or a local model (ox local)';
+    throw new Error(`Missing API key for ${pname}: set ${keyEnv} (no silent fallback)${ways}`);
   }
   const streamChat = adapterFor(pname, cfg);
   const budget = currentCostBudget();

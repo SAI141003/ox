@@ -246,7 +246,7 @@ describe('critique: no configuration', () => {
     assert.equal(res.ok, true, JSON.stringify(res.considered));
     // ox-opus is anthropic (different family) and first in the list, so it wins
     // before the walk ever reaches the xai ox-grok entry.
-    assert.equal(res.target.model, 'claude-opus-5');
+    assert.equal(res.target.model, 'claude-opus-5-5');
     assert.equal(res.familyVerified, true);
     assert.notEqual(res.family, 'xai');
 
@@ -355,12 +355,12 @@ describe('critique: same-model refusal', () => {
     const res = resolveCritic({
       config: { critiqueBot: 'ox-opus' },
       env: { ANTHROPIC_API_KEY: 'k' },
-      activeTarget: { provider: 'anthropic', model: 'claude-opus-5' },
+      activeTarget: { provider: 'anthropic', model: 'claude-opus-5-5' },
     });
     assert.equal(res.ok, false);
     assert.equal(res.reason, 'same-model');
-    assert.equal(res.criticModel, 'claude-opus-5');
-    assert.match(criticErrorMessage(res, { model: 'claude-opus-5' }), /refused/);
+    assert.equal(res.criticModel, 'claude-opus-5-5');
+    assert.match(criticErrorMessage(res, { model: 'claude-opus-5-5' }), /refused/);
   });
 
   test('3d. a DIFFERENT model in the SAME family is allowed but warned loudly', async () => {

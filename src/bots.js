@@ -34,9 +34,10 @@ export const OLLAMA_BASE_URL = 'http://localhost:11434/v1';
 export const BOTS = {
   'ox-grok': { provider: 'xai', model: 'grok-4.6', desc: 'xAI Grok flagship' },
   'ox-grok-fast': { provider: 'xai', model: 'grok-build-0.1', desc: 'xAI fast build model' },
-  'ox-claude': { provider: 'anthropic', model: 'claude-sonnet-5', desc: 'Anthropic Sonnet' },
-  'ox-opus': { provider: 'anthropic', model: 'claude-opus-5', desc: 'Anthropic Opus' },
-  'ox-haiku': { provider: 'anthropic', model: 'claude-haiku-4-5', desc: 'Anthropic Haiku' },
+  'ox-claude': { provider: 'anthropic', model: 'claude-sonnet-5-5', desc: 'Anthropic Claude Sonnet 5.5' },
+  'ox-opus': { provider: 'anthropic', model: 'claude-opus-5-5', desc: 'Anthropic Claude Opus 5.5' },
+  'ox-haiku': { provider: 'anthropic', model: 'claude-haiku-5-5', desc: 'Anthropic Claude Haiku 5.5' },
+  'ox-fable': { provider: 'anthropic', model: 'claude-fable-5-1', desc: 'Anthropic Claude Fable 5.1 (most capable)' },
   'ox-gpt': { provider: 'openai', model: 'gpt-5.6-sol', desc: 'OpenAI GPT-5.6 Sol' },
   'ox-gemini': { provider: 'gemini', model: 'gemini-3.1-pro-preview', desc: 'Google Gemini Pro preview' },
   'ox-flash': { provider: 'gemini', model: 'gemini-3.7-flash', desc: 'Google Gemini Flash' },
@@ -60,6 +61,24 @@ export const BOTS = {
 
 function fail(msg) {
   throw new Error(`ox: ${msg}`);
+}
+
+// With no default chosen, ox uses whatever you have: the first provider whose
+// key is set, in this order. It used to be xAI whatever you had.
+export const AUTO_PROVIDER_ORDER = Object.freeze([
+  'anthropic', 'openai', 'gemini', 'xai', 'openrouter', 'groq', 'deepseek', 'mistral',
+  'moonshot', 'zhipu', 'minimax', 'baichuan', 'yi', 'stepfun', 'together', 'fireworks', 'cerebras',
+]);
+
+export function autoDefaultBot(env = process.env, keys = {}) {
+  for (const provider of AUTO_PROVIDER_ORDER) {
+    const keyEnv = KEY_ENV[provider];
+    if (!keyEnv || !(env?.[keyEnv] || keys?.[keyEnv])) continue;
+    const preset = Object.entries(BOTS).find(([, d]) => d.provider === provider && d.model);
+    if (preset) return { spec: preset[0], reason: `${keyEnv} is set` };
+    if (env?.OX_MODEL) return { spec: `${provider}:${env.OX_MODEL}`, reason: `${keyEnv} is set` };
+  }
+  return null;
 }
 
 function obj(v) {

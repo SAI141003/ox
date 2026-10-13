@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { autoSubagentTarget } from '../src/subagent.js';
 
 const env = { ...process.env, XAI_API_KEY: 'x', ANTHROPIC_API_KEY: 'y' };
-const opus = { provider: 'anthropic', model: 'claude-opus-5', keyEnv: 'ANTHROPIC_API_KEY', pricing: { in: 5, out: 25 } };
+const opus = { provider: 'anthropic', model: 'claude-opus-5-5', keyEnv: 'ANTHROPIC_API_KEY', pricing: { in: 4, out: 20 } };
 
 function withEnv(fn) {
   const saved = { ...process.env };
@@ -21,7 +21,7 @@ function withEnv(fn) {
 test('a cheaper priced model is picked, with the saving in the note', () => withEnv(() => {
   const r = autoSubagentTarget({ config: {}, mainTarget: opus, pick: { bot: 'ox-grok-fast' } });
   assert.equal(r.target.model, 'grok-build-0.1');
-  assert.match(r.why, /\$3\/Mtok vs \$30\/Mtok/);
+  assert.match(r.why, /\$3\/Mtok vs \$24\/Mtok/);
 }));
 
 test('a local keyless model replaces a paid main model', () => withEnv(() => {

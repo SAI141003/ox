@@ -6,9 +6,10 @@ test('every preset resolves to its expected provider+model', () => {
   const expected = {
     'ox-grok': ['xai', 'grok-4.6', null],
     'ox-grok-fast': ['xai', 'grok-build-0.1', null],
-    'ox-claude': ['anthropic', 'claude-sonnet-5', null],
-    'ox-opus': ['anthropic', 'claude-opus-5', null],
-    'ox-haiku': ['anthropic', 'claude-haiku-4-5', null],
+    'ox-claude': ['anthropic', 'claude-sonnet-5-5', null],
+    'ox-opus': ['anthropic', 'claude-opus-5-5', null],
+    'ox-haiku': ['anthropic', 'claude-haiku-5-5', null],
+    'ox-fable': ['anthropic', 'claude-fable-5-1', null],
     'ox-gpt': ['openai', 'gpt-5.6-sol', null],
     'ox-gemini': ['gemini', 'gemini-3.1-pro-preview', null],
     'ox-flash': ['gemini', 'gemini-3.7-flash', null],

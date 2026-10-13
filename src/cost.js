@@ -125,6 +125,12 @@ export function createCostBudget(options = {}) {
 export const PRICING = {
   'grok-4.6': { in: 2, out: 6, window: 500_000 },
   'grok-build-0.1': { in: 1, out: 2, window: 256_000 },
+  // The current Claude family. Haiku 5.5 is $0.10/$0.50 up to 100K-token
+  // prompts ($0.50/$2.50 beyond); the table keeps the common case.
+  'claude-fable-5-1': { in: 10, out: 50, window: 1_000_000 },
+  'claude-opus-5-5': { in: 4, out: 20, window: 1_000_000 },
+  'claude-sonnet-5-5': { in: 2, out: 10, window: 1_000_000 },
+  'claude-haiku-5-5': { in: 0.1, out: 0.5, window: 1_000_000 },
   'claude-sonnet-5': { in: 2, out: 10, window: 200_000 },
   'claude-opus-5': { in: 5, out: 25, window: 200_000 },
   'claude-haiku-4-5': { in: 1, out: 5, window: 200_000 },

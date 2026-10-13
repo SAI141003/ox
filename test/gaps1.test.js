@@ -306,7 +306,7 @@ test('resolveAuxTarget resolves valid bots, returns null silently when unset, wa
   assert.equal(resolveAuxTarget(null), null);
 
   const haiku = resolveAuxTarget({ auxBot: 'ox-haiku' });
-  assert.equal(haiku.model, 'claude-haiku-4-5');
+  assert.equal(haiku.model, 'claude-haiku-5-5');
   assert.equal(haiku.provider, 'anthropic');
 
   const orig = process.stderr.write;

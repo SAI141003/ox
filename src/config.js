@@ -1,7 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import { resolveBot, defaultBotSpec } from './bots.js';
+import { resolveBot, defaultBotSpec, autoDefaultBot } from './bots.js';
 import { pickForRole, STRATEGIES } from './model-registry.js';
 import { resolveMaxCostUsd } from './cost.js';
 import { pluginMcpServers } from './plugins.js';
@@ -311,7 +311,12 @@ export function loadConfig(overrides = {}) {
   const baseUrl = firstDefined(ov.baseUrl ?? ov.oxBaseUrl, env.OX_BASE_URL, file.baseUrl ?? file.base_url) ?? null;
   const apiKey = firstDefined(ov.apiKey, env.OX_API_KEY, file.api_key ?? file.apiKey) ?? null;
   const model = firstDefined(ov.model, env.OX_MODEL, file.model) ?? null;
-  const defaultBot = String(firstDefined(ov.defaultBot ?? ov.default_bot, file.defaultBot ?? file.default_bot, 'ox-grok'));
+  // A default you chose wins; otherwise the first provider you have a key for;
+  // 'ox-grok' only when nothing at all is set up (the error then says how to connect).
+  const chosenBot = firstDefined(ov.defaultBot ?? ov.default_bot, file.defaultBot ?? file.default_bot);
+  const autoBot = chosenBot === undefined ? autoDefaultBot(env, apiKeys) : null;
+  const defaultBot = String(chosenBot ?? autoBot?.spec ?? 'ox-grok');
+  const defaultBotSource = chosenBot !== undefined ? 'config' : autoBot ? `auto: ${autoBot.reason}` : 'fallback';
   const defaultVerify = truthy(file.default_verify ?? file.defaultVerify) === true;
 
   const maxModeRaw = firstDefined(ov.maxMode, file.max_mode ?? file.maxMode);
@@ -514,6 +519,7 @@ export function loadConfig(overrides = {}) {
     cwd,
     configDir: CONFIG_DIR,
     defaultBot,
+    defaultBotSource,
     bots: { ...obj(file.bots), ...obj(ov.bots) },
     baseUrl,
     oxBaseUrl: baseUrl,
