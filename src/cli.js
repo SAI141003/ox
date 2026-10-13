@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -366,6 +366,7 @@ function usage() {
     row('ox mail draft --from --to', 'an email draft in Mail, from the account you name'),
     row('ox awake [2h|off|--lid]', 'keep the computer awake for your agents (automatic while ox works)'),
     row('ox do "open notes"', 'small tasks offline, no AI needed: apps, search, timers, notes, math'),
+    row('ox watch add <url> --price-below 99', 'tell me when a page changes, shows text, or a price drops'),
     '',
     c.bold('Tasks and teams'),
     row('ox task', 'the task board: add, next, claim, done, approve, log'),
@@ -4542,6 +4543,48 @@ async function runSubcommand(cmd, args) {
         return;
       }
       console.log(c.dim('usage: ox kanban [list] | ox kanban add <title>   (the same board as: ox task)'));
+      return;
+    }
+    case 'watch': {
+      const w = await import('./watch.js');
+      const action = String(args[0] ?? 'list').toLowerCase();
+      const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+      if (action === '--help' || action === 'help') {
+        console.log(`${c.bold('ox watch')} — tell me when a page changes, shows something, or a price drops`);
+        console.log(c.dim('  ox watch add <url> [--contains "<text>" | --missing "<text>" | --price-below <n>] [--every 30m] [--label <name>]'));
+        console.log(c.dim('  ox watch list | remove <id> | check   (check now)'));
+        console.log(c.dim('  ox watch start | stop                 the background checker (once a minute, due watches only)'));
+        console.log(c.dim('  alerts: a desktop notification, and your phone if ox gateway telegram is paired. No AI, no key.'));
+        return;
+      }
+      if (action === 'add') {
+        try {
+          const added = w.addWatch({ url: args[1], contains: flag('--contains'), missing: flag('--missing'), priceBelow: flag('--price-below'), every: flag('--every') ?? '30m', label: flag('--label') });
+          console.log(c.green(`watching: ${w.describe(added)}`));
+          if (!w.watcherPid()) console.log(c.dim('  start the background checker with: ox watch start   (or check now: ox watch check)'));
+        } catch (e) { console.log(c.red(e.message)); process.exitCode = 3; }
+        return;
+      }
+      if (action === 'remove' || action === 'rm') {
+        const list = w.loadWatches();
+        const keep = list.filter((x) => x.id !== args[1]);
+        w.saveWatches(keep);
+        console.log(keep.length < list.length ? c.green(`removed ${args[1]}`) : c.red(`no watch ${args[1] ?? ''}`));
+        return;
+      }
+      if (action === 'check') {
+        const alerts = await w.checkWatches({ force: true });
+        for (const x of w.loadWatches()) console.log(`  ${w.describe(x)}`);
+        console.log(alerts.length ? c.yellow(`${alerts.length} alert(s) sent`) : c.dim('no alerts'));
+        return;
+      }
+      if (action === 'start') { const r = w.startWatcher(); console.log(r.already ? c.dim(`already checking (pid ${r.pid})`) : c.green(`checking in the background (pid ${r.pid}) — ox watch stop to stop`)); return; }
+      if (action === 'stop') { console.log(w.stopWatcher() ? c.green('stopped') : c.dim('it was not running')); return; }
+      if (action === 'loop') { await w.watchLoop(); return; }
+      const list = w.loadWatches();
+      if (!list.length) { console.log(c.dim('no watches — ox watch add <url> --price-below 99')); return; }
+      for (const x of list) console.log(`  ${w.describe(x)}`);
+      console.log(c.dim(w.watcherPid() ? 'checking in the background' : 'not checking in the background — ox watch start'));
       return;
     }
     case 'do': {

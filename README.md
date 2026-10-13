@@ -135,12 +135,17 @@ The limits are enforced where tools run, not just described to the model:
 
 ```bash
 ox agent new reviewer --bot claude-plan --mode ask --prompt "Review diffs for bugs. Cite file:line."
+ox agent new researcher --tools read_file,grep,web_search,web_fetch
 ox --agent reviewer -p "review the last commit"
 ox agent list
 ```
 
-An agent is a bot (any model, or a plan you pay for), a mode, and standing
-instructions. Flags on the command line still win over the agent's.
+An agent is a bot (any model, or a plan you pay for), a mode, standing
+instructions, and optionally the only tools it may use (`--tools`;
+`mcp__github__*` grants a whole MCP server). A refused call names the grant,
+before anyone is asked to approve it. In the island's chat, your agents appear
+as faces you can tap to talk to. Flags on the command line still win over the
+agent's.
 
 ## Bring your own subscription
 
@@ -178,6 +183,19 @@ ox do "search ramen"    ox do "note call the bank"    ox do "volume 30"
 
 A rules parser (no model, no network) handles short requests and says so when
 something is bigger. The island's voice falls back to it when no ox run is live.
+
+## Watch a page
+
+```bash
+ox watch add https://shop.example/shoe --price-below 100 --every 30m
+ox watch add https://example.com/tickets --contains "Available"
+ox watch start        # check in the background; ox watch list / check / stop
+```
+
+Tells you when a page changes, shows (or stops showing) some text, or a price
+falls below a number — a desktop notification, and your phone if the Telegram
+gateway is paired. No model and no key: plain page fetches. One alert per
+change, and a failing page backs off instead of being hammered.
 
 ## Keep the computer awake
 
