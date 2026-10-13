@@ -224,6 +224,7 @@ when it stops. `ox awake 2h` holds it for a while, `ox awake off` releases it,
 
 ```bash
 ox gateway telegram --token <token from @BotFather> --cwd ~/my-project
+ox gateway discord  --token <bot token> --cwd ~/my-project     # DM the bot
 ```
 
 Message your bot and ox works on it in that project. One status message
@@ -232,7 +233,7 @@ buttons (a phone gets ten minutes, then the usual decline); the answer comes
 back when it is done. `/status`, `/stop`, `/mode ask`, `/new`, `/where`.
 Until a chat sends the pairing code printed in your terminal, nobody can run
 anything, and afterwards every other chat is ignored. Long polling: no port is
-opened, no server is exposed. Telegram is the channel that works today.
+opened, no server is exposed. Telegram and Discord (direct messages) work today.
 
 ## OX Island (macOS notch)
 

@@ -56,7 +56,7 @@ installed and working on this machine), so none are claimed.
 | OS sandbox | ✓ macOS/Linux | ✓ | ✓ macOS/Linux/Windows | ✓ | ? | ? | ? | ✗ | ✗ | cloud VM |
 | Hooks, skills, MCP | ✓ (imports Claude Code plugins) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (imports Claude/Codex skills) | ✓ | ✓ 100+ skills | plugins |
 | Memory that persists and is screened for secrets | ✓ | ✓ | ~ | ✓ | ? | ? | ? | ✓ learning loop | ✓ | ✓ |
-| Phone / chat-app channel | ✓ Telegram | ~ remote control | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ WhatsApp/Telegram/Discord | ✓ ChatGPT/Slack/Teams/WhatsApp |
+| Phone / chat-app channel | ✓ Telegram, Discord | ~ remote control | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ WhatsApp/Telegram/Discord | ✓ ChatGPT/Slack/Teams/WhatsApp |
 | Approvals on the phone | ✓ Allow/Deny buttons | ? | ✗ | ✗ | ✗ | ✗ | ✗ | ? | ? | ✓ |
 | Keeps working when you walk away | ✓ local, holds the machine awake | ~ | ~ cloud | ✗ | ✗ | ✗ | ✓ background | ✓ | ✓ | ✓ cloud computer |
 | Desktop presence | ✓ notch island (Mac) + top bar (Windows/Linux): chat with your agents as faces, approvals, file shelf | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | app |
@@ -72,8 +72,8 @@ installed and working on this machine), so none are claimed.
 - **Cloud computers.** Dots and Muse each get a cloud machine and browser that
   keep running with your laptop closed. ox runs on your machine: private and
   free, but it needs the machine on (`ox awake --lid` explains each OS).
-- **Chat apps.** OpenClaw and Muse reach WhatsApp, Discord and more; ox's phone
-  channel today is Telegram only.
+- **Chat apps.** OpenClaw and Muse reach WhatsApp and more; ox reaches Telegram
+  and Discord today (WhatsApp needs Meta's paid Business API).
 - **App connectors.** Dots claims 4,000+ apps through plugins. ox reaches apps
   through MCP servers and its own tools (Mail, the OS), far fewer out of the box.
 - **Windows sandbox.** Codex sandboxes on Windows (restricted tokens, ACLs); ox's
