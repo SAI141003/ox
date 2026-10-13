@@ -49,7 +49,10 @@ test('a run appears on the web island and its approval is answered from there', 
   fs.mkdirSync(path.join(home, '.ox'), { recursive: true });
   fs.writeFileSync(path.join(home, '.ox', 'island.json'), JSON.stringify({ pid: process.pid, kind: 'web' }));
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/_API_KEY$|^OX_/.test(k)));
-  Object.assign(env, { HOME: home, NO_COLOR: '1', OX_NO_PLUGINS: '1', OX_NO_BUILTIN_SKILLS: '1', OX_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`, OX_API_KEY: 'x' });
+  // A private temp dir for the run's socket: a real OX Island on this machine
+  // watches the shared one and would take this test's approval.
+  const sockDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-iws-'));
+  Object.assign(env, { HOME: home, TMPDIR: sockDir, NO_COLOR: '1', OX_NO_PLUGINS: '1', OX_NO_BUILTIN_SKILLS: '1', OX_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`, OX_API_KEY: 'x' });
   const run = spawn(process.execPath, [OX, '--bot', 'custom:m', '-p', 'write approved.txt'], { cwd, env });
   let out = '';
   run.stdout.on('data', (d) => (out += d));
@@ -57,8 +60,8 @@ test('a run appears on the web island and its approval is answered from there', 
   const done = new Promise((r) => run.on('close', r));
 
   // Only this test's run: the machine may have real ox runs open too.
-  const mine = socketPathFor(`run-${run.pid}`);
-  const island = await createIslandServer({ watcher: createRunWatcher({ list: () => listIpcSockets().filter((s) => s === mine) }) });
+  const mine = socketPathFor(`run-${run.pid}`, sockDir);
+  const island = await createIslandServer({ watcher: createRunWatcher({ list: () => listIpcSockets(sockDir).filter((s) => s === mine) }) });
   after(() => island.close());
   const base = `http://127.0.0.1:${island.port}`;
   const get = (p, headers = {}) => fetch(base + p, { headers: { 'x-ox-token': island.token, ...headers } });

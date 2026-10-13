@@ -49,6 +49,8 @@ installed and working on this machine), so none are claimed.
 | Modes (ask / plan / debug / orchestrate) enforced at the tool gate | ✓ + auto-routing | ~ plan mode | ~ approval presets | ~ | ✓ plan/build | ✓ plan | ? | ? | ✗ | ✗ |
 | Your own agents (bot + mode + instructions) | ✓ `ox agent new` | ✓ subagent files | ? | ? | ✓ | ? | ? | ✓ | ✓ | ✓ named dot |
 | Parallel subagents | ✓ | ✓ | ✓ | ? | ✓ | ✓ | ✓ | ✓ | ? | ✓ |
+| Each agent sees only the tools you grant | ✓ `--tools`, refusals name the grant | ✓ per-subagent tools | ? | ? | ✓ | ? | ? | ? | ? | ✓ (OpenBot/OpenDots per-bot tools) |
+| Watch a page for changes / prices | ✓ `ox watch`, desktop + phone alerts, no model | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ? | ? | ✓ (OpenMuse goals & tracking) |
 | Agents check on each other live | ✓ `agent_status` + mailbox | ? | ✗ | ? | ? | ? | ? | ? | ? | ? |
 | Several models race, best change wins | ✓ `ox arena` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | OS sandbox | ✓ macOS/Linux | ✓ | ✓ macOS/Linux/Windows | ✓ | ? | ? | ? | ✗ | ✗ | cloud VM |
@@ -57,7 +59,7 @@ installed and working on this machine), so none are claimed.
 | Phone / chat-app channel | ✓ Telegram | ~ remote control | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ WhatsApp/Telegram/Discord | ✓ ChatGPT/Slack/Teams/WhatsApp |
 | Approvals on the phone | ✓ Allow/Deny buttons | ? | ✗ | ✗ | ✗ | ✗ | ✗ | ? | ? | ✓ |
 | Keeps working when you walk away | ✓ local, holds the machine awake | ~ | ~ cloud | ✗ | ✗ | ✗ | ✓ background | ✓ | ✓ | ✓ cloud computer |
-| Desktop presence | ✓ notch island (Mac) + top bar (Windows/Linux) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | app |
+| Desktop presence | ✓ notch island (Mac) + top bar (Windows/Linux): chat with your agents as faces, approvals, file shelf | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | app |
 | Voice | ✓ push-to-talk, on-device speech | ✓ | ? | ? | ✗ | ? | ✓ | ? | ? | ✓ |
 | Email from the right account | ✓ from must match Mail, draft default | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ? | ✓ | ✓ |
 | Small tasks with no AI and no internet | ✓ `ox do` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -105,3 +107,4 @@ Other products' exact colour values were not sampled, so they are not listed.
 - Claude Code 2026 releases: [release tracker](https://www.havoptic.com/releases/claude-code/2026/10), [March roundup](https://pasqualepillitteri.it/en/news/381/claude-code-march-2026-updates)
 - opencode: [package listing](https://community.chocolatey.org/packages/opencode/1.0.67)
 - Osaurus: [GitHub](https://github.com/osaurus-ai/osaurus)
+- CopilotKit templates read for ideas (all MIT, no code copied): [OpenDots](https://github.com/CopilotKit/OpenDots), [OpenMuse](https://github.com/CopilotKit/openmuse), [OpenBot](https://github.com/CopilotKit/openbot); xAI [grok-build](https://github.com/xai-org/grok-build) (Apache-2.0)
