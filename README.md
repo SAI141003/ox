@@ -187,6 +187,20 @@ when it stops. `ox awake 2h` holds it for a while, `ox awake off` releases it,
 `ox awake --lid` explains what each OS needs to keep running with the lid closed.
 `OX_NO_AWAKE=1` turns it off.
 
+## ox on your phone
+
+```bash
+ox gateway telegram --token <token from @BotFather> --cwd ~/my-project
+```
+
+Message your bot and ox works on it in that project. One status message
+updates in place with what it is doing; approvals arrive as **Allow / Deny**
+buttons (a phone gets ten minutes, then the usual decline); the answer comes
+back when it is done. `/status`, `/stop`, `/mode ask`, `/new`, `/where`.
+Until a chat sends the pairing code printed in your terminal, nobody can run
+anything, and afterwards every other chat is ignored. Long polling: no port is
+opened, no server is exposed. Telegram is the channel that works today.
+
 ## OX Island (macOS notch)
 
 ```bash

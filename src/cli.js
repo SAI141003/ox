@@ -155,7 +155,6 @@ import {createMemoryStore} from './memory-learn.js';
 import { learnFromSession, findRecentSession } from './learn.js';
 import {createBundleManager, listBundles} from './skill-bundles.js';
 import { createArena } from './arena.js';
-import { createGateway } from './gateway.js';
 import { cmdSchedule as cmdScheduleStore, cmdCron, cmdHeartbeat } from './daemon-cmd.js';
 import {
   addSchedule as addStoreSchedule,
@@ -4669,18 +4668,39 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'gateway': {
+      // Talk to ox from a chat app. Telegram is real end to end; it used to
+      // print "gateway started" for a list of platform names it never connected.
       const action = String(args[0] ?? '').trim().toLowerCase();
-      const gw = createGateway(process.cwd());
-      if (action === 'start') {
-        await gw.start(['cli']);
-        console.log(c.green('✓ gateway started (cli)'));
+      const tg = await import('./telegram-gateway.js');
+      const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+      if (action === 'telegram') {
+        const saved = tg.loadState();
+        const token = flag('--token') ?? process.env.TELEGRAM_BOT_TOKEN ?? saved.token;
+        const mode = flag('--mode') ? normalizeMode(flag('--mode')) : null;
+        if (flag('--mode') && !mode) { console.log(c.red(`--mode must be one of: auto, ${MODE_NAMES.join(', ')}`)); process.exitCode = 3; return; }
+        const ac = new AbortController();
+        process.on('SIGINT', () => { ac.abort(); process.exit(0); });
+        try {
+          await tg.runTelegramGateway({ token, cwd: path.resolve(flag('--cwd') ?? process.cwd()), agent: flag('--agent') ?? null, mode, signal: ac.signal });
+        } catch (e) {
+          console.log(c.red(String(e?.message ?? e)));
+          process.exitCode = 1;
+        }
         return;
       }
-      if (action === 'stop') { gw.stop(); console.log(c.green('✓ gateway stopped')); return; }
-      const status = gw.getStatus();
-      console.log(c.bold('gateway status'));
-      console.log(`  running: ${status.running ? c.green('yes') : c.red('no')}`);
-      console.log(`  platforms: ${status.platforms}`);
+      if (action === 'unpair') {
+        const st = tg.loadState();
+        delete st.owner;
+        tg.saveState(st);
+        console.log(c.green('unpaired — the next run of ox gateway telegram prints a new pairing code'));
+        return;
+      }
+      const st = tg.loadState();
+      console.log(`${c.bold('ox gateway')} — talk to ox from your phone`);
+      console.log(c.dim('  ox gateway telegram --token <token from @BotFather> [--cwd <project>] [--mode <mode>] [--agent <name>]'));
+      console.log(c.dim('  ox gateway unpair'));
+      console.log(`  telegram: ${st.token ? 'set up' : 'not set up'}${st.owner ? `, paired with chat ${st.owner}` : st.token ? ', not paired yet' : ''}`);
+      console.log(c.dim('  Telegram is the channel that works today. Each message runs ox in your project; approvals come as Allow/Deny buttons.'));
       return;
     }
     case 'cron': {
@@ -6659,11 +6679,7 @@ async function replWithBudget(config, opts, flags, budget) {
         return;
       }
       case '/gateway': {
-        const gw = createGateway(config.cwd);
-        const status = gw.getStatus();
-        console.log(c.bold('gateway'));
-        console.log(`  running: ${status.running ? c.green('yes') : c.red('no')}`);
-        console.log(`  platforms: ${status.platforms}`);
+        await runSubcommand('gateway', []);
         return;
       }
       case '/heartbeat': {
@@ -7551,6 +7567,11 @@ export async function main(argv = []) {
       // The island discovers sockets asynchronously; give it a moment to say
       // 'ready' so the very first approval of a fast run can reach the notch.
       if (forIsland) await waitForReadyClient(ipcServer, 2000);
+      // A launcher that starts this run and then connects to it (the phone
+      // gateway) asks the run to wait for it, so the first approval reaches
+      // that client instead of a terminal nobody is at.
+      const waitMs = Number(process.env.OX_IPC_WAIT_CLIENT_MS);
+      if (Number.isFinite(waitMs) && waitMs > 0) await waitForReadyClient(ipcServer, Math.min(waitMs, 60_000));
     } catch (err) {
       process.stderr.write(`${c.red(`✗ ${err?.message ?? err}`)}\n`);
       process.exitCode = 4;
