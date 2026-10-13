@@ -4422,13 +4422,35 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'arena': {
-      const task = args.join(' ');
-      if (!task) { console.log(c.red('✗ usage: ox arena run <task> [count]')); process.exitCode = 3; return; }
-      const arena = createArena(process.cwd());
-      console.log(c.dim(`arena: running 3 agents on "${task.slice(0, 60)}"...`));
-      const result = await arena.run(task, 3);
-      console.log(c.bold('arena results'));
-      for (const r of result.results) console.log(`  ${r.agent}: ${r.winner ? c.green('★ WINNER') : c.dim(r.output.slice(0, 80))}`);
+      const usageLine = 'usage: ox arena "<task>" --bots a,b[,c] [--test "<command>"] [--max-cost <usd>] [--apply]';
+      if (!args.length || args.includes('--help') || args.includes('-h')) {
+        console.log(`${c.bold('ox arena')} — the same task, several models, one winner\n  ${usageLine}`);
+        console.log(c.dim('  each bot works in its own git worktree; the winner passes --test, then succeeded, then changed least, then cost least.'));
+        console.log(c.dim('  patches are kept in ~/.ox/arena/<run>/; --apply applies the winner to this project.'));
+        if (!args.length) process.exitCode = 3;
+        return;
+      }
+      const { parseArenaArgs, runArena } = await import('./arena.js');
+      try {
+        const opts = parseArenaArgs(args);
+        console.log(c.dim(`arena: ${opts.bots.join(' vs ')} on "${truncate(opts.task, 60)}"`));
+        const res = await runArena(opts, { cwd: process.cwd(), log: (l) => console.log(c.dim(l)) });
+        console.log(c.bold('\narena results'));
+        for (const [i, e] of res.entries.entries()) {
+          const mark = res.winner === e ? c.green('★') : ' ';
+          const tests = e.test === null ? '' : e.test ? c.green(' tests pass') : c.red(' tests fail');
+          const cost = e.costUsd != null ? ` $${e.costUsd.toFixed(4)}` : '';
+          console.log(`${mark} ${i + 1}. ${e.bot.padEnd(16)} ${e.ok ? c.green('ok') : c.red('failed')}${tests} · ${e.files} file(s) ${e.changedLines} line(s) · ${e.seconds}s${cost}${e.error ? c.dim(`  ${e.error}`) : ''}`);
+        }
+        if (!res.winner) console.log(c.yellow('\nno bot produced a usable change'));
+        else if (res.winner.applied) console.log(c.green(`\n✓ applied ${res.winner.bot}'s change to this project`));
+        else if (res.winner.applied === false) console.log(c.red(`\n✗ could not apply ${res.winner.bot}'s change: ${res.winner.applyError}`));
+        else console.log(c.dim(`\nwinner: ${res.winner.bot} · apply it: git apply "${res.winner.patch}"  (or rerun with --apply)`));
+        console.log(c.dim(`patches: ${res.patchDir}`));
+      } catch (err) {
+        process.stderr.write(`${c.red(`✗ ${err.message}`)}\n`);
+        process.exitCode = 3;
+      }
       return;
     }
     case 'gateway': {
