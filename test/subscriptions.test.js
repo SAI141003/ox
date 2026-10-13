@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { subscriptionTarget, foldPrompt, parseLine, checkCli } from '../src/subscriptions.js';
+import { subscriptionTarget, foldPrompt, parseLine, checkCli, findOnPath, execPlan } from '../src/subscriptions.js';
 
 const OX = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
 const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-sub-bin-'));
@@ -104,6 +104,20 @@ test('a text CLI streams verbatim; a failing one says why, not "done"', () => {
   const bad = ox('--bot', 'kimi-plan', '-p', 'hi');
   assert.notEqual(bad.code, 0, bad.out);
   assert.match(bad.out, /kimi-plan \(kimi\): Error: not logged in, run \/setup/);
+});
+
+test('Windows: claude.cmd is found, and run through node, never through cmd.exe', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-win-'));
+  // The shim npm writes for a global install (cmd-shim), trimmed to its last line.
+  fs.writeFileSync(path.join(dir, 'claude.cmd'), '@ECHO off\r\nSETLOCAL\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@anthropic-ai\\claude-code\\cli.js" %*\r\n');
+  fs.writeFileSync(path.join(dir, 'weird.bat'), '@echo off\r\nsomething.exe %*\r\n');
+  const found = findOnPath('claude', { PATH: dir, PATHEXT: '.EXE;.CMD' }, 'win32');
+  assert.equal(found, path.join(dir, 'claude.cmd'));
+  const plan = execPlan(found, 'win32');
+  assert.equal(plan.cmd, process.execPath);
+  assert.ok(plan.pre[0].endsWith('node_modules\\@anthropic-ai\\claude-code\\cli.js'));
+  assert.match(execPlan(path.join(dir, 'weird.bat'), 'win32').error, /cannot run safely/);
+  assert.deepEqual(execPlan('/usr/local/bin/claude', 'darwin'), { cmd: '/usr/local/bin/claude', pre: [] });
 });
 
 test('ox connect reports what runs here, and a missing CLI explains how to get it', () => {

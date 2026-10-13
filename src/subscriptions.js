@@ -232,17 +232,37 @@ export function subscriptionTarget(spec, config = {}) {
   };
 }
 
-export function findOnPath(bin, env = process.env) {
-  if (bin.includes('/')) return fs.existsSync(bin) ? bin : null;
-  for (const dir of String(env.PATH ?? '').split(path.delimiter)) {
+export function findOnPath(bin, env = process.env, platform = process.platform) {
+  if (bin.includes('/') || bin.includes('\\')) return fs.existsSync(bin) ? bin : null;
+  // Windows finds `claude` as claude.cmd / claude.exe: try each PATHEXT ending.
+  const exts = platform === 'win32'
+    ? String(env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean).map((e) => e.toLowerCase())
+    : [''];
+  for (const dir of String(env.PATH ?? env.Path ?? '').split(platform === 'win32' ? ';' : path.delimiter)) {
     if (!dir) continue;
-    const p = path.join(dir, bin);
-    try {
-      fs.accessSync(p, fs.constants.X_OK);
-      if (fs.statSync(p).isFile()) return p;
-    } catch {}
+    for (const ext of exts) {
+      const p = path.join(dir, bin + ext);
+      try {
+        if (platform !== 'win32') fs.accessSync(p, fs.constants.X_OK);
+        if (fs.statSync(p).isFile()) return p;
+      } catch {}
+    }
   }
   return null;
+}
+
+// How to start a found CLI without a shell. A Windows .cmd/.bat cannot be
+// spawned directly (Node refuses since CVE-2024-27980), and running it through
+// cmd.exe would let a prompt's & or | become commands. npm's .cmd shims name
+// the script they run, so ox runs that script with node instead; any other
+// batch file is refused rather than handed a prompt.
+export function execPlan(where, platform = process.platform) {
+  if (platform !== 'win32' || !/\.(cmd|bat)$/i.test(where)) return { cmd: where, pre: [] };
+  let text = '';
+  try { text = fs.readFileSync(where, 'utf8'); } catch {}
+  const m = /"%(?:~)?dp0%?\\([^"]+?\.(?:c?js|mjs))"/i.exec(text);
+  if (!m) return { error: `${path.basename(where)} is a batch file ox cannot run safely; install the CLI's .exe or set its full path in config subscriptions.` };
+  return { cmd: process.execPath, pre: [path.join(path.dirname(where), m[1])] };
 }
 
 // Installed is not enough: a half-installed CLI (a stub with no binary) is
@@ -258,7 +278,9 @@ export function checkCli(id, config = {}, env = process.env) {
     if (stub) return { id, label: cli.label, bin: cli.bin, path: stub, installed: true, works: false, problem: `${stub} is there but cannot run (an unfinished install)`, fix: `reinstall: ${cli.install}` };
     return { id, label: cli.label, bin: cli.bin, installed: false, works: false, fix: cli.install, login: cli.login };
   }
-  const r = spawnSync(where, ['--version'], { encoding: 'utf8', timeout: 8000, env });
+  const plan = execPlan(where);
+  if (plan.error) return { id, label: cli.label, bin: cli.bin, path: where, installed: true, works: false, problem: plan.error, fix: `reinstall: ${cli.install}` };
+  const r = spawnSync(plan.cmd, [...plan.pre, '--version'], { encoding: 'utf8', timeout: 8000, env, windowsHide: true });
   const works = r.status === 0;
   const version = (r.stdout || '').trim().split('\n')[0] || null;
   const why = r.error?.code ?? (r.stderr || '').trim().split('\n').find(Boolean) ?? `exit ${r.status}`;
@@ -402,7 +424,13 @@ export async function* runSubscriptionTurn({ target, messages = [], ctx = {}, co
   const approval = approvalFor(ctx);
   const args = cli.args({ prompt, model: target.model, approval });
   const st = { text: '', tools: new Map(), done: false, error: null, usage: null, estimateUsd: null, model: null };
-  const child = spawn(where, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const plan = execPlan(where);
+  if (plan.error) {
+    yield { type: 'error', error: `${target.bot}: ${plan.error}` };
+    yield { type: 'turn-end', stopReason: 'error', iters: 0 };
+    return;
+  }
+  const child = spawn(plan.cmd, [...plan.pre, ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   const onAbort = () => { try { child.kill('SIGTERM'); } catch {} };
   signal?.addEventListener?.('abort', onAbort, { once: true });
 
