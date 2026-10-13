@@ -946,7 +946,37 @@ async function serveChatPage(res) {
   res.end(chatPage);
 }
 
+// Requests a browser could forge. A page on another site can make the browser
+// send a request to 127.0.0.1 (it cannot read the reply, but the request still
+// runs), and a domain that resolves to 127.0.0.1 can read replies too (DNS
+// rebinding). So: the Host must be the address this server listens on, and a
+// request that changes anything must come from this server's own page or from
+// a client with no browser Origin at all (curl, SDKs, the island, ox itself).
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
+let boundHost = '127.0.0.1';
+
+export function requestGuard(req, bound = boundHost) {
+  const host = String(req.headers.host ?? '');
+  const hostname = host.replace(/:\d+$/, '').toLowerCase();
+  const anyHost = bound === '0.0.0.0' || bound === '::';
+  if (!anyHost && !(LOOPBACK_HOSTS.has(hostname) || hostname === String(bound).toLowerCase())) {
+    return 'this server answers only to its own address';
+  }
+  const origin = req.headers.origin;
+  if (origin && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    let o;
+    try { o = new URL(origin); } catch { return 'unreadable Origin'; }
+    if (o.host.toLowerCase() !== host.toLowerCase()) return 'requests from other sites are refused';
+  }
+  return null;
+}
+
 async function handleRequest(req, res) {
+  const refused = requestGuard(req);
+  if (refused) {
+    sendError(res, 403, refused, 'invalid_request_error', 'forbidden_origin', null);
+    return;
+  }
   let url;
   try {
     url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -988,6 +1018,7 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
     return Promise.reject(new Error(exposure.lines.join('\n')));
   }
 
+  boundHost = host;
   const server = createServer(handleRequest);
 
   return new Promise((resolve, reject) => {
