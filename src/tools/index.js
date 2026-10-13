@@ -14,6 +14,7 @@ import {
   open_app, open_url, open_path, open_window, type_text, screenshot, notify,
   OPERATOR_TOOL_SCHEMAS,
 } from './operator.js';
+import { modeRefusal } from '../modes.js';
 import { webFetchTool, webSearchTool, WEB_TOOL_SCHEMAS, WEB_TOOLS } from './web.js';
 import { webTaskTool, WEB_TASK_TOOL_SCHEMAS, WEB_TASK_TOOLS } from './web-task.js';
 import { critiqueTool, CRITIQUE_TOOL_SCHEMAS, CRITIQUE_TOOLS } from './critique.js';
@@ -621,6 +622,8 @@ export async function dispatchTool(name, args, ctx = {}) {
         isError: true,
       };
     }
+    const modeNo = modeRefusal(ctx?.mode, name, args, ctx?.cwd ?? process.cwd());
+    if (modeNo) return { content: modeNo, isError: true };
     if (name.startsWith('memory_')) {
       if (typeof ctx?.memory?.dispatch !== 'function') {
         return { content: `${name}: memory subsystem unavailable in this context.`, isError: true };

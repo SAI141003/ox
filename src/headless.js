@@ -1,4 +1,6 @@
 import { expandLlmsRefs } from './llms-txt.js';
+import fs from 'node:fs';
+import { resolveTurnMode } from './modes.js';
 import path from 'node:path';
 import { loadImage } from './providers/images.js';
 import { runAgent, draftTitle } from './agent.js';
@@ -191,7 +193,21 @@ export async function cleanupCtx(assembled) {
   } catch {}
 }
 
+// How long to wait for piped input depends on what stdin is. A shell pipe
+// (`cmd | ox -p`) or a redirected file is real input: wait for its end. A socket
+// is what a program gets when it spawns ox with stdio 'pipe' and never writes:
+// waiting the full limit there added 10s to every scripted, arena and island run,
+// so it gets a short grace and is only read to the end once data starts.
+function stdinWaitMs(limitMs) {
+  try {
+    const st = fs.fstatSync(0);
+    if (st.isFIFO() || st.isFile()) return limitMs;
+  } catch {}
+  return Math.min(limitMs, Number(process.env.OX_STDIN_GRACE_MS) || 150);
+}
+
 function readPipedStdin(limitMs = 10000) {
+  const graceMs = stdinWaitMs(limitMs);
   return new Promise((resolve) => {
     let buf = '';
     let done = false;
@@ -199,11 +215,16 @@ function readPipedStdin(limitMs = 10000) {
       if (done) return;
       done = true;
       clearTimeout(timer);
+      process.stdin.pause();
       resolve(buf);
     };
-    const timer = setTimeout(finish, limitMs);
+    let timer = setTimeout(finish, graceMs);
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', (d) => {
+      if (!buf && graceMs < limitMs) {
+        clearTimeout(timer);
+        timer = setTimeout(finish, limitMs);
+      }
       buf += d;
     });
     process.stdin.on('end', finish);
@@ -243,6 +264,14 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
   const auxTarget = resolveAuxTarget(config);
   const assembled = await assembleCtx({ config, target, opts, auxTarget });
   const { ctx } = assembled;
+  // Mode: fixed by --mode / config, or picked per message by auto. The pick is
+  // printed so a routed run can be checked, not taken on trust.
+  const turnMode = resolveTurnMode(opts.mode ?? config.mode, prompt);
+  ctx.mode = turnMode.mode;
+  if (turnMode.routed) {
+    if (opts.json) console.log(JSON.stringify({ t: 'mode', mode: turnMode.mode, routed: true, reason: turnMode.reason }));
+    else process.stderr.write(c.dim(`· auto → ${turnMode.mode} (${turnMode.reason})\n`));
+  }
   const auto = !!opts.auto;
   // A detached (`--daemon-worker`) run passes `opts.session` to get the
   // append-only transcript a supervised session exists for. That is the ONLY

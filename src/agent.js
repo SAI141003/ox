@@ -19,6 +19,7 @@ import { generateCritique, reflect as reflectSession } from './self-improve.js';
 import { recordDecision, recordOutcome } from './audit.js';
 import { createVerifier } from './verify-loop.js';
 import { fireHooks, formatHookOutputs, hooksFor, loadHooksConfig } from './hooks.js';
+import { modeBlock } from './modes.js';
 
 const SUMMARY_PREFIX = '[ox: summary of earlier conversation turns]\n';
 const VERIFY_MAX_ROUNDS = 2;
@@ -1078,7 +1079,7 @@ async function* runAgentLoop(opts = {}) {
   let contextParts = buildContext({ cwd, scopedPaths });
   const memoryBlock = ctx.memoryBlock ?? '';
   const skillIndex = ctx.skillIndex ?? '';
-  const personaBlock = ctx.personaBlock ?? '';
+  const personaBlock = [ctx.personaBlock, modeBlock(ctx.mode)].filter(Boolean).join('\n\n');
   let guidance = String(extraGuidance ?? '');
   let builtGuidance = null;
   // The persistent goal renders ABOVE the contract, inside the same prompt layer,

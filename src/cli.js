@@ -137,6 +137,7 @@ import { banner as oxBanner, intro as oxIntro } from './logo.js';
 import { dispatchTool, listToolSchemas } from './tools/index.js';
 import {handlePowerCommand} from './cmd-power.js';
 import { listAgents, loadAgent, saveAgent, deleteAgent, resolveAgent } from './agents.js';
+import { MODES, MODE_NAMES, normalizeMode, resolveTurnMode } from './modes.js';
 import { importAll } from './import.js';
 import {getPlanCache, clearPlanCache} from './plan-cache.js';
 import {createHierarchicalMemory} from './hierarchical-memory.js';
@@ -225,6 +226,7 @@ const SLASH_HELP = [
   '  /compact              summarize older history to shrink context',
   '  /context              per-segment context breakdown: system / tool schemas / history / latest input',
   '  /clear                wipe in-memory context (session file kept)',
+  '  /mode [name]          auto | code | ask | plan | debug | orchestrate (enforced at the tool gate)',
   '  /plan                 toggle plan mode (read-only tools)',
   '  /tools                list available tools',
   '  /mem [query]          rank learned memory by TF-IDF (bare /mem prints the tally)',
@@ -324,6 +326,7 @@ export function slashHelp(arg = '') {
     c.bold('Talk and switch'),
     row('/model <spec>', 'switch model, conversation kept (/bot for presets)'),
     row('/screen [question]', 'ask about what is on your screen'),
+    row('/mode [name]', 'auto · code · ask · plan · debug · orchestrate'),
     row('/plan', 'read-only mode: look and plan, change nothing'),
     row('/yolo', 'skip approvals (dangerous commands stay blocked)'),
     c.bold('Context and cost'),
@@ -608,6 +611,7 @@ function usageAll() {
     '                                 before the new turn (append-only; files on disk are NOT reverted)',
     '  -y, --dangerously-skip-approvals   skip all approvals',
     '      --plan                     plan mode (read-only)',
+    '      --mode <name>              auto | code | ask | plan | debug | orchestrate',
     '      --cwd <dir>                workspace directory',
     '  -h, --help                     show help',
     '  -v, --version                  print version',
@@ -4863,6 +4867,7 @@ async function replWithBudget(config, opts, flags, budget) {
     // remain unconditionally verified in headless.
     verify: !!opts.verify,
     maxMode: resolveMaxMode(opts.maxMode ?? config.maxMode),
+    mode: normalizeMode(opts.mode ?? config.mode) ?? 'code',
     baseApprovalMode: ctx.approval === 'plan' ? 'default' : ctx.approval,
     goalContract: null,
     // The persistent goal lives here for the run and on disk between runs. It is
@@ -5034,6 +5039,9 @@ async function replWithBudget(config, opts, flags, budget) {
         if (mm.plan) extraGuidance = [extraGuidance, `[SELECTED PLAN]\n${mm.plan}`].filter(Boolean).join('\n\n');
       } catch {}
     }
+    const turnMode = resolveTurnMode(state.mode, text);
+    ctx.mode = turnMode.mode;
+    if (turnMode.routed) process.stdout.write(`${c.dim(`· auto → ${turnMode.mode} (${turnMode.reason})`)}\n`);
     try {
       for await (const ev of runAgent({
         target,
@@ -5392,6 +5400,22 @@ async function replWithBudget(config, opts, flags, budget) {
         messages = [];
         console.log(c.dim('context cleared (session file kept)'));
         return;
+      case '/mode': {
+        const want = rest.trim().toLowerCase();
+        if (!want) {
+          for (const m of ['auto', ...MODE_NAMES]) {
+            const desc = m === 'auto' ? 'picks one of the modes below for each message, and says which' : MODES[m].desc;
+            console.log(`${m === state.mode ? c.green('●') : ' '} ${m.padEnd(12)}${c.dim(desc)}`);
+          }
+          console.log(c.dim('/mode <name> to switch'));
+          return;
+        }
+        const m = normalizeMode(want);
+        if (!m) { console.log(c.red(`no mode '${want}' — one of: auto, ${MODE_NAMES.join(', ')}`)); return; }
+        state.mode = m;
+        console.log(c.green(`mode: ${m}`) + c.dim(m === 'auto' ? ' — each message is routed; the pick is shown' : ` — ${MODES[m].desc}`));
+        return;
+      }
       case '/plan': {
         if (rest.trim()) {
           console.log(c.dim('building plan...'));
@@ -6977,6 +7001,7 @@ function detachPassthrough(flags) {
   if (flags.yesEdits) out.push('--yes-edits');
   if (flags.yolo) out.push('-y');
   if (flags.plan) out.push('--plan');
+  push('--mode', flags.mode);
   if (flags.strictApprovals) out.push('--strict-approvals');
   if (flags.sideEffectsOk) out.push('--side-effects-ok');
   if (flags.repoMap) out.push('--repo-map');
@@ -7171,6 +7196,14 @@ export async function main(argv = []) {
       case '--plan':
         flags.plan = true;
         break;
+      case '--mode': {
+        const v = needValue(a, i);
+        if (v === null) return;
+        if (!normalizeMode(v)) { process.stderr.write(`${c.red(`✗ --mode must be one of: auto, ${MODE_NAMES.join(', ')}`)}\n`); process.exitCode = 3; return; }
+        flags.mode = normalizeMode(v);
+        i++;
+        break;
+      }
       case '--side-effects-ok':
         flags.sideEffectsOk = true;
         break;
@@ -7338,6 +7371,7 @@ export async function main(argv = []) {
     verify: flags.verify || config.defaultVerify === true,
     yesEdits: flags.yesEdits,
     planMode: flags.plan,
+    mode: flags.mode,
     strictApprovals: flags.strictApprovals,
     maxCostUsd: flags.maxCostUsd,
     maxMode: flags.maxMode,
