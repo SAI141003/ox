@@ -152,7 +152,6 @@ import {previewInstall, auditSkills, formatAuditReport, formatHostList} from './
 import {createMemoryStore} from './memory-learn.js';
 import { learnFromSession, findRecentSession } from './learn.js';
 import {createBundleManager, listBundles} from './skill-bundles.js';
-import { createKanban, KanbanSwarm } from './kanban.js';
 import { createArena } from './arena.js';
 import { createGateway } from './gateway.js';
 import { cmdSchedule as cmdScheduleStore, cmdCron, cmdHeartbeat } from './daemon-cmd.js';
@@ -174,7 +173,7 @@ import { createVoiceMode } from './voice-mode.js';
 import { createAcpServer } from './acp.js';
 import {inspectProject, formatInspect} from './inspect.js';
 import {createCodebaseIndex, formatSearchResults} from './codebase-index.js';
-import { createResearchBrain, ResearchSession } from './brain-research.js';
+import { createResearchBrain } from './brain-research.js';
 import { startServer } from './serve.js';
 import { DEFAULT_APPROVAL_TIMEOUT_MS, controlReply, createIpcServer, socketPathFor } from './ipc.js';
 import { WATCH_DEFAULT_FPS, runWatch } from './ipc-watch.js';
@@ -4352,36 +4351,64 @@ async function runSubcommand(cmd, args) {
       const restArgs = args.slice(1);
       try {
         if (action === 'research') {
-          const topic = restArgs.join(' ');
-          if (!topic) { console.log(c.red('✗ usage: ox brain research <topic>')); process.exitCode = 3; return; }
-          const brain = createResearchBrain(process.cwd());
-          const session = new ResearchSession(topic);
-          const findings = await session.run();
-          console.log(c.bold(`research: ${topic}`));
-          console.log(`  sources: ${findings.sources.length}  gaps: ${findings.gaps.length}`);
-          for (const g of findings.gaps.slice(0, 5)) console.log(c.dim(`  gap: ${g}`));
+          // A real research run: a headless agent with web_search/web_fetch,
+          // primary sources, inline citations, saved under .agent/research/.
+          const topic = restArgs.filter((a) => !a.startsWith('--')).join(' ');
+          if (!topic) { console.log(c.red('✗ usage: ox brain research <topic> [--max-cost <usd>]')); process.exitCode = 3; return; }
+          const slug = topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'research';
+          const file = path.join('.agent', 'research', `${new Date().toISOString().slice(0, 10)}-${slug}.md`);
+          const prompt = [
+            `Research this topic: ${topic}`,
+            'Use web_search to find sources and web_fetch to read at least three primary or authoritative ones (official docs, papers, maintainers) - not summaries of summaries.',
+            'Write the findings as Markdown with inline citations like [1], a "Sources" list of the URLs you actually read, and an "Open questions" section for what the sources do not settle.',
+            `Save the report with write_file to ${file}, then reply with a five-line summary.`,
+          ].join('\n');
+          const mi = restArgs.indexOf('--max-cost');
+          const childArgs = [path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js'), '-p', prompt, '-y', '--sandbox', 'workspace', ...(mi >= 0 ? ['--max-cost', restArgs[mi + 1]] : [])];
+          const { spawn } = await import('node:child_process');
+          const code = await new Promise((resolve) => spawn(process.execPath, childArgs, { stdio: 'inherit' }).on('close', resolve));
+          if (code === 0 && fs.existsSync(file)) console.log(c.green(`\n✓ report: ${file}`));
+          else if (code === 0) console.log(c.yellow('\nthe run finished but did not save a report'));
+          process.exitCode = code ?? 1;
           return;
         }
+        const researchDir = path.join(process.cwd(), '.agent', 'research');
+        const reports = (() => {
+          try { return fs.readdirSync(researchDir).filter((f) => f.endsWith('.md')).sort().reverse(); } catch { return []; }
+        })();
         if (action === 'gaps') {
-          const brain = createResearchBrain(process.cwd());
-          const gaps = brain.getGaps();
-          if (!gaps.length) { console.log(c.dim('no gaps identified')); return; }
-          for (const g of gaps) console.log(`${c.yellow('○')} ${g.topic}: ${g.reason}`);
+          // The "Open questions" each report ended with.
+          let any = false;
+          for (const f of reports) {
+            const md = fs.readFileSync(path.join(researchDir, f), 'utf8');
+            const m = /^#+\s*Open questions\s*\n([\s\S]*?)(?=^#+\s|(?![\s\S]))/im.exec(md);
+            const items = (m?.[1] ?? '').split('\n').map((l) => l.replace(/^[-*\d.)\s]+/, '').trim()).filter(Boolean);
+            if (!items.length) continue;
+            any = true;
+            console.log(c.bold(f.replace(/\.md$/, '')));
+            for (const it of items.slice(0, 8)) console.log(`  ${c.yellow('○')} ${it}`);
+          }
+          if (!any) console.log(c.dim('no open questions yet — run: ox brain research <topic>'));
           return;
         }
         if (action === 'synthesize') {
           const topic = restArgs.join(' ');
           if (!topic) { console.log(c.red('✗ usage: ox brain synthesize <topic>')); process.exitCode = 3; return; }
-          const brain = createResearchBrain(process.cwd());
-          const report = brain.synthesize(topic);
-          console.log(c.bold(`synthesize: ${topic}`));
-          console.log(c.dim(report.slice(0, 600)));
+          if (!reports.length) { console.log(c.dim('no reports to synthesize yet — run: ox brain research <topic>')); return; }
+          const slug = topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'synthesis';
+          const out = path.join('.agent', 'research', `${new Date().toISOString().slice(0, 10)}-synthesis-${slug}.md`);
+          const prompt = `Read the research reports in .agent/research/ that bear on: ${topic}\nSynthesize them into one Markdown report: what the sources agree on, where they conflict, and what is still open, keeping their citations. Save it with write_file to ${out}, then reply with a five-line summary.`;
+          const { spawn } = await import('node:child_process');
+          const ox = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
+          const code = await new Promise((resolve) => spawn(process.execPath, [ox, '-p', prompt, '--yes-edits'], { stdio: 'inherit' }).on('close', resolve));
+          if (code === 0 && fs.existsSync(out)) console.log(c.green(`\n✓ synthesis: ${out}`));
+          process.exitCode = code ?? 1;
           return;
         }
-        const brain = createResearchBrain(process.cwd());
-        console.log(c.bold('brain status'));
-        console.log(`  topics: ${brain.listTopics().length}`);
-        console.log(c.dim('  run: ox brain research <topic> | ox brain gaps | ox brain synthesize <topic>'));
+        console.log(c.bold('research'));
+        if (!reports.length) console.log(c.dim('  no reports yet'));
+        for (const f of reports.slice(0, 15)) console.log(`  ${f}`);
+        console.log(c.dim('  ox brain research <topic> | ox brain gaps | ox brain synthesize <topic>'));
       } catch (err) {
         console.log(c.red(`✗ ${err?.message ?? err}`));
         process.exitCode = 1;
@@ -4391,34 +4418,32 @@ async function runSubcommand(cmd, args) {
     case 'kanban': {
       const action = String(args[0] ?? '').trim().toLowerCase();
       const restArgs = args.slice(1);
-      const kb = createKanban(process.cwd());
+      // The board view of the task board (src/tasks.js): one store, two views.
       if (action === 'add') {
         const title = restArgs.join(' ');
         if (!title) { console.log(c.red('✗ usage: ox kanban add <title>')); process.exitCode = 3; return; }
-        const task = kb.createTask(title, '');
+        const task = addTask({ title });
         console.log(c.green(`✓ created task ${task.id}: ${task.title}`));
         return;
       }
-      if (action === 'list') {
-        const board = kb.getBoard();
-        for (const status of ['backlog', 'todo', 'in-progress', 'review', 'done']) {
-          const tasks = board[status] || [];
-          if (!tasks.length) continue;
-          console.log(c.bold(`${status} (${tasks.length})`));
-          for (const t of tasks) console.log(`  ${t.id} ${t.title}`);
+      if (action === '' || action === 'list' || action === 'board') {
+        const tasks = listTasks();
+        if (!tasks.length) { console.log(c.dim('the board is empty — ox kanban add <title>, or ox task add')); return; }
+        const columns = [['to do', ['pending']], ['doing', ['running']], ['review', ['in_review']], ['blocked', ['blocked']], ['done', ['done']], ['failed', ['failed', 'cancelled']]];
+        for (const [label, statuses] of columns) {
+          const col = tasks.filter((t) => statuses.includes(t.status));
+          if (!col.length) continue;
+          console.log(c.bold(`${label} (${col.length})`));
+          for (const t of col) console.log(`  ${c.dim(t.id)} ${t.title}${t.assignee ? c.dim(` · ${t.assignee}`) : ''}`);
         }
         return;
       }
       if (action === 'swarm') {
-        const goal = restArgs.join(' ');
-        if (!goal) { console.log(c.red('✗ usage: ox kanban swarm <goal>')); process.exitCode = 3; return; }
-        const swarm = new KanbanSwarm(kb);
-        const result = await swarm.run(goal);
-        console.log(c.bold(`swarm: ${goal}`));
-        console.log(`  tasks: ${result.tasks.length}  completed: ${result.completed}`);
+        console.log(c.dim('ox kanban swarm is replaced by real runs: ox task next (an agent takes the next ready task),'));
+        console.log(c.dim('ox auto "<goal>" (a long run that plans and verifies), or ox arena (several models on one task).'));
         return;
       }
-      console.log(c.dim('usage: ox kanban add <title> | ox kanban list | ox kanban swarm <goal>'));
+      console.log(c.dim('usage: ox kanban [list] | ox kanban add <title>   (the same board as: ox task)'));
       return;
     }
     case 'arena': {
@@ -6411,35 +6436,23 @@ async function replWithBudget(config, opts, flags, budget) {
         const parts = rest.trim().split(/\s+/);
         const action = (parts[0] ?? '').toLowerCase();
         const topic = parts.slice(1).join(' ');
-        const brain = createResearchBrain(config.cwd);
         if (action === 'research' && topic) {
-          console.log(c.dim(`researching: ${topic}...`));
-          const session = new ResearchSession(topic);
-          const findings = await session.run();
-          console.log(c.bold(`research: ${topic}`));
-          console.log(`  sources: ${findings.sources.length}  gaps: ${findings.gaps.length}`);
+          // In the chat it is a normal turn, on this session's model.
+          const slug = topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'research';
+          const file = path.join('.agent', 'research', `${new Date().toISOString().slice(0, 10)}-${slug}.md`);
+          await runTurn([
+            `Research this topic: ${topic}`,
+            'Use web_search to find sources and web_fetch to read at least three primary or authoritative ones.',
+            'Write the findings as Markdown with inline citations like [1], a "Sources" list of the URLs you read, and an "Open questions" section.',
+            `Save the report with write_file to ${file}, then give me a five-line summary.`,
+          ].join('\n'));
           return;
         }
-        if (action === 'gaps') {
-          const gaps = brain.getGaps();
-          if (!gaps.length) { console.log(c.dim('no gaps identified')); return; }
-          for (const g of gaps) console.log(`${c.yellow('○')} ${g.topic}: ${g.reason}`);
-          return;
-        }
-        console.log(c.bold('brain status'));
-        console.log(`  topics: ${brain.listTopics().length}`);
-        console.log(c.dim('  usage: /brain research <topic> | /brain gaps'));
+        await runSubcommand('brain', action ? [action, ...parts.slice(1)] : []);
         return;
       }
       case '/kanban': {
-        const kb = createKanban(config.cwd);
-        const board = kb.getBoard();
-        console.log(c.bold('kanban board'));
-        for (const status of ['backlog', 'todo', 'in-progress', 'review', 'done']) {
-          const tasks = board[status] || [];
-          console.log(`  ${c.bold(status)} (${tasks.length})`);
-          for (const t of tasks.slice(0, 5)) console.log(`    ${t.id} ${t.title}`);
-        }
+        await runSubcommand('kanban', ['list']);
         return;
       }
       case '/gateway': {
