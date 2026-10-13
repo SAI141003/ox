@@ -107,7 +107,7 @@ test('1. both schemas ship when a handler is installed, and neither ships withou
 
   // Names are Prime Agent's, so a transferring user's muscle memory is not a
   // guess: exactly these two, nothing spelled differently.
-  assert.deepEqual(agentMessagingToolSchemas().map((s) => s.name), ['agent_message.send', 'agent_observe']);
+  assert.deepEqual(agentMessagingToolSchemas().map((s) => s.name), ['agent_status', 'agent_message.send', 'agent_observe']);
 });
 
 test('2. narrowing keeps them on an agent turn and withholds them on a coding turn', (t) => {
@@ -129,9 +129,9 @@ test('2. narrowing keeps them on an agent turn and withholds them on a coding tu
   assert.ok(!AGENT_KEYWORDS.some((k) => !/^[a-z-]+$/.test(k)), 'keywords stay plain words');
 });
 
-test('3. both tools are batchable (memory_write, never unknown)', () => {
+test('3. the mailbox tools are batchable (never unknown); agent_status is a pure read', () => {
   for (const n of AGENT_MESSAGE_TOOLS) {
-    assert.equal(classifyTool(n), 'memory_write', `${n} must not classify as unknown`);
+    assert.equal(classifyTool(n), n === 'agent_status' ? 'pure_read' : 'memory_write', `${n} must not classify as unknown`);
   }
   // A model polls for mail next to a read; that batch has to survive the
   // unknown-tools-in-a-batch rejection in src/agent.js.

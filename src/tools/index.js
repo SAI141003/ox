@@ -49,7 +49,7 @@ export const TOOL_IMPLS = {
   task_board: taskBoardTool,
 };
 
-const PLAN_READ_ONLY = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'show_ui'];
+const PLAN_READ_ONLY = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'show_ui', 'agent_status'];
 
 export const BUILTIN_SCHEMAS = [
   ...OPERATOR_TOOL_SCHEMAS,
@@ -661,6 +661,12 @@ export async function dispatchTool(name, args, ctx = {}) {
     // is calling is the load-bearing part of the call. The handler derives the
     // sender and the mailbox from ctx, so the model cannot address a mailbox that
     // is not its own by any argument it can pass.
+    if (name === 'agent_status') {
+      const { agentSnapshot } = await import('../subagent-registry.js');
+      const { renderAgentStatus } = await import('../agent-teams.js');
+      const snap = agentSnapshot({ cwd: ctx?.cwd ?? process.cwd() });
+      return { content: renderAgentStatus(snap, { self: ctx?.subagentId ?? null, id: args?.id ? String(args.id) : null }) };
+    }
     if (name === 'agent_message.send' || name === 'agent_observe') {
       if (typeof ctx?.agentTeamsHandler !== 'function') {
         return { content: `${name}: agent-to-agent messaging is not configured in this context.`, isError: true };

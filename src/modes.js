@@ -7,7 +7,7 @@
 // checked rather than taken on trust.
 import path from 'node:path';
 
-const READ_TOOLS = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'show_ui', 'web_search', 'web_fetch', 'mail_accounts'];
+const READ_TOOLS = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'show_ui', 'web_search', 'web_fetch', 'mail_accounts', 'agent_status'];
 const PLAN_DIR = path.join('.agent', 'plans');
 
 export const MODES = Object.freeze({

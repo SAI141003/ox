@@ -458,7 +458,7 @@ export function createAgentTeams(cwd) {
 // arguments: an agent that tries to read another agent's mailbox, or to send mail
 // as somebody else, is told no, instead of quietly receiving its own empty
 // mailbox and concluding the other one was empty.
-export const AGENT_MESSAGE_TOOLS = Object.freeze(['agent_message.send', 'agent_observe']);
+export const AGENT_MESSAGE_TOOLS = Object.freeze(['agent_message.send', 'agent_observe', 'agent_status']);
 
 // Identity arguments each tool must REFUSE, and they are not the same set.
 //
@@ -618,8 +618,34 @@ export function makeAgentTeamsHandler(cwd) {
 // narrowing-priority entry, because src/agent-teams.js was left out of the
 // always-keep core set -- so these ride the keyword narrowing group in
 // src/tools/index.js, exactly like memory_*, operator, web and critique do.
+// A peer's progress, read straight from the live registry: no reply needed, so
+// checking on another agent never waits for it to look at its mail.
+export function renderAgentStatus(snapshot, { self = null, id = null } = {}) {
+  const now = Number(snapshot?.at) || Date.now();
+  const rows = (snapshot?.live ?? []).filter((a) => a.id !== self && (!id || a.id === id));
+  const done = (snapshot?.recentFinished ?? []).filter((a) => a.id !== self && (!id || a.id === id)).slice(-5);
+  if (!rows.length && !done.length) return id ? `no agent ${id} is running or recently finished` : 'no other agents are running';
+  const secs = (t) => (Number.isFinite(t) ? `${Math.max(0, Math.round((now - t) / 1000))}s` : '?');
+  const lines = rows.map((a) => {
+    const doing = a.currentTool ? `${a.currentTool}${a.currentToolArgsPreview ? ` ${String(a.currentToolArgsPreview).slice(0, 60)}` : ''}` : a.phase ?? a.status;
+    return `- ${a.id} [${a.status ?? a.phase}] ${String(a.task ?? a.description ?? '').slice(0, 80)} — now: ${doing}; ${a.iterations ?? 0} steps, ${a.filesTouched ?? 0} files, running ${secs(a.spawnedAt)}`;
+  });
+  for (const a of done) lines.push(`- ${a.id} [${a.status ?? 'done'}] ${String(a.task ?? a.description ?? '').slice(0, 80)} — finished`);
+  return lines.join('\n');
+}
+
 export function agentMessagingToolSchemas() {
   return [
+    {
+      name: 'agent_status',
+      description:
+        "See what the other agents in this session are doing right now: each one's task, status, current tool, steps, files touched and how long it has run. Read-only and instant (it does not wait for them to reply). Pass id to look at one agent.",
+      input_schema: {
+        type: 'object',
+        properties: { id: { type: 'string', description: 'One agent id (optional).' } },
+        additionalProperties: false,
+      },
+    },
     {
       name: 'agent_message.send',
       description:

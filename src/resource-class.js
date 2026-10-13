@@ -7,7 +7,8 @@ export const RESOURCE_CLASSES = Object.freeze([
   'unknown',
 ]);
 
-const PURE_READ_TOOLS = new Set(['read_file', 'grep', 'glob', 'list_dir', 'ls']);
+// agent_status only reads the in-process registry of running agents.
+const PURE_READ_TOOLS = new Set(['read_file', 'grep', 'glob', 'list_dir', 'ls', 'agent_status']);
 const FS_WRITE_TOOLS = new Set(['write_file', 'edit_file']);
 const TERMINAL_TOOLS = new Set(['reply', 'finish', 'report_result']);
 
