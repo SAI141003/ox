@@ -3566,6 +3566,12 @@ async function cmdServe(args = []) {
       i++;
     } else if (a === '--api-key') {
       apiKey = true;
+    } else if (a === '--help' || a === '-h') {
+      console.log(`${c.bold('ox serve')} — an OpenAI-compatible API and a web chat, on this machine`);
+      console.log(c.dim('  ox serve [--port 8080] [--host 127.0.0.1] [--api-key]'));
+      console.log(c.dim('  then open http://127.0.0.1:8080 for the chat, or point any OpenAI client at http://127.0.0.1:8080/v1'));
+      console.log(c.dim('  --api-key requires a bearer token (printed at start); use it before binding beyond loopback'));
+      return;
     } else if (String(a).startsWith('-')) {
       process.stderr.write(`ox: unknown flag '${a}'\n`);
       process.exitCode = 3;
@@ -4005,7 +4011,31 @@ async function cmdIpcWatch(args = []) {
   }
 }
 
+// `ox <cmd> --help` for the commands whose own parsers would otherwise reject
+// --help as an unknown subcommand or flag. Each line is the usage the command
+// already reports on a wrong argument, so the two cannot disagree.
+const SUB_USAGE = {
+  help: 'usage: ox help [task | serve | skill | mcp | autonomy | ipc | sessions | flags | all]',
+  prompt: 'usage: ox prompt [--breakdown]  — show the system prompt ox would send here, layer by layer',
+  session: 'usage: ox session export <id> | ox session prune',
+  mcp: 'usage: ox mcp ls | add | remove | test',
+  skill: 'usage: ox skill <name> | ox skill add <dir | owner/repo[/path]>',
+  episode: 'usage: ox episode ls | ox episode promote <id>',
+  'memory-loss': 'usage: ox memory-loss [--limit <n>]',
+  auto: 'usage: ox auto "<goal>" [--contract ["<goal>"]] [--max-cost <usd>] [--json] [--bot <name>] [--yes-edits] [-y] [--side-effects-ok]',
+  attach: 'usage: ox attach <worker id>  — follow a detached run (ox agents lists them)',
+  import: 'usage: ox import <claude-code | hermes | codex | all> [--dry-run]',
+  task: 'usage: ox task list | add | get | run | update | delete | claim | release | next | done | approve | log',
+  island: 'usage: ox island [start | stop | status | on | off | build | web]',
+  plugin: 'usage: ox plugin ls | add | rm | enable | disable | mcp | import-claude',
+  plugins: 'usage: ox plugin ls | add | rm | enable | disable | mcp | import-claude',
+};
+
 async function runSubcommand(cmd, args) {
+  if ((args[0] === '--help' || args[0] === '-h') && SUB_USAGE[cmd]) {
+    console.log(SUB_USAGE[cmd]);
+    return;
+  }
   switch (cmd) {
     case 'version':
       printVersion();
@@ -4225,6 +4255,8 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'plan-cache': {
+      const sub = String(args[0] ?? '').toLowerCase();
+      if (sub === '--help' || sub === '-h') { console.log('usage: ox plan-cache [clear]  — the saved plan templates ox reuses for similar tasks'); return; }
       if (sub === 'clear') { clearPlanCache(); console.log(c.green('✓ plan cache cleared')); return; }
       const cache = getPlanCache();
       const list = cache.templates || [];

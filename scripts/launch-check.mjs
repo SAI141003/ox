@@ -42,7 +42,7 @@ const ARGS = {
   mem: [], 'memory-loss': [], episode: ['ls'], skill: ['ls'], mcp: ['ls'], doctor: [], prompt: [],
   history: [], session: [], sessions: [], bots: [], help: [], version: [],
 };
-const BAD = /\n\s+at .+\(.+:\d+:\d+\)|TypeError|ReferenceError|SyntaxError|Cannot read properties|is not a function|Unhandled|ERR_/;
+const BAD = /\n\s+at .+\(.+:\d+:\d+\)|TypeError|ReferenceError|SyntaxError|Cannot read properties|is not a function|is not defined|Unhandled|ERR_/;
 
 function fresh() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-launch-home-'));
