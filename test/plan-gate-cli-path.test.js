@@ -112,28 +112,26 @@ const plansIn = (work) => {
 };
 
 // ---------------------------------------------------------------------------
-// 1. non-TTY --plan without -y: refused, and the message says so
+// 1. non-TTY --plan without -y: the plan is saved, the run stays read-only
 // ---------------------------------------------------------------------------
+//
+// It used to be refused outright. But the run after the plan is in plan mode,
+// where every write and command is refused at dispatch, so nothing unreviewed
+// can be applied: the safe answer is to keep the plan and stay read-only, and
+// to say plainly that nobody reviewed it.
 
-test('cli --plan: non-TTY without -y is REFUSED — nothing built, nothing applied', async (t) => {
-  const { home, work } = sandbox(t, 'plan-refuse');
+test('cli --plan: non-TTY without -y saves the plan and stays read-only, and says nobody reviewed it', async (t) => {
+  const { home, work } = sandbox(t, 'plan-readonly');
+  fs.writeFileSync(path.join(work, 'keep.txt'), 'original\n');
   const r = await runOx(t, ['-p', '--plan', 'build a test and fix the bug'], { home, work });
 
-  assert.equal(r.code, 4, `expected the plan-refusal exit code\n--- stdout\n${r.stdout}\n--- stderr\n${r.stderr}`);
-  assert.match(r.stderr, /--plan refused/, r.stderr);
-  assert.match(r.stderr, /stdin is not a TTY/, r.stderr);
-  // Truthful about what did not happen.
-  assert.match(r.stderr, /no plan review can run/i, r.stderr);
-  assert.match(r.stderr, /no plan was built, nothing was applied/i, r.stderr);
-  // Fail fast: refused before the model call, so no plan and no plan file.
-  assert.ok(!/building plan/.test(r.stdout), `the refused run still built a plan\n${r.stdout}`);
-  assert.deepEqual(plansIn(work), [], 'the refused run saved a plan');
-  assert.ok(!fs.existsSync(path.join(work, '.agent')), 'the refused run wrote a .agent dir');
-  // The old reassuring line is gone for good.
+  assert.match(r.stdout, /building plan/, r.stdout);
+  assert.equal(plansIn(work).length, 1, `the plan should be saved, got ${JSON.stringify(plansIn(work))}`);
+  assert.match(r.stdout, /nobody reviewed this plan/i, r.stdout);
+  assert.match(r.stdout, /read-only \(plan mode\), so nothing is changed/i, r.stdout);
+  assert.equal(fs.readFileSync(path.join(work, 'keep.txt'), 'utf8'), 'original\n');
   assert.ok(!/continuing with plan/i.test(r.all), r.all);
-  assertNoFalseClaim(r.all, 'non-TTY refusal');
-  // The agent never started: no run output at all.
-  assert.ok(!/tool offer narrowed|stream dropped|stream died/.test(r.all), r.all);
+  assertNoFalseClaim(r.all, 'non-TTY read-only');
 });
 
 // ---------------------------------------------------------------------------
@@ -159,24 +157,21 @@ test('cli --plan: non-TTY WITH -y proceeds (plan built, saved, agent started)', 
 // 3. the message never claims a gate ran when none did
 // ---------------------------------------------------------------------------
 
-test('cli --plan: the non-TTY messages say the gate was SKIPPED, not passed', async (t) => {
+test('cli --plan: the non-TTY messages say no review happened, never that one passed', async (t) => {
   const { home, work } = sandbox(t, 'plan-truthful');
-  const refused = await runOx(t, ['-p', '--plan', 'build a test'], { home, work });
+  const ro = await runOx(t, ['-p', '--plan', 'build a test'], { home, work });
   const yolo = await runOx(t, ['-p', '--plan', '-y', 'build a test'], { home, work });
 
-  // -y is the only non-TTY path that still exists, and it must admit that no
-  // gate ran and no human ever saw the plan.
   assert.match(yolo.stdout, /plan review SKIPPED/i, yolo.stdout);
   assert.match(yolo.stdout, /no gate ran/i, yolo.stdout);
   assert.match(yolo.stdout, /nobody approved this plan/i, yolo.stdout);
   assert.ok(!/approving|auto-approved|approved the plan/i.test(yolo.all), yolo.all);
 
-  // The refusal names the same reality, and never says anything was approved.
-  assert.match(refused.stderr, /no plan review can run/i, refused.stderr);
-  assert.ok(!/(?<!nobody )approved/i.test(refused.stderr), `the refusal implies an approval:\n${refused.stderr}`);
-  assert.ok(!/applied (it|the plan)/i.test(refused.stderr), `the refusal implies it applied the plan:\n${refused.stderr}`);
+  assert.match(ro.stdout, /nobody reviewed this plan/i, ro.stdout);
+  assert.ok(!/(?<!nobody )approved/i.test(ro.all), `the read-only path implies an approval:\n${ro.all}`);
+  assert.ok(!/applied (it|the plan)/i.test(ro.all), `the read-only path implies it applied the plan:\n${ro.all}`);
 
-  for (const [where, text] of [['refusal', refused.all], ['-y', yolo.all]]) {
+  for (const [where, text] of [['read-only', ro.all], ['-y', yolo.all]]) {
     for (const re of FALSE_CLAIMS) {
       assert.ok(!re.test(text), `${where}: false claim ${re}\n--- ${text}`);
     }
@@ -184,42 +179,21 @@ test('cli --plan: the non-TTY messages say the gate was SKIPPED, not passed', as
 });
 
 // ---------------------------------------------------------------------------
-// 4. the message names flags the parser actually accepts
+// 4. the skip-review flags really do open the unattended path
 // ---------------------------------------------------------------------------
 
-test('cli --plan: the refusal names only flags the parser accepts', async (t) => {
-  const { home, work } = sandbox(t, 'plan-flagname');
-  const r = await runOx(t, ['-p', '--plan', 'build a test'], { home, work });
-
-  // Every flag-shaped token in the message, minus the flag the user typed.
-  const named = [...new Set(r.all.match(/(^|[\s(])(--?[A-Za-z][A-Za-z0-9-]*)/g) ?? [])]
-    .map((s) => s.trim())
-    .filter((tok) => tok !== '--plan');
-  assert.ok(named.includes('-y'), `the refusal must name -y, named=${JSON.stringify(named)}`);
-  assert.ok(
-    named.includes('--dangerously-skip-approvals'),
-    `the refusal must name --dangerously-skip-approvals, named=${JSON.stringify(named)}`,
-  );
-  // No --yolo: there is no such flag, so naming it would be advice the parser
-  // rejects. (The next test proves the parser really does reject it.)
-  for (const tok of named) {
-    assert.ok(!/^--?yolo$/i.test(tok), `the refusal names a flag the parser does not accept: ${tok}`);
-  }
-});
-
-test('cli --plan: every flag the refusal names really does open the non-TTY path', async (t) => {
+test('cli --plan: -y and --dangerously-skip-approvals both skip the review, and say so', async (t) => {
   const { home, work } = sandbox(t, 'plan-flagrun');
   for (const flag of ['-y', '--dangerously-skip-approvals']) {
     const dir = path.join(work, flag.replace(/^-+/, ''));
     fs.mkdirSync(dir, { recursive: true });
     const r = await runOx(t, ['-p', '--plan', flag, 'build a test'], { home, work: dir });
-    assert.ok(!/--plan refused/.test(r.stderr), `${flag} was refused\n--- stderr\n${r.stderr}`);
     assert.match(r.stdout, /plan review SKIPPED/i, `${flag}: ${r.stdout}`);
-    assert.equal(plansIn(dir).length, 1, `${flag} did not proceed past the gate`);
+    assert.equal(plansIn(dir).length, 1, `${flag} did not save the plan`);
   }
 });
 
-test('cli --plan: --yolo is NOT a flag, which is why the refusal does not name it', async (t) => {
+test('cli --plan: --yolo is NOT a flag', async (t) => {
   const { home, work } = sandbox(t, 'plan-yoloflag');
   const r = await runOx(t, ['-p', '--plan', '--yolo', 'build a test'], { home, work });
   assert.equal(r.code, 3, r.all);

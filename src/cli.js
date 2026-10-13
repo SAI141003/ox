@@ -7677,16 +7677,11 @@ export async function main(argv = []) {
         //
         // The one way through unattended is the flag the parser actually
         // accepts: -y / --dangerously-skip-approvals. There is no --yolo flag.
-        if (!process.stdin.isTTY && !flags.yolo) {
-          process.stderr.write(
-            `${c.red('✗ --plan refused: stdin is not a TTY, so no plan review can run and nobody approved this plan.')}\n` +
-            `${c.dim('  No plan was built, nothing was applied, and the agent was not started.')}\n` +
-            `${c.dim('  Re-run from a terminal to review the plan, or pass -y / --dangerously-skip-approvals')}\n` +
-            `${c.dim('  to skip the plan review and apply it unattended (that also skips tool approvals).')}\n`
-          );
-          process.exitCode = 4;
-          return;
-        }
+        // Without a terminal there is no review, but nothing is applied either:
+        // the run below is in plan mode (opts.planMode), where every write and
+        // command is refused at dispatch. So the plan is built and saved, the
+        // run stays read-only, and the output says nobody reviewed it.
+        const unreviewedReadOnly = !process.stdin.isTTY && !flags.yolo;
         let pfTarget;
         try {
           pfTarget = resolveBot(opts.bot || opts.model || defaultBotSpec(config), config);
@@ -7714,13 +7709,15 @@ export async function main(argv = []) {
           if (review.action === 'edit') {
             console.log('Edit mode: type your changes');
           }
+        } else if (unreviewedReadOnly) {
+          console.log(c.yellow('non-interactive: nobody reviewed this plan — it is saved, and the run stays read-only (plan mode), so nothing is changed.'));
+          console.log(c.dim('  Review it from a terminal, or run without --plan to carry it out.'));
         } else {
-          // Reached only with -y / --dangerously-skip-approvals, which the
-          // refusal above requires. interactivePlanReview short-circuits on
-          // autoApprove without reading stdin, so no gate ever ran and no human
-          // ever saw this plan. Say that; do not imply a review happened.
+          // -y / --dangerously-skip-approvals: interactivePlanReview would
+          // short-circuit, so no gate ran and no human saw this plan. Say that;
+          // do not imply a review happened.
           console.log(c.yellow('non-interactive: plan review SKIPPED — no gate ran, nobody approved this plan.'));
-          console.log(c.dim('  -y / --dangerously-skip-approvals applied it unattended; tool approvals are skipped too.'));
+          console.log(c.dim('  -y / --dangerously-skip-approvals: tool approvals are skipped too.'));
         }
         savePlan(planResult.plan, { cwd: config.cwd });
       }
