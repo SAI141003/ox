@@ -218,10 +218,20 @@
       const res = await api('/v1/models');
       const { data = [] } = await res.json();
       sel.innerHTML = '';
-      for (const m of data) {
-        const o = document.createElement('option');
-        o.value = m.id; o.textContent = m.id;
-        sel.append(o);
+      // Your agents first (agent:<name>), then the models.
+      const groups = [['Your agents', data.filter((m) => m.ox?.agent)], ['Models', data.filter((m) => !m.ox?.agent)]];
+      for (const [label, list] of groups) {
+        if (!list.length) continue;
+        const g = document.createElement('optgroup');
+        g.label = label;
+        for (const m of list) {
+          const o = document.createElement('option');
+          o.value = m.id;
+          o.textContent = m.ox?.agent ? `${m.id.slice(6)} · ${m.ox.mode}` : m.id;
+          if (m.ox?.agent) o.title = `${m.ox.bot ?? 'default bot'} · ${m.ox.mode}${m.ox.desc ? ` — ${m.ox.desc}` : ''}`;
+          g.append(o);
+        }
+        sel.append(g);
       }
       const saved = store.get('ox.model', null);
       if (saved && data.some((m) => m.id === saved)) sel.value = saved;

@@ -27,13 +27,14 @@
 import { createServer } from 'http';
 import { createHash, timingSafeEqual } from 'crypto';
 import { runAgent } from './agent.js';
-import { BOTS, KEY_ENV, resolveBot } from './bots.js';
+import { BOTS, KEY_ENV, resolveBot, defaultBotSpec } from './bots.js';
 
 import { readFile } from 'fs/promises';
 import { join, resolve, extname } from 'path';
 import { createReadStream } from 'fs';
 import { stat } from 'fs/promises';
 import { resolveTurnMode } from './modes.js';
+import { listAgents, loadAgent, agentBotSpec, agentPersonaBlock } from './agents.js';
 
 // Read at request time, not at module load: a supervisor (or a test) that sets
 // the key after this module is imported must not silently get the old answer.
@@ -256,6 +257,19 @@ export function serveModelCatalog(env = process.env) {
       },
     });
   }
+  // Your agents (`ox agent new`), as `agent:<name>`: picking one in a chat
+  // runs it with its bot, mode, instructions and tool grant.
+  for (const name of listAgents()) {
+    const a = loadAgent(name);
+    if (!a) continue;
+    data.push({
+      id: `agent:${name}`,
+      object: 'model',
+      created: MODELS_CREATED,
+      owned_by: 'you',
+      ox: { agent: true, bot: agentBotSpec(a), mode: a.mode ?? 'code', tools: Array.isArray(a.tools) ? a.tools : null, desc: a.description || '' },
+    });
+  }
   return { data, withheld };
 }
 
@@ -424,18 +438,31 @@ async function handleChatCompletions(req, res) {
   // turning that into a 400 would break existing callers. The fallback is the
   // pre-existing behaviour and it is why an unresolvable model on THIS endpoint
   // can still come back as an empty 200 — /v1/responses does not have that gap.
+  // `agent:<name>` is one of your agents: its bot, mode, instructions, tools.
+  const agentDef = String(targetModel).startsWith('agent:') ? loadAgent(String(targetModel).slice(6)) : null;
+  if (String(targetModel).startsWith('agent:') && !agentDef) {
+    sendError(res, 404, `No agent '${String(targetModel).slice(6)}'. Make one with: ox agent new <name>`, 'invalid_request_error', 'model_not_found', 'model');
+    return;
+  }
   let target;
   try {
-    target = resolveBot(String(targetModel));
+    target = resolveBot(agentDef ? (agentBotSpec(agentDef) ?? defaultBotSpec({}, process.env) ?? 'ox-grok') : String(targetModel));
     target.temperature = temperature0;
   } catch {
     target = { model: targetModel, temperature: temperature0 };
   }
   // `ox_mode` is an ox extension (other OpenAI clients never send it): the
-  // mode is enforced at the tool gate, and auto's pick is reported back.
+  // mode is enforced at the tool gate, and auto's pick is reported back. An
+  // agent's own mode applies unless a specific mode was picked.
   const lastUser = [...messages].reverse().find((m) => m?.role === 'user');
-  const turnMode = resolveTurnMode(body.ox_mode ?? 'code', typeof lastUser?.content === 'string' ? lastUser.content : '');
-  const ctx = { cwd: process.cwd(), mode: turnMode.mode };
+  const pickedMode = body.ox_mode && body.ox_mode !== 'auto' ? body.ox_mode : (agentDef?.mode ?? body.ox_mode ?? 'code');
+  const turnMode = resolveTurnMode(pickedMode, typeof lastUser?.content === 'string' ? lastUser.content : '');
+  const ctx = {
+    cwd: process.cwd(),
+    mode: turnMode.mode,
+    ...(agentDef ? { personaBlock: agentPersonaBlock(agentDef), agentName: agentDef.name } : {}),
+    ...(Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools } : {}),
+  };
   const config = { maxTokens: max_tokens };
 
   if (stream) {

@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const OX = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
@@ -45,6 +45,20 @@ test('Ask from the web chat cannot write, and says so', async () => {
   assert.deepEqual(r.frames.find((f) => f.ox?.type === 'mode').ox, { type: 'mode', mode: 'ask', routed: false, reason: null });
   assert.match(r.content, /ask mode only reads/);
   assert.equal(fs.existsSync(path.join(cwd, 'web.txt')), false);
+});
+
+test('your agents are in the model list, and picking one runs it as itself', async () => {
+  const made = spawnSync(process.execPath, [OX, 'agent', 'new', 'asker', '--bot', 'custom:m', '--mode', 'ask', '--prompt', 'WEB-AGENT-MARK'], { cwd, env, encoding: 'utf8' });
+  assert.equal(made.status, 0, made.stdout + made.stderr);
+  const models = await (await fetch(`http://127.0.0.1:${port}/v1/models`)).json();
+  const entry = models.data.find((m) => m.id === 'agent:asker');
+  assert.deepEqual({ agent: entry.ox.agent, mode: entry.ox.mode, bot: entry.ox.bot }, { agent: true, mode: 'ask', bot: 'custom:m' });
+  // Its own mode applies under Auto: the write is refused as Ask.
+  const r = await chat({ model: 'agent:asker', ox_mode: 'auto', messages: [{ role: 'user', content: 'write web.txt' }] });
+  assert.equal(r.frames.find((f) => f.ox?.type === 'mode').ox.mode, 'ask');
+  assert.match(r.content, /ask mode only reads/);
+  const missing = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'agent:ghost', messages: [{ role: 'user', content: 'hi' }] }) });
+  assert.equal(missing.status, 404);
 });
 
 test('Auto names its pick; a plain OpenAI client gets no ox fields', async () => {
