@@ -138,6 +138,7 @@ import { dispatchTool, listToolSchemas } from './tools/index.js';
 import {handlePowerCommand} from './cmd-power.js';
 import { listAgents, loadAgent, saveAgent, deleteAgent, resolveAgent, agentBotSpec, AGENT_NAME } from './agents.js';
 import { MODES, MODE_NAMES, normalizeMode, resolveTurnMode } from './modes.js';
+import { holdAwake } from './awake.js';
 import { importAll } from './import.js';
 import {getPlanCache, clearPlanCache} from './plan-cache.js';
 import {createHierarchicalMemory} from './hierarchical-memory.js';
@@ -211,7 +212,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -364,6 +365,7 @@ function usage() {
     row('ox serve', 'OpenAI-compatible API + web chat on 127.0.0.1:8080'),
     row('ox connect', 'use a plan you already pay for: Claude, ChatGPT, Gemini, Qwen, Kimi, ...'),
     row('ox mail draft --from --to', 'an email draft in Mail, from the account you name'),
+    row('ox awake [2h|off|--lid]', 'keep the computer awake for your agents (automatic while ox works)'),
     '',
     c.bold('Tasks and teams'),
     row('ox task', 'the task board: add, next, claim, done, approve, log'),
@@ -4496,6 +4498,36 @@ async function runSubcommand(cmd, args) {
       console.log(c.dim('usage: ox kanban [list] | ox kanban add <title>   (the same board as: ox task)'));
       return;
     }
+    case 'awake': {
+      const aw = await import('./awake.js');
+      const a = String(args[0] ?? '').toLowerCase();
+      if (a === '--help' || a === 'help') {
+        console.log(`${c.bold('ox awake')} — keep the computer awake for your agents`);
+        console.log(c.dim('  ox already keeps it awake while it works (a -p run, ox auto, a chat turn). OX_NO_AWAKE=1 turns that off.'));
+        console.log(c.dim('  ox awake 2h | 30m | 1d   hold it awake for a while, even with no ox running'));
+        console.log(c.dim('  ox awake off             let it sleep again'));
+        console.log(c.dim('  ox awake --lid           how to keep running with the lid closed'));
+        return;
+      }
+      if (a === '--lid' || a === 'lid') { for (const l of aw.lidHelp()) console.log(l); return; }
+      if (a === 'off' || a === 'stop') {
+        console.log(aw.stopTimed() ? c.green('ok — the computer can sleep again') : c.dim('nothing was being held'));
+        return;
+      }
+      if (a) {
+        const secs = aw.parseDuration(a);
+        if (!secs) { console.log(c.red(`not a duration: '${args[0]}' (try 45m, 2h, 1d; at most 7d)`)); process.exitCode = 3; return; }
+        try {
+          const t = aw.startTimed(secs);
+          console.log(c.green(`awake until ${t.until.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${secs >= 86400 ? ` (${t.until.toLocaleDateString()})` : ''}`) + c.dim(' — ox awake off to stop early; the screen can still turn off'));
+        } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; }
+        return;
+      }
+      const st = aw.status();
+      console.log(st.timed ? `awake until ${st.timed.until.toLocaleString()}` : c.dim('no timed hold — ox still keeps the computer awake while it works'));
+      if (st.lidSleepDisabled) console.log(c.yellow('sleep is disabled system-wide (pmset disablesleep 1): turn it back on with  sudo pmset -a disablesleep 0'));
+      return;
+    }
     case 'mail': {
       // The same checks as the agent's mail tool; from here it only ever makes
       // a draft, so sending stays a click in Mail.
@@ -5176,6 +5208,8 @@ async function replWithBudget(config, opts, flags, budget) {
         if (mm.plan) extraGuidance = [extraGuidance, `[SELECTED PLAN]\n${mm.plan}`].filter(Boolean).join('\n\n');
       } catch {}
     }
+    // Awake for the length of the turn, so a long one survives the idle timer.
+    const releaseAwake = holdAwake({ config });
     const turnMode = resolveTurnMode(state.mode, text);
     ctx.mode = turnMode.mode;
     if (turnMode.routed) process.stdout.write(`${c.dim(`· auto → ${turnMode.mode} (${turnMode.reason})`)}\n`);
@@ -5403,6 +5437,7 @@ async function replWithBudget(config, opts, flags, budget) {
       else process.stdout.write(`${renderError(err)}\n`);
     } finally {
       state.currentAbort = null;
+      releaseAwake();
     }
     // Delegated turns end with who spent what (/cost shows the whole session).
     if (turnLedger.hasSubagents()) process.stdout.write(`${renderLedger(turnLedger, { dim: c.dim, bold: c.bold })}\n`);

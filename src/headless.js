@@ -2,6 +2,7 @@ import { expandLlmsRefs } from './llms-txt.js';
 import fs from 'node:fs';
 import { resolveTurnMode } from './modes.js';
 import { agentPersonaBlock } from './agents.js';
+import { holdAwake } from './awake.js';
 import path from 'node:path';
 import { loadImage } from './providers/images.js';
 import { runAgent, draftTitle } from './agent.js';
@@ -256,6 +257,8 @@ export async function runHeadless(args = {}) {
 
 async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMessages = [] } = {}) {
   const budget = currentCostBudget();
+  // Held while this process lives: the OS hold ends by itself when ox exits.
+  holdAwake({ config });
   let target;
   try {
     target = resolveBot(opts.bot || opts.model || defaultBotSpec(config), config);
