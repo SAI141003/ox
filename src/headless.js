@@ -207,7 +207,7 @@ function stdinWaitMs(limitMs) {
     const st = fs.fstatSync(0);
     if (st.isFIFO() || st.isFile()) return limitMs;
   } catch {}
-  return Math.min(limitMs, Number(process.env.OX_STDIN_GRACE_MS) || 150);
+  return Math.min(limitMs, Number(process.env.OX_STDIN_GRACE_MS) || 50);
 }
 
 function readPipedStdin(limitMs = 10000) {

@@ -45,7 +45,7 @@ surface and grinds through per-tool consent prompts. Hermes Agent has the widest
 feature fan and weakest verification spine: frozen 2KB memory, unverified skill
 births, silent paid fallbacks, SQLite corruption. ox competes where a CLI can win
 outright — weight, provider freedom, cost honesty, evidence-gated memory,
-scriptable CI semantics — and concedes the rest on the record. Full matrix:
+scriptable CI semantics — and concedes the rest on the record. October 2026 landscape (Muse, Dots, Grok Build, Hermes, OpenClaw and the coding CLIs), measured: [docs/landscape-2026.md](docs/landscape-2026.md). Older matrix:
 [docs/comparison.md](docs/comparison.md); rationale in docs/plan.md, docs/research.md.
 
 ## Quickstart
