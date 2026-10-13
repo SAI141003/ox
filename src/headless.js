@@ -77,6 +77,7 @@ export async function assembleCtx({ config, target, opts = {}, auxTarget = null 
     memoryBlock,
     skillIndex: skills.index,
     personaBlock: persona.block,
+    ...(Array.isArray(config.agentDef?.tools) ? { allowedTools: config.agentDef.tools, agentName: config.agentDef.name } : {}),
     agentMessaging: typeof agentTeamsHandler === 'function',
   });
   let hub = null;
@@ -156,6 +157,7 @@ export async function assembleCtx({ config, target, opts = {}, auxTarget = null 
     skillIndex: skills.index,
     memory: memoryApi,
     personaBlock: persona.block,
+    ...(Array.isArray(config.agentDef?.tools) ? { allowedTools: config.agentDef.tools, agentName: config.agentDef.name } : {}),
     fallbackTargets,
     // Wave5a A: effective OS sandbox profile (kind 'off' when unset).
     sandbox: opts.sandbox ?? null,

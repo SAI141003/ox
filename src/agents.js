@@ -43,6 +43,8 @@ export function saveAgent(name, agent) {
     // older provider/model pair, which is kept for agents saved before it.
     bot: agent.bot ?? null,
     mode: agent.mode ?? null,
+    // The tools this agent may use; null means everything its mode allows.
+    tools: Array.isArray(agent.tools) ? agent.tools : null,
     provider: agent.provider ?? null,
     model: agent.model ?? null,
     baseUrl: agent.baseUrl ?? null,

@@ -19,7 +19,7 @@ import { generateCritique, reflect as reflectSession } from './self-improve.js';
 import { recordDecision, recordOutcome } from './audit.js';
 import { createVerifier } from './verify-loop.js';
 import { fireHooks, formatHookOutputs, hooksFor, loadHooksConfig } from './hooks.js';
-import { modeBlock, modeRefusal } from './modes.js';
+import { modeBlock, modeRefusal, grantRefusal } from './modes.js';
 import { runSubscriptionTurn } from './subscriptions.js';
 
 const SUMMARY_PREFIX = '[ox: summary of earlier conversation turns]\n';
@@ -1961,7 +1961,7 @@ async function* runAgentLoop(opts = {}) {
       // The mode is checked before any approval: asking someone to approve a
       // write that Ask or Plan mode will refuse anyway is a question with no
       // point, and with no one to ask it reads as "declined" instead of why.
-      const modeNo = modeRefusal(toolCtx.mode, name, args, toolCtx.cwd ?? cwd);
+      const modeNo = modeRefusal(toolCtx.mode, name, args, toolCtx.cwd ?? cwd) ?? grantRefusal(toolCtx.allowedTools, name, toolCtx.agentName);
       if (signal?.aborted) {
         result = { content: '[aborted]', isError: true };
         neutral = true;

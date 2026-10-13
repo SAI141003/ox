@@ -77,3 +77,18 @@ test('flags still win over the agent, and a missing agent is an error', async ()
   assert.equal(r.code, 3);
   assert.match(r.out, /no agent 'ghost'/);
 });
+
+test('an agent sees only the tools it was granted, and a refusal names the grant', async () => {
+  const made = oxSync('agent', 'new', 'reader', '--bot', 'custom:m', '--tools', 'read_file,grep');
+  assert.equal(made.code, 0, made.out);
+  assert.match(oxSync('agent', 'show', 'reader').out, /tools:\s+read_file, grep/);
+  seen.length = 0;
+  fs.rmSync(path.join(cwd, 'x.txt'), { force: true });
+  await oxAsync('--agent', 'reader', '-y', '-p', 'look');
+  const offered = (seen[0].tools ?? []).map((t) => t.function?.name);
+  assert.ok(offered.includes('read_file'), offered.join(','));
+  assert.ok(!offered.includes('write_file') && !offered.includes('bash'), `offered: ${offered.join(',')}`);
+  const toolMsg = seen.flatMap((j) => j.messages ?? []).find((m) => m.role === 'tool');
+  assert.match(String(toolMsg?.content), /reader is not granted this tool \(granted: read_file, grep\)/);
+  assert.equal(fs.existsSync(path.join(cwd, 'x.txt')), false);
+});

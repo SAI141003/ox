@@ -14,7 +14,7 @@ import {
   open_app, open_url, open_path, open_window, type_text, screenshot, notify,
   OPERATOR_TOOL_SCHEMAS,
 } from './operator.js';
-import { modeRefusal } from '../modes.js';
+import { modeRefusal, grantRefusal } from '../modes.js';
 import { mail_accounts, mail_compose, MAIL_TOOL_SCHEMAS } from './mail.js';
 import { webFetchTool, webSearchTool, WEB_TOOL_SCHEMAS, WEB_TOOLS } from './web.js';
 import { webTaskTool, WEB_TASK_TOOL_SCHEMAS, WEB_TASK_TOOLS } from './web-task.js';
@@ -211,7 +211,8 @@ export function listToolSchemas(ctx = {}, strictSchemas = false) {
   // ctx.subagentTools. Use it directly to avoid re-adding 'subagent' and to
   // preserve report_result injection.
   if (Array.isArray(ctx.allTools) && ctx.allTools.length > 0) {
-    return strict ? ctx.allTools.map((s) => applyStrictSchema(s, true)) : ctx.allTools;
+    const pre = Array.isArray(ctx.allowedTools) ? ctx.allTools.filter((s) => grantRefusal(ctx.allowedTools, s.name) === null) : ctx.allTools;
+    return strict ? pre.map((s) => applyStrictSchema(s, true)) : pre;
   }
   if (Array.isArray(ctx.subagentTools) && ctx.subagentTools.length > 0) {
     return strict ? ctx.subagentTools.map((s) => applyStrictSchema(s, true)) : ctx.subagentTools;
@@ -263,7 +264,11 @@ export function listToolSchemas(ctx = {}, strictSchemas = false) {
       if (!schemas.some((x) => x.name === s.name)) schemas.push(s);
     }
   }
-  return strict ? schemas.map((s) => applyStrictSchema(s, true)) : schemas;
+  // An agent with a tool grant is offered only those tools.
+  const granted = Array.isArray(ctx.allowedTools)
+    ? schemas.filter((s) => grantRefusal(ctx.allowedTools, s.name) === null)
+    : schemas;
+  return strict ? granted.map((s) => applyStrictSchema(s, true)) : granted;
 }
 
 // Small-model competence guard: keep the tool-schema block inside a fraction
@@ -628,7 +633,7 @@ export async function dispatchTool(name, args, ctx = {}) {
         isError: true,
       };
     }
-    const modeNo = modeRefusal(ctx?.mode, name, args, ctx?.cwd ?? process.cwd());
+    const modeNo = modeRefusal(ctx?.mode, name, args, ctx?.cwd ?? process.cwd()) ?? grantRefusal(ctx?.allowedTools, name, ctx?.agentName);
     if (modeNo) return { content: modeNo, isError: true };
     if (name.startsWith('memory_')) {
       if (typeof ctx?.memory?.dispatch !== 'function') {

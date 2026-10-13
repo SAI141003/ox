@@ -2104,7 +2104,8 @@ async function cmdAgent(args = []) {
   const rest = args.slice(1);
   if (sub === '--help' || sub === '-h' || sub === 'help') {
     console.log(`${c.bold('ox agent')} — your own agents: a bot, a mode and standing instructions`);
-    console.log(c.dim('  ox agent new <name> [--bot <bot>] [--mode <mode>] [--prompt "<instructions>" | --prompt-file <f>] [--description "<d>"]'));
+    console.log(c.dim('  ox agent new <name> [--bot <bot>] [--mode <mode>] [--tools read_file,grep,web_search|all] [--prompt "<instructions>" | --prompt-file <f>] [--description "<d>"]'));
+    console.log(c.dim('  --tools: the only tools it may use (mcp__server__* for a whole MCP server); refused calls name the rule'));
     console.log(c.dim('  ox agent list | show <name> | delete <name>'));
     console.log(c.dim('  run one:  ox --agent <name>        (chat)'));
     console.log(c.dim('            ox --agent <name> -p "<task>"'));
@@ -2151,7 +2152,7 @@ async function cmdAgent(args = []) {
 }
 
 function cmdAgentNew(args = []) {
-  const usage = 'usage: ox agent new <name> [--bot <bot>] [--mode <mode>] [--prompt "<instructions>" | --prompt-file <f>] [--description "<d>"]';
+  const usage = 'usage: ox agent new <name> [--bot <bot>] [--mode <mode>] [--tools a,b,mcp__github__*|all] [--prompt "<instructions>" | --prompt-file <f>] [--description "<d>"]';
   const name = args[0] && !String(args[0]).startsWith('-') ? args[0] : null;
   if (!name) { process.stderr.write(`${usage}\n`); process.exitCode = 3; return; }
   if (!AGENT_NAME.test(name)) { process.stderr.write(`${c.red(`✗ agent names are letters, digits, - and _ (got '${name}')`)}\n`); process.exitCode = 3; return; }
@@ -2159,7 +2160,7 @@ function cmdAgentNew(args = []) {
   for (let i = 1; i < args.length; i++) {
     const a = args[i];
     const v = args[i + 1];
-    if (['--bot', '--mode', '--prompt', '--prompt-file', '--description'].includes(a) && v === undefined) {
+    if (['--bot', '--mode', '--prompt', '--prompt-file', '--description', '--tools'].includes(a) && v === undefined) {
       process.stderr.write(`${c.red(`✗ ${a} needs a value`)}\n`); process.exitCode = 3; return;
     }
     if (a === '--bot') { def.bot = v; i++; }
@@ -2174,6 +2175,11 @@ function cmdAgentNew(args = []) {
       i++;
     }
     else if (a === '--description') { def.description = v; i++; }
+    else if (a === '--tools') {
+      const list = v.split(',').map((t) => t.trim()).filter(Boolean);
+      def.tools = list.length && !(list.length === 1 && list[0] === 'all') ? list : null;
+      i++;
+    }
     else { process.stderr.write(`${c.red(`✗ unknown flag '${a}'`)}\n${usage}\n`); process.exitCode = 3; return; }
   }
   if (def.bot) {
@@ -2183,7 +2189,7 @@ function cmdAgentNew(args = []) {
     }
   }
   const data = saveAgent(name, def);
-  console.log(`${c.green(`✓ agent '${name}'`)} ${c.dim(`— ${agentBotSpec(data) ?? 'default bot'} · ${data.mode ?? 'code'} mode${data.systemPrompt ? ' · own instructions' : ''}`)}`);
+  console.log(`${c.green(`✓ agent '${name}'`)} ${c.dim(`— ${agentBotSpec(data) ?? 'default bot'} · ${data.mode ?? 'code'} mode${Array.isArray(data.tools) ? ` · ${data.tools.length} tool(s) granted` : ''}${data.systemPrompt ? ' · own instructions' : ''}`)}`);
   console.log(c.dim(`  run it: ox --agent ${name}   or   ox --agent ${name} -p "<task>"`));
 }
 
@@ -2241,6 +2247,7 @@ function cmdAgentUse(args = []) {
   console.log(`${c.bold('agent:')} ${name}${merged.description ? c.dim(` — ${merged.description}`) : ''}`);
   console.log(`  runs on: ${agentBotSpec(merged) ?? 'the default bot'}`);
   console.log(`  mode:    ${merged.mode ?? 'code'}`);
+  console.log(`  tools:   ${Array.isArray(merged.tools) ? merged.tools.join(', ') : 'everything its mode allows'}`);
   if (merged.baseUrl) console.log(`  url:     ${merged.baseUrl}`);
   if (merged.systemPrompt) console.log(`  prompt:  ${truncate(merged.systemPrompt, 80)}`);
   console.log(c.dim(`  run it: ox --agent ${name}   or   ox --agent ${name} -p "<task>"`));

@@ -111,3 +111,14 @@ export function modeRefusal(mode, name, args = {}, cwd = process.cwd()) {
   }
   return null;
 }
+
+// An agent sees only the tools it was granted (`ox agent new --tools ...`).
+// Finishing and the todo list are always allowed: an agent must be able to say
+// it is done. null = no grant list, everything the mode allows.
+const ALWAYS_ALLOWED = ['report_result', 'todo_write'];
+export function grantRefusal(allowed, name, agentName = 'this agent') {
+  if (!Array.isArray(allowed)) return null;
+  if (ALWAYS_ALLOWED.includes(name) || allowed.includes(name)) return null;
+  if (name.startsWith('mcp__') && allowed.some((t) => t.endsWith('*') && name.startsWith(t.slice(0, -1)))) return null;
+  return `${name}: ${agentName} is not granted this tool (granted: ${allowed.join(', ') || 'none'}).`;
+}
