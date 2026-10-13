@@ -1,6 +1,7 @@
 import { expandLlmsRefs } from './llms-txt.js';
 import fs from 'node:fs';
 import { resolveTurnMode } from './modes.js';
+import { agentPersonaBlock } from './agents.js';
 import path from 'node:path';
 import { loadImage } from './providers/images.js';
 import { runAgent, draftTitle } from './agent.js';
@@ -60,7 +61,9 @@ export async function assembleCtx({ config, target, opts = {}, auxTarget = null 
   const skills = discoverSkills({ cwd: config.cwd });
   const context = buildContext({ cwd: config.cwd });
   const memoryBlock = loadMemoryBlock(config.cwd);
-  const persona = loadPersona({ cwd: config.cwd, enabled: config.soul !== false });
+  const basePersona = loadPersona({ cwd: config.cwd, enabled: config.soul !== false });
+  // A custom agent (`ox --agent <name>`) adds its own instructions to the persona.
+  const persona = { ...basePersona, block: [basePersona.block, agentPersonaBlock(config.agentDef)].filter(Boolean).join('\n\n') };
   // Hoisted above the prompt build (it used to sit below) purely so the
   // # AGENT MESSAGING section can be gated on the same condition that
   // src/tools/index.js gates the two mailbox schemas on. Depends only on

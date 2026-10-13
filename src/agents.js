@@ -38,8 +38,13 @@ export function saveAgent(name, agent) {
   const file = agentFile(name);
   const data = {
     name,
-    provider: agent.provider,
-    model: agent.model,
+    description: agent.description ?? '',
+    // A bot spec (any `--bot` value, `claude-plan` included) wins over the
+    // older provider/model pair, which is kept for agents saved before it.
+    bot: agent.bot ?? null,
+    mode: agent.mode ?? null,
+    provider: agent.provider ?? null,
+    model: agent.model ?? null,
     baseUrl: agent.baseUrl ?? null,
     mcpServers: agent.mcpServers ?? {},
     skills: agent.skills ?? [],
@@ -71,3 +76,20 @@ export function resolveAgent(name, config) {
     // Skills are additive from config
   };
 }
+
+// What `--bot` an agent runs on: its own bot spec, else provider:model.
+export function agentBotSpec(agent) {
+  if (!agent) return null;
+  if (agent.bot) return agent.bot;
+  if (agent.provider && agent.model) return `${agent.provider}:${agent.model}`;
+  return null;
+}
+
+// The agent's own instructions, as a prompt block.
+export function agentPersonaBlock(agent) {
+  const text = String(agent?.systemPrompt ?? '').trim();
+  if (!text) return '';
+  return `# You are the "${agent.name}" agent${agent.description ? ` — ${agent.description}` : ''}\n${text}`;
+}
+
+export const AGENT_NAME = /^[a-z0-9][a-z0-9_-]{0,47}$/i;

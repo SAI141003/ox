@@ -136,7 +136,7 @@ import {
 import { banner as oxBanner, intro as oxIntro } from './logo.js';
 import { dispatchTool, listToolSchemas } from './tools/index.js';
 import {handlePowerCommand} from './cmd-power.js';
-import { listAgents, loadAgent, saveAgent, deleteAgent, resolveAgent } from './agents.js';
+import { listAgents, loadAgent, saveAgent, deleteAgent, resolveAgent, agentBotSpec, AGENT_NAME } from './agents.js';
 import { MODES, MODE_NAMES, normalizeMode, resolveTurnMode } from './modes.js';
 import { importAll } from './import.js';
 import {getPlanCache, clearPlanCache} from './plan-cache.js';
@@ -378,7 +378,7 @@ function usage() {
     row('ox skill', 'skills: ls, add, new, curate'),
     row('ox plugin', 'Claude Code plugins: add, import-claude, ls'),
     row('ox mcp', 'MCP servers: add, test, remove'),
-    row('ox agent', 'saved agent presets'),
+    row('ox agent new <name>', 'your own agent: a bot, a mode and instructions; run with --agent'),
     '',
     c.bold('History and memory'),
     row('ox sessions', 'past sessions; ox history <query>, ox episode'),
@@ -488,7 +488,7 @@ function usageAll() {
     '                                    with no value the positional goal is used as the contract source',
     '      [--max-cost <usd>] [--json] [--bot <name>] [--model <spec>] [--yes-edits] [-y] [--side-effects-ok] [--cwd <dir>]',
     '      refuses -y while money-risk MCP servers are configured unless --side-effects-ok (exit 4)',
-    '  ox agent                        list saved agents (~/.ox/agents/*.json)',
+    '  ox agent                        your own agents: ox agent new <name> --bot --mode --prompt; run with --agent',
     '  ox agent save <name> --provider <p> --model <m> [--base-url <u>] [--system-prompt <text>]',
     '  ox agent use <name>             show a saved agent (provider/model/url/skills)',
     '  ox agent delete <name> [--yes]  delete a saved agent',
@@ -613,6 +613,7 @@ function usageAll() {
     '  -y, --dangerously-skip-approvals   skip all approvals',
     '      --plan                     plan mode (read-only)',
     '      --mode <name>              auto | code | ask | plan | debug | orchestrate',
+    '      --agent <name>             run as a saved agent (its bot, mode and instructions)',
     '      --cwd <dir>                workspace directory',
     '  -h, --help                     show help',
     '  -v, --version                  print version',
@@ -2098,31 +2099,82 @@ async function cmdSchedule(args = []) {
 async function cmdAgent(args = []) {
   const sub = String(args[0] ?? '').trim().toLowerCase();
   const rest = args.slice(1);
+  if (sub === '--help' || sub === '-h' || sub === 'help') {
+    console.log(`${c.bold('ox agent')} — your own agents: a bot, a mode and standing instructions`);
+    console.log(c.dim('  ox agent new <name> [--bot <bot>] [--mode <mode>] [--prompt "<instructions>" | --prompt-file <f>] [--description "<d>"]'));
+    console.log(c.dim('  ox agent list | show <name> | delete <name>'));
+    console.log(c.dim('  run one:  ox --agent <name>        (chat)'));
+    console.log(c.dim('            ox --agent <name> -p "<task>"'));
+    console.log(c.dim(`  modes: auto, ${MODE_NAMES.join(', ')} · bots: ox bots, or a plan you pay for (ox connect)`));
+    return;
+  }
   if (sub === 'list' || sub === 'ls' || !sub) {
     const names = listAgents();
     if (!names.length) {
-      console.log('(no agents saved — use: ox agent save <name> --provider <p> --model <m>)');
+      console.log('no agents yet — make one: ox agent new reviewer --mode ask --prompt "review diffs for bugs; cite file:line"');
       return;
     }
-    console.log(`${padCell('NAME', 16)}  ${padCell('PROVIDER', 10)}  ${padCell('MODEL', 28)}  UPDATED`);
+    console.log(`${padCell('NAME', 18)}  ${padCell('RUNS ON', 26)}  ${padCell('MODE', 11)}  ABOUT`);
     for (const n of names) {
       const a = loadAgent(n);
       if (!a) continue;
-      console.log(`${padCell(n, 16)}  ${padCell(a.provider ?? '-', 10)}  ${padCell(a.model ?? '-', 28)}  ${(a.updatedAt ?? '').slice(0, 19)}`);
+      const about = a.description || truncate(String(a.systemPrompt ?? '').split('\n')[0], 48) || '-';
+      console.log(`${padCell(n, 18)}  ${padCell(agentBotSpec(a) ?? 'default bot', 26)}  ${padCell(a.mode ?? 'code', 11)}  ${c.dim(about)}`);
     }
+    console.log(c.dim('run one: ox --agent <name>'));
     return;
+  }
+  if (sub === 'new' || sub === 'create') {
+    return cmdAgentNew(rest);
   }
   if (sub === 'save') {
     return cmdAgentSave(rest);
   }
-  if (sub === 'use') {
+  if (sub === 'use' || sub === 'show') {
     return cmdAgentUse(rest);
   }
   if (sub === 'delete' || sub === 'rm') {
     return cmdAgentDelete(rest);
   }
-  process.stderr.write(`ox: unknown agent subcommand '${args[0] ?? ''}' (use list | save | use | delete)\n`);
+  process.stderr.write(`ox: unknown agent subcommand '${args[0] ?? ''}' (use new | list | show | delete; ox agent --help)\n`);
   process.exitCode = 3;
+}
+
+function cmdAgentNew(args = []) {
+  const usage = 'usage: ox agent new <name> [--bot <bot>] [--mode <mode>] [--prompt "<instructions>" | --prompt-file <f>] [--description "<d>"]';
+  const name = args[0] && !String(args[0]).startsWith('-') ? args[0] : null;
+  if (!name) { process.stderr.write(`${usage}\n`); process.exitCode = 3; return; }
+  if (!AGENT_NAME.test(name)) { process.stderr.write(`${c.red(`✗ agent names are letters, digits, - and _ (got '${name}')`)}\n`); process.exitCode = 3; return; }
+  const def = { ...(loadAgent(name) ?? {}) };
+  for (let i = 1; i < args.length; i++) {
+    const a = args[i];
+    const v = args[i + 1];
+    if (['--bot', '--mode', '--prompt', '--prompt-file', '--description'].includes(a) && v === undefined) {
+      process.stderr.write(`${c.red(`✗ ${a} needs a value`)}\n`); process.exitCode = 3; return;
+    }
+    if (a === '--bot') { def.bot = v; i++; }
+    else if (a === '--mode') {
+      const m = normalizeMode(v);
+      if (!m) { process.stderr.write(`${c.red(`✗ --mode must be one of: auto, ${MODE_NAMES.join(', ')}`)}\n`); process.exitCode = 3; return; }
+      def.mode = m; i++;
+    }
+    else if (a === '--prompt') { def.systemPrompt = v; i++; }
+    else if (a === '--prompt-file') {
+      try { def.systemPrompt = fs.readFileSync(path.resolve(v), 'utf8'); } catch (e) { process.stderr.write(`${c.red(`✗ cannot read ${v}: ${e.message}`)}\n`); process.exitCode = 3; return; }
+      i++;
+    }
+    else if (a === '--description') { def.description = v; i++; }
+    else { process.stderr.write(`${c.red(`✗ unknown flag '${a}'`)}\n${usage}\n`); process.exitCode = 3; return; }
+  }
+  if (def.bot) {
+    // Checked now, so a typo is caught here rather than at the first run.
+    try { resolveBot(def.bot, loadConfig()); } catch (e) {
+      process.stderr.write(`${c.red(`✗ --bot ${def.bot}: ${e?.message ?? e}`)}\n`); process.exitCode = 3; return;
+    }
+  }
+  const data = saveAgent(name, def);
+  console.log(`${c.green(`✓ agent '${name}'`)} ${c.dim(`— ${agentBotSpec(data) ?? 'default bot'} · ${data.mode ?? 'code'} mode${data.systemPrompt ? ' · own instructions' : ''}`)}`);
+  console.log(c.dim(`  run it: ox --agent ${name}   or   ox --agent ${name} -p "<task>"`));
 }
 
 function cmdAgentSave(args = []) {
@@ -2165,7 +2217,7 @@ function cmdAgentSave(args = []) {
 function cmdAgentUse(args = []) {
   const name = args.find((a) => !String(a).startsWith('-'));
   if (!name) {
-    process.stderr.write('usage: ox agent use <name>\n');
+    process.stderr.write('usage: ox agent show <name>\n');
     process.exitCode = 3;
     return;
   }
@@ -2175,14 +2227,13 @@ function cmdAgentUse(args = []) {
     process.exitCode = 3;
     return;
   }
-  const config = loadConfig();
-  const merged = resolveAgent(name, config);
-  console.log(`${c.bold('agent:')} ${name}`);
-  console.log(`  provider: ${merged.provider}`);
-  console.log(`  model:   ${merged.model}`);
+  const merged = resolveAgent(name, loadConfig());
+  console.log(`${c.bold('agent:')} ${name}${merged.description ? c.dim(` — ${merged.description}`) : ''}`);
+  console.log(`  runs on: ${agentBotSpec(merged) ?? 'the default bot'}`);
+  console.log(`  mode:    ${merged.mode ?? 'code'}`);
   if (merged.baseUrl) console.log(`  url:     ${merged.baseUrl}`);
   if (merged.systemPrompt) console.log(`  prompt:  ${truncate(merged.systemPrompt, 80)}`);
-  console.log(c.dim(`  mcp: ${Object.keys(merged.mcpServers ?? {}).length} server(s), ${merged.skills?.length ?? 0} skill(s)`));
+  console.log(c.dim(`  run it: ox --agent ${name}   or   ox --agent ${name} -p "<task>"`));
 }
 
 async function cmdAgentDelete(args = []) {
@@ -7040,6 +7091,7 @@ function detachPassthrough(flags) {
   if (flags.yolo) out.push('-y');
   if (flags.plan) out.push('--plan');
   push('--mode', flags.mode);
+  push('--agent', flags.agent);
   if (flags.strictApprovals) out.push('--strict-approvals');
   if (flags.sideEffectsOk) out.push('--side-effects-ok');
   if (flags.repoMap) out.push('--repo-map');
@@ -7234,6 +7286,13 @@ export async function main(argv = []) {
       case '--plan':
         flags.plan = true;
         break;
+      case '--agent': {
+        const v = needValue(a, i);
+        if (v === null) return;
+        flags.agent = v;
+        i++;
+        break;
+      }
       case '--mode': {
         const v = needValue(a, i);
         if (v === null) return;
@@ -7334,6 +7393,18 @@ export async function main(argv = []) {
     maxCostUsd: flags.maxCostUsd,
   });
   config.selfImprove = flags.selfImprove;
+  // A custom agent supplies the bot, mode and instructions the flags did not.
+  if (flags.agent) {
+    const agentDef = loadAgent(flags.agent);
+    if (!agentDef) {
+      process.stderr.write(`${c.red(`✗ no agent '${flags.agent}'`)} — make one with: ox agent new ${flags.agent} --bot <bot> --mode <mode> --prompt "<instructions>"\n`);
+      process.exitCode = 3;
+      return;
+    }
+    config.agentDef = agentDef;
+    if (!flags.bot && !flags.model) flags.bot = agentBotSpec(agentDef) ?? undefined;
+    if (!flags.mode && agentDef.mode) flags.mode = normalizeMode(agentDef.mode) ?? undefined;
+  }
   config.repoMap = flags.repoMap || config.repoMap;
   const trustResolved = resolveTrustLevel({ config, env: process.env, flags });
   config.trustLevel = trustResolved.level;
