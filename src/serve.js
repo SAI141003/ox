@@ -426,6 +426,9 @@ function agentErrorShape(message) {
 // described in JSON so even a small local model gets it right and no model-written
 // code runs. Kept short; the example is the format, copied as is.
 const NEEDS_WEB = /\b(price|prices|cost of|latest|today|this week|news|current|rate today|search|look up|website|https?:\/\/)/i;
+// Asks that need a tool even without naming a file: the web, the machine, mail, memory, other agents.
+const NEEDS_TOOLS = /\b(search|look up|google|browse|latest|today|news|price|weather|open|run|install|email|mail|send|remember|forget|schedule|remind|screenshot|download|fetch|https?:\/\/|www\.|agent|subagent)\b/i;
+const SMALL_TALK = /^\s*(hi|hey|hello|yo|thanks|thank you|ok|okay|cool|nice|great|good (morning|night|evening)|how are you|who are you|what can you do)[\s!.?]*$/i;
 const TOUCHES_CODE = /\b(file|files|repo|repository|project|codebase|function|class|module|component|test|tests|bug|fix|refactor|commit|branch|src|readme)\b|[\w-]+\.(js|ts|tsx|jsx|py|go|rs|java|rb|css|html|json|md)\b/i;
 const WANTS_UI = /\b(calculat\w*|convert\w*|compar\w*|table|chart|graph|plot|slider|interactive|estimat\w*|budget|breakdown|checklist|options|pros and cons|form)\b/i;
 // OpenUI Lang (thesysdev/openui), the way OpenUI does it: the prompt is built
@@ -500,9 +503,17 @@ async function handleChatCompletions(req, res) {
   // In ox's own app, "make a loan calculator" asks for something to look at and
   // use here, not a change to the project: auto keeps it an answer (ask), unless
   // the message points at code or files.
-  if (turnMode.routed && turnMode.mode !== 'ask' && body.ox_ui === 'live' && typeof lastUser?.content === 'string'
-    && WANTS_UI.test(lastUser.content) && !TOUCHES_CODE.test(lastUser.content)) {
+  const said = typeof lastUser?.content === 'string' ? lastUser.content : '';
+  if (turnMode.routed && turnMode.mode !== 'ask' && body.ox_ui === 'live'
+    && WANTS_UI.test(said) && !TOUCHES_CODE.test(said)) {
     turnMode = { mode: 'ask', routed: true, reason: 'an answer to use here, not a change to your files', answerOnly: true };
+  }
+  // Tokens are time on a local model (it reads the whole prompt first) and money
+  // on a paid one. A message that needs nothing but an answer (hi, a question
+  // about the world) is sent without tool definitions, about 1,600 tokens.
+  // Measured on qwen2.5:3b: "hi" 2,740 tokens / 17 s before this.
+  if (turnMode.routed && !turnMode.answerOnly && !TOUCHES_CODE.test(said) && !NEEDS_TOOLS.test(said) && (turnMode.mode === 'ask' || SMALL_TALK.test(said))) {
+    turnMode = { mode: 'ask', routed: true, reason: turnMode.mode === 'ask' ? turnMode.reason : 'small talk', answerOnly: true };
   }
   // The same memory a terminal run starts with: the project's MEMORY.md, what ox
   // remembers about the user, and what bears on this message.
@@ -517,7 +528,8 @@ async function handleChatCompletions(req, res) {
     memoryBlock = [loadMemoryBlock(process.cwd()), process.env.OX_MEMORY === '0' || incognito ? '' : memoryPromptBlock({ cwd: process.cwd(), task: lastText })].filter(Boolean).join('\n\n');
   } catch {}
   // `ox_ui: 'live'` is sent by ox's own app, which can run interactive answers.
-  const liveUi = body.ox_ui === 'live' ? LIVE_UI_GUIDE : '';
+  // About 600 tokens: sent only when the message asks for something to use.
+  const liveUi = body.ox_ui === 'live' && WANTS_UI.test(lastText) ? LIVE_UI_GUIDE : '';
   // Small models follow what sits next to the question, not a guide far up in
   // the system prompt: when the message plainly asks for something to work
   // with, the reminder rides along with it (the stored chat is unchanged).
@@ -533,7 +545,11 @@ async function handleChatCompletions(req, res) {
     ...(incognito ? { incognito: true } : {}),
     ...(agentDef || liveUi ? { personaBlock: [agentDef ? agentPersonaBlock(agentDef) : '', liveUi].filter(Boolean).join('\n\n') } : {}),
     ...(agentDef ? { agentName: agentDef.name } : {}),
-    ...(Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools } : turnMode.answerOnly ? (NEEDS_WEB.test(lastText) ? { allowedTools: ['web_search', 'web_fetch'] } : { noTools: true }) : {}),
+    ...(Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools }
+      : turnMode.answerOnly ? (NEEDS_WEB.test(lastText) ? { onlyTools: ['web_search', 'web_fetch'] } : { noTools: true })
+      // A question about the project in ask mode: only the four readers.
+      : turnMode.mode === 'ask' && TOUCHES_CODE.test(lastText) && !NEEDS_TOOLS.test(lastText) ? { onlyTools: ['read_file', 'list_dir', 'glob', 'grep'] }
+      : {}),
   };
   // Preferences the user states here are kept, as in the terminal.
   if (process.env.OX_LEARN !== '0' && lastText && !incognito) {

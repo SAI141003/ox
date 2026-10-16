@@ -223,6 +223,10 @@ export async function buildPromptLayers({
   agentMessaging = false,
   // The name the user gave ox (Settings › General, `ox name`); defaults to theirs.
   assistantName = configuredName(),
+  // A turn offered no tools (src/serve.js: hi, a plain question): the parts
+  // about tools, subagents, skills and coding rules cannot be used, so they are
+  // not sent. Who it is, what it remembers about you and the date stay.
+  answerOnly = false,
   // Defaults to a fresh clock on every call, exactly as before. Exposed only so
   // the cache test can pin it and show the rest of the prompt is byte-stable.
   now = new Date(),
@@ -272,8 +276,12 @@ export async function buildPromptLayers({
   open('core', 'static');
   put(assistantName === 'ox' ? 'You are ox, a featherweight coding agent.' : identityLine(assistantName));
 
+  if (answerOnly) {
+    open('answer', 'static');
+    put('', 'Answer directly and briefly; no filler. You have no tools in this turn: say so if the user needs files read, commands run or the web searched, and they can ask again.');
+  }
   open('tool-rules', 'static');
-  put(
+  if (!answerOnly) put(
     '',
     '# TOOL RULES',
     '- File tool paths may be relative to cwd; ~ is not expanded.',
@@ -290,11 +298,11 @@ export async function buildPromptLayers({
   // the turn loop, so this can change the prefix at most once per run — one
   // cache write, not one per turn. Moving it to the tail to save that single
   // write would orphan the bullet from the list it belongs to.
-  const withheldLine = renderWithheldToolsLine(withheldTools);
+  const withheldLine = answerOnly ? '' : renderWithheldToolsLine(withheldTools);
   if (withheldLine) put(withheldLine);
 
   open('subagents', 'static');
-  put(
+  if (!answerOnly) put(
     '',
     '# SUBAGENTS',
     SUBAGENT_PARALLEL_CLAUSE,
@@ -304,7 +312,7 @@ export async function buildPromptLayers({
     '- Do NOT spawn a subagent for trivial single-step work you can do directly.',
   );
 
-  if (agentMessaging) {
+  if (agentMessaging && !answerOnly) {
     open('agent-messaging', 'static');
     put('', '# AGENT MESSAGING', ...AGENT_MESSAGING_CLAUSES);
   }
@@ -316,7 +324,7 @@ export async function buildPromptLayers({
 
   // -- session: fixed for the run ---------------------------------------------
   open('skills', 'session');
-  put('', '# SKILLS', skills || 'No skills installed.');
+  if (!answerOnly) put('', '# SKILLS', skills || 'No skills installed.');
 
   // The date line is NOT here — see the clock layer at the bottom. What remains
   // is true for as long as the process lives on this directory.
@@ -334,11 +342,11 @@ export async function buildPromptLayers({
     put('', ...historyBlock.split('\n'));
   }
 
-  if (tree) {
+  if (tree && !answerOnly) {
     open('workspace-tree', 'session');
     put('', '# WORKSPACE TREE', tree);
   }
-  if (instructions) {
+  if (instructions && !answerOnly) {
     open('project-instructions', 'session');
     put('', '# PROJECT INSTRUCTIONS', INSTRUCTION_PRECEDENCE_LINE, instructions);
   }
@@ -351,7 +359,7 @@ export async function buildPromptLayers({
     put('', '# REPO MAP', repoMapSection);
   }
   const procStats = proceduralStats({ cwd });
-  if (procStats.totalPatterns > 0) {
+  if (procStats.totalPatterns > 0 && !answerOnly) {
     const procContext = formatProceduralContext({ cwd, maxLines: 8 });
     if (procContext) {
       open('procedural-memory', 'session');
@@ -378,7 +386,7 @@ export async function buildPromptLayers({
   open('memory', 'dynamic');
   put('', '# MEMORY');
   if (memory) put(memory);
-  put('- Use memory tools only for durable, evidence-backed facts; never store secrets.');
+  if (!answerOnly) put('- Use memory tools only for durable, evidence-backed facts; never store secrets.');
 
   // Last line in the prompt, deliberately. This single line used to sit at offset
   // 42 with 86% of the system prompt behind it, so it invalidated the entire

@@ -1140,7 +1140,7 @@ async function* runAgentLoop(opts = {}) {
   let steeringBlock = '';
   let builtSteering = '';
   const systemText = async () =>
-    buildSystemPrompt({ cwd, contextParts, memoryBlock, skillIndex, extraGuidance: steeringBlock ? `${guidance}\n\n${steeringBlock}` : guidance, personaBlock, contractBlock: contractBlockFor(loopHistory), withheldTools, agentMessaging: typeof ctx?.agentTeamsHandler === 'function', includeRepoMap: config.repoMap === true || process.env.OX_REPO_MAP === '1' });
+    buildSystemPrompt({ cwd, contextParts, memoryBlock, skillIndex, extraGuidance: steeringBlock ? `${guidance}\n\n${steeringBlock}` : guidance, personaBlock, contractBlock: contractBlockFor(loopHistory), withheldTools, answerOnly: ctx?.noTools === true, agentMessaging: typeof ctx?.agentTeamsHandler === 'function', includeRepoMap: config.repoMap === true || process.env.OX_REPO_MAP === '1' });
   history = [
     { role: 'system', content: await systemText() },
     ...sanitizeHistory(messages).filter((m) => m?.role !== 'system'),

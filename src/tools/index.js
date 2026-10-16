@@ -275,6 +275,12 @@ export function listToolSchemas(ctx = {}, strictSchemas = false) {
   // instead of answering (seen on qwen2.5:3b: a to-do list, then a web fetch
   // with to-do arguments).
   if (ctx.noTools === true) return [];
+  // A question about the project (ask mode, nothing to change) needs only the
+  // four readers: about 620 tokens instead of ~1,850 for ten tools.
+  if (Array.isArray(ctx.onlyTools)) {
+    const only = schemas.filter((s) => ctx.onlyTools.includes(s.name));
+    return strict ? only.map((s) => applyStrictSchema(s, true)) : only;
+  }
   // An agent with a tool grant is offered only those tools.
   const granted = Array.isArray(ctx.allowedTools)
     ? schemas.filter((s) => grantRefusal(ctx.allowedTools, s.name) === null)
