@@ -41,7 +41,8 @@ Updated October 16 2026.
 |---|---|---|---|
 | 3.1 | OpenUI Lang answers render live while streaming | ✓ | Stand-in model page: forms, sliders, charts, drawings, segmented, buttons; loan maths exact |
 | 3.2 | Page-style answers in colour (open-intelligent-ui ideas) | ✓ | Donut, area and bar charts, coloured badges, SVG drawings; app chrome stays black and white |
-| 3.3 | Real local model writes it | ~ | qwen2.5:3b writes the language; its formulas are unreliable at 3B. Larger models not tested here (no keys) |
+| 3.3 | Real models write it | ✓ | ChatGPT plan (gpt-6-luna): valid OpenUI Lang, 0 errors, 8.5 s, maths exact ($1,798.65), guarded the zero-rate case. qwen2.5:3b writes the language but its formulas are unreliable |
+| 3.6 | Plans you pay for get ox's brief (name, bot instructions, OpenUI guide, memory) | ✓ | Was the bare chat only; tested above |
 | 3.4 | Query() runs read-only tools only | ✓ | Route refuses anything outside read_file, list_dir, glob, grep |
 | 3.5 | Photos in answers (SearchImage) and maps | ✗ | Not built |
 

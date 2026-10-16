@@ -479,6 +479,21 @@ export function foldPrompt(messages = []) {
   return `Earlier in this conversation:\n\n${ctx}\n\n---\n\n${last.content}`;
 }
 
+export function planBrief(ctx = {}, env = process.env) {
+  const parts = [];
+  const name = String(env.OX_NAME ?? '').trim() || (() => { try { return readName(); } catch { return ''; } })();
+  if (name && name !== 'ox') parts.push(`You are ${name}; the user named you that and talks to you by that name.`);
+  if (typeof ctx.personaBlock === 'string' && ctx.personaBlock.trim()) parts.push(ctx.personaBlock.trim());
+  if (typeof ctx.memoryBlock === 'string' && ctx.memoryBlock.trim()) parts.push(`What you know about the user and this project:\n${ctx.memoryBlock.trim().slice(0, 4000)}`);
+  return parts.join('\n\n');
+}
+function readName() {
+  const f = path.join(env_home(), '.ox', 'config.json');
+  const doc = JSON.parse(fs.readFileSync(f, 'utf8'));
+  return typeof doc.name === 'string' ? doc.name.trim() : '';
+}
+const env_home = () => os.homedir();
+
 function approvalFor(ctx = {}) {
   if (ctx.mode === 'ask' || ctx.mode === 'plan' || ctx.approval === 'plan') return 'read';
   if (ctx.yolo) return 'yolo';
@@ -530,7 +545,13 @@ async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = 
     yield { type: 'turn-end', stopReason: 'error', iters: 0 };
     return;
   }
-  const prompt = foldPrompt(messages);
+  // The vendor's CLI brings its own system prompt; ox's part of a turn travels
+  // ahead of the conversation as a short brief: the name you gave it, a bot's
+  // instructions or the app's interactive-answer guide, and what ox remembers
+  // about you. Without it a plan answered as a bare chat (no OpenUI, no bot
+  // personality, no memory).
+  const brief = planBrief(ctx);
+  const prompt = brief ? `${brief}\n\n---\n\n${foldPrompt(messages)}` : foldPrompt(messages);
   const approval = approvalFor(ctx);
   const args = cli.args({ prompt, model: target.model, approval });
   const st = { text: '', tools: new Map(), done: false, error: null, usage: null, estimateUsd: null, model: null };
