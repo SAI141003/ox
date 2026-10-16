@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4037,6 +4037,7 @@ const SUB_USAGE = {
   skill: 'usage: ox skill <name> | ox skill add <dir | owner/repo[/path]>',
   episode: 'usage: ox episode ls | ox episode promote <id>',
   'memory-loss': 'usage: ox memory-loss [--limit <n>]',
+  hooks: 'usage: ox hooks install claude [--yes] | uninstall claude [--yes] | status',
   memory: 'usage: ox memory [recall "<question>" | add "<fact>" [--project] | history <id> | forget <id> | all [--project]]',
   auto: 'usage: ox auto "<goal>" [--contract ["<goal>"]] [--max-cost <usd>] [--json] [--bot <name>] [--yes-edits] [-y] [--side-effects-ok]',
   attach: 'usage: ox attach <worker id>  — follow a detached run (ox agents lists them)',
@@ -4601,6 +4602,54 @@ async function runSubcommand(cmd, args) {
       }
       console.log(SUB_USAGE.memory);
       process.exitCode = 2;
+      return;
+    }
+    case 'hook': {
+      // Run by Claude Code on each event (src/agent-hooks.js). Never fails the
+      // agent: any problem prints nothing and Claude Code carries on as usual.
+      try {
+        const ah = await import('./agent-hooks.js');
+        let raw = '';
+        for await (const chunk of process.stdin) raw += chunk;
+        const out = await ah.handleHook(args[0] ?? 'claude', raw);
+        if (out) process.stdout.write(`${out}\n`);
+      } catch {}
+      return;
+    }
+    case 'hook-relay': {
+      const ah = await import('./agent-hooks.js');
+      const { server } = ah.runRelay({ agent: args[0] ?? 'claude', sessionId: args[1] ?? 'default', cwd: process.cwd() });
+      await new Promise((resolve) => { server.on('close', resolve); server.on('error', resolve); });
+      return;
+    }
+    case 'hooks': {
+      const ah = await import('./agent-hooks.js');
+      const sub = args[0] ?? 'status';
+      const agent = args[1] ?? 'claude';
+      if (sub === 'status') {
+        for (const [id, a] of Object.entries(ah.AGENTS)) {
+          let on = false;
+          try { on = ah.installed(JSON.parse(fs.readFileSync(a.settings(), 'utf8'))); } catch {}
+          console.log(`${on ? c.green('connected') : c.dim('not connected')}  ${a.label}  ${c.dim(a.settings())}`);
+        }
+        console.log(c.dim('connect one: ox hooks install claude'));
+        return;
+      }
+      if (sub !== 'install' && sub !== 'uninstall') { console.log(SUB_USAGE.hooks); process.exitCode = 2; return; }
+      let plan;
+      try { plan = ah.planInstall(agent, { remove: sub === 'uninstall' }); } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; return; }
+      if (!plan.changed) { console.log(c.dim(sub === 'install' ? `already connected — ${ah.AGENTS[agent].label} sessions show in OX Island` : 'nothing to remove')); return; }
+      console.log(`${sub === 'install' ? 'Connect' : 'Disconnect'} ${ah.AGENTS[agent].label} ${sub === 'install' ? 'to' : 'from'} OX Island — this is the change to ${plan.file}:`);
+      const before = new Set(plan.beforeText.split('\n'));
+      const after = new Set(plan.afterText.split('\n'));
+      for (const l of plan.beforeText.split('\n')) if (!after.has(l) && l.trim()) console.log(c.red(`- ${l}`));
+      for (const l of plan.afterText.split('\n')) if (!before.has(l) && l.trim()) console.log(c.green(`+ ${l}`));
+      if (!args.includes('--yes')) { console.log(c.dim(`apply it: ox hooks ${sub} ${agent} --yes  (the current file is backed up first)`)); return; }
+      try {
+        const backup = ah.applyInstall(plan);
+        console.log(c.green(sub === 'install' ? `connected — new ${ah.AGENTS[agent].label} sessions show in OX Island, and you can answer its permission requests there` : 'disconnected'));
+        if (backup) console.log(c.dim(`backup: ${backup}`));
+      } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; }
       return;
     }
     case 'speak': {

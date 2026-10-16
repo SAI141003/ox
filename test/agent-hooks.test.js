@@ -1,0 +1,120 @@
+// Claude Code in OX Island: hook events become island events, a permission
+// request is answered from the island, silence is always "ask", and the
+// settings installer only ever adds or removes ox's own hooks.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import net from 'node:net';
+import { handleHook, runRelay, toEvents, decisionOutput, withHooks, installed, planInstall, applyInstall } from '../src/agent-hooks.js';
+
+// A short dir: unix socket paths are capped near 104 bytes on macOS.
+const sockDir = () => fs.mkdtempSync(path.join('/tmp', 'oxh-'));
+
+// Plays the island: connects, says ready, records events, answers approvals.
+function island(socketPath, answer) {
+  const events = [];
+  const sock = net.createConnection(socketPath);
+  let buf = '';
+  sock.on('connect', () => sock.write(`${JSON.stringify({ type: 'ready', clientId: 'test-island' })}\n`));
+  sock.on('data', (d) => {
+    buf += d;
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1);
+      if (m.type === 'event') events.push(m.event);
+      if (m.type === 'hello') events.push({ type: 'hello', bot: m.bot });
+      if (m.type === 'approval-request') { events.push({ type: 'approval', tool: m.tool, preview: m.argsPreview }); sock.write(`${JSON.stringify({ type: 'approval-answer', id: m.id, decision: answer })}\n`); }
+    }
+  });
+  return { events, close: () => sock.destroy() };
+}
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test('events map to what the island already draws, and decisions to what Claude Code reads', () => {
+  assert.deepEqual(toEvents({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_use_id: 't1', tool_input: { command: 'npm test' } }), [{ type: 'tool-start', id: 't1', name: 'bash', argsPreview: 'npm test' }]);
+  assert.deepEqual(toEvents({ hook_event_name: 'Stop' }), [{ type: 'turn-end', stopReason: 'end_turn' }]);
+  assert.match(decisionOutput('allow'), /"behavior":"allow"/);
+  assert.match(decisionOutput('always'), /"behavior":"allow"/);
+  assert.match(decisionOutput('deny'), /"behavior":"deny"/);
+  assert.equal(decisionOutput('ask'), '');
+  assert.equal(decisionOutput(undefined), '');
+});
+
+test('a Claude Code session shows in the island and its permission is answered there', async (t) => {
+  const dir = sockDir();
+  const relays = [];
+  t.after(() => relays.forEach((r) => r.server.close()));
+  const spawnRelay = ({ agent, sessionId, cwd }) => relays.push(runRelay({ agent, sessionId, cwd, socketDir: dir }));
+  const opts = { socketDir: dir, spawnRelay };
+  const base = { session_id: 'abc-123', cwd: '/tmp/proj' };
+  assert.equal(await handleHook('claude', JSON.stringify({ ...base, hook_event_name: 'UserPromptSubmit', prompt: 'fix it' }), opts), '');
+  const isl = island(relays[0].socketPath, 'allow');
+  t.after(isl.close);
+  await wait(150);
+  await handleHook('claude', JSON.stringify({ ...base, hook_event_name: 'PreToolUse', tool_name: 'Edit', tool_use_id: 'u1', tool_input: { file_path: 'src/a.ts' } }), opts);
+  const out = await handleHook('claude', JSON.stringify({ ...base, hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'rm -rf build' } }), opts);
+  assert.match(out, /"behavior":"allow"/);
+  await wait(50);
+  assert.equal(relays.length, 1, 'one relay per session');
+  assert.deepEqual(isl.events[0], { type: 'hello', bot: 'Claude Code' });
+  assert.ok(isl.events.some((e) => e.type === 'tool-start' && e.name === 'edit_file' && e.argsPreview === 'src/a.ts'));
+  assert.ok(isl.events.some((e) => e.type === 'approval' && e.tool === 'bash' && e.preview === 'rm -rf build'));
+});
+
+test('"Always" is remembered for the rest of the session; Deny denies', async (t) => {
+  const dir = sockDir();
+  const relays = [];
+  t.after(() => relays.forEach((r) => r.server.close()));
+  const opts = { socketDir: dir, spawnRelay: ({ agent, sessionId, cwd }) => relays.push(runRelay({ agent, sessionId, cwd, socketDir: dir })) };
+  await handleHook('claude', JSON.stringify({ session_id: 's2', hook_event_name: 'UserPromptSubmit' }), opts);
+  const a = island(relays[0].socketPath, 'always');
+  await wait(150);
+  const ask = (tool) => handleHook('claude', JSON.stringify({ session_id: 's2', hook_event_name: 'PermissionRequest', tool_name: tool, tool_input: { command: 'ls' } }), opts);
+  assert.match(await ask('Bash'), /allow/);
+  a.close();
+  await wait(100);
+  assert.match(await ask('Bash'), /allow/, 'remembered without asking again');
+  const d = island(relays[0].socketPath, 'deny');
+  t.after(d.close);
+  await wait(150);
+  assert.match(await ask('Write'), /"behavior":"deny"/);
+});
+
+test('with no island, a permission request falls back to the terminal (prints nothing)', async (t) => {
+  const dir = sockDir();
+  const relays = [];
+  t.after(() => relays.forEach((r) => r.server.close()));
+  const opts = { socketDir: dir, spawnRelay: ({ agent, sessionId, cwd }) => relays.push(runRelay({ agent, sessionId, cwd, socketDir: dir, waitForIslandMs: 200 })) };
+  const t0 = Date.now();
+  assert.equal(await handleHook('claude', JSON.stringify({ session_id: 's3', hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: {} }), opts), '');
+  assert.ok(Date.now() - t0 < 3000);
+  assert.equal(await handleHook('claude', 'not json', opts), '');
+  assert.equal(await handleHook('nope', '{"hook_event_name":"Stop"}', opts), '');
+});
+
+test('install adds only ox hooks, keeps everything else, backs up, and uninstall removes only ours', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-claude-settings-'));
+  const file = path.join(dir, 'settings.json');
+  const mine = { model: 'opus', hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'my-own-guard.sh' }] }] } };
+  fs.writeFileSync(file, JSON.stringify(mine));
+  const plan = planInstall('claude', { file });
+  assert.ok(plan.changed);
+  const backup = applyInstall(plan);
+  assert.ok(fs.existsSync(backup));
+  const after = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(after.model, 'opus');
+  assert.ok(installed(after));
+  assert.ok(after.hooks.PreToolUse.some((g) => g.hooks.some((h) => h.command === 'my-own-guard.sh')), 'your own hook is kept');
+  assert.equal(after.hooks.PermissionRequest[0].hooks[0].timeout, 120);
+  assert.equal(planInstall('claude', { file }).changed, false, 'installing twice changes nothing');
+  applyInstall(planInstall('claude', { file, remove: true }));
+  const removed = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.ok(!installed(removed));
+  assert.deepEqual(removed, mine);
+  fs.writeFileSync(file, '{ broken');
+  assert.throws(() => planInstall('claude', { file }), /not valid JSON/);
+  assert.deepEqual(withHooks({}, { remove: true }), {});
+});
