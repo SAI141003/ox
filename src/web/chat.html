@@ -289,6 +289,7 @@
       <div class="nav">
         <button id="nav-new"><span data-i="plus"></span><span class="grow">New session</span><span class="kbd">⌘</span><span class="kbd">N</span></button>
         <button id="nav-incog" title="Nothing is saved: no history, no memory used or learned, no usage record (⌘⇧N)"><span data-i="incog"></span><span class="grow">New incognito chat</span><span class="kbd">⇧</span><span class="kbd">N</span></button>
+        <button data-view="map"><span data-i="mapi"></span><span class="grow">Project map</span></button>
         <button data-view="caps"><span data-i="blocks"></span><span class="grow">Capabilities</span></button>
         <button data-view="studio"><span data-i="film"></span><span class="grow">Studio</span></button>
         <button data-view="market"><span data-i="store"></span><span class="grow">Marketplace</span></button>
@@ -384,6 +385,8 @@
       <div id="st-gallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px"></div>
     </div></div></section>
 
+    <section class="view" id="v-map"><div class="page"><div class="page-inner" style="max-width:1100px" id="map"></div></div></section>
+
     <section class="view" id="v-sched"><div class="page"><div class="page-inner" id="sched"></div></div></section>
   </main>
 </div>
@@ -434,6 +437,7 @@
     film: 'M4 4h16v16H4zM8 4v16M16 4v16M4 8h4M4 12h4M4 16h4M16 8h4M16 12h4M16 16h4',
     incog: 'M3 11h18M5 11l2-6h10l2 6M7 17a3 3 0 1 0 0-.01M17 17a3 3 0 1 0 0-.01M10 17h4',
     chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
+    mapi: 'M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2ZM9 4v14M15 6v14',
     shield: 'M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6Z', open: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6', back: 'M15 18l-6-6 6-6',
   };
   const icon = (n, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${P[n] || ''}"/></svg>`;
@@ -525,13 +529,14 @@
     view = v;
     document.querySelectorAll('.view').forEach((el) => el.classList.toggle('on', el.id === `v-${v}`));
     document.querySelectorAll('.nav [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
-    $('title').textContent = v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : (readonly ? readonly.title : convo()?.title || 'New session');
+    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : (readonly ? readonly.title : convo()?.title || 'New session');
     document.body.classList.remove('nav');
     if (v === 'caps') loadCaps();
     if (v === 'msg') loadMessaging();
     if (v === 'sched') loadScheduled();
     if (v === 'market') loadMarket();
     if (v === 'studio') loadStudio();
+    if (v === 'map') loadMap();
     renderLists();
   }
   document.querySelectorAll('.nav [data-view]').forEach((b) => (b.onclick = () => show(b.dataset.view)));
@@ -994,6 +999,43 @@
       <div class="cmd"><code>${esc(c.command)}${c.configured ? '' : ' --token &lt;token&gt;'}</code><button data-copy-cmd="${esc(c.command)}${c.configured ? '' : ' --token '}">${icon('copy')}</button></div></div>
       <div class="section-cap cap">From your phone</div>
       <div class="box small muted">/status — what ox is doing · /stop — stop the run · /mode ask|code|plan — switch mode · /new — start fresh · /where — the folder it works in</div>`;
+  }
+
+  // ---------- project map (PLAN.md in agenttrail's convention, against git)
+  const MAP_COLOR = { done: 'var(--green)', active: 'var(--amber)', blocked: 'var(--red)', pending: 'var(--dim)' };
+  const MAP_WORD = { done: 'done', active: 'working', blocked: 'stuck', pending: 'to do' };
+  async function loadMap() {
+    const el = $('map');
+    el.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
+    let M; try { M = await getJson('/ox/map'); } catch (e) { el.innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; return; }
+    const changes = (list) => list.map((f) => `<div class="small mono" style="display:flex;gap:8px;color:var(--muted)"><span class="dim" style="width:16px">${esc(f.state)}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.file)}</span><span class="dim">${f.at ? ago(f.at) : ''}</span></div>`).join('');
+    const head = `<div class="shead" style="font-size:18px">${esc(M.title)}</div><p class="sdesc">What the plan says (PLAN.md) against what the files show (git). ${M.hasPlan ? `${M.progress.done} of ${M.progress.total} tasks done.` : ''} Refreshes when you open it; <a href="#" id="map-refresh" style="color:var(--gold)">refresh</a>.</p>`;
+    if (!M.hasPlan) {
+      el.innerHTML = head + `<div class="box"><b>No PLAN.md in ${esc(M.cwd)}</b><p class="muted small">Ask ox: “write a PLAN.md for this repo in the agenttrail convention — components with files: globs, tasks with [ ] [~] [x] [!] and {#ids}”. Or start from this:</p><pre class="body-md">## Sign-in {#auth}
+files: [src/auth/**]
+- [x] Email login {#auth-email}
+  tech: src/auth/email.ts
+- [~] Google login {#auth-google}
+
+## Billing {#billing}
+needs: [auth]
+files: [src/billing/**]
+- [ ] Stripe checkout {#billing-checkout}</pre></div>` + (M.changes.length ? `<div class="section-cap cap">Changed files (git)</div><div class="box">${changes(M.changes.slice(0, 30))}</div>` : '');
+    } else {
+      el.innerHTML = head
+        + (M.planStale ? `<div class="alert" style="color:var(--amber);border-color:color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 8%,transparent);margin-bottom:12px">${icon('info')}Code has moved for ${M.planStale} minutes while PLAN.md stayed the same — the plan may be out of date.</div>` : '')
+        + `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">${M.components.map((c) => `
+          <div class="box" style="border-left:3px solid ${MAP_COLOR[c.status]}">
+            <div style="display:flex;align-items:center;gap:8px"><b style="flex:1">${esc(c.title)}</b>${c.live ? '<span class="badge warn"><span class="dot run"></span>files moving</span>' : ''}<span class="badge" style="color:${MAP_COLOR[c.status]}">${MAP_WORD[c.status]}</span></div>
+            <div class="small dim mono" style="margin:2px 0 8px">{#${esc(c.id)}}${c.needs.length ? ` · needs ${c.needs.map(esc).join(', ')}` : ''}${c.files.length ? ` · ${c.files.map(esc).join(', ')}` : ''}</div>
+            ${c.tasks.map((t) => `<div class="wl ${t.status === 'done' ? 'completed' : t.status === 'active' ? 'in_progress' : ''}"><span class="dot" style="background:${MAP_COLOR[t.status]}"></span><span>${esc(t.title)}${t.by ? ` <span class="dim">· ${esc(t.by)}</span>` : ''}</span></div>`).join('')}
+            ${c.recent.length ? `<div class="section-cap cap" style="margin:10px 0 4px">Recent changes</div>${changes(c.recent)}` : ''}
+          </div>`).join('')}</div>`
+        + (M.unplanned.length ? `<div class="section-cap cap">Changed outside the plan</div><div class="box">${changes(M.unplanned)}</div>` : '')
+        + (M.lints.length ? `<div class="section-cap cap">Plan checks</div><div class="box small muted">${M.lints.map((l) => `<div>· ${esc(l)}</div>`).join('')}</div>` : '')
+        + (M.decisions.length ? `<div class="section-cap cap">Decisions</div><div class="box small">${M.decisions.map((d) => `<div>· ${esc(d)}</div>`).join('')}</div>` : '');
+    }
+    $('map-refresh').onclick = (e) => { e.preventDefault(); loadMap(); };
   }
 
   // ---------- studio

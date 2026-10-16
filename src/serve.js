@@ -979,6 +979,7 @@ const ROUTES = [
   { method: 'POST', pattern: /^\/ox\/studio\/?$/, handler: appRoute(async (b) => (await appApi()).studioAction(b)) },
   { method: 'GET', pattern: /^\/ox\/media\/([^/]+)\/([^/]+)$/, handler: serveMediaFile },
   { method: 'GET', pattern: /^\/ox\/usage\/?$/, handler: appRoute(async (_, __, req) => (await import('./usage-log.js')).summarize({ days: Math.max(1, Math.min(365, Number(new URL(req.url, 'http://x').searchParams.get('days')) || 30)) })) },
+  { method: 'GET', pattern: /^\/ox\/map\/?$/, handler: appRoute(async () => (await import('./project-map.js')).projectMap(process.cwd())) },
   { method: 'GET', pattern: /^\/ox\/about\/?$/, handler: appRoute(async () => (await appApi()).aboutView()) },
   { method: 'GET', pattern: /^\/ox\/settings\/?$/, handler: handleSettingsGet },
   { method: 'POST', pattern: /^\/ox\/settings\/?$/, handler: handleSettingsPost },
