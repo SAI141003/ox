@@ -1342,9 +1342,49 @@ files: [src/billing/**]
           <div class="section-cap cap">Running now</div>
           ${L.runtimes.length ? `<div class="cards">${L.runtimes.map((r) => `<div class="card"><span class="dot ok"></span><span class="t"><div class="n">${esc(r.name)} ${r.version ? `<span class="badge">${esc(r.version)}</span>` : ''}</div><div class="d mono">${esc(r.url)}</div></span></div>${r.models.map((mm) => `<div class="card" style="margin-left:22px"><span class="t"><div class="n mono">${esc(mm.id)}</div><div class="d">${esc(mm.size || '')}</div></span>${/ollama/i.test(r.name) ? `<button class="btn" data-use="ox-ollama:${esc(mm.id)}">Use</button>` : ''}</div>`).join('') || '<div class="empty-note">No models installed in it yet.</div>'}`).join('')}</div>`
             : `<div class="box muted small">No local model server is running. Install <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" style="color:var(--gold)">Ollama</a> or LM Studio, start it, and come back.</div>`}
+          <div class="section-cap cap">Find more on Hugging Face</div>
+          <p class="sdesc" style="margin-bottom:8px">Search every open model in GGUF form. Each file shows its real size and whether it fits this machine; ox downloads it through Ollama and it shows up in the model picker.</p>
+          <label class="search" style="margin:0 0 8px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:8px 10px"><span data-i="search"></span><input id="hf-q" placeholder="Search models by name — qwen coder, llama, gemma, deepseek…"></label>
+          <div id="hf-results" class="cards"></div>
           <div class="section-cap cap">Models for coding</div>
           <div class="cards">${L.catalog.map((c) => `<div class="card"><span class="t"><div class="n">${esc(c.name)}</div><div class="d"><span>${esc(c.bestFor)}</span><span class="badge ${c.fits ? 'ok' : 'err'}">${c.fits ? 'Fits this machine' : 'Too big for this machine'}</span><span class="badge">needs ${c.minRAM} GB</span><span class="badge">${esc(c.size)}</span></div></span><button class="btn ghost" data-copy-cmd="${esc(c.pull)}">${icon('copy')}${esc(c.pull)}</button></div>`).join('')}</div>`;
         el.querySelectorAll('[data-use]').forEach((b) => (b.onclick = async () => { try { await postJson('/ox/settings', { defaultBot: b.dataset.use }); toast(`Default model: ${b.dataset.use}`); loadModels(); } catch (e) { toast(e.message); } }));
+        paintIcons(el);
+        let hfTimer = null;
+        const fmtN = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(0)}k` : String(n));
+        const hfSearch = async () => {
+          const q = $('hf-q').value.trim();
+          if (!q) { $('hf-results').innerHTML = ''; return; }
+          $('hf-results').innerHTML = '<div class="skeleton"></div>';
+          try {
+            const list = await getJson(`/ox/hf/search?q=${encodeURIComponent(q)}`);
+            $('hf-results').innerHTML = list.length ? list.map((m) => `<div class="card" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:10px"><span class="t"><div class="n mono">${esc(m.repo)}</div><div class="d"><span>${fmtN(m.downloads)} downloads</span><span>${fmtN(m.likes)} likes</span>${m.runtime !== 'ollama' ? `<span class="badge warn">needs ${esc(m.runtime)} — Ollama can't run it</span>` : ''}</div></span>${m.runtime === 'ollama' ? `<button class="btn ghost" data-hf-files="${esc(m.repo)}">Show files</button>` : ''}</div><div data-hf-for="${esc(m.repo)}"></div></div>`).join('') : '<div class="box muted small">Nothing found.</div>';
+            $('hf-results').querySelectorAll('[data-hf-files]').forEach((b) => (b.onclick = async () => {
+              const box = $('hf-results').querySelector(`[data-hf-for="${CSS.escape(b.dataset.hfFiles)}"]`);
+              box.innerHTML = '<div class="skeleton"></div>';
+              try {
+                const files = await getJson(`/ox/hf/files?repo=${encodeURIComponent(b.dataset.hfFiles)}`);
+                box.innerHTML = files.filter((f) => !f.split).map((f) => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)"><span class="mono small" style="flex:1">${esc(f.quant || f.file)}</span><span class="badge">${f.sizeGB} GB</span><span class="badge ${f.fits ? 'ok' : 'err'}">${f.fits ? 'fits this machine' : 'too big for this machine'}</span><button class="btn" data-pull-repo="${esc(b.dataset.hfFiles)}" data-pull-quant="${esc(f.quant || '')}" ${f.fits ? '' : 'disabled'}>Download</button></div>`).join('') || '<div class="small muted">No single-file GGUF here.</div>';
+                box.querySelectorAll('[data-pull-repo]').forEach((d) => (d.onclick = async () => {
+                  d.disabled = true;
+                  try {
+                    await postJson('/ox/hf/pull', { repo: d.dataset.pullRepo, quant: d.dataset.pullQuant || null });
+                    const tick = async () => {
+                      const jobs = await getJson('/ox/hf/pulls');
+                      const j = jobs.find((x) => x.repo === d.dataset.pullRepo && (x.quant ?? '') === (d.dataset.pullQuant || ''));
+                      if (!j) return;
+                      if (j.state === 'running') { d.textContent = j.total ? `${Math.floor((j.completed / j.total) * 100)}%` : j.status; setTimeout(tick, 800); }
+                      else if (j.state === 'done') { d.textContent = 'Use it'; d.disabled = false; d.onclick = async () => { await postJson('/ox/settings', { defaultBot: j.bot }); toast(`Default model: ${j.bot}`); loadModels(); }; toast('Downloaded — it is in the model picker'); loadModels(); }
+                      else { d.textContent = 'Failed'; toast(j.error || 'download failed'); }
+                    };
+                    tick();
+                  } catch (e) { toast(e.message); d.disabled = false; }
+                }));
+              } catch (e) { box.innerHTML = `<div class="small err">${esc(e.message)}</div>`; }
+            }));
+          } catch (e) { $('hf-results').innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; }
+        };
+        $('hf-q').oninput = () => { clearTimeout(hfTimer); hfTimer = setTimeout(hfSearch, 450); };
       } else if (sec === 'messaging') {
         closeSettings(); show('msg'); return;
       } else if (sec === 'shortcuts') {

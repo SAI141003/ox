@@ -19,7 +19,7 @@ export const DEFAULT_CATALOGS = Object.freeze(['anthropics/claude-plugins-offici
 const RAW = () => process.env.OX_MARKET_RAW_BASE || 'https://raw.githubusercontent.com';
 const API = () => process.env.OX_MARKET_API_BASE || 'https://api.github.com';
 const CACHE = () => path.join(process.env.OX_MARKET_CACHE || path.join(os.homedir(), '.ox', 'cache', 'market'));
-const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
+const REPO_RE = /^(?!\.)[\w.-]+\/(?!\.)[\w.-]+$/; // no "..", no leading dot
 
 async function cached(key, ttlMs, fetcher) {
   const file = path.join(CACHE(), `${key.replace(/[^\w.-]+/g, '_')}.json`);
