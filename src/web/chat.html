@@ -715,7 +715,7 @@
     try {
       const res = await api('/v1/chat/completions', {
         method: 'POST', signal: busy.signal,
-        body: JSON.stringify({ model: $('model').value || undefined, ox_mode: $('mode').value, stream: true, messages: c.messages.filter((m) => m !== reply).map(({ role, content }) => ({ role, content })) }),
+        body: JSON.stringify({ model: $('model').value || undefined, ox_mode: $('mode').value, ox_ui: 'live', stream: true, messages: c.messages.filter((m) => m !== reply).map(({ role, content }) => ({ role, content })) }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error?.message || `HTTP ${res.status}`);
       const reader = res.body.getReader();

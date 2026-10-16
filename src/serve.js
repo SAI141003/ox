@@ -457,12 +457,31 @@ async function handleChatCompletions(req, res) {
   const lastUser = [...messages].reverse().find((m) => m?.role === 'user');
   const pickedMode = body.ox_mode && body.ox_mode !== 'auto' ? body.ox_mode : (agentDef?.mode ?? body.ox_mode ?? 'code');
   const turnMode = resolveTurnMode(pickedMode, typeof lastUser?.content === 'string' ? lastUser.content : '');
+  // The same memory a terminal run starts with: the project's MEMORY.md, what ox
+  // remembers about the user, and what bears on this message.
+  const lastText = typeof lastUser?.content === 'string' ? lastUser.content : '';
+  let memoryBlock = '';
+  try {
+    const { loadMemoryBlock } = await import('./memory.js');
+    const { memoryPromptBlock } = await import('./memory-graph.js');
+    memoryBlock = [loadMemoryBlock(process.cwd()), process.env.OX_MEMORY === '0' ? '' : memoryPromptBlock({ cwd: process.cwd(), task: lastText })].filter(Boolean).join('\n\n');
+  } catch {}
+  // `ox_ui: 'live'` is sent by ox's own app, which can run interactive answers.
+  const liveUi = body.ox_ui === 'live'
+    ? 'This chat can show interactive answers. When a calculator, simulation, chart or small tool would explain better than prose (loan payments, unit conversions, "what if" sliders), reply with a ```html-live code block: one self-contained HTML snippet with inline <style> and <script>, no external URLs or network requests (it runs sandboxed with no network). Keep the prose short around it. Use it only when interaction genuinely helps.'
+    : '';
   const ctx = {
     cwd: process.cwd(),
     mode: turnMode.mode,
-    ...(agentDef ? { personaBlock: agentPersonaBlock(agentDef), agentName: agentDef.name } : {}),
+    memoryBlock,
+    ...(agentDef || liveUi ? { personaBlock: [agentDef ? agentPersonaBlock(agentDef) : '', liveUi].filter(Boolean).join('\n\n') } : {}),
+    ...(agentDef ? { agentName: agentDef.name } : {}),
     ...(Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools } : {}),
   };
+  // Preferences the user states here are kept, as in the terminal.
+  if (process.env.OX_LEARN !== '0' && lastText) {
+    try { (await import('./memory-graph.js')).learnFromMessages([{ role: 'user', content: lastText }], { source: 'app' }); } catch {}
+  }
   const config = { maxTokens: max_tokens };
 
   if (stream) {

@@ -349,6 +349,28 @@ other OpenAI clients ignore, and only the tool's name and a short preview leave
 the server, never its output. With `OX_SERVE_API_KEY` set, the page asks for
 the key and the API stays locked without it.
 
+The same page is the desktop app (`ox app`), laid out like this:
+
+- **Sidebar.**
+  - Sessions, with pinned chats, ages and search (⌘K).
+  - Your terminal sessions, read-only, each with "Continue in a new chat".
+  - An Agents tab.
+  - Capabilities: your skills, tools, MCP servers and agents, each with its details.
+  - Messaging: Telegram and Discord status and setup.
+  - Scheduled: scheduled runs, with on/off switches, and page watches.
+- **Settings (⌘,).**
+  - Default model, default mode, and Enter or ⌘Enter to send.
+  - Appearance: theme, text size, width and motion.
+  - OX Island and keep-awake.
+  - Voice.
+  - Memory.
+  - Providers:
+    - Accounts: the plans you already pay for that ox found on this machine.
+    - API keys: pasted keys are saved to `~/.ox/keys.json`, readable only by your account, and only their last four characters are shown.
+    - Local models: what is running now, and which models fit this machine.
+  - Keyboard shortcuts, archived chats, and About.
+- **Interactive answers.** A reply can include an ```` ```html-live ```` block, which runs as a live widget, such as a calculator with sliders. It runs in a sandboxed frame with no network and no access to the page.
+
 ## Run the agent's commands in a container
 
 ```bash
@@ -600,6 +622,42 @@ are typed `[user] [feedback] [project] [lesson]`, optionally dated.
 
 `memory_add` dedupes: similar statements update the existing entry in place
 rather than duplicating (normalized substring or Jaccard > 0.8).
+
+### What ox remembers about you
+
+Beside the project notes, ox keeps a fact graph (`src/memory-graph.js`):
+facts about you in `~/.ox/memory/graph.jsonl` that follow you into every
+project, and facts about a project in `.agent/memory-graph.jsonl`.
+
+- **New facts replace old ones.** "I prefer pnpm" after "I prefer npm" makes
+  pnpm the current fact. npm stays in the history with the dates it was true,
+  so `ox memory history <id>` still shows it.
+- **Dates are fixed when said.** "Demo on Friday" is stored as that Friday's
+  date. Things tied to a date stop being used once it has passed.
+- **Repetition counts.** Saying a preference again makes it stronger instead
+  of adding a duplicate.
+- **Recall ranks.** Results are ordered by word match, shared names
+  (projects, files, people), recency and importance. A question nothing
+  matches gets nothing back.
+- **It learns as you work.** When you say something about yourself ("call me
+  Sai", "never commit without asking", "I prefer short answers"), ox keeps it
+  and says `· remembered: …`. Every run starts with a short profile of you
+  and the facts that bear on the task.
+
+```bash
+ox memory                     # what ox remembers about you
+ox memory recall "deploys"    # best matches, current facts only
+ox memory add "I use pnpm"    # tell it (--project for this folder)
+ox memory history <id>        # every version of one fact, with dates
+ox memory forget <id>         # never shown to a model again
+```
+
+The app shows the same under **Settings › Memory**. The design draws on Zep /
+Graphiti (facts carry when they were true and when ox learned them),
+Supermemory (updates, extends, forgetting) and Generative Agents (recency,
+importance and relevance together). Every write passes the same credential and
+injection screen as `MEMORY.md`. `OX_LEARN=0` stops learning from what you say,
+and `OX_MEMORY=0` keeps the graph out of the prompt.
 
 ### Persistence screen
 

@@ -641,7 +641,8 @@ test('serve: /v1/chat/completions with an unresolvable model name keeps its old 
 // --- 7. the shape of the surface itself ---------------------------------------
 
 test('serve: the route table is exactly the documented OpenAI surface', () => {
-  const table = routeTable();
+  // ox's own app routes live under /ox/ and are checked in serve-web-chat.test.js.
+  const table = routeTable().filter((r) => !r.includes('\\/ox\\/'));
   assert.equal(table.length, 5, `unexpected route count: ${table.join(' | ')}`);
   assert.ok(table.some(r => r.startsWith('GET') && r.includes('health')));
   assert.ok(table.some(r => r.includes('models')));
