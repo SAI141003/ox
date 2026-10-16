@@ -4,28 +4,33 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ox</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2215%22%20fill%3D%22%23000000%22/%3E%3Cg%20transform%3D%22translate%284%209%29%20scale%28.5%29%22%20fill%3D%22none%22%20stroke%3D%22%23FFFFFF%22%20stroke-width%3D%2212%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2228%22%20cy%3D%2238%22%20r%3D%2217%22/%3E%3Cpath%20d%3D%22M60%2056%20L77%2038%20C86%2029%2091%2022%2091%2012%22/%3E%3Cpath%20d%3D%22M94%2056%20L77%2038%20C68%2029%2063%2022%2063%2012%22/%3E%3C/g%3E%3C/svg%3E">
 <style>
+  /* Black and white, like a terminal. One accent: the text colour itself.
+     Red is kept only for errors and deletions; nothing else carries a hue. */
   :root {
-    --bg: #050506; --side: #09090B; --panel: #0D0E11; --raise: #131419; --hover: #16181E; --sel: #121722;
-    --line: #1B1C21; --line2: #25262D;
-    --text: #E8E9EC; --muted: #9A9FA8; --dim: #62666F;
-    --gold: #E9A66B; --gold-ink: #1A1512; --btn: #E4E5E8; --btn-ink: #0B0C0E;
-    --green: #3FB27F; --amber: #E5A33B; --red: #E5534B; --blue: #5B8DEF;
+    --bg: #000000; --side: #0A0A0A; --panel: #0F0F0F; --raise: #161616; --hover: #1A1A1A; --sel: #1F1F1F;
+    --line: #1F1F1F; --line2: #2A2A2A;
+    --text: #EDEDED; --muted: #A1A1A1; --dim: #6B6B6B;
+    --gold: #FFFFFF; --gold-ink: #000000; --btn: #EDEDED; --btn-ink: #000000;
+    --green: #D4D4D4; --amber: #A1A1A1; --red: #F2615C; --blue: #D4D4D4;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
     --fs: 14px; --tw: 760px;
     color-scheme: dark;
   }
   :root[data-theme="light"] {
-    --bg: #FBFAF8; --side: #F4F2EE; --panel: #FFFFFF; --raise: #F1EFEA; --hover: #ECE9E3; --sel: #E7E4DD;
-    --line: #E6E2DB; --line2: #D9D4CB; --text: #1B1A18; --muted: #66625B; --dim: #9A958C;
-    --gold: #B9682A; --gold-ink: #FFFFFF; --btn: #1B1A18; --btn-ink: #FFFFFF; color-scheme: light;
+    --bg: #FFFFFF; --side: #FAFAFA; --panel: #FFFFFF; --raise: #F4F4F4; --hover: #F0F0F0; --sel: #EBEBEB;
+    --line: #EAEAEA; --line2: #DDDDDD; --text: #0A0A0A; --muted: #5E5E5E; --dim: #8F8F8F;
+    --gold: #000000; --gold-ink: #FFFFFF; --btn: #0A0A0A; --btn-ink: #FFFFFF;
+    --green: #3D3D3D; --amber: #5E5E5E; --red: #D93A35; --blue: #3D3D3D; color-scheme: light;
   }
   @media (prefers-color-scheme: light) {
     :root:not([data-theme]) {
-      --bg: #FBFAF8; --side: #F4F2EE; --panel: #FFFFFF; --raise: #F1EFEA; --hover: #ECE9E3; --sel: #E7E4DD;
-      --line: #E6E2DB; --line2: #D9D4CB; --text: #1B1A18; --muted: #66625B; --dim: #9A958C;
-      --gold: #B9682A; --gold-ink: #FFFFFF; --btn: #1B1A18; --btn-ink: #FFFFFF; color-scheme: light;
+      --bg: #FFFFFF; --side: #FAFAFA; --panel: #FFFFFF; --raise: #F4F4F4; --hover: #F0F0F0; --sel: #EBEBEB;
+      --line: #EAEAEA; --line2: #DDDDDD; --text: #0A0A0A; --muted: #5E5E5E; --dim: #8F8F8F;
+      --gold: #000000; --gold-ink: #FFFFFF; --btn: #0A0A0A; --btn-ink: #FFFFFF;
+      --green: #3D3D3D; --amber: #5E5E5E; --red: #D93A35; --blue: #3D3D3D; color-scheme: light;
     }
   }
   :root[data-motion="reduced"] *, :root[data-motion="reduced"] *::before { animation: none !important; transition: none !important; }
@@ -68,7 +73,23 @@
   .side { background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
   .side-top { display: flex; align-items: center; gap: 10px; padding: 14px 14px 6px; }
   .brand { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 16px; letter-spacing: -.02em; flex: 1; }
-  .brand svg { width: 22px; height: 22px; }
+  .brand .brand-word { width: 44px; height: 25px; }
+  .brand-tile { width: 24px; height: 24px; border-radius: 7px; background: var(--gold); color: var(--gold-ink); display: grid; place-items: center; flex: none; }
+  .brand-tile svg { width: 18px; height: 11px; }
+  .brand:not(.own) .brand-tile, .brand:not(.own) #brand-name, .brand.own .brand-word { display: none; }
+  /* Launch: the mark draws itself, the name settles in, then the app shows. */
+  #splash { position: fixed; inset: 0; z-index: 100; background: var(--bg); display: grid; place-items: center; transition: opacity .45s ease, visibility .45s; }
+  #splash.done { opacity: 0; visibility: hidden; }
+  #splash .in { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+  #splash svg { width: 196px; height: 112px; overflow: visible; }
+  #splash path, #splash circle { stroke-dasharray: 120; stroke-dashoffset: 120; animation: ox-draw .7s cubic-bezier(.65,0,.35,1) forwards; }
+  #splash circle { animation-delay: .05s; } #splash path:nth-of-type(1) { animation-delay: .32s; } #splash path:nth-of-type(2) { animation-delay: .44s; }
+  #splash .glow { position: absolute; width: 280px; height: 280px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--gold) 9%, transparent), transparent 65%); opacity: 0; animation: ox-glow 1.2s .5s ease-out forwards; }
+  #splash .nm { font-weight: 700; font-size: 15px; letter-spacing: .02em; color: var(--muted); opacity: 0; transform: translateY(6px); animation: ox-rise .5s .85s ease-out forwards; }
+  @keyframes ox-draw { to { stroke-dashoffset: 0; } }
+  @keyframes ox-glow { 40% { opacity: 1; } to { opacity: .55; } }
+  @keyframes ox-rise { to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { #splash * { animation-duration: 1ms !important; animation-delay: 0s !important; } }
   .iconbtn { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: var(--muted); }
   .iconbtn:hover { background: var(--hover); color: var(--text); }
   .tabs { display: flex; gap: 18px; padding: 8px 14px 0; border-bottom: 1px solid var(--line); }
@@ -97,7 +118,7 @@
   .empty-note { padding: 8px 10px; font-size: 12.5px; color: var(--dim); }
   .side-foot { border-top: 1px solid var(--line); padding: 8px 10px; display: flex; align-items: center; gap: 4px; }
   .side-foot .host { flex: 1; font-size: 11.5px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 4px; }
-  .avatar { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none; color: #fff; }
+  .avatar { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none; color: var(--text); box-shadow: inset 0 0 0 1px var(--line2); }
 
   main { min-width: 0; display: flex; flex-direction: column; height: 100vh; position: relative; }
   .bar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-bottom: 1px solid var(--line); min-height: 50px; }
@@ -112,7 +133,8 @@
   .msg.user { align-self: flex-end; max-width: 80%; background: var(--raise); border: 1px solid var(--line); padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .msg.assistant { display: grid; grid-template-columns: 26px 1fr; gap: 12px; }
   .msg.assistant .who { width: 26px; height: 26px; border-radius: 8px; background: var(--gold); display: grid; place-items: center; }
-  .msg.assistant .who svg { width: 18px; height: 18px; }
+  .msg.assistant .who { color: var(--gold-ink); }
+  .msg.assistant .who svg { width: 19px; height: 11px; }
   .body { min-width: 0; padding-top: 2px; overflow-wrap: anywhere; }
   .body p { margin: 0 0 10px; } .body p:last-child { margin-bottom: 0; }
   .body ul, .body ol { margin: 0 0 10px; padding-left: 22px; }
@@ -125,8 +147,56 @@
   .code .cb button { color: var(--muted); font-size: 12px; }
   .code pre { margin: 0; padding: 12px; overflow-x: auto; font: 12.5px/1.55 var(--mono); }
   .code pre code { background: none; border: 0; padding: 0; }
-  .live { margin: 10px 0; border: 1px solid var(--line2); border-radius: 12px; overflow: hidden; background: #fff; }
-  .live iframe { display: block; width: 100%; border: 0; height: 320px; background: #fff; }
+  .live { margin: 10px 0; border: 1px solid var(--line2); border-radius: 12px; overflow: hidden; background: var(--panel); }
+  .live iframe { display: block; width: 100%; border: 0; height: 320px; background: var(--panel); }
+  /* Answers drawn as interface (ox-ui blocks) */
+  .ui { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
+  .ui-title { font-weight: 600; margin-bottom: 10px; }
+  .ui-box, .ui-form { border: 1px solid var(--line2); border-radius: 12px; padding: 14px; background: var(--panel); }
+  .ui-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .ui-field { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--muted); }
+  .ui-field input:not([type=range]), .ui-field select { background: var(--bg); border: 1px solid var(--line2); border-radius: 8px; padding: 8px 10px; color: var(--text); font: 14px var(--sans); outline: 0; }
+  .ui-field input:focus, .ui-field select:focus { border-color: var(--muted); }
+  .ui-field input[type=range] { accent-color: var(--text); width: 100%; }
+  .ui-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 14px; }
+  .ui-stats.loose { margin-top: 0; }
+  .ui-stat { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; background: var(--bg); }
+  .ui-stat span { font-size: 12px; color: var(--muted); }
+  .ui-stat b { font-size: 18px; font-weight: 650; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+  .ui-stat.main b { font-size: 26px; }
+  .ui-stat em { font-style: normal; font-size: 12px; color: var(--dim); }
+  .ui-scroll { overflow-x: auto; }
+  .ui-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ui-table th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 6px 10px; border-bottom: 1px solid var(--line2); }
+  .ui-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  .ui-table tr:last-child td { border-bottom: 0; }
+  .ui-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+  .ui-card { border: 1px solid var(--line2); border-radius: 12px; padding: 12px 14px; background: var(--panel); }
+  .ui-card p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+  .ui-card span { display: block; margin-top: 8px; font-size: 12px; color: var(--dim); }
+  .ui-steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+  .ui-steps li p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  .ui-steps li.done b { text-decoration: line-through; color: var(--muted); }
+  .ui-bars { display: flex; flex-direction: column; gap: 8px; }
+  .ui-bar { display: grid; grid-template-columns: minmax(60px, 140px) 1fr auto; gap: 10px; align-items: center; font-size: 12.5px; }
+  .ui-bar span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ui-bar i { height: 8px; border-radius: 99px; background: var(--text); display: block; }
+  .ui-bar b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ui-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cv-stack { display: flex; flex-direction: column; gap: 10px; }
+  .cv-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .cv-head b { display: block; font-size: 16px; font-weight: 650; } .cv-head span { color: var(--muted); font-size: 13px; }
+  .cv-text { margin: 0; } .cv-text.muted { color: var(--muted); }
+  .cv-fields { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 13px; } .cv-fields span { color: var(--muted); } .cv-fields b { font-weight: 550; }
+  .cv-spark { display: flex; flex-direction: column; gap: 4px; color: var(--text); } .cv-spark span { font-size: 12px; color: var(--muted); } .cv-spark svg { width: 100%; height: 34px; }
+  .cv-prog div { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 5px; } .cv-prog span { color: var(--muted); }
+  .cv-prog i { display: block; height: 6px; border-radius: 99px; background: var(--raise); overflow: hidden; } .cv-prog s { display: block; height: 100%; background: var(--text); text-decoration: none; }
+  .cv-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+  .cv-callout { border: 1px solid var(--line2); border-left: 3px solid var(--text); border-radius: 8px; padding: 10px 12px; } .cv-callout p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .cv-callout.bad, .ui-box.bad { border-left-color: var(--red); }
+  .cv-diff { font: 12.5px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line2); border-radius: 8px; padding: 10px; overflow-x: auto; margin: 0; }
+  .cv-diff .add { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); } .cv-diff .del { color: var(--red); }
+  .cv-hr { border: 0; border-top: 1px solid var(--line); margin: 2px 0; }
   .live .cb { display: flex; justify-content: space-between; align-items: center; padding: 5px 10px; font: 11.5px var(--mono); color: var(--dim); background: var(--panel); border-bottom: 1px solid var(--line); }
   .live .cb button { color: var(--muted); font-size: 12px; }
   .worklog { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 12px; margin: 0 0 10px; }
@@ -147,6 +217,8 @@
   .msg-tools button { font-size: 12px; color: var(--dim); padding: 2px 6px; border-radius: 5px; }
   .msg-tools button:hover { color: var(--text); background: var(--hover); }
   .hello { margin: 13vh auto 0; text-align: center; max-width: 620px; }
+  .hello-mark { background: var(--gold); color: var(--gold-ink); width: 52px; height: 52px; border-radius: 15px; margin: 0 auto; display: grid; place-items: center; box-shadow: 0 8px 30px color-mix(in srgb, var(--gold) 10%, transparent); }
+  .hello-mark svg { width: 34px; height: 20px; }
   .hello h1 { font-size: 30px; letter-spacing: -.025em; margin: 14px 0 6px; font-weight: 700; }
   .hello p { color: var(--muted); margin: 0 0 24px; }
   .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; text-align: left; }
@@ -193,7 +265,7 @@
   .item .t { flex: 1; min-width: 0; }
   .item .n { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .item .d { font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; gap: 6px; align-items: center; }
-  .ch-icon { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: #fff; flex: none; font-weight: 700; font-size: 12px; }
+  .ch-icon { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--text); box-shadow: inset 0 0 0 1px var(--line2); flex: none; font-weight: 700; font-size: 12px; }
   .detail h2 { margin: 0; font-size: 20px; letter-spacing: -.01em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .detail .lede { color: var(--muted); margin: 6px 0 20px; }
   .detail pre.body-md { white-space: pre-wrap; font: 12.5px/1.6 var(--mono); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; color: var(--muted); }
@@ -252,9 +324,9 @@
   .toast.on { display: block; }
 
   .mback { display: none !important; }
-  body.incog .cbox { border-color: #6E56CF; box-shadow: 0 0 0 1px #6E56CF55; }
-  body.incog .bar { background: linear-gradient(90deg, #6E56CF22, transparent 60%); }
-  .incog-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #A99BEA; letter-spacing: .02em; text-transform: none; }
+  body.incog .cbox { border-style: dashed; border-color: var(--muted); }
+  body.incog .bar { background: repeating-linear-gradient(135deg, var(--raise) 0 6px, transparent 6px 12px); }
+  .incog-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); letter-spacing: .02em; text-transform: none; }
   @media (max-width: 860px) {
     .mback { display: inline-flex !important; }
     .app { grid-template-columns: 1fr; }
@@ -275,10 +347,11 @@
 </style>
 </head>
 <body>
+<div id="splash" aria-hidden="true"><div class="glow"></div><div class="in"><svg viewBox="0 0 112 64"><g fill="none" stroke="var(--gold)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"><circle cx="28" cy="38" r="17"/><path d="M60 56 L77 38 C86 29 91 22 91 12"/><path d="M94 56 L77 38 C68 29 63 22 63 12"/></g></svg><div class="nm"></div></div></div>
 <div class="app">
   <aside class="side" id="side">
     <div class="side-top">
-      <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 9c-3-1-4-5-3-7 2 2 4 3 7 4M26 9c3-1 4-5 3-7-2 2-4 3-7 4" fill="none" stroke="var(--gold)" stroke-width="2.4" stroke-linecap="round"/><rect x="7" y="7" width="18" height="17" rx="7" fill="var(--gold)"/><rect x="10" y="17" width="12" height="8" rx="4" fill="#FFE8CF"/><circle cx="12.5" cy="14" r="1.5" fill="#1A1512"/><circle cx="19.5" cy="14" r="1.5" fill="#1A1512"/></svg><span id="brand-name">ox</span></div>
+      <div class="brand"><svg class="brand-word" viewBox="0 0 112 64" aria-label="ox"><g fill="none" stroke="var(--gold)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"><circle cx="28" cy="38" r="17"/><path d="M60 56 L77 38 C86 29 91 22 91 12"/><path d="M94 56 L77 38 C68 29 63 22 63 12"/></g></svg><span class="brand-tile"><svg viewBox="0 0 112 64" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"><circle cx="28" cy="38" r="17"/><path d="M60 56 L77 38 C86 29 91 22 91 12"/><path d="M94 56 L77 38 C68 29 63 22 63 12"/></g></svg></span><span id="brand-name">ox</span></div>
       <button class="iconbtn" id="collapse" title="Hide the sidebar (⌘\)" aria-label="Hide the sidebar" data-i="sidebar"></button>
     </div>
     <div class="tabs" role="tablist">
@@ -324,7 +397,7 @@
           <div class="crow">
             <button class="round" id="attach" title="Attach text or code files" aria-label="Attach files" data-i="plus"></button>
             <input type="file" id="file" multiple hidden>
-            <label class="pill" title="Mode — enforced, not a hint"><span data-i="mode"></span><select id="mode" aria-label="Mode">
+            <label class="pill" title="Mode. Enforced, not a hint"><span data-i="mode"></span><select id="mode" aria-label="Mode">
               <option value="auto">Auto</option><option value="code">Code</option><option value="ask">Ask</option><option value="plan">Plan</option>
               <option value="debug">Debug</option><option value="data">Data</option><option value="orchestrate">Orchestrate</option>
             </select></label>
@@ -358,8 +431,8 @@
 
     <section class="view" id="v-market"><div class="page"><div class="page-inner" style="max-width:980px">
       <div class="shead" style="font-size:18px">Marketplace</div>
-      <p class="sdesc">Skills and plugins other people have published — from plugin catalogues and from GitHub. Everything is scanned before it is installed, and anything that looks unsafe is refused.</p>
-      <label class="search" style="margin:0 0 12px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:9px 12px"><span data-i="search"></span><input id="mk-q" placeholder="Search skills and plugins — pdf, security, figma, testing…" aria-label="Search the marketplace"></label>
+      <p class="sdesc">Skills and plugins other people have published, from plugin catalogues and from GitHub. Everything is scanned before it is installed, and anything that looks unsafe is refused.</p>
+      <label class="search" style="margin:0 0 12px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:9px 12px"><span data-i="search"></span><input id="mk-q" placeholder="Search skills and plugins: pdf, security, figma, testing…" aria-label="Search the marketplace"></label>
       <div class="subtabs" id="mk-tabs" style="padding-left:0"></div>
       <div id="mk-cats" class="chipline" style="margin:12px 0"></div>
       <div id="mk-list" class="cards"></div>
@@ -369,14 +442,14 @@
 
     <section class="view" id="v-studio"><div class="page"><div class="page-inner" style="max-width:1100px">
       <div class="shead" style="font-size:18px">Studio</div>
-      <p class="sdesc">Images and video from one prompt. Pick where it runs — Higgsfield's 38 models, any fal.ai model, OpenAI's image models, or a Stable Diffusion server on this machine with no account at all. Every result is saved to ~/.ox/media with its full recipe.</p>
+      <p class="sdesc">Images and video from one prompt. Pick where it runs: Higgsfield's 38 models, any fal.ai model, OpenAI's image models, or a Stable Diffusion server on this machine with no account at all. Every result is saved to ~/.ox/media with its full recipe.</p>
       <div class="box" id="st-composer">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
           <select class="field" id="st-provider" style="width:auto" aria-label="Provider"></select>
           <select class="field" id="st-model" style="width:auto;min-width:220px" aria-label="Model"></select>
           <input class="field" id="st-model-custom" placeholder="fal model id, e.g. fal-ai/flux/schnell" style="flex:1;min-width:220px" hidden>
         </div>
-        <textarea class="field" id="st-prompt" rows="3" placeholder="Describe the image or video — ⌘/Ctrl+Enter to generate" style="resize:vertical"></textarea>
+        <textarea class="field" id="st-prompt" rows="3" placeholder="Describe the image or video. ⌘/Ctrl+Enter to generate" style="resize:vertical"></textarea>
         <div id="st-settings" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px"></div>
         <div id="st-media" style="display:flex;flex-direction:column;gap:6px;margin-top:10px"></div>
         <div style="display:flex;align-items:center;gap:10px;margin-top:12px"><button class="btn primary" id="st-go">Generate</button><span class="small muted" id="st-state"></span></div>
@@ -442,7 +515,7 @@
   };
   const icon = (n, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${P[n] || ''}"/></svg>`;
   const paintIcons = (root = document) => root.querySelectorAll('[data-i]').forEach((el) => { if (!el.querySelector('svg')) el.insertAdjacentHTML('afterbegin', icon(el.dataset.i)); });
-  const OX_FACE = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="7" y="7" width="18" height="17" rx="7" fill="#1A1512" opacity=".0"/><circle cx="12.5" cy="14" r="1.8" fill="#1A1512"/><circle cx="19.5" cy="14" r="1.8" fill="#1A1512"/><rect x="10" y="18" width="12" height="7" rx="3.5" fill="#FFE8CF"/></svg>';
+  const OX_FACE = '<svg viewBox="0 0 112 64" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"><circle cx="28" cy="38" r="17"/><path d="M60 56 L77 38 C86 29 91 22 91 12"/><path d="M94 56 L77 38 C68 29 63 22 63 12"/></g></svg>';
 
   function toast(text) {
     const t = $('toast'); t.textContent = text; t.classList.add('on');
@@ -522,7 +595,7 @@
   let about = null;
   // The name you gave ox (Settings › General); every label here follows it.
   let botName = 'ox';
-  const applyName = (n) => { botName = n || 'ox'; document.title = botName; $('brand-name').textContent = botName; if (!convo()?.messages?.length) renderChat(); };
+  const applyName = (n) => { botName = n || 'ox'; document.title = botName; $('brand-name').textContent = botName; const own = botName !== 'ox'; document.querySelector('.brand').classList.toggle('own', own); const sn = document.querySelector('#splash .nm'); if (sn && own) sn.textContent = botName; if (!convo()?.messages?.length) renderChat(); };
   // Incognito chats live only in this tab: never written to storage.
   const saveConvos = () => store.set('ox.convos', convos.filter((c) => !c.incognito).slice(0, 200));
   const convo = () => convos.find((c) => c.id === current);
@@ -564,7 +637,7 @@
     const term = terminalSessions.filter((s) => match(s.title));
     let html = '';
     const rowFor = (c) => `<div class="row${view === 'chat' && !readonly && c.id === current ? ' on' : ''}" data-c="${esc(c.id)}" role="button" tabindex="0">
-      ${c.incognito ? `<span style="color:#A99BEA" title="incognito">${icon('incog')}</span>` : `<span class="dot${c.running ? ' run' : ''}"></span>`}<span class="t">${esc(c.title)}</span><span class="age">${ago(c.updated || c.at)}</span>
+      ${c.incognito ? `<span style="color:var(--muted)" title="incognito">${icon('incog')}</span>` : `<span class="dot${c.running ? ' run' : ''}"></span>`}<span class="t">${esc(c.title)}</span><span class="age">${ago(c.updated || c.at)}</span>
       <span class="acts"><button data-act="pin" title="${c.pinned ? 'Unpin' : 'Pin'}" aria-label="Pin">${icon('pin')}</button><button data-act="archive" title="Archive" aria-label="Archive">${icon('archive')}</button><button data-act="del" title="Delete" aria-label="Delete">${icon('trash')}</button></span></div>`;
     if (pinned.length) html += `<div class="group cap">Pinned</div>${pinned.map(rowFor).join('')}`;
     html += `<div class="group cap">Sessions</div>${rest.map(rowFor).join('') || `<div class="empty-note">${q ? 'Nothing matches.' : 'No chats yet. Start one with New session.'}</div>`}`;
@@ -579,7 +652,7 @@
         const act = e.target.closest('[data-act]')?.dataset.act;
         const c = convos.find((x) => x.id === id);
         if (act === 'pin') { c.pinned = !c.pinned; saveConvos(); renderLists(); return; }
-        if (act === 'archive') { c.archived = true; c.pinned = false; if (current === id) current = null; saveConvos(); renderChat(); renderLists(); toast('Archived — Settings › Archived chats'); return; }
+        if (act === 'archive') { c.archived = true; c.pinned = false; if (current === id) current = null; saveConvos(); renderChat(); renderLists(); toast('Archived. Find it in Settings › Archived chats'); return; }
         if (act === 'del') { if (!confirm(`Delete “${c.title}”? This cannot be undone.`)) return; convos = convos.filter((x) => x.id !== id); if (current === id) current = null; saveConvos(); renderChat(); renderLists(); return; }
         current = id; readonly = null; show('chat'); renderChat();
       };
@@ -592,7 +665,7 @@
   function renderAgents(el) {
     const agents = caps?.agents ?? null;
     if (!agents) { el.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>'; loadCaps().then(renderLists); return; }
-    const colors = ['#6E56CF', '#2F80ED', '#E5534B', '#3FB27F', '#E5A33B', '#C2410C', '#0EA5E9'];
+    const colors = ['var(--raise)'];
     el.innerHTML = `<div class="group cap">Your agents</div>` + (agents.length ? agents.map((a, i) => `
       <button class="row" data-agent="${esc(a.name)}" style="padding:8px">
         <span class="avatar" style="background:${colors[i % colors.length]}">${esc(a.name[0].toUpperCase())}</span>
@@ -626,15 +699,150 @@
       .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>')
       .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   }
-  const LIVE_LANGS = new Set(['html-live', 'ox-ui']);
+  // ---------- answers as interface (OpenUI-style)
+  // The model describes UI as JSON in an ```ox-ui block; this page draws it with
+  // its own components. No model-written code runs here, so small local models
+  // work too. Formulas go through a tiny arithmetic parser, never eval.
+  function calc(expr, vars) {
+    const toks = String(expr).match(/\d*\.?\d+(?:e[+-]?\d+)?|[A-Za-z_]\w*|\*\*|[-+*/^%(),]/gi) || [];
+    let i = 0;
+    const FN = { min: Math.min, max: Math.max, round: Math.round, floor: Math.floor, ceil: Math.ceil, abs: Math.abs, sqrt: Math.sqrt, pow: Math.pow, log: Math.log, exp: Math.exp };
+    const peek = () => toks[i], next = () => toks[i++];
+    const prim = () => {
+      const t = next();
+      if (t === undefined) throw new Error('incomplete formula');
+      if (t === '(') { const v = sum(); if (next() !== ')') throw new Error('missing )'); return v; }
+      if (t === '-') return -unary();
+      if (t === '+') return unary();
+      if (/^[\d.]/.test(t)) return Number(t);
+      if (FN[t] && peek() === '(') { next(); const a = []; if (peek() !== ')') { a.push(sum()); while (peek() === ',') { next(); a.push(sum()); } } if (next() !== ')') throw new Error('missing )'); return FN[t](...a); }
+      if (t === 'PI') return Math.PI;
+      if (Object.prototype.hasOwnProperty.call(vars, t)) return Number(vars[t]);
+      throw new Error(`unknown name ${t}`);
+    };
+    const unary = () => prim();
+    const power = () => { const b = unary(); if (peek() === '^' || peek() === '**') { next(); return Math.pow(b, power()); } return b; };
+    const prod = () => { let v = power(); while (['*', '/', '%'].includes(peek())) { const o = next(), r = power(); v = o === '*' ? v * r : o === '/' ? v / r : v % r; } return v; };
+    const sum = () => { let v = prod(); while (['+', '-'].includes(peek())) { const o = next(), r = prod(); v = o === '+' ? v + r : v - r; } return v; };
+    const v = sum();
+    if (i < toks.length) throw new Error('could not read the formula');
+    return v;
+  }
+  function fmtNum(v, f = {}) {
+    if (!Number.isFinite(v)) return '…';
+    if (f.format === 'currency' || f.format === 'usd') f = { ...f, format: 'money' };
+    const d = f.decimals ?? (f.format === 'money' ? 2 : Math.abs(v) < 10 ? 2 : 0);
+    const n = v.toLocaleString(undefined, { minimumFractionDigits: f.format === 'money' ? d : 0, maximumFractionDigits: d });
+    return f.format === 'money' ? `${f.currency ?? '$'}${n}` : f.format === 'percent' ? `${n}%` : `${n}${f.unit ? ` ${f.unit}` : ''}`;
+  }
+  function uiPart(p) {
+    if (!p || typeof p !== 'object') return '';
+    const t = p.type;
+    const title = p.title ? `<div class="ui-title">${esc(p.title)}</div>` : '';
+    if (t === 'form' || t === 'calculator') {
+      return `<div class="ui-form" data-ui='${esc(JSON.stringify(p))}'>${title}<div class="ui-fields">${(p.fields ?? []).map((f) => `<label class="ui-field"><span>${esc(f.label ?? f.id)}</span>${f.options ? `<select data-id="${esc(f.id)}">${f.options.map((o) => `<option value="${esc(o.value ?? o)}">${esc(o.label ?? o)}</option>`).join('')}</select>` : `<input data-id="${esc(f.id)}" type="${f.kind === 'text' ? 'text' : 'number'}" value="${esc(f.value ?? '')}" ${f.min != null ? `min="${esc(f.min)}"` : ''} ${f.max != null ? `max="${esc(f.max)}"` : ''} step="${esc(f.step ?? 'any')}">`}${f.slider && f.min != null && f.max != null ? `<input type="range" data-for="${esc(f.id)}" min="${esc(f.min)}" max="${esc(f.max)}" step="${esc(f.step ?? 'any')}" value="${esc(f.value ?? f.min)}">` : ''}</label>`).join('')}</div><div class="ui-stats">${(p.outputs ?? []).map((o, k) => `<div class="ui-stat${k === 0 ? ' main' : ''}"><span>${esc(o.label)}</span><b data-out="${k}">—</b></div>`).join('')}</div></div>`;
+    }
+    if (t === 'table') return `<div class="ui-box">${title}<div class="ui-scroll"><table class="ui-table"><thead><tr>${(p.columns ?? []).map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${(p.rows ?? []).map((r) => `<tr>${(Array.isArray(r) ? r : Object.values(r)).map((c) => `<td>${inline(String(c ?? ''))}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+    if (t === 'cards') return `<div class="ui-cards">${(p.items ?? []).map((c) => `<div class="ui-card"><b>${esc(c.title ?? '')}</b>${c.text ? `<p>${inline(c.text)}</p>` : ''}${c.meta ? `<span>${esc(c.meta)}</span>` : ''}</div>`).join('')}</div>`;
+    if (t === 'stats') return `<div class="ui-stats loose">${(p.items ?? []).map((s) => `<div class="ui-stat"><span>${esc(s.label)}</span><b>${esc(s.value)}</b>${s.note ? `<em>${esc(s.note)}</em>` : ''}</div>`).join('')}</div>`;
+    if (t === 'steps') return `<div class="ui-box">${title}<ol class="ui-steps">${(p.items ?? []).map((s) => `<li class="${s.done ? 'done' : ''}"><b>${esc(s.title ?? s)}</b>${s.text ? `<p>${inline(s.text)}</p>` : ''}</li>`).join('')}</ol></div>`;
+    if (t === 'chart') {
+      const vals = (p.values ?? []).map(Number), max = Math.max(1e-9, ...vals.map(Math.abs));
+      return `<div class="ui-box">${title}<div class="ui-bars">${vals.map((v, k) => `<div class="ui-bar"><span>${esc(p.labels?.[k] ?? '')}</span><i style="width:${Math.max(1, Math.abs(v) / max * 100)}%"></i><b>${esc(fmtNum(v, p))}</b></div>`).join('')}</div></div>`;
+    }
+    if (t === 'choices' || t === 'actions') return `<div class="ui-box">${title}<div class="ui-choices">${(p.items ?? []).map((c) => `<button class="chip" data-ask="${esc(c.prompt ?? c.label ?? c)}">${esc(c.label ?? c)}</button>`).join('')}</div></div>`;
+    if (t === 'text') return `<p>${inline(p.text ?? '')}</p>`;
+    return '';
+  }
+  function renderUi(code) {
+    let spec;
+    try { spec = JSON.parse(code); } catch { return null; }
+    const parts = Array.isArray(spec) ? spec : Array.isArray(spec?.parts) ? spec.parts : [spec];
+    const html = parts.map(uiPart).join('');
+    return html ? `<div class="ui">${html}</div>` : null;
+  }
+  function bindUi(root) {
+    root.querySelectorAll('.ui-form[data-ui]').forEach((el) => {
+      const p = JSON.parse(el.dataset.ui); el.removeAttribute('data-ui');
+      const run = () => {
+        const vars = {};
+        el.querySelectorAll('[data-id]').forEach((i) => { vars[i.dataset.id] = i.type === 'number' || i.tagName === 'SELECT' ? Number(i.value) : i.value; });
+        try { for (const [k, ex] of Object.entries(p.let ?? {})) vars[k] = calc(ex, vars); } catch {}
+        (p.outputs ?? []).forEach((o, k) => { let v; try { v = calc(o.expr ?? o.formula, vars); } catch (e) { v = NaN; } el.querySelector(`[data-out="${k}"]`).textContent = fmtNum(v, o); });
+      };
+      el.querySelectorAll('input[type=range]').forEach((r) => { const box = el.querySelector(`[data-id="${CSS.escape(r.dataset.for)}"]`); r.oninput = () => { box.value = r.value; run(); }; box.addEventListener('input', () => { r.value = box.value; }); });
+      el.addEventListener('input', run); el.addEventListener('change', run); run();
+    });
+    root.querySelectorAll('[data-ask]').forEach((b) => (b.onclick = () => { $('input').value = b.dataset.ask; $('input').dispatchEvent(new Event('input')); $('input').focus(); }));
+  }
+
+  // OX Canvas (src/ui-lang.js, the show_ui tool): the same component tree the
+  // terminal and the island draw, drawn here with the page's own components.
+  function canvasNode(n) {
+    if (n == null) return '';
+    if (Array.isArray(n)) return n.map(canvasNode).join('');
+    if (typeof n !== 'object') return esc(String(n));
+    const p = n.props ?? {}, kids = (c) => canvasNode(c ?? []);
+    const tone = (t) => (t === 'danger' || t === 'error' ? ' bad' : '');
+    switch (n.type) {
+      case 'Stack': return `<div class="cv-stack">${kids(p.children)}</div>`;
+      case 'Row': return `<div class="cv-row">${kids(p.children)}</div>`;
+      case 'Card': return `<div class="ui-box${tone(p.tone)}">${p.title ? `<div class="ui-title">${esc(p.title)}</div>` : ''}<div class="cv-stack">${kids(p.children)}</div></div>`;
+      case 'Header': return `<div class="cv-head"><b>${esc(p.title ?? '')}</b>${p.subtitle ? `<span>${esc(p.subtitle)}</span>` : ''}</div>`;
+      case 'Text': return `<p class="cv-text${p.style === 'muted' ? ' muted' : ''}">${inline(String(p.text ?? ''))}</p>`;
+      case 'Stat': return `<div class="ui-stat"><span>${esc(p.label ?? '')}</span><b>${esc(p.value ?? '')}${p.unit ? ` <small>${esc(p.unit)}</small>` : ''}</b>${p.delta != null ? `<em>${esc(p.delta)}</em>` : ''}</div>`;
+      case 'Fields': return `<div class="cv-fields">${(Array.isArray(p.pairs) ? p.pairs : Object.entries(p.pairs ?? {})).map((x) => { const [k, v] = Array.isArray(x) ? x : [x.label ?? x.key, x.value]; return `<span>${esc(k)}</span><b>${esc(v)}</b>`; }).join('')}</div>`;
+      case 'Table': {
+        const cols = (p.columns ?? []).map((c) => c.props ?? c);
+        const rows = Math.max(0, ...cols.map((c) => (c.values ?? []).length));
+        return `<div class="ui-scroll"><table class="ui-table"><thead><tr>${cols.map((c) => `<th>${esc(c.label ?? '')}</th>`).join('')}</tr></thead><tbody>${Array.from({ length: rows }, (_, r) => `<tr>${cols.map((c) => `<td>${esc(c.values?.[r] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+      }
+      case 'BarChart': {
+        const vals = (p.values ?? []).map(Number), max = Math.max(1e-9, ...vals.map(Math.abs));
+        return `<div>${p.title ? `<div class="ui-title">${esc(p.title)}</div>` : ''}<div class="ui-bars">${vals.map((v, k) => `<div class="ui-bar"><span>${esc(p.labels?.[k] ?? '')}</span><i style="width:${Math.max(1, Math.abs(v) / max * 100)}%"></i><b>${esc(fmtNum(v))}</b></div>`).join('')}</div></div>`;
+      }
+      case 'Sparkline': {
+        const v = (p.values ?? []).map(Number); if (!v.length) return '';
+        const lo = Math.min(...v), hi = Math.max(...v), span = hi - lo || 1;
+        const pts = v.map((y, i) => `${(i / Math.max(1, v.length - 1)) * 100},${28 - ((y - lo) / span) * 26}`).join(' ');
+        return `<div class="cv-spark">${p.label ? `<span>${esc(p.label)}</span>` : ''}<svg viewBox="0 0 100 30" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg></div>`;
+      }
+      case 'Progress': { const max = Number(p.max ?? 100) || 100, pct = Math.max(0, Math.min(100, Number(p.value) / max * 100)); return `<div class="cv-prog"><div><span>${esc(p.label ?? '')}</span><b>${Math.round(pct)}%</b></div><i><s style="width:${pct}%"></s></i></div>`; }
+      case 'List': { const tag = p.ordered ? 'ol' : 'ul'; return `<${tag} class="cv-list">${(p.items ?? []).map((x) => `<li>${typeof x === 'object' ? canvasNode(x) : inline(String(x))}</li>`).join('')}</${tag}>`; }
+      case 'Callout': return `<div class="cv-callout${tone(p.tone)}"><b>${esc(p.title ?? '')}</b>${p.text ? `<p>${inline(String(p.text))}</p>` : ''}</div>`;
+      case 'Badge': return `<span class="badge${tone(p.tone)}">${esc(p.text ?? '')}</span>`;
+      case 'Code': return `<div class="code"><div class="cb"><span>${esc(p.lang || 'code')}</span><button data-copy>Copy</button></div><pre><code>${esc(p.code ?? '')}</code></pre></div>`;
+      case 'Diff': return `<pre class="cv-diff">${String(p.diff ?? '').split('\n').map((l) => `<span class="${l.startsWith('+') ? 'add' : l.startsWith('-') ? 'del' : ''}">${esc(l)}</span>`).join('\n')}</pre>`;
+      case 'Divider': return '<hr class="cv-hr">';
+      case 'Buttons': return `<div class="ui-choices">${kids(p.buttons)}</div>`;
+      case 'Button': {
+        const steps = p.action?.steps ?? [];
+        const ask = steps.find((x) => x.step === 'ask')?.message, url = steps.find((x) => x.step === 'open' || x.step === 'url')?.url;
+        if (url && /^https?:\/\//.test(url)) return `<a class="chip" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(p.label ?? '')}</a>`;
+        return `<button class="chip" ${ask ? `data-ask="${esc(ask)}"` : 'disabled title="Works in the terminal and the island"'}>${esc(p.label ?? '')}</button>`;
+      }
+      case 'Select': return `<label class="ui-field"><span>${esc(p.name ?? '')}</span><select disabled>${(p.options ?? []).map((o) => { const q = o.props ?? o; return `<option ${String(q.value) === String(p.value) ? 'selected' : ''}>${esc(q.label ?? q.value)}</option>`; }).join('')}</select></label>`;
+      default: return p.children ? kids(p.children) : '';
+    }
+  }
+
+  // Models sometimes add words after the fence name ("html-live code block:").
+  const fenceKind = (lang) => /^ox-?ui\b/i.test(lang) ? 'ui' : /^html-?live\b/i.test(lang) ? 'live' : '';
   function md(text) {
     const out = [];
     String(text).split(/```/).forEach((part, i) => {
       if (i % 2 === 1) {
         const nl = part.indexOf('\n');
-        const lang = nl > 0 ? part.slice(0, nl).trim() : '';
-        const code = (nl >= 0 ? part.slice(nl + 1) : part).replace(/\n$/, '');
-        if (LIVE_LANGS.has(lang)) {
+        let lang = nl > 0 ? part.slice(0, nl).trim() : '';
+        let code = (nl >= 0 ? part.slice(nl + 1) : part).replace(/\n$/, '');
+        // Some models put the block's name on the line after the fence.
+        const named = !lang && /^\s*(ox-?ui|html-?live)\s*\n/i.exec(code);
+        if (named) { lang = named[1]; code = code.slice(named[0].length); }
+        const kind = fenceKind(lang);
+        const ui = kind === 'ui' ? renderUi(code) : null;
+        if (ui) { out.push(ui); return; }
+        // A model that wrote HTML where JSON belonged still gets a working (sandboxed) widget.
+        if (kind === 'live' || (kind === 'ui' && /^\s*</.test(code))) {
           // An interactive answer: run in a sandboxed frame with no network and no access to this page.
           out.push(`<div class="live"><div class="cb"><span>interactive</span><button data-copy>Copy source</button></div><iframe sandbox="allow-scripts" referrerpolicy="no-referrer" data-src="${esc(code)}" title="Interactive answer"></iframe><pre hidden><code>${esc(code)}</code></pre></div>`);
           return;
@@ -668,7 +876,9 @@
     root.querySelectorAll('iframe[data-src]').forEach((f) => {
       const src = f.dataset.src; f.removeAttribute('data-src');
       const sizer = '<script>(()=>{const s=()=>parent.postMessage({oxLiveHeight:Math.ceil(document.body.getBoundingClientRect().height)+28},"*");addEventListener("load",s);addEventListener("input",s);addEventListener("click",()=>setTimeout(s,30));setTimeout(s,60);try{new ResizeObserver(s).observe(document.body)}catch{}})()<\/script>';
-      f.srcdoc = `<!doctype html><meta charset="utf-8"><style>body{font:14px/1.5 system-ui,sans-serif;margin:14px;color:#1b1a18}</style>${src}${sizer}`;
+      const cs = getComputedStyle(document.documentElement), v = (n) => cs.getPropertyValue(n).trim();
+      const base = `:root{color-scheme:${v('color-scheme') || 'dark'}}body{font:14px/1.5 -apple-system,system-ui,sans-serif;margin:14px;color:${v('--text')};background:${v('--panel')}}input,select,textarea,button{font:inherit;color:inherit;background:${v('--bg')};border:1px solid ${v('--line2')};border-radius:8px;padding:6px 9px}button{cursor:pointer;background:${v('--btn')};color:${v('--btn-ink')};border:0;font-weight:600}input[type=range]{accent-color:${v('--text')}}table{border-collapse:collapse}td,th{border-bottom:1px solid ${v('--line')};padding:6px 8px;text-align:left}`;
+      f.srcdoc = `<!doctype html><meta charset="utf-8"><style>${base}</style>${src}${sizer}`;
     });
   }
   window.addEventListener('message', (e) => {
@@ -697,8 +907,9 @@
     const plan = Array.isArray(msg.plan) && msg.plan.length
       ? `<div class="worklog"><div class="cap" style="margin-bottom:6px">Plan · ${msg.plan.filter((t) => t.status === 'completed').length}/${msg.plan.length} done</div>${msg.plan.map((t) => `<div class="wl ${t.status}"><span class="dot ${PI[t.status]?.[0] ?? ''}"></span><span>${esc(t.content)}</span></div>`).join('')}</div>`
       : '';
-    body.innerHTML = routed + plan + (steps ? `<div class="steps">${steps}</div>` : '') + text + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : '');
-    mountLive(body);
+    const canv = (msg.canvases || []).map((c) => `<div class="ui cv">${canvasNode(c.tree)}</div>`).join('');
+    body.innerHTML = routed + plan + (steps ? `<div class="steps">${steps}</div>` : '') + canv + text + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : '');
+    mountLive(body); bindUi(body);
     body.closest('.msg').dataset.text = msg.content || '';
   }
   function renderChat() {
@@ -706,7 +917,7 @@
     inner.innerHTML = '';
     $('title').textContent = readonly ? readonly.title : convo()?.title || 'New session';
     document.body.classList.toggle('incog', !!convo()?.incognito && !readonly);
-    $('ro').innerHTML = readonly ? 'terminal session · read-only' : convo()?.incognito ? `<span class="incog-tag">${icon('incog')}incognito — nothing is saved</span>` : '';
+    $('ro').innerHTML = readonly ? 'terminal session · read-only' : convo()?.incognito ? `<span class="incog-tag">${icon('incog')}incognito, nothing is saved</span>` : '';
     $('input').disabled = !!readonly;
     $('input').placeholder = readonly ? 'Viewing a terminal session' : 'Describe what you need';
     if (readonly) {
@@ -725,7 +936,7 @@
     }
     const c = convo();
     if (!c || !c.messages.length) {
-      inner.innerHTML = `<div class="hello"><div class="avatar" style="background:var(--gold);width:46px;height:46px;border-radius:14px;margin:0 auto">${OX_FACE}</div><h1>What should ${esc(botName)} do?</h1><p>${esc(botName)} works in ${esc(about?.cwd?.split(/[\\/]/).pop() || 'this project')} on your machine — it reads, edits, runs and explains.</p><div class="chips">${SUGGESTIONS.map((s) => `<button class="chip">${esc(s)}</button>`).join('')}</div></div>`;
+      inner.innerHTML = `<div class="hello"><div class="avatar hello-mark">${OX_FACE}</div><h1>What should ${esc(botName)} do?</h1><p>${esc(botName)} works in ${esc(about?.cwd?.split(/[\\/]/).pop() || 'this project')} on your machine. It reads, edits, runs and explains.</p><div class="chips">${SUGGESTIONS.map((s) => `<button class="chip">${esc(s)}</button>`).join('')}</div></div>`;
       inner.querySelectorAll('.chip').forEach((b) => (b.onclick = () => { $('input').value = b.textContent; resize(); send(); }));
       return;
     }
@@ -796,7 +1007,7 @@
           if (ox?.type === 'mode') reply.routed = `${ox.routed ? 'auto → ' : ''}${ox.mode}${ox.reason ? ` · ${ox.reason}` : ''}`;
           if (ox?.type === 'tool-start' && Array.isArray(ox.plan)) reply.plan = ox.plan;
           else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '' });
-          if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; }
+          if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; if (ox.canvas) { reply.canvases = (reply.canvases || []).filter((c) => c.id !== ox.id); reply.canvases.push({ id: ox.id, tree: ox.canvas }); } }
           const delta = ev.choices?.[0]?.delta?.content;
           if (delta) reply.content += delta;
           if (ev.usage) $('usage').textContent = `${((ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0)).toLocaleString()} tokens`;
@@ -889,7 +1100,7 @@
   }
   async function addFiles(list) {
     for (const f of list) {
-      if (f.size > 200_000) { toast(`${f.name} is over 200 KB — point ox at it by path instead`); continue; }
+      if (f.size > 200_000) { toast(`${f.name} is over 200 KB. Point ox at it by path instead`); continue; }
       const text = await f.text();
       if (/\u0000/.test(text)) { toast(`${f.name} is not a text file`); continue; }
       attachments.push({ name: f.name, text });
@@ -961,7 +1172,7 @@
   async function renderCapDetail() {
     const d = $('caps-detail');
     const x = (caps[capsTab] || []).find((i) => i.name === capsSel);
-    if (!x) { d.innerHTML = `<div class="muted" style="margin-top:20vh;text-align:center">${capsTab === 'skills' ? 'Skills are instructions ox loads when a task needs them — built in, yours, this project\'s, or learned from your own runs.' : 'Pick one to see what it does.'}</div>`; return; }
+    if (!x) { d.innerHTML = `<div class="muted" style="margin-top:20vh;text-align:center">${capsTab === 'skills' ? 'Skills are instructions ox loads when a task needs them: built in, yours, this project\'s, or learned from your own runs.' : 'Pick one to see what it does.'}</div>`; return; }
     const back = `<button class="btn ghost mback" style="margin-bottom:12px" onclick="document.getElementById('caps-split').classList.remove('show-detail')">${icon('back')}Back</button>`;
     if (capsTab === 'skills') {
       d.innerHTML = `${back}<h2>${esc(x.name)} <span class="badge">${esc(x.source)}</span>${x.learned ? '<span class="badge ok">learned</span>' : ''}</h2><p class="lede">${esc(x.description)}</p><dl class="kv"><dt>file</dt><dd class="mono">${esc(x.path)}</dd></dl><div class="skeleton"></div><div class="skeleton"></div>`;
@@ -981,12 +1192,12 @@
 
   // ---------- messaging
   let msgSel = 'telegram', channels = null;
-  const CH = { telegram: { bg: '#2AABEE', l: 'T' }, discord: { bg: '#5865F2', l: 'D' } };
+  const CH = { telegram: { bg: 'var(--raise)', l: 'T' }, discord: { bg: 'var(--raise)', l: 'D' } };
   async function loadMessaging() {
     try { channels = await getJson('/ox/messaging'); } catch (e) { $('msg-list').innerHTML = `<div class="empty-note">${esc(e.message)}</div>`; return; }
-    const state = (c) => c.paired ? ['ok', 'Paired'] : c.configured ? ['warn', c.pairing ? 'Waiting for /pair' : 'Token saved — run it to pair'] : ['warn', 'Needs setup'];
+    const state = (c) => c.paired ? ['ok', 'Paired'] : c.configured ? ['warn', c.pairing ? 'Waiting for /pair' : 'Token saved. Run it to pair'] : ['warn', 'Needs setup'];
     $('msg-list').innerHTML = `<label class="search"><span data-i="search"></span><input placeholder="Filter channels…" aria-label="Filter channels" id="msg-q"></label>` + channels.map((c) => `<button class="item${msgSel === c.id ? ' on' : ''}" data-ch="${c.id}"><span class="ch-icon" style="background:${CH[c.id]?.bg || '#555'}">${CH[c.id]?.l || '?'}</span><span class="t"><div class="n">${esc(c.label)}</div><div class="d">${esc(state(c)[1])}</div></span><span class="dot ${state(c)[0]}"></span></button>`).join('')
-      + '<div class="empty-note" style="padding:12px 16px">More channels — Slack, WhatsApp, email — are on the way; these two work today.</div>';
+      + '<div class="empty-note" style="padding:12px 16px">More channels (Slack, WhatsApp, email) are on the way. These two work today.</div>';
     paintIcons($('msg-list'));
     $('msg-list').querySelectorAll('[data-ch]').forEach((b) => (b.onclick = () => { msgSel = b.dataset.ch; loadMessaging(); $('msg-split').classList.add('show-detail'); }));
     $('msg-q').oninput = () => { const q = $('msg-q').value.toLowerCase(); $('msg-list').querySelectorAll('[data-ch]').forEach((b) => (b.hidden = !b.textContent.toLowerCase().includes(q))); };
@@ -1001,7 +1212,7 @@
       <div class="box"><ol class="steps-ol">${c.how.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>
       <div class="cmd"><code>${esc(c.command)}${c.configured ? '' : ' --token &lt;token&gt;'}</code><button data-copy-cmd="${esc(c.command)}${c.configured ? '' : ' --token '}">${icon('copy')}</button></div></div>
       <div class="section-cap cap">From your phone</div>
-      <div class="box small muted">/status — what ox is doing · /stop — stop the run · /mode ask|code|plan — switch mode · /new — start fresh · /where — the folder it works in</div>`;
+      <div class="box small muted">/status: what ox is doing · /stop: stop the run · /mode ask|code|plan: switch mode · /new: start fresh · /where: the folder it works in</div>`;
   }
 
   // ---------- project map (PLAN.md in agenttrail's convention, against git)
@@ -1014,7 +1225,7 @@
     const changes = (list) => list.map((f) => `<div class="small mono" style="display:flex;gap:8px;color:var(--muted)"><span class="dim" style="width:16px">${esc(f.state)}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.file)}</span><span class="dim">${f.at ? ago(f.at) : ''}</span></div>`).join('');
     const head = `<div class="shead" style="font-size:18px">${esc(M.title)}</div><p class="sdesc">What the plan says (PLAN.md) against what the files show (git). ${M.hasPlan ? `${M.progress.done} of ${M.progress.total} tasks done.` : ''} Refreshes when you open it; <a href="#" id="map-refresh" style="color:var(--gold)">refresh</a>.</p>`;
     if (!M.hasPlan) {
-      el.innerHTML = head + `<div class="box"><b>No PLAN.md in ${esc(M.cwd)}</b><p class="muted small">Ask ox: “write a PLAN.md for this repo in the agenttrail convention — components with files: globs, tasks with [ ] [~] [x] [!] and {#ids}”. Or start from this:</p><pre class="body-md">## Sign-in {#auth}
+      el.innerHTML = head + `<div class="box"><b>No PLAN.md in ${esc(M.cwd)}</b><p class="muted small">Ask ox: “write a PLAN.md for this repo in the agenttrail convention, components with files: globs, tasks with [ ] [~] [x] [!] and {#ids}”. Or start from this:</p><pre class="body-md">## Sign-in {#auth}
 files: [src/auth/**]
 - [x] Email login {#auth-email}
   tech: src/auth/email.ts
@@ -1026,7 +1237,7 @@ files: [src/billing/**]
 - [ ] Stripe checkout {#billing-checkout}</pre></div>` + (M.changes.length ? `<div class="section-cap cap">Changed files (git)</div><div class="box">${changes(M.changes.slice(0, 30))}</div>` : '');
     } else {
       el.innerHTML = head
-        + (M.planStale ? `<div class="alert" style="color:var(--amber);border-color:color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 8%,transparent);margin-bottom:12px">${icon('info')}Code has moved for ${M.planStale} minutes while PLAN.md stayed the same — the plan may be out of date.</div>` : '')
+        + (M.planStale ? `<div class="alert" style="color:var(--amber);border-color:color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 8%,transparent);margin-bottom:12px">${icon('info')}Code has moved for ${M.planStale} minutes while PLAN.md stayed the same. The plan may be out of date.</div>` : '')
         + `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">${M.components.map((c) => `
           <div class="box" style="border-left:3px solid ${MAP_COLOR[c.status]}">
             <div style="display:flex;align-items:center;gap:8px"><b style="flex:1">${esc(c.title)}</b>${c.live ? '<span class="badge warn"><span class="dot run"></span>files moving</span>' : ''}<span class="badge" style="color:${MAP_COLOR[c.status]}">${MAP_WORD[c.status]}</span></div>
@@ -1047,7 +1258,7 @@ files: [src/billing/**]
     try { stData = await getJson('/ox/studio'); } catch (e) { $('st-gallery').innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; return; }
     const prov = $('st-provider');
     const keep = prov.value || store.get('ox.studio.provider', 'higgsfield');
-    prov.innerHTML = stData.providers.map((p) => `<option value="${p.id}">${esc(p.label)}${p.ready ? '' : ' — needs a key'}</option>`).join('');
+    prov.innerHTML = stData.providers.map((p) => `<option value="${p.id}">${esc(p.label)}${p.ready ? '' : ' (needs a key)'}</option>`).join('');
     prov.value = stData.providers.some((p) => p.id === keep) ? keep : 'higgsfield';
     renderStudioModels(); renderGallery();
   }
@@ -1096,7 +1307,7 @@ files: [src/billing/**]
     $('st-gallery').prepend(tile);
     try {
       const r = await postJson('/ox/studio/create', { provider: p.id, model, prompt, settings, media });
-      toast(r.status === 'completed' ? 'Done — saved to ~/.ox/media' : `Finished as ${r.status}${r.error ? `: ${r.error}` : ''}`);
+      toast(r.status === 'completed' ? 'Done. Saved to ~/.ox/media' : `Finished as ${r.status}${r.error ? `: ${r.error}` : ''}`);
     } catch (e) { toast(e.message); }
     stBusy--; $('st-state').textContent = stBusy ? `${stBusy} running…` : '';
     loadStudio();
@@ -1112,7 +1323,7 @@ files: [src/billing/**]
     $('st-gallery').innerHTML = list.length ? list.map((r) => {
       const f = r.files?.[0];
       const media = f ? (/\.(mp4|mov|webm)$/i.test(f) ? `<video src="${esc(f)}" controls muted style="width:100%;border-radius:8px;background:#000"></video>` : `<a href="${esc(f)}" target="_blank" rel="noopener"><img src="${esc(f)}" alt="${esc(r.prompt)}" style="width:100%;border-radius:8px;display:block"></a>`)
-        : `<div class="box small ${r.status === 'failed' || r.status === 'nsfw' ? 'err' : 'muted'}" style="min-height:90px">${esc(r.status === 'queued' ? 'still running, or stopped before it finished' : `${r.status}${r.error ? ` — ${r.error}` : ''}`)}</div>`;
+        : `<div class="box small ${r.status === 'failed' || r.status === 'nsfw' ? 'err' : 'muted'}" style="min-height:90px">${esc(r.status === 'queued' ? 'still running, or stopped before it finished' : `${r.status}${r.error ? `: ${r.error}` : ''}`)}</div>`;
       return `<div class="box" style="padding:8px">${media}<div class="small" style="margin:6px 2px 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.prompt)}">${esc(r.prompt || '(no prompt)')}</div><div class="d small dim" style="display:flex;gap:6px;align-items:center;margin:0 2px"><span>${esc(r.label || r.model)}</span><span class="grow" style="flex:1"></span>${(r.files?.length ?? 0) > 1 ? `<span>+${r.files.length - 1}</span>` : ''}<button class="btn ghost" data-reuse="${esc(r.id)}" title="Reuse prompt, model and settings">Reuse</button><button class="btn ghost" data-fav="${esc(r.id)}" title="Favorite">${r.favorite ? '★' : '☆'}</button><button class="btn ghost danger" data-del="${esc(r.id)}" title="Remove from the gallery">✕</button></div></div>`;
     }).join('') : '<div class="box muted small">Nothing yet. Try: “a lighthouse at dusk, cinematic, 35mm”.</div>';
     $('st-gallery').querySelectorAll('[data-reuse]').forEach((b) => (b.onclick = () => {
@@ -1153,7 +1364,7 @@ files: [src/billing/**]
       b.disabled = true; b.textContent = 'Installing…';
       try {
         const r = await postJson('/ox/market/install', b.dataset.instRepo ? { repo: b.dataset.instRepo } : { name: b.dataset.instName, catalog: b.dataset.instCat });
-        toast(r.ok ? `Installed — ${r.message}` : r.message);
+        toast(r.ok ? `Installed. ${r.message}` : r.message);
         if (r.ok) { b.outerHTML = '<span class="badge ok"><span class="dot ok"></span>installed</span>'; caps = null; } else { b.disabled = false; b.textContent = 'Install'; }
       } catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Install'; }
     }));
@@ -1168,10 +1379,10 @@ files: [src/billing/**]
     let s;
     try { s = await getJson('/ox/scheduled'); } catch (e) { el.innerHTML = `<div class="empty-note">${esc(e.message)}</div>`; return; }
     el.innerHTML = `
-      <div class="shead">${icon('clock')}Scheduled runs</div><p class="sdesc">ox runs these prompts on their own, on the schedule you set — with a cost cap per run.</p>
+      <div class="shead">${icon('clock')}Scheduled runs</div><p class="sdesc">ox runs these prompts on their own, on the schedule you set, with a cost cap per run.</p>
       <div class="cards">${s.schedules.length ? s.schedules.map((x) => `<div class="card"><span class="dot ${x.enabled ? 'ok' : ''}"></span><span class="t"><div class="n">${esc(x.prompt)}</div><div class="d"><span>${esc(x.cadence)}</span><span>next: ${esc(x.next)}</span><span class="mono">${esc(x.id)}</span></div></span><label class="switch" title="${x.enabled ? 'On' : 'Paused'}"><input type="checkbox" data-sch="${esc(x.id)}" ${x.enabled ? 'checked' : ''} aria-label="Enabled"><span></span></label></div>`).join('')
         : `<div class="box muted small">Nothing scheduled.<div class="cmd"><code>ox schedule add "summarise yesterday's commits" --every 1d</code><button data-copy-cmd='ox schedule add "summarise yesterday&#39;s commits" --every 1d'>${icon('copy')}</button></div></div>`}</div>
-      <div class="shead" style="margin-top:34px">${icon('globe')}Page watches</div><p class="sdesc">ox checks pages for you and tells you when something changes — a price drops, a word shows up. ${s.watcherRunning ? '<span class="badge ok"><span class="dot ok"></span>checker running</span>' : '<span class="badge">checker stopped</span>'}</p>
+      <div class="shead" style="margin-top:34px">${icon('globe')}Page watches</div><p class="sdesc">ox checks pages for you and tells you when something changes: a price drops, a word shows up. ${s.watcherRunning ? '<span class="badge ok"><span class="dot ok"></span>checker running</span>' : '<span class="badge">checker stopped</span>'}</p>
       <div class="cards">${s.watches.length ? s.watches.map((w) => `<div class="card"><span class="dot ok"></span><span class="t"><div class="n">${esc(w.label)}</div><div class="d"><span>${esc(w.what)}</span></div></span><a class="btn ghost" href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${icon('open')}Open</a></div>`).join('')
         : `<div class="box muted small">No watches.<div class="cmd"><code>ox watch https://example.com/item --price-below 50</code><button data-copy-cmd="ox watch https://example.com/item --price-below 50">${icon('copy')}</button></div></div>`}</div>`;
     el.querySelectorAll('[data-sch]').forEach((i) => (i.onchange = async () => {
@@ -1235,11 +1446,11 @@ files: [src/billing/**]
       if (sec === 'general') {
         const st = await getJson('/ox/settings');
         if (!caps) await loadCaps().catch(() => {});
-        el.innerHTML = `${mobileBack}<div class="sblock"><div class="shead">${icon('chat')}Name</div><p class="sdesc">Call it whatever you like. It answers to this name when you say it while talking to it — in this app, the terminal, the island and your phone — and calls itself by it. Your agents keep their own names (rename them below).</p>
-          ${row('Name', st.name === 'ox' ? 'The default' : `Was ox — clear it to go back`, `<span style="display:flex;gap:6px"><input class="field" id="s-name" maxlength="24" style="width:160px" placeholder="ox"><button class="btn" id="s-name-save">Save</button></span>`)}
+        el.innerHTML = `${mobileBack}<div class="sblock"><div class="shead">${icon('chat')}Name</div><p class="sdesc">Call it whatever you like. It answers to this name when you say it while talking to it, in this app, the terminal, the island and your phone, and calls itself by it. Your agents keep their own names (rename them below).</p>
+          ${row('Name', st.name === 'ox' ? 'The default' : `Was ox. Clear it to go back`, `<span style="display:flex;gap:6px"><input class="field" id="s-name" maxlength="24" style="width:160px" placeholder="ox"><button class="btn" id="s-name-save">Save</button></span>`)}
           ${(caps?.agents ?? []).map((a) => row(`Agent “${esc(a.name)}”`, esc(a.desc || a.mode || ''), `<span style="display:flex;gap:6px"><input class="field" data-ag-from="${esc(a.name)}" value="${esc(a.name)}" maxlength="48" style="width:160px"><button class="btn" data-ag-save="${esc(a.name)}">Rename</button></span>`)).join('')}</div>
-          <div class="sblock"><div class="shead">${icon('bolt')}Model</div><p class="sdesc">The model ox uses everywhere — the terminal, this app, the island and your phone — unless you pick another for a session. Saved in ~/.ox/config.json.</p>
-          ${row('Default model', st.model.source.startsWith('auto') ? `Chosen for you — ${esc(st.model.source.slice(6))}` : st.model.source === 'config' ? 'Your choice' : 'Nothing connected yet — add a key in API keys, or an account, or a local model', `<select id="s-model">${st.model.bots.map((b) => `<option value="${esc(b.id)}">${esc(b.id)}${b.ready ? '' : ' — no key'}</option>`).join('')}</select>`)}</div>
+          <div class="sblock"><div class="shead">${icon('bolt')}Model</div><p class="sdesc">The model ox uses everywhere (the terminal, this app, the island and your phone) unless you pick another for a session. Saved in ~/.ox/config.json.</p>
+          ${row('Default model', st.model.source.startsWith('auto') ? `Chosen for you: ${esc(st.model.source.slice(6))}` : st.model.source === 'config' ? 'Your choice' : 'Nothing connected yet. Add a key in API keys, an account, or a local model', `<select id="s-model">${st.model.bots.map((b) => `<option value="${esc(b.id)}">${esc(b.id)}${b.ready ? '' : ' (no key)'}</option>`).join('')}</select>`)}</div>
           <div class="sblock"><div class="shead">${icon('chat')}Chat</div><p class="sdesc">How this app behaves. Kept in this browser.</p>
           ${row('Default mode', 'What new chats start in. Auto picks per message.', `<select id="s-mode">${['auto', 'code', 'ask', 'plan', 'debug', 'data', 'orchestrate'].map((m) => `<option value="${m}">${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}</select>`)}
           ${row('Send with', 'The other key adds a new line.', seg('sendKey', [['enter', 'Enter'], ['mod', `${MOD}+Enter`]], prefs.sendKey))}</div>`;
@@ -1265,13 +1476,13 @@ files: [src/billing/**]
       } else if (sec === 'desktop') {
         const st = await getJson('/ox/settings');
         el.innerHTML = `${mobileBack}<div class="shead">${icon('monitor')}Desktop</div><p class="sdesc">Same settings as <code>ox island on|off</code> and <code>ox awake</code>.</p>
-          ${row('OX Island', st.island.enabled ? (st.island.running ? 'On and running' : 'On — starts with the next run') : `Off — ${st.island.platform === 'darwin' ? 'ox lives in your notch when on' : 'a slim bar at the top of the screen when on'}`, sw('s-island', st.island.enabled))}
+          ${row('OX Island', st.island.enabled ? (st.island.running ? 'On and running' : 'On. Starts with the next run') : `Off. ${st.island.platform === 'darwin' ? 'When on, ox lives in your notch' : 'When on, a slim bar sits at the top of the screen'}`, sw('s-island', st.island.enabled))}
           ${row('Keep the computer awake', 'While ox works, so long runs are not cut off by sleep.', sw('s-awake', st.awake.on))}`;
         $('s-island').onchange = async () => { try { await postJson('/ox/settings', { island: $('s-island').checked }); toast($('s-island').checked ? 'Island on' : 'Island off'); renderSection(); } catch (e) { toast(e.message); } };
         $('s-awake').onchange = async () => { try { await postJson('/ox/settings', { awake: $('s-awake').checked }); } catch (e) { toast(e.message); } };
       } else if (sec === 'voice') {
         const voices = ('speechSynthesis' in window) ? speechSynthesis.getVoices() : [];
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('mic')}Voice</div><p class="sdesc">Talking to ox here uses this browser's speech recognition${Speech ? '' : ' — this browser has none, so the mic is hidden'}. In the terminal, <code>ox speak</code> uses your system voice or VoxCPM.</p>
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('mic')}Voice</div><p class="sdesc">Talking to ox here uses this browser's speech recognition${Speech ? '' : '. This browser has none, so the mic is hidden'}. In the terminal, <code>ox speak</code> uses your system voice or VoxCPM.</p>
           ${row('Language', 'What you speak in.', `<select id="s-lang"><option value="">Same as this browser (${esc(navigator.language)})</option>${['en-US', 'en-GB', 'en-IN', 'fr-FR', 'de-DE', 'es-ES', 'it-IT', 'pt-BR', 'hi-IN', 'zh-CN', 'ja-JP', 'ko-KR', 'ar-SA', 'ru-RU'].map((l) => `<option>${l}</option>`).join('')}</select>`)}
           ${row('Read answers aloud', 'ox says each finished answer.', sw('s-speak', prefs.speakReplies))}
           ${row('Voice', voices.length ? '' : 'This browser has no voices.', `<select id="s-voice"><option value="">Default</option>${voices.map((v) => `<option>${esc(v.name)}</option>`).join('')}</select>`)}`;
@@ -1286,7 +1497,7 @@ files: [src/billing/**]
         const money = (c) => (c == null ? 'unpriced' : c < 0.01 ? `$${c.toFixed(4)}` : `$${c.toFixed(2)}`);
         const max = Math.max(1, ...U.byDay.map((d) => d.in + d.out));
         const table = (title, rows) => `<div class="section-cap cap">${title}</div>${rows.length ? `<div class="cards">${rows.map((r) => `<div class="card"><span class="t"><div class="n">${esc(r.key)}</div><div class="d"><span>${fmt(r.in)} in · ${fmt(r.out)} out</span>${r.runs ? `<span>${r.runs} run${r.runs === 1 ? '' : 's'}</span>` : ''}</div></span><span class="mono small">${money(r.cost)}</span></div>`).join('')}</div>` : '<div class="box muted small">Nothing yet.</div>'}`;
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('chart')}Usage</div><p class="sdesc">Every run's tokens, kept on this machine in ~/.ox/usage.jsonl — from the terminal, this app, the island and your phone. Prices come from ox's price table; a model with no published price (local, subscription) shows as unpriced, never $0. Incognito chats are not recorded.</p>
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('chart')}Usage</div><p class="sdesc">Every run's tokens, kept on this machine in ~/.ox/usage.jsonl, from the terminal, this app, the island and your phone. Prices come from ox's price table; a model with no published price (local, subscription) shows as unpriced, never $0. Incognito chats are not recorded.</p>
           ${row('Period', '', seg('udays', [['1', 'Today'], ['7', '7 days'], ['30', '30 days'], ['90', '90 days']], String(days)))}
           <div class="chipline" style="margin:6px 0 4px"><span class="badge">${fmt(U.total.in)} tokens in</span><span class="badge">${fmt(U.total.out)} tokens out</span><span class="badge">${U.total.runs} runs</span><span class="badge ok">${money(U.total.cost)}</span></div>
           <div class="section-cap cap">By day</div><div style="display:flex;align-items:flex-end;gap:3px;height:90px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--panel)">${U.byDay.map((d) => `<div title="${esc(d.key)}: ${fmt(d.in + d.out)} tokens${d.cost != null ? `, ${money(d.cost)}` : ''}" style="flex:1;min-width:4px;background:var(--gold);opacity:.85;border-radius:3px 3px 0 0;height:${Math.max(3, ((d.in + d.out) / max) * 100)}%"></div>`).join('') || '<span class="dim small">no runs in this period</span>'}</div>
@@ -1297,9 +1508,9 @@ files: [src/billing/**]
         const item = (m) => `<div class="card"><span class="dot ${m.kind === 'event' ? 'warn' : 'ok'}"></span><span class="t"><div class="n">${esc(m.text)}</div><div class="d"><span>${esc(m.kind)}</span><span>${new Date(m.at).toLocaleDateString()}</span>${m.strength > 1 ? `<span>said ${m.strength}×</span>` : ''}${m.replaced ? '<span>replaced an older fact</span>' : ''}${m.until ? `<span>until ${new Date(m.until).toLocaleDateString()}</span>` : ''}</div></span><button class="btn ghost danger" data-forget="${esc(m.id)}">Forget</button></div>`;
         const none = '<div class="box muted small">Nothing yet.</div>';
         el.innerHTML = `${mobileBack}<div class="shead">${icon('brain')}Memory</div><p class="sdesc">What ox has learned, kept on this machine. Tell it something new about the same thing and the new fact replaces the old one (the old one stays in its history). Things tied to a date are dropped once the date has passed. ${M.learning ? 'ox learns from what you say about yourself as you work.' : 'Learning is off (OX_LEARN=0).'}</p>
-          <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap"><input class="field" style="flex:1;min-width:220px" id="mem-new" placeholder="Tell ox something to remember — e.g. I prefer pnpm, call me Sai"><select id="mem-scope" class="field" style="width:auto"><option value="user">About me</option><option value="project">This project</option></select><button class="btn primary" id="mem-add">Remember</button></div>
-          <div class="section-cap cap">About you — always</div><div class="cards">${M.user.stable.map(item).join('') || none}</div>
-          <div class="section-cap cap">About you — lately</div><div class="cards">${M.user.lately.map(item).join('') || none}</div>
+          <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap"><input class="field" style="flex:1;min-width:220px" id="mem-new" placeholder="Tell ox something to remember, like: I prefer pnpm"><select id="mem-scope" class="field" style="width:auto"><option value="user">About me</option><option value="project">This project</option></select><button class="btn primary" id="mem-add">Remember</button></div>
+          <div class="section-cap cap">About you, always</div><div class="cards">${M.user.stable.map(item).join('') || none}</div>
+          <div class="section-cap cap">About you, lately</div><div class="cards">${M.user.lately.map(item).join('') || none}</div>
           <div class="section-cap cap">This project</div><div class="cards">${M.project.map(item).join('') || none}</div>`;
         const add = async () => { const t = $('mem-new').value.trim(); if (!t) return; try { await postJson('/ox/memory', { action: 'add', text: t, scope: $('mem-scope').value }); toast('Remembered'); renderSection(); } catch (e) { toast(e.message); } };
         $('mem-add').onclick = add; $('mem-new').onkeydown = (e) => { if (e.key === 'Enter') add(); };
@@ -1309,19 +1520,19 @@ files: [src/billing/**]
         const n = keys.filter((k) => k.set).length;
         el.innerHTML = `${mobileBack}<div class="shead">${icon('bolt')}Providers</div><p class="sdesc">ox talks to any model. Three ways in: an account you already pay for, an API key, or a model on this machine.</p>
           <div class="cards">
-            <button class="card" data-go="accounts" style="text-align:left">${icon('user')}<span class="t"><div class="n">Accounts</div><div class="d">Use a Claude, ChatGPT or other plan you already pay for — no API key</div></span>${icon('back', 'i')}</button>
+            <button class="card" data-go="accounts" style="text-align:left">${icon('user')}<span class="t"><div class="n">Accounts</div><div class="d">Use a Claude, ChatGPT or other plan you already pay for. No API key</div></span>${icon('back', 'i')}</button>
             <button class="card" data-go="keys" style="text-align:left">${icon('key')}<span class="t"><div class="n">API keys</div><div class="d">${n ? `${n} connected` : 'None yet'} · ${keys.length} providers</div></span></button>
-            <button class="card" data-go="local" style="text-align:left">${icon('cpu')}<span class="t"><div class="n">Local models</div><div class="d">Run models on this machine — no account, works offline</div></span></button>
+            <button class="card" data-go="local" style="text-align:left">${icon('cpu')}<span class="t"><div class="n">Local models</div><div class="d">Run models on this machine. No account, works offline</div></span></button>
           </div>
           <div class="section-cap cap">In use</div><div class="box">${esc(st.model.defaultBot)} <span class="dim small">· ${esc(st.model.source)}</span></div>`;
         el.querySelectorAll('[data-go]').forEach((b) => (b.onclick = () => { sec = b.dataset.go; renderSnav(); renderSection(); }));
         el.querySelectorAll('.card svg:last-child').forEach((s) => (s.style.transform = 'rotate(180deg)'));
       } else if (sec === 'accounts') {
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('user')}Connect an account</div><p class="sdesc">Sign in with a subscription — no API key to copy. ox runs the official app for that plan on your machine and works through it. Checking what is installed…</p><div class="skeleton"></div><div class="skeleton"></div>`;
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('user')}Connect an account</div><p class="sdesc">Sign in with a subscription. No API key to copy. ox runs the official app for that plan on your machine and works through it. Checking what is installed…</p><div class="skeleton"></div><div class="skeleton"></div>`;
         const acc = await getJson('/ox/accounts');
         const ready = acc.filter((a) => a.works), rest = acc.filter((a) => !a.works);
         const card = (a) => `<div class="card"><span class="dot ${a.works ? 'ok' : a.installed ? 'err' : ''}"></span><span class="t"><div class="n">${esc(a.label)} ${a.works ? '<span class="badge ok">Ready</span>' : a.installed ? '<span class="badge err">Broken install</span>' : ''}</div><div class="d">${a.works ? `${esc(a.version || '')} · use the <span class="mono">${esc(a.bot)}</span> model · ${esc(a.login || '')}` : esc(a.problem || a.fix || '')}</div></span>${a.fix && !a.works ? `<button class="btn" data-copy-cmd="${esc(a.fix.replace(/^reinstall: /, ''))}">${icon('copy')}Copy install</button>` : ''}</div>`;
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('user')}Connect an account</div><p class="sdesc">Sign in with a subscription — no API key to copy. ox runs the official app for that plan on your machine and works through it. <a href="#" id="to-keys" style="color:var(--gold)">Have an API key instead?</a></p>
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('user')}Connect an account</div><p class="sdesc">Sign in with a subscription. No API key to copy. ox runs the official app for that plan on your machine and works through it. <a href="#" id="to-keys" style="color:var(--gold)">Have an API key instead?</a></p>
           ${ready.length ? `<div class="section-cap cap">Connected</div><div class="cards">${ready.map(card).join('')}</div>` : ''}
           <div class="section-cap cap">${ready.length ? 'Connect another' : 'Available'}</div><div class="cards">${rest.map(card).join('')}</div>`;
         $('to-keys').onclick = (e) => { e.preventDefault(); sec = 'keys'; renderSnav(); renderSection(); };
@@ -1330,7 +1541,7 @@ files: [src/billing/**]
         el.innerHTML = `${mobileBack}<div class="shead">${icon('key')}API keys</div><p class="sdesc">Pasted keys are saved in ~/.ox/keys.json, readable only by your account, and work in the terminal too. A key already set in your shell always wins. ox only ever shows the last four characters.</p>
           <label class="search" style="margin:0 0 8px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line)"><span data-i="search"></span><input id="kq" placeholder="Search providers…"></label>
           <div id="krows">${keys.map((k) => `<div class="keyrow" data-k="${esc(k.id)}" data-name="${esc(k.label.toLowerCase())}"><span class="dot ${k.set ? 'ok' : ''}"></span><div><div class="n">${esc(k.label)}</div><div class="e">${esc(k.env)}${k.set ? ` · ${esc(k.hint)} · from ${esc(k.source)}` : ''}</div></div>
-            <input class="field" type="password" autocomplete="off" placeholder="${k.set ? 'Paste a new key to replace it' : `Paste ${esc(k.label)} key`}" ${k.set && k.source === 'environment' ? 'disabled title="Set in your shell — change it there"' : ''}>
+            <input class="field" type="password" autocomplete="off" placeholder="${k.set ? 'Paste a new key to replace it' : `Paste ${esc(k.label)} key`}" ${k.set && k.source === 'environment' ? 'disabled title="Set in your shell. Change it there"' : ''}>
             ${k.set && k.source === 'app' ? `<button class="btn ghost danger" data-rm>Remove</button>` : `<button class="btn" data-save>Save</button>`}</div>`).join('')}</div>`;
         paintIcons(el);
         $('kq').oninput = () => { const q = $('kq').value.toLowerCase(); el.querySelectorAll('.keyrow').forEach((r) => (r.hidden = !r.dataset.name.includes(q))); };
@@ -1349,7 +1560,7 @@ files: [src/billing/**]
         });
       } else if (sec === 'endpoints') {
         const eps = await getJson('/ox/endpoints');
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('globe')}Custom endpoints</div><p class="sdesc">Point ox at any OpenAI-compatible server — vLLM, llama.cpp, LM Studio on another machine, a company gateway. Each gets a name you can pick anywhere (terminal: <code>ox --bot &lt;name&gt;</code>) and its own key, kept in ~/.ox/keys.json.</p>
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('globe')}Custom endpoints</div><p class="sdesc">Point ox at any OpenAI-compatible server: vLLM, llama.cpp, LM Studio on another machine, a company gateway. Each gets a name you can pick anywhere (terminal: <code>ox --bot &lt;name&gt;</code>) and its own key, kept in ~/.ox/keys.json.</p>
           <div class="cards" id="ep-list">${eps.map((e) => `<div class="card"><span class="dot ${e.model ? 'ok' : 'warn'}"></span><span class="t"><div class="n">${esc(e.name)}</div><div class="d mono"><span>${esc(e.baseUrl)}</span><span>${esc(e.model || 'no model chosen')}</span><span>${e.key.set ? `key ${esc(e.key.hint)}` : 'no key'}</span></div></span><button class="btn ghost" data-ep-test="${esc(e.name)}" data-url="${esc(e.baseUrl)}">Test</button><button class="btn" data-ep-use="${esc(e.name)}" ${e.model ? '' : 'disabled title="choose a model first"'}>Use</button><button class="btn ghost danger" data-ep-rm="${esc(e.name)}">Remove</button></div>`).join('') || '<div class="box muted small">None yet.</div>'}</div>
           <div class="section-cap cap">Add or edit</div>
           <div class="box" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -1365,7 +1576,7 @@ files: [src/billing/**]
           const r = await postJson('/ox/endpoints', { action: 'test', ...body });
           if (!r.ok) { st(r.error); return null; }
           $('ep-models').innerHTML = r.models.map((m) => `<option value="${esc(m)}">`).join('');
-          st(`answered in ${r.ms} ms · ${r.models.length} model${r.models.length === 1 ? '' : 's'}${r.models.length ? ` — e.g. ${r.models.slice(0, 3).join(', ')}` : ''}`);
+          st(`answered in ${r.ms} ms · ${r.models.length} model${r.models.length === 1 ? '' : 's'}${r.models.length ? `, like ${r.models.slice(0, 3).join(', ')}` : ''}`);
           return r;
         };
         $('ep-test').onclick = () => test({ baseUrl: $('ep-url').value.trim(), key: $('ep-key').value.trim() || null, name: $('ep-name').value.trim() || null }).catch((e) => st(e.message));
@@ -1380,7 +1591,7 @@ files: [src/billing/**]
         el.innerHTML = `${mobileBack}<div class="shead">${icon('cpu')}Local models</div><p class="sdesc">Looking for model servers on this machine…</p><div class="skeleton"></div><div class="skeleton"></div>`;
         const L = await getJson('/ox/local');
         const m = L.machine;
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('cpu')}Local models</div><p class="sdesc">Models that run entirely on this machine — no account, nothing leaves your computer. ox finds Ollama, LM Studio, llama.cpp and vLLM by itself.</p>
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('cpu')}Local models</div><p class="sdesc">Models that run entirely on this machine. No account, nothing leaves your computer. ox finds Ollama, LM Studio, llama.cpp and vLLM by itself.</p>
           <div class="section-cap cap">This machine</div>
           <div class="chipline"><span class="badge">${icon('cpu')}${m.ramGB} GB ${m.unified ? 'unified memory' : 'RAM'}</span><span class="badge">${m.cpus} cores</span><span class="badge">${esc(m.platform)} · ${esc(m.arch)}</span></div>
           <div class="section-cap cap">Running now</div>
@@ -1388,7 +1599,7 @@ files: [src/billing/**]
             : `<div class="box muted small">No local model server is running. Install <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" style="color:var(--gold)">Ollama</a> or LM Studio, start it, and come back.</div>`}
           <div class="section-cap cap">Find more on Hugging Face</div>
           <p class="sdesc" style="margin-bottom:8px">Search every open model in GGUF form. Each file shows its real size and whether it fits this machine; ox downloads it through Ollama and it shows up in the model picker.</p>
-          <label class="search" style="margin:0 0 8px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:8px 10px"><span data-i="search"></span><input id="hf-q" placeholder="Search models by name — qwen coder, llama, gemma, deepseek…"></label>
+          <label class="search" style="margin:0 0 8px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:8px 10px"><span data-i="search"></span><input id="hf-q" placeholder="Search models by name: qwen coder, llama, gemma, deepseek…"></label>
           <div id="hf-results" class="cards"></div>
           <div class="section-cap cap">Models for coding</div>
           <div class="cards">${L.catalog.map((c) => `<div class="card"><span class="t"><div class="n">${esc(c.name)}</div><div class="d"><span>${esc(c.bestFor)}</span><span class="badge ${c.fits ? 'ok' : 'err'}">${c.fits ? 'Fits this machine' : 'Too big for this machine'}</span><span class="badge">needs ${c.minRAM} GB</span><span class="badge">${esc(c.size)}</span></div></span><button class="btn ghost" data-copy-cmd="${esc(c.pull)}">${icon('copy')}${esc(c.pull)}</button></div>`).join('')}</div>`;
@@ -1402,7 +1613,7 @@ files: [src/billing/**]
           $('hf-results').innerHTML = '<div class="skeleton"></div>';
           try {
             const list = await getJson(`/ox/hf/search?q=${encodeURIComponent(q)}`);
-            $('hf-results').innerHTML = list.length ? list.map((m) => `<div class="card" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:10px"><span class="t"><div class="n mono">${esc(m.repo)}</div><div class="d"><span>${fmtN(m.downloads)} downloads</span><span>${fmtN(m.likes)} likes</span>${m.runtime !== 'ollama' ? `<span class="badge warn">needs ${esc(m.runtime)} — Ollama can't run it</span>` : ''}</div></span>${m.runtime === 'ollama' ? `<button class="btn ghost" data-hf-files="${esc(m.repo)}">Show files</button>` : ''}</div><div data-hf-for="${esc(m.repo)}"></div></div>`).join('') : '<div class="box muted small">Nothing found.</div>';
+            $('hf-results').innerHTML = list.length ? list.map((m) => `<div class="card" style="flex-direction:column;align-items:stretch"><div style="display:flex;align-items:center;gap:10px"><span class="t"><div class="n mono">${esc(m.repo)}</div><div class="d"><span>${fmtN(m.downloads)} downloads</span><span>${fmtN(m.likes)} likes</span>${m.runtime !== 'ollama' ? `<span class="badge warn">needs ${esc(m.runtime)}, Ollama can't run it</span>` : ''}</div></span>${m.runtime === 'ollama' ? `<button class="btn ghost" data-hf-files="${esc(m.repo)}">Show files</button>` : ''}</div><div data-hf-for="${esc(m.repo)}"></div></div>`).join('') : '<div class="box muted small">Nothing found.</div>';
             $('hf-results').querySelectorAll('[data-hf-files]').forEach((b) => (b.onclick = async () => {
               const box = $('hf-results').querySelector(`[data-hf-for="${CSS.escape(b.dataset.hfFiles)}"]`);
               box.innerHTML = '<div class="skeleton"></div>';
@@ -1418,7 +1629,7 @@ files: [src/billing/**]
                       const j = jobs.find((x) => x.repo === d.dataset.pullRepo && (x.quant ?? '') === (d.dataset.pullQuant || ''));
                       if (!j) return;
                       if (j.state === 'running') { d.textContent = j.total ? `${Math.floor((j.completed / j.total) * 100)}%` : j.status; setTimeout(tick, 800); }
-                      else if (j.state === 'done') { d.textContent = 'Use it'; d.disabled = false; d.onclick = async () => { await postJson('/ox/settings', { defaultBot: j.bot }); toast(`Default model: ${j.bot}`); loadModels(); }; toast('Downloaded — it is in the model picker'); loadModels(); }
+                      else if (j.state === 'done') { d.textContent = 'Use it'; d.disabled = false; d.onclick = async () => { await postJson('/ox/settings', { defaultBot: j.bot }); toast(`Default model: ${j.bot}`); loadModels(); }; toast('Downloaded. It is in the model picker'); loadModels(); }
                       else { d.textContent = 'Failed'; toast(j.error || 'download failed'); }
                     };
                     tick();
@@ -1482,7 +1693,14 @@ files: [src/billing/**]
   loadModels();
   renderChat(); renderLists();
   getJson('/ox/about').then((a) => { about = a; $('cwd').textContent = a.cwd.split(/[\\/]/).slice(-2).join('/'); $('cwd').title = a.cwd; if (!convo()?.messages?.length) renderChat(); }).catch(() => { $('cwd').textContent = location.host; });
-  getJson('/ox/settings').then((st) => applyName(st.name)).catch(() => {});
+  // Launch screen: once per browser session, at least long enough to draw the
+  // mark, and never longer than 2.4s even if the server is slow to answer.
+  const splash = $('splash');
+  let seen = false; try { seen = sessionStorage.getItem('ox.splash') === '1'; sessionStorage.setItem('ox.splash', '1'); } catch {}
+  const t0 = performance.now();
+  const hideSplash = () => setTimeout(() => { splash.classList.add('done'); setTimeout(() => splash.remove(), 500); }, Math.max(0, 1250 - (performance.now() - t0)));
+  if (seen) splash.remove(); else setTimeout(hideSplash, 2400);
+  getJson('/ox/settings').then((st) => applyName(st.name)).catch(() => {}).finally(() => { if (!seen) hideSplash(); });
   loadTerminalSessions();
   if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => {};
 })();

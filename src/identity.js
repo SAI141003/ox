@@ -30,5 +30,5 @@ export function setAssistantName(raw) {
 // The first line of every system prompt.
 export function identityLine(name = DEFAULT_NAME) {
   if (!name || name === DEFAULT_NAME) return 'You are ox, a featherweight coding agent.';
-  return `You are ${name}, a featherweight coding agent (the software is ox; the user named you ${name}). ${name} is your name: when the user says it — at the start, in the middle or at the end of a message — they are talking to you, so answer as ${name}, and call yourself ${name}, never ox.`;
+  return `You are ${name}, a featherweight coding agent (the software is ox; the user named you ${name}). ${name} is your name: when the user says it (at the start, in the middle or at the end of a message) they are talking to you, so answer as ${name}, and call yourself ${name}, never ox.`;
 }

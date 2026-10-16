@@ -58,7 +58,7 @@ export async function pullModel(repo, quant, { onProgress = () => {}, fetchImpl 
   try {
     r = await fetchImpl(`${OLLAMA()}/api/pull`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: name, stream: true }), signal });
   } catch (e) {
-    throw new Error(`Ollama is not running at ${OLLAMA()} — install it from ollama.com and start it (${e.message})`);
+    throw new Error(`Ollama is not running at ${OLLAMA()}: install it from ollama.com and start it (${e.message})`);
   }
   if (!r.ok) throw new Error(`Ollama refused the download (${r.status}): ${(await r.text()).slice(0, 200)}`);
   const dec = new TextDecoder();

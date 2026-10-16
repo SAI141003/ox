@@ -391,7 +391,7 @@ function tallyUsage(total, event) {
 function oxToolEvent(event) {
   return event.type === 'tool-start'
     ? { type: 'tool-start', id: event.id ?? null, name: String(event.name ?? 'tool'), preview: String(event.argsPreview ?? '').slice(0, 120), ...(Array.isArray(event.plan) ? { plan: event.plan } : {}) }
-    : { type: 'tool-end', id: event.id ?? null, name: String(event.name ?? 'tool'), isError: event.isError === true };
+    : { type: 'tool-end', id: event.id ?? null, name: String(event.name ?? 'tool'), isError: event.isError === true, ...(event.meta?.canvas?.tree ? { canvas: event.meta.canvas.tree } : {}) };
 }
 
 function textDelta(event) {
@@ -401,9 +401,14 @@ function textDelta(event) {
 
 // Only used when no delta arrived, so a provider that reports its text once at
 // the end is not lost and a stream that did stream is not double-counted.
-function finalText(event, alreadyHave) {
+export function finalText(event, alreadyHave) {
   if (alreadyHave) return '';
-  if (event.type === 'final' && typeof event.message === 'string') return event.message;
+  if (event.type !== 'final') return '';
+  // The agent reports `final` as a message ({ role, content }); older paths as a string.
+  if (typeof event.message === 'string') return event.message;
+  const c = event.message?.content;
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c)) return c.map((p) => (typeof p === 'string' ? p : p?.type === 'text' ? p.text ?? '' : '')).join('');
   return '';
 }
 
@@ -415,6 +420,21 @@ function agentErrorShape(message) {
   }
   return { status: 500, type: 'server_error', code: null, param: null };
 }
+
+// What ox's own app can draw (src/web/chat.html renderUi): answers as interface,
+// described in JSON so even a small local model gets it right and no model-written
+// code runs. Kept short; the example is the format, copied as is.
+const NEEDS_WEB = /\b(price|prices|cost of|latest|today|this week|news|current|rate today|search|look up|website|https?:\/\/)/i;
+const TOUCHES_CODE = /\b(file|files|repo|repository|project|codebase|function|class|module|component|test|tests|bug|fix|refactor|commit|branch|src|readme)\b|[\w-]+\.(js|ts|tsx|jsx|py|go|rs|java|rb|css|html|json|md)\b/i;
+const WANTS_UI = /\b(calculat\w*|convert\w*|compar\w*|table|chart|graph|plot|slider|interactive|estimat\w*|budget|breakdown|checklist|options|pros and cons|form)\b/i;
+export const LIVE_UI_GUIDE = [
+  'This chat draws interface. When a form, calculator, table, comparison, step list, chart or set of next choices would answer better than prose, put it in a block fenced with ```ox-ui on its own line, containing JSON only. Keep any prose short, outside the block.',
+  'Parts (one object, or a list of them):',
+  '{"type":"form","title":"…","fields":[{"id":"P","label":"Loan amount","value":300000,"min":0,"max":2000000,"slider":true},{"id":"rate","label":"Interest % a year","value":6},{"id":"n","label":"Months","value":360}],"let":{"r":"rate/1200"},"outputs":[{"label":"Monthly payment","expr":"P*r/(1-(1+r)^(-n))","format":"money"}]}',
+  '{"type":"table","title":"…","columns":["A","B"],"rows":[["1","2"]]}  {"type":"cards","items":[{"title":"…","text":"…"}]}  {"type":"stats","items":[{"label":"…","value":"…"}]}',
+  '{"type":"steps","items":[{"title":"…","text":"…"}]}  {"type":"chart","title":"…","labels":["a","b"],"values":[3,5]}  {"type":"choices","items":[{"label":"…","prompt":"what to ask next"}]}',
+  'Formulas use field ids and let names with + - * / ^ ( ) and min max round floor ceil abs sqrt pow log exp. Every field id used in a formula must exist. For anything these parts cannot show, use a block fenced with ```html-live holding one self-contained HTML snippet (inline style and script, no network).',
+].join('\n');
 
 async function handleChatCompletions(req, res) {
   if (!authorized(req)) {
@@ -430,7 +450,8 @@ async function handleChatCompletions(req, res) {
     return;
   }
 
-  const { model, messages, stream, max_tokens, temperature } = body;
+  const { model, stream, max_tokens, temperature } = body;
+  let { messages } = body;
 
   if (!messages || !Array.isArray(messages)) {
     sendError(res, 400, "'messages' is required and must be an array.", 'invalid_request_error', 'missing_required_parameter', 'messages');
@@ -464,7 +485,14 @@ async function handleChatCompletions(req, res) {
   // agent's own mode applies unless a specific mode was picked.
   const lastUser = [...messages].reverse().find((m) => m?.role === 'user');
   const pickedMode = body.ox_mode && body.ox_mode !== 'auto' ? body.ox_mode : (agentDef?.mode ?? body.ox_mode ?? 'code');
-  const turnMode = resolveTurnMode(pickedMode, typeof lastUser?.content === 'string' ? lastUser.content : '');
+  let turnMode = resolveTurnMode(pickedMode, typeof lastUser?.content === 'string' ? lastUser.content : '');
+  // In ox's own app, "make a loan calculator" asks for something to look at and
+  // use here, not a change to the project: auto keeps it an answer (ask), unless
+  // the message points at code or files.
+  if (turnMode.routed && turnMode.mode !== 'ask' && body.ox_ui === 'live' && typeof lastUser?.content === 'string'
+    && WANTS_UI.test(lastUser.content) && !TOUCHES_CODE.test(lastUser.content)) {
+    turnMode = { mode: 'ask', routed: true, reason: 'an answer to use here, not a change to your files', answerOnly: true };
+  }
   // The same memory a terminal run starts with: the project's MEMORY.md, what ox
   // remembers about the user, and what bears on this message.
   const lastText = typeof lastUser?.content === 'string' ? lastUser.content : '';
@@ -478,9 +506,14 @@ async function handleChatCompletions(req, res) {
     memoryBlock = [loadMemoryBlock(process.cwd()), process.env.OX_MEMORY === '0' || incognito ? '' : memoryPromptBlock({ cwd: process.cwd(), task: lastText })].filter(Boolean).join('\n\n');
   } catch {}
   // `ox_ui: 'live'` is sent by ox's own app, which can run interactive answers.
-  const liveUi = body.ox_ui === 'live'
-    ? 'This chat can show interactive answers. When a calculator, simulation, chart or small tool would explain better than prose (loan payments, unit conversions, "what if" sliders), reply with a ```html-live code block: one self-contained HTML snippet with inline <style> and <script>, no external URLs or network requests (it runs sandboxed with no network). Keep the prose short around it. Use it only when interaction genuinely helps.'
-    : '';
+  const liveUi = body.ox_ui === 'live' ? LIVE_UI_GUIDE : '';
+  // Small models follow what sits next to the question, not a guide far up in
+  // the system prompt: when the message plainly asks for something to work
+  // with, the reminder rides along with it (the stored chat is unchanged).
+  if (liveUi && WANTS_UI.test(lastText)) {
+    const i = messages.lastIndexOf(lastUser);
+    if (i >= 0) messages = [...messages.slice(0, i), { ...lastUser, content: `${lastText}\n\n(Answer with an \`\`\`ox-ui block as described in your instructions.)` }, ...messages.slice(i + 1)];
+  }
   const ctx = {
     cwd: process.cwd(),
     mode: turnMode.mode,
@@ -489,7 +522,7 @@ async function handleChatCompletions(req, res) {
     ...(incognito ? { incognito: true } : {}),
     ...(agentDef || liveUi ? { personaBlock: [agentDef ? agentPersonaBlock(agentDef) : '', liveUi].filter(Boolean).join('\n\n') } : {}),
     ...(agentDef ? { agentName: agentDef.name } : {}),
-    ...(Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools } : {}),
+    ...(Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools } : turnMode.answerOnly ? (NEEDS_WEB.test(lastText) ? { allowedTools: ['web_search', 'web_fetch'] } : { noTools: true }) : {}),
   };
   // Preferences the user states here are kept, as in the terminal.
   if (process.env.OX_LEARN !== '0' && lastText && !incognito) {

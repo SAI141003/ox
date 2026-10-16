@@ -26,7 +26,7 @@ test('ox until renamed; the prompt then names it and says it answers to that nam
   assert.equal(assistantName({}), 'Nova');
   const prompt = await buildSystemPrompt({ cwd: home, now: 0 });
   assert.match(prompt, /^You are Nova, a featherweight coding agent/);
-  assert.match(prompt, /when the user says it — at the start, in the middle or at the end/);
+  assert.match(prompt, /when the user says it \(at the start, in the middle or at the end/);
   assert.match(prompt, /call yourself Nova, never ox/);
   // OX_NAME wins for one run; names in any script work.
   assert.equal(assistantName({ OX_NAME: 'Jarvis' }), 'Jarvis');

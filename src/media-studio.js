@@ -94,7 +94,7 @@ export const MODELS = Object.freeze([
 
 export function getModel(id) {
   const m = MODELS.find((x) => x.id === id);
-  if (!m) throw new Error(`unknown model '${id}' — ox create --models lists them`);
+  if (!m) throw new Error(`unknown model '${id}'. ox create --models lists them`);
   return m;
 }
 
@@ -200,7 +200,7 @@ export function apiKey(env = process.env) {
 }
 
 export function createClient({ key = apiKey(), base = API_BASE(), fetchImpl = globalThis.fetch } = {}) {
-  if (!key) throw new Error(`no Higgsfield key — get one at console.higgsfield.ai, then: ox create --key <id:secret> (or Settings › API keys)`);
+  if (!key) throw new Error(`no Higgsfield key. Get one at console.higgsfield.ai, then: ox create --key <id:secret> (or Settings › API keys)`);
   const send = async (method, p, body) => {
     const r = await fetchImpl(`${base}${p}`, { method, headers: { Authorization: `Key ${key}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(60_000) });
     const text = await r.text();
@@ -331,7 +331,7 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
   if (!P) throw new Error(`unknown provider '${provider}' (${Object.keys(PROVIDERS).join(', ')})`);
   if (!String(prompt).trim()) throw new Error('a prompt is needed');
   const key = P.key ? String(env[P.key] ?? '').trim() : null;
-  if (P.key && !key) throw new Error(`no ${P.label} key — set ${P.key} (Settings › API keys)`);
+  if (P.key && !key) throw new Error(`no ${P.label} key. Set ${P.key} (Settings › API keys)`);
   const id = crypto.randomBytes(5).toString('hex');
   const dir = path.join(MEDIA_DIR(), id);
   const recipe = { id, at: Date.now(), provider, model, label: model, surface: 'image', prompt, settings, media };
@@ -353,7 +353,7 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
       const d = await jsonFetch(fetchImpl, `${LOCAL_SD()}/sdapi/v1/txt2img`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, negative_prompt: settings.negative ?? '', steps: Number(settings.steps ?? 25), width: Number(settings.width ?? 1024), height: Number(settings.height ?? 1024), batch_size: Number(settings.n ?? 1), ...(settings.seed != null ? { seed: Number(settings.seed) } : {}) }),
-      }).catch((e) => { throw new Error(`no Stable Diffusion server answered at ${LOCAL_SD()} (${e.message}) — start Draw Things / Forge / AUTOMATIC1111 with its API on, or set OX_SD_URL`); });
+      }).catch((e) => { throw new Error(`no Stable Diffusion server answered at ${LOCAL_SD()} (${e.message}). Start Draw Things, Forge or AUTOMATIC1111 with its API on, or set OX_SD_URL`); });
       fs.mkdirSync(dir, { recursive: true });
       files = (d.images ?? []).map((b64, i) => writeB64(dir, i, String(b64).replace(/^data:image\/\w+;base64,/, ''), 'png'));
     } else if (provider === 'fal') {

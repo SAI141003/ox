@@ -270,6 +270,11 @@ export function listToolSchemas(ctx = {}, strictSchemas = false) {
       if (!schemas.some((x) => x.name === s.name)) schemas.push(s);
     }
   }
+  // A turn that only needs words or an interface to look at (the app's "answer
+  // to use here") is offered no tools: small models otherwise invent calls
+  // instead of answering (seen on qwen2.5:3b: a to-do list, then a web fetch
+  // with to-do arguments).
+  if (ctx.noTools === true) return [];
   // An agent with a tool grant is offered only those tools.
   const granted = Array.isArray(ctx.allowedTools)
     ? schemas.filter((s) => grantRefusal(ctx.allowedTools, s.name) === null)

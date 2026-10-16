@@ -66,8 +66,12 @@ export function buildIslandApp({ bin, pkg, home = os.homedir() }) {
   fs.chmodSync(path.join(contents, 'MacOS', 'OxIsland'), 0o755);
   const res = path.join(path.dirname(bin), 'OxIsland_OxIsland.bundle');
   if (fs.existsSync(res)) fs.cpSync(res, path.join(contents, 'Resources', 'OxIsland_OxIsland.bundle'), { recursive: true });
+  const icns = path.join(pkg, 'AppIcon.icns');
+  const hasIcon = fs.existsSync(icns);
+  if (hasIcon) fs.copyFileSync(icns, path.join(contents, 'Resources', 'AppIcon.icns'));
   let plist = fs.readFileSync(path.join(pkg, 'Info.plist'), 'utf8');
   const extra = [
+    ...(hasIcon ? [['CFBundleIconFile', 'AppIcon']] : []),
     ['CFBundleExecutable', 'OxIsland'],
     ['CFBundlePackageType', 'APPL'],
     ['CFBundleVersion', '1'],

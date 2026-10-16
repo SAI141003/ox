@@ -65,13 +65,14 @@ with the reason. Nothing here is marked done without a test or a real run.
 | Token use (your request) | Fewer tokens, usage shown everywhere | **done** — focused skill index, truncation warning, `ox usage`, Settings › Usage |
 | Incognito (your request) | Private mode | **done** — `--incognito`, ⌘⇧N in the app |
 | Your own name for ox (your request; Pixie answers to its name) | Rename ox and your agents; it answers to the name when you say it mid-conversation | **done** — Settings › General, `ox name`, `ox agent rename`; prompt, app and island use it; tested on local qwen2.5 (“My name is Nova”) |
+| Cursor (your request) | Black and white only, light and dark; logo made from the name | **done**: monochrome tokens (red kept only for errors), new `ox` mark (the x's arms rise into horns), app icon, favicon, launch screen that draws the mark |
 
 ## Media and other repos
 
 | Reference | Idea | Status |
 |---|---|---|
 | open-higgsfield | 38 image/video models, one composer, gallery | **done** — OX Studio, `ox create`, `create_media` tool; plus fal, OpenAI, local SD |
-| GPT-6 / OpenUI interactive answers | Answers as live widgets | **done** — sandboxed html-live |
+| GPT-6 / OpenUI interactive answers | Answers drawn as interface | **done**: the app draws `ox-ui` blocks (form with live formulas, table, cards, stats, steps, chart, follow-up buttons) and OX Canvas from the `show_ui` tool with its own components; no model-written code runs. Tested on local qwen2.5:3b (loan calculator, $1,798.65 for $300k at 6% over 30 years). html-live stays as the sandboxed fallback |
 | Recordly | Demo videos | **no** (AGPL; a recorder, not an agent feature) |
 | ManimGX | 3D math animation | not yet (could be a skill) |
 | REA (reverse engineering MCP) | MCP add-on | listed in the Marketplace via GitHub search; not bundled |

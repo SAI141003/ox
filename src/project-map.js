@@ -92,7 +92,7 @@ export function lintPlan(parsed, text = '') {
     if (!c.files.length) out.push(`${c.id}: no files: globs, so file activity can't be pinned to it`);
   }
   for (const t of tasks) if (t.status === 'done' && !t.tech) out.push(`[x] "${t.title}" cites no evidence (add a tech: line)`);
-  if (comps.length > 9) out.push(`${comps.length} components — more than 9 is hard to follow; consider merging`);
+  if (comps.length > 9) out.push(`${comps.length} components. More than 9 is hard to follow, consider merging`);
   return out.slice(0, 12);
 }
 

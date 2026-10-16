@@ -112,8 +112,11 @@ ${icon ? '\t<key>CFBundleIconFile</key><string>AppIcon</string>\n' : ''}</dict>
   return app;
 }
 
-// The ox standing, on the app's dark background, at every size macOS asks for.
+// The ox mark on its gold tile (assets/logo-ox.svg, rendered to every size
+// macOS asks for); the older standing-ox sprite only if that file is missing.
 function makeIcon(resDir) {
+  const icns = path.join(PKG, 'AppIcon.icns');
+  if (fs.existsSync(icns)) { fs.copyFileSync(icns, path.join(resDir, 'AppIcon.icns')); return true; }
   const src = path.join(PKG, 'Sources', 'OxIsland', 'Resources', 'ox', 'idle', 'idle_0001.png');
   if (!fs.existsSync(src) || spawnSync('which', ['iconutil']).status !== 0) return false;
   const set = path.join(os.tmpdir(), `ox-icon-${process.pid}.iconset`);
