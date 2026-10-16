@@ -134,10 +134,16 @@ test('1. coding prompt: core kept, memory_*/operator/mcp all withheld', () => {
   const out = narrowToolSchemas(OFFER, { message: 'fix the failing test', relevantSkillTools: [] });
   const kept = names(out);
   const offered = new Set(names(OFFER));
+  // A short, single-target task: planning and delegation wait behind load_tools.
+  const WAIT = ['todo_write', 'subagent'];
   for (const core of NARROW_CORE_TOOLS) {
     if (!offered.has(core)) continue; // report_result is subagent-only, never on the main path
-    assert.ok(kept.includes(core), `core ${core} survives`);
+    if (WAIT.includes(core)) assert.ok(!kept.includes(core), `${core} waits on a short task`);
+    else assert.ok(kept.includes(core), `core ${core} survives`);
   }
+  // A task with several steps keeps them.
+  const big = names(narrowToolSchemas(OFFER, { message: 'refactor the auth module, then update every test', relevantSkillTools: [] }));
+  for (const w of WAIT) if (offered.has(w)) assert.ok(big.includes(w), `${w} kept for a multi-step task`);
   for (const m of MEMORY_NAMES) assert.ok(!kept.includes(m), `${m} withheld on a coding prompt`);
   for (const op of OPERATOR_TOOLS) assert.ok(!kept.includes(op), `${op} withheld on a coding prompt`);
   assert.ok(!kept.some((n) => n.startsWith('mcp__')), 'mcp withheld on a coding prompt');

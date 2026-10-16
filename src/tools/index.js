@@ -591,6 +591,8 @@ function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, web
   }
   return false;
 }
+// Words that mean a task has several steps or parts: planning and delegation stay offered.
+const PLANNING_SIGNAL = /\b(plan|planning|steps?|step by step|refactor|migrate|migration|across|every|all (?:the )?files|several|multiple|many|feature|implement|build|project|parallel|subagents?|delegate|investigate|audit|review|then|and then|todo|checklist)\b/i;
 export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, strict = false } = {}) {
   if (!Array.isArray(schemas)) return schemas;
   if (schemas.length <= NARROW_THRESHOLD) return schemas;
@@ -624,6 +626,13 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
   const keep = new Set(NARROW_CORE_TOOLS);
   for (const t of skillNames) keep.add(t);
   for (const t of TASK_BOARD_TOOLS) if (names.includes(t)) keep.add(t);
+  // A short task with one target ("fix the failing test in src/math.js") needs
+  // no planning list or delegation: those definitions (~450 tokens on every
+  // request) wait behind load_tools. Anything that sounds multi-step keeps them.
+  // A subagent's own offer is never trimmed this way.
+  if (!isSubagentOffer && String(message).length < 220 && !PLANNING_SIGNAL.test(message)) {
+    for (const t of ['todo_write', 'subagent', ...TASK_BOARD_TOOLS]) keep.delete(t);
+  }
   for (const n of names) {
     if (memoryOn && n.startsWith('memory_')) keep.add(n);
     if (operatorOn && OPERATOR_TOOLS.includes(n)) keep.add(n);

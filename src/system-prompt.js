@@ -302,7 +302,8 @@ export async function buildPromptLayers({
   if (withheldLine) put(withheldLine);
 
   open('subagents', 'static');
-  if (!answerOnly) put(
+  // Not offered this turn (a short task): the section waits with the tool.
+  if (!answerOnly && !(Array.isArray(withheldTools) && withheldTools.includes('subagent'))) put(
     '',
     '# SUBAGENTS',
     SUBAGENT_PARALLEL_CLAUSE,
