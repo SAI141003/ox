@@ -4038,7 +4038,7 @@ const SUB_USAGE = {
   episode: 'usage: ox episode ls | ox episode promote <id>',
   'memory-loss': 'usage: ox memory-loss [--limit <n>]',
   market: 'usage: ox market ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
-  hooks: 'usage: ox hooks install <claude|codex> [--yes] | uninstall <claude|codex> [--yes] | status',
+  hooks: 'usage: ox hooks install <claude|codex|gemini|cursor|copilot> [--yes] | uninstall <agent> [--yes] | status',
   memory: 'usage: ox memory [recall "<question>" | add "<fact>" [--project] | history <id> | forget <id> | all [--project]]',
   auto: 'usage: ox auto "<goal>" [--contract ["<goal>"]] [--max-cost <usd>] [--json] [--bot <name>] [--yes-edits] [-y] [--side-effects-ok]',
   attach: 'usage: ox attach <worker id>  — follow a detached run (ox agents lists them)',
@@ -4637,7 +4637,7 @@ async function runSubcommand(cmd, args) {
         const ah = await import('./agent-hooks.js');
         let raw = '';
         for await (const chunk of process.stdin) raw += chunk;
-        const out = await ah.handleHook(args[0] ?? 'claude', raw);
+        const out = await ah.handleHook(args[0] ?? 'claude', raw, { event: args[1] ?? null });
         if (out) process.stdout.write(`${out}\n`);
       } catch {}
       return;

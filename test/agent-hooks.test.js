@@ -119,6 +119,53 @@ test('install adds only ox hooks, keeps everything else, backs up, and uninstall
   assert.deepEqual(withHooks({}, { remove: true }), {});
 });
 
+test('Gemini CLI, Cursor and Copilot CLI: each in its own format, payloads read as one shape', async (t) => {
+  const { normalize, decisionOutput: out } = await import('../src/agent-hooks.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-agents-'));
+  // Gemini: groups with a * matcher everywhere, ms timeouts, the event on the command line.
+  const g = path.join(dir, 'gemini.json');
+  fs.writeFileSync(g, JSON.stringify({ theme: 'dark' }));
+  applyInstall(planInstall('gemini', { file: g }));
+  const gd = JSON.parse(fs.readFileSync(g, 'utf8'));
+  assert.equal(gd.theme, 'dark');
+  assert.equal(gd.hooks.BeforeTool[0].matcher, '*');
+  assert.equal(gd.hooks.BeforeTool[0].hooks[0].timeout, 5000);
+  assert.match(gd.hooks.BeforeTool[0].hooks[0].command, /hook gemini BeforeTool$/);
+  assert.equal(gd.hooks.AfterModel, undefined, 'AfterModel would flood the island');
+  // Cursor: flat entries and a version.
+  const cu = path.join(dir, 'cursor.json');
+  applyInstall(planInstall('cursor', { file: cu }));
+  const cd = JSON.parse(fs.readFileSync(cu, 'utf8'));
+  assert.equal(cd.version, 1);
+  assert.match(cd.hooks.preToolUse[0].command, /hook cursor$/);
+  // Copilot: its own file, bash + timeoutSec, and removing the last entry leaves nothing.
+  const co = path.join(dir, 'copilot.json');
+  applyInstall(planInstall('copilot', { file: co }));
+  const cod = JSON.parse(fs.readFileSync(co, 'utf8'));
+  assert.equal(cod.hooks.permissionRequest[0].timeoutSec, 120);
+  assert.match(cod.hooks.permissionRequest[0].bash, /hook copilot permissionRequest$/);
+  applyInstall(planInstall('copilot', { file: co, remove: true }));
+  assert.deepEqual(JSON.parse(fs.readFileSync(co, 'utf8')), {});
+  // Payloads: every agent's names become Claude Code's.
+  const gem = normalize({ toolCall: { name: 'run_shell_command', args: { CommandLine: 'npm test' } }, conversationId: 'c1', workspacePaths: ['/w'] }, 'BeforeTool');
+  assert.deepEqual([gem.hook_event_name, gem.tool_name, gem.tool_input.command, gem.session_id, gem.cwd], ['PreToolUse', 'run_shell_command', 'npm test', 'c1', '/w']);
+  const cop = normalize({ toolName: 'bash', toolArgs: '{"command":"ls"}', workdir: '/p' }, 'permissionRequest');
+  assert.deepEqual([cop.hook_event_name, cop.tool_input.command, cop.cwd], ['PermissionRequest', 'ls', '/p']);
+  assert.equal(normalize({ hook_event_name: 'stop', status: 'error' }).hook_event_name, 'StopFailure');
+  assert.equal(normalize({ tool_name: 'Bash', toolName: 'other' }).tool_name, 'Bash', 'what the payload says is never overwritten');
+  // Copilot is fail-closed: always valid JSON, "ask" when nobody clicked.
+  assert.equal(out('ask', 'bare'), '{"permissionDecision":"ask"}');
+  assert.equal(out('always', 'bare'), '{"permissionDecision":"allow"}');
+  assert.equal(out('allow', 'none'), '');
+  // A Copilot permission request with no island answers "ask", never nothing.
+  const sd = sockDir();
+  const relays = [];
+  t.after(() => relays.forEach((r) => r.server.close()));
+  const opts = { socketDir: sd, event: 'permissionRequest', spawnRelay: ({ agent, sessionId, cwd }) => relays.push(runRelay({ agent, sessionId, cwd, socketDir: sd, waitForIslandMs: 100 })) };
+  assert.equal(await handleHook('copilot', JSON.stringify({ sessionId: 's9', toolName: 'bash', toolArgs: { command: 'ls' } }), opts), '{"permissionDecision":"ask"}');
+  assert.equal(await handleHook('copilot', 'garbage', opts), '{"permissionDecision":"ask"}');
+});
+
 test('Codex: hooks.json groups without a matcher, its own mark, and its tools read as ox tools', async () => {
   const { toolName, preview } = await import('../src/agent-hooks.js');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-codex-'));

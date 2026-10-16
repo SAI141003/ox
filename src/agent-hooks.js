@@ -34,18 +34,83 @@ const OX_BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 
 // whether tool events take a matcher. Codex reads Claude-style groups from
 // ~/.codex/hooks.json (no matcher), runs them only after you trust them with
 // /hooks in Codex, and reads the same PermissionRequest decision.
+//
+// format: 'groups' = Claude-style { hooks: { Event: [{ matcher?, hooks: [{ command }] }] } },
+//         'flat'   = Cursor's { version: 1, hooks: { event: [{ command }] } },
+//         'copilot'= Copilot CLI's own file, { version: 1, hooks: { event: [{ type, bash, timeoutSec }] } }.
+// eventOnCommand: the agent does not put the event in the payload, so the
+//   command line carries it (`ox hook gemini BeforeTool`).
+// decision: how a permission answer is written back — 'claude' (hookSpecificOutput),
+//   'bare' ({ permissionDecision }, always valid JSON: Copilot is fail-closed),
+//   or 'none' (the agent has no permission hook; ox only shows its steps).
+// Formats follow Coucou's installers (MIT), which are tested against each agent.
 export const AGENTS = Object.freeze({
   claude: {
-    label: 'Claude Code', settings: () => path.join(os.homedir(), '.claude', 'settings.json'), matcher: true,
+    label: 'Claude Code', settings: () => path.join(os.homedir(), '.claude', 'settings.json'), format: 'groups', matcher: true, decision: 'claude',
     events: { PreToolUse: 5, PostToolUse: 5, PostToolUseFailure: 5, PermissionRequest: 120, UserPromptSubmit: 5, Stop: 5, SubagentStart: 5, SubagentStop: 5, SessionEnd: 5 },
   },
   codex: {
-    label: 'Codex', settings: () => path.join(os.homedir(), '.codex', 'hooks.json'), matcher: false,
+    label: 'Codex', settings: () => path.join(os.homedir(), '.codex', 'hooks.json'), format: 'groups', matcher: false, decision: 'claude',
     events: { SessionStart: 10, UserPromptSubmit: 10, PreToolUse: 10, PermissionRequest: 120, PostToolUse: 10, Stop: 10, SubagentStart: 10, SubagentStop: 10, SessionEnd: 3 },
     statusMessage: 'Waiting for your answer in OX Island',
     after: 'In Codex, run /hooks once and trust them — Codex only runs hooks you have trusted.',
   },
+  gemini: {
+    label: 'Gemini CLI', settings: () => path.join(os.homedir(), '.gemini', 'settings.json'), format: 'groups', matcher: true, matcherAll: true, eventOnCommand: true, timeoutMs: true, decision: 'none',
+    // AfterModel is left out on purpose: it fires on every streamed chunk.
+    events: { SessionStart: 10, SessionEnd: 10, BeforeTool: 5, AfterTool: 5, BeforeAgent: 5, AfterAgent: 5 },
+  },
+  cursor: {
+    label: 'Cursor', settings: () => path.join(os.homedir(), '.cursor', 'hooks.json'), format: 'flat', decision: 'none',
+    events: { sessionStart: 10, sessionEnd: 10, beforeSubmitPrompt: 10, preToolUse: 10, postToolUse: 10, postToolUseFailure: 10, stop: 10 },
+  },
+  copilot: {
+    label: 'Copilot CLI', settings: () => path.join(os.homedir(), '.copilot', 'hooks', 'ox.json'), format: 'copilot', eventOnCommand: true, decision: 'bare',
+    events: { sessionStart: 10, userPromptSubmitted: 10, preToolUse: 10, permissionRequest: 120, postToolUse: 10, agentStop: 10, sessionEnd: 3, notification: 10 },
+  },
 });
+
+// Every agent's event names, as Claude Code's (which the relay understands).
+const CANONICAL = {
+  BeforeTool: 'PreToolUse', BeforeToolSelection: 'PreToolUse', AfterTool: 'PostToolUse', AfterModel: 'PostToolUse', BeforeAgent: 'UserPromptSubmit', AfterAgent: 'Stop', startup: 'SessionStart', exit: 'SessionEnd',
+  pre_tool_use: 'PreToolUse', post_tool_use: 'PostToolUse', user_prompt_submit: 'UserPromptSubmit', session_start: 'SessionStart', session_end: 'SessionEnd', stop: 'Stop',
+  sessionStart: 'SessionStart', userPromptSubmitted: 'UserPromptSubmit', agentStop: 'Stop', notification: 'Notification', preToolUse: 'PreToolUse', postToolUse: 'PostToolUse', permissionRequest: 'PermissionRequest', sessionEnd: 'SessionEnd',
+  beforeSubmitPrompt: 'UserPromptSubmit', postToolUseFailure: 'PostToolUseFailure', subagentStart: 'SubagentStart', subagentStop: 'SubagentStop',
+};
+export const canonicalEvent = (name) => CANONICAL[name] ?? name;
+
+// One payload, whatever agent sent it, in Claude Code's field names. What the
+// payload already says is never overwritten; odd shapes are ignored, not trusted.
+export function normalize(raw = {}, eventArg = null, env = process.env) {
+  const p = raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...raw } : {};
+  const str = (v) => (typeof v === 'string' && v ? v : null);
+  p.hook_event_name = canonicalEvent(str(eventArg) ?? str(p.hook_event_name) ?? str(p.hookEventName) ?? str(p.event) ?? '');
+  const call = p.toolCall && typeof p.toolCall === 'object' ? p.toolCall : null;
+  if (!str(p.tool_name)) {
+    const name = str(p.toolName) ?? str(call?.name) ?? str(p.tool);
+    if (name) p.tool_name = name;
+  }
+  if (!p.tool_input || typeof p.tool_input !== 'object') {
+    let args = null;
+    if (p.toolArgs && typeof p.toolArgs === 'object') args = p.toolArgs;
+    else if (typeof p.toolArgs === 'string') { try { const v = JSON.parse(p.toolArgs); if (v && typeof v === 'object') args = v; } catch {} }
+    else if (call?.args && typeof call.args === 'object') {
+      args = { ...call.args };
+      for (const [from, to] of [['CommandLine', 'command'], ['FilePath', 'file_path'], ['Path', 'path'], ['Url', 'url'], ['Query', 'query'], ['Pattern', 'pattern']]) if (args[from] != null) args[to] = args[from];
+    }
+    if (args) p.tool_input = args;
+  }
+  if (!str(p.session_id)) {
+    const sid = str(p.conversationId) ?? str(p.conversation_id) ?? str(p.sessionId) ?? str(env.GEMINI_SESSION_ID);
+    if (sid) p.session_id = sid;
+  }
+  if (!str(p.cwd)) {
+    const cwd = str(p.workdir) ?? str(p.workspacePaths?.[0]) ?? str(p.workspace_roots?.[0]);
+    if (cwd) p.cwd = cwd;
+  }
+  if (p.hook_event_name === 'Stop' && p.status === 'error') p.hook_event_name = 'StopFailure';
+  return p;
+}
 const IDLE_MS = 30 * 60_000;
 
 // Claude Code's tool names, as the island already describes ox's own tools.
@@ -53,6 +118,10 @@ const TOOL = {
   Read: 'read_file', Write: 'write_file', Edit: 'edit_file', MultiEdit: 'edit_file', NotebookEdit: 'edit_file', Bash: 'bash', Grep: 'grep', Glob: 'glob', LS: 'list_dir', WebFetch: 'web_fetch', WebSearch: 'web_search', Task: 'subagent', Agent: 'subagent', TodoWrite: 'todo_write',
   // Codex
   apply_patch: 'edit_file', shell: 'bash', exec_command: 'bash', local_shell: 'bash', update_plan: 'todo_write', spawn_agent: 'subagent', view_image: 'read_file',
+  // Gemini CLI
+  run_shell_command: 'bash', replace: 'edit_file', search_file_content: 'grep', list_directory: 'list_dir', read_many_files: 'read_file', google_web_search: 'web_search',
+  // Copilot CLI / Antigravity
+  view: 'read_file', create: 'write_file', edit: 'edit_file', str_replace: 'edit_file', run_command: 'bash',
 };
 export const toolName = (n) => TOOL[n] ?? String(n ?? 'tool');
 export function preview(input = {}) {
@@ -87,9 +156,12 @@ export function toEvents(p = {}) {
   }
 }
 
-// What Claude Code reads back from a PermissionRequest hook. "ask" -> nothing,
-// so Claude Code asks in its own terminal.
-export function decisionOutput(decision) {
+// What the agent reads back from a permission hook. Claude Code / Codex: "ask"
+// prints nothing, so the agent asks in its own terminal. Copilot is fail-closed,
+// so it always gets valid JSON — "ask" when nobody clicked.
+export function decisionOutput(decision, style = 'claude') {
+  if (style === 'bare') return JSON.stringify({ permissionDecision: decision === 'always' ? 'allow' : ['allow', 'deny'].includes(decision) ? decision : 'ask' });
+  if (style !== 'claude') return '';
   if (decision === 'allow' || decision === 'always') return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } });
   if (decision === 'deny') return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message: 'Denied from OX Island' } } });
   return '';
@@ -178,17 +250,24 @@ const defaultSpawnRelay = ({ agent, sessionId, cwd }) => {
 };
 
 // Returns what to print on stdout (usually nothing).
-export async function handleHook(agent, raw, { socketDir, spawnRelay = defaultSpawnRelay, approvalTimeoutMs = 118_000 } = {}) {
-  let payload;
-  try { payload = JSON.parse(String(raw || '{}')); } catch { return ''; }
-  if (!AGENTS[agent] || !payload?.hook_event_name) return '';
+// `event` is the event name from the command line, for agents that do not put it
+// in the payload (Gemini CLI, Copilot CLI).
+export async function handleHook(agent, raw, { event = null, socketDir, spawnRelay = defaultSpawnRelay, approvalTimeoutMs = 118_000, env = process.env } = {}) {
+  const spec = AGENTS[agent];
+  if (!spec) return '';
+  let parsed;
+  try { parsed = JSON.parse(String(raw || '{}')); } catch { return spec.decision === 'bare' && /permission/i.test(String(event)) ? decisionOutput('ask', 'bare') : ''; }
+  const payload = normalize(parsed, event, env);
+  if (!payload.hook_event_name) return '';
   const isAsk = payload.hook_event_name === 'PermissionRequest';
+  const answer = (d) => (isAsk ? decisionOutput(d, spec.decision) : '');
+  if (isAsk && spec.decision === 'none') return '';
   // A session ending with no relay alive has nothing to tell anyone.
   if (payload.hook_event_name === 'SessionEnd' && !exists(socketPathFor(sessionKey(agent, payload.session_id), socketDir))) return '';
   const sp = await ensureRelay(agent, payload, { socketDir, spawnRelay });
-  if (!sp) return '';
+  if (!sp) return answer('ask');
   const reply = await talk(sp, { type: 'hook', payload }, { timeoutMs: isAsk ? approvalTimeoutMs : 800 });
-  return isAsk ? decisionOutput(reply?.decision) : '';
+  return answer(reply?.decision ?? 'ask');
 }
 
 // ---- installing the hooks into an agent's settings ---------------------------------------
@@ -196,34 +275,58 @@ export async function handleHook(agent, raw, { socketDir, spawnRelay = defaultSp
 const mark = (agent) => `hook ${agent}`;
 const TOOL_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest']);
 
-export function hookCommand(agent = 'claude') {
+export function hookCommand(agent = 'claude', event = null) {
   const q = (s) => (/[\s"'$`\\]/.test(s) ? `'${s.replace(/'/g, "'\\''")}'` : s);
-  return `${q(process.execPath)} ${q(OX_BIN)} ${mark(agent)}`;
+  return `${q(process.execPath)} ${q(OX_BIN)} ${mark(agent)}${event ? ` ${event}` : ''}`;
+}
+
+// An entry ox wrote for this agent, in any of the shapes agents use.
+const isOurs = (entry, M) => ['command', 'bash', 'powershell'].some((k) => typeof entry?.[k] === 'string' && (entry[k].endsWith(M) || entry[k].includes(`${M} `)));
+
+// A list of entries without ox's, keeping everyone else's exactly as they were.
+function withoutOurs(list, M) {
+  return list.flatMap((item) => {
+    if (Array.isArray(item?.hooks)) {
+      const inner = item.hooks.filter((h) => !isOurs(h, M));
+      if (inner.length === item.hooks.length) return [item];
+      return inner.length ? [{ ...item, hooks: inner }] : [];
+    }
+    return isOurs(item, M) ? [] : [item];
+  });
+}
+
+function ourEntry(spec, agent, event, timeout) {
+  const command = hookCommand(agent, spec.eventOnCommand ? event : null);
+  if (spec.format === 'flat') return { command };
+  if (spec.format === 'copilot') return { type: 'command', bash: command, timeoutSec: timeout };
+  const hook = { type: 'command', command, timeout: spec.timeoutMs ? timeout * 1000 : timeout, ...(event === 'PermissionRequest' && spec.statusMessage ? { statusMessage: spec.statusMessage } : {}) };
+  const matcher = spec.matcher && (spec.matcherAll || TOOL_EVENTS.has(event));
+  return { ...(matcher ? { matcher: '*' } : {}), hooks: [hook] };
 }
 
 // The settings document with ox's hooks added (or removed), without touching
 // anything else in it — other tools' hooks and your own stay exactly as they are.
-export function withHooks(doc = {}, { remove = false, agent = 'claude', command = hookCommand(agent) } = {}) {
+export function withHooks(doc = {}, { remove = false, agent = 'claude' } = {}) {
   const spec = AGENTS[agent];
   const M = mark(agent);
   const next = JSON.parse(JSON.stringify(doc ?? {}));
-  next.hooks = next.hooks && typeof next.hooks === 'object' ? next.hooks : {};
-  for (const [event, timeout] of Object.entries(spec.events)) {
-    const groups = Array.isArray(next.hooks[event]) ? next.hooks[event] : [];
-    const kept = groups.map((g) => ({ ...g, hooks: (g.hooks ?? []).filter((h) => !String(h.command ?? '').includes(M)) })).filter((g) => g.hooks.length);
-    if (!remove) {
-      const hook = { type: 'command', command, timeout, ...(event === 'PermissionRequest' && spec.statusMessage ? { statusMessage: spec.statusMessage } : {}) };
-      kept.push({ ...(spec.matcher && TOOL_EVENTS.has(event) ? { matcher: '*' } : {}), hooks: [hook] });
-    }
+  next.hooks = next.hooks && typeof next.hooks === 'object' && !Array.isArray(next.hooks) ? next.hooks : {};
+  const events = new Set([...Object.keys(spec.events), ...Object.keys(next.hooks)]);
+  for (const event of events) {
+    if (!Array.isArray(next.hooks[event]) && next.hooks[event] !== undefined) continue; // not a list: not ours to touch
+    const kept = withoutOurs(next.hooks[event] ?? [], M);
+    if (!remove && spec.events[event] != null) kept.push(ourEntry(spec, agent, event, spec.events[event]));
     if (kept.length) next.hooks[event] = kept; else delete next.hooks[event];
   }
   if (!Object.keys(next.hooks).length) delete next.hooks;
+  if ((spec.format === 'flat' || spec.format === 'copilot') && next.hooks) next.version ??= 1;
+  if (remove && spec.format !== 'groups' && !next.hooks && Object.keys(next).every((k) => k === 'version')) delete next.version;
   return next;
 }
 
 export function installed(doc = {}, agent = 'claude') {
   const M = mark(agent);
-  return Object.values(doc?.hooks ?? {}).some((groups) => Array.isArray(groups) && groups.some((g) => (g.hooks ?? []).some((h) => String(h.command ?? '').includes(M))));
+  return Object.values(doc?.hooks ?? {}).some((list) => Array.isArray(list) && list.some((item) => isOurs(item, M) || (Array.isArray(item?.hooks) && item.hooks.some((h) => isOurs(h, M)))));
 }
 
 // plan -> { file, before, after, changed }. apply(plan) backs up, then writes.
