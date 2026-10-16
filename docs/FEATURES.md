@@ -91,6 +91,29 @@ Updated October 16 2026.
 | 8.1 | Black and white palette | ✓ | Builds |
 | 8.2 | On / off from the app | ~ | Off tested (terminal agrees); on not tested here, to avoid a second island beside yours |
 | 8.3 | Live transcript as you speak (Pixie) | ✗ | Not built in the island |
+| 8.4 | Inbox card in the notch: unread list, open, Reply, Mark as read (Coucou video 1) | ✗ | Mail tool exists; no notch card |
+| 8.5 | Widget gallery for the island, incl. an AI usage meter (video 2) | ✗ | Usage is recorded; not shown in the island |
+| 8.6 | Draft-then-send email card with Send / Cancel from voice (video 4) | ✗ | Mail tool drafts; no notch card |
+| 8.7 | Service cards: Stripe payments today, Vercel, GitHub (video 4) | ✗ | |
+| 8.8 | Wake word ("OK ox") (video 4) | ✗ | |
+| 8.9 | Agent question cards with option chips; live view of the file being read (video 5) | ✗ | Approvals with Allow / Deny work |
+| 8.10 | Approvals on the phone lock screen (Live Activity) (video 5) | ~ | Telegram buttons, no Live Activity |
+| 8.11 | Now-playing music card; read Reminders (Pixie, video 7) | ✗ | Can open apps only |
+| 8.12 | Draw on the screen to explain (Pixie, video 7) | ✗ | |
+| 8.13 | Personal dictionary for dictation; call notes with speakers and to-dos (Coucou screenshot) | ✗ | Hold-to-talk dictation exists |
+
+## 10. From the October 16 videos and screenshots, beyond the island
+
+| # | Feature | State | Evidence / gap |
+|---|---|---|---|
+| 10.1 | Slack: work from Slack (Reason, video 6) | ✗ | Telegram and Discord only |
+| 10.2 | Your computers in sync (Reason, video 6) | ✗ | |
+| 10.3 | Live graph of agents talking (Reason, video 6) | ✗ | Group chat shows it as a thread |
+| 10.4 | Interactive breakdowns like ChatGPT's debt simulator (video 3) | ✓ | OpenUI Lang: sliders, live maths, Progress, deltas, @Reset |
+| 10.5 | Research-paper lab (Paper Lab, video 8) | ✗ | |
+| 10.6 | Agent traces with plain-English alerts ("stuck in a loop") (Laminar screenshot) | ✗ | Usage log only |
+| 10.7 | One prompt to a running vision-monitoring system (NVIDIA screenshot) | ✗ | |
+| 10.8 | Fast 3D maths animation skill (ManimGX screenshot) | ✗ | |
 
 ## 9. Reliability
 
