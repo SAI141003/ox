@@ -78,6 +78,26 @@ test('credentials and instructions are refused, never stored', () => {
   assert.equal(load(file).length, 0);
 });
 
+test('how a project is run is learned from commands that worked, newest wins', async () => {
+  const { commandKind, learnProjectCommands } = await import('../src/memory-graph.js');
+  assert.deepEqual(commandKind('npm test'), { kind: 'test', command: 'npm test' });
+  assert.deepEqual(commandKind('cd app && pnpm run build'), { kind: 'build', command: 'pnpm run build' });
+  assert.equal(commandKind('npm test | tee out.txt'), null, 'piped or chained commands are never remembered');
+  assert.equal(commandKind('rm -rf node_modules && npm install'), null);
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-proj-'));
+  const learn = process.env.OX_LEARN; delete process.env.OX_LEARN;
+  try {
+    learnProjectCommands([{ name: 'bash', args: { command: 'npm test' }, ok: true }, { name: 'bash', args: { command: 'npm run lint' }, ok: false }], { cwd, ref: T0 });
+    const r = learnProjectCommands([{ name: 'bash', args: { command: 'node --test' }, ok: true }], { cwd, ref: T0 + DAY });
+    assert.equal(r[0].op, 'update');
+    const file = path.join(cwd, '.agent', 'memory-graph.jsonl');
+    const hits = recall('how do I run the tests', { file, now: T0 + 2 * DAY });
+    assert.match(hits[0].text, /node --test/);
+    assert.ok(!hits.some((m) => /npm test/.test(m.text)), 'the replaced command is history');
+    assert.ok(!load(file).some((m) => /lint/.test(m.text)), 'a failed command is not remembered');
+  } finally { if (learn !== undefined) process.env.OX_LEARN = learn; }
+});
+
 test('learning from conversation: only what the user says about themselves', () => {
   assert.deepEqual(learnable('Fix the login bug in auth.ts please.'), []);
   assert.deepEqual(learnable('Please never commit without asking me. Also fix the tests.'), ['Please never commit without asking me']);

@@ -382,7 +382,7 @@ function tallyUsage(total, event) {
 // Only names and a short preview leave the server: never tool output.
 function oxToolEvent(event) {
   return event.type === 'tool-start'
-    ? { type: 'tool-start', id: event.id ?? null, name: String(event.name ?? 'tool'), preview: String(event.argsPreview ?? '').slice(0, 120) }
+    ? { type: 'tool-start', id: event.id ?? null, name: String(event.name ?? 'tool'), preview: String(event.argsPreview ?? '').slice(0, 120), ...(Array.isArray(event.plan) ? { plan: event.plan } : {}) }
     : { type: 'tool-end', id: event.id ?? null, name: String(event.name ?? 'tool'), isError: event.isError === true };
 }
 

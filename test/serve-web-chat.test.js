@@ -15,14 +15,20 @@ const origCwd = process.cwd();
 
 // A provider that lists the workspace once, then answers.
 let turn = 0;
+const PLAN = [{ content: 'Read the code', status: 'completed' }, { content: 'Fix the bug', status: 'in_progress' }, { content: 'Run the tests', status: 'pending' }];
 const provider = http.createServer((req, res) => {
-  req.resume();
+  let body = '';
+  req.on('data', (d) => { body += d; });
   req.on('end', () => {
     turn++;
     const sse = (o) => `data: ${JSON.stringify(o)}\n\n`;
     res.writeHead(200, { 'content-type': 'text/event-stream' });
+    const wantsPlan = body.includes('make a plan');
     if (turn % 2 === 1) {
-      res.end(sse({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call_ls', type: 'function', function: { name: 'list_dir', arguments: JSON.stringify({ path: '.' }) } }] }, finish_reason: null }] })
+      const call = wantsPlan
+        ? { index: 0, id: 'call_plan', type: 'function', function: { name: 'todo_write', arguments: JSON.stringify({ todos: PLAN }) } }
+        : { index: 0, id: 'call_ls', type: 'function', function: { name: 'list_dir', arguments: JSON.stringify({ path: '.' }) } };
+      res.end(sse({ choices: [{ index: 0, delta: { tool_calls: [call] }, finish_reason: null }] })
         + sse({ choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }) + 'data: [DONE]\n\n');
     } else {
       res.end(sse({ choices: [{ index: 0, delta: { content: 'one file here.' }, finish_reason: null }] })
@@ -89,6 +95,18 @@ test('the stream carries tool activity as an ox extension, never tool output', a
   for (const c of chunks) assert.equal(c.object, 'chat.completion.chunk', 'every frame is still a valid OpenAI chunk');
   assert.match(chunks.map((c) => c.choices?.[0]?.delta?.content ?? '').join(''), /one file here\./);
   assert.doesNotMatch(raw, /SECRET_NOTE|must never reach/, 'tool output stays on the server');
+});
+
+test('a plan the agent writes reaches the app as a checklist (Devin-style worklog)', async () => {
+  const res = await fetch(`${base}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'mock', stream: true, messages: [{ role: 'user', content: 'make a plan then do it' }] }),
+  });
+  const raw = await res.text();
+  const ox = raw.split('\n\n').map((f) => f.replace(/^data: /, '')).filter((d) => d && d !== '[DONE]').map((d) => JSON.parse(d).ox).filter(Boolean);
+  const start = ox.find((e) => e.type === 'tool-start' && e.name === 'todo_write');
+  assert.deepEqual(start.plan, PLAN);
 });
 
 test('with an API key set the page loads, but the API it calls is locked', async () => {

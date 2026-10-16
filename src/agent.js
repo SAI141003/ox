@@ -1942,7 +1942,12 @@ async function* runAgentLoop(opts = {}) {
       const name = call.function.name;
       const parsed = safeJsonParse(call.function.arguments || '{}');
       const args = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-      yield { type: 'tool-start', id: call.id, name, argsPreview: truncate(JSON.stringify(args), 120) };
+      // The plan itself (todo_write) travels with its tool-start, so a live view
+      // can draw the checklist instead of a truncated JSON preview.
+      const plan = name === 'todo_write' && Array.isArray(args.todos)
+        ? args.todos.filter((t) => t && typeof t.content === 'string').slice(0, 40).map((t) => ({ content: String(t.content).slice(0, 200), status: String(t.status ?? 'pending') }))
+        : null;
+      yield { type: 'tool-start', id: call.id, name, argsPreview: truncate(JSON.stringify(args), 120), ...(plan ? { plan } : {}) };
       const started = Date.now();
       let result;
       let neutral = false;

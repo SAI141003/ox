@@ -129,6 +129,10 @@
   .live iframe { display: block; width: 100%; border: 0; height: 320px; background: #fff; }
   .live .cb { display: flex; justify-content: space-between; align-items: center; padding: 5px 10px; font: 11.5px var(--mono); color: var(--dim); background: var(--panel); border-bottom: 1px solid var(--line); }
   .live .cb button { color: var(--muted); font-size: 12px; }
+  .worklog { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 12px; margin: 0 0 10px; }
+  .wl { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); padding: 2px 0; }
+  .wl.completed span:last-child { color: var(--dim); text-decoration: line-through; }
+  .wl.in_progress { color: var(--text); }
   .steps { display: flex; flex-direction: column; gap: 2px; margin: 0 0 10px; }
   .step { display: flex; align-items: center; gap: 8px; font: 12.5px var(--mono); color: var(--muted); padding: 3px 0; min-width: 0; }
   .step b { color: var(--text); font-weight: 600; }
@@ -653,7 +657,11 @@
     const steps = (msg.tools || []).map((t) => `<div class="step"><span class="dot ${t.state === 'ok' ? 'ok' : t.state === 'err' ? 'err' : 'run'}"></span><b>${esc(t.name)}</b><span>${esc(t.preview || '')}</span></div>`).join('');
     const text = msg.content ? md(msg.content) : (msg.pending ? '<span class="typing"><i></i><i></i><i></i></span>' : '');
     const routed = msg.routed ? `<span class="routed">${icon('mode')}${esc(msg.routed)}</span>` : '';
-    body.innerHTML = routed + (steps ? `<div class="steps">${steps}</div>` : '') + text + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : '');
+    const PI = { completed: ['ok', '✓'], in_progress: ['run', '›'], blocked: ['err', '!'], pending: ['', ''] };
+    const plan = Array.isArray(msg.plan) && msg.plan.length
+      ? `<div class="worklog"><div class="cap" style="margin-bottom:6px">Plan · ${msg.plan.filter((t) => t.status === 'completed').length}/${msg.plan.length} done</div>${msg.plan.map((t) => `<div class="wl ${t.status}"><span class="dot ${PI[t.status]?.[0] ?? ''}"></span><span>${esc(t.content)}</span></div>`).join('')}</div>`
+      : '';
+    body.innerHTML = routed + plan + (steps ? `<div class="steps">${steps}</div>` : '') + text + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : '');
     mountLive(body);
     body.closest('.msg').dataset.text = msg.content || '';
   }
@@ -748,7 +756,8 @@
           if (ev.error) { reply.error = ev.error.message; continue; }
           const ox = ev.ox;
           if (ox?.type === 'mode') reply.routed = `${ox.routed ? 'auto → ' : ''}${ox.mode}${ox.reason ? ` · ${ox.reason}` : ''}`;
-          if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '' });
+          if (ox?.type === 'tool-start' && Array.isArray(ox.plan)) reply.plan = ox.plan;
+          else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '' });
           if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; }
           const delta = ev.choices?.[0]?.delta?.content;
           if (delta) reply.content += delta;

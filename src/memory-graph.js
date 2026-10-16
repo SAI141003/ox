@@ -80,8 +80,19 @@ const STOP = new Set('a an the and or but of to in on at for with by from is are
 
 export function tokens(text) {
   return String(text ?? '').toLowerCase().replace(/[^\p{L}\p{N}._/@-]+/gu, ' ').split(/\s+/)
-    .map((t) => t.replace(/^[._/-]+|[._/-]+$/g, ''))
+    .map((t) => stem(t.replace(/^[._/-]+|[._/-]+$/g, '')))
     .filter((t) => t.length > 1 && !STOP.has(t));
+}
+
+// Light stemming so "tests" finds "test" and "deploying" finds "deploy".
+// Identifiers, paths and handles are left exactly as written.
+function stem(t) {
+  if (t.length < 5 || /[._/@\d-]/.test(t)) return t;
+  if (t.endsWith('ies')) return `${t.slice(0, -3)}y`;
+  if (t.endsWith('ing') && t.length > 6) return t.slice(0, -3);
+  if (t.endsWith('ed') && t.length > 5) return t.slice(0, -2);
+  if (t.endsWith('s') && !t.endsWith('ss')) return t.slice(0, -1);
+  return t;
 }
 
 // Names worth linking on: Capitalised words, code identifiers, paths, @handles.
@@ -204,7 +215,7 @@ function guessKind(text) {
 // Remember one statement. Returns { op: 'add'|'update'|'extend'|'noop'|'refused', memory, previous? }.
 export function remember(text, {
   scope = 'user', cwd = process.cwd(), home = os.homedir(), kind = null, source = null,
-  importance = null, ref = Date.now(), file = memoryFile(scope, { cwd, home }),
+  importance = null, ref = Date.now(), file = memoryFile(scope, { cwd, home }), slot: slotOverride = null,
 } = {}) {
   const statement = String(text ?? '').replace(/\s+/g, ' ').trim();
   if (!statement) return { op: 'refused', reason: 'nothing to remember' };
@@ -229,7 +240,7 @@ export function remember(text, {
   const memory = {
     id: crypto.randomBytes(5).toString('hex'),
     text: statement, kind: k, scope,
-    entities: ents, slot: slot ? `${slot.subject}|${slot.relation}${slot.topic ? `|${slot.topic}` : ''}` : null,
+    entities: ents, slot: slotOverride ?? (slot ? `${slot.subject}|${slot.relation}${slot.topic ? `|${slot.topic}` : ''}` : null),
     importance: Number.isFinite(importance) ? Math.max(1, Math.min(10, importance)) : (k === 'preference' ? 6 : k === 'lesson' ? 7 : k === 'event' ? 4 : 5),
     strength: 1, createdAt: ref, lastSeen: ref, validFrom: when?.at ?? ref, validTo: null,
     expiresAt: k === 'event' && when ? when.until + DAY : null,
@@ -239,7 +250,7 @@ export function remember(text, {
   // UPDATE: the same slot with a different value closes the old fact's validity.
   const changed = [];
   let previous = null;
-  if (memory.slot && /\|(works-at|lives-in|prefers|uses|name|is)/.test(memory.slot)) {
+  if (memory.slot && (slotOverride || /\|(works-at|lives-in|prefers|uses|name|is)/.test(memory.slot))) {
     previous = live.find((m) => m.slot === memory.slot && m.id !== memory.id);
     if (previous) {
       memory.updates = previous.id;
@@ -393,6 +404,44 @@ export function learnFromMessages(messages = [], { home = os.homedir(), source =
       const r = remember(s, { file, source, ref, scope: 'user' });
       if (r.op !== 'refused' && r.op !== 'noop') done.push(r);
     }
+  }
+  return done;
+}
+
+// ---- how this project is run (Devin's "save to environment") -----------------
+
+const COMMAND_KINDS = [
+  ['test', /^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b|^npx\s+(?:vitest|jest)\b|^node\s+--test\b|^(?:pytest|go test|cargo test|make test|mvn test|gradle test|swift test|deno test)\b/],
+  ['lint', /^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?lint\b|^npx\s+(?:eslint|biome|tsc\b)|^(?:ruff|flake8|golangci-lint|cargo clippy|swiftlint)\b/],
+  ['build', /^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?build\b|^(?:cargo build|go build|make|swift build|mvn package|gradle build|xcodebuild)\b/],
+  ['install', /^(?:npm (?:install|ci)|pnpm install|yarn(?: install)?|bun install|pip install -r|poetry install|uv sync|go mod download|bundle install)\s*$|^(?:npm ci|pip install -r \S+)$/],
+  ['start', /^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start)\b|^(?:python manage\.py runserver|rails s|cargo run|go run)\b/],
+];
+
+// A plain project command of a known kind, or null. Anything chained, piped or
+// redirected is left alone: what gets remembered must be safe to suggest again.
+export function commandKind(command) {
+  const c = String(command ?? '').trim().replace(/^cd\s+[\w./~-]+\s*&&\s*/, '');
+  if (!c || c.length > 160 || /[|;`$<>]|&&/.test(c)) return null;
+  for (const [kind, re] of COMMAND_KINDS) if (re.test(c)) return { kind, command: c };
+  return null;
+}
+
+// After a run: the commands that worked are how this project is tested,
+// linted, built, installed and started. The newest working one replaces the old.
+export function learnProjectCommands(calls = [], { cwd = process.cwd(), ref = Date.now() } = {}) {
+  if (process.env.OX_LEARN === '0') return [];
+  const file = memoryFile('project', { cwd });
+  const done = [];
+  const seen = new Set();
+  for (const call of calls) {
+    if (call?.ok !== true || !/^(?:bash|shell|run_command)$/.test(String(call.name))) continue;
+    const k = commandKind(call.args?.command ?? call.args?.cmd);
+    if (!k || seen.has(k.kind)) continue;
+    seen.add(k.kind);
+    const what = k.kind === 'start' ? 'run it locally' : k.kind === 'install' ? 'install its dependencies' : `${k.kind} this project`;
+    const r = remember(`To ${what}: \`${k.command}\``, { file, scope: 'project', kind: 'procedure', importance: 7, ref, slot: `project|command|${k.kind}`, source: 'run' });
+    if (r.op === 'add' || r.op === 'update' || r.op === 'extend') done.push(r);
   }
   return done;
 }

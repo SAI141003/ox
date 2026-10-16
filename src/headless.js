@@ -761,6 +761,10 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
         const said = [{ role: 'user', content: String(prompt ?? '') }];
         const learned = learnFromMessages(said, { source: session?.file ? path.basename(session.file) : 'headless' });
         if (learned.length && !opts.json) process.stderr.write(dimYellow(`· remembered: ${learned.map((r) => `"${r.memory.text}"${r.op === 'update' ? ` (replaces "${r.previous.text}")` : ''}`).join('; ')} — see them with: ox memory\n`));
+        // How this project is tested / built / started, from the commands that worked.
+        const { learnProjectCommands } = await import('./memory-graph.js');
+        const cmds = learnProjectCommands(learnCalls, { cwd: config.cwd });
+        if (cmds.length && !opts.json) process.stderr.write(dimYellow(`· remembered for this project: ${cmds.map((r) => r.memory.text).join('; ')}\n`));
       } catch {}
     }
     if (code === 0 && process.env.OX_LEARN !== '0') {
