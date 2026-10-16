@@ -4262,6 +4262,22 @@ async function runSubcommand(cmd, args) {
     }
     case 'voice': {
       const action = String(args[0] ?? '').trim().toLowerCase();
+      // How ox SOUNDS: Kokoro's natural voice (src/kokoro.js).
+      if (action === 'install') {
+        const k = await import('./kokoro.js');
+        console.log(`${c.bold('Natural voice:')} Kokoro-82M (Apache-2.0), offline, into ${k.VOICE_DIR()}`);
+        for (const s of k.installSteps()) console.log(c.dim(`  · ${s.what}`));
+        try { k.installKokoro(); console.log(`${c.green('✓')} ready. Try: ox speak "Hello, I am ox."`); }
+        catch (e) { process.stderr.write(`${c.red('✗')} ${e.message}\n`); process.exitCode = 1; }
+        return;
+      }
+      if (action === 'voices') {
+        const k = await import('./kokoro.js');
+        if (!k.kokoroStatus().ready) { console.log('Kokoro is not set up: ox voice install'); process.exitCode = 3; return; }
+        try { const v = await k.kokoroVoices(); for (const id of v) console.log(`${id.padEnd(14)} ${c.dim(k.VOICE_LABELS[id] ?? '')}`); console.log(c.dim(`pick one: ox speak --voice ${k.DEFAULT_VOICE} "…"  or OX_TTS_VOICE`)); }
+        finally { k.stopKokoro(); }
+        return;
+      }
       if (action === '' || action === 'status' || action === 'setup' || action === 'test') {
         const done = await cmdVoiceDictation(action || 'status', args.slice(1));
         if (done) return;
@@ -4788,12 +4804,13 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'speak': {
-      // ox's voice: the system voice, or VoxCPM when installed (src/tts.js).
+      // ox's voice: Kokoro when set up, else the system voice; VoxCPM to clone (src/tts.js).
       const tts = await import('./tts.js');
       const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
       if (args[0] === '--help' || args[0] === 'help') {
-        console.log(`${c.bold('ox speak')} — say something out loud`);
-        console.log(c.dim('  ox speak "hello"                          the system voice'));
+        console.log(`${c.bold('ox speak')}: say something out loud`);
+        console.log(c.dim('  ox speak "hello"                          Kokoro\'s natural voice when set up (ox voice install), else the system voice'));
+        console.log(c.dim('  ox speak "hello" --voice bm_george        another Kokoro voice (ox voice voices)'));
         console.log(c.dim('  ox speak "hello" --engine voxcpm          VoxCPM2 (natural, 30 languages) when installed'));
         console.log(c.dim('  ox speak "hello" --voice me.wav           clone the voice in a reference clip (VoxCPM)'));
         console.log(c.dim('  ox speak "hello" --out hello.wav          write a WAV instead of playing'));
@@ -4803,7 +4820,8 @@ async function runSubcommand(cmd, args) {
       if (args[0] === '--engines') {
         const e = tts.engines();
         console.log(`system voice: ${e.system ? c.green(e.system) : c.red('none found')}`);
-        console.log(`VoxCPM:       ${e.voxcpm ? c.green('installed') : c.dim(`not installed — ${e.install.voxcpm}`)}`);
+        console.log(`Kokoro:       ${e.kokoro ? c.green('ready') : c.dim(`not set up: ${e.install.kokoro}`)}`);
+        console.log(`VoxCPM:       ${e.voxcpm ? c.green('installed') : c.dim(`not installed: ${e.install.voxcpm}`)}`);
         return;
       }
       const VALUED = new Set(['--engine', '--voice', '--out', '--model']);
@@ -4811,6 +4829,7 @@ async function runSubcommand(cmd, args) {
       const r = await tts.speak(text, { engine: flag('--engine') ?? 'auto', voice: flag('--voice') ?? null, out: flag('--out') ?? null, model: flag('--model') ?? null });
       console.log(r.ok ? c.dim(`${r.message} (${r.engine})`) : c.red(r.message));
       if (!r.ok) process.exitCode = 1;
+      (await import('./kokoro.js')).stopKokoro();
       return;
     }
     case 'app': {

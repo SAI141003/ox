@@ -1159,10 +1159,34 @@
     rec.start();
   }
   if (Speech) { $('mic').hidden = false; $('mic').onclick = toggleMic; }
-  function speakText(text, force = false) {
-    if (!('speechSynthesis' in window) || (!force && !prefs.speakReplies)) return;
-    speechSynthesis.cancel();
+  // Kokoro's natural voice through the server when it is set up (ox voice
+  // install); this browser's voice otherwise, or when picked in Settings › Voice.
+  let voiceInfo = null, playing = null, speakRun = 0;
+  const voiceStatus = async () => (voiceInfo ??= await getJson('/ox/voice').catch(() => ({ kokoro: false, voices: [] })));
+  function stopSpeaking() { speakRun++; if (playing) { playing.pause(); playing = null; } if ('speechSynthesis' in window) speechSynthesis.cancel(); }
+  async function speakNatural(plain) {
+    const run = ++speakRun;
+    // Sentence-sized pieces: the first one plays while the next is being made.
+    const parts = plain.match(/[^.!?\n]+[.!?]*\s*/g)?.reduce((acc, s) => { if (acc.length && (acc.at(-1) + s).length < 240) acc[acc.length - 1] += s; else acc.push(s); return acc; }, []) ?? [plain];
+    const make = (t) => fetch('/ox/speak', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: t, voice: prefs.kvoice || undefined }) })
+      .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error?.message || `HTTP ${r.status}`); return URL.createObjectURL(await r.blob()); });
+    let next = make(parts[0]);
+    for (let i = 0; i < parts.length; i++) {
+      const url = await next;
+      if (i + 1 < parts.length) next = make(parts[i + 1]);
+      if (run !== speakRun) { URL.revokeObjectURL(url); return; }
+      await new Promise((done) => { playing = new Audio(url); playing.onended = playing.onerror = () => { URL.revokeObjectURL(url); done(); }; playing.play().catch(done); });
+      if (run !== speakRun) return;
+    }
+  }
+  async function speakText(text, force = false) {
+    if (!force && !prefs.speakReplies) return;
+    stopSpeaking();
     const plain = String(text).replace(/```[\s\S]*?```/g, ' (code) ').replace(/[*#`>]/g, '').slice(0, 4000);
+    if (prefs.voiceEngine !== 'system' && (await voiceStatus()).kokoro) {
+      try { await speakNatural(plain); return; } catch (e) { toast(`Natural voice failed, using this browser's: ${e.message}`); }
+    }
+    if (!('speechSynthesis' in window)) return;
     const u = new SpeechSynthesisUtterance(plain);
     const v = speechSynthesis.getVoices().find((x) => x.name === prefs.voice);
     if (v) u.voice = v;
@@ -1573,13 +1597,25 @@ files: [src/billing/**]
         $('s-awake').onchange = async () => { try { await postJson('/ox/settings', { awake: $('s-awake').checked }); } catch (e) { toast(e.message); } };
       } else if (sec === 'voice') {
         const voices = ('speechSynthesis' in window) ? speechSynthesis.getVoices() : [];
+        const V = await voiceStatus();
         el.innerHTML = `${mobileBack}<div class="shead">${icon('mic')}Voice</div><p class="sdesc">Talking to ox here uses this browser's speech recognition${Speech ? '' : '. This browser has none, so the mic is hidden'}. In the terminal, <code>ox speak</code> uses your system voice or VoxCPM.</p>
           ${row('Language', 'What you speak in.', `<select id="s-lang"><option value="">Same as this browser (${esc(navigator.language)})</option>${['en-US', 'en-GB', 'en-IN', 'fr-FR', 'de-DE', 'es-ES', 'it-IT', 'pt-BR', 'hi-IN', 'zh-CN', 'ja-JP', 'ko-KR', 'ar-SA', 'ru-RU'].map((l) => `<option>${l}</option>`).join('')}</select>`)}
           ${row('Read answers aloud', 'ox says each finished answer.', sw('s-speak', prefs.speakReplies))}
-          ${row('Voice', voices.length ? '' : 'This browser has no voices.', `<select id="s-voice"><option value="">Default</option>${voices.map((v) => `<option>${esc(v.name)}</option>`).join('')}</select>`)}`;
-        $('s-lang').value = prefs.lang; $('s-voice').value = prefs.voice;
+          <div class="section-cap cap">How ox sounds</div>
+          ${row('Natural voice', V.kokoro ? 'Kokoro, open source, runs on this Mac offline' : 'Not set up. In a terminal: <code>ox voice install</code> (about 120 MB, offline)', V.kokoro ? seg('voiceEngine', [['natural', 'Natural'], ['system', 'This browser']], prefs.voiceEngine === 'system' ? 'system' : 'natural') : '')}
+          ${V.kokoro && prefs.voiceEngine !== 'system'
+            ? row('Voice', 'Kokoro has 54. The labelled ones are the best rated.', `<span style="display:flex;gap:6px"><select id="s-kvoice">${[...V.voices].sort((a, b) => (a.label === a.id) - (b.label === b.id)).map((v) => `<option value="${esc(v.id)}">${esc(v.label === v.id ? v.id : v.label)}</option>`).join('')}</select><button class="btn" id="s-vtest">Play</button></span>`)
+            : row('Voice', voices.length ? '' : 'This browser has no voices.', `<select id="s-voice"><option value="">Default</option>${voices.map((v) => `<option>${esc(v.name)}</option>`).join('')}</select>`)}`;
+        $('s-lang').value = prefs.lang;
+        if ($('s-voice')) { $('s-voice').value = prefs.voice; $('s-voice').onchange = () => { prefs.voice = $('s-voice').value; savePrefs(); speakText('This is how I sound.', true); }; }
+        if ($('s-kvoice')) {
+          $('s-kvoice').value = prefs.kvoice || V.default;
+          const play = () => speakText(`Hi, I'm ${botName}. I edited three files and the tests pass.`, true);
+          $('s-kvoice').onchange = () => { prefs.kvoice = $('s-kvoice').value; savePrefs(); play(); };
+          $('s-vtest').onclick = play;
+        }
+        bindSegs(el, (k, v) => { prefs[k] = v; savePrefs(); renderSection(); });
         $('s-lang').onchange = () => { prefs.lang = $('s-lang').value; savePrefs(); };
-        $('s-voice').onchange = () => { prefs.voice = $('s-voice').value; savePrefs(); speakText('This is how I sound.', true); };
         $('s-speak').onchange = () => { prefs.speakReplies = $('s-speak').checked; savePrefs(); };
       } else if (sec === 'usage') {
         const days = Number(store.get('ox.usage.days', 30));

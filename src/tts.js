@@ -1,5 +1,8 @@
-// ox speaks: the system voice everywhere, or VoxCPM when it is installed.
+// ox speaks: Kokoro's natural voice when set up, the system voice everywhere
+// else, or VoxCPM for cloning a voice.
 //
+//   kokoro   Kokoro-82M (Apache-2.0) on the CPU, offline: src/kokoro.js, set up
+//            with `ox voice install` (about 120 MB in ~/.ox/voice).
 //   system   macOS `say`, Windows' built-in SpeechSynthesizer, Linux espeak-ng /
 //            espeak / spd-say. Nothing to install.
 //   voxcpm   OpenBMB's VoxCPM2 (Apache-2.0): natural voices in 30 languages and
@@ -13,6 +16,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { kokoroStatus, kokoroSpeak, DEFAULT_VOICE } from './kokoro.js';
 
 const PY = () => process.env.OX_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
 
@@ -52,8 +56,9 @@ export function systemVoice(platform = process.platform) {
 export function engines(env = process.env) {
   return {
     system: systemVoice(),
+    kokoro: kokoroStatus().ready,
     voxcpm: voxcpmAvailable(env),
-    install: { voxcpm: 'pip install voxcpm   (then ox speak --engine voxcpm; needs PyTorch, an NVIDIA GPU with ~8 GB is what VoxCPM is tested on)' },
+    install: { kokoro: 'ox voice install   (Kokoro-82M, about 120 MB, offline, in ~/.ox/voice)', voxcpm: 'pip install voxcpm   (then ox speak --engine voxcpm; needs PyTorch, an NVIDIA GPU with ~8 GB is what VoxCPM is tested on)' },
   };
 }
 
@@ -92,7 +97,27 @@ function runQuiet(cmd, args, env = {}) {
 export async function speak(text, { engine = 'auto', voice = null, out = null, model = null, env = process.env } = {}) {
   const t = String(text ?? '').trim();
   if (!t) return { ok: false, message: 'nothing to say' };
-  if (voice && !fs.existsSync(voice)) return { ok: false, message: `no reference clip at ${voice}` };
+  // A Kokoro voice is a name (af_heart); a path is a clip to clone with VoxCPM.
+  const kokoroVoice = voice && /^[a-z]{2}_[a-z]+$/.test(voice) ? voice : null;
+  if (voice && !kokoroVoice && !fs.existsSync(voice)) return { ok: false, message: `no reference clip at ${voice}` };
+  const wantKokoro = engine === 'kokoro' || (engine === 'auto' && !(voice && !kokoroVoice) && env.OX_TTS_ENGINE !== 'system' && env.OX_TTS_ENGINE !== 'voxcpm');
+  if (wantKokoro && kokoroStatus().ready) {
+    try {
+      const r = await kokoroSpeak(t, { voice: kokoroVoice ?? env.OX_TTS_VOICE ?? DEFAULT_VOICE, out });
+      if (!out) {
+        const play = playCommand(r.out);
+        if (play) await runQuiet(play[0], play[1], { OX_TTS_OUT: r.out });
+        try { fs.unlinkSync(r.out); } catch {}
+      }
+      return { ok: true, engine: 'kokoro', out: out ?? null, message: out ? `wrote ${out}` : 'spoken' };
+    } catch (e) {
+      if (engine === 'kokoro') return { ok: false, engine: 'kokoro', message: e.message };
+      // auto: fall through to the system voice, and say so in the result
+      const sys = await speak(t, { engine: 'system', out, env });
+      return { ...sys, message: `${sys.message} (Kokoro failed: ${e.message})` };
+    }
+  }
+  if (engine === 'kokoro') return { ok: false, engine: 'kokoro', message: `Kokoro is not set up. ${engines(env).install.kokoro}` };
   const useVox = engine === 'voxcpm' || (engine === 'auto' && (voice || env.OX_TTS_ENGINE === 'voxcpm') && voxcpmAvailable(env));
   if (engine === 'voxcpm' && !voxcpmAvailable(env)) {
     return { ok: false, engine: 'voxcpm', message: `VoxCPM is not installed for ${PY()}. ${engines(env).install.voxcpm}` };

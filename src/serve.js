@@ -32,7 +32,7 @@ import { BOTS, KEY_ENV, resolveBot, defaultBotSpec } from './bots.js';
 import { readFile } from 'fs/promises';
 import { join, resolve, extname } from 'path';
 import { createReadStream } from 'fs';
-import { stat } from 'fs/promises';
+import { stat, unlink } from 'fs/promises';
 import { resolveTurnMode } from './modes.js';
 import { listAgents, loadAgent, agentBotSpec, agentPersonaBlock } from './agents.js';
 import { readConfigDoc } from './config.js';
@@ -1016,7 +1016,27 @@ async function serveMediaFile(req, res, m) {
   createReadStream(f).pipe(res);
 }
 
+// The app's "Read aloud" in Kokoro's natural voice: POST { text, voice } and get
+// a WAV back. The model stays loaded in one worker for every later sentence.
+async function handleSpeak(req, res) {
+  if (!authorized(req)) { unauthorized(res); return; }
+  let body;
+  try { body = await parseBody(req); } catch { sendInvalidJson(res); return; }
+  const k = await import('./kokoro.js');
+  if (!k.kokoroStatus().ready) { sendError(res, 409, 'Kokoro is not set up. Run: ox voice install', 'invalid_request_error', 'voice_not_installed', null); return; }
+  let r;
+  try { r = await k.kokoroSpeak(String(body?.text ?? ''), { voice: body?.voice || undefined, speed: Math.max(0.5, Math.min(2, Number(body?.speed) || 1)) }); }
+  catch (e) { sendError(res, 400, String(e?.message ?? e), 'invalid_request_error', 'speak_failed', null); return; }
+  const st = await stat(r.out);
+  res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': st.size, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+  const s = createReadStream(r.out);
+  s.pipe(res);
+  s.on('close', () => { unlink(r.out).catch(() => {}); });
+}
+
 const ROUTES = [
+  { method: 'POST', pattern: /^\/ox\/speak\/?$/, handler: handleSpeak },
+  { method: 'GET', pattern: /^\/ox\/voice\/?$/, handler: appRoute(async () => { const k = await import('./kokoro.js'); const st = k.kokoroStatus(); return { kokoro: st.ready, install: 'ox voice install', voices: st.ready ? (await k.kokoroVoices()).map((id) => ({ id, label: k.VOICE_LABELS[id] ?? id })) : [], default: k.DEFAULT_VOICE }; }) },
   { method: 'GET', pattern: /^\/ox\/providers\/?$/, handler: appRoute(async () => (await appApi()).providersView()) },
   { method: 'POST', pattern: /^\/ox\/providers\/?$/, handler: appRoute(async (b) => (await appApi()).saveProviderKey(String(b.provider ?? ''), b.key ?? null)) },
   { method: 'GET', pattern: /^\/ox\/accounts\/?$/, handler: appRoute(async () => (await appApi()).accountsView()) },
