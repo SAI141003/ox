@@ -118,3 +118,25 @@ test('install adds only ox hooks, keeps everything else, backs up, and uninstall
   assert.throws(() => planInstall('claude', { file }), /not valid JSON/);
   assert.deepEqual(withHooks({}, { remove: true }), {});
 });
+
+test('Codex: hooks.json groups without a matcher, its own mark, and its tools read as ox tools', async () => {
+  const { toolName, preview } = await import('../src/agent-hooks.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-codex-'));
+  const file = path.join(dir, 'hooks.json');
+  applyInstall(planInstall('codex', { file }));
+  const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.ok(installed(doc, 'codex'));
+  assert.ok(!installed(doc, 'claude'), 'one agent never counts as another');
+  assert.equal(doc.hooks.PreToolUse[0].matcher, undefined);
+  assert.equal(doc.hooks.PermissionRequest[0].hooks[0].timeout, 120);
+  assert.match(doc.hooks.PermissionRequest[0].hooks[0].statusMessage, /OX Island/);
+  assert.match(doc.hooks.SessionStart[0].hooks[0].command, /hook codex$/);
+  // Claude Code's hooks and Codex's live side by side in one document.
+  const both = withHooks(withHooks({}, { agent: 'claude' }), { agent: 'codex' });
+  assert.ok(installed(both, 'claude') && installed(both, 'codex'));
+  assert.ok(installed(withHooks(both, { agent: 'codex', remove: true }), 'claude'));
+  assert.equal(toolName('apply_patch'), 'edit_file');
+  assert.equal(toolName('exec_command'), 'bash');
+  assert.equal(preview({ command: '*** Begin Patch\n*** Update File: src/app.ts\n@@\n-a\n+b\n*** End Patch' }), 'src/app.ts');
+  assert.equal(preview({ command: ['git', 'status'] }), 'git status');
+});

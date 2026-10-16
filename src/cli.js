@@ -4038,7 +4038,7 @@ const SUB_USAGE = {
   episode: 'usage: ox episode ls | ox episode promote <id>',
   'memory-loss': 'usage: ox memory-loss [--limit <n>]',
   market: 'usage: ox market ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
-  hooks: 'usage: ox hooks install claude [--yes] | uninstall claude [--yes] | status',
+  hooks: 'usage: ox hooks install <claude|codex> [--yes] | uninstall <claude|codex> [--yes] | status',
   memory: 'usage: ox memory [recall "<question>" | add "<fact>" [--project] | history <id> | forget <id> | all [--project]]',
   auto: 'usage: ox auto "<goal>" [--contract ["<goal>"]] [--max-cost <usd>] [--json] [--bot <name>] [--yes-edits] [-y] [--side-effects-ok]',
   attach: 'usage: ox attach <worker id>  — follow a detached run (ox agents lists them)',
@@ -4655,10 +4655,9 @@ async function runSubcommand(cmd, args) {
       if (sub === 'status') {
         for (const [id, a] of Object.entries(ah.AGENTS)) {
           let on = false;
-          try { on = ah.installed(JSON.parse(fs.readFileSync(a.settings(), 'utf8'))); } catch {}
-          console.log(`${on ? c.green('connected') : c.dim('not connected')}  ${a.label}  ${c.dim(a.settings())}`);
+          try { on = ah.installed(JSON.parse(fs.readFileSync(a.settings(), 'utf8')), id); } catch {}
+          console.log(`${on ? c.green('connected') : c.dim('not connected')}  ${a.label.padEnd(12)} ${c.dim(`ox hooks install ${id}  ·  ${a.settings()}`)}`);
         }
-        console.log(c.dim('connect one: ox hooks install claude'));
         return;
       }
       if (sub !== 'install' && sub !== 'uninstall') { console.log(SUB_USAGE.hooks); process.exitCode = 2; return; }
@@ -4675,6 +4674,7 @@ async function runSubcommand(cmd, args) {
         const backup = ah.applyInstall(plan);
         console.log(c.green(sub === 'install' ? `connected — new ${ah.AGENTS[agent].label} sessions show in OX Island, and you can answer its permission requests there` : 'disconnected'));
         if (backup) console.log(c.dim(`backup: ${backup}`));
+        if (sub === 'install' && ah.AGENTS[agent].after) console.log(c.yellow(ah.AGENTS[agent].after));
       } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; }
       return;
     }

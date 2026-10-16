@@ -30,15 +30,40 @@ import { fileURLToPath } from 'node:url';
 import { createIpcServer, socketPathFor, sanitizeForWire } from './ipc.js';
 
 const OX_BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
-export const AGENTS = Object.freeze({ claude: { label: 'Claude Code', settings: () => path.join(os.homedir(), '.claude', 'settings.json') } });
+// Each agent: where its hooks live, which events to hook (with timeouts), and
+// whether tool events take a matcher. Codex reads Claude-style groups from
+// ~/.codex/hooks.json (no matcher), runs them only after you trust them with
+// /hooks in Codex, and reads the same PermissionRequest decision.
+export const AGENTS = Object.freeze({
+  claude: {
+    label: 'Claude Code', settings: () => path.join(os.homedir(), '.claude', 'settings.json'), matcher: true,
+    events: { PreToolUse: 5, PostToolUse: 5, PostToolUseFailure: 5, PermissionRequest: 120, UserPromptSubmit: 5, Stop: 5, SubagentStart: 5, SubagentStop: 5, SessionEnd: 5 },
+  },
+  codex: {
+    label: 'Codex', settings: () => path.join(os.homedir(), '.codex', 'hooks.json'), matcher: false,
+    events: { SessionStart: 10, UserPromptSubmit: 10, PreToolUse: 10, PermissionRequest: 120, PostToolUse: 10, Stop: 10, SubagentStart: 10, SubagentStop: 10, SessionEnd: 3 },
+    statusMessage: 'Waiting for your answer in OX Island',
+    after: 'In Codex, run /hooks once and trust them — Codex only runs hooks you have trusted.',
+  },
+});
 const IDLE_MS = 30 * 60_000;
 
 // Claude Code's tool names, as the island already describes ox's own tools.
-const TOOL = { Read: 'read_file', Write: 'write_file', Edit: 'edit_file', MultiEdit: 'edit_file', NotebookEdit: 'edit_file', Bash: 'bash', Grep: 'grep', Glob: 'glob', LS: 'list_dir', WebFetch: 'web_fetch', WebSearch: 'web_search', Task: 'subagent', Agent: 'subagent' };
+const TOOL = {
+  Read: 'read_file', Write: 'write_file', Edit: 'edit_file', MultiEdit: 'edit_file', NotebookEdit: 'edit_file', Bash: 'bash', Grep: 'grep', Glob: 'glob', LS: 'list_dir', WebFetch: 'web_fetch', WebSearch: 'web_search', Task: 'subagent', Agent: 'subagent', TodoWrite: 'todo_write',
+  // Codex
+  apply_patch: 'edit_file', shell: 'bash', exec_command: 'bash', local_shell: 'bash', update_plan: 'todo_write', spawn_agent: 'subagent', view_image: 'read_file',
+};
 export const toolName = (n) => TOOL[n] ?? String(n ?? 'tool');
 export function preview(input = {}) {
   const i = input && typeof input === 'object' ? input : {};
-  const s = i.command ?? i.file_path ?? i.notebook_path ?? i.path ?? i.pattern ?? i.url ?? i.query ?? i.description ?? i.prompt ?? '';
+  // Codex's apply_patch carries the whole patch: show the file it touches.
+  if (typeof i.command === 'string' && i.command.startsWith('*** Begin Patch')) {
+    const f = /^\*\*\* (?:Update|Add|Delete) File: (.+)$/m.exec(i.command);
+    if (f) return f[1].trim();
+  }
+  const cmd = Array.isArray(i.command) ? i.command.join(' ') : i.command;
+  const s = cmd ?? i.file_path ?? i.notebook_path ?? i.path ?? i.pattern ?? i.url ?? i.query ?? i.description ?? i.prompt ?? '';
   return String(s).replace(/\s+/g, ' ').slice(0, 300);
 }
 
@@ -166,33 +191,39 @@ export async function handleHook(agent, raw, { socketDir, spawnRelay = defaultSp
   return isAsk ? decisionOutput(reply?.decision) : '';
 }
 
-// ---- installing the hooks into Claude Code ---------------------------------------------
+// ---- installing the hooks into an agent's settings ---------------------------------------
 
-const MARK = 'hook claude';
-const EVENTS = { PreToolUse: true, PostToolUse: true, PostToolUseFailure: true, PermissionRequest: true, UserPromptSubmit: false, Stop: false, SubagentStart: false, SubagentStop: false, SessionEnd: false };
+const mark = (agent) => `hook ${agent}`;
+const TOOL_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest']);
 
-export function hookCommand() {
+export function hookCommand(agent = 'claude') {
   const q = (s) => (/[\s"'$`\\]/.test(s) ? `'${s.replace(/'/g, "'\\''")}'` : s);
-  return `${q(process.execPath)} ${q(OX_BIN)} ${MARK}`;
+  return `${q(process.execPath)} ${q(OX_BIN)} ${mark(agent)}`;
 }
 
 // The settings document with ox's hooks added (or removed), without touching
-// anything else in it.
-export function withHooks(doc = {}, { remove = false, command = hookCommand() } = {}) {
+// anything else in it — other tools' hooks and your own stay exactly as they are.
+export function withHooks(doc = {}, { remove = false, agent = 'claude', command = hookCommand(agent) } = {}) {
+  const spec = AGENTS[agent];
+  const M = mark(agent);
   const next = JSON.parse(JSON.stringify(doc ?? {}));
   next.hooks = next.hooks && typeof next.hooks === 'object' ? next.hooks : {};
-  for (const [event, matcher] of Object.entries(EVENTS)) {
+  for (const [event, timeout] of Object.entries(spec.events)) {
     const groups = Array.isArray(next.hooks[event]) ? next.hooks[event] : [];
-    const kept = groups.map((g) => ({ ...g, hooks: (g.hooks ?? []).filter((h) => !String(h.command ?? '').includes(MARK)) })).filter((g) => g.hooks.length);
-    if (!remove) kept.push({ ...(matcher ? { matcher: '*' } : {}), hooks: [{ type: 'command', command, timeout: event === 'PermissionRequest' ? 120 : 5 }] });
+    const kept = groups.map((g) => ({ ...g, hooks: (g.hooks ?? []).filter((h) => !String(h.command ?? '').includes(M)) })).filter((g) => g.hooks.length);
+    if (!remove) {
+      const hook = { type: 'command', command, timeout, ...(event === 'PermissionRequest' && spec.statusMessage ? { statusMessage: spec.statusMessage } : {}) };
+      kept.push({ ...(spec.matcher && TOOL_EVENTS.has(event) ? { matcher: '*' } : {}), hooks: [hook] });
+    }
     if (kept.length) next.hooks[event] = kept; else delete next.hooks[event];
   }
   if (!Object.keys(next.hooks).length) delete next.hooks;
   return next;
 }
 
-export function installed(doc = {}) {
-  return Object.values(doc?.hooks ?? {}).some((groups) => Array.isArray(groups) && groups.some((g) => (g.hooks ?? []).some((h) => String(h.command ?? '').includes(MARK))));
+export function installed(doc = {}, agent = 'claude') {
+  const M = mark(agent);
+  return Object.values(doc?.hooks ?? {}).some((groups) => Array.isArray(groups) && groups.some((g) => (g.hooks ?? []).some((h) => String(h.command ?? '').includes(M))));
 }
 
 // plan -> { file, before, after, changed }. apply(plan) backs up, then writes.
@@ -204,7 +235,7 @@ export function planInstall(agent = 'claude', { remove = false, file = AGENTS[ag
   if (text.trim()) {
     try { doc = JSON.parse(text); } catch { throw new Error(`${file} is not valid JSON — fix it first; ox will not rewrite a file it cannot read`); }
   }
-  const after = withHooks(doc, { remove });
+  const after = withHooks(doc, { remove, agent });
   const afterText = `${JSON.stringify(after, null, 2)}\n`;
   return { file, beforeText: text, afterText, changed: afterText.trim() !== text.trim(), mtimeMs: text ? fs.statSync(file).mtimeMs : null };
 }
