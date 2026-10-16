@@ -714,12 +714,12 @@ export function createLocalRunner(config = {}) {
 export const LOCAL_MODELS = [
   { id: 'qwen2.5-coder-32b', name: 'Qwen2.5-Coder 32B', size: '20GB', minRAM: 24, bestFor: 'Deep refactors, multi-file edits', quantization: 'Q4_K_M', ollamaName: 'qwen2.5-coder:32b' },
   { id: 'qwen2.5-coder-7b', name: 'Qwen2.5-Coder 7B', size: '5GB', minRAM: 8, bestFor: 'Quick edits, single-file tasks', quantization: 'Q4_K_M', ollamaName: 'qwen2.5-coder:7b' },
-  { id: 'devstral-small-24b', name: 'Devstral Small 24B', size: '14GB', minRAM: 16, bestFor: 'Code generation, debugging', quantization: 'Q4_K_M', ollamaName: 'devstral-small-24b' },
+  { id: 'devstral-small-24b', name: 'Devstral Small 24B', size: '14GB', minRAM: 16, bestFor: 'Code generation, debugging', quantization: 'Q4_K_M', ollamaName: 'devstral:24b' },
   { id: 'llama3.1-8b', name: 'Llama 3.1 8B', size: '9GB', minRAM: 12, bestFor: 'Quick edits, minimum viable', quantization: 'Q8_0', ollamaName: 'llama3.1:8b' },
-  { id: 'deepseek-coder-v2-16b', name: 'DeepSeek-Coder-V2 16B', size: '10GB', minRAM: 16, bestFor: 'Code generation, reasoning', quantization: 'Q4_K_M', ollamaName: 'deepseek-coder-v2-16b' },
+  { id: 'deepseek-coder-v2-16b', name: 'DeepSeek-Coder-V2 16B', size: '10GB', minRAM: 16, bestFor: 'Code generation, reasoning', quantization: 'Q4_K_M', ollamaName: 'deepseek-coder-v2:16b' },
   { id: 'gemma4-12b', name: 'Gemma 4 12B', size: '10GB', minRAM: 16, bestFor: 'General coding, skill writing', quantization: 'Q6_K', ollamaName: 'gemma4:12b' },
   { id: 'qwen3-coder-80b-a3b', name: 'Qwen3-Coder-80B-A3B', size: '48GB', minRAM: 64, bestFor: 'Frontier coding (MoE)', quantization: 'Q4_K_M', ollamaName: 'qwen3-coder-80b-a3b' },
-  { id: 'mixtral-8x22b', name: 'Mixtral 8x22B', size: '26GB', minRAM: 32, bestFor: 'Multilingual, general purpose', quantization: 'Q4_K_M', ollamaName: 'mixtral-8x22b' },
+  { id: 'mixtral-8x22b', name: 'Mixtral 8x22B', size: '26GB', minRAM: 32, bestFor: 'Multilingual, general purpose', quantization: 'Q4_K_M', ollamaName: 'mixtral:8x22b' },
 ];
 
 export function recommendLocalModel(hardware = {}, taskType = 'general', memory = os) {

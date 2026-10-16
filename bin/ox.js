@@ -16,6 +16,8 @@ if (process.argv.length === 3 && (process.argv[2] === '--version' || process.arg
 }
 
 async function main() {
+  // Keys pasted into the app (~/.ox/keys.json) fill in what the shell did not set.
+  try { (await import('../src/keystore.js')).loadKeysIntoEnv(); } catch {}
   let cli = null;
   try {
     cli = await import('../src/cli.js');

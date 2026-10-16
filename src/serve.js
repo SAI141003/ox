@@ -903,7 +903,39 @@ async function handleSettingsPost(req, res) {
   sendJson(res, 200, await settingsView());
 }
 
+// The app's other screens (src/app-api.js): providers and keys, accounts,
+// local models, capabilities, messaging, scheduled runs, terminal sessions.
+function appRoute(fn) {
+  return async (req, res, m) => {
+    if (!authorized(req)) { unauthorized(res); return; }
+    let body = null;
+    if (req.method === 'POST') {
+      try { body = await parseBody(req); } catch { sendInvalidJson(res); return; }
+    }
+    try {
+      const out = await fn(body ?? {}, m);
+      if (out == null) sendError(res, 404, 'Not found', 'invalid_request_error', 'not_found', null);
+      else sendJson(res, 200, out);
+    } catch (e) {
+      sendError(res, 400, String(e?.message ?? e), 'invalid_request_error', 'bad_request', null);
+    }
+  };
+}
+const appApi = () => import('./app-api.js');
+
 const ROUTES = [
+  { method: 'GET', pattern: /^\/ox\/providers\/?$/, handler: appRoute(async () => (await appApi()).providersView()) },
+  { method: 'POST', pattern: /^\/ox\/providers\/?$/, handler: appRoute(async (b) => (await appApi()).saveProviderKey(String(b.provider ?? ''), b.key ?? null)) },
+  { method: 'GET', pattern: /^\/ox\/accounts\/?$/, handler: appRoute(async () => (await appApi()).accountsView()) },
+  { method: 'GET', pattern: /^\/ox\/local\/?$/, handler: appRoute(async () => (await appApi()).localView()) },
+  { method: 'GET', pattern: /^\/ox\/capabilities\/?$/, handler: appRoute(async () => (await appApi()).capabilitiesView()) },
+  { method: 'GET', pattern: /^\/ox\/skills\/([^/]+)$/, handler: appRoute(async (_, m) => (await appApi()).skillBody(decodeURIComponent(m[1]))) },
+  { method: 'GET', pattern: /^\/ox\/messaging\/?$/, handler: appRoute(async () => (await appApi()).messagingView()) },
+  { method: 'GET', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async () => (await appApi()).scheduledView()) },
+  { method: 'POST', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async (b) => (await appApi()).setScheduleEnabled(String(b.id ?? ''), b.enabled)) },
+  { method: 'GET', pattern: /^\/ox\/sessions\/?$/, handler: appRoute(async () => (await appApi()).sessionsView()) },
+  { method: 'GET', pattern: /^\/ox\/sessions\/([^/]+)$/, handler: appRoute(async (_, m) => (await appApi()).sessionView(decodeURIComponent(m[1]))) },
+  { method: 'GET', pattern: /^\/ox\/about\/?$/, handler: appRoute(async () => (await appApi()).aboutView()) },
   { method: 'GET', pattern: /^\/ox\/settings\/?$/, handler: handleSettingsGet },
   { method: 'POST', pattern: /^\/ox\/settings\/?$/, handler: handleSettingsPost },
   { method: 'GET', pattern: /^\/health\/?$/, handler: handleHealth },

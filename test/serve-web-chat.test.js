@@ -66,11 +66,11 @@ test('GET / serves the chat page with a locked-down CSP', async () => {
 });
 
 test('the OpenAI route table is unchanged by the page', () => {
-  // The OpenAI-compatible surface is the same five routes; the only additions
-  // are ox's own settings routes, under /ox/.
+  // The OpenAI-compatible surface is the same five routes; everything the app
+  // adds lives under /ox/ and is GET or POST.
   const routes = routeTable();
   assert.equal(routes.filter((r) => !r.includes('\\/ox\\/')).length, 5, routes.join('\n'));
-  assert.ok(routes.filter((r) => r.includes('\\/ox\\/')).every((r) => /settings/.test(r)));
+  assert.ok(routes.filter((r) => r.includes('\\/ox\\/')).every((r) => /^(GET|POST) \^\\\/ox\\\//.test(r)), routes.join('\n'));
 });
 
 test('the stream carries tool activity as an ox extension, never tool output', async () => {
