@@ -16,11 +16,11 @@ Updated October 16 2026.
 | 1.3 | Claude plan answering | ✗ | Needs you to sign in once (ox never handles credentials): run the command shown in Settings › Accounts |
 | 1.4 | Model picker lists what can answer first | ✓ | Plans, agents, endpoints, models; keyless models greyed under "Needs a key" |
 | 1.5 | A chat with no model picked uses one that works | ✓ | Was a hard-coded gpt-4o; now your default if it can run, else a signed-in plan, a local endpoint, a keyed provider |
-| 1.6 | Auto-switching model per message (small talk to a small model, code to a strong one) | ✗ | Not built: ox picks one model per chat. Next to build |
+| 1.6 | Auto-switching model per message (small talk to a small model, code to a strong one) | ✓ | Picker default "Auto": hi went to qwen2.5:3b on this Mac ("a quick answer, on your machine"), a code fix to chatgpt-plan; only models that can answer are picked; the reason shows on each answer |
 | 1.7 | Several models at once on one task | ~ | `ox arena` races models in the terminal; not in the app |
 | 1.8 | Custom endpoints (any OpenAI-compatible server) | ✓ | Settings › Custom endpoints; Test listed Ollama's models in 31 ms; chat through it worked |
 | 1.9 | Local models + Hugging Face search and download | ✓ | Search from Providers, the picker and Local models; BitNet found; a 105 MB model downloaded and chatted earlier |
-| 1.10 | Default local model choice | ~ | With several installed, the picker can land on the smallest (135M); should prefer the most capable |
+| 1.10 | Default local model choice | ✓ | Auto uses Ollama's biggest chat model (qwen2.5:3b, not the 135M one); the picker opens on Auto |
 
 ## 2. Tokens and speed
 

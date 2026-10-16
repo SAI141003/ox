@@ -244,6 +244,22 @@ export function refreshPlans() {
 }
 export const workingPlans = () => planCache.list.filter((p) => p.works);
 
+// Chat models Ollama has on this machine, biggest first (refreshed in the background).
+let ollamaCache = { at: 0, models: [] };
+export async function refreshOllama(base = process.env.OLLAMA_HOST ? `http://${String(process.env.OLLAMA_HOST).replace(/^https?:\/\//, '')}` : 'http://127.0.0.1:11434') {
+  try {
+    const r = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(1500) });
+    const j = await r.json();
+    ollamaCache.models = (j.models ?? [])
+      .filter((m) => !/embed|bge|nomic|minilm/i.test(m.name))
+      .sort((a, b) => (b.size ?? 0) - (a.size ?? 0))
+      .map((m) => m.name);
+  } catch { ollamaCache.models = []; }
+  ollamaCache.at = Date.now();
+  return ollamaCache.models;
+}
+export const localOllama = () => ollamaCache.models;
+
 // Could this bot answer right now? A plan must be signed in, a keyed provider
 // needs its key; local servers and your own endpoints carry no key to check.
 export function runnable(spec, env = process.env) {
@@ -252,6 +268,32 @@ export function runnable(spec, env = process.env) {
     if (t.subscription) return workingPlans().some((p) => p.bot === `${t.subscription}-plan`);
     return !t.keyEnv || !!env[t.keyEnv];
   } catch { return false; }
+}
+
+// Auto model, per message. Small talk and plain questions go to the quickest,
+// cheapest model that can answer (a model on your machine costs nothing);
+// anything about code, files, tools or several steps goes to the strongest you
+// have connected. Only models that can answer right now are considered.
+const FAST_BOTS = ['ox-haiku', 'ox-flash', 'ox-grok-fast', 'ox-groq'];
+const STRONG_BOTS = ['claude-plan', 'chatgpt-plan', 'ox-opus', 'ox-claude', 'ox-gpt', 'ox-gemini', 'ox-grok', 'ox-deepseek', 'cursor-plan'];
+export function autoModel(messages = [], env = process.env) {
+  const last = [...messages].reverse().find((m) => m?.role === 'user');
+  const said = typeof last?.content === 'string' ? last.content : '';
+  const light = SMALL_TALK.test(said) || (!TOUCHES_CODE.test(said) && !NEEDS_TOOLS.test(said) && said.length < 400);
+  let local = [];
+  try { local = Object.entries(readConfigDoc().bots ?? {}).filter(([, d]) => d?.provider === 'custom' && d.model).map(([id]) => id); } catch {}
+  if (Date.now() - ollamaCache.at > 5 * 60_000 && process.env.OX_NO_KEYSTORE !== '1') refreshOllama();
+  // Ollama's biggest chat model counts as local too (it needs no key).
+  if (localOllama()[0]) local.push(`ox-ollama:${localOllama()[0]}`);
+  const can = (id) => runnable(id, env);
+  if (light) {
+    const id = local.find(can) ?? FAST_BOTS.find(can) ?? STRONG_BOTS.find(can);
+    if (id) return { id, why: local.includes(id) ? 'a quick answer, on your machine' : FAST_BOTS.includes(id) ? 'a quick answer, the fastest model connected' : 'a quick answer (no small model is connected)' };
+  }
+  const id = STRONG_BOTS.find(can) ?? FAST_BOTS.find(can) ?? local.find(can);
+  if (!id) return { id: pickWorkingDefault(env), why: 'nothing else can answer here' };
+  const strong = STRONG_BOTS.includes(id);
+  return { id, why: light ? 'the only model that can answer' : strong ? 'work with code or tools, the strongest model connected' : 'work with code or tools; the only model that can answer (connect a stronger one in Settings)' };
 }
 
 // The model a chat uses when none is picked: your default if it can run, then a
@@ -528,7 +570,9 @@ async function handleChatCompletions(req, res) {
     return;
   }
 
-  const targetModel = model || pickWorkingDefault();
+  // "auto": a model per message, from what can answer here (see autoModel).
+  const autoPick = model === 'auto' ? autoModel(messages) : null;
+  const targetModel = autoPick?.id ?? (model || pickWorkingDefault());
   const temperature0 = temperature ?? 0.7;
   // Resolve a name the registry knows (every id in /v1/models) through the same
   // resolver, so a client that lists models can actually use them here. A name
@@ -622,7 +666,7 @@ async function handleChatCompletions(req, res) {
 
     let fullContent = '';
     const totalUsage = usageTally();
-    if (body.ox_mode) sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'mode', mode: turnMode.mode, routed: turnMode.routed, reason: turnMode.reason } });
+    if (body.ox_mode || autoPick) sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'mode', mode: turnMode.mode, routed: turnMode.routed, reason: turnMode.reason, ...(autoPick ? { model: autoPick.id, modelWhy: autoPick.why } : {}) } });
 
     try {
       for await (const event of runAgent({ target, messages, ctx, config, maxIterations: 40 })) {

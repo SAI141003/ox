@@ -1273,7 +1273,7 @@
           let ev; try { ev = JSON.parse(data); } catch { continue; }
           if (ev.error) { reply.error = plainDash(ev.error.message); continue; }
           const ox = ev.ox;
-          if (ox?.type === 'mode') reply.routed = `${ox.routed ? 'auto → ' : ''}${ox.mode}${ox.reason ? ` · ${ox.reason}` : ''}`;
+          if (ox?.type === 'mode') reply.routed = `${ox.routed ? 'auto → ' : ''}${ox.mode}${ox.reason ? ` · ${ox.reason}` : ''}${ox.model ? ` · ${ox.model} (${ox.modelWhy})` : ''}`;
           if (ox?.type === 'tool-start' && Array.isArray(ox.plan)) reply.plan = ox.plan;
           else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '' });
           if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; if (ox.canvas) { reply.canvases = (reply.canvases || []).filter((x) => x.id !== ox.id); reply.canvases.push({ id: ox.id, tree: ox.canvas }); } }
@@ -1352,9 +1352,13 @@
       const saved = store.get('ox.model', null);
       if (saved && data.some((m) => m.id === saved)) sel.value = saved;
       else {
-        try { const st = await getJson('/ox/settings'); if (data.some((m) => m.id === st.model.defaultBot)) sel.value = st.model.defaultBot; } catch {}
+        // Nothing chosen yet: Auto, which picks a model that can answer for each message.
+        sel.value = 'auto';
       }
       if (!data.length) sel.innerHTML = '<option value="">no models</option>';
+      // Auto: a model per message (quick ones locally, code to the strongest connected).
+      const autoO = document.createElement('option'); autoO.value = 'auto'; autoO.textContent = 'Auto · picks a model per message';
+      sel.prepend(autoO);
       const more = document.createElement('optgroup'); more.label = 'More';
       const find = document.createElement('option'); find.value = '__find'; find.textContent = 'Find a model on Hugging Face…';
       more.append(find); sel.append(more);
