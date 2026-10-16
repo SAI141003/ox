@@ -201,6 +201,36 @@ export function renderSkillIndex(skills, cap = MAX_INDEX_SKILLS) {
   return lines.join('\n');
 }
 
+// The index for one known task, in a fraction of the tokens: skills whose name
+// or description shares words with the task get their full line; every other
+// skill is still listed, by name, under the one folder it lives in, so the
+// model can open any of them (`<folder>/<name>/SKILL.md`). With no task, or
+// OX_FULL_SKILL_INDEX=1, this is the full index.
+export function renderFocusedSkillIndex(skills, task = '', { maxFull = 6 } = {}) {
+  const list = (Array.isArray(skills) ? skills : []).slice(0, MAX_INDEX_SKILLS);
+  const words = (t) => new Set(String(t ?? '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3));
+  const want = words(task);
+  if (!want.size || process.env.OX_FULL_SKILL_INDEX === '1') return renderSkillIndex(list);
+  const scored = list.map((s) => {
+    const have = words(`${s.name.replace(/-/g, ' ')} ${s.description}`);
+    let n = 0;
+    for (const w of want) if (have.has(w)) n++;
+    return { s, n };
+  });
+  const full = scored.filter((x) => x.n > 0).sort((a, b) => b.n - a.n).slice(0, maxFull).map((x) => x.s);
+  const rest = list.filter((s) => !full.includes(s));
+  const parts = [];
+  if (full.length) parts.push(renderSkillIndex(full));
+  const byRoot = new Map();
+  for (const s of rest) {
+    const root = path.dirname(path.dirname(String(s.path ?? '')));
+    if (!byRoot.has(root)) byRoot.set(root, []);
+    byRoot.get(root).push(s.name);
+  }
+  for (const [root, names] of byRoot) parts.push(`- also: ${names.join(', ')} (read ${root}/<name>/SKILL.md)`);
+  return parts.join('\n');
+}
+
 // ox's own skills ship in <repo>/skills. Scanned FIRST so that any user or
 // project skill with the same name overrides the built-in one. OX_NO_BUILTIN_SKILLS=1
 // turns them off (tests that count skills exactly use it).

@@ -222,9 +222,32 @@ export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
     }
     const parser = createOpenAICompatParser({ name });
     const dec = new TextDecoder();
+    // A local server whose context window is smaller than the request silently
+    // drops the front of it (Ollama does), so the model works without part of
+    // its instructions. Counted tokens far below the request's size is the sign.
+    const sentChars = JSON.stringify(body.messages).length + JSON.stringify(body.tools ?? []).length;
+    const check = (ev) => {
+      if (ev?.type === 'usage' && isLocalBase(baseUrl)) {
+        const warning = truncationWarning(ev.inputTokens, sentChars, baseUrl);
+        if (warning && !warnedTruncation.has(baseUrl)) { warnedTruncation.add(baseUrl); process.stderr.write(`${warning}\n`); }
+      }
+      return ev;
+    };
     for await (const chunk of res.body) {
-      for (const ev of parser.push(dec.decode(chunk, { stream: true }))) yield ev;
+      for (const ev of parser.push(dec.decode(chunk, { stream: true }))) yield check(ev);
     }
-    for (const ev of parser.end(dec.decode())) yield ev;
+    for (const ev of parser.end(dec.decode())) yield check(ev);
   };
+}
+
+const warnedTruncation = new Set();
+const isLocalBase = (u) => /\/\/(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:|\/)/.test(String(u));
+
+// ~4 characters a token for English and code. A count under half of that is a
+// cut prompt, not a tokenizer difference.
+export function truncationWarning(promptTokens, sentChars, baseUrl = '') {
+  const expected = Math.round(sentChars / 4);
+  if (!(promptTokens > 0) || expected < 1500 || promptTokens >= expected * 0.5) return null;
+  const ollama = String(baseUrl).includes(':11434');
+  return `ox: the local model saw about ${promptTokens} of the ~${expected} tokens ox sent — its context window cut the rest, so it is missing part of its instructions.${ollama ? ' Raise it: OLLAMA_CONTEXT_LENGTH=16384 ollama serve (or set num_ctx on the model).' : ' Raise the server\'s context length.'}`;
 }

@@ -14,7 +14,7 @@ import { createMemoryApi, loadMemoryBlock, writeSessionNote, writeEpisode } from
 import { memoryPromptBlock, learnFromMessages } from './memory-graph.js';
 import { readMcpPolicyDocs, resolveAuxTarget } from './config.js';
 import { createSession, appendEvent, nextRewindId } from './session.js';
-import { discoverSkills } from './skills.js';
+import { discoverSkills, renderFocusedSkillIndex } from './skills.js';
 import { buildSystemPrompt, loadPersona } from './system-prompt.js';
 import { makeSubagentToolHandler, listSubagents } from './subagent.js';
 import { makeAgentTeamsHandler } from './agent-teams.js';import { listToolSchemas } from './tools/index.js';
@@ -78,11 +78,14 @@ export async function assembleCtx({ config, target, opts = {}, auxTarget = null 
   // opts and config.cwd, and nothing between here and its old position
   // referenced it, so the move is inert apart from that.
   const agentTeamsHandler = opts.agentTeamsHandler ?? makeAgentTeamsHandler(config.cwd);
+  // A known task (one-shot runs, the island, the phone) gets the focused skill
+  // index: full lines only for skills that bear on it, names for the rest.
+  const skillIndex = opts.memoryTask ? renderFocusedSkillIndex(skills, String(opts.memoryTask)) : skills.index;
   const systemPrompt = await buildSystemPrompt({
     cwd: config.cwd,
     contextParts: { memoryFiles: context.memoryFiles, tree: context.tree },
     memoryBlock,
-    skillIndex: skills.index,
+    skillIndex,
     personaBlock: persona.block,
     ...(Array.isArray(config.agentDef?.tools) ? { allowedTools: config.agentDef.tools, agentName: config.agentDef.name } : {}),
     agentMessaging: typeof agentTeamsHandler === 'function',
@@ -161,7 +164,7 @@ export async function assembleCtx({ config, target, opts = {}, auxTarget = null 
     },
     hooksConfig,
     memoryBlock,
-    skillIndex: skills.index,
+    skillIndex,
     memory: memoryApi,
     personaBlock: persona.block,
     ...(Array.isArray(config.agentDef?.tools) ? { allowedTools: config.agentDef.tools, agentName: config.agentDef.name } : {}),
