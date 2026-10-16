@@ -11,6 +11,7 @@ import { buildContext, expandContextRefs } from './context.js';
 import { createCostBudget, currentCostBudget, formatCost } from './cost.js';
 import { runMaxModePlanning, resolveMaxMode } from './maxmode.js';
 import { createMemoryApi, loadMemoryBlock, writeSessionNote, writeEpisode } from './memory.js';
+import { memoryPromptBlock, learnFromMessages } from './memory-graph.js';
 import { readMcpPolicyDocs, resolveAuxTarget } from './config.js';
 import { createSession, appendEvent, nextRewindId } from './session.js';
 import { discoverSkills } from './skills.js';
@@ -61,7 +62,13 @@ export async function assembleCtx({ config, target, opts = {}, auxTarget = null 
   const memoryApi = createMemoryApi(config.cwd);
   const skills = discoverSkills({ cwd: config.cwd });
   const context = buildContext({ cwd: config.cwd });
-  const memoryBlock = loadMemoryBlock(config.cwd);
+  // The project's MEMORY.md, then what ox remembers about this user and what
+  // bears on this task (src/memory-graph.js). OX_MEMORY=0 leaves the graph out.
+  let graphBlock = '';
+  if (process.env.OX_MEMORY !== '0') {
+    try { graphBlock = memoryPromptBlock({ cwd: config.cwd, task: String(opts.memoryTask ?? '') }); } catch {}
+  }
+  const memoryBlock = [loadMemoryBlock(config.cwd), graphBlock].filter(Boolean).join('\n\n');
   const basePersona = loadPersona({ cwd: config.cwd, enabled: config.soul !== false });
   // A custom agent (`ox --agent <name>`) adds its own instructions to the persona.
   const persona = { ...basePersona, block: [basePersona.block, agentPersonaBlock(config.agentDef)].filter(Boolean).join('\n\n') };
@@ -270,7 +277,7 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
     throw e;
   }
   const auxTarget = resolveAuxTarget(config);
-  const assembled = await assembleCtx({ config, target, opts, auxTarget });
+  const assembled = await assembleCtx({ config, target, opts: { ...opts, memoryTask: prompt }, auxTarget });
   const { ctx } = assembled;
   // Mode: fixed by --mode / config, or picked per message by auto. The pick is
   // printed so a routed run can be checked, not taken on trust.
@@ -747,6 +754,15 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
     }
     // Learn from it: a task finished in several good steps becomes a draft
     // skill (never used until accepted). OX_LEARN=0 turns this off.
+    // And from what you said: preferences and facts about yourself are kept in
+    // ox's memory, so the next run starts already knowing them.
+    if (process.env.OX_LEARN !== '0') {
+      try {
+        const said = [{ role: 'user', content: String(prompt ?? '') }];
+        const learned = learnFromMessages(said, { source: session?.file ? path.basename(session.file) : 'headless' });
+        if (learned.length && !opts.json) process.stderr.write(dimYellow(`· remembered: ${learned.map((r) => `"${r.memory.text}"${r.op === 'update' ? ` (replaces "${r.previous.text}")` : ''}`).join('; ')} — see them with: ox memory\n`));
+      } catch {}
+    }
     if (code === 0 && process.env.OX_LEARN !== '0') {
       try {
         const { draftFromSession, draftFromRecord } = await import('./skill-drafts.js');

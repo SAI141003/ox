@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import * as memoryGraph from './memory-graph.js';
 import os from 'node:os';
 import path from 'node:path';
 import { appendJsonlCapped, auditEnabled, auditFilePath } from './audit.js';
@@ -553,7 +554,17 @@ function addMemory(cwd, args = {}) {
     hint = capsHint(after.split('\n').filter((l) => l.trim()).length, Buffer.byteLength(after, 'utf8'));
   } catch {}
   const verb = updated ? 'updated existing entry (dedupe match)' : 'added entry';
-  return ok(`memory_add: ${verb}: [${type}] ${statement} -> ${target}${hint}`);
+  // Also into the memory graph: facts about the user follow them across
+  // projects; project facts and lessons stay with this folder. A statement that
+  // replaces an earlier one says so, so the model knows the old one is gone.
+  let graphNote = '';
+  try {
+    const scope = args.scope === 'user' || args.scope === 'project' ? args.scope : (type === 'user' || type === 'feedback' ? 'user' : 'project');
+    const kind = type === 'feedback' ? 'preference' : type === 'lesson' ? 'lesson' : 'fact';
+    const r = memoryGraph.remember(statement, { scope, kind, cwd, file: memoryGraph.memoryFile(scope, { cwd }), source: 'memory_add' });
+    if (r.op === 'update') graphNote = `\n(replaces the earlier memory: "${r.previous.text}")`;
+  } catch {}
+  return ok(`memory_add: ${verb}: [${type}] ${statement} -> ${target}${hint}${graphNote}`);
 }
 
 function memoryList(cwd) {
@@ -665,6 +676,8 @@ function memorySearch(cwd, args = {}) {
   const hits = [];
   let withheldHits = 0;
   for (const file of collectAgentFiles(root)) {
+    // The memory graph is searched by ranked recall below, not by grep.
+    if (path.basename(file) === 'memory-graph.jsonl') continue;
     let text;
     try {
       text = fs.readFileSync(file, 'utf8');
@@ -696,7 +709,18 @@ function memorySearch(cwd, args = {}) {
     }
   }
   recordReadScreen(root, 'memory_search', withheldHits);
-  if (!hits.length) return ok(`No matches for '${query}' under ${root}.`);
+  // Ranked recall from the memory graph first: current facts only, with dates.
+  let remembered = [];
+  try {
+    remembered = [
+      ...memoryGraph.recall(query, { file: memoryGraph.memoryFile('project', { cwd }), k: 5 }),
+      ...memoryGraph.recall(query, { file: memoryGraph.memoryFile('user', { cwd }), k: 5 }),
+    ];
+  } catch {}
+  const rememberedText = remembered.length
+    ? `Remembered (current, best match first):\n${remembered.map((m) => `- ${m.text} [${m.scope}, ${memoryGraph.fmtDay(m.createdAt)}${m.updates ? ', replaced an older fact' : ''}]`).join('\n')}\n\n`
+    : '';
+  if (!hits.length) return ok(remembered.length ? rememberedText.trimEnd() : `No matches for '${query}' under ${root}.`);
   hits.sort((a, b) => b.date.localeCompare(a.date) || a.file.localeCompare(b.file) || a.line - b.line);
   const top = hits.slice(0, SEARCH_RESULT_CAP);
   const notes = [];
@@ -704,7 +728,7 @@ function memorySearch(cwd, args = {}) {
   if (withheldHits) notes.push(withheldNotice(withheldHits, `.agent/** (${root})`));
   const tail = notes.length ? `\n${notes.join('\n')}` : '';
   return ok(
-    `${hits.length} match(es), most recent first:\n${top
+    `${rememberedText}${hits.length} match(es), most recent first:\n${top
       .map((h) => `${h.file}:${h.line}: ${h.text}`)
       .join('\n')}${tail}`
   );
@@ -733,7 +757,7 @@ function schemas() {
     {
       name: 'memory_add',
       description:
-        "Persist one durable fact to project memory. Args: type ('user'|'feedback'|'project'|lesson'), statement (REQUIRED one-line fact), topic (optional slug naming topics/<slug>.md), detail (optional longer markdown appended to the topic note). Similar statements UPDATE the existing entry in place instead of duplicating; a prune reminder appears when the 150-line / 20KB cap is exceeded. Credentials (provider keys, JWTs, PEM blocks, bearer tokens, inline secret assignments) and prompt-injection payloads are REFUSED with an error — store a pointer to where the credential lives, never the value.",
+        "Persist one durable fact to project memory. Args: type ('user'|'feedback'|'project'|lesson'), statement (REQUIRED one-line fact), topic (optional slug naming topics/<slug>.md), detail (optional longer markdown appended to the topic note). Similar statements UPDATE the existing entry in place instead of duplicating, and a statement about the same thing with a new value (\"works at Stripe\" after \"works at Google\") replaces the old fact in ox's memory graph, keeping its history; a prune reminder appears when the 150-line / 20KB cap is exceeded. Credentials (provider keys, JWTs, PEM blocks, bearer tokens, inline secret assignments) and prompt-injection payloads are REFUSED with an error — store a pointer to where the credential lives, never the value.",
       input_schema: {
         type: 'object',
         properties: {
@@ -741,6 +765,7 @@ function schemas() {
           statement: { type: 'string', description: 'One-line fact, phrased as a complete statement.' },
           topic: { type: 'string', description: 'Optional topic slug; defaults are derived from the statement.' },
           detail: { type: 'string', description: 'Optional long-form detail appended to the topic note.' },
+          scope: { type: 'string', enum: ['user', 'project'], description: "Where it applies: 'user' follows this person into every project (their preferences, who they are); 'project' stays with this folder. Defaults: user/feedback -> user, project/lesson -> project." },
         },
         required: ['type', 'statement'],
         additionalProperties: false,
@@ -749,7 +774,7 @@ function schemas() {
     {
       name: 'memory_search',
       description:
-        'Grep across everything under .agent/ (index, topic notes, episodes) ranked by date-prefix recency, most recent first. Args: query (REQUIRED substring, case-insensitive).',
+        'Search memory: ranked recall of current facts from ox\'s memory graph (this project and what you know about the user), then a grep across everything under .agent/ (index, topic notes, episodes), most recent first. Args: query (REQUIRED, words or a substring).',
       input_schema: {
         type: 'object',
         properties: {

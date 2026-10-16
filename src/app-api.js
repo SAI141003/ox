@@ -210,3 +210,31 @@ export async function aboutView() {
     cwd: process.cwd(), config: path.join(os.homedir(), '.ox', 'config.json'), keys: path.join(os.homedir(), '.ox', 'keys.json'),
   };
 }
+
+// What ox remembers: about you (every project) and about the folder it serves.
+export async function memoryView(cwd = process.cwd()) {
+  const mg = await import('./memory-graph.js');
+  const pick = (m) => ({ id: m.id, text: m.text, kind: m.kind, at: m.createdAt, strength: m.strength ?? 1, replaced: !!m.updates, until: m.expiresAt ?? null });
+  const user = mg.profile({ file: mg.memoryFile('user'), maxStatic: 200, maxRecent: 200 });
+  const proj = mg.profile({ file: mg.memoryFile('project', { cwd }), maxStatic: 200, maxRecent: 200 });
+  return {
+    user: { stable: user.stable.map(pick), lately: user.lately.map(pick) },
+    project: [...proj.stable, ...proj.lately].map(pick),
+    learning: process.env.OX_LEARN !== '0',
+  };
+}
+
+export async function memoryAction(body = {}, cwd = process.cwd()) {
+  const mg = await import('./memory-graph.js');
+  const scope = body.scope === 'project' ? 'project' : 'user';
+  if (body.action === 'add') {
+    const r = mg.remember(String(body.text ?? ''), { scope, file: mg.memoryFile(scope, { cwd }), source: 'app' });
+    if (r.op === 'refused') throw new Error(r.reason);
+  } else if (body.action === 'forget') {
+    const id = String(body.id ?? '');
+    if (!mg.forget(id, { file: mg.memoryFile('user') }) && !mg.forget(id, { file: mg.memoryFile('project', { cwd }) })) throw new Error(`no memory ${id}`);
+  } else {
+    throw new Error("action must be 'add' or 'forget'");
+  }
+  return memoryView(cwd);
+}

@@ -390,6 +390,7 @@
     key: 'M15 7a4 4 0 1 1-3.9 5H3v3h3v3h3v-3h2.1A4 4 0 0 1 15 7ZM16 10h.01', cpu: 'M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4',
     globe: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18', palette: 'M12 21a9 9 0 1 1 9-9c0 2-1.5 3-3.5 3H16a2 2 0 0 0-1.5 3.3A2 2 0 0 1 12 21ZM7.5 11h.01M10 7h.01M15 7.5h.01',
     monitor: 'M3 4h18v12H3zM8 20h8M12 16v4', info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 11v5M12 8h.01', play: 'M7 4v16l13-8Z', refresh: 'M20 11a8 8 0 0 0-14.9-3.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.9 3.9L20 16M20 20v-4h-4',
+    brain: 'M9 4a3 3 0 0 0-3 3v.2A3 3 0 0 0 4 10a3 3 0 0 0 1 2.2A3 3 0 0 0 6 17a3 3 0 0 0 3 3a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3ZM15 4a3 3 0 0 1 3 3v.2A3 3 0 0 1 20 10a3 3 0 0 1-1 2.2A3 3 0 0 1 18 17a3 3 0 0 1-3 3a3 3 0 0 1-3-3',
     shield: 'M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6Z', open: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6', back: 'M15 18l-6-6 6-6',
   };
   const icon = (n, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${P[n] || ''}"/></svg>`;
@@ -950,6 +951,7 @@
     ['appearance', 'Appearance', 'palette', 'theme dark light text size width motion'],
     ['desktop', 'Desktop', 'monitor', 'island notch awake sleep'],
     ['voice', 'Voice', 'mic', 'speech language read aloud'],
+    ['memory', 'Memory', 'brain', 'remember forget profile facts preferences'],
     ['gap'],
     ['providers', 'Providers', 'bolt', 'models'],
     ['accounts', 'Accounts', 'user', 'subscription claude chatgpt plan', true],
@@ -1030,6 +1032,18 @@
         $('s-lang').onchange = () => { prefs.lang = $('s-lang').value; savePrefs(); };
         $('s-voice').onchange = () => { prefs.voice = $('s-voice').value; savePrefs(); speakText('This is how I sound.', true); };
         $('s-speak').onchange = () => { prefs.speakReplies = $('s-speak').checked; savePrefs(); };
+      } else if (sec === 'memory') {
+        const M = await getJson('/ox/memory');
+        const item = (m) => `<div class="card"><span class="dot ${m.kind === 'event' ? 'warn' : 'ok'}"></span><span class="t"><div class="n">${esc(m.text)}</div><div class="d"><span>${esc(m.kind)}</span><span>${new Date(m.at).toLocaleDateString()}</span>${m.strength > 1 ? `<span>said ${m.strength}×</span>` : ''}${m.replaced ? '<span>replaced an older fact</span>' : ''}${m.until ? `<span>until ${new Date(m.until).toLocaleDateString()}</span>` : ''}</div></span><button class="btn ghost danger" data-forget="${esc(m.id)}">Forget</button></div>`;
+        const none = '<div class="box muted small">Nothing yet.</div>';
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('brain')}Memory</div><p class="sdesc">What ox has learned, kept on this machine. Tell it something new about the same thing and the new fact replaces the old one (the old one stays in its history). Things tied to a date are dropped once the date has passed. ${M.learning ? 'ox learns from what you say about yourself as you work.' : 'Learning is off (OX_LEARN=0).'}</p>
+          <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap"><input class="field" style="flex:1;min-width:220px" id="mem-new" placeholder="Tell ox something to remember — e.g. I prefer pnpm, call me Sai"><select id="mem-scope" class="field" style="width:auto"><option value="user">About me</option><option value="project">This project</option></select><button class="btn primary" id="mem-add">Remember</button></div>
+          <div class="section-cap cap">About you — always</div><div class="cards">${M.user.stable.map(item).join('') || none}</div>
+          <div class="section-cap cap">About you — lately</div><div class="cards">${M.user.lately.map(item).join('') || none}</div>
+          <div class="section-cap cap">This project</div><div class="cards">${M.project.map(item).join('') || none}</div>`;
+        const add = async () => { const t = $('mem-new').value.trim(); if (!t) return; try { await postJson('/ox/memory', { action: 'add', text: t, scope: $('mem-scope').value }); toast('Remembered'); renderSection(); } catch (e) { toast(e.message); } };
+        $('mem-add').onclick = add; $('mem-new').onkeydown = (e) => { if (e.key === 'Enter') add(); };
+        el.querySelectorAll('[data-forget]').forEach((b) => (b.onclick = async () => { try { await postJson('/ox/memory', { action: 'forget', id: b.dataset.forget }); toast('Forgotten'); renderSection(); } catch (e) { toast(e.message); } }));
       } else if (sec === 'providers') {
         const [keys, st] = await Promise.all([getJson('/ox/providers'), getJson('/ox/settings')]);
         const n = keys.filter((k) => k.set).length;

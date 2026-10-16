@@ -935,6 +935,8 @@ const ROUTES = [
   { method: 'POST', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async (b) => (await appApi()).setScheduleEnabled(String(b.id ?? ''), b.enabled)) },
   { method: 'GET', pattern: /^\/ox\/sessions\/?$/, handler: appRoute(async () => (await appApi()).sessionsView()) },
   { method: 'GET', pattern: /^\/ox\/sessions\/([^/]+)$/, handler: appRoute(async (_, m) => (await appApi()).sessionView(decodeURIComponent(m[1]))) },
+  { method: 'GET', pattern: /^\/ox\/memory\/?$/, handler: appRoute(async () => (await appApi()).memoryView()) },
+  { method: 'POST', pattern: /^\/ox\/memory\/?$/, handler: appRoute(async (b) => (await appApi()).memoryAction(b)) },
   { method: 'GET', pattern: /^\/ox\/about\/?$/, handler: appRoute(async () => (await appApi()).aboutView()) },
   { method: 'GET', pattern: /^\/ox\/settings\/?$/, handler: handleSettingsGet },
   { method: 'POST', pattern: /^\/ox\/settings\/?$/, handler: handleSettingsPost },

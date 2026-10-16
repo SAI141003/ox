@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4037,6 +4037,7 @@ const SUB_USAGE = {
   skill: 'usage: ox skill <name> | ox skill add <dir | owner/repo[/path]>',
   episode: 'usage: ox episode ls | ox episode promote <id>',
   'memory-loss': 'usage: ox memory-loss [--limit <n>]',
+  memory: 'usage: ox memory [recall "<question>" | add "<fact>" [--project] | history <id> | forget <id> | all [--project]]',
   auto: 'usage: ox auto "<goal>" [--contract ["<goal>"]] [--max-cost <usd>] [--json] [--bot <name>] [--yes-edits] [-y] [--side-effects-ok]',
   attach: 'usage: ox attach <worker id>  — follow a detached run (ox agents lists them)',
   import: 'usage: ox import <claude-code | hermes | codex | all> [--dry-run]',
@@ -4544,6 +4545,62 @@ async function runSubcommand(cmd, args) {
         return;
       }
       console.log(c.dim('usage: ox kanban [list] | ox kanban add <title>   (the same board as: ox task)'));
+      return;
+    }
+    case 'memory': {
+      // What ox remembers (src/memory-graph.js): about you, and about this project.
+      const mg = await import('./memory-graph.js');
+      const project = args.includes('--project');
+      const rest = args.filter((a) => a !== '--project');
+      const [sub, ...words] = rest;
+      const userFile = mg.memoryFile('user');
+      const projFile = mg.memoryFile('project', { cwd: process.cwd() });
+      const file = project ? projFile : userFile;
+      const day = mg.fmtDay;
+      const row = (m) => `${c.dim(m.id)}  ${m.text}  ${c.dim(`${m.kind} · ${day(m.createdAt)}${m.strength > 1 ? ` · said ${m.strength}×` : ''}${m.updates ? ' · replaced an older fact' : ''}${m.expiresAt ? ` · until ${day(m.expiresAt)}` : ''}`)}`;
+      if (!sub) {
+        const p = mg.profile({ file: userFile });
+        console.log(c.bold('What ox remembers about you'));
+        if (!p.total) console.log(c.dim('  nothing yet — tell ox things like "I prefer pnpm" or "call me Sai", or: ox memory add "<fact>"'));
+        if (p.stable.length) { console.log(c.dim('\n  always')); for (const m of p.stable) console.log(`  ${row(m)}`); }
+        if (p.lately.length) { console.log(c.dim('\n  lately')); for (const m of p.lately) console.log(`  ${row(m)}`); }
+        const pp = mg.profile({ file: projFile });
+        if (pp.total) console.log(c.dim(`\n  and ${pp.total} about this project — ox memory all --project`));
+        return;
+      }
+      if (sub === 'recall' || sub === 'search') {
+        const q = words.join(' ');
+        const hits = [...mg.recall(q, { file: projFile, k: 6 }), ...mg.recall(q, { file: userFile, k: 6 })];
+        if (!hits.length) { console.log(c.dim('nothing remembered about that')); return; }
+        for (const m of hits) console.log(row(m));
+        return;
+      }
+      if (sub === 'add') {
+        const r = mg.remember(words.join(' '), { file, scope: project ? 'project' : 'user', source: 'cli' });
+        if (r.op === 'refused') { console.log(c.red(r.reason)); process.exitCode = 1; return; }
+        console.log(`${r.op === 'update' ? c.yellow('updated') : r.op === 'noop' ? c.dim('already known — made stronger') : c.green('remembered')}  ${r.memory.text}${r.previous ? c.dim(`  (replaces: ${r.previous.text})`) : ''}`);
+        return;
+      }
+      if (sub === 'history') {
+        const chain = mg.history(words[0] ?? '', { file: userFile }).length ? mg.history(words[0], { file: userFile }) : mg.history(words[0] ?? '', { file: projFile });
+        if (!chain.length) { console.log(c.red(`no memory ${words[0] ?? ''}`)); process.exitCode = 1; return; }
+        for (const m of chain) console.log(`${m.latest === false ? c.dim(`${day(m.validFrom)} → ${m.validTo ? day(m.validTo) : ''}`) : c.green(`${day(m.validFrom)} → now`)}  ${m.text}`);
+        return;
+      }
+      if (sub === 'forget') {
+        const gone = mg.forget(words[0] ?? '', { file: userFile }) ?? mg.forget(words[0] ?? '', { file: projFile });
+        console.log(gone ? `${c.green('forgotten')}  ${gone.text}  ${c.dim('(kept on disk, never shown to a model again)')}` : c.red(`no memory ${words[0] ?? ''}`));
+        if (!gone) process.exitCode = 1;
+        return;
+      }
+      if (sub === 'all') {
+        const all = mg.load(file).sort((a, b) => b.createdAt - a.createdAt);
+        if (!all.length) { console.log(c.dim('nothing remembered yet')); return; }
+        for (const m of all) console.log(`${m.state !== 'active' ? c.dim(`[${m.state}] `) : m.latest === false ? c.dim('[replaced] ') : ''}${row(m)}`);
+        return;
+      }
+      console.log(SUB_USAGE.memory);
+      process.exitCode = 2;
       return;
     }
     case 'speak': {
@@ -5397,6 +5454,14 @@ async function replWithBudget(config, opts, flags, budget) {
     } catch {}
     appendEvent(session, { t: 'user', text });
     messages.push({ role: 'user', content: text, ...(extra.images?.length ? { images: extra.images } : {}) });
+    // Preferences and facts you state about yourself go to ox's memory.
+    if (process.env.OX_LEARN !== '0') {
+      try {
+        const { learnFromMessages } = await import('./memory-graph.js');
+        const learned = learnFromMessages([{ role: 'user', content: text }], { source: session?.file ? path.basename(session.file) : 'repl' });
+        if (learned.length) console.log(c.dim(`· remembered: ${learned.map((r) => `"${r.memory.text}"${r.op === 'update' ? ` (replaces "${r.previous.text}")` : ''}`).join('; ')}`));
+      } catch {}
+    }
     const ac = new AbortController();
     state.currentAbort = ac;
     state.lastEventWasError = false;

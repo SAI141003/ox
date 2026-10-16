@@ -32,7 +32,7 @@ jobs:
         # The suite has not yet been run on Windows: report its failures there
         # without blocking the download, until it has been.
         continue-on-error: ${{ runner.os == 'Windows' }}
-        run: OX_ISLAND=0 OX_LEARN=0 OX_NO_PLUGINS=1 OX_NO_BUILTIN_SKILLS=1 node scripts/verify.mjs --only unit
+        run: OX_ISLAND=0 OX_LEARN=0 OX_NO_KEYSTORE=1 OX_NO_PLUGINS=1 OX_NO_BUILTIN_SKILLS=1 node scripts/verify.mjs --only unit
       - name: Package
         shell: bash
         run: node scripts/package.mjs --out dist
