@@ -611,7 +611,7 @@ async function handleChatCompletions(req, res) {
   // `agent:<name>` is one of your agents: its bot, mode, instructions, tools.
   const agentDef = String(targetModel).startsWith('agent:') ? loadAgent(String(targetModel).slice(6)) : null;
   if (String(targetModel).startsWith('agent:') && !agentDef) {
-    sendError(res, 404, `No agent '${String(targetModel).slice(6)}'. Make one with: ox agent new <name>`, 'invalid_request_error', 'model_not_found', 'model');
+    sendError(res, 404, `There is no bot called ${String(targetModel).slice(6)} on this ox: it was deleted, or this chat came from another computer. Make it again in Bots, or pick another model.`, 'invalid_request_error', 'model_not_found', 'model');
     return;
   }
   let target;
@@ -688,6 +688,10 @@ async function handleChatCompletions(req, res) {
       : turnMode.mode === 'ask' && TOUCHES_CODE.test(lastText) && !NEEDS_TOOLS.test(lastText) ? { onlyTools: ['read_file', 'list_dir', 'glob', 'grep'] }
       : {}),
   };
+  // The Office: this run, and any helper it starts, is shown at a desk.
+  const board = await import('./live-board.js');
+  const runId = board.startRun({ who: agentDef?.name ?? autoPick?.id ?? String(targetModel), title: incognito ? 'Incognito chat' : lastText || '(no text)', model: target?.model ?? null });
+  ctx.ipcBroadcast = board.boardBroadcaster(runId);
   // Preferences the user states here are kept, as in the terminal.
   if (process.env.OX_LEARN !== '0' && lastText && !incognito && !tool.noMemory) {
     try { (await import('./memory-graph.js')).learnFromMessages([{ role: 'user', content: lastText }], { source: 'app' }); } catch {}
@@ -727,7 +731,9 @@ async function handleChatCompletions(req, res) {
       sendSSE(res, createChatCompletionChunk(targetModel, '', true, totalUsage));
       sendSSEDone(res);
       res.end();
+      board.endRun(runId);
     } catch (error) {
+      board.endRun(runId, { failed: true });
       sendSSE(res, { error: { message: error.message, type: 'server_error' } });
       sendSSEDone(res);
       res.end();
@@ -745,8 +751,10 @@ async function handleChatCompletions(req, res) {
           tallyUsage(totalUsage, event);
         }
       }
+      board.endRun(runId);
       sendJson(res, 200, createChatCompletionResponse(targetModel, fullContent, totalUsage));
     } catch (error) {
+      board.endRun(runId, { failed: true });
       const shape = agentErrorShape(error.message);
       sendError(res, shape.status, error.message, shape.type, shape.code, shape.param);
     }
@@ -1245,6 +1253,7 @@ async function handleImage(req, res) {
 }
 
 const ROUTES = [
+  { method: 'GET', pattern: /^\/ox\/live\/?$/, handler: async (req, res) => { if (!authorized(req)) return unauthorized(res); sendJson(res, 200, (await import('./live-board.js')).liveBoard()); } },
   { method: 'GET', pattern: /^\/ox\/image\/?$/, handler: handleImage },
   { method: 'POST', pattern: /^\/ox\/followups\/?$/, handler: appRoute(followupsRoute) },
   { method: 'POST', pattern: /^\/ox\/optimize\/?$/, handler: appRoute(optimizeRoute) },
