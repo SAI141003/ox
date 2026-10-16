@@ -932,7 +932,7 @@ function appRoute(fn) {
       try { body = await parseBody(req); } catch { sendInvalidJson(res); return; }
     }
     try {
-      const out = await fn(body ?? {}, m);
+      const out = await fn(body ?? {}, m, req);
       if (out == null) sendError(res, 404, 'Not found', 'invalid_request_error', 'not_found', null);
       else sendJson(res, 200, out);
     } catch (e) {
@@ -956,6 +956,9 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/sessions\/([^/]+)$/, handler: appRoute(async (_, m) => (await appApi()).sessionView(decodeURIComponent(m[1]))) },
   { method: 'GET', pattern: /^\/ox\/memory\/?$/, handler: appRoute(async () => (await appApi()).memoryView()) },
   { method: 'POST', pattern: /^\/ox\/memory\/?$/, handler: appRoute(async (b) => (await appApi()).memoryAction(b)) },
+  { method: 'GET', pattern: /^\/ox\/market\/?$/, handler: appRoute(async (_, __, req) => (await import('./market.js')).search(new URL(req.url, 'http://x').searchParams.get('q') ?? '')) },
+  { method: 'POST', pattern: /^\/ox\/market\/install\/?$/, handler: appRoute(async (b) => (await import('./market.js')).install({ name: b.name, catalog: b.catalog, repo: b.repo })) },
+  { method: 'POST', pattern: /^\/ox\/market\/catalogs\/?$/, handler: appRoute(async (b) => ({ catalogs: await (await import('./market.js')).addCatalog(String(b.repo ?? '')) })) },
   { method: 'GET', pattern: /^\/ox\/about\/?$/, handler: appRoute(async () => (await appApi()).aboutView()) },
   { method: 'GET', pattern: /^\/ox\/settings\/?$/, handler: handleSettingsGet },
   { method: 'POST', pattern: /^\/ox\/settings\/?$/, handler: handleSettingsPost },

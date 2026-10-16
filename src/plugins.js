@@ -130,9 +130,16 @@ export async function scanPlugin(plugin) {
 // `plugin@owner/repo` (a repo whose .claude-plugin/marketplace.json lists it).
 // ---------------------------------------------------------------------------
 
-function gitClone(url, dest) {
-  const r = spawnSync('git', ['clone', '--depth', '1', '--quiet', url, dest], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 });
+function gitClone(url, dest, { sha = null } = {}) {
+  const r = spawnSync('git', ['clone', ...(sha ? [] : ['--depth', '1']), '--quiet', url, dest], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 180_000 });
   if (r.status !== 0) throw new Error(`git clone ${url} failed: ${String(r.stderr || r.error || '').trim().slice(0, 300)}`);
+  // A catalogue that pins a commit gets exactly that commit, not whatever the
+  // branch says today: what was reviewed is what is installed.
+  if (sha) {
+    if (!/^[0-9a-f]{7,40}$/i.test(sha)) throw new Error(`not a commit id: ${sha}`);
+    const co = spawnSync('git', ['-C', dest, 'checkout', '--quiet', '--detach', sha], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 });
+    if (co.status !== 0) throw new Error(`the pinned commit ${sha} is not in ${url}`);
+  }
 }
 
 function resolveMarketplaceEntry(repoDir, pluginName) {
@@ -144,8 +151,8 @@ function resolveMarketplaceEntry(repoDir, pluginName) {
   }
   const src = entry.source;
   if (typeof src === 'string') return { local: path.resolve(repoDir, src) };
-  if (src?.source === 'github' && src.repo) return { github: src.repo, subdir: src.path ?? '' };
-  if (src?.url) return { url: src.url, subdir: src.path ?? '' };
+  if (src?.source === 'github' && src.repo) return { github: src.repo, subdir: src.path ?? '', sha: src.sha ?? null };
+  if (src?.url) return { url: src.url, subdir: src.path ?? '', sha: src.sha ?? null };
   throw new Error(`unsupported marketplace source for '${pluginName}'`);
 }
 
@@ -158,7 +165,7 @@ export function stageSource(source, { tmpRoot = os.tmpdir() } = {}) {
     const hit = resolveMarketplaceEntry(path.join(stage, 'repo'), at[1]);
     if (hit.local) return { stage, root: hit.local };
     const url = hit.github ? `https://github.com/${hit.github}.git` : hit.url;
-    gitClone(url, path.join(stage, 'plugin'));
+    gitClone(url, path.join(stage, 'plugin'), { sha: hit.sha });
     return { stage, root: path.join(stage, 'plugin', hit.subdir) };
   }
   if (fs.existsSync(source) && fs.statSync(source).isDirectory()) {

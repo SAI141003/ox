@@ -282,6 +282,7 @@
       <div class="nav">
         <button id="nav-new"><span data-i="plus"></span><span class="grow">New session</span><span class="kbd">⌘</span><span class="kbd">N</span></button>
         <button data-view="caps"><span data-i="blocks"></span><span class="grow">Capabilities</span></button>
+        <button data-view="market"><span data-i="store"></span><span class="grow">Marketplace</span></button>
         <button data-view="msg"><span data-i="chat"></span><span class="grow">Messaging</span></button>
         <button data-view="sched"><span data-i="clock"></span><span class="grow">Scheduled</span></button>
       </div>
@@ -345,6 +346,17 @@
       </div>
     </section>
 
+    <section class="view" id="v-market"><div class="page"><div class="page-inner" style="max-width:980px">
+      <div class="shead" style="font-size:18px">Marketplace</div>
+      <p class="sdesc">Skills and plugins other people have published — from plugin catalogues and from GitHub. Everything is scanned before it is installed, and anything that looks unsafe is refused.</p>
+      <label class="search" style="margin:0 0 12px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:9px 12px"><span data-i="search"></span><input id="mk-q" placeholder="Search skills and plugins — pdf, security, figma, testing…" aria-label="Search the marketplace"></label>
+      <div class="subtabs" id="mk-tabs" style="padding-left:0"></div>
+      <div id="mk-cats" class="chipline" style="margin:12px 0"></div>
+      <div id="mk-list" class="cards"></div>
+      <div class="section-cap cap">Catalogues</div><div id="mk-catalogs" class="small muted"></div>
+      <div style="display:flex;gap:8px;margin-top:8px"><input class="field" id="mk-add" placeholder="Add a catalogue: owner/repo with a .claude-plugin/marketplace.json" style="flex:1"><button class="btn" id="mk-add-btn">Add</button></div>
+    </div></div></section>
+
     <section class="view" id="v-sched"><div class="page"><div class="page-inner" id="sched"></div></div></section>
   </main>
 </div>
@@ -391,6 +403,7 @@
     globe: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18', palette: 'M12 21a9 9 0 1 1 9-9c0 2-1.5 3-3.5 3H16a2 2 0 0 0-1.5 3.3A2 2 0 0 1 12 21ZM7.5 11h.01M10 7h.01M15 7.5h.01',
     monitor: 'M3 4h18v12H3zM8 20h8M12 16v4', info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 11v5M12 8h.01', play: 'M7 4v16l13-8Z', refresh: 'M20 11a8 8 0 0 0-14.9-3.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.9 3.9L20 16M20 20v-4h-4',
     brain: 'M9 4a3 3 0 0 0-3 3v.2A3 3 0 0 0 4 10a3 3 0 0 0 1 2.2A3 3 0 0 0 6 17a3 3 0 0 0 3 3a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3ZM15 4a3 3 0 0 1 3 3v.2A3 3 0 0 1 20 10a3 3 0 0 1-1 2.2A3 3 0 0 1 18 17a3 3 0 0 1-3 3a3 3 0 0 1-3-3',
+    store: 'M4 9l1.5-5h13L20 9M4 9h16v11H4zM4 9a3 3 0 0 0 6 0 3 3 0 0 0 4 0 3 3 0 0 0 6 0M9 20v-5h6v5',
     shield: 'M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6Z', open: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6', back: 'M15 18l-6-6 6-6',
   };
   const icon = (n, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${P[n] || ''}"/></svg>`;
@@ -481,11 +494,12 @@
     view = v;
     document.querySelectorAll('.view').forEach((el) => el.classList.toggle('on', el.id === `v-${v}`));
     document.querySelectorAll('.nav [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
-    $('title').textContent = v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : (readonly ? readonly.title : convo()?.title || 'New session');
+    $('title').textContent = v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : (readonly ? readonly.title : convo()?.title || 'New session');
     document.body.classList.remove('nav');
     if (v === 'caps') loadCaps();
     if (v === 'msg') loadMessaging();
     if (v === 'sched') loadScheduled();
+    if (v === 'market') loadMarket();
     renderLists();
   }
   document.querySelectorAll('.nav [data-view]').forEach((b) => (b.onclick = () => show(b.dataset.view)));
@@ -799,7 +813,23 @@
         try { const st = await getJson('/ox/settings'); if (data.some((m) => m.id === st.model.defaultBot)) sel.value = st.model.defaultBot; } catch {}
       }
       if (!data.length) sel.innerHTML = '<option value="">no models</option>';
-    } catch { sel.innerHTML = '<option value="">server unreachable</option>'; }
+    } catch { sel.innerHTML = '<option value="">server unreachable</option>'; return; }
+    // Models installed on this machine, found by asking the local servers.
+    try {
+      const L = await getJson('/ox/local');
+      const PREFIX = { ollama: 'ox-ollama', 'lm studio': 'ox-lmstudio', 'llama.cpp': 'ox-llamacpp', vllm: 'ox-vllm' };
+      const local = L.runtimes.flatMap((r) => {
+        const key = Object.keys(PREFIX).find((k) => r.name.toLowerCase().includes(k));
+        return key ? r.models.map((m) => ({ id: `${PREFIX[key]}:${m.id}`, label: `${m.id} · ${r.name}${m.size ? ` · ${m.size}` : ''}` })) : [];
+      });
+      if (local.length) {
+        const g = document.createElement('optgroup'); g.label = 'On this machine';
+        for (const m of local) { const o = document.createElement('option'); o.value = m.id; o.textContent = m.label; g.append(o); }
+        sel.prepend(g);
+        const saved = store.get('ox.model', null);
+        if (saved && local.some((m) => m.id === saved)) sel.value = saved;
+      }
+    } catch {}
   }
   $('model').onchange = () => store.set('ox.model', $('model').value);
 
@@ -926,6 +956,39 @@
       <div class="section-cap cap">From your phone</div>
       <div class="box small muted">/status — what ox is doing · /stop — stop the run · /mode ask|code|plan — switch mode · /new — start fresh · /where — the folder it works in</div>`;
   }
+
+  // ---------- marketplace
+  let mkTab = 'plugins', mkCat = '', mkData = null, mkTimer = null;
+  async function loadMarket() {
+    $('mk-list').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
+    try { mkData = await getJson(`/ox/market?q=${encodeURIComponent($('mk-q').value.trim())}`); } catch (e) { $('mk-list').innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; return; }
+    renderMarket();
+  }
+  function renderMarket() {
+    const d = mkData;
+    $('mk-tabs').innerHTML = `<button data-mt2="plugins" class="${mkTab === 'plugins' ? 'on' : ''}">Plugins<sup>${d.plugins.length}</sup></button><button data-mt2="repos" class="${mkTab === 'repos' ? 'on' : ''}">GitHub skills<sup>${d.repos.length}</sup></button>`;
+    $('mk-tabs').querySelectorAll('button').forEach((b) => (b.onclick = () => { mkTab = b.dataset.mt2; mkCat = ''; renderMarket(); }));
+    const cats = [...new Set(d.plugins.map((p) => p.category).filter(Boolean))].sort();
+    $('mk-cats').innerHTML = mkTab === 'plugins' && cats.length ? ['', ...cats].map((c) => `<button class="badge" data-cat="${esc(c)}" style="cursor:pointer;${mkCat === c ? 'color:var(--text);border-color:var(--muted)' : ''}">${esc(c || 'all')}</button>`).join('') : '';
+    $('mk-cats').querySelectorAll('[data-cat]').forEach((b) => (b.onclick = () => { mkCat = b.dataset.cat; renderMarket(); }));
+    const btn = (installed, attrs) => installed ? '<span class="badge ok"><span class="dot ok"></span>installed</span>' : `<button class="btn primary" ${attrs}>Install</button>`;
+    const list = mkTab === 'plugins'
+      ? d.plugins.filter((p) => !mkCat || p.category === mkCat).map((p) => `<div class="card"><span class="t"><div class="n">${esc(p.name)} ${p.category ? `<span class="badge">${esc(p.category)}</span>` : ''}</div><div class="d"><span>${esc(p.description)}</span></div><div class="d"><span>${esc(p.author || '')}</span><span class="mono">${esc(p.catalog)}</span>${p.skills ? `<span>skills: ${esc(p.skills.join(', '))}</span>` : ''}</div></span>${btn(p.installed, `data-inst-name="${esc(p.name)}" data-inst-cat="${esc(p.catalog)}"`)}</div>`)
+      : d.repos.map((r) => `<div class="card"><span class="t"><div class="n"><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" style="color:inherit">${esc(r.repo)}</a></div><div class="d"><span>${esc(r.description)}</span></div><div class="d"><span>★ ${Number(r.stars).toLocaleString()}</span>${r.license ? `<span>${esc(r.license)}</span>` : ''}<span>updated ${esc(String(r.updated || '').slice(0, 10))}</span></div></span>${btn(r.installed, `data-inst-repo="${esc(r.repo)}"`)}</div>`);
+    $('mk-list').innerHTML = list.join('') || '<div class="box muted small">Nothing matches.</div>';
+    if (d.errors.length) $('mk-list').insertAdjacentHTML('afterbegin', `<div class="alert">${icon('info')}${esc(d.errors.join(' · '))}</div>`);
+    $('mk-catalogs').innerHTML = d.catalogs.map((c) => `<span class="badge mono" style="margin:0 6px 6px 0">${esc(c)}</span>`).join('');
+    $('mk-list').querySelectorAll('[data-inst-name], [data-inst-repo]').forEach((b) => (b.onclick = async () => {
+      b.disabled = true; b.textContent = 'Installing…';
+      try {
+        const r = await postJson('/ox/market/install', b.dataset.instRepo ? { repo: b.dataset.instRepo } : { name: b.dataset.instName, catalog: b.dataset.instCat });
+        toast(r.ok ? `Installed — ${r.message}` : r.message);
+        if (r.ok) { b.outerHTML = '<span class="badge ok"><span class="dot ok"></span>installed</span>'; caps = null; } else { b.disabled = false; b.textContent = 'Install'; }
+      } catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Install'; }
+    }));
+  }
+  $('mk-q').addEventListener('input', () => { clearTimeout(mkTimer); mkTimer = setTimeout(loadMarket, 400); });
+  $('mk-add-btn').onclick = async () => { try { await postJson('/ox/market/catalogs', { repo: $('mk-add').value.trim() }); $('mk-add').value = ''; toast('Catalogue added'); loadMarket(); } catch (e) { toast(e.message); } };
 
   // ---------- scheduled
   async function loadScheduled() {

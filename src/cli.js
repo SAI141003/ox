@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4037,6 +4037,7 @@ const SUB_USAGE = {
   skill: 'usage: ox skill <name> | ox skill add <dir | owner/repo[/path]>',
   episode: 'usage: ox episode ls | ox episode promote <id>',
   'memory-loss': 'usage: ox memory-loss [--limit <n>]',
+  market: 'usage: ox market ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
   hooks: 'usage: ox hooks install claude [--yes] | uninstall claude [--yes] | status',
   memory: 'usage: ox memory [recall "<question>" | add "<fact>" [--project] | history <id> | forget <id> | all [--project]]',
   auto: 'usage: ox auto "<goal>" [--contract ["<goal>"]] [--max-cost <usd>] [--json] [--bot <name>] [--yes-edits] [-y] [--side-effects-ok]',
@@ -4602,6 +4603,31 @@ async function runSubcommand(cmd, args) {
       }
       console.log(SUB_USAGE.memory);
       process.exitCode = 2;
+      return;
+    }
+    case 'market': {
+      // Search and install published skills and plugins (src/market.js).
+      const mk = await import('./market.js');
+      if (args[0] === 'add') {
+        try { const list = await mk.addCatalog(args[1] ?? ''); console.log(c.green(`catalogues: ${list.join(', ')}`)); } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; }
+        return;
+      }
+      if (args[0] === 'install') {
+        const target = String(args[1] ?? '');
+        const at = target.match(/^([\w.-]+)@([\w.-]+\/[\w.-]+)$/);
+        try {
+          const r = await mk.install(at ? { name: at[1], catalog: at[2], force: args.includes('--force') } : { repo: target, force: args.includes('--force') });
+          console.log(r.ok ? c.green(r.message) : c.red(r.message));
+          if (!r.ok) process.exitCode = 1;
+        } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; }
+        return;
+      }
+      const r = await mk.search(args.join(' '));
+      for (const p of r.plugins.slice(0, 25)) console.log(`${p.installed ? c.green('✓') : ' '} ${c.bold(p.name)}${p.category ? c.dim(` [${p.category}]`) : ''}  ${c.dim(p.description.slice(0, 90))}  ${c.dim(`ox market install ${p.name}@${p.catalog}`)}`);
+      if (r.repos.length) console.log(c.dim('\n  from GitHub (topic: agent-skills)'));
+      for (const x of r.repos.slice(0, 15)) console.log(`${x.installed ? c.green('✓') : ' '} ${c.bold(x.repo)} ${c.dim(`★${x.stars}`)}  ${c.dim(x.description.slice(0, 80))}`);
+      for (const e of r.errors) console.log(c.yellow(e));
+      if (!r.plugins.length && !r.repos.length) console.log(c.dim('nothing found'));
       return;
     }
     case 'hook': {
