@@ -526,6 +526,8 @@ function agentErrorShape(message) {
 const NEEDS_WEB = /\b(price|prices|cost of|latest|today|this week|news|current|rate today|search|look up|website|https?:\/\/)/i;
 // Asks that need a tool even without naming a file: the web, the machine, mail, memory, other agents.
 const NEEDS_TOOLS = /\b(search|look up|google|browse|latest|today|news|price|weather|open|run|install|email|mail|send|remember|forget|schedule|remind|screenshot|download|fetch|https?:\/\/|www\.|agent|subagent)\b/i;
+// Asking for something to be made or changed: that needs tools.
+const BUILDS = /\b(build|create|make|write|generate|scaffold|implement|code|script|website|app|deploy|install|edit|change|update|delete|rename|fix|refactor|add|remove|run|test)\b/i;
 const SMALL_TALK = /^\s*(hi|hey|hello|yo|thanks|thank you|ok|okay|cool|nice|great|good (morning|night|evening)|how are you|who are you|what can you do)[\s!.?]*$/i;
 const TOUCHES_CODE = /\b(file|files|repo|repository|project|codebase|function|class|module|component|test|tests|bug|fix|refactor|commit|branch|src|readme)\b|[\w-]+\.(js|ts|tsx|jsx|py|go|rs|java|rb|css|html|json|md)\b/i;
 const WANTS_UI = /\b(calculat\w*|convert\w*|compar\w*|table|chart|graph|plot|slider|interactive|estimat\w*|budget|breakdown|checklist|options|pros and cons|form)\b/i;
@@ -612,8 +614,11 @@ async function handleChatCompletions(req, res) {
   // on a paid one. A message that needs nothing but an answer (hi, a question
   // about the world) is sent without tool definitions, about 1,600 tokens.
   // Measured on qwen2.5:3b: "hi" 2,740 tokens / 17 s before this.
-  if (turnMode.routed && !turnMode.answerOnly && !TOUCHES_CODE.test(said) && !NEEDS_TOOLS.test(said) && (turnMode.mode === 'ask' || SMALL_TALK.test(said))) {
-    turnMode = { mode: 'ask', routed: true, reason: turnMode.mode === 'ask' ? turnMode.reason : 'small talk', answerOnly: true };
+  // A short message that names no file or code, needs no tool and asks to build
+  // nothing is a question, whatever the mode guesser read into its first word
+  // ("Name the capital of Australia" was routed as a change: 2,115 tokens).
+  if (turnMode.routed && !turnMode.answerOnly && !TOUCHES_CODE.test(said) && !NEEDS_TOOLS.test(said) && (turnMode.mode === 'ask' || SMALL_TALK.test(said) || (!BUILDS.test(said) && said.length < 400))) {
+    turnMode = { mode: 'ask', routed: true, reason: turnMode.mode === 'ask' ? turnMode.reason : SMALL_TALK.test(said) ? 'small talk' : 'a question', answerOnly: true };
   }
   // The same memory a terminal run starts with: the project's MEMORY.md, what ox
   // remembers about the user, and what bears on this message.

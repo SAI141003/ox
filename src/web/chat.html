@@ -216,6 +216,9 @@
   .bot-colors { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
   .bot-colors button { width: 26px; height: 26px; border-radius: 99px; box-shadow: inset 0 0 0 1px var(--line2); }
   .bot-colors button.on { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--text); }
+  .cmp-pick { position: fixed; inset: 0; z-index: 80; background: color-mix(in srgb, var(--bg) 70%, transparent); display: grid; place-items: center; padding: 16px; }
+  .cmp-pick .box { width: min(460px, 100%); max-height: 80vh; overflow: auto; background: var(--panel); }
+  .cmp-list { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
   .bot-groupnew { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
   .bot-pick { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: 8px; cursor: pointer; }
   .bot-pick:hover { background: var(--hover); } .bot-pick input { accent-color: var(--text); }
@@ -1131,7 +1134,7 @@
     const steps = (msg.tools || []).map((t) => `<div class="step"><span class="dot ${t.state === 'ok' ? 'ok' : t.state === 'err' ? 'err' : 'run'}"></span><b>${esc(t.name)}</b><span>${esc(t.preview || '')}</span></div>`).join('');
     msg.key ??= `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     const text = msg.content ? md(msg.content, msg.key) : (msg.pending ? '<span class="typing"><i></i><i></i><i></i></span>' : '');
-    const routed = (msg.bot ? `<span class="botname">${esc(msg.bot)}</span>` : '') + (msg.routed ? `<span class="routed">${icon('mode')}${esc(msg.routed)}</span>` : '');
+    const routed = (msg.compare ? `<span class="botname">${esc(msg.compare)}</span>` : '') + (msg.bot ? `<span class="botname">${esc(msg.bot)}</span>` : '') + (msg.routed ? `<span class="routed">${icon('mode')}${esc(msg.routed)}</span>` : '');
     if (msg.bot) { const who = body.closest('.msg')?.querySelector('.who'); if (who && !who.dataset.bot) { who.dataset.bot = msg.bot; who.classList.add('botwho'); who.innerHTML = botFace(msg.bot, botShapes[msg.bot], 26, botColors[msg.bot]); } }
     const PI = { completed: ['ok', '✓'], in_progress: ['run', '›'], blocked: ['err', '!'], pending: ['', ''] };
     const plan = Array.isArray(msg.plan) && msg.plan.length
@@ -1225,6 +1228,18 @@
     input.value = ''; resize();
     // A group chat: every bot answers in turn and sees what the others said, so
     // they check, build on and correct each other. "@name" asks just that one.
+    // Compare: the same message to several models at once, side by side.
+    if (Array.isArray(c.compare) && c.compare.length) {
+      const replies = c.compare.map((m) => ({ role: 'assistant', content: '', tools: [], pending: true, compare: m }));
+      c.messages.push(...replies);
+      c.updated = Date.now(); c.running = true;
+      saveConvos(); renderChat(); renderLists();
+      const bodies = [...$('inner').querySelectorAll('.msg.assistant .body')].slice(-replies.length);
+      busy = new AbortController(); setBusy(true);
+      await Promise.all(replies.map((r, k) => replyOnce(c, text, null, null, { reply: r, body: bodies[k], model: c.compare[k], signal: busy.signal })));
+      c.running = false; busy = null; setBusy(false); resize(); saveConvos(); renderLists();
+      return;
+    }
     const group = Array.isArray(c.group) && c.group.length ? c.group : null;
     const mentioned = group ? group.filter((b) => new RegExp(`(^|\\s)@${b.replace(/[-]/g, '\\-')}\\b`, 'i').test(text)) : [];
     const speakers = group ? (mentioned.length ? mentioned : group) : [null];
@@ -1235,26 +1250,36 @@
   }
 
   // One answer from one model (or one bot in a group).
-  async function replyOnce(c, text, bot, group) {
-    const reply = { role: 'assistant', content: '', tools: [], pending: true, ...(bot ? { bot } : {}) };
+  async function replyOnce(c, text, bot, group, opts = {}) {
+    const reply = opts.reply ?? { role: 'assistant', content: '', tools: [], pending: true, ...(bot ? { bot } : {}) };
     const t0 = performance.now();
-    c.messages.push(reply);
-    c.updated = Date.now(); c.running = true;
-    saveConvos(); renderChat(); renderLists();
-    const body = $('inner').lastElementChild.querySelector('.body');
-    const model = bot ? `agent:${bot}` : ($('model').value || undefined);
-    let history = c.messages.filter((m) => m !== reply).map((m) => ({ role: m.role, content: m.bot && m.role === 'assistant' ? `${m.bot}: ${m.content}` : m.content }));
-    if (group) {
-      const last = history.length - 1 - [...history].reverse().findIndex((m) => m.role === 'user');
-      const others = group.filter((b) => b !== bot);
-      history = history.map((m, k) => (k === last ? { ...m, content: `${m.content}\n\n(Group chat with ${others.join(', ')}. You are ${bot}. Answer for yourself, build on what the others already said, and say plainly if you think one of them is wrong. Do not repeat them.)` } : m));
+    if (!opts.reply) {
+      c.messages.push(reply);
+      c.updated = Date.now(); c.running = true;
+      saveConvos(); renderChat(); renderLists();
     }
-    busy = new AbortController();
-    setBusy(true);
+    const body = opts.body ?? $('inner').lastElementChild.querySelector('.body');
+    const model = opts.model ?? (bot ? `agent:${bot}` : ($('model').value || undefined));
+    // Earlier answers from other bots or models in this turn travel as quoted
+    // context, never as this model's own turn: a conversation ending on an
+    // assistant turn gives the model nothing to answer (local models return
+    // nothing), which is what left a group chat's second bot empty.
+    const turnStart = c.messages.length - 1 - [...c.messages].reverse().findIndex((m) => m.role === 'user');
+    const others = c.messages.slice(turnStart + 1).filter((m) => m !== reply && m.role === 'assistant' && m.content && !m.compare);
+    let history = c.messages.slice(0, turnStart + 1).filter((m) => !m.compare || m.compare === model).map((m) => ({ role: m.role, content: m.bot && m.role === 'assistant' ? `${m.bot}: ${m.content}` : m.content }));
+    if (group) {
+      const names = group.filter((b) => b !== bot);
+      const said = others.map((m) => `${m.bot} said: ${m.content}`).join('\n\n');
+      const last = history.length - 1;
+      history[last] = { ...history[last], content: `${history[last].content}\n\n${said ? `${said}\n\n` : ''}(Group chat with ${names.join(', ')}. You are ${bot}. Answer for yourself, build on what the others already said, and say plainly if you think one of them is wrong. Do not repeat them.)` };
+    }
+    const own = !opts.signal;
+    if (own) { busy = new AbortController(); setBusy(true); }
+    const signal = opts.signal ?? busy.signal;
     let ok = true;
     try {
       const res = await api('/v1/chat/completions', {
-        method: 'POST', signal: busy.signal,
+        method: 'POST', signal,
         body: JSON.stringify({ model, ox_mode: $('mode').value, ox_ui: 'live', ...(c.incognito ? { ox_incognito: true } : {}), stream: true, messages: history }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error?.message || `HTTP ${res.status}`);
@@ -1288,12 +1313,12 @@
       reply.error = e.name === 'AbortError' ? 'Stopped.' : plainDash(e.message);
       ok = false;
     } finally {
-      reply.pending = false; c.running = false; c.updated = Date.now();
+      reply.pending = false; c.updated = Date.now();
       reply.ms = Math.round(performance.now() - t0);
-      busy = null; setBusy(false); resize();
+      if (own) { c.running = false; busy = null; setBusy(false); resize(); }
       paint(body, reply); saveConvos(); renderLists();
       // Three things to ask next, made after the answer so it never waits on them.
-      if (!group && reply.content && !reply.error && prefs.followups === true && !c.incognito) {
+      if (!group && !opts.reply && reply.content && !reply.error && prefs.followups === true && !c.incognito) {
         postJson('/ox/followups', { model, question: text, answer: reply.content })
           .then((f) => { if (f.items?.length) { reply.follow = f.items; if (c === convo()) paint(body, reply); saveConvos(); } })
           .catch(() => {});
@@ -1361,7 +1386,8 @@
       sel.prepend(autoO);
       const more = document.createElement('optgroup'); more.label = 'More';
       const find = document.createElement('option'); find.value = '__find'; find.textContent = 'Find a model on Hugging Face…';
-      more.append(find); sel.append(more);
+      const cmp = document.createElement('option'); cmp.value = '__compare'; cmp.textContent = 'Compare several models at once…';
+      more.append(cmp, find); sel.append(more);
     } catch { sel.innerHTML = '<option value="">server unreachable</option>'; return; }
     // Models installed on this machine, found by asking the local servers.
     try {
@@ -1381,6 +1407,10 @@
     } catch {}
   }
   $('model').onchange = () => {
+    if ($('model').value === '__compare') {
+      $('model').value = store.get('ox.model', '') || 'auto';
+      pickCompare(); return;
+    }
     if ($('model').value === '__find') {
       // Not a model: open the Hugging Face search and put the picker back.
       $('model').value = store.get('ox.model', '') || $('model').options[0]?.value || '';
@@ -1441,6 +1471,24 @@
     if (talk.muted) { try { talk.rec?.abort(); } catch {} talkUi('Muted'); } else talkListen();
   };
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && talk) endTalk(); });
+  // Pick models to compare, then a new chat sends each message to all of them.
+  function pickCompare() {
+    const opts = [...$('model').querySelectorAll('option')].filter((o) => !o.disabled && !o.value.startsWith('__') && o.value !== 'auto' && !o.value.startsWith('agent:'));
+    const box = document.createElement('div');
+    box.className = 'cmp-pick';
+    box.innerHTML = `<div class="box"><b>Compare models</b><p class="small muted">Each message goes to every model you tick, at the same time. Their answers show side by side with time and tokens.</p><div class="cmp-list">${opts.map((o) => `<label class="bot-pick"><input type="checkbox" value="${esc(o.value)}"><span>${esc(o.textContent)}</span></label>`).join('')}</div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="cmp-go">Start</button><button class="btn ghost" id="cmp-x">Cancel</button></div></div>`;
+    document.body.append(box);
+    box.querySelector('#cmp-x').onclick = () => box.remove();
+    box.querySelector('#cmp-go').onclick = () => {
+      const ids = [...box.querySelectorAll('input:checked')].map((i) => i.value);
+      if (ids.length < 2) { toast('Pick at least two models'); return; }
+      box.remove();
+      newConvo();
+      const c = convo(); c.compare = ids; c.title = `Compare: ${ids.join(', ')}`; saveConvos(); renderChat(); renderLists();
+      $('input').placeholder = `Ask ${ids.length} models at once`; $('input').focus();
+    };
+  }
+
   // Kokoro's natural voice through the server when it is set up (ox voice
   // install); this browser's voice otherwise, or when picked in Settings › Voice.
   let voiceInfo = null, playing = null, speakRun = 0;

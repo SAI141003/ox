@@ -17,7 +17,7 @@ Updated October 16 2026.
 | 1.4 | Model picker lists what can answer first | ✓ | Plans, agents, endpoints, models; keyless models greyed under "Needs a key" |
 | 1.5 | A chat with no model picked uses one that works | ✓ | Was a hard-coded gpt-4o; now your default if it can run, else a signed-in plan, a local endpoint, a keyed provider |
 | 1.6 | Auto-switching model per message (small talk to a small model, code to a strong one) | ✓ | Picker default "Auto": hi went to qwen2.5:3b on this Mac ("a quick answer, on your machine"), a code fix to chatgpt-plan; only models that can answer are picked; the reason shows on each answer |
-| 1.7 | Several models at once on one task | ~ | `ox arena` races models in the terminal; not in the app |
+| 1.7 | Several models at once on one task | ✓ | Picker › Compare several models: one message to each at once; qwen-3b and qwen-1-5b both said Canberra, 22.1 s vs 13.2 s, side by side with tokens |
 | 1.8 | Custom endpoints (any OpenAI-compatible server) | ✓ | Settings › Custom endpoints; Test listed Ollama's models in 31 ms; chat through it worked |
 | 1.9 | Local models + Hugging Face search and download | ✓ | Search from Providers, the picker and Local models; BitNet found; a 105 MB model downloaded and chatted earlier |
 | 1.10 | Default local model choice | ✓ | Auto uses Ollama's biggest chat model (qwen2.5:3b, not the 135M one); the picker opens on Auto |
@@ -31,6 +31,7 @@ Updated October 16 2026.
 | 2.3 | Project questions get only the 4 readers | ✓ | 5,192 → 2,608 tokens over two calls |
 | 2.4 | Usage shown per answer, model, agent, surface | ✓ | Time and tokens under each answer; Settings › Usage |
 | 2.5 | Coding runs (with tools) are leaner | ? | Not measured yet: tool rules and subagent text still sent when the subagent tool is not offered |
+| 2.7 | Short questions the mode guesser reads as a change | ✓ | "Name the capital of Australia" 2,115 → 255 tokens |
 | 2.6 | Follow-up suggestions cost | ✓ | Off by default (one extra call); switch in Settings › General |
 
 ## 3. Answers as interface (OpenUI)
@@ -50,7 +51,7 @@ Updated October 16 2026.
 | 4.1 | Bots page: make, edit, rename, delete | ✓ | API + page tested; bad names and unknown models refused |
 | 4.2 | Bot shapes and colours | ✓ | 13 shapes, 12 colours |
 | 4.3 | A bot answers to its name | ✓ | "I am the critic, reviewing diffs…" |
-| 4.4 | Group chat (bots check each other) | ~ | Second bot's answer came back empty once in the app while the same request through the API streamed; open |
+| 4.4 | Group chat (bots check each other) | ~ | Fixed the empty second answer (the history ended on another bot's turn): skeptic now answers and responds to optimist. Open: the screen switched to an older chat while it answered |
 | 4.5 | Subagents checking each other's progress | ~ | agent_status + mailbox exist for terminal runs; no live view in the app |
 
 ## 5. Memory
