@@ -34,6 +34,8 @@ async function main() {
     await cli.main(process.argv.slice(2));
   } catch (err) {
     console.error(`ox: ${err?.message ?? err}`);
+    // Remembered (secrets redacted) so `ox evolve` can fix what actually broke.
+    try { await (await import('../src/evolve.js')).recordFailure({ command: process.argv.slice(2), error: err }); } catch {}
     process.exit(1);
   }
 }

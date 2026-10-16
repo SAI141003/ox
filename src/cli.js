@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4656,6 +4656,49 @@ async function runSubcommand(cmd, args) {
         }
       } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; return; }
       console.log(SUB_USAGE.hf); process.exitCode = 2;
+      return;
+    }
+    case 'evolve': {
+      // ox improves ox (src/evolve.js): an attempt in its own worktree, judged by
+      // the unit suite against the current version; nothing merges on its own.
+      const E = await import('./evolve.js');
+      const [verb, id] = args;
+      try {
+        if (verb === 'list') {
+          const rows = E.archive();
+          if (!rows.length) { console.log('no attempts yet: ox evolve "<what to make better>"'); return; }
+          for (const r of rows.slice(0, 20)) console.log(`${r.id}  ${String(r.state).padEnd(9)} ${String(r.goal ?? '').slice(0, 60)}${r.why ? c.dim(`  ${r.why}`) : ''}`);
+          return;
+        }
+        if (verb === 'failures') {
+          const f = E.failures();
+          if (!f.length) { console.log('no recorded failures'); return; }
+          for (const g of f.slice(0, 15)) console.log(`${String(g.count).padStart(3)}×  ${g.sig}${c.dim(`  (ox ${g.example.command})`)}`);
+          return;
+        }
+        if (verb === 'diff') { if (!id) throw new Error('usage: ox evolve diff <id>'); process.stdout.write(E.diff(id)); return; }
+        if (verb === 'accept') { if (!id) throw new Error('usage: ox evolve accept <id>'); const a = E.accept(id); console.log(`accepted ${a.id}: your checkout now has it`); return; }
+        if (verb === 'reject') { if (!id) throw new Error('usage: ox evolve reject <id>'); E.reject(id); console.log(`rejected ${id}`); return; }
+        const bi = args.indexOf('--bot'), mi = args.indexOf('--max-cost');
+        const skip = new Set([bi, bi + 1, mi, mi + 1].filter((i) => i >= 0));
+        const goal = args.filter((a, i) => !skip.has(i) && !a.startsWith('--')).join(' ');
+        const r = await E.evolve({ goal, bot: bi >= 0 ? args[bi + 1] : null, maxCost: mi >= 0 ? Number(args[mi + 1]) || 2 : 2, log: (l) => process.stderr.write(`${c.dim(l)}\n`) });
+        if (!r.id) { console.log(r.why); return; }
+        console.log(r.accepted
+          ? `${c.bold(`attempt ${r.id} measured better`)}: ${r.why}\n  look: ox evolve diff ${r.id}\n  keep: ox evolve accept ${r.id}   drop: ox evolve reject ${r.id}`
+          : `attempt ${r.id} not kept: ${r.why}`);
+      } catch (e) { process.stderr.write(`ox: ${e.message}\n`); process.exitCode = 1; }
+      return;
+    }
+    case 'update': {
+      // What is new upstream; --apply fast-forwards to it.
+      const E = await import('./evolve.js');
+      const u = E.updateCheck();
+      if (u.kind !== 'git') { console.log(u.message); if (u.kind === 'error') process.exitCode = 1; return; }
+      if (!u.incoming.length) { console.log(`up to date with ${u.upstream}`); return; }
+      console.log(`${u.incoming.length} new from ${u.upstream}:\n${u.incoming.slice(0, 15).map((l) => `  ${l}`).join('\n')}`);
+      if (!args.includes('--apply')) { console.log(c.dim('bring them in: ox update --apply')); return; }
+      try { E.updateApply(); console.log('updated'); } catch (e) { process.stderr.write(`ox: ${e.message}\n`); process.exitCode = 1; }
       return;
     }
     case 'name': {
