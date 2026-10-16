@@ -285,3 +285,63 @@ export async function mediaFile(id, name) {
   if (!f.startsWith(path.join(ms.MEDIA_DIR(), id) + path.sep) || !fs.existsSync(f)) return null;
   return f;
 }
+
+// Bots: your own (a name, a model, a mode, the tools it may use and standing
+// instructions; the same files `ox agent` writes in ~/.ox/agents) and every
+// model ox can run them on, with whether it is ready.
+export async function botsView(env = process.env) {
+  const { listAgents, loadAgent, agentBotSpec } = await import('./agents.js');
+  const { MODE_NAMES } = await import('./modes.js');
+  const { listToolSchemas } = await import('./tools/index.js');
+  const { listEndpoints } = await import('./endpoints.js');
+  const mine = listAgents().map((name) => {
+    const a = loadAgent(name);
+    if (!a) return null;
+    return { name, description: a.description ?? '', bot: agentBotSpec(a), mode: a.mode ?? 'code', tools: a.tools ?? null, instructions: a.systemPrompt ?? '', updatedAt: a.updatedAt ?? null };
+  }).filter(Boolean);
+  const models = Object.entries(BOTS).filter(([, d]) => d.model).map(([id, d]) => {
+    const k = KEY_ENV[d.provider] ?? null;
+    return { id, kind: 'model', provider: d.provider, desc: d.desc ?? '', ready: !k || !!env[k] };
+  });
+  let endpoints = [];
+  try { endpoints = listEndpoints(env).map((e) => ({ id: e.name, kind: 'endpoint', provider: 'custom', desc: `${e.model ?? 'no model'} at ${e.baseUrl}`, ready: !!e.model })); } catch {}
+  let plans = [];
+  // Installed or not, from PATH alone: running every vendor CLI to check its
+  // sign-in took ~9 s here (Settings › Accounts does that full check).
+  try {
+    const { allClis, findOnPath } = await import('./subscriptions.js');
+    const { loadConfig } = await import('./config.js');
+    let config = {};
+    try { config = loadConfig(); } catch {}
+    plans = Object.entries(allClis(config)).map(([id, c]) => ({ id: `${id}-plan`, kind: 'plan', provider: id, desc: `${c.label} (${c.bin})`, ready: !!findOnPath(c.bin, env) }));
+  } catch {}
+  let tools = [];
+  try { tools = listToolSchemas({}).map((t) => t.name).sort(); } catch {}
+  return { mine, runsOn: [...endpoints, ...plans, ...models], modes: MODE_NAMES, tools };
+}
+
+export async function botSave(body = {}, env = process.env) {
+  const { saveAgent, loadAgent, renameAgent, AGENT_NAME } = await import('./agents.js');
+  const { MODE_NAMES } = await import('./modes.js');
+  const { resolveBot } = await import('./bots.js');
+  const { readConfigDoc, saveConfigDoc } = await import('./config.js');
+  const name = String(body.name ?? '').trim();
+  if (!AGENT_NAME.test(name)) throw new Error('a bot name is 1 to 48 letters, digits, dashes or underscores');
+  const from = body.from ? String(body.from) : null;
+  if (from && from !== name) renameAgent(from, name, { saveConfig: saveConfigDoc });
+  else if (!from && loadAgent(name)) throw new Error(`there is already a bot called ${name}`);
+  const mode = body.mode && body.mode !== 'auto' ? String(body.mode) : null;
+  if (mode && !MODE_NAMES.includes(mode)) throw new Error(`unknown mode ${mode}`);
+  const bot = body.bot ? String(body.bot) : null;
+  if (bot) resolveBot(bot, { bots: readConfigDoc().bots ?? {} }, env);
+  const tools = Array.isArray(body.tools) && body.tools.length ? body.tools.map(String) : null;
+  const prior = loadAgent(name) ?? {};
+  saveAgent(name, { ...prior, description: String(body.description ?? '').slice(0, 200), bot, mode, tools, systemPrompt: String(body.instructions ?? '').slice(0, 20_000) });
+  return botsView(env);
+}
+
+export async function botDelete(name, env = process.env) {
+  const { deleteAgent, AGENT_NAME } = await import('./agents.js');
+  if (!AGENT_NAME.test(String(name)) || !deleteAgent(String(name))) throw new Error(`no bot called ${name}`);
+  return botsView(env);
+}

@@ -10,7 +10,7 @@ with the reason. Nothing here is marked done without a test or a real run.
 | Reference | Idea | Status |
 |---|---|---|
 | Hermes desktop — settings (Model, Chat, Appearance, Providers › Accounts / API keys / Custom endpoints / Local models, Gateways, Shortcuts, Tools & Keys, Archived) | One settings window with search and every area reachable | **done** — 15 sections incl. Memory, Usage; search box |
-| Hermes — Local models (RAM, "too big for this machine", Hugging Face search & download) | Show what fits, search HF, download | **done** — Settings › Local models and `ox hf`; real download tested |
+| Hermes, Local models (RAM, "too big for this machine", Hugging Face search and download) | Show what fits, search HF, download | **done**: search from Settings › Providers, the model picker (Find a model on Hugging Face…) and Local models, and `ox hf`; real download tested |
 | Hermes — Custom endpoints (any OpenAI-compatible URL, test, use for new chats) | Add your own endpoint from the app | **done** — Settings › Custom endpoints: add, Test (models + latency), Use, Remove; own key per endpoint; keyless on your network; tested against local Ollama |
 | Hermes — Messaging (20+ channels, QR setup) | Phone channels with status | **partial** — Telegram, Discord; Slack/WhatsApp **not yet** |
 | Hermes — Capabilities (skills with use counts, toggles, Skills Hub) | Browse skills, install from a hub | **done** — Capabilities view + Marketplace (Anthropic catalogues + GitHub agent-skills) |
@@ -34,7 +34,7 @@ with the reason. Nothing here is marked done without a test or a real run.
 | Laminar | Traces, "agent stuck" alerts, evals | **partial** — usage log by model/agent/surface; no trace viewer yet |
 | company-brain | Shared team memory in Slack | **no** for now — needs Slack; ox memory is personal + per project |
 | Kilo modes | Ask / Plan / Code / Debug / Orchestrate, enforced | **done** |
-| Paperclip-style agents | Make your own agents | **done** — `ox agent new`, Agents tab |
+| Paperclip-style agents; OpenDots / Grok Bot bots (your request: a Bots section) | Make and manage your own bots in the app | **done**: sidebar › Bots: make, edit, rename, delete; model, mode, tools, instructions; chat with one (it answers to its name); what each can run on, ready or not. Tested on local qwen2.5:3b |
 | OpenDots / openmuse / openbot / grok-build / Grok Bot OS | Bots with their own tools, phone, voice | **done** for tools/phone/voice; see Island |
 
 ## OX Island (notch) — from Coucou, Pixie, Kodemon, Lintel, Glance

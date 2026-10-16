@@ -183,6 +183,17 @@
   .ui-bar i { height: 8px; border-radius: 99px; background: var(--text); display: block; }
   .ui-bar b { font-weight: 600; font-variant-numeric: tabular-nums; }
   .ui-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+  .bots-grid { display: grid; grid-template-columns: minmax(240px, 320px) 1fr; gap: 18px; align-items: start; margin-top: 16px; }
+  .bots-grid .card { text-align: left; width: 100%; }
+  .bots-grid .card.on { border-color: var(--text); }
+  .bot-new { border-style: dashed !important; }
+  .bot-edit { display: flex; flex-direction: column; gap: 12px; }
+  .bot-edit label { display: flex; flex-direction: column; gap: 6px; }
+  .bot-two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .bot-tools { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 12px; font: 12.5px var(--mono); color: var(--muted); }
+  .bot-tools label { display: flex; flex-direction: row !important; align-items: center; gap: 6px; }
+  .bot-tools input { accent-color: var(--text); }
+  @media (max-width: 860px) { .bots-grid, .bot-two { grid-template-columns: 1fr; } }
   .cv-stack { display: flex; flex-direction: column; gap: 10px; }
   .cv-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
   .cv-head b { display: block; font-size: 16px; font-weight: 650; } .cv-head span { color: var(--muted); font-size: 13px; }
@@ -363,6 +374,7 @@
         <button id="nav-new"><span data-i="plus"></span><span class="grow">New session</span><span class="kbd">⌘</span><span class="kbd">N</span></button>
         <button id="nav-incog" title="Nothing is saved: no history, no memory used or learned, no usage record (⌘⇧N)"><span data-i="incog"></span><span class="grow">New incognito chat</span><span class="kbd">⇧</span><span class="kbd">N</span></button>
         <button data-view="map"><span data-i="mapi"></span><span class="grow">Project map</span></button>
+        <button data-view="bots"><span data-i="bot"></span><span class="grow">Bots</span></button>
         <button data-view="caps"><span data-i="blocks"></span><span class="grow">Capabilities</span></button>
         <button data-view="studio"><span data-i="film"></span><span class="grow">Studio</span></button>
         <button data-view="market"><span data-i="store"></span><span class="grow">Marketplace</span></button>
@@ -460,6 +472,7 @@
 
     <section class="view" id="v-map"><div class="page"><div class="page-inner" style="max-width:1100px" id="map"></div></div></section>
 
+    <section class="view" id="v-bots"><div class="page"><div class="page-inner" style="max-width:1100px" id="bots"></div></div></section>
     <section class="view" id="v-sched"><div class="page"><div class="page-inner" id="sched"></div></div></section>
   </main>
 </div>
@@ -508,6 +521,7 @@
     brain: 'M9 4a3 3 0 0 0-3 3v.2A3 3 0 0 0 4 10a3 3 0 0 0 1 2.2A3 3 0 0 0 6 17a3 3 0 0 0 3 3a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3ZM15 4a3 3 0 0 1 3 3v.2A3 3 0 0 1 20 10a3 3 0 0 1-1 2.2A3 3 0 0 1 18 17a3 3 0 0 1-3 3a3 3 0 0 1-3-3',
     store: 'M4 9l1.5-5h13L20 9M4 9h16v11H4zM4 9a3 3 0 0 0 6 0 3 3 0 0 0 4 0 3 3 0 0 0 6 0M9 20v-5h6v5',
     film: 'M4 4h16v16H4zM8 4v16M16 4v16M4 8h4M4 12h4M4 16h4M16 8h4M16 12h4M16 16h4',
+    bot: 'M12 3v3M8 7h8a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3ZM9.5 12.5h.01M14.5 12.5h.01M2 13v2M22 13v2',
     incog: 'M3 11h18M5 11l2-6h10l2 6M7 17a3 3 0 1 0 0-.01M17 17a3 3 0 1 0 0-.01M10 17h4',
     chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
     mapi: 'M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2ZM9 4v14M15 6v14',
@@ -605,11 +619,12 @@
     view = v;
     document.querySelectorAll('.view').forEach((el) => el.classList.toggle('on', el.id === `v-${v}`));
     document.querySelectorAll('.nav [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
-    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : (readonly ? readonly.title : convo()?.title || 'New session');
+    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : (readonly ? readonly.title : convo()?.title || 'New session');
     document.body.classList.remove('nav');
     if (v === 'caps') loadCaps();
     if (v === 'msg') loadMessaging();
     if (v === 'sched') loadScheduled();
+    if (v === 'bots') loadBots();
     if (v === 'market') loadMarket();
     if (v === 'studio') loadStudio();
     if (v === 'map') loadMap();
@@ -1071,6 +1086,9 @@
         try { const st = await getJson('/ox/settings'); if (data.some((m) => m.id === st.model.defaultBot)) sel.value = st.model.defaultBot; } catch {}
       }
       if (!data.length) sel.innerHTML = '<option value="">no models</option>';
+      const more = document.createElement('optgroup'); more.label = 'More';
+      const find = document.createElement('option'); find.value = '__find'; find.textContent = 'Find a model on Hugging Face…';
+      more.append(find); sel.append(more);
     } catch { sel.innerHTML = '<option value="">server unreachable</option>'; return; }
     // Models installed on this machine, found by asking the local servers.
     try {
@@ -1089,7 +1107,14 @@
       }
     } catch {}
   }
-  $('model').onchange = () => store.set('ox.model', $('model').value);
+  $('model').onchange = () => {
+    if ($('model').value === '__find') {
+      // Not a model: open the Hugging Face search and put the picker back.
+      $('model').value = store.get('ox.model', '') || $('model').options[0]?.value || '';
+      pendingHf = ''; openSettings('local'); return;
+    }
+    store.set('ox.model', $('model').value);
+  };
 
   // ---------- attachments: text files, read here, added to the next message
   let attachments = [];
@@ -1373,6 +1398,71 @@ files: [src/billing/**]
   $('mk-add-btn').onclick = async () => { try { await postJson('/ox/market/catalogs', { repo: $('mk-add').value.trim() }); $('mk-add').value = ''; toast('Catalogue added'); loadMarket(); } catch (e) { toast(e.message); } };
 
   // ---------- scheduled
+  // ---------- bots: your own, and what they run on
+  let botSel = null;
+  async function loadBots() {
+    const el = $('bots');
+    el.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
+    let B;
+    try { B = await getJson('/ox/bots'); } catch (e) { el.innerHTML = `<div class="box">${esc(e.message)} <button class="btn" id="bots-retry">Retry</button></div>`; $('bots-retry').onclick = loadBots; return; }
+    const sel = botSel === '+new' ? { name: '', description: '', bot: '', mode: 'code', tools: null, instructions: '' } : B.mine.find((b) => b.name === botSel) ?? null;
+    const runs = (k) => B.runsOn.filter((r) => r.kind === k);
+    const opt = (r) => `<option value="${esc(r.id)}">${esc(r.id)}${r.ready ? '' : ' (not ready)'}</option>`;
+    el.innerHTML = `<div class="shead" style="margin-bottom:4px">${icon('bot')}Bots</div>
+      <p class="sdesc">A bot is a name with a model, a mode, the tools it may use and its own instructions. Talk to one in a chat, call it from the terminal (<code>ox --agent &lt;name&gt;</code>) or from your phone. It answers to its name.</p>
+      <div class="bots-grid">
+        <div class="cards">
+          <button class="card bot-new" data-bot="+new">${icon('plus')}<span class="t"><div class="n">New bot</div><div class="d">Pick a model, a mode and what it may do</div></span></button>
+          ${B.mine.map((b) => `<button class="card${botSel === b.name ? ' on' : ''}" data-bot="${esc(b.name)}"><span class="avatar">${esc(b.name[0].toUpperCase())}</span><span class="t"><div class="n">${esc(b.name)}</div><div class="d">${esc(b.description || `${b.mode} · ${b.bot || 'default model'}`)}</div></span><span class="badge">${esc(b.mode)}</span></button>`).join('')}
+          ${B.mine.length ? '' : '<div class="box muted small">No bots yet.</div>'}
+        </div>
+        <div>${sel ? `<div class="box bot-edit">
+          <label class="small muted">Name<input class="field" id="b-name" value="${esc(sel.name)}" placeholder="reviewer" maxlength="48"></label>
+          <label class="small muted">What it is for<input class="field" id="b-desc" value="${esc(sel.description)}" placeholder="Reviews my diffs for bugs" maxlength="200"></label>
+          <div class="bot-two">
+            <label class="small muted">Runs on<select class="field" id="b-bot"><option value="">The default model</option>
+              ${runs('endpoint').length ? `<optgroup label="Your endpoints">${runs('endpoint').map(opt).join('')}</optgroup>` : ''}
+              <optgroup label="Plans you pay for">${runs('plan').map(opt).join('')}</optgroup>
+              <optgroup label="Models">${runs('model').map(opt).join('')}</optgroup></select></label>
+            <label class="small muted">Mode<select class="field" id="b-mode">${B.modes.map((m) => `<option value="${m}">${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}</select></label>
+          </div>
+          <div class="small muted">Tools it may use <span class="dim">(none ticked: everything its mode allows)</span></div>
+          <div class="bot-tools">${B.tools.map((t) => `<label><input type="checkbox" value="${esc(t)}" ${sel.tools?.includes(t) ? 'checked' : ''}> ${esc(t)}</label>`).join('')}</div>
+          <label class="small muted">Instructions<textarea class="field" id="b-ins" rows="7" placeholder="You review diffs. Cite file:line for every problem. Never edit files.">${esc(sel.instructions)}</textarea></label>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn primary" id="b-save">${botSel === '+new' ? 'Create bot' : 'Save'}</button>
+            ${botSel !== '+new' ? `<button class="btn" id="b-chat">${icon('chat')}Chat with it</button><button class="btn ghost danger" id="b-del">Delete</button>` : ''}
+            <span class="small muted" id="b-state"></span>
+          </div></div>`
+          : `<div class="box muted" style="text-align:center;padding:40px 20px">Pick a bot to edit it, or make a new one.</div>`}
+          <div class="section-cap cap" style="margin-top:22px">What bots can run on</div>
+          <div class="cards">${B.runsOn.filter((r) => r.ready).slice(0, 12).map((r) => `<div class="card"><span class="dot ok"></span><span class="t"><div class="n mono">${esc(r.id)}</div><div class="d">${esc(r.desc)}</div></span><span class="badge">${esc(r.kind)}</span></div>`).join('') || '<div class="box muted small">Nothing is connected yet. Add a key, an account or a local model in Settings.</div>'}</div>
+          <p class="small muted">${B.runsOn.filter((r) => !r.ready).length} more need a key, a sign-in or a model: Settings › Providers.</p>
+        </div>
+      </div>`;
+    paintIcons();
+    el.querySelectorAll('[data-bot]').forEach((b) => (b.onclick = () => { botSel = b.dataset.bot; loadBots(); }));
+    if (!sel) return;
+    $('b-bot').value = sel.bot || '';
+    $('b-mode').value = sel.mode || 'code';
+    const st = (t) => ($('b-state').textContent = t);
+    $('b-save').onclick = async () => {
+      const tools = [...el.querySelectorAll('.bot-tools input:checked')].map((i) => i.value);
+      const name = $('b-name').value.trim();
+      try {
+        await postJson('/ox/bots', { name, from: botSel === '+new' ? null : sel.name, description: $('b-desc').value, bot: $('b-bot').value || null, mode: $('b-mode').value, tools, instructions: $('b-ins').value });
+        botSel = name; toast('Saved'); caps = null; loadModels(); loadBots();
+      } catch (e) { st(e.message); }
+    };
+    if ($('b-del')) $('b-del').onclick = async () => { if (!confirm(`Delete the bot ${sel.name}?`)) return; try { await postJson('/ox/bots', { action: 'delete', name: sel.name }); botSel = null; caps = null; loadModels(); loadBots(); } catch (e) { st(e.message); } };
+    if ($('b-chat')) $('b-chat').onclick = () => {
+      newConvo(); show('chat');
+      const id = `agent:${sel.name}`;
+      if ([...$('model').options].some((o) => o.value === id)) { $('model').value = id; store.set('ox.model', id); }
+      $('input').placeholder = `Message ${sel.name}`; $('input').focus();
+    };
+  }
+
   async function loadScheduled() {
     const el = $('sched');
     el.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
@@ -1411,6 +1501,7 @@ files: [src/billing/**]
     ['about', 'About', 'info', 'version'],
   ];
   let sec = 'general';
+  let pendingHf = null;
   function openSettings(which) {
     if (which) sec = which;
     $('ovl').classList.add('on');
@@ -1524,7 +1615,12 @@ files: [src/billing/**]
             <button class="card" data-go="keys" style="text-align:left">${icon('key')}<span class="t"><div class="n">API keys</div><div class="d">${n ? `${n} connected` : 'None yet'} · ${keys.length} providers</div></span></button>
             <button class="card" data-go="local" style="text-align:left">${icon('cpu')}<span class="t"><div class="n">Local models</div><div class="d">Run models on this machine. No account, works offline</div></span></button>
           </div>
+          <div class="section-cap cap">Find a model on Hugging Face</div>
+          <label class="search" style="margin:0 0 8px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:9px 12px"><span data-i="search"></span><input id="prov-hf" placeholder="qwen coder, llama, gemma, deepseek, bitnet…" aria-label="Search Hugging Face models"></label>
+          <p class="small muted" style="margin:0 0 16px">Every GGUF model on Hugging Face, most downloaded first, with its real size and whether it fits this machine. Downloads through Ollama.</p>
           <div class="section-cap cap">In use</div><div class="box">${esc(st.model.defaultBot)} <span class="dim small">· ${esc(st.model.source)}</span></div>`;
+        paintIcons();
+        $('prov-hf').onkeydown = (e) => { if (e.key === 'Enter' && $('prov-hf').value.trim()) { pendingHf = $('prov-hf').value.trim(); sec = 'local'; renderSnav(); renderSection(); } };
         el.querySelectorAll('[data-go]').forEach((b) => (b.onclick = () => { sec = b.dataset.go; renderSnav(); renderSection(); }));
         el.querySelectorAll('.card svg:last-child').forEach((s) => (s.style.transform = 'rotate(180deg)'));
       } else if (sec === 'accounts') {
@@ -1640,6 +1736,7 @@ files: [src/billing/**]
           } catch (e) { $('hf-results').innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; }
         };
         $('hf-q').oninput = () => { clearTimeout(hfTimer); hfTimer = setTimeout(hfSearch, 450); };
+        if (pendingHf !== null) { $('hf-q').value = pendingHf; pendingHf = null; $('hf-q').scrollIntoView({ block: 'center' }); $('hf-q').focus(); if ($('hf-q').value) hfSearch(); }
       } else if (sec === 'messaging') {
         closeSettings(); show('msg'); return;
       } else if (sec === 'shortcuts') {

@@ -1043,6 +1043,8 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/hf\/files\/?$/, handler: appRoute(async (_, __, req) => (await import('./hf-models.js')).modelFiles(new URL(req.url, 'http://x').searchParams.get('repo') ?? '')) },
   { method: 'POST', pattern: /^\/ox\/hf\/pull\/?$/, handler: appRoute(async (b) => (await import('./hf-models.js')).startPull(String(b.repo ?? ''), b.quant ? String(b.quant) : null)) },
   { method: 'GET', pattern: /^\/ox\/hf\/pulls\/?$/, handler: appRoute(async () => (await import('./hf-models.js')).pullJobs()) },
+  { method: 'GET', pattern: /^\/ox\/bots\/?$/, handler: appRoute(async () => (await appApi()).botsView()) },
+  { method: 'POST', pattern: /^\/ox\/bots\/?$/, handler: appRoute(async (b) => { const a = await appApi(); return b.action === 'delete' ? a.botDelete(String(b.name ?? '')) : a.botSave(b); }) },
   { method: 'POST', pattern: /^\/ox\/agents\/rename\/?$/, handler: appRoute(async (b) => { const { renameAgent } = await import('./agents.js'); const { saveConfigDoc } = await import('./config.js'); const a = renameAgent(String(b.from ?? ''), String(b.to ?? ''), { saveConfig: saveConfigDoc }); return { name: a.name }; }) },
   { method: 'GET', pattern: /^\/ox\/endpoints\/?$/, handler: appRoute(async () => (await import('./endpoints.js')).listEndpoints()) },
   { method: 'POST', pattern: /^\/ox\/endpoints\/?$/, handler: appRoute(async (b) => { const e = await import('./endpoints.js'); return b.action === 'remove' ? e.removeEndpoint(String(b.name ?? '')) : b.action === 'test' ? e.testEndpoint({ baseUrl: b.baseUrl, key: b.key ?? null, name: b.name ?? null }) : e.saveEndpoint({ name: b.name, baseUrl: b.baseUrl, model: b.model || null, key: b.key || null, desc: b.desc || '' }); }) },
