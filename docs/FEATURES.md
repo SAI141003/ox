@@ -115,6 +115,8 @@ Updated October 16 2026.
 | 10.6 | Agent traces with plain-English alerts ("stuck in a loop") (Laminar screenshot) | ✗ | Usage log only |
 | 10.7 | One prompt to a running vision-monitoring system (NVIDIA screenshot) | ✗ | |
 | 10.8 | Fast 3D maths animation skill (ManimGX screenshot) | ✗ | |
+| 10.9 | Install a missing agent CLI on first use, with your OK (Omarchy) | ✗ | ox connect knows 16 CLIs, shows the install line only |
+| 10.10 | Crash watcher: a dev server or test crash briefs the agent at once (Omarchy) | ✗ | |
 
 ## 9. Reliability
 
@@ -134,3 +136,4 @@ Updated October 16 2026.
 | thesysdev/open-intelligent-ui | none (all rights reserved) | Ideas only, written from scratch |
 | PrimeIntellect-ai/prime-agent | MIT | Cloned; study pending (next) |
 | xai-org/grok-build | Apache-2.0 | Cloned; study pending (next) |
+| Omarchy (DHH, Arch Linux) | open source | Ideas only: agents on first use, crash watcher (10.9, 10.10) |
