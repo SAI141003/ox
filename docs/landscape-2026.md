@@ -120,15 +120,55 @@ apps (October 2026); Coucou from its MIT source and changelog (0.5.0, October
 
 ## The interface
 
-The island uses text `#F5F6F8`, muted `#8E939C`, dim `#6B7079` and card
-`#141518` on black. The app follows the near-black, hairline-border look of
-Hermes and the Claude app: background `#050506`, sidebar `#09090B`, panels
-`#0D0E11`, borders `#1B1C21`, text `#E8E9EC`, muted `#9A9FA8`, ox gold
-`#E9A66B`, with a light theme alongside. The three signal colours mean the
-same thing everywhere: amber (ox needs you), green (done), red (failed). The
-terminal uses the same meanings through ANSI colours and honours `NO_COLOR`.
+Black and white, like Cursor (October 16 2026): dark is `#000000` background,
+`#0A0A0A` sidebar, `#0F0F0F` panels, `#1F1F1F` lines, `#EDEDED` text, `#A1A1A1`
+muted; light is the same in reverse on `#FFFFFF`. There is no accent colour:
+the primary button is the text colour. Red (`#F2615C` dark, `#D93A35` light) is
+kept for errors and deletions only. The island follows: white for "needs you"
+(the brightest thing on screen), grey for working, red for errors, sessions told
+apart by shade. The mark is the name: a ring for the o, an x whose arms rise
+into horns (assets/logo-use.md).
 
 Other products' exact colour values were not sampled, so they are not listed.
+
+## Hermes Desktop, pane by pane (from its docs, checked October 16 2026)
+
+✓ ox has it · ~ partly · ✗ not yet
+
+| Hermes Desktop | ox app |
+|---|---|
+| Streaming with live tool activity, Markdown | ✓ plus answers drawn as interface (ox-ui, OX Canvas) |
+| Shared history with the CLI | ✓ terminal sessions listed in the app |
+| Model picker, favourite models, reasoning-effort pill | ~ model picker with Hugging Face search; no favourites or effort pill |
+| Context-usage meter, tokens per second | ~ tokens per chat shown; no live meter |
+| Up/down prompt history, find in page, timeline rail | ✗ |
+| Preview rail for pages, files, tool output; annotate mode | ✗ |
+| Artifacts gallery | ~ Studio gallery for images and video only |
+| Tabs, several windows, terminal pane | ✗ |
+| Live subagents frame with steer and stop | ~ agents report to each other (agent_status, mailbox); no frame in the app |
+| Bot mode: roster of bots, @mention handoffs, group chats | ~ Bots page and chatting with a bot; no @mention handoff or group chat |
+| Git review pane: diffs, staging, commits, PRs, worktree lanes | ✗ in the app (the agent does git itself) |
+| Memory graph you can zoom and edit | ~ Settings › Memory lists, edits and forgets facts; no graph view |
+| Skills with on/off toggles, catalogue, Skills Hub links | ~ Capabilities and Marketplace; no per-skill toggle |
+| Routines (cron): pause, resume, edit, delete, run history | ~ create, pause and resume; no edit, delete or history in the app |
+| Profiles with export and import | ✗ |
+| Gateways: local, remote, cloud, SSH | ~ `ox serve` with a key for remote; no switcher |
+| Voice: dictation, read aloud, wake word, voice conversations | ~ dictation and read aloud (Kokoro natural voice); no wake word or voice conversation |
+| Providers: accounts, keys, custom endpoints with transport choice, local models | ✓ accounts, keys, custom endpoints with Test, local models with Hugging Face search; no transport choice |
+| Themes, fonts, UI languages | ~ light and dark, text size and width; no presets, fonts or languages |
+| Quick entry hotkey, HUD bar | ✓ OX Island in the notch |
+| Command palette, rebindable shortcuts | ~ fixed shortcuts; no palette |
+| Keep awake, reopen last chat, auto updates | ✓ keep awake; ~ the rest |
+| Failure cards with retry and logs | ~ Retry on every page error |
+
+## Grok Bot (xAI, beta August 11 2026)
+
+A cloud computer per bot (browser, files, terminal), its own logins to your
+tools, computer use for sites with no API, several bots handing work to each
+other, and teaching a workflow by showing it. Beta for SuperGrok Heavy and some
+Cursor plans; no published pricing or reliability data. ox runs on your own
+machine instead, reaches sites through its web tools and Mac control, and its
+bots hand off through the agent mailbox; teaching by demonstration is not built.
 
 ## Sources
 
@@ -143,3 +183,8 @@ Other products' exact colour values were not sampled, so they are not listed.
 - opencode: [package listing](https://community.chocolatey.org/packages/opencode/1.0.67)
 - Osaurus: [GitHub](https://github.com/osaurus-ai/osaurus)
 - CopilotKit templates read for ideas (all MIT, no code copied): [OpenDots](https://github.com/CopilotKit/OpenDots), [OpenMuse](https://github.com/CopilotKit/openmuse), [OpenBot](https://github.com/CopilotKit/openbot); xAI [grok-build](https://github.com/xai-org/grok-build) (Apache-2.0)
+- Hermes Desktop: [docs](https://hermes-agent.nousresearch.com/docs/user-guide/desktop), [Decrypt](https://decrypt.co/369952/hermes-ai-agent-official-app-terminal), [AI Weekly](https://aiweekly.co/alerts/nous-research-ships-hermes-desktop-across-mac-windows-linux)
+- OpenAI Dots: [SiliconANGLE](https://siliconangle.com/2026/09/29/openai-launches-dots-always-on-ai-agents-in-chatgpt-with-their-own-cloud-computers/), [TechCrunch](https://techcrunch.com/2026/09/29/openai-launches-dots-its-bubbly-agentic-avatar/)
+- Meta Muse: [TechCrunch](https://techcrunch.com/2026/09/23/everything-new-coming-to-metas-ai-agent-muse/), [Engadget](https://engadget.com/2253133/meta-reveals-its-ai-agent-that-can-shop-send-emails-and-plan-trips-on-your-behalf/)
+- Grok Bot: [KuCoin News](https://www.kucoin.com/news/flash/xai-launches-grok-bot-ai-agent-with-its-own-computer-for-cross-app-task-automation), [Mem0 guide](https://mem0.ai/blog/grok-bot-guide)
+- OpenClaw releases: [ClawHub marketplace (2026.3.22)](https://www.createwith.com/tool/openclaw/updates/openclaw-2026322-launches-clawhub-plugin-marketplace-and-expands-agent-capabilit), [2026.6.6](https://www.createwith.com/tool/openclaw/updates/openclaw-202666-tightens-security-and-speeds-up-agent-response-times)
