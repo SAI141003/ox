@@ -91,7 +91,22 @@ export function agentBotSpec(agent) {
 export function agentPersonaBlock(agent) {
   const text = String(agent?.systemPrompt ?? '').trim();
   if (!text) return '';
-  return `# You are the "${agent.name}" agent${agent.description ? ` — ${agent.description}` : ''}\n${text}`;
+  return `# You are the "${agent.name}" agent${agent.description ? ` — ${agent.description}` : ''}\n${agent.name} is your name: when the user says it, they are talking to you.\n${text}`;
 }
 
 export const AGENT_NAME = /^[a-z0-9][a-z0-9_-]{0,47}$/i;
+
+// Give one of your agents a new name: same bot, mode, tools and instructions,
+// first-made date kept; a default that pointed at the old name follows it.
+export function renameAgent(from, to, { saveConfig } = {}) {
+  const next = String(to ?? '').trim();
+  if (!AGENT_NAME.test(next)) throw new Error('an agent name is 1–48 letters, digits, dashes or underscores');
+  const agent = AGENT_NAME.test(String(from)) ? loadAgent(from) : null;
+  if (!agent) throw new Error(`no agent '${from}'`);
+  if (next === from) return agent;
+  if (loadAgent(next)) throw new Error(`there is already an agent called '${next}'`);
+  const saved = saveAgent(next, { ...agent, name: next });
+  deleteAgent(from);
+  saveConfig?.((doc) => { if (doc.defaultBot === `agent:${from}`) doc.defaultBot = `agent:${next}`; });
+  return saved;
+}

@@ -110,6 +110,19 @@ struct IslandMenu: View {
     }
 }
 
+/// The name you gave ox (`ox name`, Settings › General in the app): the island
+/// shows it everywhere it would say "ox". Read fresh each time, so a rename
+/// shows up on the next redraw without restarting the island.
+enum OxName {
+    static var current: String {
+        guard let data = try? Data(contentsOf: IslandSwitch.config),
+              let doc = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let n = doc["name"] as? String else { return "ox" }
+        let t = n.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty || t.count > 24 ? "ox" : t
+    }
+}
+
 /// The island's own off switch: same setting as `ox island off`.
 enum IslandSwitch {
     static let config = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/config.json")

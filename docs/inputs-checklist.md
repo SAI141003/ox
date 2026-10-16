@@ -64,6 +64,7 @@ with the reason. Nothing here is marked done without a test or a real run.
 | alphainsider "install the skill from this GitHub link" | Install a skill by asking in chat | **done** — `install_skill` tool (scanned, asked first) |
 | Token use (your request) | Fewer tokens, usage shown everywhere | **done** — focused skill index, truncation warning, `ox usage`, Settings › Usage |
 | Incognito (your request) | Private mode | **done** — `--incognito`, ⌘⇧N in the app |
+| Your own name for ox (your request; Pixie answers to its name) | Rename ox and your agents; it answers to the name when you say it mid-conversation | **done** — Settings › General, `ox name`, `ox agent rename`; prompt, app and island use it; tested on local qwen2.5 (“My name is Nova”) |
 
 ## Media and other repos
 

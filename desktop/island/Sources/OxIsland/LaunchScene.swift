@@ -185,7 +185,7 @@ struct LaunchScene {
         // Wordmark resolves beside the standing ox.
         let wk = Self.easeOutExpo(Self.clamp((t - 1.0) / 0.6))
         if wk > 0 {
-            let text = Text("ox").font(.system(size: size.height * 0.36, weight: .heavy, design: .rounded)).foregroundColor(Color(hex: "#F5F6F8").opacity(wk))
+            let text = Text(OxName.current).font(.system(size: size.height * 0.36, weight: .heavy, design: .rounded)).foregroundColor(Color(hex: "#F5F6F8").opacity(wk))
             let wordX: CGFloat = ox + oxSize + 14 + 14 * CGFloat(1 - wk)
             g.draw(text, at: CGPoint(x: wordX, y: c.y + 2), anchor: .leading)
         }

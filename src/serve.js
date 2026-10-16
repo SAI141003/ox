@@ -905,7 +905,13 @@ async function settingsView() {
     const keyEnv = KEY_ENV[d.provider] ?? null;
     return { id, provider: d.provider, desc: d.desc, ready: !keyEnv || !!process.env[keyEnv], key: keyEnv };
   });
+  // Your own endpoints (Settings › Custom endpoints) are choices here too.
+  for (const [id] of Object.entries(doc.bots ?? {}).filter(([, d]) => d?.provider === 'custom' && d.baseUrl && d.model)) {
+    try { const t = resolveBot(id, { bots: doc.bots }); bots.unshift({ id, provider: 'custom', desc: t.desc, ready: !t.keyEnv || !!process.env[t.keyEnv], key: t.keyEnv }); } catch {}
+  }
+  const { assistantName } = await import('./identity.js');
   return {
+    name: assistantName(),
     island: { enabled: islandEnabled(), running: islandRunning({ env: {} }), platform: process.platform },
     model: { defaultBot: config.defaultBot, source: config.defaultBotSource ?? 'config', bots },
     awake: { on: doc.awake !== false && process.env.OX_NO_AWAKE !== '1' },
@@ -928,7 +934,7 @@ async function handleSettingsPost(req, res) {
   }
   if (typeof body.defaultBot === 'string') {
     try {
-      resolveBot(body.defaultBot);
+      resolveBot(body.defaultBot, { bots: readConfigDoc().bots ?? {} });
     } catch (e) {
       sendError(res, 400, String(e?.message ?? e), 'invalid_request_error', 'invalid_bot', 'defaultBot');
       return;
@@ -936,6 +942,14 @@ async function handleSettingsPost(req, res) {
     saveConfigDoc((doc) => { doc.defaultBot = body.defaultBot; });
   }
   if (typeof body.awake === 'boolean') saveConfigDoc((doc) => { doc.awake = body.awake; });
+  if (typeof body.name === 'string') {
+    try {
+      (await import('./identity.js')).setAssistantName(body.name);
+    } catch (e) {
+      sendError(res, 400, String(e?.message ?? e), 'invalid_request_error', 'invalid_name', 'name');
+      return;
+    }
+  }
   sendJson(res, 200, await settingsView());
 }
 
@@ -996,6 +1010,7 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/hf\/files\/?$/, handler: appRoute(async (_, __, req) => (await import('./hf-models.js')).modelFiles(new URL(req.url, 'http://x').searchParams.get('repo') ?? '')) },
   { method: 'POST', pattern: /^\/ox\/hf\/pull\/?$/, handler: appRoute(async (b) => (await import('./hf-models.js')).startPull(String(b.repo ?? ''), b.quant ? String(b.quant) : null)) },
   { method: 'GET', pattern: /^\/ox\/hf\/pulls\/?$/, handler: appRoute(async () => (await import('./hf-models.js')).pullJobs()) },
+  { method: 'POST', pattern: /^\/ox\/agents\/rename\/?$/, handler: appRoute(async (b) => { const { renameAgent } = await import('./agents.js'); const { saveConfigDoc } = await import('./config.js'); const a = renameAgent(String(b.from ?? ''), String(b.to ?? ''), { saveConfig: saveConfigDoc }); return { name: a.name }; }) },
   { method: 'GET', pattern: /^\/ox\/endpoints\/?$/, handler: appRoute(async () => (await import('./endpoints.js')).listEndpoints()) },
   { method: 'POST', pattern: /^\/ox\/endpoints\/?$/, handler: appRoute(async (b) => { const e = await import('./endpoints.js'); return b.action === 'remove' ? e.removeEndpoint(String(b.name ?? '')) : b.action === 'test' ? e.testEndpoint({ baseUrl: b.baseUrl, key: b.key ?? null, name: b.name ?? null }) : e.saveEndpoint({ name: b.name, baseUrl: b.baseUrl, model: b.model || null, key: b.key || null, desc: b.desc || '' }); }) },
   { method: 'GET', pattern: /^\/ox\/about\/?$/, handler: appRoute(async () => (await appApi()).aboutView()) },

@@ -278,7 +278,7 @@
 <div class="app">
   <aside class="side" id="side">
     <div class="side-top">
-      <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 9c-3-1-4-5-3-7 2 2 4 3 7 4M26 9c3-1 4-5 3-7-2 2-4 3-7 4" fill="none" stroke="var(--gold)" stroke-width="2.4" stroke-linecap="round"/><rect x="7" y="7" width="18" height="17" rx="7" fill="var(--gold)"/><rect x="10" y="17" width="12" height="8" rx="4" fill="#FFE8CF"/><circle cx="12.5" cy="14" r="1.5" fill="#1A1512"/><circle cx="19.5" cy="14" r="1.5" fill="#1A1512"/></svg>ox</div>
+      <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 9c-3-1-4-5-3-7 2 2 4 3 7 4M26 9c3-1 4-5 3-7-2 2-4 3-7 4" fill="none" stroke="var(--gold)" stroke-width="2.4" stroke-linecap="round"/><rect x="7" y="7" width="18" height="17" rx="7" fill="var(--gold)"/><rect x="10" y="17" width="12" height="8" rx="4" fill="#FFE8CF"/><circle cx="12.5" cy="14" r="1.5" fill="#1A1512"/><circle cx="19.5" cy="14" r="1.5" fill="#1A1512"/></svg><span id="brand-name">ox</span></div>
       <button class="iconbtn" id="collapse" title="Hide the sidebar (⌘\)" aria-label="Hide the sidebar" data-i="sidebar"></button>
     </div>
     <div class="tabs" role="tablist">
@@ -520,6 +520,9 @@
   let terminalSessions = [];
   let caps = null;
   let about = null;
+  // The name you gave ox (Settings › General); every label here follows it.
+  let botName = 'ox';
+  const applyName = (n) => { botName = n || 'ox'; document.title = botName; $('brand-name').textContent = botName; if (!convo()?.messages?.length) renderChat(); };
   // Incognito chats live only in this tab: never written to storage.
   const saveConvos = () => store.set('ox.convos', convos.filter((c) => !c.incognito).slice(0, 200));
   const convo = () => convos.find((c) => c.id === current);
@@ -722,7 +725,7 @@
     }
     const c = convo();
     if (!c || !c.messages.length) {
-      inner.innerHTML = `<div class="hello"><div class="avatar" style="background:var(--gold);width:46px;height:46px;border-radius:14px;margin:0 auto">${OX_FACE}</div><h1>What should ox do?</h1><p>ox works in ${esc(about?.cwd?.split(/[\\/]/).pop() || 'this project')} on your machine — it reads, edits, runs and explains.</p><div class="chips">${SUGGESTIONS.map((s) => `<button class="chip">${esc(s)}</button>`).join('')}</div></div>`;
+      inner.innerHTML = `<div class="hello"><div class="avatar" style="background:var(--gold);width:46px;height:46px;border-radius:14px;margin:0 auto">${OX_FACE}</div><h1>What should ${esc(botName)} do?</h1><p>${esc(botName)} works in ${esc(about?.cwd?.split(/[\\/]/).pop() || 'this project')} on your machine — it reads, edits, runs and explains.</p><div class="chips">${SUGGESTIONS.map((s) => `<button class="chip">${esc(s)}</button>`).join('')}</div></div>`;
       inner.querySelectorAll('.chip').forEach((b) => (b.onclick = () => { $('input').value = b.textContent; resize(); send(); }));
       return;
     }
@@ -1178,7 +1181,7 @@ files: [src/billing/**]
 
   // ---------- settings
   const SECTIONS = [
-    ['general', 'General', 'gear', 'default model mode send enter'],
+    ['general', 'General', 'gear', 'name rename call it default model mode send enter agents'],
     ['appearance', 'Appearance', 'palette', 'theme dark light text size width motion'],
     ['desktop', 'Desktop', 'monitor', 'island notch awake sleep'],
     ['voice', 'Voice', 'mic', 'speech language read aloud'],
@@ -1231,11 +1234,22 @@ files: [src/billing/**]
     try {
       if (sec === 'general') {
         const st = await getJson('/ox/settings');
-        el.innerHTML = `${mobileBack}<div class="sblock"><div class="shead">${icon('bolt')}Model</div><p class="sdesc">The model ox uses everywhere — the terminal, this app, the island and your phone — unless you pick another for a session. Saved in ~/.ox/config.json.</p>
+        if (!caps) await loadCaps().catch(() => {});
+        el.innerHTML = `${mobileBack}<div class="sblock"><div class="shead">${icon('chat')}Name</div><p class="sdesc">Call it whatever you like. It answers to this name when you say it while talking to it — in this app, the terminal, the island and your phone — and calls itself by it. Your agents keep their own names (rename them below).</p>
+          ${row('Name', st.name === 'ox' ? 'The default' : `Was ox — clear it to go back`, `<span style="display:flex;gap:6px"><input class="field" id="s-name" maxlength="24" style="width:160px" placeholder="ox"><button class="btn" id="s-name-save">Save</button></span>`)}
+          ${(caps?.agents ?? []).map((a) => row(`Agent “${esc(a.name)}”`, esc(a.desc || a.mode || ''), `<span style="display:flex;gap:6px"><input class="field" data-ag-from="${esc(a.name)}" value="${esc(a.name)}" maxlength="48" style="width:160px"><button class="btn" data-ag-save="${esc(a.name)}">Rename</button></span>`)).join('')}</div>
+          <div class="sblock"><div class="shead">${icon('bolt')}Model</div><p class="sdesc">The model ox uses everywhere — the terminal, this app, the island and your phone — unless you pick another for a session. Saved in ~/.ox/config.json.</p>
           ${row('Default model', st.model.source.startsWith('auto') ? `Chosen for you — ${esc(st.model.source.slice(6))}` : st.model.source === 'config' ? 'Your choice' : 'Nothing connected yet — add a key in API keys, or an account, or a local model', `<select id="s-model">${st.model.bots.map((b) => `<option value="${esc(b.id)}">${esc(b.id)}${b.ready ? '' : ' — no key'}</option>`).join('')}</select>`)}</div>
           <div class="sblock"><div class="shead">${icon('chat')}Chat</div><p class="sdesc">How this app behaves. Kept in this browser.</p>
           ${row('Default mode', 'What new chats start in. Auto picks per message.', `<select id="s-mode">${['auto', 'code', 'ask', 'plan', 'debug', 'data', 'orchestrate'].map((m) => `<option value="${m}">${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}</select>`)}
           ${row('Send with', 'The other key adds a new line.', seg('sendKey', [['enter', 'Enter'], ['mod', `${MOD}+Enter`]], prefs.sendKey))}</div>`;
+        $('s-name').value = st.name === 'ox' ? '' : st.name;
+        $('s-name-save').onclick = async () => { try { const r = await postJson('/ox/settings', { name: $('s-name').value }); applyName(r.name); toast(`Name: ${r.name}`); renderSection(); } catch (e) { toast(e.message); } };
+        $('s-name').onkeydown = (e) => { if (e.key === 'Enter') $('s-name-save').click(); };
+        el.querySelectorAll('[data-ag-save]').forEach((b) => (b.onclick = async () => {
+          const from = b.dataset.agSave; const to = el.querySelector(`[data-ag-from="${CSS.escape(from)}"]`).value.trim();
+          try { await postJson('/ox/agents/rename', { from, to }); toast(`${from} is now ${to}`); caps = null; await loadCaps(); loadModels(); renderSection(); renderLists(); } catch (e) { toast(e.message); }
+        }));
         $('s-model').value = st.model.defaultBot;
         $('s-model').onchange = async () => { try { await postJson('/ox/settings', { defaultBot: $('s-model').value }); toast('Default model saved'); } catch (e) { toast(e.message); } };
         $('s-mode').value = store.get('ox.prefs', {}).defaultMode || 'auto';
@@ -1468,6 +1482,7 @@ files: [src/billing/**]
   loadModels();
   renderChat(); renderLists();
   getJson('/ox/about').then((a) => { about = a; $('cwd').textContent = a.cwd.split(/[\\/]/).slice(-2).join('/'); $('cwd').title = a.cwd; if (!convo()?.messages?.length) renderChat(); }).catch(() => { $('cwd').textContent = location.host; });
+  getJson('/ox/settings').then((st) => applyName(st.name)).catch(() => {});
   loadTerminalSessions();
   if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => {};
 })();

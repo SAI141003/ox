@@ -387,14 +387,14 @@ struct ShelfView: View {
                         mailForm
                     } else {
                         HStack(spacing: 6) {
-                            TextField("Ask ox about \(shelf.current?.name ?? "it")…", text: $question)
+                            TextField("Ask \(OxName.current) about \(shelf.current?.name ?? "it")…", text: $question)
                                 .modifier(FieldStyle())
                                 .onSubmit { shelf.ask(question) }
                             PillButton(title: shelf.busy ? "…" : "Ask", primary: true) { shelf.ask(question) }
                             PillButton(title: "Email", primary: false) { mailing = true; shelf.loadAccounts() }
                         }
                         ScrollView {
-                            Text(shelf.busy ? "ox is reading it…" : shelf.answer)
+                            Text(shelf.busy ? "\(OxName.current) is reading it…" : shelf.answer)
                                 .font(.system(size: 11.5)).foregroundStyle(Ink.text.opacity(0.9))
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -627,7 +627,7 @@ struct ChatView: View {
             // Your agents, as faces: tap one to talk to it (ox is the default).
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    agentChip(name: nil, label: "ox", color: Ink.gold, help: "ox: your messages go to a live run, or run here")
+                    agentChip(name: nil, label: OxName.current, color: Ink.gold, help: "\(OxName.current): your messages go to a live run, or run here")
                     ForEach(chat.agents, id: \.self) { a in
                         agentChip(name: a.name, label: a.name, color: IslandChat.color(for: a.name),
                                   help: "\(a.name) · \(a.bot ?? "default bot") · \(a.mode)\(a.description.isEmpty ? "" : " — \(a.description)")")

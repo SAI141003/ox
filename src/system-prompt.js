@@ -9,6 +9,7 @@ import { buildRepoMap, renderRepoMap } from './repo-map.js';
 import { HISTORY_STATUS, degradedHistoryNotice, lastHistoryLoad } from './session.js';
 import { DEFAULT_SUBAGENT_CONCURRENCY, MAX_SUBAGENT_CONCURRENCY } from './resource-class.js';
 import { shellNote } from './shell.js';
+import { assistantName as configuredName, identityLine } from './identity.js';
 
 function gitInfo(cwd) {
   // Branch from .git directly; only the dirty count needs git, run without a shell.
@@ -220,6 +221,8 @@ export async function buildPromptLayers({
   withheldTools = [],
   // True only when a mailbox handler is installed (see AGENT_MESSAGING_CLAUSES).
   agentMessaging = false,
+  // The name the user gave ox (Settings › General, `ox name`); defaults to theirs.
+  assistantName = configuredName(),
   // Defaults to a fresh clock on every call, exactly as before. Exposed only so
   // the cache test can pin it and show the rest of the prompt is byte-stable.
   now = new Date(),
@@ -267,7 +270,7 @@ export async function buildPromptLayers({
 
   // -- static: the cacheable prefix -------------------------------------------
   open('core', 'static');
-  put('You are ox, a featherweight coding agent.');
+  put(assistantName === 'ox' ? 'You are ox, a featherweight coding agent.' : identityLine(assistantName));
 
   open('tool-rules', 'static');
   put(

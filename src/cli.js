@@ -36,7 +36,7 @@ import {
 import { buildPlan as planFirstBuildPlan, formatPlan, interactivePlanReview, savePlan } from './plan-first.js';
 import {orchestrate, buildPlan} from './orchestrator.js';
 import { KEY_ENV, PROVIDERS, defaultBotSpec, listBots, resolveBot } from './bots.js';
-import { CONFIG_DIR, compactionKnobs, compactionModelChoice, compactionPassKnobs, loadConfig, resolveAuxTarget } from './config.js';
+import { CONFIG_DIR, compactionKnobs, compactionModelChoice, compactionPassKnobs, loadConfig, resolveAuxTarget, saveConfigDoc } from './config.js';
 import { buildContext, estimateTokens, pureCompact, expandContextRefs } from './context.js';
 import { buildContextReport, contextBreakdownToJson, formatContextBreakdown } from './context-report.js';
 import { formatLossReport, lossLedgerPath, readLossLedger } from './memory-loss.js';
@@ -136,7 +136,7 @@ import {
 import { banner as oxBanner, intro as oxIntro } from './logo.js';
 import { dispatchTool, listToolSchemas } from './tools/index.js';
 import {handlePowerCommand} from './cmd-power.js';
-import { listAgents, loadAgent, saveAgent, deleteAgent, resolveAgent, agentBotSpec, AGENT_NAME } from './agents.js';
+import { listAgents, loadAgent, saveAgent, deleteAgent, resolveAgent, agentBotSpec, AGENT_NAME, renameAgent } from './agents.js';
 import { MODES, MODE_NAMES, normalizeMode, resolveTurnMode } from './modes.js';
 import { holdAwake } from './awake.js';
 import { importAll } from './import.js';
@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -2107,7 +2107,7 @@ async function cmdAgent(args = []) {
     console.log(`${c.bold('ox agent')} — your own agents: a bot, a mode and standing instructions`);
     console.log(c.dim('  ox agent new <name> [--bot <bot>] [--mode <mode>] [--tools read_file,grep,web_search|all] [--prompt "<instructions>" | --prompt-file <f>] [--description "<d>"]'));
     console.log(c.dim('  --tools: the only tools it may use (mcp__server__* for a whole MCP server); refused calls name the rule'));
-    console.log(c.dim('  ox agent list | show <name> | delete <name>'));
+    console.log(c.dim('  ox agent list | show <name> | rename <name> <new> | delete <name>'));
     console.log(c.dim('  run one:  ox --agent <name>        (chat)'));
     console.log(c.dim('            ox --agent <name> -p "<task>"'));
     console.log(c.dim(`  modes: auto, ${MODE_NAMES.join(', ')} · bots: ox bots, or a plan you pay for (ox connect)`));
@@ -2147,6 +2147,13 @@ async function cmdAgent(args = []) {
   }
   if (sub === 'delete' || sub === 'rm') {
     return cmdAgentDelete(rest);
+  }
+  if (sub === 'rename' || sub === 'mv') {
+    const [from, to] = rest.filter((a) => !String(a).startsWith('-'));
+    if (!from || !to) { process.stderr.write('usage: ox agent rename <name> <new name>\n'); process.exitCode = 3; return; }
+    try { renameAgent(from, to, { saveConfig: saveConfigDoc }); console.log(`${from} is now ${to} — run it: ox --agent ${to}`); }
+    catch (e) { process.stderr.write(`${c.red(`✗ ${e.message}`)}\n`); process.exitCode = 3; }
+    return;
   }
   process.stderr.write(`ox: unknown agent subcommand '${args[0] ?? ''}' (use new | list | show | delete; ox agent --help)\n`);
   process.exitCode = 3;
@@ -4039,6 +4046,7 @@ const SUB_USAGE = {
   'memory-loss': 'usage: ox memory-loss [--limit <n>]',
   create: 'usage: ox create "<prompt>" [--provider higgsfield|fal|openai|local] [--model <id>] [--set key=value]... [--start <url>] [--end <url>] [--ref <url>]... [--video <url>] [--audio <url>] | --models [provider] | --history',
   hf: 'usage: ox hf search "<words>" | ox hf files <owner/repo> | ox hf pull <owner/repo>[:QUANT]',
+  name: 'usage: ox name [<new name> | --reset]  — what ox is called everywhere; it answers to that name when you say it',
   usage: 'usage: ox usage [--days <n>] [--json]  — tokens and cost by model, agent, surface, project and day',
   market: 'usage: ox market ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
   hook: 'usage: ox hook <claude|codex|gemini|cursor|copilot> [event]  — run by the agent itself with the event on stdin (set up with: ox hooks install <agent>)',
@@ -4632,6 +4640,16 @@ async function runSubcommand(cmd, args) {
         }
       } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; return; }
       console.log(SUB_USAGE.hf); process.exitCode = 2;
+      return;
+    }
+    case 'name': {
+      // What ox is called (src/identity.js): the prompt, the app and the island.
+      const { assistantName, setAssistantName } = await import('./identity.js');
+      const words = args.filter((a) => !a.startsWith('-'));
+      if (args.includes('--reset')) { setAssistantName(null); console.log('name: ox (the default)'); return; }
+      if (!words.length) { console.log(assistantName()); return; }
+      try { console.log(`name: ${setAssistantName(words.join(' '))} — say it while you talk to it`); }
+      catch (e) { process.stderr.write(`ox: ${e.message}\n`); process.exitCode = 3; }
       return;
     }
     case 'usage': {

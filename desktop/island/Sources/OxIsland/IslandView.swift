@@ -341,7 +341,7 @@ struct Header: View {
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 6) {
-                Text("ox").font(.system(size: 13, weight: .heavy, design: .rounded)).foregroundStyle(Ink.text)
+                Text(OxName.current).font(.system(size: 13, weight: .heavy, design: .rounded)).foregroundStyle(Ink.text)
                 ForEach(bridge.sessions.prefix(5)) { s in
                     Circle().fill(Color(hex: bridge.color(of: s))).frame(width: 6, height: 6)
                 }
