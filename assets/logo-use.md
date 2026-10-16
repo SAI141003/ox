@@ -1,21 +1,16 @@
 # ox logo
 
-The name is the mark: a ring for the **o**, and an **x** whose upper arms rise
-into horns. No separate drawing of a bull — the word itself is the ox.
+The user's own logo: a white O ring cut by a bladed X, on a dark rounded tile
+lit from the top. Traced from their image (Downloads/IMG_9291.jpg, October 16 2026)
+onto a 100x100 grid, so every size stays crisp; the shapes are theirs.
 
 | File | Use |
 |---|---|
-| `logo-ox.svg` | App icon: black tile, white mark (1024 grid, macOS safe area) |
+| `logo-ox.svg` | App icon: dark tile with a top light, white mark (1024 grid, macOS safe area) |
 | `logo-ox-wordmark.svg`, `logo-ox-mark-only.svg`, `brand/ox-mark.svg` | The mark alone, white, for dark backgrounds |
 | `logo-ox-monochrome.svg` | One colour (`currentColor`) — set the colour from CSS |
 | `logo-ox-favicon.svg` | Browser tab |
 | `desktop/island/AppIcon.icns` | macOS app icon (ox.app and OX Island), rendered from `logo-ox.svg` |
-
-## Geometry
-
-112 × 64 grid, stroke 10, round caps and joins. Ring: centre (28, 38), radius 17.
-x: two strokes crossing at (77, 38); lower arms straight to (60, 56) and (94, 56),
-upper arms curving up to (63, 12) and (91, 12) — the horns.
 
 ## Colour
 
