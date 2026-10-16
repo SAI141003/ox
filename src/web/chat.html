@@ -242,6 +242,25 @@
   .cv-callout.bad, .ui-box.bad { border-left-color: var(--red); }
   .cv-diff { font: 12.5px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line2); border-radius: 8px; padding: 10px; overflow-x: auto; margin: 0; }
   .cv-diff .add { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); } .cv-diff .del { color: var(--red); }
+  .cv-title { font-weight: 700; letter-spacing: -.015em; } .cv-title.s-xl { font-size: 24px; } .cv-title.s-lg { font-size: 19px; } .cv-title.s-md { font-size: 16px; } .cv-title.s-sm { font-size: 14px; }
+  .cv-caption { font-size: 12px; color: var(--muted); }
+  .cv-text.t-small { font-size: 13px; } .cv-text.t-strong { font-weight: 650; } .cv-text.t-large { font-size: 17px; } .cv-text.t-muted { color: var(--muted); }
+  .cv-grid { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 700px) { .cv-grid { grid-template-columns: 1fr; } }
+  .cv-row .cv-spacer, .cv-spacer { flex: 1; }
+  .cv-row:has(.cv-spacer) { display: flex; align-items: center; gap: 8px; }
+  .cv-press { border: 1px solid var(--line2); border-radius: 12px; padding: 8px; cursor: pointer; } .cv-press.on { border-color: var(--text); } .cv-press:hover { background: var(--hover); }
+  .cv-check { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; } .cv-check input { accent-color: var(--text); width: 16px; height: 16px; }
+  .cv-seg { display: inline-flex; background: var(--raise); border-radius: 9px; padding: 3px; gap: 2px; } .cv-seg button { padding: 5px 12px; border-radius: 7px; font-size: 13px; color: var(--muted); } .cv-seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+  .cv-chart { border: 1px solid var(--line2); border-radius: 12px; padding: 12px; background: var(--panel); }
+  .ch-pie { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; } .ch-legend { display: flex; flex-direction: column; gap: 5px; font-size: 13px; flex: 1; min-width: 140px; }
+  .ch-legend div { display: flex; align-items: center; gap: 8px; } .ch-legend i { width: 10px; height: 10px; border-radius: 3px; flex: none; } .ch-legend span { flex: 1; color: var(--muted); } .ch-legend b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ch-line { width: 100%; height: 130px; display: block; } .ch-x { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); margin-top: 4px; }
+  .cv-svg { width: 100%; max-width: 420px; height: auto; display: block; margin: 0 auto; }
+  .cv-badge { border: 1px solid var(--line); }
+  .cv-row:has(> .chip) { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .cv-row:has(> .cv-badge) { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .ui-box .cv-chart { border: 0; padding: 0; background: none; }
   .ol-errs { margin-top: 8px; font-size: 12px; color: var(--dim); } .ol-errs summary { cursor: pointer; } .ol-errs div { font-family: var(--mono); margin-top: 3px; }
   .cv-hr { border: 0; border-top: 1px solid var(--line); margin: 2px 0; }
   .ol .ui-field { min-width: 0; } .ol .cv-row { align-items: end; }
@@ -860,6 +879,52 @@
 
   // OX Canvas (src/ui-lang.js, the show_ui tool): the same component tree the
   // terminal and the island draw, drawn here with the page's own components.
+  // Colours inside answers (the app around them stays black and white).
+  const PAL = { ink: 'var(--text)', muted: 'var(--muted)', surface: 'var(--raise)', info: '#3B82F6', success: '#16A34A', warning: '#F59E0B', danger: '#EF4444', error: '#EF4444', purple: '#8B5CF6', pink: '#EC4899', chart1: '#3B82F6', chart2: '#10B981', chart3: '#F59E0B', chart4: '#EF4444', chart5: '#8B5CF6', chart6: '#EC4899' };
+  const SERIES = ['chart1', 'chart2', 'chart3', 'chart4', 'chart5', 'chart6'];
+  const col = (c, d = 'var(--text)') => (c == null || c === '' ? d : PAL[c] ?? (/^#[0-9a-f]{3,8}$/i.test(c) ? c : d));
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  function chartSvg(p) {
+    const vals = (p.values ?? []).map(num), labels = p.labels ?? [];
+    const fmt = (v) => (p.format === 'currency' ? '$' : '') + v.toLocaleString(undefined, { maximumFractionDigits: 2 }) + (p.format === 'percent' ? '%' : '');
+    if (!vals.length) return '';
+    if (p.type === 'pie' || p.type === 'donut') {
+      const total = vals.reduce((a, b) => a + Math.max(0, b), 0) || 1;
+      let a0 = -Math.PI / 2;
+      const arcs = vals.map((v, k) => {
+        const a1 = a0 + (Math.max(0, v) / total) * 2 * Math.PI, big = a1 - a0 > Math.PI ? 1 : 0;
+        const p0 = [60 + 50 * Math.cos(a0), 60 + 50 * Math.sin(a0)], p1 = [60 + 50 * Math.cos(a1), 60 + 50 * Math.sin(a1)];
+        const d = vals.length === 1 ? 'M60 10a50 50 0 1 0 0.01 0Z' : `M60 60L${p0[0].toFixed(2)} ${p0[1].toFixed(2)}A50 50 0 ${big} 1 ${p1[0].toFixed(2)} ${p1[1].toFixed(2)}Z`;
+        a0 = a1;
+        return `<path d="${d}" fill="${PAL[SERIES[k % 6]]}"/>`;
+      }).join('');
+      const hole = p.type === 'donut' ? '<circle cx="60" cy="60" r="30" fill="var(--panel)"/>' : '';
+      const legend = vals.map((v, k) => `<div><i style="background:${PAL[SERIES[k % 6]]}"></i><span>${esc(labels[k] ?? '')}</span><b>${esc(fmt(v))}</b></div>`).join('');
+      return `<div class="ch-pie"><svg viewBox="0 0 120 120" width="120" height="120">${arcs}${hole}</svg><div class="ch-legend">${legend}</div></div>`;
+    }
+    if (p.type === 'line' || p.type === 'area') {
+      const W = 300, H = 120, lo = Math.min(0, ...vals), hi = Math.max(...vals), span = hi - lo || 1;
+      const pts = vals.map((v, k) => [vals.length === 1 ? W / 2 : (k / (vals.length - 1)) * W, H - ((v - lo) / span) * (H - 10) - 5]);
+      const line = pts.map((q, k) => `${k ? 'L' : 'M'}${q[0].toFixed(1)} ${q[1].toFixed(1)}`).join('');
+      const area = p.type === 'area' ? `<path d="${line}L${W} ${H}L0 ${H}Z" fill="${PAL.chart1}" opacity=".18"/>` : '';
+      const dots = pts.map((q, k) => `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="3" fill="${PAL.chart1}"><title>${esc(labels[k] ?? '')}: ${esc(fmt(vals[k]))}</title></circle>`).join('');
+      return `<svg class="ch-line" viewBox="-6 0 ${W + 12} ${H}" preserveAspectRatio="none">${area}<path d="${line}" fill="none" stroke="${PAL.chart1}" stroke-width="2.2" vector-effect="non-scaling-stroke"/>${dots}</svg><div class="ch-x">${labels.map((l) => `<span>${esc(l)}</span>`).join('')}</div>`;
+    }
+    const max = Math.max(1e-9, ...vals.map(Math.abs));
+    return `<div class="ui-bars">${vals.map((v, k) => `<div class="ui-bar"><span>${esc(labels[k] ?? '')}</span><i style="width:${Math.max(1, (Math.abs(v) / max) * 100)}%;background:${PAL[SERIES[k % 6]]}"></i><b>${esc(fmt(v))}</b></div>`).join('')}</div>`;
+  }
+  function svgNode(n) {
+    const p = n?.props ?? {};
+    switch (n?.type) {
+      case 'Rect': return `<rect x="${num(p.x)}" y="${num(p.y)}" width="${num(p.w)}" height="${num(p.h)}" rx="3" fill="${col(p.fill, 'none')}" stroke="${col(p.stroke, 'none')}" stroke-width="${num(p.width) || 1.5}"/>`;
+      case 'Circle': return `<circle cx="${num(p.cx)}" cy="${num(p.cy)}" r="${num(p.r)}" fill="${col(p.fill, 'var(--text)')}" stroke="${col(p.stroke, 'none')}"/>`;
+      case 'Line': return `<line x1="${num(p.x1)}" y1="${num(p.y1)}" x2="${num(p.x2)}" y2="${num(p.y2)}" stroke="${col(p.stroke)}" stroke-width="${num(p.width) || 1.5}" stroke-linecap="round"/>`;
+      case 'Polygon': return `<polygon points="${esc(String(p.points ?? '').replace(/[^0-9.,\s-]/g, ''))}" fill="${col(p.fill, 'var(--text)')}" stroke="${col(p.stroke, 'none')}"/>`;
+      case 'SvgText': return `<text x="${num(p.x)}" y="${num(p.y)}" font-size="${num(p.size) || 11}" fill="${col(p.fill, 'var(--muted)')}" text-anchor="${['start', 'middle', 'end'].includes(p.anchor) ? p.anchor : 'start'}">${esc(p.text ?? '')}</text>`;
+      default: return '';
+    }
+  }
+
   function canvasNode(n, cx = null) {
     if (n == null) return '';
     if (Array.isArray(n)) return n.map((x) => canvasNode(x, cx)).join('');
@@ -871,7 +936,20 @@
       case 'Row': return `<div class="cv-row">${kids(p.children)}</div>`;
       case 'Card': return `<div class="ui-box${tone(p.tone)}">${p.title ? `<div class="ui-title">${esc(p.title)}</div>` : ''}<div class="cv-stack">${kids(p.children)}</div></div>`;
       case 'Header': return `<div class="cv-head"><b>${esc(p.title ?? '')}</b>${p.subtitle ? `<span>${esc(p.subtitle)}</span>` : ''}</div>`;
-      case 'Text': return `<p class="cv-text${p.style === 'muted' ? ' muted' : ''}">${inline(String(p.text ?? ''))}</p>`;
+      case 'Title': return `<div class="cv-title s-${esc(p.size || 'lg')}">${esc(p.text ?? '')}</div>`;
+      case 'Caption': return `<div class="cv-caption">${esc(p.text ?? '')}</div>`;
+      case 'Column': return `<div class="cv-stack">${kids(p.children)}</div>`;
+      case 'Grid': return `<div class="cv-grid" style="--cols:${Math.max(1, Math.min(6, Number(p.cols) || 2))}">${kids(p.children)}</div>`;
+      case 'Spacer': return '<span class="cv-spacer"></span>';
+      case 'Pressable': {
+        const i = cx ? cx.actions.push(p.action ?? { steps: [] }) - 1 : null;
+        return `<div class="cv-press${p.selected ? ' on' : ''}" ${cx ? `data-cv-act="${i}" role="button" tabindex="0"` : ''}>${kids(p.children)}</div>`;
+      }
+      case 'Checkbox': return `<label class="cv-check"><input type="checkbox" ${p.value ? 'checked' : ''} ${cx && p.bind ? `data-cv-bind="${esc(p.bind)}"` : 'disabled'}><span>${esc(p.label ?? '')}</span></label>`;
+      case 'Segmented': return `<div class="cv-seg">${(p.options ?? []).map((o) => { const i = cx && p.bind ? cx.actions.push({ steps: [{ step: 'set', name: p.bind, value: o }] }) - 1 : null; return `<button class="${String(o) === String(p.value) ? 'on' : ''}" ${i != null ? `data-cv-act="${i}"` : 'disabled'}>${esc(o)}</button>`; }).join('')}</div>`;
+      case 'Chart': return `<div class="cv-chart">${p.title ? `<div class="ui-title">${esc(p.title)}</div>` : ''}${chartSvg(p)}</div>`;
+      case 'Svg': return `<svg class="cv-svg" viewBox="${esc(/^[\d.\s-]+$/.test(p.viewBox ?? '') ? p.viewBox : '0 0 240 160')}">${(p.children ?? []).map(svgNode).join('')}</svg>`;
+      case 'Text': return `<p class="cv-text${p.style ? ` t-${esc(p.style)}` : ''}"${p.color ? ` style="color:${col(p.color)}"` : ''}>${inline(String(p.text ?? ''))}</p>`;
       case 'Stat': return `<div class="ui-stat"><span>${esc(p.label ?? '')}</span><b>${esc(typeof p.value === 'number' ? p.value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : p.value ?? '')}${p.unit ? ` <small>${esc(p.unit)}</small>` : ''}</b>${p.delta != null ? `<em>${esc(p.delta)}</em>` : ''}</div>`;
       case 'Fields': return `<div class="cv-fields">${(Array.isArray(p.pairs) ? p.pairs : Object.entries(p.pairs ?? {})).map((x) => { const [k, v] = Array.isArray(x) ? x : [x.label ?? x.key, x.value]; return `<span>${esc(k)}</span><b>${esc(v)}</b>`; }).join('')}</div>`;
       case 'Table': {
@@ -892,7 +970,7 @@
       case 'Progress': { const max = Number(p.max ?? 100) || 100, pct = Math.max(0, Math.min(100, Number(p.value) / max * 100)); return `<div class="cv-prog"><div><span>${esc(p.label ?? '')}</span><b>${Math.round(pct)}%</b></div><i><s style="width:${pct}%"></s></i></div>`; }
       case 'List': { const tag = p.ordered ? 'ol' : 'ul'; return `<${tag} class="cv-list">${(p.items ?? []).map((x) => `<li>${typeof x === 'object' ? canvasNode(x) : inline(String(x))}</li>`).join('')}</${tag}>`; }
       case 'Callout': return `<div class="cv-callout${tone(p.tone)}"><b>${esc(p.title ?? '')}</b>${p.text ? `<p>${inline(String(p.text))}</p>` : ''}</div>`;
-      case 'Badge': return `<span class="badge${tone(p.tone)}">${esc(p.text ?? '')}</span>`;
+      case 'Badge': { const c = p.tone && p.tone !== 'plain' ? col(p.tone === 'error' ? 'danger' : p.tone, null) : null; return `<span class="badge cv-badge"${c ? ` style="color:${c};background:color-mix(in srgb, ${c} 14%, transparent);border-color:color-mix(in srgb, ${c} 30%, transparent)"` : ''}>${esc(p.text ?? '')}</span>`; }
       case 'Code': return `<div class="code"><div class="cb"><span>${esc(p.lang || 'code')}</span><button data-copy>Copy</button></div><pre><code>${esc(p.code ?? '')}</code></pre></div>`;
       case 'Diff': return `<pre class="cv-diff">${String(p.diff ?? '').split('\n').map((l) => `<span class="${l.startsWith('+') ? 'add' : l.startsWith('-') ? 'del' : ''}">${esc(l)}</span>`).join('\n')}</pre>`;
       case 'Divider': return '<hr class="cv-hr">';
@@ -950,11 +1028,11 @@
       }
       el.addEventListener('input', (e) => {
         const b = e.target.closest('[data-cv-bind]'); if (!b) return;
-        const v = b.type === 'text' ? b.value : b.tagName === 'SELECT' ? (isNaN(Number(b.value)) ? b.value : Number(b.value)) : Number(b.value);
+        const v = b.type === 'checkbox' ? b.checked : b.type === 'text' ? b.value : b.tagName === 'SELECT' ? (isNaN(Number(b.value)) ? b.value : Number(b.value)) : Number(b.value);
         c.canvas.state[b.dataset.cvBind] = v;
         c.canvas.evaluate();
         // Keep the control being used; refresh everything else.
-        const focus = b.type === 'range' ? null : b.dataset.cvBind, at = b.selectionStart;
+        const focus = b.type === 'range' || b.type === 'checkbox' ? null : b.dataset.cvBind, at = b.selectionStart;
         redraw();
         if (focus) { const nb = el.querySelector(`[data-cv-bind="${CSS.escape(focus)}"]`); if (nb && nb.type === b.type) { nb.focus(); try { nb.setSelectionRange(at, at); } catch {} } }
         else { const nb = el.querySelector(`[data-cv-bind="${CSS.escape(b.dataset.cvBind)}"][type=range]`); nb?.focus(); }
@@ -1215,7 +1293,7 @@
       busy = null; setBusy(false); resize();
       paint(body, reply); saveConvos(); renderLists();
       // Three things to ask next, made after the answer so it never waits on them.
-      if (!group && reply.content && !reply.error && prefs.followups !== false && !c.incognito) {
+      if (!group && reply.content && !reply.error && prefs.followups === true && !c.incognito) {
         postJson('/ox/followups', { model, question: text, answer: reply.content })
           .then((f) => { if (f.items?.length) { reply.follow = f.items; if (c === convo()) paint(body, reply); saveConvos(); } })
           .catch(() => {});
@@ -1882,7 +1960,8 @@ files: [src/billing/**]
           ${row('Default model', st.model.source.startsWith('auto') ? `Chosen for you: ${esc(st.model.source.slice(6))}` : st.model.source === 'config' ? 'Your choice' : 'Nothing connected yet. Add a key in API keys, an account, or a local model', `<select id="s-model">${st.model.bots.map((b) => `<option value="${esc(b.id)}">${esc(b.id)}${b.ready ? '' : ' (no key)'}</option>`).join('')}</select>`)}</div>
           <div class="sblock"><div class="shead">${icon('chat')}Chat</div><p class="sdesc">How this app behaves. Kept in this browser.</p>
           ${row('Default mode', 'What new chats start in. Auto picks per message.', `<select id="s-mode">${['auto', 'code', 'ask', 'plan', 'debug', 'data', 'orchestrate'].map((m) => `<option value="${m}">${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}</select>`)}
-          ${row('Send with', 'The other key adds a new line.', seg('sendKey', [['enter', 'Enter'], ['mod', `${MOD}+Enter`]], prefs.sendKey))}</div>`;
+          ${row('Send with', 'The other key adds a new line.', seg('sendKey', [['enter', 'Enter'], ['mod', `${MOD}+Enter`]], prefs.sendKey))}
+          ${row('Suggest follow-ups', 'Three questions to ask next under each answer. Costs one small extra model call per answer (about 250 tokens).', sw('s-follow', prefs.followups === true))}</div>`;
         $('s-name').value = st.name === 'ox' ? '' : st.name;
         $('s-name-save').onclick = async () => { try { const r = await postJson('/ox/settings', { name: $('s-name').value }); applyName(r.name); toast(`Name: ${r.name}`); renderSection(); } catch (e) { toast(e.message); } };
         $('s-name').onkeydown = (e) => { if (e.key === 'Enter') $('s-name-save').click(); };
@@ -1894,6 +1973,7 @@ files: [src/billing/**]
         $('s-model').onchange = async () => { try { await postJson('/ox/settings', { defaultBot: $('s-model').value }); toast('Default model saved'); } catch (e) { toast(e.message); } };
         $('s-mode').value = store.get('ox.prefs', {}).defaultMode || 'auto';
         $('s-mode').onchange = () => { prefs.defaultMode = $('s-mode').value; savePrefs(); };
+        $('s-follow').onchange = () => { prefs.followups = $('s-follow').checked; savePrefs(); };
         bindSegs(el, (k, v) => { prefs[k] = v; savePrefs(); });
       } else if (sec === 'appearance') {
         el.innerHTML = `${mobileBack}<div class="shead">${icon('palette')}Appearance</div><p class="sdesc">Kept in this browser.</p>

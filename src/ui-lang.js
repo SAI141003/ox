@@ -26,7 +26,7 @@ export const LIBRARY = {
   Row: { params: [['children', 'nodes']], desc: 'side-by-side layout' },
   Card: { params: [['title', 'str'], ['children', 'nodes'], ['tone', 'plain|info|success|warning|error', true]], desc: 'boxed section' },
   Header: { params: [['title', 'str'], ['subtitle', 'str', true]], desc: 'section title' },
-  Text: { params: [['text', 'any'], ['style', 'body|muted|strong|large', true]], desc: 'paragraph' },
+  Text: { params: [['text', 'any'], ['style', 'body|muted|strong|large|small', true], ['color', 'str', true]], desc: 'paragraph' },
   Stat: { params: [['label', 'str'], ['value', 'any'], ['delta', 'num', true], ['unit', 'str', true]], desc: 'KPI number' },
   Fields: { params: [['pairs', 'obj']], desc: 'aligned key: value lines' },
   Table: { params: [['columns', 'nodes']], desc: 'table built from Col()s' },
@@ -36,7 +36,7 @@ export const LIBRARY = {
   Progress: { params: [['label', 'str'], ['value', 'num'], ['max', 'num', true]], desc: 'progress bar' },
   List: { params: [['items', 'list'], ['ordered', 'bool', true]], desc: 'bullet list' },
   Callout: { params: [['tone', 'info|success|warning|error'], ['title', 'str'], ['text', 'str', true]], desc: 'highlighted note' },
-  Badge: { params: [['text', 'str'], ['tone', 'plain|info|success|warning|error', true]], desc: 'small tag' },
+  Badge: { params: [['text', 'any'], ['tone', 'plain|info|success|warning|error|purple|pink', true]], desc: 'small tag' },
   Code: { params: [['code', 'str'], ['lang', 'str', true]], desc: 'code block' },
   Diff: { params: [['diff', 'str']], desc: 'unified diff' },
   Divider: { params: [], desc: 'rule' },
@@ -48,7 +48,27 @@ export const LIBRARY = {
   // reads it recomputes as the user types or drags, for zero tokens.
   Input: { params: [['label', 'str'], ['value', 'any'], ['type', 'number|text', true]], desc: 'field bound to a $var' },
   Slider: { params: [['label', 'str'], ['value', 'num'], ['min', 'num'], ['max', 'num'], ['step', 'num', true]], desc: 'slider bound to a $var' },
+  // Answers composed like a page, in colour (ideas from open-intelligent-ui,
+  // written here from scratch): titles, captions, grids, charts, drawings.
+  Title: { params: [['text', 'any'], ['size', 'sm|md|lg|xl', true]], desc: 'heading' },
+  Caption: { params: [['text', 'any']], desc: 'small muted label' },
+  Column: { params: [['children', 'nodes'], ['gap', 'num', true]], desc: 'vertical group (also written Col([…]), as in OpenUI)' },
+  Grid: { params: [['children', 'nodes'], ['cols', 'num', true]], desc: 'grid of cards or tiles' },
+  Spacer: { params: [], desc: 'pushes the rest of a Row to the right' },
+  Pressable: { params: [['children', 'nodes'], ['action', 'action', true], ['selected', 'bool', true]], desc: 'clickable area' },
+  Checkbox: { params: [['label', 'str'], ['value', 'bool']], desc: 'tick bound to a $var' },
+  Segmented: { params: [['value', 'any'], ['options', 'list']], desc: 'one-of choice bound to a $var' },
+  Chart: { params: [['type', 'bar|line|area|pie|donut'], ['labels', 'list'], ['values', 'list'], ['title', 'str', true], ['format', 'number|currency|percent', true]], desc: 'chart in colour' },
+  Svg: { params: [['children', 'nodes'], ['viewBox', 'str', true]], desc: 'drawing (about 240 wide)' },
+  Rect: { params: [['x', 'num'], ['y', 'num'], ['w', 'num'], ['h', 'num'], ['fill', 'str', true], ['stroke', 'str', true], ['width', 'num', true]], desc: 'drawing rectangle', inner: true },
+  Circle: { params: [['cx', 'num'], ['cy', 'num'], ['r', 'num'], ['fill', 'str', true], ['stroke', 'str', true]], desc: 'drawing circle', inner: true },
+  Line: { params: [['x1', 'num'], ['y1', 'num'], ['x2', 'num'], ['y2', 'num'], ['stroke', 'str', true], ['width', 'num', true]], desc: 'drawing line', inner: true },
+  Polygon: { params: [['points', 'str'], ['fill', 'str', true], ['stroke', 'str', true]], desc: 'drawing polygon ("x,y x,y …")', inner: true },
+  SvgText: { params: [['text', 'any'], ['x', 'num'], ['y', 'num'], ['size', 'num', true], ['fill', 'str', true], ['anchor', 'start|middle|end', true]], desc: 'drawing label', inner: true },
 };
+
+// Named colours an answer may use (the app maps them to its palette; any #hex works too).
+export const COLORS = 'ink|muted|surface|info|success|warning|danger|purple|pink|chart1|chart2|chart3|chart4|chart5|chart6'.split('|');
 
 // Tools a Query() may call: read-only, no approval needed anywhere in ox.
 export const QUERY_TOOLS = new Set(['read_file', 'list_dir', 'glob', 'grep']);
@@ -64,6 +84,31 @@ const BUILTINS = {
   Round: (n, d = 0) => { const f = 10 ** (Number(d) || 0); return Math.round(Number(n) * f) / f; },
   Abs: (n) => Math.abs(Number(n)),
   Pow: (b, e) => Math.pow(Number(b), Number(e)),
+  Clamp: (n, lo, hi) => Math.min(Number(hi), Math.max(Number(lo), Number(n))),
+  Default: (v, d) => (v === null || v === undefined || v === '' || (typeof v === 'number' && !Number.isFinite(v)) ? d : v),
+  Percent: (a, b) => (Number(b) ? Math.round((Number(a) / Number(b)) * 100) : 0),
+  Range: (a, b, step = 1) => { const out = []; const st = Number(step) || 1; for (let x = Number(a); st > 0 ? x < Number(b) : x > Number(b); x += st) { out.push(x); if (out.length >= 1000) break; } return out; },
+  Format: (n, kind = 'number', digits = null, currency = 'USD') => {
+    const v = Number(n);
+    if (!Number.isFinite(v)) return '';
+    const d = digits == null ? undefined : Number(digits);
+    if (kind === 'currency') return v.toLocaleString('en-US', { style: 'currency', currency: String(currency || 'USD'), maximumFractionDigits: d ?? 2, minimumFractionDigits: d ?? (Math.abs(v) >= 1000 ? 0 : 2) });
+    if (kind === 'percent') return `${v.toLocaleString('en-US', { maximumFractionDigits: d ?? 1 })}%`;
+    if (kind === 'compact') return v.toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: d ?? 1 });
+    return v.toLocaleString('en-US', { maximumFractionDigits: d ?? 2 });
+  },
+  Plural: (n, word, plural = null) => `${n} ${Number(n) === 1 ? word : plural ?? `${word}s`}`,
+  Includes: (a, v) => (Array.isArray(a) ? a.some((x) => x === v) : String(a ?? '').includes(String(v))),
+  Toggle: (a, v) => { const l = Array.isArray(a) ? a : []; return l.includes(v) ? l.filter((x) => x !== v) : [...l, v]; },
+  Append: (a, v) => [...(Array.isArray(a) ? a : []), v],
+  Remove: (a, v) => (Array.isArray(a) ? a.filter((x) => x !== v) : []),
+  GroupBy: (rows, key, field = null) => {
+    const m = new Map();
+    for (const r of Array.isArray(rows) ? rows : []) { const k = r?.[key]; m.set(k, (m.get(k) ?? 0) + (field ? Number(r?.[field]) || 0 : 1)); }
+    return [...m].map(([k, v]) => ({ key: k, value: v }));
+  },
+  Upper: (t) => String(t ?? '').toUpperCase(),
+  Today: () => new Date().toISOString().slice(0, 10),
   Sqrt: (n) => Math.sqrt(Number(n)),
   Floor: (n) => Math.floor(Number(n)),
   Ceil: (n) => Math.ceil(Number(n)),
@@ -197,13 +242,20 @@ function parseExpr(tokens) {
     throw new SyntaxError(`unexpected '${tk.v}'`);
   }
   function postfix(node) {
-    while (isP('.')) {
-      i++;
-      const tk = tokens[i++];
-      if (!tk || tk.t !== 'id') throw new SyntaxError('expected a field name after "."');
-      node = { k: 'member', obj: node, prop: tk.v };
+    for (;;) {
+      if (isP('.')) {
+        i++;
+        const tk = tokens[i++];
+        if (!tk || tk.t !== 'id') throw new SyntaxError('expected a field name after "."');
+        node = { k: 'member', obj: node, prop: tk.v };
+      } else if (isP('[')) {
+        // steps[$step], row["name"]: an index into a list or a key into an object.
+        i++;
+        const at = expr(0);
+        expect(']');
+        node = { k: 'index', obj: node, at };
+      } else return node;
     }
-    return node;
   }
   function expr(minPrec) {
     let left = postfix(primary());
@@ -437,6 +489,7 @@ export function evaluate(program, env = {}) {
       case 'arr': return n.items.map((x) => value(x, id)).filter((x) => x !== undefined);
       case 'obj': return Object.fromEntries(n.entries.map(([k, v]) => [k, value(v, id)]));
       case 'member': return member(value(n.obj, id), n.prop) ?? null;
+      case 'index': { const o = value(n.obj, id), k = value(n.at, id); return o == null ? null : Array.isArray(o) ? o[Number(k)] ?? null : typeof o === 'object' ? o[k] ?? null : null; }
       case 'tern': return value(n.c, id) ? value(n.a, id) : value(n.b, id);
       case 'un': { const x = value(n.x, id); return n.op === '!' ? !x : -Number(x); }
       case 'bin': {
@@ -505,6 +558,9 @@ export function evaluate(program, env = {}) {
       err(id, 'query', `${n.name}() must be its own statement (\`data = ${n.name}(…)\`)`);
       return null;
     }
+    // Col is two things: OpenUI's layout column, Col([a, b]), and ox's table
+    // column, Col("Label", values). A list first means the layout.
+    if (n.name === 'Col' && n.args[0]?.k === 'arr') n = { ...n, name: 'Column' };
     const spec = LIBRARY[n.name];
     if (!spec) {
       const near = suggest(n.name, Object.keys(LIBRARY));
@@ -537,7 +593,8 @@ export function evaluate(program, env = {}) {
     }
     // A Select's value arg binds a $var: keep the name so actions can set it.
     if (n.name === 'Select' && n.args[1]?.k === 'state') props.bind = n.args[1].name;
-    if ((n.name === 'Input' || n.name === 'Slider') && n.args[1]?.k === 'state') props.bind = n.args[1].name;
+    if ((n.name === 'Input' || n.name === 'Slider' || n.name === 'Checkbox') && n.args[1]?.k === 'state') props.bind = n.args[1].name;
+    if (n.name === 'Segmented' && n.args[0]?.k === 'state') props.bind = n.args[0].name;
     return { type: n.name, props };
   }
 
@@ -573,7 +630,7 @@ export function languageSpec() {
   return [
     'Write OX Canvas: one `name = Expression` per line, `root = ...` renders. Positional args only.',
     'Values: "str" 12 true null [a, b] {k: v}, refs to other lines (forward refs ok), a.b plucks a field from every row, cond ? a : b, + - * / == != > < && ||.',
-    '$var = default declares state; Input("Amount", $amount, "number") and Slider("Rate %", $rate, 0, 20, 0.1) let the user change it and every line using it recomputes. @Pow(b, e) @Sqrt @Abs @Floor @Ceil @Count @Sum @Avg @Min @Max @First @Last @Round(n, digits) @Join @Filter(rows, field, op, value) @Sort(rows, field, "desc") @Each(rows, "r", Text(r.x)).',
+    'Compose like a page: Title, a short Text, then blocks; Grid/Row/Col for layout; colours by name (ink muted surface info success warning danger purple pink chart1 chart2 chart3 chart4 chart5 chart6) or #hex in Badge tone, Text color, Chart and Svg fills. steps[$step] indexes a list. $var = default declares state; Input("Amount", $amount, "number") and Slider("Rate %", $rate, 0, 20, 0.1) let the user change it and every line using it recomputes. @Pow(b, e) @Sqrt @Abs @Floor @Ceil @Clamp(n, lo, hi) @Default(v, d) @Format(n, "currency|percent|compact") @Plural(n, "item") @Percent(a, b) @Range(0, n) @Includes @Toggle @Append @Remove @GroupBy(rows, key, field) @Today @Count @Sum @Avg @Min @Max @First @Last @Round(n, digits) @Join @Filter(rows, field, op, value) @Sort(rows, field, "desc") @Each(rows, "r", Text(r.x)).',
     `Live data: d = Query("${[...QUERY_TOOLS].join('|')}", {args}, {defaults}); d is the tool result ({text, lines} or parsed JSON).`,
     'Buttons: Button("Label", Action([@Set($v, 1), @Run(d), @ToAssistant("msg"), @OpenUrl("u")])). m = Mutation("tool", {args}) runs only via @Run(m) from a Button.',
     'Edit an existing canvas with patch: true and send only changed or new lines.',
@@ -666,6 +723,15 @@ function draw(node, w, actions) {
         if (out.length) for (let i = 0; i < gap; i++) out.push('');
         out.push(...ls);
       }
+      return out;
+    }
+    case 'Column':
+    case 'Pressable':
+      return draw({ type: 'Stack', props: { children: p.children ?? [] } }, w, actions);
+    case 'Grid': {
+      // Rows of `cols` cells, each drawn like a Row.
+      const kids = (p.children ?? []).filter(Boolean), n = Math.max(1, Number(p.cols) || 2), out = [];
+      for (let i = 0; i < kids.length; i += n) { if (out.length) out.push(''); out.push(...draw({ type: 'Row', props: { children: kids.slice(i, i + n) } }, w, actions)); }
       return out;
     }
     case 'Row': {
@@ -781,6 +847,16 @@ function draw(node, w, actions) {
     }
     case 'Input':
       return [`${paint.dim(`${p.label}:`)} ${p.value ?? ''}`];
+    case 'Title': return [paint.bold ? paint.bold(String(p.text ?? '')) : String(p.text ?? '')];
+    case 'Caption': return [paint.dim(String(p.text ?? ''))];
+    case 'Spacer': return [];
+    case 'Checkbox': return [`${p.value ? '☑' : '☐'} ${p.label}`];
+    case 'Segmented': return [(p.options ?? []).map((o) => (String(o) === String(p.value) ? `[${o}]` : ` ${o} `)).join(' ')];
+    case 'Svg': return [paint.dim('[drawing: open it in the app]')];
+    case 'Chart': {
+      const vals = (p.values ?? []).map(Number), max = Math.max(1e-9, ...vals.map(Math.abs));
+      return [...(p.title ? [String(p.title)] : []), ...vals.map((v, k) => `${String(p.labels?.[k] ?? '').padEnd(12).slice(0, 12)} ${'█'.repeat(Math.max(1, Math.round((Math.abs(v) / max) * 24)))} ${v}`)];
+    }
     case 'Slider': {
       const lo = Number(p.min), hi = Number(p.max), v = Number(p.value);
       const w = 16, f = hi > lo ? Math.max(0, Math.min(w, Math.round(((v - lo) / (hi - lo)) * w))) : 0;

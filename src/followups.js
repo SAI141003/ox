@@ -10,7 +10,8 @@ export function parseFollowups(text) {
   return String(text ?? '')
     .split('\n')
     .map((l) => l.replace(/^\s*(?:[-*•↳]|\d+[.)])\s*/, '').replace(/^["“]|["”]$/g, '').trim())
-    .filter((l) => l.length >= 3 && l.length <= 90 && !/^(here are|sure|suggest)/i.test(l))
+    // Questions or short asks only: never code, markup or an echo of the answer.
+    .filter((l) => l.length >= 3 && l.length <= 90 && !/^(here are|sure|suggest)/i.test(l) && !/[`{}\[\]<>=;]|^\w+\s*\(/.test(l))
     .slice(0, 3);
 }
 
