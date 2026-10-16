@@ -233,11 +233,46 @@ export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
       }
       return ev;
     };
+    // Ollama, streaming with tools attached, swallows an answer that starts like
+    // a tool call (a code fence or JSON) and sends nothing in its place: tokens
+    // counted, no text, no call (seen on 0.40 with qwen2.5). The same request
+    // without streaming returns the answer, so that is asked once instead.
+    let sawText = false, sawCall = false, outTokens = 0, done = null;
+    const seen = (ev) => {
+      if (ev.type === 'text-delta') sawText = true;
+      else if (ev.type === 'tool-call') sawCall = true;
+      else if (ev.type === 'usage') outTokens = ev.outputTokens;
+      return check(ev);
+    };
     for await (const chunk of res.body) {
-      for (const ev of parser.push(dec.decode(chunk, { stream: true }))) yield check(ev);
+      for (const ev of parser.push(dec.decode(chunk, { stream: true }))) { if (ev.type === 'done') { done = ev; continue; } yield seen(ev); }
     }
-    for (const ev of parser.end(dec.decode())) yield check(ev);
+    for (const ev of parser.end(dec.decode())) { if (ev.type === 'done') { done = ev; continue; } yield seen(ev); }
+    if (!sawText && !sawCall && outTokens > 0 && body.tools) {
+      yield* recoverSwallowed({ name, baseUrl, headers, body, signal });
+      return;
+    }
+    if (done) yield done;
   };
+}
+
+// The non-streaming retry for an answer a server dropped from its stream.
+export async function* recoverSwallowed({ name, baseUrl, headers, body, signal, fetchImpl = fetch }) {
+  const { stream_options: _, ...plain } = body;
+  const res = await fetchImpl(`${trimBase(baseUrl)}/chat/completions`, { method: 'POST', headers, body: JSON.stringify({ ...plain, stream: false }), signal });
+  if (!res.ok) throw new Error(`ox[${name}]: HTTP ${res.status} ${res.statusText}: ${(await res.text()).slice(0, 300)}`);
+  const j = await res.json();
+  const choice = j.choices?.[0] ?? {};
+  const msg = choice.message ?? {};
+  if (j.usage) yield { type: 'usage', inputTokens: Number(j.usage.prompt_tokens) || 0, outputTokens: Number(j.usage.completion_tokens) || 0 };
+  if (typeof msg.content === 'string' && msg.content) yield { type: 'text-delta', text: msg.content };
+  const calls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+  for (const c of calls) {
+    let args = null, parseError = false;
+    try { args = JSON.parse(c.function?.arguments || '{}'); } catch { parseError = true; }
+    yield { type: 'tool-call', call: { id: c.id ?? '', name: c.function?.name ?? '', args, ...(parseError ? { parseError: true } : {}) } };
+  }
+  yield { type: 'done', stopReason: calls.length ? 'tool_calls' : choice.finish_reason === 'length' ? 'length' : 'stop' };
 }
 
 const warnedTruncation = new Set();

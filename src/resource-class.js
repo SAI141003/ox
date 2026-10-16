@@ -38,13 +38,28 @@ const MAILBOX_TOOLS = new Set(['agent_message.send', 'agent_observe']);
 // state that the CLI appends to the transcript, it spawns nothing, reaches no
 // network and touches no file, which is the same posture the class already
 // describes.
-const SESSION_STATE_TOOLS = new Set(['todo_write']);
+const SESSION_STATE_TOOLS = new Set(['todo_write', 'task_board']);
+
+// The same bug again, wider: 15 of 25 registered tools had no class, so every
+// call to web_search, web_fetch, show_ui, the mail tools and the Mac tools was
+// refused, alone or not (found by a real run: a local model's show_ui call got
+// "unknown tools are forbidden in a batch"). test/resource-class-coverage.test.js
+// now fails if a registered tool is left unclassified.
+//
+// Reads with no side effect: search and fetch the web, list mail accounts, draw
+// a canvas (its queries run under plan mode), get a second opinion.
+const NETWORK_READ_TOOLS = new Set(['web_search', 'web_fetch', 'mail_accounts', 'show_ui', 'critique']);
+// Act on this computer or for the user (each also asks inside the tool): open
+// things, type, take a screenshot, notify, write mail, drive a browser task.
+const ACTING_TOOLS = new Set(['open_app', 'open_url', 'open_path', 'open_window', 'type_text', 'screenshot', 'notify', 'mail_compose', 'web_task']);
 
 export function classifyTool(name) {
   const toolName = String(name ?? '');
   if (PURE_READ_TOOLS.has(toolName)) return 'pure_read';
   if (FS_WRITE_TOOLS.has(toolName)) return 'fs_write';
   if (toolName === 'bash' || toolName === 'subagent' || toolName === 'create_media' || toolName === 'install_skill' || toolName.startsWith('mcp__')) return 'approval_gated';
+  if (ACTING_TOOLS.has(toolName)) return 'approval_gated';
+  if (NETWORK_READ_TOOLS.has(toolName)) return 'pure_read';
   if (toolName.startsWith('memory_')) return 'memory_write';
   if (MAILBOX_TOOLS.has(toolName)) return 'memory_write';
   if (SESSION_STATE_TOOLS.has(toolName)) return 'memory_write';
