@@ -44,7 +44,8 @@ Updated October 16 2026.
 | 3.3 | Real models write it | ✓ | ChatGPT plan (gpt-6-luna): valid OpenUI Lang, 0 errors, 8.5 s, maths exact ($1,798.65), guarded the zero-rate case. qwen2.5:3b writes the language but its formulas are unreliable |
 | 3.6 | Plans you pay for get ox's brief (name, bot instructions, OpenUI guide, memory) | ✓ | Was the bare chat only; tested above |
 | 3.4 | Query() runs read-only tools only | ✓ | Route refuses anything outside read_file, list_dir, glob, grep |
-| 3.5 | Photos in answers (SearchImage) and maps | ✗ | Not built |
+| 3.5 | Photos in answers (SearchImage) | ✓ | Real lookups: Pena Palace, Golden Gate Bridge, ramen, each the right Wikipedia photo in under 0.7 s, cached in ~/.ox/cache/images; only Wikimedia hosts are fetched (test) |
+| 3.7 | Maps in answers | ✗ | Not built |
 
 ## 4. Bots and agents
 
@@ -54,7 +55,7 @@ Updated October 16 2026.
 | 4.2 | Bot shapes and colours | ✓ | 13 shapes, 12 colours |
 | 4.3 | A bot answers to its name | ✓ | "I am the critic, reviewing diffs…" |
 | 4.4 | Group chat (bots check each other) | ~ | Fixed the empty second answer (the history ended on another bot's turn): skeptic now answers and responds to optimist. Open: the screen switched to an older chat while it answered |
-| 4.5 | Subagents checking each other's progress | ~ | agent_status + mailbox exist for terminal runs; no live view in the app |
+| 4.5 | Subagents checking each other's progress | ~ | agent_status + mailbox for terminal runs; the app's live view is the Office (11.12). Terminal runs are not on it yet |
 
 ## 5. Memory
 
@@ -119,15 +120,44 @@ Updated October 16 2026.
 | 10.9 | Install a missing agent CLI on first use, with your OK (Omarchy) | ✗ | ox connect knows 16 CLIs, shows the install line only |
 | 10.10 | Crash watcher: a dev server or test crash briefs the agent at once (Omarchy) | ✗ | |
 
+## 11. Chat box and live view (October 16 screenshots)
+
+| # | Feature | State | Evidence / gap |
+|---|---|---|---|
+| 11.1 | + menu, every row saying what it does (ChatGPT, Gemini, Perplexity, Claude) | ✓ | Opened in the app; picked Web search, its chip showed, ✕ removes it |
+| 11.2 | Photos and Camera | ? | Shrunk to 1,600 px and sent as images every provider understands; not yet sent to a model that can see (none connected here with vision) |
+| 11.3 | Web search | ~ | The server gets it (answer reason "web search", web tools only); answer quality not checked |
+| 11.4 | Deep research | ~ | Asks for several searches, reading sources, citations [1]; not run end to end yet |
+| 11.5 | Guided learning | ~ | Teach step by step and check; not run end to end yet |
+| 11.6 | Interactive answer on demand | ~ | Forces the OpenUI guide for any message; not run end to end yet |
+| 11.7 | Think harder | ~ | Skips the quick pick (test); on a server started seconds ago it can still pick the local model, before your plans are checked |
+| 11.8 | Memory off for one chat | ~ | Nothing in, nothing learned; wired, not run end to end yet |
+| 11.9 | Mode list with what each mode does (Kilo), ⌘. next mode | ✓ | Opened in the app; descriptions match what each mode enforces |
+| 11.10 | Prompt wand (⌘I) | ✓ | "write email to landlord about broken heater" → "Write an email to [landlord] about the broken heater." in 1.0 s on qwen2.5:3b; ⌘Z undoes |
+| 11.11 | Delete a chat (Undo), a bot, an endpoint | ✓ | The pane blocked the browser's confirm box, so Delete did nothing; now 15 → 14 chats, Undo → 15 |
+| 11.12 | Office: who is working on what (Pixel Agents) | ✓ | Real run: bot scout at a desk, monitor lit on its tool step, then "writing the answer"; writer in the lounge |
+| 11.13 | Sidebar hide button on a narrow window | ✓ | Did nothing before (it toggled the wide layout); closes now, also Esc and a click beside it |
+| 11.14 | Pictures load when the server has a key | ✓ | Fetched with the key instead of a bare image link |
+
+## 12. Asked for, not started
+
+| # | Feature | State | Note |
+|---|---|---|---|
+| 12.1 | OX Island upgrade from the Coucou repo and the Pixie video (section 8) | ✗ | Next, as you asked |
+| 12.2 | ox's own automations (n8n-style flows), no n8n needed | ✗ | Scheduled runs exist (7.6); no flow builder |
+| 12.3 | Marketplace with every skill, Karpathy's included | ~ | 329 plugins, 30 GitHub skills listed (7.4); not "everything" |
+| 12.4 | ox's own deep learning (Andrew Ng's course ideas) | ✗ | To be scoped: what it should learn, from what data |
+| 12.5 | Paperclip's task board in the app | ~ | Board, claims, blockers, budgets, review gates exist in ox's engine (src/tasks.js); no page in the app |
+
 ## 9. Reliability
 
 | # | Feature | State | Evidence / gap |
 |---|---|---|---|
 | 9.1 | Every tool has a resource class | ✓ | 15 of 25 were refused before; test guards it |
 | 9.2 | Ollama streaming + tools swallowing answers | ✓ | Recovered with one non-streaming retry; tested |
-| 9.3 | Unit suite | ~ | 1,800 pass; failures seen only under load 300+ (serve-settings, web-render timing) |
+| 9.3 | Unit suite | ✓ | 1,825 pass, 0 fail. Three failures found today came from my own short-task trim (it slipped past the never-drop-a-needed-tool check); fixed |
 | 9.4 | Launch check | ✓ | 132/132 |
-| 9.5 | Tests leaving files in your real home | ✗ | Three test-agent*.json in ~/.ox/agents; find the test that leaks them |
+| 9.5 | Tests leaving files in your real home | ~ | The leak was fixed on October 12; three old test-agent*.json files are still in ~/.ox/agents and show as junk bots. Deleting them needs your OK |
 
 ## Repos studied
 
