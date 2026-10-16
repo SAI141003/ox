@@ -4041,6 +4041,8 @@ const SUB_USAGE = {
   hf: 'usage: ox hf search "<words>" | ox hf files <owner/repo> | ox hf pull <owner/repo>[:QUANT]',
   usage: 'usage: ox usage [--days <n>] [--json]  — tokens and cost by model, agent, surface, project and day',
   market: 'usage: ox market ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
+  hook: 'usage: ox hook <claude|codex|gemini|cursor|copilot> [event]  — run by the agent itself with the event on stdin (set up with: ox hooks install <agent>)',
+  'hook-relay': 'usage: ox hook-relay <agent> <session id>  — started by ox hook; one per agent session, not run by hand',
   hooks: 'usage: ox hooks install <claude|codex|gemini|cursor|copilot> [--yes] | uninstall <agent> [--yes] | status',
   memory: 'usage: ox memory [recall "<question>" | add "<fact>" [--project] | history <id> | forget <id> | all [--project]]',
   auto: 'usage: ox auto "<goal>" [--contract ["<goal>"]] [--max-cost <usd>] [--json] [--bot <name>] [--yes-edits] [-y] [--side-effects-ok]',
