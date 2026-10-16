@@ -183,6 +183,27 @@
   .ui-bar i { height: 8px; border-radius: 99px; background: var(--text); display: block; }
   .ui-bar b { font-weight: 600; font-variant-numeric: tabular-nums; }
   .ui-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+  .send[hidden], .speak-btn[hidden], .round[hidden] { display: none !important; }
+  .speak-btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border-radius: 99px; background: var(--btn); color: var(--btn-ink); font-weight: 600; font-size: 13.5px; }
+  .speak-btn svg { width: 16px; height: 16px; }
+  #talk { position: fixed; inset: 0; z-index: 90; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; }
+  #talk[hidden] { display: none; }
+  .talk-orb { display: flex; gap: 8px; align-items: center; height: 90px; }
+  .talk-orb i { width: 14px; height: 14px; border-radius: 99px; background: var(--text); transition: height .2s; }
+  #talk[data-state="listen"] .talk-orb i { animation: talk-bar 1s ease-in-out infinite; }
+  #talk[data-state="listen"] .talk-orb i:nth-child(2) { animation-delay: .15s; } #talk[data-state="listen"] .talk-orb i:nth-child(3) { animation-delay: .3s; }
+  #talk[data-state="think"] .talk-orb i { animation: talk-dot 1.2s ease-in-out infinite; opacity: .4; }
+  #talk[data-state="think"] .talk-orb i:nth-child(2) { animation-delay: .2s; } #talk[data-state="think"] .talk-orb i:nth-child(3) { animation-delay: .4s; }
+  #talk[data-state="speak"] .talk-orb i { animation: talk-bar .6s ease-in-out infinite; }
+  #talk[data-state="speak"] .talk-orb i:nth-child(2) { animation-delay: .1s; } #talk[data-state="speak"] .talk-orb i:nth-child(3) { animation-delay: .2s; }
+  @keyframes talk-bar { 50% { height: 56px; } }
+  @keyframes talk-dot { 50% { opacity: 1; } }
+  #talk-state { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  #talk-words { font-size: 26px; font-weight: 600; letter-spacing: -.01em; text-align: center; max-width: 720px; min-height: 2.4em; line-height: 1.25; }
+  .talk-bar { position: absolute; bottom: 34px; display: flex; gap: 12px; }
+  .talk-btn { width: 64px; height: 52px; border-radius: 16px; background: var(--raise); display: grid; place-items: center; color: var(--text); }
+  .talk-btn svg { width: 20px; height: 20px; } .talk-btn.off { opacity: .45; }
+  .talk-end { min-width: 110px; height: 52px; border-radius: 16px; background: var(--red); color: #fff; font-weight: 650; }
   .sch-new { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; } .sch-new #sch-prompt { flex: 1; min-width: 220px; }
   .bots-grid { display: grid; grid-template-columns: minmax(240px, 320px) 1fr; gap: 18px; align-items: start; margin-top: 16px; }
   .bots-grid .card { text-align: left; width: 100%; }
@@ -226,7 +247,17 @@
   .typing i:nth-child(2) { animation-delay: .2s; } .typing i:nth-child(3) { animation-delay: .4s; }
   .msg-tools { display: flex; gap: 2px; margin-top: 6px; opacity: 0; transition: opacity .15s; }
   .msg:hover .msg-tools { opacity: 1; }
-  .msg-tools button { font-size: 12px; color: var(--dim); padding: 2px 6px; border-radius: 5px; }
+  .msg-tools button { font-size: 12px; color: var(--dim); padding: 5px; border-radius: 6px; display: grid; place-items: center; }
+  .msg-tools button svg { width: 15px; height: 15px; }
+  .msg-tools { align-items: center; }
+  .mt-meta { margin-left: auto; font-size: 11.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .msg.assistant:last-child .msg-tools { opacity: 1; }
+  .follow { display: flex; flex-direction: column; margin-top: 6px; }
+  .follow:empty { display: none; }
+  .follow button { display: flex; align-items: center; gap: 10px; text-align: left; padding: 9px 2px; border-top: 1px solid var(--line); color: var(--text); font-size: 14px; }
+  .follow button:first-child { border-top: 0; }
+  .follow button:hover { color: var(--muted); }
+  .follow button svg { width: 15px; height: 15px; color: var(--dim); flex: none; }
   .msg-tools button:hover { color: var(--text); background: var(--hover); }
   .hello { margin: 13vh auto 0; text-align: center; max-width: 620px; }
   .hello-mark { background: var(--gold); color: var(--gold-ink); width: 52px; height: 52px; border-radius: 15px; margin: 0 auto; display: grid; place-items: center; box-shadow: 0 8px 30px color-mix(in srgb, var(--gold) 10%, transparent); }
@@ -360,6 +391,16 @@
 </style>
 </head>
 <body>
+<div id="talk" hidden role="dialog" aria-label="Spoken conversation">
+  <div class="talk-orb"><i></i><i></i><i></i></div>
+  <div id="talk-state">Listening</div>
+  <div id="talk-words"></div>
+  <div class="talk-bar">
+    <button class="talk-btn" id="talk-mute" title="Mute the microphone"><span data-i="mic"></span></button>
+    <button class="talk-btn" id="talk-quiet" title="Stop speaking"><span data-i="speaker"></span></button>
+    <button class="talk-end" id="talk-end" title="End">End</button>
+  </div>
+</div>
 <div id="splash" aria-hidden="true"><div class="glow"></div><div class="in"><svg viewBox="0 0 112 64"><g fill="none" stroke="var(--gold)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"><circle cx="28" cy="38" r="17"/><path d="M60 56 L77 38 C86 29 91 22 91 12"/><path d="M94 56 L77 38 C68 29 63 22 63 12"/></g></svg><div class="nm"></div></div></div>
 <div class="app">
   <aside class="side" id="side">
@@ -418,6 +459,7 @@
             <span class="grow"></span>
             <label class="pill" title="Model or agent (⌘⇧M)"><select id="model" aria-label="Model"></select></label>
             <button class="round" id="mic" title="Talk instead of typing (⌃B)" aria-label="Talk" data-i="mic" hidden></button>
+            <button class="speak-btn" id="speak" aria-label="Talk to it" title="Have a spoken conversation" hidden><span data-i="wave"></span>Speak</button>
             <button class="send" id="send" aria-label="Send" disabled></button>
           </div>
         </div>
@@ -523,6 +565,7 @@
     brain: 'M9 4a3 3 0 0 0-3 3v.2A3 3 0 0 0 4 10a3 3 0 0 0 1 2.2A3 3 0 0 0 6 17a3 3 0 0 0 3 3a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3ZM15 4a3 3 0 0 1 3 3v.2A3 3 0 0 1 20 10a3 3 0 0 1-1 2.2A3 3 0 0 1 18 17a3 3 0 0 1-3 3a3 3 0 0 1-3-3',
     store: 'M4 9l1.5-5h13L20 9M4 9h16v11H4zM4 9a3 3 0 0 0 6 0 3 3 0 0 0 4 0 3 3 0 0 0 6 0M9 20v-5h6v5',
     film: 'M4 4h16v16H4zM8 4v16M16 4v16M4 8h4M4 12h4M4 16h4M16 8h4M16 12h4M16 16h4',
+    wave: 'M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4', nextq: 'M5 4v6a4 4 0 0 0 4 4h11M16 10l4 4-4 4', speaker: 'M4 9v6h4l5 4V5L8 9H4ZM16 9a3 3 0 0 1 0 6M18.5 6.5a7 7 0 0 1 0 11', retry: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7',
     bot: 'M12 3v3M8 7h8a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3ZM9.5 12.5h.01M14.5 12.5h.01M2 13v2M22 13v2',
     incog: 'M3 11h18M5 11l2-6h10l2 6M7 17a3 3 0 1 0 0-.01M17 17a3 3 0 1 0 0-.01M10 17h4',
     chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
@@ -913,7 +956,7 @@
     const m = document.createElement('div');
     m.className = `msg ${role}`;
     if (role === 'assistant') {
-      m.innerHTML = `<div class="who">${OX_FACE}</div><div><div class="body"></div><div class="msg-tools"><button data-mt="copy">Copy</button><button data-mt="speak">Read aloud</button></div></div>`;
+      m.innerHTML = `<div class="who">${OX_FACE}</div><div><div class="body"></div><div class="msg-tools"><button data-mt="copy" title="Copy" aria-label="Copy">${icon('copy')}</button><button data-mt="speak" title="Read aloud" aria-label="Read aloud">${icon('speaker')}</button><button data-mt="retry" title="Ask again" aria-label="Ask again">${icon('retry')}</button><span class="mt-meta"></span></div><div class="follow"></div></div>`;
     }
     $('inner').append(m);
     return role === 'assistant' ? m.querySelector('.body') : m;
@@ -930,7 +973,15 @@
     const canv = (msg.canvases || []).map((c) => `<div class="ui cv">${canvasNode(c.tree)}</div>`).join('');
     body.innerHTML = routed + plan + (steps ? `<div class="steps">${steps}</div>` : '') + canv + text + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : '');
     mountLive(body); bindUi(body);
-    body.closest('.msg').dataset.text = msg.content || '';
+    const m = body.closest('.msg');
+    m.dataset.text = msg.content || '';
+    const meta = m.querySelector('.mt-meta');
+    if (meta) meta.textContent = [msg.ms ? `${(msg.ms / 1000).toFixed(msg.ms < 10_000 ? 2 : 1)}s` : '', msg.tokens ? `${msg.tokens.toLocaleString()} tokens` : ''].filter(Boolean).join(' · ');
+    const fw = m.querySelector('.follow');
+    if (fw) {
+      fw.innerHTML = (msg.follow || []).map((q) => `<button data-ask-send="${esc(q)}">${icon('nextq')}<span>${esc(q)}</span></button>`).join('');
+      fw.querySelectorAll('[data-ask-send]').forEach((b) => (b.onclick = () => { $('input').value = b.dataset.askSend; resize(); send(); }));
+    }
   }
   function renderChat() {
     const inner = $('inner');
@@ -974,6 +1025,14 @@
       const text = mt.closest('.msg').dataset.text || '';
       if (mt.dataset.mt === 'copy') copy(text);
       if (mt.dataset.mt === 'speak') speakText(text, true);
+      if (mt.dataset.mt === 'retry' && !busy) {
+        const c = convo(); if (!c) return;
+        const lastUser = [...c.messages].reverse().find((x) => x.role === 'user');
+        if (!lastUser) return;
+        while (c.messages.length && c.messages.at(-1).role === 'assistant') c.messages.pop();
+        c.messages.pop();
+        $('input').value = lastUser.content; resize(); send();
+      }
     }
   });
 
@@ -997,6 +1056,7 @@
     if (!c.messages.length) c.title = text.replace(/\s+/g, ' ').slice(0, 60);
     c.messages.push({ role: 'user', content: text });
     const reply = { role: 'assistant', content: '', tools: [], pending: true };
+    const t0 = performance.now();
     c.messages.push(reply);
     c.updated = Date.now(); c.running = true;
     input.value = ''; resize(); saveConvos(); renderChat(); renderLists();
@@ -1030,7 +1090,7 @@
           if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; if (ox.canvas) { reply.canvases = (reply.canvases || []).filter((c) => c.id !== ox.id); reply.canvases.push({ id: ox.id, tree: ox.canvas }); } }
           const delta = ev.choices?.[0]?.delta?.content;
           if (delta) reply.content += delta;
-          if (ev.usage) $('usage').textContent = `${((ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0)).toLocaleString()} tokens`;
+          if (ev.usage) { reply.tokens = (ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0); $('usage').textContent = `${reply.tokens.toLocaleString()} tokens`; }
           reply.pending = !reply.content;
           paint(body, reply); scrollDown();
         }
@@ -1039,19 +1099,29 @@
       reply.error = e.name === 'AbortError' ? 'Stopped.' : plainDash(e.message);
     } finally {
       reply.pending = false; c.running = false; c.updated = Date.now();
-      busy = null; setBusy(false);
+      reply.ms = Math.round(performance.now() - t0);
+      busy = null; setBusy(false); resize();
       paint(body, reply); saveConvos(); renderLists();
+      // Three things to ask next, made after the answer so it never waits on them.
+      if (reply.content && !reply.error && prefs.followups !== false && !c.incognito) {
+        postJson('/ox/followups', { model: $('model').value || undefined, question: text, answer: reply.content })
+          .then((f) => { if (f.items?.length) { reply.follow = f.items; if (c === convo()) paint(body, reply); saveConvos(); } })
+          .catch(() => {});
+      }
       if (prefs.speakReplies && reply.content) speakText(reply.content);
     }
   }
   function setBusy(on) {
     const b = $('send');
+    if (on) { b.hidden = false; $('speak').hidden = true; }
     b.disabled = !on && !$('input').value.trim() && !attachments.length;
     b.innerHTML = icon(on ? 'stop' : 'up');
     b.setAttribute('aria-label', on ? 'Stop (Esc)' : 'Send');
   }
   function resize() {
     const t = $('input');
+    // Speak while the box is empty, send once there is something to send.
+    if (Speech && !readonly) { const empty = !t.value.trim() && !attachments.length && !busy; $('speak').hidden = !empty; $('send').hidden = empty; }
     t.style.height = 'auto';
     t.style.height = `${Math.min(260, t.scrollHeight)}px`;
     if (!busy) $('send').disabled = !t.value.trim() && !attachments.length;
@@ -1163,7 +1233,16 @@
     $('mic').classList.add('live');
     rec.start();
   }
-  if (Speech) { $('mic').hidden = false; $('mic').onclick = toggleMic; }
+  if (Speech) { $('mic').hidden = false; $('mic').onclick = toggleMic; $('speak').onclick = startTalk; }
+  $('talk-end').onclick = endTalk;
+  $('talk-quiet').onclick = () => stopSpeaking();
+  $('talk-mute').onclick = () => {
+    if (!talk) return;
+    talk.muted = !talk.muted;
+    $('talk-mute').classList.toggle('off', talk.muted);
+    if (talk.muted) { try { talk.rec?.abort(); } catch {} talkUi('Muted'); } else talkListen();
+  };
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && talk) endTalk(); });
   // Kokoro's natural voice through the server when it is set up (ox voice
   // install); this browser's voice otherwise, or when picked in Settings › Voice.
   let voiceInfo = null, playing = null, speakRun = 0;
@@ -1195,7 +1274,52 @@
     const u = new SpeechSynthesisUtterance(plain);
     const v = speechSynthesis.getVoices().find((x) => x.name === prefs.voice);
     if (v) u.voice = v;
-    speechSynthesis.speak(u);
+    await new Promise((done) => { u.onend = u.onerror = done; speechSynthesis.speak(u); });
+  }
+
+  // ---------- talk: a spoken conversation (Grok's Speak). Listens, shows your
+  // words as you say them, sends when you stop, says the answer, listens again.
+  let talk = null;
+  function talkUi(state, words = '') {
+    $('talk-state').textContent = state;
+    $('talk-words').textContent = words;
+    $('talk').dataset.state = state === 'Listening' ? 'listen' : state === 'Thinking' ? 'think' : state === 'Speaking' ? 'speak' : '';
+  }
+  function talkListen() {
+    if (!talk) return;
+    const r = new Speech();
+    r.interimResults = true;
+    r.lang = prefs.lang || navigator.language || 'en-US';
+    let said = '';
+    r.onresult = (e) => { said = [...e.results].map((x) => x[0].transcript).join(''); talkUi('Listening', said); };
+    r.onerror = (e) => { if (e.error === 'not-allowed') { toast('The microphone is blocked for this page'); endTalk(); } };
+    r.onend = async () => {
+      if (!talk || talk.rec !== r) return;
+      if (!said.trim()) { if (!talk.muted) talkListen(); return; }
+      talkUi('Thinking', said);
+      $('input').value = said; resize();
+      await send();
+      if (!talk) return;
+      const reply = convo()?.messages.at(-1);
+      if (reply?.content) { talkUi('Speaking', ''); await speakText(reply.content, true); }
+      if (talk && !talk.muted) talkListen(); else if (talk) talkUi('Muted');
+    };
+    talk.rec = r;
+    talkUi('Listening');
+    try { r.start(); } catch { /* already started */ }
+  }
+  function startTalk() {
+    if (!Speech || readonly || talk) return;
+    talk = { muted: false, rec: null };
+    $('talk').hidden = false;
+    talkListen();
+  }
+  function endTalk() {
+    const t = talk; talk = null;
+    try { t?.rec?.abort(); } catch {}
+    stopSpeaking();
+    if (busy) busy.abort();
+    $('talk').hidden = true;
   }
 
   // ---------- capabilities
@@ -1841,7 +1965,7 @@ files: [src/billing/**]
   // ---------- start
   paintIcons();
   $('host').textContent = location.host;
-  setBusy(false);
+  setBusy(false); resize();
   loadModels();
   renderChat(); renderLists();
   getJson('/ox/about').then((a) => { about = a; $('cwd').textContent = a.cwd.split(/[\\/]/).slice(-2).join('/'); $('cwd').title = a.cwd; if (!convo()?.messages?.length) renderChat(); }).catch(() => { $('cwd').textContent = location.host; });

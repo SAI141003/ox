@@ -1034,7 +1034,24 @@ async function handleSpeak(req, res) {
   s.on('close', () => { unlink(r.out).catch(() => {}); });
 }
 
+// Follow-up suggestions under an answer: the chat's own model, no tools, a tiny prompt.
+async function followupsRoute(b) {
+  const spec = String(b.model ?? '').trim();
+  let botSpec = spec;
+  if (spec.startsWith('agent:')) { const a = loadAgent(spec.slice(6)); botSpec = (a && agentBotSpec(a)) || ''; }
+  if (!botSpec) botSpec = defaultBotSpec({}, process.env) ?? 'ox-grok';
+  const target = resolveBot(botSpec, { bots: readConfigDoc().bots ?? {} });
+  const { followups } = await import('./followups.js');
+  const r = await followups({ target, question: b.question, answer: b.answer });
+  // Counted like every other run, as a helper call (Settings › Usage).
+  if (r.usage && process.env.OX_USAGE_LOG !== '0') {
+    try { (await import('./usage-log.js')).recordRun({ surface: 'app', mode: 'followups', rows: [{ id: 'aux', model: target.model, ...r.usage }] }); } catch {}
+  }
+  return { items: r.items };
+}
+
 const ROUTES = [
+  { method: 'POST', pattern: /^\/ox\/followups\/?$/, handler: appRoute(followupsRoute) },
   { method: 'POST', pattern: /^\/ox\/speak\/?$/, handler: handleSpeak },
   { method: 'GET', pattern: /^\/ox\/voice\/?$/, handler: appRoute(async () => { const k = await import('./kokoro.js'); const st = k.kokoroStatus(); return { kokoro: st.ready, install: 'ox voice install', voices: st.ready ? (await k.kokoroVoices()).map((id) => ({ id, label: k.VOICE_LABELS[id] ?? id })) : [], default: k.DEFAULT_VOICE }; }) },
   { method: 'GET', pattern: /^\/ox\/providers\/?$/, handler: appRoute(async () => (await appApi()).providersView()) },
