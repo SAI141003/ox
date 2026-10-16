@@ -17,20 +17,27 @@ export const PROVIDER_LABELS = Object.freeze({
 });
 const ORDER = ['anthropic', 'openai', 'xai', 'gemini', 'openrouter', 'deepseek', 'mistral', 'groq', 'together', 'fireworks', 'cerebras'];
 
+// Keys for image and video generation (OX Studio), next to the model keys.
+export const MEDIA_KEYS = Object.freeze({ higgsfield: { label: 'Higgsfield (images & video)', env: 'HIGGSFIELD_API_KEY' }, fal: { label: 'fal.ai (images & video)', env: 'FAL_KEY' } });
+const keyEnvOf = (id) => KEY_ENV[id] ?? MEDIA_KEYS[id]?.env ?? null;
+
 export function providersView(env = process.env) {
   const ids = Object.keys(KEY_ENV).filter((p) => KEY_ENV[p]);
   ids.sort((a, b) => ((ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99)) || a.localeCompare(b));
-  return ids.map((id) => ({
-    id,
-    label: PROVIDER_LABELS[id] ?? id,
-    env: KEY_ENV[id],
-    bots: Object.entries(BOTS).filter(([, d]) => d.provider === id && d.model).map(([b]) => b),
-    ...keyStatus(KEY_ENV[id], env),
-  }));
+  return [
+    ...ids.map((id) => ({
+      id,
+      label: PROVIDER_LABELS[id] ?? id,
+      env: KEY_ENV[id],
+      bots: Object.entries(BOTS).filter(([, d]) => d.provider === id && d.model).map(([b]) => b),
+      ...keyStatus(KEY_ENV[id], env),
+    })),
+    ...Object.entries(MEDIA_KEYS).map(([id, m]) => ({ id, label: m.label, env: m.env, bots: [], media: true, ...keyStatus(m.env, env) })),
+  ];
 }
 
 export function saveProviderKey(provider, key, env = process.env) {
-  const name = KEY_ENV[provider];
+  const name = keyEnvOf(provider);
   if (!name) throw new Error(`unknown provider: ${provider}`);
   setKey(name, key, { env });
   return providersView(env);
@@ -237,4 +244,44 @@ export async function memoryAction(body = {}, cwd = process.cwd()) {
     throw new Error("action must be 'add' or 'forget'");
   }
   return memoryView(cwd);
+}
+
+// OX Studio (src/media-studio.js): providers and their models, and every run.
+export async function studioView() {
+  const ms = await import('./media-studio.js');
+  return {
+    providers: Object.entries(ms.PROVIDERS).map(([id, p]) => ({ id, label: p.label, kinds: p.kinds, anyModel: !!p.anyModel, ready: !p.key || !!process.env[p.key], key: p.key, models: p.models() })),
+    higgsfield: ms.MODELS,
+    history: ms.history({ limit: 120 }).map((r) => ({ ...r, files: (r.files ?? []).map((f) => `/ox/media/${encodeURIComponent(r.id)}/${encodeURIComponent(path.basename(f))}`) })),
+  };
+}
+
+export async function studioCreate(b = {}) {
+  const ms = await import('./media-studio.js');
+  const media = {};
+  for (const role of ['start', 'end', 'reference', 'video', 'audio']) {
+    const list = (Array.isArray(b.media?.[role]) ? b.media[role] : []).map(String).filter(Boolean);
+    if (list.length) media[role] = list;
+  }
+  const r = await ms.generate({ provider: String(b.provider ?? 'higgsfield'), model: String(b.model ?? ''), prompt: String(b.prompt ?? ''), settings: b.settings && typeof b.settings === 'object' ? b.settings : {}, media });
+  return { ...r, files: (r.files ?? []).map((f) => `/ox/media/${encodeURIComponent(r.id)}/${encodeURIComponent(path.basename(f))}`) };
+}
+
+export async function studioAction(b = {}) {
+  const ms = await import('./media-studio.js');
+  const id = String(b.id ?? '');
+  if (!/^[0-9a-f]{6,20}$/.test(id)) throw new Error('bad id');
+  if (b.action === 'delete') ms.remove(id);
+  else if (b.action === 'favorite') ms.favorite(id, b.on !== false);
+  else throw new Error("action must be 'delete' or 'favorite'");
+  return studioView();
+}
+
+// A finished file, only from inside ~/.ox/media/<id>/.
+export async function mediaFile(id, name) {
+  const ms = await import('./media-studio.js');
+  if (!/^[0-9a-f]{6,20}$/.test(id) || !/^[\w.-]{1,40}$/.test(name) || name.startsWith('.')) return null;
+  const f = path.join(ms.MEDIA_DIR(), id, name);
+  if (!f.startsWith(path.join(ms.MEDIA_DIR(), id) + path.sep) || !fs.existsSync(f)) return null;
+  return f;
 }

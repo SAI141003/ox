@@ -228,9 +228,9 @@ test('pruneToolSchemas no-op when schemas fit comfortably; input untouched', () 
 
 test('small forced window clips descriptions to 160 chars and drops non-required properties', () => {
   // Stage 1 is tested on a fixed tool set, not on whatever ox ships today: the
-  // mail tools are left out so a new builtin cannot silently push this test
+  // mail tools and create_media are left out so a new builtin cannot silently push this test
   // into stage 2 (which has its own test below).
-  const schemas = listToolSchemas({}).filter((s) => !s.name.startsWith('mail_'));
+  const schemas = listToolSchemas({}).filter((s) => !s.name.startsWith('mail_') && s.name !== 'create_media');
   // The prune budget floors at 8000 (cap 2000 tok) and the built-ins fit under
   // it, so pad with fat filler tools to create real pressure. Two, not three:
   // each builtin added since this was written eats into the headroom the

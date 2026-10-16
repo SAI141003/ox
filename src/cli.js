@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4037,6 +4037,7 @@ const SUB_USAGE = {
   skill: 'usage: ox skill <name> | ox skill add <dir | owner/repo[/path]>',
   episode: 'usage: ox episode ls | ox episode promote <id>',
   'memory-loss': 'usage: ox memory-loss [--limit <n>]',
+  create: 'usage: ox create "<prompt>" [--provider higgsfield|fal|openai|local] [--model <id>] [--set key=value]... [--start <url>] [--end <url>] [--ref <url>]... [--video <url>] [--audio <url>] | --models [provider] | --history',
   market: 'usage: ox market ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
   hooks: 'usage: ox hooks install <claude|codex|gemini|cursor|copilot> [--yes] | uninstall <agent> [--yes] | status',
   memory: 'usage: ox memory [recall "<question>" | add "<fact>" [--project] | history <id> | forget <id> | all [--project]]',
@@ -4603,6 +4604,50 @@ async function runSubcommand(cmd, args) {
       }
       console.log(SUB_USAGE.memory);
       process.exitCode = 2;
+      return;
+    }
+    case 'create': {
+      // OX Studio from the terminal (src/media-studio.js).
+      const ms = await import('./media-studio.js');
+      const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+      const all = (n) => args.flatMap((a, i) => (a === n && args[i + 1] ? [args[i + 1]] : []));
+      if (args.includes('--models')) {
+        const only = args[args.indexOf('--models') + 1];
+        for (const [id, p] of Object.entries(ms.PROVIDERS)) {
+          if (only && !only.startsWith('--') && only !== id) continue;
+          console.log(`${c.bold(p.label)} ${c.dim(`--provider ${id}${p.key ? ` · key ${p.key} ${process.env[p.key] ? c.green('set') : c.yellow('not set')}` : ' · no key'}${p.anyModel ? ' · any model id' : ''}`)}`);
+          for (const m of p.models()) {
+            const full = id === 'higgsfield' ? ms.getModel(m.id) : null;
+            console.log(`  ${m.id.padEnd(24)} ${c.dim(`${m.surface}${full ? ` · inputs: ${Object.keys(full.roles).join(', ') || 'prompt only'} · settings: ${Object.keys(full.settings).join(', ')}` : ''}`)}`);
+          }
+        }
+        return;
+      }
+      if (args.includes('--history')) {
+        for (const r of ms.history({ limit: 30 })) console.log(`${r.status === 'completed' ? c.green('✓') : c.yellow(r.status ?? '?')} ${c.dim(r.id)} ${r.label ?? r.model}  ${String(r.prompt ?? '').slice(0, 60)}  ${c.dim((r.files ?? [])[0] ?? '')}`);
+        return;
+      }
+      const VALUED = new Set(['--provider', '--model', '--set', '--start', '--end', '--ref', '--video', '--audio']);
+      const prompt = args.filter((a, i) => !a.startsWith('--') && !VALUED.has(args[i - 1])).join(' ');
+      if (!prompt) { console.log(SUB_USAGE.create); process.exitCode = 2; return; }
+      const settings = {};
+      for (const kv of all('--set')) { const [k, ...v] = kv.split('='); settings[k] = v.join('='); }
+      const media = {};
+      for (const [f, role] of [['--start', 'start'], ['--end', 'end'], ['--ref', 'reference'], ['--video', 'video'], ['--audio', 'audio']]) if (all(f).length) media[role] = all(f);
+      const provider = flag('--provider') ?? 'higgsfield';
+      const model = flag('--model') ?? (provider === 'higgsfield' ? 'soul-2' : provider === 'openai' ? 'gpt-image-2' : provider === 'fal' ? 'fal-ai/flux/schnell' : 'local');
+      // Settings from the command line are text; the catalogue turns numbers and switches back.
+      if (provider === 'higgsfield') {
+        const m = ms.getModel(model);
+        for (const [k, f] of Object.entries(m.settings)) if (settings[k] != null && f.type === 'range') settings[k] = Number(settings[k]);
+      }
+      try {
+        let last = '';
+        const r = await ms.generate({ provider, model, prompt, settings, media, onStatus: (s) => { if (s.status !== last) { last = s.status; process.stderr.write(c.dim(`  ${s.status}\n`)); } } });
+        if (r.status !== 'completed') { console.log(c.red(`${r.status}${r.error ? `: ${r.error}` : ''}`)); process.exitCode = 1; return; }
+        for (const f of r.files) console.log(c.green(f));
+        if (!r.files.length) for (const u of r.urls) console.log(u);
+      } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; }
       return;
     }
     case 'market': {

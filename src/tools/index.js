@@ -22,6 +22,7 @@ import { critiqueTool, CRITIQUE_TOOL_SCHEMAS, CRITIQUE_TOOLS } from './critique.
 import { showUiTool, CANVAS_TOOL_SCHEMAS, CANVAS_TOOLS, CANVAS_KEYWORDS } from './canvas.js';
 import { agentMessagingToolSchemas, AGENT_MESSAGE_TOOLS } from '../agent-teams.js';
 import { taskBoardTool, TASK_BOARD_TOOL_SCHEMAS, TASK_BOARD_TOOLS, currentTaskId } from './task-board.js';
+import { createMediaTool, MEDIA_TOOL_SCHEMAS, MEDIA_TOOLS, MEDIA_KEYWORDS } from './media.js';
 
 export const TOOL_IMPLS = {
   read_file: readFileTool,
@@ -47,6 +48,7 @@ export const TOOL_IMPLS = {
   web_task: webTaskTool,
   show_ui: showUiTool,
   task_board: taskBoardTool,
+  create_media: createMediaTool,
 };
 
 const PLAN_READ_ONLY = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'show_ui', 'agent_status'];
@@ -57,6 +59,7 @@ export const BUILTIN_SCHEMAS = [
   ...WEB_TOOL_SCHEMAS,
   ...WEB_TASK_TOOL_SCHEMAS,
   ...CRITIQUE_TOOL_SCHEMAS,
+  ...MEDIA_TOOL_SCHEMAS,
   {
     name: 'read_file',
     description:
@@ -553,7 +556,7 @@ export function relevantSkillToolNames({ skillIndex = '', message = '', availabl
 // True when the candidate cut would drop a tool from a group this message is
 // about. Such a cut is refused — a dropped tool the request needs is silently
 // unsatisfiable, which is worse than carrying the bytes.
-function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, critiqueOn, agentOn, canvasOn, skillNames }) {
+function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, critiqueOn, agentOn, canvasOn, mediaOn, skillNames }) {
   const kept = new Set(filtered.map((s) => s?.name));
   const skillSet = new Set(skillNames);
   for (const s of schemas) {
@@ -566,6 +569,7 @@ function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, web
     if (critiqueOn && CRITIQUE_TOOLS.includes(n)) return true;
     if (agentOn && AGENT_MESSAGE_TOOLS.includes(n)) return true;
     if (canvasOn && CANVAS_TOOLS.includes(n)) return true;
+    if (mediaOn && MEDIA_TOOLS.includes(n)) return true;
     if (skillSet.has(n)) return true;
   }
   return false;
@@ -598,6 +602,7 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
   const isSubagentOffer = names.includes('report_result');
   const agentOn = isSubagentOffer || keywordSignal(message, AGENT_KEYWORDS) !== null;
   const canvasOn = keywordSignal(message, CANVAS_KEYWORDS) !== null;
+  const mediaOn = keywordSignal(message, MEDIA_KEYWORDS) !== null;
   const keep = new Set(NARROW_CORE_TOOLS);
   for (const t of skillNames) keep.add(t);
   for (const t of TASK_BOARD_TOOLS) if (names.includes(t)) keep.add(t);
@@ -609,11 +614,12 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
     if (critiqueOn && CRITIQUE_TOOLS.includes(n)) keep.add(n);
     if (agentOn && AGENT_MESSAGE_TOOLS.includes(n)) keep.add(n);
     if (canvasOn && CANVAS_TOOLS.includes(n)) keep.add(n);
+    if (mediaOn && MEDIA_TOOLS.includes(n)) keep.add(n);
   }
   const filtered = schemas.filter((s) => typeof s?.name === 'string' && keep.has(s.name));
   if (filtered.length < NARROW_FLOOR) return schemas;
   if (filtered.length === schemas.length) return schemas;
-  if (dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, critiqueOn, agentOn, canvasOn, skillNames })) return schemas;
+  if (dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, critiqueOn, agentOn, canvasOn, mediaOn, skillNames })) return schemas;
   const saved =
     estimateTokens(JSON.stringify(schemas)) - estimateTokens(JSON.stringify(filtered));
   if (saved < NARROW_MIN_SAVING) return schemas;

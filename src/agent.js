@@ -21,6 +21,7 @@ import { createVerifier } from './verify-loop.js';
 import { fireHooks, formatHookOutputs, hooksFor, loadHooksConfig } from './hooks.js';
 import { modeBlock, modeRefusal, grantRefusal } from './modes.js';
 import { runSubscriptionTurn } from './subscriptions.js';
+import { withUsageLog } from './usage-log.js';
 
 const SUMMARY_PREFIX = '[ox: summary of earlier conversation turns]\n';
 const VERIFY_MAX_ROUNDS = 2;
@@ -652,6 +653,8 @@ export async function summarizeMessages(target, toSummarize, signal, opts = {}) 
 function needsApproval(name, ctx) {
   if (ctx?.yolo) return false;
   if (name === 'bash') return true;
+  // Making an image or video spends money (or GPU time): always asked.
+  if (name === 'create_media') return true;
   if (name.startsWith('mcp__')) return true;
   if (name === 'write_file' || name === 'edit_file') {
     return (ctx?.approval ?? 'default') === 'default';
@@ -2748,10 +2751,11 @@ export function runAgent(opts = {}) {
   // synchronously at the runAgent() call site, with the caller on the
   // stack, instead of surfacing later as a rejected event stream.
   resolveRunCwd(opts);
+  // Every run's tokens are kept by model, agent and surface (src/usage-log.js).
   if (opts?.target?.provider === 'subscription') {
-    return withIpcBroadcast(opts, runSubscriptionTurn({ ...opts, ctx: { ...(opts.ctx ?? {}), cwd: resolveRunCwd(opts) } }));
+    return withUsageLog(opts, withIpcBroadcast(opts, runSubscriptionTurn({ ...opts, ctx: { ...(opts.ctx ?? {}), cwd: resolveRunCwd(opts) } })));
   }
-  return withIpcBroadcast(opts, runAgentLoop(opts));
+  return withUsageLog(opts, withIpcBroadcast(opts, runAgentLoop(opts)));
 }
 
 export async function runAgentCollect(opts) {

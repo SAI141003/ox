@@ -61,7 +61,7 @@ export function createRemoteCore({ adapter, state, persist, cwd, agent = null, e
     const status = await adapter.send(chat, '⏳ working…');
     // A phone is slower to answer than a desk: approvals wait 10 minutes
     // (unless set), then decline as usual.
-    const childEnv = { OX_IPC_APPROVAL_TIMEOUT_MS: '600000', ...env, OX_IPC_WAIT_CLIENT_MS: '15000', OX_ISLAND: '0', NO_COLOR: '1' };
+    const childEnv = { OX_IPC_APPROVAL_TIMEOUT_MS: '600000', ...env, OX_IPC_WAIT_CLIENT_MS: '15000', OX_ISLAND: '0', NO_COLOR: '1', OX_SURFACE: channel };
     const child = spawn(process.execPath, args, { cwd, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     run = { id, chat, child, sock, statusId: status.id, started: Date.now(), watch: createWatchState(), client: null, asked: new Set(), lastEdit: 0, lastShown: '' };
     let out = '';

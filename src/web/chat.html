@@ -286,6 +286,7 @@
       <div class="nav">
         <button id="nav-new"><span data-i="plus"></span><span class="grow">New session</span><span class="kbd">⌘</span><span class="kbd">N</span></button>
         <button data-view="caps"><span data-i="blocks"></span><span class="grow">Capabilities</span></button>
+        <button data-view="studio"><span data-i="film"></span><span class="grow">Studio</span></button>
         <button data-view="market"><span data-i="store"></span><span class="grow">Marketplace</span></button>
         <button data-view="msg"><span data-i="chat"></span><span class="grow">Messaging</span></button>
         <button data-view="sched"><span data-i="clock"></span><span class="grow">Scheduled</span></button>
@@ -361,6 +362,24 @@
       <div style="display:flex;gap:8px;margin-top:8px"><input class="field" id="mk-add" placeholder="Add a catalogue: owner/repo with a .claude-plugin/marketplace.json" style="flex:1"><button class="btn" id="mk-add-btn">Add</button></div>
     </div></div></section>
 
+    <section class="view" id="v-studio"><div class="page"><div class="page-inner" style="max-width:1100px">
+      <div class="shead" style="font-size:18px">Studio</div>
+      <p class="sdesc">Images and video from one prompt. Pick where it runs — Higgsfield's 38 models, any fal.ai model, OpenAI's image models, or a Stable Diffusion server on this machine with no account at all. Every result is saved to ~/.ox/media with its full recipe.</p>
+      <div class="box" id="st-composer">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <select class="field" id="st-provider" style="width:auto" aria-label="Provider"></select>
+          <select class="field" id="st-model" style="width:auto;min-width:220px" aria-label="Model"></select>
+          <input class="field" id="st-model-custom" placeholder="fal model id, e.g. fal-ai/flux/schnell" style="flex:1;min-width:220px" hidden>
+        </div>
+        <textarea class="field" id="st-prompt" rows="3" placeholder="Describe the image or video — ⌘/Ctrl+Enter to generate" style="resize:vertical"></textarea>
+        <div id="st-settings" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px"></div>
+        <div id="st-media" style="display:flex;flex-direction:column;gap:6px;margin-top:10px"></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:12px"><button class="btn primary" id="st-go">Generate</button><span class="small muted" id="st-state"></span></div>
+      </div>
+      <div class="subtabs" id="st-tabs" style="padding-left:0;margin-top:18px"></div>
+      <div id="st-gallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px"></div>
+    </div></div></section>
+
     <section class="view" id="v-sched"><div class="page"><div class="page-inner" id="sched"></div></div></section>
   </main>
 </div>
@@ -408,6 +427,7 @@
     monitor: 'M3 4h18v12H3zM8 20h8M12 16v4', info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 11v5M12 8h.01', play: 'M7 4v16l13-8Z', refresh: 'M20 11a8 8 0 0 0-14.9-3.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.9 3.9L20 16M20 20v-4h-4',
     brain: 'M9 4a3 3 0 0 0-3 3v.2A3 3 0 0 0 4 10a3 3 0 0 0 1 2.2A3 3 0 0 0 6 17a3 3 0 0 0 3 3a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3ZM15 4a3 3 0 0 1 3 3v.2A3 3 0 0 1 20 10a3 3 0 0 1-1 2.2A3 3 0 0 1 18 17a3 3 0 0 1-3 3a3 3 0 0 1-3-3',
     store: 'M4 9l1.5-5h13L20 9M4 9h16v11H4zM4 9a3 3 0 0 0 6 0 3 3 0 0 0 4 0 3 3 0 0 0 6 0M9 20v-5h6v5',
+    film: 'M4 4h16v16H4zM8 4v16M16 4v16M4 8h4M4 12h4M4 16h4M16 8h4M16 12h4M16 16h4',
     shield: 'M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6Z', open: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6', back: 'M15 18l-6-6 6-6',
   };
   const icon = (n, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${P[n] || ''}"/></svg>`;
@@ -498,12 +518,13 @@
     view = v;
     document.querySelectorAll('.view').forEach((el) => el.classList.toggle('on', el.id === `v-${v}`));
     document.querySelectorAll('.nav [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
-    $('title').textContent = v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : (readonly ? readonly.title : convo()?.title || 'New session');
+    $('title').textContent = v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : (readonly ? readonly.title : convo()?.title || 'New session');
     document.body.classList.remove('nav');
     if (v === 'caps') loadCaps();
     if (v === 'msg') loadMessaging();
     if (v === 'sched') loadScheduled();
     if (v === 'market') loadMarket();
+    if (v === 'studio') loadStudio();
     renderLists();
   }
   document.querySelectorAll('.nav [data-view]').forEach((b) => (b.onclick = () => show(b.dataset.view)));
@@ -964,6 +985,93 @@
       <div class="cmd"><code>${esc(c.command)}${c.configured ? '' : ' --token &lt;token&gt;'}</code><button data-copy-cmd="${esc(c.command)}${c.configured ? '' : ' --token '}">${icon('copy')}</button></div></div>
       <div class="section-cap cap">From your phone</div>
       <div class="box small muted">/status — what ox is doing · /stop — stop the run · /mode ask|code|plan — switch mode · /new — start fresh · /where — the folder it works in</div>`;
+  }
+
+  // ---------- studio
+  let stData = null, stTab = 'all', stBusy = 0;
+  async function loadStudio() {
+    try { stData = await getJson('/ox/studio'); } catch (e) { $('st-gallery').innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; return; }
+    const prov = $('st-provider');
+    const keep = prov.value || store.get('ox.studio.provider', 'higgsfield');
+    prov.innerHTML = stData.providers.map((p) => `<option value="${p.id}">${esc(p.label)}${p.ready ? '' : ' — needs a key'}</option>`).join('');
+    prov.value = stData.providers.some((p) => p.id === keep) ? keep : 'higgsfield';
+    renderStudioModels(); renderGallery();
+  }
+  const stProvider = () => stData.providers.find((p) => p.id === $('st-provider').value);
+  const stModel = () => (stProvider()?.id === 'higgsfield' ? stData.higgsfield.find((m) => m.id === $('st-model').value) : null);
+  function renderStudioModels() {
+    const p = stProvider();
+    const models = p.models;
+    $('st-model').innerHTML = ['image', 'video'].map((k) => { const list = models.filter((m) => m.surface === k); return list.length ? `<optgroup label="${k === 'image' ? 'Image' : 'Video'}">${list.map((m) => `<option value="${esc(m.id)}">${esc(m.label)}</option>`).join('')}</optgroup>` : ''; }).join('');
+    const saved = store.get(`ox.studio.model.${p.id}`, null);
+    if (saved && models.some((m) => m.id === saved)) $('st-model').value = saved;
+    $('st-model-custom').hidden = !p.anyModel;
+    renderStudioSettings();
+  }
+  function renderStudioSettings() {
+    const p = stProvider(); const m = stModel();
+    let fields = {};
+    if (m) fields = m.settings;
+    else if (p.id === 'openai') fields = { size: { type: 'enum', values: ['auto', '1024x1024', '1536x1024', '1024x1536'], default: 'auto' }, quality: { type: 'enum', values: ['auto', 'low', 'medium', 'high'], default: 'auto' }, n: { type: 'range', min: 1, max: 4, default: 1 } };
+    else if (p.id === 'local') fields = { width: { type: 'range', min: 256, max: 2048, default: 1024, step: 64 }, height: { type: 'range', min: 256, max: 2048, default: 1024, step: 64 }, steps: { type: 'range', min: 1, max: 80, default: 25 }, n: { type: 'range', min: 1, max: 4, default: 1 } };
+    const label = (k) => k.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
+    $('st-settings').innerHTML = Object.entries(fields).map(([k, f]) => `<label class="small muted" style="display:flex;flex-direction:column;gap:4px">${esc(label(k))}${
+      f.type === 'enum' ? `<select class="field" data-set="${k}" style="width:auto">${f.values.map((v) => `<option ${v === f.default ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>`
+      : f.type === 'range' ? `<input class="field" type="number" data-set="${k}" min="${f.min}" max="${f.max}" step="${f.step ?? 1}" value="${f.default}" style="width:110px">`
+      : `<label class="switch"><input type="checkbox" data-set="${k}" ${f.default ? 'checked' : ''}><span></span></label>`}</label>`).join('') + (p.id === 'local' ? '<label class="small muted" style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:200px">Leave out<input class="field" data-set="negative" placeholder="blurry, text, watermark"></label>' : '');
+    const roles = m ? Object.entries(m.roles) : p.id === 'fal' ? [['start', 1]] : [];
+    const RN = { start: 'Start frame', end: 'End frame', reference: 'References', video: 'Video', audio: 'Audio' };
+    $('st-media').innerHTML = roles.map(([r, max]) => `<label class="small muted" style="display:flex;gap:8px;align-items:center"><span style="width:110px">${RN[r]} <span class="dim">(up to ${max})</span></span><input class="field" data-role="${r}" placeholder="public https:// link${max > 1 ? 's, separated by spaces' : ''}"></label>`).join('');
+  }
+  $('st-provider').onchange = () => { store.set('ox.studio.provider', $('st-provider').value); renderStudioModels(); };
+  $('st-model').onchange = () => { store.set(`ox.studio.model.${$('st-provider').value}`, $('st-model').value); renderStudioSettings(); };
+  async function studioGo() {
+    const p = stProvider();
+    const prompt = $('st-prompt').value.trim();
+    if (!prompt && !document.querySelector('#st-media input[data-role]')?.value) { toast('Write a prompt first'); return; }
+    const settings = {};
+    document.querySelectorAll('#st-settings [data-set]').forEach((el) => {
+      const k = el.dataset.set;
+      if (el.type === 'checkbox') settings[k] = el.checked; else if (el.type === 'number') settings[k] = Number(el.value); else if (el.value) settings[k] = el.value;
+    });
+    const media = {};
+    document.querySelectorAll('#st-media [data-role]').forEach((el) => { const l = el.value.split(/\s+/).filter(Boolean); if (l.length) media[el.dataset.role] = l; });
+    const model = p.anyModel && $('st-model-custom').value.trim() ? $('st-model-custom').value.trim() : $('st-model').value;
+    stBusy++; $('st-state').textContent = `${stBusy} running… videos can take a few minutes`;
+    const tile = document.createElement('div'); tile.className = 'box'; tile.style.minHeight = '160px'; tile.innerHTML = `<div class="skeleton" style="height:120px"></div><div class="small muted">${esc(prompt.slice(0, 80))}</div>`;
+    $('st-gallery').prepend(tile);
+    try {
+      const r = await postJson('/ox/studio/create', { provider: p.id, model, prompt, settings, media });
+      toast(r.status === 'completed' ? 'Done — saved to ~/.ox/media' : `Finished as ${r.status}${r.error ? `: ${r.error}` : ''}`);
+    } catch (e) { toast(e.message); }
+    stBusy--; $('st-state').textContent = stBusy ? `${stBusy} running…` : '';
+    loadStudio();
+  }
+  $('st-go').onclick = studioGo;
+  $('st-prompt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); studioGo(); } });
+  function renderGallery() {
+    const h = stData.history;
+    const counts = { all: h.length, image: h.filter((r) => r.surface === 'image').length, video: h.filter((r) => r.surface === 'video').length, favorites: h.filter((r) => r.favorite).length };
+    $('st-tabs').innerHTML = [['all', 'All'], ['image', 'Images'], ['video', 'Videos'], ['favorites', 'Favorites']].map(([k, l]) => `<button data-st="${k}" class="${stTab === k ? 'on' : ''}">${l}<sup>${counts[k]}</sup></button>`).join('');
+    $('st-tabs').querySelectorAll('button').forEach((b) => (b.onclick = () => { stTab = b.dataset.st; renderGallery(); }));
+    const list = h.filter((r) => stTab === 'all' || (stTab === 'favorites' ? r.favorite : r.surface === stTab));
+    $('st-gallery').innerHTML = list.length ? list.map((r) => {
+      const f = r.files?.[0];
+      const media = f ? (/\.(mp4|mov|webm)$/i.test(f) ? `<video src="${esc(f)}" controls muted style="width:100%;border-radius:8px;background:#000"></video>` : `<a href="${esc(f)}" target="_blank" rel="noopener"><img src="${esc(f)}" alt="${esc(r.prompt)}" style="width:100%;border-radius:8px;display:block"></a>`)
+        : `<div class="box small ${r.status === 'failed' || r.status === 'nsfw' ? 'err' : 'muted'}" style="min-height:90px">${esc(r.status === 'queued' ? 'still running, or stopped before it finished' : `${r.status}${r.error ? ` — ${r.error}` : ''}`)}</div>`;
+      return `<div class="box" style="padding:8px">${media}<div class="small" style="margin:6px 2px 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.prompt)}">${esc(r.prompt || '(no prompt)')}</div><div class="d small dim" style="display:flex;gap:6px;align-items:center;margin:0 2px"><span>${esc(r.label || r.model)}</span><span class="grow" style="flex:1"></span>${(r.files?.length ?? 0) > 1 ? `<span>+${r.files.length - 1}</span>` : ''}<button class="btn ghost" data-reuse="${esc(r.id)}" title="Reuse prompt, model and settings">Reuse</button><button class="btn ghost" data-fav="${esc(r.id)}" title="Favorite">${r.favorite ? '★' : '☆'}</button><button class="btn ghost danger" data-del="${esc(r.id)}" title="Remove from the gallery">✕</button></div></div>`;
+    }).join('') : '<div class="box muted small">Nothing yet. Try: “a lighthouse at dusk, cinematic, 35mm”.</div>';
+    $('st-gallery').querySelectorAll('[data-reuse]').forEach((b) => (b.onclick = () => {
+      const r = h.find((x) => x.id === b.dataset.reuse);
+      $('st-provider').value = r.provider || 'higgsfield'; renderStudioModels();
+      if ([...$('st-model').options].some((o) => o.value === r.model)) $('st-model').value = r.model; else if (r.provider === 'fal') $('st-model-custom').value = r.model;
+      renderStudioSettings();
+      for (const [k, v] of Object.entries(r.settings || {})) { const el = document.querySelector(`#st-settings [data-set="${k}"]`); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; }
+      for (const [role, l] of Object.entries(r.media || {})) { const el = document.querySelector(`#st-media [data-role="${role}"]`); if (el) el.value = l.join(' '); }
+      $('st-prompt').value = r.prompt || ''; $('st-prompt').focus(); window.scrollTo(0, 0);
+    }));
+    $('st-gallery').querySelectorAll('[data-fav]').forEach((b) => (b.onclick = async () => { const r = h.find((x) => x.id === b.dataset.fav); stData = await postJson('/ox/studio', { id: r.id, action: 'favorite', on: !r.favorite }); renderGallery(); }));
+    $('st-gallery').querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => { stData = await postJson('/ox/studio', { id: b.dataset.del, action: 'delete' }); renderGallery(); toast('Removed from the gallery (the files stay in ~/.ox/media)'); }));
   }
 
   // ---------- marketplace
