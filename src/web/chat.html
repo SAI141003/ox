@@ -213,6 +213,9 @@
   .bot-shapes { display: grid; grid-template-columns: repeat(auto-fill, 40px); gap: 6px; justify-content: center; }
   .bot-shapes button { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; }
   .bot-shapes button.on { box-shadow: inset 0 0 0 1.5px var(--text); }
+  .bot-colors { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+  .bot-colors button { width: 26px; height: 26px; border-radius: 99px; box-shadow: inset 0 0 0 1px var(--line2); }
+  .bot-colors button.on { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--text); }
   .bot-groupnew { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
   .bot-pick { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: 8px; cursor: pointer; }
   .bot-pick:hover { background: var(--hover); } .bot-pick input { accent-color: var(--text); }
@@ -1051,7 +1054,7 @@
     msg.key ??= `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     const text = msg.content ? md(msg.content, msg.key) : (msg.pending ? '<span class="typing"><i></i><i></i><i></i></span>' : '');
     const routed = (msg.bot ? `<span class="botname">${esc(msg.bot)}</span>` : '') + (msg.routed ? `<span class="routed">${icon('mode')}${esc(msg.routed)}</span>` : '');
-    if (msg.bot) { const who = body.closest('.msg')?.querySelector('.who'); if (who && !who.dataset.bot) { who.dataset.bot = msg.bot; who.classList.add('botwho'); who.innerHTML = botFace(msg.bot, botShapes[msg.bot], 26); } }
+    if (msg.bot) { const who = body.closest('.msg')?.querySelector('.who'); if (who && !who.dataset.bot) { who.dataset.bot = msg.bot; who.classList.add('botwho'); who.innerHTML = botFace(msg.bot, botShapes[msg.bot], 26, botColors[msg.bot]); } }
     const PI = { completed: ['ok', '✓'], in_progress: ['run', '›'], blocked: ['err', '!'], pending: ['', ''] };
     const plan = Array.isArray(msg.plan) && msg.plan.length
       ? `<div class="worklog"><div class="cap" style="margin-bottom:6px">Plan · ${msg.plan.filter((t) => t.status === 'completed').length}/${msg.plan.length} done</div>${msg.plan.map((t) => `<div class="wl ${t.status}"><span class="dot ${PI[t.status]?.[0] ?? ''}"></span><span>${esc(t.content)}</span></div>`).join('')}</div>`
@@ -1689,13 +1692,17 @@ files: [src/billing/**]
     round('20,4 34,12 34,28 20,36 6,28 6,12'),
   ];
   const SHADES = [1, 0.86, 0.72, 0.6];
+  // Bots have colour (as in Grok Bot); the app around them stays black and white.
+  const BOT_COLORS = { mono: null, black: '#1C1C1E', brown: '#9A6A3E', red: '#FF2D46', orange: '#FF6A00', amber: '#FF9F0A', green: '#16C47F', teal: '#14B8A6', blue: '#1E88FF', purple: '#8B5CF6', pink: '#FF3EA5', grey: '#7A7A7A' };
   const nameHash = (n) => [...String(n)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
-  function botFace(name, shape = null, size = 32) {
+  function botFace(name, shape = null, size = 32, color = null) {
     const k = Number.isInteger(shape) ? shape : nameHash(name) % BOT_SHAPES.length;
     const shade = SHADES[nameHash(`${name}!`) % SHADES.length];
-    return `<svg class="botface" viewBox="0 0 40 40" width="${size}" height="${size}" aria-hidden="true"><g fill="var(--text)" stroke="var(--text)" stroke-width="0" opacity="${shade}">${BOT_SHAPES[k]}</g><g fill="var(--bg)"><rect x="14.5" y="15" width="3.6" height="8" rx="1.8" transform="rotate(-14 16.3 19)"/><rect x="21.5" y="15" width="3.6" height="8" rx="1.8" transform="rotate(-14 23.3 19)"/></g></svg>`;
+    const hex = BOT_COLORS[color ?? botColors[name]] ?? null;
+    const fill = hex ?? 'var(--text)', eye = hex ? '#FFFFFF' : 'var(--bg)';
+    return `<svg class="botface" viewBox="0 0 40 40" width="${size}" height="${size}" aria-hidden="true"><g fill="${fill}" stroke="${fill}" stroke-width="0" opacity="${hex ? 1 : shade}">${BOT_SHAPES[k]}</g><g fill="${eye}"><rect x="14.5" y="15" width="3.6" height="8" rx="1.8" transform="rotate(-14 16.3 19)"/><rect x="21.5" y="15" width="3.6" height="8" rx="1.8" transform="rotate(-14 23.3 19)"/></g></svg>`;
   }
-  let botShapes = {};
+  let botShapes = {}, botColors = {};
 
   // ---------- bots: your own, and what they run on
   let botSel = null;
@@ -1713,12 +1720,13 @@ files: [src/billing/**]
         <div class="cards">
           <button class="card bot-new" data-bot="+new">${icon('plus')}<span class="t"><div class="n">New bot</div><div class="d">Pick a model, a mode and what it may do</div></span></button>
           ${B.mine.length > 1 ? `<button class="card bot-new" id="b-group">${icon('chat')}<span class="t"><div class="n">New group chat</div><div class="d">Several bots in one chat, checking each other</div></span></button>` : ''}
-          ${B.mine.map((b) => `<button class="card${botSel === b.name ? ' on' : ''}" data-bot="${esc(b.name)}">${botFace(b.name, b.shape, 34)}<span class="t"><div class="n">${esc(b.name)}</div><div class="d">${esc(b.description || `${b.mode} · ${b.bot || 'default model'}`)}</div></span><span class="badge">${esc(b.mode)}</span></button>`).join('')}
+          ${B.mine.map((b) => `<button class="card${botSel === b.name ? ' on' : ''}" data-bot="${esc(b.name)}">${botFace(b.name, b.shape, 34, b.color)}<span class="t"><div class="n">${esc(b.name)}</div><div class="d">${esc(b.description || `${b.mode} · ${b.bot || 'default model'}`)}</div></span><span class="badge">${esc(b.mode)}</span></button>`).join('')}
           ${B.mine.length ? '' : '<div class="box muted small">No bots yet.</div>'}
         </div>
         <div>${sel ? `<div class="box bot-edit">
-          <div class="bot-hero" id="b-hero">${botFace(sel.name || 'new', sel.shape, 96)}</div>
+          <div class="bot-hero" id="b-hero">${botFace(sel.name || 'new', sel.shape, 96, sel.color)}</div>
           <div class="bot-shapes">${BOT_SHAPES.map((_, k) => `<button data-shape="${k}" class="${(Number.isInteger(sel.shape) ? sel.shape : nameHash(sel.name || 'new') % BOT_SHAPES.length) === k ? 'on' : ''}" aria-label="Shape ${k + 1}">${botFace(sel.name || 'new', k, 30)}</button>`).join('')}</div>
+          <div class="bot-colors">${Object.entries(BOT_COLORS).map(([n, h]) => `<button data-color="${n}" title="${n}" class="${(sel.color || 'mono') === n ? 'on' : ''}" style="background:${h ?? 'var(--text)'}"></button>`).join('')}</div>
           <label class="small muted">Name<input class="field" id="b-name" value="${esc(sel.name)}" placeholder="reviewer" maxlength="48"></label>
           <label class="small muted">What it is for<input class="field" id="b-desc" value="${esc(sel.description)}" placeholder="Reviews my diffs for bugs" maxlength="200"></label>
           <div class="bot-two">
@@ -1743,12 +1751,12 @@ files: [src/billing/**]
         </div>
       </div>`;
     paintIcons();
-    botShapes = Object.fromEntries(B.mine.map((b) => [b.name, b.shape]));
+    botShapes = Object.fromEntries(B.mine.map((b) => [b.name, b.shape])); botColors = Object.fromEntries(B.mine.map((b) => [b.name, b.color]));
     el.querySelectorAll('[data-bot]').forEach((b) => (b.onclick = () => { botSel = b.dataset.bot; loadBots(); }));
     if ($('b-group')) $('b-group').onclick = () => {
       const box = document.createElement('div');
       box.className = 'box bot-groupnew';
-      box.innerHTML = `<b>New group chat</b><p class="small muted">Pick the bots. Each answers in turn and sees what the others said; write @name to ask just one.</p>${B.mine.map((b) => `<label class="bot-pick"><input type="checkbox" value="${esc(b.name)}">${botFace(b.name, b.shape, 26)}<span>${esc(b.name)}</span><span class="dim small">${esc(b.description || b.mode)}</span></label>`).join('')}<div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="g-go">Start</button><button class="btn ghost" id="g-cancel">Cancel</button></div>`;
+      box.innerHTML = `<b>New group chat</b><p class="small muted">Pick the bots. Each answers in turn and sees what the others said; write @name to ask just one.</p>${B.mine.map((b) => `<label class="bot-pick"><input type="checkbox" value="${esc(b.name)}">${botFace(b.name, b.shape, 26, b.color)}<span>${esc(b.name)}</span><span class="dim small">${esc(b.description || b.mode)}</span></label>`).join('')}<div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="g-go">Start</button><button class="btn ghost" id="g-cancel">Cancel</button></div>`;
       el.querySelector('.bots-grid').before(box);
       box.querySelector('#g-cancel').onclick = () => box.remove();
       box.querySelector('#g-go').onclick = () => {
@@ -1760,11 +1768,13 @@ files: [src/billing/**]
       };
     };
     if (!sel) return;
-    let pickedShape = Number.isInteger(sel.shape) ? sel.shape : null;
+    let pickedShape = Number.isInteger(sel.shape) ? sel.shape : null, pickedColor = sel.color || 'mono';
+    const hero = () => { $('b-hero').innerHTML = botFace($('b-name').value || 'new', pickedShape, 96, pickedColor); el.querySelectorAll('[data-shape]').forEach((b) => (b.innerHTML = botFace($('b-name').value || 'new', Number(b.dataset.shape), 30, pickedColor))); };
+    el.querySelectorAll('[data-color]').forEach((b) => (b.onclick = () => { pickedColor = b.dataset.color; el.querySelectorAll('[data-color]').forEach((x) => x.classList.toggle('on', x === b)); hero(); }));
     el.querySelectorAll('[data-shape]').forEach((b) => (b.onclick = () => {
       pickedShape = Number(b.dataset.shape);
       el.querySelectorAll('[data-shape]').forEach((x) => x.classList.toggle('on', x === b));
-      $('b-hero').innerHTML = botFace($('b-name').value || 'new', pickedShape, 96);
+      hero();
     }));
     $('b-bot').value = sel.bot || '';
     $('b-mode').value = sel.mode || 'code';
@@ -1773,7 +1783,7 @@ files: [src/billing/**]
       const tools = [...el.querySelectorAll('.bot-tools input:checked')].map((i) => i.value);
       const name = $('b-name').value.trim();
       try {
-        await postJson('/ox/bots', { name, from: botSel === '+new' ? null : sel.name, description: $('b-desc').value, bot: $('b-bot').value || null, mode: $('b-mode').value, tools, instructions: $('b-ins').value, shape: pickedShape });
+        await postJson('/ox/bots', { name, from: botSel === '+new' ? null : sel.name, description: $('b-desc').value, bot: $('b-bot').value || null, mode: $('b-mode').value, tools, instructions: $('b-ins').value, shape: pickedShape, color: pickedColor === 'mono' ? null : pickedColor });
         botSel = name; toast('Saved'); caps = null; loadModels(); loadBots();
       } catch (e) { st(e.message); }
     };
@@ -2137,7 +2147,7 @@ files: [src/billing/**]
   const t0 = performance.now();
   const hideSplash = () => setTimeout(() => { splash.classList.add('done'); setTimeout(() => splash.remove(), 500); }, Math.max(0, 1250 - (performance.now() - t0)));
   if (seen) splash.remove(); else setTimeout(hideSplash, 2400);
-  getJson('/ox/bots').then((B) => { botShapes = Object.fromEntries(B.mine.map((b) => [b.name, b.shape])); }).catch(() => {});
+  getJson('/ox/bots').then((B) => { botShapes = Object.fromEntries(B.mine.map((b) => [b.name, b.shape])); botColors = Object.fromEntries(B.mine.map((b) => [b.name, b.color])); }).catch(() => {});
   getJson('/ox/settings').then((st) => applyName(st.name)).catch(() => {}).finally(() => { if (!seen) hideSplash(); });
   loadTerminalSessions();
   if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => {};

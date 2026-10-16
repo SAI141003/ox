@@ -53,6 +53,8 @@ export function saveAgent(name, agent) {
     systemPrompt: agent.systemPrompt ?? '',
     // The avatar shape picked in the app (0 to 12); null for the default.
     shape: Number.isInteger(agent.shape) && agent.shape >= 0 && agent.shape <= 12 ? agent.shape : null,
+    // Its colour in the app (a palette name); the app itself stays black and white.
+    color: typeof agent.color === 'string' && /^[a-z]{3,10}$/.test(agent.color) ? agent.color : null,
     createdAt: agent.createdAt ?? new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
