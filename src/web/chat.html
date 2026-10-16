@@ -183,6 +183,7 @@
   .ui-bar i { height: 8px; border-radius: 99px; background: var(--text); display: block; }
   .ui-bar b { font-weight: 600; font-variant-numeric: tabular-nums; }
   .ui-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+  .sch-new { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; } .sch-new #sch-prompt { flex: 1; min-width: 220px; }
   .bots-grid { display: grid; grid-template-columns: minmax(240px, 320px) 1fr; gap: 18px; align-items: start; margin-top: 16px; }
   .bots-grid .card { text-align: left; width: 100%; }
   .bots-grid .card.on { border-color: var(--text); }
@@ -285,6 +286,7 @@
   .section-cap { margin: 22px 0 10px; }
   .box { border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 14px 16px; }
   .alert { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-radius: 9px; border: 1px solid color-mix(in srgb, var(--red) 40%, transparent); background: color-mix(in srgb, var(--red) 8%, transparent); color: var(--red); font-size: 13.5px; }
+  .alert.note { color: var(--muted); border-color: var(--line2); background: var(--panel); }
   .alert.ok { border-color: color-mix(in srgb, var(--green) 40%, transparent); background: color-mix(in srgb, var(--green) 8%, transparent); color: var(--green); }
   .steps-ol { margin: 0; padding-left: 20px; color: var(--muted); } .steps-ol li { margin: 4px 0; }
   .cmd { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 9px 12px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); font: 12.5px var(--mono); }
@@ -531,8 +533,11 @@
   const paintIcons = (root = document) => root.querySelectorAll('[data-i]').forEach((el) => { if (!el.querySelector('svg')) el.insertAdjacentHTML('afterbegin', icon(el.dataset.i)); });
   const OX_FACE = '<svg viewBox="0 0 112 64" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"><circle cx="28" cy="38" r="17"/><path d="M60 56 L77 38 C86 29 91 22 91 12"/><path d="M94 56 L77 38 C68 29 63 22 63 12"/></g></svg>';
 
+  // ox's messages from the server can carry " — " between clauses; the
+  // interface shows none (a colon reads the same).
+  const plainDash = (m) => String(m).replace(/\s+[—–]\s+/g, ': ');
   function toast(text) {
-    const t = $('toast'); t.textContent = text; t.classList.add('on');
+    const t = $('toast'); t.textContent = plainDash(text); t.classList.add('on');
     clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('on'), 2200);
   }
   const copy = (text) => { navigator.clipboard?.writeText(text); toast('Copied'); };
@@ -568,13 +573,13 @@
   async function getJson(path) {
     const r = await api(path);
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j?.error?.message || `HTTP ${r.status}`);
+    if (!r.ok) throw new Error(plainDash(j?.error?.message || `HTTP ${r.status}`));
     return j;
   }
   async function postJson(path, body) {
     const r = await api(path, { method: 'POST', body: JSON.stringify(body) });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j?.error?.message || `HTTP ${r.status}`);
+    if (!r.ok) throw new Error(plainDash(j?.error?.message || `HTTP ${r.status}`));
     return j;
   }
   function askKey() {
@@ -1017,7 +1022,7 @@
           const data = frame.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('');
           if (!data || data === '[DONE]') continue;
           let ev; try { ev = JSON.parse(data); } catch { continue; }
-          if (ev.error) { reply.error = ev.error.message; continue; }
+          if (ev.error) { reply.error = plainDash(ev.error.message); continue; }
           const ox = ev.ox;
           if (ox?.type === 'mode') reply.routed = `${ox.routed ? 'auto → ' : ''}${ox.mode}${ox.reason ? ` · ${ox.reason}` : ''}`;
           if (ox?.type === 'tool-start' && Array.isArray(ox.plan)) reply.plan = ox.plan;
@@ -1031,7 +1036,7 @@
         }
       }
     } catch (e) {
-      reply.error = e.name === 'AbortError' ? 'Stopped.' : e.message;
+      reply.error = e.name === 'AbortError' ? 'Stopped.' : plainDash(e.message);
     } finally {
       reply.pending = false; c.running = false; c.updated = Date.now();
       busy = null; setBusy(false);
@@ -1208,6 +1213,9 @@
     $('caps-tabs').querySelectorAll('button').forEach((b) => (b.onclick = () => { capsTab = b.dataset.ct; capsSel = null; renderCaps(); }));
     const q = $('caps-q').value.trim().toLowerCase();
     const items = (caps[capsTab] || []).filter((x) => !q || `${x.name} ${x.description || x.desc || ''}`.toLowerCase().includes(q));
+    // Open on something rather than half a page of nothing (wide screens only:
+    // on a phone the list is the page until you pick one).
+    if (!capsSel && items.length && !matchMedia('(max-width: 860px)').matches) capsSel = items[0].name;
     const sub = (x) => capsTab === 'skills' ? `<span>${esc(x.source)}</span>${x.learned ? '<span class="badge ok">learned</span>' : ''}`
       : capsTab === 'mcp' ? `<span>${esc(x.kind)}</span><span class="mono">${esc(x.target)}</span>`
       : capsTab === 'agents' ? `<span>${esc(x.mode)}</span><span>${esc(x.bot || 'default model')}</span>`
@@ -1256,7 +1264,7 @@
       <button class="btn ghost mback" style="margin-bottom:12px" onclick="document.getElementById('msg-split').classList.remove('show-detail')">${icon('back')}Back</button>
       <h2><span class="ch-icon" style="background:${CH[c.id]?.bg}">${CH[c.id]?.l}</span>${esc(c.label)} <span class="badge ${cls}"><span class="dot ${cls}"></span>${esc(label)}</span></h2>
       <p class="lede">Drive ox from ${esc(c.label)} on your phone: send a task, approve or deny what it wants to do, get the answer back. Only the chat you pair can use it.</p>
-      ${c.paired ? '<div class="alert ok">' + icon('shield') + 'Paired with your chat.</div>' : c.configured ? '<div class="alert" style="color:var(--amber);border-color:color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 8%,transparent)">' + icon('info') + `Bot token found (${esc(c.tokenFrom)}). Run the gateway to pair.</div>` : '<div class="alert">' + icon('info') + 'No bot token configured.</div>'}
+      ${c.paired ? '<div class="alert ok">' + icon('shield') + 'Paired with your chat.</div>' : c.configured ? '<div class="alert" style="color:var(--amber);border-color:color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 8%,transparent)">' + icon('info') + `Bot token found (${esc(c.tokenFrom)}). Run the gateway to pair.</div>` : '<div class="alert note">' + icon('info') + 'Not set up yet. Three steps below.</div>'}
       <div class="section-cap cap">Set up</div>
       <div class="box"><ol class="steps-ol">${c.how.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>
       <div class="cmd"><code>${esc(c.command)}${c.configured ? '' : ' --token &lt;token&gt;'}</code><button data-copy-cmd="${esc(c.command)}${c.configured ? '' : ' --token '}">${icon('copy')}</button></div></div>
@@ -1274,7 +1282,7 @@
     const changes = (list) => list.map((f) => `<div class="small mono" style="display:flex;gap:8px;color:var(--muted)"><span class="dim" style="width:16px">${esc(f.state)}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.file)}</span><span class="dim">${f.at ? ago(f.at) : ''}</span></div>`).join('');
     const head = `<div class="shead" style="font-size:18px">${esc(M.title)}</div><p class="sdesc">What the plan says (PLAN.md) against what the files show (git). ${M.hasPlan ? `${M.progress.done} of ${M.progress.total} tasks done.` : ''} Refreshes when you open it; <a href="#" id="map-refresh" style="color:var(--gold)">refresh</a>.</p>`;
     if (!M.hasPlan) {
-      el.innerHTML = head + `<div class="box"><b>No PLAN.md in ${esc(M.cwd)}</b><p class="muted small">Ask ox: “write a PLAN.md for this repo in the agenttrail convention, components with files: globs, tasks with [ ] [~] [x] [!] and {#ids}”. Or start from this:</p><pre class="body-md">## Sign-in {#auth}
+      el.innerHTML = head + `<div class="box"><b>No PLAN.md in ${esc(M.cwd)}</b><p class="muted small"><button class="btn primary" id="map-write" style="margin:4px 0 10px">Have ox write it</button><br>Or start from this:</p><pre class="body-md">## Sign-in {#auth}
 files: [src/auth/**]
 - [x] Email login {#auth-email}
   tech: src/auth/email.ts
@@ -1284,6 +1292,12 @@ files: [src/auth/**]
 needs: [auth]
 files: [src/billing/**]
 - [ ] Stripe checkout {#billing-checkout}</pre></div>` + (M.changes.length ? `<div class="section-cap cap">Changed files (git)</div><div class="box">${changes(M.changes.slice(0, 30))}</div>` : '');
+      $('map-write').onclick = () => {
+        newConvo(); show('chat');
+        $('mode').value = 'code';
+        $('input').value = 'Write a PLAN.md for this repo in the agenttrail convention: one section per component with {#id} and files: globs, tasks as - [ ] / [~] / [x] / [!] with {#ids}, needs: for dependencies. Read the code first; mark what already works as [x].';
+        $('input').dispatchEvent(new Event('input')); $('input').focus();
+      };
     } else {
       el.innerHTML = head
         + (M.planStale ? `<div class="alert" style="color:var(--amber);border-color:color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 8%,transparent);margin-bottom:12px">${icon('info')}Code has moved for ${M.planStale} minutes while PLAN.md stayed the same. The plan may be out of date.</div>` : '')
@@ -1493,12 +1507,17 @@ files: [src/billing/**]
     let s;
     try { s = await getJson('/ox/scheduled'); } catch (e) { el.innerHTML = `<div class="empty-note">${esc(e.message)}</div>`; return; }
     el.innerHTML = `
-      <div class="shead">${icon('clock')}Scheduled runs</div><p class="sdesc">ox runs these prompts on their own, on the schedule you set, with a cost cap per run.</p>
+      <div class="shead">${icon('clock')}Scheduled runs</div><p class="sdesc">ox runs these prompts on their own, on the schedule you set, with a cost cap per run. They run while the ox daemon is up (<code>ox daemon start</code>).</p>
+      <div class="box sch-new"><input class="field" id="sch-prompt" placeholder="What to do, like: summarise yesterday's commits"><input class="field" id="sch-when" placeholder="every 1d · every 30m · daily at 9:00" style="max-width:240px"><button class="btn primary" id="sch-add">Schedule</button></div>
       <div class="cards">${s.schedules.length ? s.schedules.map((x) => `<div class="card"><span class="dot ${x.enabled ? 'ok' : ''}"></span><span class="t"><div class="n">${esc(x.prompt)}</div><div class="d"><span>${esc(x.cadence)}</span><span>next: ${esc(x.next)}</span><span class="mono">${esc(x.id)}</span></div></span><label class="switch" title="${x.enabled ? 'On' : 'Paused'}"><input type="checkbox" data-sch="${esc(x.id)}" ${x.enabled ? 'checked' : ''} aria-label="Enabled"><span></span></label></div>`).join('')
         : `<div class="box muted small">Nothing scheduled.<div class="cmd"><code>ox schedule add "summarise yesterday's commits" --every 1d</code><button data-copy-cmd='ox schedule add "summarise yesterday&#39;s commits" --every 1d'>${icon('copy')}</button></div></div>`}</div>
       <div class="shead" style="margin-top:34px">${icon('globe')}Page watches</div><p class="sdesc">ox checks pages for you and tells you when something changes: a price drops, a word shows up. ${s.watcherRunning ? '<span class="badge ok"><span class="dot ok"></span>checker running</span>' : '<span class="badge">checker stopped</span>'}</p>
       <div class="cards">${s.watches.length ? s.watches.map((w) => `<div class="card"><span class="dot ok"></span><span class="t"><div class="n">${esc(w.label)}</div><div class="d"><span>${esc(w.what)}</span></div></span><a class="btn ghost" href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${icon('open')}Open</a></div>`).join('')
         : `<div class="box muted small">No watches.<div class="cmd"><code>ox watch https://example.com/item --price-below 50</code><button data-copy-cmd="ox watch https://example.com/item --price-below 50">${icon('copy')}</button></div></div>`}</div>`;
+    $('sch-add').onclick = async () => {
+      try { await postJson('/ox/scheduled', { action: 'add', prompt: $('sch-prompt').value, when: $('sch-when').value }); toast('Scheduled'); loadScheduled(); }
+      catch (e) { toast(e.message); }
+    };
     el.querySelectorAll('[data-sch]').forEach((i) => (i.onchange = async () => {
       try { await postJson('/ox/scheduled', { id: i.dataset.sch, enabled: i.checked }); toast(i.checked ? 'Schedule on' : 'Schedule paused'); } catch (e) { toast(e.message); i.checked = !i.checked; }
     }));

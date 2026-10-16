@@ -162,6 +162,17 @@ export async function scheduledView() {
   return { schedules, watches, watcherRunning: !!watcher };
 }
 
+// A new scheduled run from the app: the same screening, cost cap and refusals
+// as `ox schedule add`; the cadence in words ("every 30m", "daily at 9:00").
+export async function scheduleAdd({ prompt, when, enabled = true, cwd = process.cwd() } = {}) {
+  const sch = await import('./schedule.js');
+  const cad = sch.parseNaturalCadence(String(when ?? ''));
+  if (cad.refusal) throw new Error(cad.refusal);
+  const r = sch.addSchedule({ prompt: String(prompt ?? ''), cadence: cad.cadence, enabled: enabled === true, cwd });
+  if (r.refusal) throw new Error(r.refusal);
+  return scheduledView();
+}
+
 export async function setScheduleEnabled(id, enabled) {
   const sch = await import('./schedule.js');
   if (!sch.getSchedule(id)) throw new Error(`no schedule ${id}`);
