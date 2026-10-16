@@ -308,7 +308,7 @@ export async function botsView(env = process.env) {
   const mine = listAgents().map((name) => {
     const a = loadAgent(name);
     if (!a) return null;
-    return { name, description: a.description ?? '', bot: agentBotSpec(a), mode: a.mode ?? 'code', tools: a.tools ?? null, instructions: a.systemPrompt ?? '', updatedAt: a.updatedAt ?? null };
+    return { name, description: a.description ?? '', bot: agentBotSpec(a), mode: a.mode ?? 'code', tools: a.tools ?? null, instructions: a.systemPrompt ?? '', shape: a.shape ?? null, updatedAt: a.updatedAt ?? null };
   }).filter(Boolean);
   const models = Object.entries(BOTS).filter(([, d]) => d.model).map(([id, d]) => {
     const k = KEY_ENV[d.provider] ?? null;
@@ -347,7 +347,7 @@ export async function botSave(body = {}, env = process.env) {
   if (bot) resolveBot(bot, { bots: readConfigDoc().bots ?? {} }, env);
   const tools = Array.isArray(body.tools) && body.tools.length ? body.tools.map(String) : null;
   const prior = loadAgent(name) ?? {};
-  saveAgent(name, { ...prior, description: String(body.description ?? '').slice(0, 200), bot, mode, tools, systemPrompt: String(body.instructions ?? '').slice(0, 20_000) });
+  saveAgent(name, { ...prior, description: String(body.description ?? '').slice(0, 200), bot, mode, tools, systemPrompt: String(body.instructions ?? '').slice(0, 20_000), shape: Number.isInteger(body.shape) ? body.shape : prior.shape ?? null });
   return botsView(env);
 }
 

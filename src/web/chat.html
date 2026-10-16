@@ -208,6 +208,16 @@
   .bots-grid { display: grid; grid-template-columns: minmax(240px, 320px) 1fr; gap: 18px; align-items: start; margin-top: 16px; }
   .bots-grid .card { text-align: left; width: 100%; }
   .bots-grid .card.on { border-color: var(--text); }
+  .botface { flex: none; display: block; }
+  .bot-hero { display: grid; place-items: center; padding: 6px 0 2px; }
+  .bot-shapes { display: grid; grid-template-columns: repeat(auto-fill, 40px); gap: 6px; justify-content: center; }
+  .bot-shapes button { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; }
+  .bot-shapes button.on { box-shadow: inset 0 0 0 1.5px var(--text); }
+  .bot-groupnew { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .bot-pick { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: 8px; cursor: pointer; }
+  .bot-pick:hover { background: var(--hover); } .bot-pick input { accent-color: var(--text); }
+  .msg.assistant .who.botwho { background: none; }
+  .botname { font-weight: 650; font-size: 13px; margin-right: 8px; }
   .bot-new { border-style: dashed !important; }
   .bot-edit { display: flex; flex-direction: column; gap: 12px; }
   .bot-edit label { display: flex; flex-direction: column; gap: 6px; }
@@ -1040,7 +1050,8 @@
     const steps = (msg.tools || []).map((t) => `<div class="step"><span class="dot ${t.state === 'ok' ? 'ok' : t.state === 'err' ? 'err' : 'run'}"></span><b>${esc(t.name)}</b><span>${esc(t.preview || '')}</span></div>`).join('');
     msg.key ??= `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     const text = msg.content ? md(msg.content, msg.key) : (msg.pending ? '<span class="typing"><i></i><i></i><i></i></span>' : '');
-    const routed = msg.routed ? `<span class="routed">${icon('mode')}${esc(msg.routed)}</span>` : '';
+    const routed = (msg.bot ? `<span class="botname">${esc(msg.bot)}</span>` : '') + (msg.routed ? `<span class="routed">${icon('mode')}${esc(msg.routed)}</span>` : '');
+    if (msg.bot) { const who = body.closest('.msg')?.querySelector('.who'); if (who && !who.dataset.bot) { who.dataset.bot = msg.bot; who.classList.add('botwho'); who.innerHTML = botFace(msg.bot, botShapes[msg.bot], 26); } }
     const PI = { completed: ['ok', '✓'], in_progress: ['run', '›'], blocked: ['err', '!'], pending: ['', ''] };
     const plan = Array.isArray(msg.plan) && msg.plan.length
       ? `<div class="worklog"><div class="cap" style="margin-bottom:6px">Plan · ${msg.plan.filter((t) => t.status === 'completed').length}/${msg.plan.length} done</div>${msg.plan.map((t) => `<div class="wl ${t.status}"><span class="dot ${PI[t.status]?.[0] ?? ''}"></span><span>${esc(t.content)}</span></div>`).join('')}</div>`
@@ -1128,20 +1139,42 @@
     if (!text) return;
     if (!convo()) newConvo();
     const c = convo();
-    if (!c.messages.length) c.title = text.replace(/\s+/g, ' ').slice(0, 60);
+    if (!c.messages.length && !c.group) c.title = text.replace(/\s+/g, ' ').slice(0, 60);
     c.messages.push({ role: 'user', content: text });
-    const reply = { role: 'assistant', content: '', tools: [], pending: true };
+    input.value = ''; resize();
+    // A group chat: every bot answers in turn and sees what the others said, so
+    // they check, build on and correct each other. "@name" asks just that one.
+    const group = Array.isArray(c.group) && c.group.length ? c.group : null;
+    const mentioned = group ? group.filter((b) => new RegExp(`(^|\\s)@${b.replace(/[-]/g, '\\-')}\\b`, 'i').test(text)) : [];
+    const speakers = group ? (mentioned.length ? mentioned : group) : [null];
+    for (const bot of speakers) {
+      const ok = await replyOnce(c, text, bot, group);
+      if (!ok) break;
+    }
+  }
+
+  // One answer from one model (or one bot in a group).
+  async function replyOnce(c, text, bot, group) {
+    const reply = { role: 'assistant', content: '', tools: [], pending: true, ...(bot ? { bot } : {}) };
     const t0 = performance.now();
     c.messages.push(reply);
     c.updated = Date.now(); c.running = true;
-    input.value = ''; resize(); saveConvos(); renderChat(); renderLists();
+    saveConvos(); renderChat(); renderLists();
     const body = $('inner').lastElementChild.querySelector('.body');
+    const model = bot ? `agent:${bot}` : ($('model').value || undefined);
+    let history = c.messages.filter((m) => m !== reply).map((m) => ({ role: m.role, content: m.bot && m.role === 'assistant' ? `${m.bot}: ${m.content}` : m.content }));
+    if (group) {
+      const last = history.length - 1 - [...history].reverse().findIndex((m) => m.role === 'user');
+      const others = group.filter((b) => b !== bot);
+      history = history.map((m, k) => (k === last ? { ...m, content: `${m.content}\n\n(Group chat with ${others.join(', ')}. You are ${bot}. Answer for yourself, build on what the others already said, and say plainly if you think one of them is wrong. Do not repeat them.)` } : m));
+    }
     busy = new AbortController();
     setBusy(true);
+    let ok = true;
     try {
       const res = await api('/v1/chat/completions', {
         method: 'POST', signal: busy.signal,
-        body: JSON.stringify({ model: $('model').value || undefined, ox_mode: $('mode').value, ox_ui: 'live', ...(c.incognito ? { ox_incognito: true } : {}), stream: true, messages: c.messages.filter((m) => m !== reply).map(({ role, content }) => ({ role, content })) }),
+        body: JSON.stringify({ model, ox_mode: $('mode').value, ox_ui: 'live', ...(c.incognito ? { ox_incognito: true } : {}), stream: true, messages: history }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error?.message || `HTTP ${res.status}`);
       const reader = res.body.getReader();
@@ -1162,7 +1195,7 @@
           if (ox?.type === 'mode') reply.routed = `${ox.routed ? 'auto → ' : ''}${ox.mode}${ox.reason ? ` · ${ox.reason}` : ''}`;
           if (ox?.type === 'tool-start' && Array.isArray(ox.plan)) reply.plan = ox.plan;
           else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '' });
-          if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; if (ox.canvas) { reply.canvases = (reply.canvases || []).filter((c) => c.id !== ox.id); reply.canvases.push({ id: ox.id, tree: ox.canvas }); } }
+          if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; if (ox.canvas) { reply.canvases = (reply.canvases || []).filter((x) => x.id !== ox.id); reply.canvases.push({ id: ox.id, tree: ox.canvas }); } }
           const delta = ev.choices?.[0]?.delta?.content;
           if (delta) reply.content += delta;
           if (ev.usage) { reply.tokens = (ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0); $('usage').textContent = `${reply.tokens.toLocaleString()} tokens`; }
@@ -1172,19 +1205,21 @@
       }
     } catch (e) {
       reply.error = e.name === 'AbortError' ? 'Stopped.' : plainDash(e.message);
+      ok = false;
     } finally {
       reply.pending = false; c.running = false; c.updated = Date.now();
       reply.ms = Math.round(performance.now() - t0);
       busy = null; setBusy(false); resize();
       paint(body, reply); saveConvos(); renderLists();
       // Three things to ask next, made after the answer so it never waits on them.
-      if (reply.content && !reply.error && prefs.followups !== false && !c.incognito) {
-        postJson('/ox/followups', { model: $('model').value || undefined, question: text, answer: reply.content })
+      if (!group && reply.content && !reply.error && prefs.followups !== false && !c.incognito) {
+        postJson('/ox/followups', { model, question: text, answer: reply.content })
           .then((f) => { if (f.items?.length) { reply.follow = f.items; if (c === convo()) paint(body, reply); saveConvos(); } })
           .catch(() => {});
       }
-      if (prefs.speakReplies && reply.content) speakText(reply.content);
+      if (prefs.speakReplies && reply.content && !talk) speakText(reply.content);
     }
+    return ok;
   }
   function setBusy(on) {
     const b = $('send');
@@ -1635,6 +1670,33 @@ files: [src/billing/**]
   $('mk-add-btn').onclick = async () => { try { await postJson('/ox/market/catalogs', { repo: $('mk-add').value.trim() }); $('mk-add').value = ''; toast('Catalogue added'); loadMarket(); } catch (e) { toast(e.message); } };
 
   // ---------- scheduled
+  // ---------- bot faces: a shape each, two eyes, in the theme's own colour
+  const ring = (n, r, cr, cx = 20, cy = 20) => Array.from({ length: n }, (_, k) => `<circle cx="${(cx + r * Math.cos((k / n) * 2 * Math.PI - Math.PI / 2)).toFixed(2)}" cy="${(cy + r * Math.sin((k / n) * 2 * Math.PI - Math.PI / 2)).toFixed(2)}" r="${cr}"/>`).join('');
+  const round = (pts) => `<polygon points="${pts}" stroke-width="5" stroke-linejoin="round"/>`;
+  const BOT_SHAPES = [
+    '<circle cx="20" cy="20" r="16"/>',
+    '<circle cx="14" cy="22" r="10"/><circle cx="26" cy="22" r="10"/><circle cx="20" cy="14" r="10"/>',
+    '<rect x="8" y="8" width="24" height="24" rx="7" transform="rotate(-18 20 20)"/>',
+    '<path d="M20 3C22 13 27 18 37 20 27 22 22 27 20 37 18 27 13 22 3 20 13 18 18 13 20 3Z"/>',
+    ring(4, 8, 9) + '<circle cx="20" cy="20" r="8"/>',
+    '<path d="M7 15c2-8 13-9 17-3 5-5 13-1 12 7-1 9-12 17-19 17S5 23 7 15Z"/>',
+    ring(8, 10, 6.5) + '<circle cx="20" cy="20" r="10"/>',
+    '<path d="M20 4c7 8 13 14 13 21a13 13 0 0 1-26 0c0-7 6-13 13-21Z"/>',
+    '<rect x="3" y="11" width="34" height="18" rx="9" transform="rotate(-14 20 20)"/>',
+    round('11,6 35,20 11,34'),
+    round('20,5 35,16 29,34 11,34 5,16'),
+    ring(6, 10, 7) + '<circle cx="20" cy="20" r="10"/>',
+    round('20,4 34,12 34,28 20,36 6,28 6,12'),
+  ];
+  const SHADES = [1, 0.86, 0.72, 0.6];
+  const nameHash = (n) => [...String(n)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
+  function botFace(name, shape = null, size = 32) {
+    const k = Number.isInteger(shape) ? shape : nameHash(name) % BOT_SHAPES.length;
+    const shade = SHADES[nameHash(`${name}!`) % SHADES.length];
+    return `<svg class="botface" viewBox="0 0 40 40" width="${size}" height="${size}" aria-hidden="true"><g fill="var(--text)" stroke="var(--text)" stroke-width="0" opacity="${shade}">${BOT_SHAPES[k]}</g><g fill="var(--bg)"><rect x="14.5" y="15" width="3.6" height="8" rx="1.8" transform="rotate(-14 16.3 19)"/><rect x="21.5" y="15" width="3.6" height="8" rx="1.8" transform="rotate(-14 23.3 19)"/></g></svg>`;
+  }
+  let botShapes = {};
+
   // ---------- bots: your own, and what they run on
   let botSel = null;
   async function loadBots() {
@@ -1650,10 +1712,13 @@ files: [src/billing/**]
       <div class="bots-grid">
         <div class="cards">
           <button class="card bot-new" data-bot="+new">${icon('plus')}<span class="t"><div class="n">New bot</div><div class="d">Pick a model, a mode and what it may do</div></span></button>
-          ${B.mine.map((b) => `<button class="card${botSel === b.name ? ' on' : ''}" data-bot="${esc(b.name)}"><span class="avatar">${esc(b.name[0].toUpperCase())}</span><span class="t"><div class="n">${esc(b.name)}</div><div class="d">${esc(b.description || `${b.mode} · ${b.bot || 'default model'}`)}</div></span><span class="badge">${esc(b.mode)}</span></button>`).join('')}
+          ${B.mine.length > 1 ? `<button class="card bot-new" id="b-group">${icon('chat')}<span class="t"><div class="n">New group chat</div><div class="d">Several bots in one chat, checking each other</div></span></button>` : ''}
+          ${B.mine.map((b) => `<button class="card${botSel === b.name ? ' on' : ''}" data-bot="${esc(b.name)}">${botFace(b.name, b.shape, 34)}<span class="t"><div class="n">${esc(b.name)}</div><div class="d">${esc(b.description || `${b.mode} · ${b.bot || 'default model'}`)}</div></span><span class="badge">${esc(b.mode)}</span></button>`).join('')}
           ${B.mine.length ? '' : '<div class="box muted small">No bots yet.</div>'}
         </div>
         <div>${sel ? `<div class="box bot-edit">
+          <div class="bot-hero" id="b-hero">${botFace(sel.name || 'new', sel.shape, 96)}</div>
+          <div class="bot-shapes">${BOT_SHAPES.map((_, k) => `<button data-shape="${k}" class="${(Number.isInteger(sel.shape) ? sel.shape : nameHash(sel.name || 'new') % BOT_SHAPES.length) === k ? 'on' : ''}" aria-label="Shape ${k + 1}">${botFace(sel.name || 'new', k, 30)}</button>`).join('')}</div>
           <label class="small muted">Name<input class="field" id="b-name" value="${esc(sel.name)}" placeholder="reviewer" maxlength="48"></label>
           <label class="small muted">What it is for<input class="field" id="b-desc" value="${esc(sel.description)}" placeholder="Reviews my diffs for bugs" maxlength="200"></label>
           <div class="bot-two">
@@ -1678,8 +1743,29 @@ files: [src/billing/**]
         </div>
       </div>`;
     paintIcons();
+    botShapes = Object.fromEntries(B.mine.map((b) => [b.name, b.shape]));
     el.querySelectorAll('[data-bot]').forEach((b) => (b.onclick = () => { botSel = b.dataset.bot; loadBots(); }));
+    if ($('b-group')) $('b-group').onclick = () => {
+      const box = document.createElement('div');
+      box.className = 'box bot-groupnew';
+      box.innerHTML = `<b>New group chat</b><p class="small muted">Pick the bots. Each answers in turn and sees what the others said; write @name to ask just one.</p>${B.mine.map((b) => `<label class="bot-pick"><input type="checkbox" value="${esc(b.name)}">${botFace(b.name, b.shape, 26)}<span>${esc(b.name)}</span><span class="dim small">${esc(b.description || b.mode)}</span></label>`).join('')}<div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="g-go">Start</button><button class="btn ghost" id="g-cancel">Cancel</button></div>`;
+      el.querySelector('.bots-grid').before(box);
+      box.querySelector('#g-cancel').onclick = () => box.remove();
+      box.querySelector('#g-go').onclick = () => {
+        const names = [...box.querySelectorAll('input:checked')].map((i) => i.value);
+        if (names.length < 2) { toast('Pick at least two bots'); return; }
+        newConvo();
+        const c = convo(); c.group = names; c.title = names.join(', '); saveConvos(); renderChat(); renderLists();
+        $('input').placeholder = `Message ${names.join(', ')} (@name for one)`; $('input').focus();
+      };
+    };
     if (!sel) return;
+    let pickedShape = Number.isInteger(sel.shape) ? sel.shape : null;
+    el.querySelectorAll('[data-shape]').forEach((b) => (b.onclick = () => {
+      pickedShape = Number(b.dataset.shape);
+      el.querySelectorAll('[data-shape]').forEach((x) => x.classList.toggle('on', x === b));
+      $('b-hero').innerHTML = botFace($('b-name').value || 'new', pickedShape, 96);
+    }));
     $('b-bot').value = sel.bot || '';
     $('b-mode').value = sel.mode || 'code';
     const st = (t) => ($('b-state').textContent = t);
@@ -1687,7 +1773,7 @@ files: [src/billing/**]
       const tools = [...el.querySelectorAll('.bot-tools input:checked')].map((i) => i.value);
       const name = $('b-name').value.trim();
       try {
-        await postJson('/ox/bots', { name, from: botSel === '+new' ? null : sel.name, description: $('b-desc').value, bot: $('b-bot').value || null, mode: $('b-mode').value, tools, instructions: $('b-ins').value });
+        await postJson('/ox/bots', { name, from: botSel === '+new' ? null : sel.name, description: $('b-desc').value, bot: $('b-bot').value || null, mode: $('b-mode').value, tools, instructions: $('b-ins').value, shape: pickedShape });
         botSel = name; toast('Saved'); caps = null; loadModels(); loadBots();
       } catch (e) { st(e.message); }
     };
@@ -2051,6 +2137,7 @@ files: [src/billing/**]
   const t0 = performance.now();
   const hideSplash = () => setTimeout(() => { splash.classList.add('done'); setTimeout(() => splash.remove(), 500); }, Math.max(0, 1250 - (performance.now() - t0)));
   if (seen) splash.remove(); else setTimeout(hideSplash, 2400);
+  getJson('/ox/bots').then((B) => { botShapes = Object.fromEntries(B.mine.map((b) => [b.name, b.shape])); }).catch(() => {});
   getJson('/ox/settings').then((st) => applyName(st.name)).catch(() => {}).finally(() => { if (!seen) hideSplash(); });
   loadTerminalSessions();
   if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => {};

@@ -51,6 +51,8 @@ export function saveAgent(name, agent) {
     mcpServers: agent.mcpServers ?? {},
     skills: agent.skills ?? [],
     systemPrompt: agent.systemPrompt ?? '',
+    // The avatar shape picked in the app (0 to 12); null for the default.
+    shape: Number.isInteger(agent.shape) && agent.shape >= 0 && agent.shape <= 12 ? agent.shape : null,
     createdAt: agent.createdAt ?? new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
