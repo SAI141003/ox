@@ -33,6 +33,8 @@ Updated October 16 2026.
 | 2.5 | Coding runs (with tools) are leaner | ✓ | Short single-target task: 2,189 → 1,648 tokens per request (−25%, every turn): planning and delegation wait behind load_tools, and their prompt text goes with them; multi-step tasks keep both |
 | 2.7 | Short questions the mode guesser reads as a change | ✓ | "Name the capital of Australia" 2,115 → 255 tokens |
 | 2.8 | Tools on demand (load_tools, after Anthropic's Tool Search) | ✓ | A narrowed offer lists the rest by name; the model loads one itself and the next request carries it (tested with a stand-in model) |
+| 2.9 | System 1 routing (Laya, Apache-2.0): what kind of message, in any language | ✓ | 26 messages, 7 languages: word lists routed 19 right, System 1 + guards 24 (weather, prices, Hindi news to the web; quiz and Spanish calculator to interactive). ~250–300 ms a turn on this Mac; falls back to the word lists when not installed or loading. Installed in ~/.ox/laya (680 MB checkpoint). Misses: "latest node.js version?", "who won the game last night" in Spanish |
+| 2.10 | A model too small to draw (under 1B) gets help for interactive answers | ✓ | SmolLM2-135M was picked on the test server and every interactive answer failed; now the best connected model draws that answer and says why (qwen2.5:3b here, 22 s) |
 | 2.6 | Follow-up suggestions cost | ✓ | Off by default (one extra call); switch in Settings › General |
 
 ## 3. Answers as interface (OpenUI)
@@ -145,8 +147,9 @@ Updated October 16 2026.
 |---|---|---|---|
 | 12.1 | OX Island upgrade from the Coucou repo and the Pixie video (section 8) | ✗ | Next, as you asked |
 | 12.2 | ox's own automations (n8n-style flows), no n8n needed | ✗ | Scheduled runs exist (7.6); no flow builder |
-| 12.3 | Marketplace with every skill, Karpathy's included | ~ | 329 plugins, 30 GitHub skills listed (7.4); not "everything" |
+| 12.3 | Marketplace with every skill (Karpathy's; languages and stacks: Java, Python, Go, Spring, SQL Server, Postgres, Oracle, MongoDB, Redis, React, Angular, Azure, AWS, GCP, Docker, Kubernetes, Kafka, gRPC, GraphQL, Terraform…; markets, finance, other professions) | ~ | 329 plugins, 30 GitHub skills listed (7.4); far from everything |
 | 12.4 | ox's own deep learning (Andrew Ng's course ideas) | ✗ | To be scoped: what it should learn, from what data |
+| 12.6 | ox evolve: ox improves ox, kept only when measured better | ✓ | Wired as ox evolve list, failures, diff, accept, reject; its test found crash recording had never saved anything (fixed). A full attempt has not been run yet |
 | 12.5 | Paperclip's task board in the app | ~ | Board, claims, blockers, budgets, review gates exist in ox's engine (src/tasks.js); no page in the app |
 
 ## 9. Reliability
@@ -157,7 +160,7 @@ Updated October 16 2026.
 | 9.2 | Ollama streaming + tools swallowing answers | ✓ | Recovered with one non-streaming retry; tested |
 | 9.3 | Unit suite | ✓ | 1,825 pass, 0 fail. Three failures found today came from my own short-task trim (it slipped past the never-drop-a-needed-tool check); fixed |
 | 9.4 | Launch check | ✓ | 132/132 |
-| 9.5 | Tests leaving files in your real home | ~ | The leak was fixed on October 12; three old test-agent*.json files are still in ~/.ox/agents and show as junk bots. Deleting them needs your OK |
+| 9.5 | Tests leaving files in your real home | ✓ | The leak was fixed October 12; the three old test-agent files are in your Trash (you OK'd it) |
 
 ## Repos studied
 

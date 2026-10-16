@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4656,6 +4656,33 @@ async function runSubcommand(cmd, args) {
         }
       } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; return; }
       console.log(SUB_USAGE.hf); process.exitCode = 2;
+      return;
+    }
+    case 'system1': {
+      // Fast typed decisions about a message (Laya, src/system1.js).
+      const S = await import('./system1.js');
+      const [verb, ...rest] = args;
+      if (verb === 'install') {
+        try { const st = S.installSystem1({ log: (l) => console.log(l) }); console.log(st.ready ? `System 1 is ready (${st.dir})` : 'not ready'); }
+        catch (e) { process.stderr.write(`ox: ${e.message}\n`); process.exitCode = 1; }
+        return;
+      }
+      if (verb === 'try') {
+        const text = rest.join(' ').trim();
+        if (!text) { process.stderr.write('usage: ox system1 try "<message>"\n'); process.exitCode = 2; return; }
+        if (!S.system1Enabled()) { console.log('System 1 is not installed: ox system1 install'); return; }
+        const t0 = Date.now();
+        try { await S.warmSystem1(); } catch (e) { process.stderr.write(`ox: ${e.message}\n`); process.exitCode = 1; return; }
+        const loaded = Date.now() - t0;
+        const r = await S.classifyTurn(text, { timeoutMs: 20000 });
+        console.log(r ? `${c.bold(r.kind)}${r.confidence != null ? ` ${(r.confidence * 100).toFixed(0)}%` : ''} · needs a plan ${r.plan != null ? `${(r.plan * 100).toFixed(0)}%` : '?'} · ${r.ms} ms ${c.dim(`(model loaded in ${(loaded / 1000).toFixed(1)} s)`)}` : 'no answer');
+        S.stopSystem1();
+        return;
+      }
+      const st = S.system1Status();
+      console.log(st.ready
+        ? `System 1: ready${st.model ? '' : ' (the checkpoint downloads on first use)'} · ${st.dir}\n  try: ox system1 try "what's the weather in Paris"`
+        : `System 1: not installed (about 1.1 GB: PyTorch and the laya-multilingual checkpoint)\n  install: ox system1 install`);
       return;
     }
     case 'evolve': {

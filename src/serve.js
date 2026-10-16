@@ -38,6 +38,7 @@ import { resolveTurnMode } from './modes.js';
 import { listAgents, loadAgent, agentBotSpec, agentPersonaBlock } from './agents.js';
 import { readConfigDoc } from './config.js';
 import * as UI_LANG from './ui-lang.js';
+import { classifyTurn, warmSystem1 } from './system1.js';
 
 // Read at request time, not at module load: a supervisor (or a test) that sets
 // the key after this module is imported must not silently get the old answer.
@@ -279,11 +280,23 @@ export function runnable(spec, env = process.env) {
 // have connected. Only models that can answer right now are considered.
 const FAST_BOTS = ['ox-haiku', 'ox-flash', 'ox-grok-fast', 'ox-groq'];
 const STRONG_BOTS = ['claude-plan', 'chatgpt-plan', 'ox-opus', 'ox-claude', 'ox-gpt', 'ox-gemini', 'ox-grok', 'ox-deepseek', 'cursor-plan'];
-export function autoModel(messages = [], env = process.env, { think = false } = {}) {
+// Under 1B parameters, read from the name ("SmolLM2-135M", "qwen2.5:0.5b").
+export function tinyModel(name) {
+  const m = /(?:^|[^a-z0-9.])(\d+(?:\.\d+)?)\s*([mb])(?![a-z0-9])/i.exec(String(name));
+  if (!m) return false;
+  const n = Number(m[1]);
+  return m[2].toLowerCase() === 'm' ? n < 1000 : n < 1;
+}
+
+export function autoModel(messages = [], env = process.env, { think = false, s1 = null } = {}) {
   const last = [...messages].reverse().find((m) => m?.role === 'user');
   const said = typeof last?.content === 'string' ? last.content : '';
   const seeing = Array.isArray(last?.images) && last.images.length > 0;
-  const light = !think && !seeing && (SMALL_TALK.test(said) || (!TOUCHES_CODE.test(said) && !NEEDS_TOOLS.test(said) && said.length < 400));
+  // System 1 (src/system1.js) reads the message in any language; the word lists
+  // are the fallback when it is not installed or not ready.
+  const light = !think && !seeing && (s1
+    ? ['chat', 'question', 'current'].includes(s1.kind) && !(s1.plan > 0.5) && !TOUCHES_CODE.test(said)
+    : SMALL_TALK.test(said) || (!TOUCHES_CODE.test(said) && !NEEDS_TOOLS.test(said) && said.length < 400));
   let local = [];
   try { local = Object.entries(readConfigDoc().bots ?? {}).filter(([, d]) => d?.provider === 'custom' && d.model).map(([id]) => id); } catch {}
   if (Date.now() - ollamaCache.at > 5 * 60_000 && process.env.OX_NO_KEYSTORE !== '1') refreshOllama();
@@ -596,9 +609,13 @@ async function handleChatCompletions(req, res) {
     web: body.ox_web === true, research: body.ox_research === true, think: body.ox_think === true,
     learn: body.ox_learn === true, canvas: body.ox_canvas === true, noMemory: body.ox_memory === false,
   };
+  // System 1: what kind of message this is, in one fast pass (null when Laya is
+  // not installed, still loading, or slower than its limit).
+  const lastUserMsg = [...messages].reverse().find((m) => m?.role === 'user');
+  const s1 = typeof lastUserMsg?.content === 'string' ? await classifyTurn(lastUserMsg.content, { timeoutMs: 1200 }) : null;
   // "auto": a model per message, from what can answer here (see autoModel).
   if (model === 'auto') await warmLocal();
-  const autoPick = model === 'auto' ? autoModel(messages, process.env, { think: tool.think || tool.research }) : null;
+  const autoPick = model === 'auto' ? autoModel(messages, process.env, { think: tool.think || tool.research, s1 }) : null;
   const targetModel = autoPick?.id ?? (model || pickWorkingDefault());
   const temperature0 = temperature ?? 0.7;
   // Resolve a name the registry knows (every id in /v1/models) through the same
@@ -631,9 +648,24 @@ async function handleChatCompletions(req, res) {
   // use here, not a change to the project: auto keeps it an answer (ask), unless
   // the message points at code or files.
   const said = typeof lastUser?.content === 'string' ? lastUser.content : '';
+  const wantsUi = WANTS_UI.test(said) || s1?.kind === 'interactive';
+  const needsWeb = NEEDS_WEB.test(said) || s1?.kind === 'current';
+  const by = s1 ? ` (System 1, ${s1.ms} ms)` : '';
   if (turnMode.routed && turnMode.mode !== 'ask' && body.ox_ui === 'live'
-    && WANTS_UI.test(said) && !TOUCHES_CODE.test(said)) {
+    && wantsUi && !TOUCHES_CODE.test(said)) {
     turnMode = { mode: 'ask', routed: true, reason: 'an answer to use here, not a change to your files', answerOnly: true };
+  }
+  // A model under 1B parameters cannot write an interactive answer (SmolLM2-135M
+  // returned noise and no block): for that one answer the best model connected
+  // takes over, and the answer says which and why.
+  let uiSwap = null;
+  const pickedName = String(target?.model ?? targetModel);
+  if (body.ox_ui === 'live' && (wantsUi || tool.canvas) && !agentDef && tinyModel(pickedName)) {
+    await warmLocal();
+    const better = autoModel(messages, process.env, { think: true });
+    if (better?.id && better.id !== 'ox-ollama' && !tinyModel(better.id) && runnable(better.id)) {
+      try { target = resolveBot(better.id, { bots: readConfigDoc().bots ?? {} }); target.temperature = temperature0; uiSwap = { from: pickedName, to: better.id }; } catch {}
+    }
   }
   // Tokens are time on a local model (it reads the whole prompt first) and money
   // on a paid one. A message that needs nothing but an answer (hi, a question
@@ -642,7 +674,13 @@ async function handleChatCompletions(req, res) {
   // A short message that names no file or code, needs no tool and asks to build
   // nothing is a question, whatever the mode guesser read into its first word
   // ("Name the capital of Australia" was routed as a change: 2,115 tokens).
-  if (turnMode.routed && !turnMode.answerOnly && !TOUCHES_CODE.test(said) && !NEEDS_TOOLS.test(said) && (turnMode.mode === 'ask' || SMALL_TALK.test(said) || (!BUILDS.test(said) && said.length < 400))) {
+  if (s1 && turnMode.routed && !turnMode.answerOnly && !TOUCHES_CODE.test(said)) {
+    // System 1's reading wins over the word lists; a named file or code still
+    // keeps the tools whatever it says.
+    if (['chat', 'question', 'current'].includes(s1.kind) && !(s1.plan > 0.5)) {
+      turnMode = { mode: 'ask', routed: true, reason: `${s1.kind === 'chat' ? 'small talk' : s1.kind === 'current' ? 'needs current information' : 'a question'}${by}`, answerOnly: true };
+    } else if (turnMode.reason) turnMode = { ...turnMode, reason: `${turnMode.reason}${by}` };
+  } else if (turnMode.routed && !turnMode.answerOnly && !TOUCHES_CODE.test(said) && !NEEDS_TOOLS.test(said) && (turnMode.mode === 'ask' || SMALL_TALK.test(said) || (!BUILDS.test(said) && said.length < 400))) {
     turnMode = { mode: 'ask', routed: true, reason: turnMode.mode === 'ask' ? turnMode.reason : SMALL_TALK.test(said) ? 'small talk' : 'a question', answerOnly: true };
   }
   if (tool.web || tool.research) turnMode = { mode: 'ask', routed: true, reason: tool.research ? 'deep research' : 'web search', answerOnly: true };
@@ -661,7 +699,7 @@ async function handleChatCompletions(req, res) {
   } catch {}
   // `ox_ui: 'live'` is sent by ox's own app, which can run interactive answers.
   // About 600 tokens: sent only when the message asks for something to use.
-  const liveUi = body.ox_ui === 'live' && (tool.canvas || WANTS_UI.test(lastText)) ? LIVE_UI_GUIDE : '';
+  const liveUi = body.ox_ui === 'live' && (tool.canvas || wantsUi) ? LIVE_UI_GUIDE : '';
   const howTo = [
     tool.research ? RESEARCH_BRIEF : tool.web ? 'Search the web for this and answer from what you find, naming each source.' : '',
     tool.think ? 'Think this through carefully before answering: weigh the alternatives, check your working, then give the answer.' : '',
@@ -670,7 +708,7 @@ async function handleChatCompletions(req, res) {
   // Small models follow what sits next to the question, not a guide far up in
   // the system prompt: when the message plainly asks for something to work
   // with, the reminder rides along with it (the stored chat is unchanged).
-  if (liveUi && (tool.canvas || WANTS_UI.test(lastText))) {
+  if (liveUi) {
     const i = messages.lastIndexOf(lastUser);
     if (i >= 0) messages = [...messages.slice(0, i), { ...lastUser, content: `${lastText}\n\n(Answer with an \`\`\`openui block as described in your instructions.)` }, ...messages.slice(i + 1)];
   }
@@ -683,7 +721,7 @@ async function handleChatCompletions(req, res) {
     ...(agentDef || liveUi || howTo ? { personaBlock: [agentDef ? agentPersonaBlock(agentDef) : '', liveUi, howTo].filter(Boolean).join('\n\n') } : {}),
     ...(agentDef ? { agentName: agentDef.name } : {}),
     ...(Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools }
-      : turnMode.answerOnly ? (tool.web || tool.research || NEEDS_WEB.test(lastText) ? { onlyTools: ['web_search', 'web_fetch'] } : { noTools: true })
+      : turnMode.answerOnly ? (tool.web || tool.research || needsWeb ? { onlyTools: ['web_search', 'web_fetch'] } : { noTools: true })
       // A question about the project in ask mode: only the four readers.
       : turnMode.mode === 'ask' && TOUCHES_CODE.test(lastText) && !NEEDS_TOOLS.test(lastText) ? { onlyTools: ['read_file', 'list_dir', 'glob', 'grep'] }
       : {}),
@@ -707,7 +745,10 @@ async function handleChatCompletions(req, res) {
 
     let fullContent = '';
     const totalUsage = usageTally();
-    if (body.ox_mode || autoPick) sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'mode', mode: turnMode.mode, routed: turnMode.routed, reason: turnMode.reason, ...(autoPick ? { model: autoPick.id, modelWhy: autoPick.why } : {}) } });
+    // route: what the turn was given (an answer only, web tools, the interactive guide, or the tools).
+    const route = liveUi && turnMode.answerOnly ? 'ui' : turnMode.answerOnly ? (ctx.onlyTools?.includes('web_search') ? 'web' : 'answer') : 'tools';
+    if (body.ox_mode || autoPick || uiSwap) sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'mode', mode: turnMode.mode, routed: turnMode.routed, reason: turnMode.reason, route,
+      ...(uiSwap ? { model: uiSwap.to, modelWhy: `${uiSwap.from} is too small to draw an interactive answer, so ${uiSwap.to} drew this one` } : autoPick ? { model: autoPick.id, modelWhy: autoPick.why } : {}) } });
 
     try {
       for await (const event of runAgent({ target, messages, ctx, config, maxIterations: 40 })) {
@@ -1473,6 +1514,8 @@ async function handleRequest(req, res) {
 // `host` defaults to loopback rather than 0.0.0.0: the wide bind is opt-in, and
 // it is only reachable with auth configured at all.
 export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
+  // System 1 loads its model now (seconds), so the first turns can use it.
+  warmSystem1();
   const exposure = authExposure({ host, key: config.apiKey ?? apiKey() });
   if (exposure.level === 'refuse') {
     return Promise.reject(new Error(exposure.lines.join('\n')));

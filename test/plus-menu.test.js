@@ -29,6 +29,12 @@ test('think harder and photos skip the quick pick', () => {
   assert.match(LEARN_BRIEF, /one step at a time/);
 });
 
+test('models under 1B parameters are spotted by name', async () => {
+  const { tinyModel } = await import('../src/serve.js');
+  for (const n of ['hf.co/unsloth/SmolLM2-135M-Instruct-GGUF:Q4_K_M', 'qwen2.5:0.5b', 'SmolLM2-360M']) assert.equal(tinyModel(n), true, n);
+  for (const n of ['qwen2.5:3b', 'qwen2.5:1.5b', 'llama3.2:1b', 'gpt-6-luna', 'grok-4.6', 'Q4_K_M', 'chatgpt-plan']) assert.equal(tinyModel(n), false, n);
+});
+
 test('the wand keeps the prompt only', () => {
   assert.equal(cleanOptimized('Here is the rewritten prompt: "Fix the login bug in [which file?]"', 'fix login'), 'Fix the login bug in [which file?]');
   assert.equal(cleanOptimized('```\nWrite an email to [landlord]\n```', 'email landlord'), 'Write an email to [landlord]');
