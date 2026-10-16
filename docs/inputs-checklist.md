@@ -11,7 +11,7 @@ with the reason. Nothing here is marked done without a test or a real run.
 |---|---|---|
 | Hermes desktop — settings (Model, Chat, Appearance, Providers › Accounts / API keys / Custom endpoints / Local models, Gateways, Shortcuts, Tools & Keys, Archived) | One settings window with search and every area reachable | **done** — 15 sections incl. Memory, Usage; search box |
 | Hermes — Local models (RAM, "too big for this machine", Hugging Face search & download) | Show what fits, search HF, download | **done** — Settings › Local models and `ox hf`; real download tested |
-| Hermes — Custom endpoints (any OpenAI-compatible URL, test, use for new chats) | Add your own endpoint from the app | **not yet** in the app (works via config / `OX_BASE_URL`) |
+| Hermes — Custom endpoints (any OpenAI-compatible URL, test, use for new chats) | Add your own endpoint from the app | **done** — Settings › Custom endpoints: add, Test (models + latency), Use, Remove; own key per endpoint; keyless on your network; tested against local Ollama |
 | Hermes — Messaging (20+ channels, QR setup) | Phone channels with status | **partial** — Telegram, Discord; Slack/WhatsApp **not yet** |
 | Hermes — Capabilities (skills with use counts, toggles, Skills Hub) | Browse skills, install from a hub | **done** — Capabilities view + Marketplace (Anthropic catalogues + GitHub agent-skills) |
 | Hermes — Scheduled jobs with toggles | See and pause scheduled runs | **done** |

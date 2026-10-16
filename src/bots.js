@@ -173,6 +173,12 @@ function normalizeOllamaBaseUrl(value) {
   return `${u.protocol}//${host}:${port}`;
 }
 
+export function isPrivateUrl(u) {
+  let host;
+  try { host = new URL(String(u)).hostname; } catch { return false; }
+  return /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/.test(host) || host.endsWith('.local') || /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(host);
+}
+
 function build({ name, provider, model, desc, baseUrlOverride, config, botDef, env }) {
   if (!PROVIDERS.includes(provider)) {
     fail(`unknown provider '${provider}' (valid providers: ${PROVIDERS.join(', ')})`);
@@ -186,12 +192,21 @@ function build({ name, provider, model, desc, baseUrlOverride, config, botDef, e
   if (!baseUrl && (provider === 'custom' || provider === 'backboard')) {
     fail(`provider '${provider}' needs a base URL: set OX_BASE_URL in the environment or a baseUrl on the bot definition`);
   }
+  // A custom endpoint added in the app carries its own key name, so two
+  // endpoints never share one OX_API_KEY. One on this machine or your network
+  // with no key saved is a keyless local server (vLLM, llama.cpp, Ollama), like
+  // the built-in ollama provider; a remote one still needs its key.
+  let keyEnv = KEY_ENV[provider];
+  if (typeof botDef?.keyEnv === 'string' && /^OX_EP_[A-Z0-9_]{1,40}_KEY$/.test(botDef.keyEnv)) {
+    keyEnv = botDef.keyEnv;
+    if (!(env ?? process.env)[keyEnv] && isPrivateUrl(baseUrl)) keyEnv = null;
+  }
   return {
     bot: name ?? null,
     provider,
     model,
     baseUrl,
-    keyEnv: KEY_ENV[provider],
+    keyEnv,
     pricing: pricingFor(model),
     // Context window for metering/budgeting: env OX_MODEL_WINDOW > explicit
     // config model_window > pricing-table window > 128k default.

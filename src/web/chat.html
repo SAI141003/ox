@@ -841,7 +841,7 @@
     try {
       const { data = [] } = await getJson('/v1/models');
       sel.innerHTML = '';
-      for (const [label, list] of [['Your agents', data.filter((m) => m.ox?.agent)], ['Models', data.filter((m) => !m.ox?.agent)]]) {
+      for (const [label, list] of [['Your agents', data.filter((m) => m.ox?.agent)], ['Your endpoints', data.filter((m) => m.ox?.endpoint)], ['Models', data.filter((m) => !m.ox?.agent && !m.ox?.endpoint)]]) {
         if (!list.length) continue;
         const g = document.createElement('optgroup'); g.label = label;
         for (const m of list) {
@@ -1188,7 +1188,8 @@ files: [src/billing/**]
     ['providers', 'Providers', 'bolt', 'models'],
     ['accounts', 'Accounts', 'user', 'subscription claude chatgpt plan', true],
     ['keys', 'API keys', 'key', 'anthropic openai xai gemini openrouter', true],
-    ['local', 'Local models', 'cpu', 'ollama lm studio offline ram', true],
+    ['endpoints', 'Custom endpoints', 'globe', 'openai compatible vllm llama.cpp gateway url server', true],
+    ['local', 'Local models', 'cpu', 'ollama lm studio offline ram hugging face', true],
     ['messaging', 'Messaging', 'chat', 'telegram discord phone'],
     ['shortcuts', 'Keyboard shortcuts', 'keyboard', 'keys hotkeys'],
     ['archived', 'Archived chats', 'archive', 'archive restore'],
@@ -1332,6 +1333,35 @@ files: [src/billing/**]
             try { await postJson('/ox/providers', { provider: r.dataset.k, key: null }); toast('Key removed'); renderSection(); } catch (e) { toast(e.message); }
           });
         });
+      } else if (sec === 'endpoints') {
+        const eps = await getJson('/ox/endpoints');
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('globe')}Custom endpoints</div><p class="sdesc">Point ox at any OpenAI-compatible server — vLLM, llama.cpp, LM Studio on another machine, a company gateway. Each gets a name you can pick anywhere (terminal: <code>ox --bot &lt;name&gt;</code>) and its own key, kept in ~/.ox/keys.json.</p>
+          <div class="cards" id="ep-list">${eps.map((e) => `<div class="card"><span class="dot ${e.model ? 'ok' : 'warn'}"></span><span class="t"><div class="n">${esc(e.name)}</div><div class="d mono"><span>${esc(e.baseUrl)}</span><span>${esc(e.model || 'no model chosen')}</span><span>${e.key.set ? `key ${esc(e.key.hint)}` : 'no key'}</span></div></span><button class="btn ghost" data-ep-test="${esc(e.name)}" data-url="${esc(e.baseUrl)}">Test</button><button class="btn" data-ep-use="${esc(e.name)}" ${e.model ? '' : 'disabled title="choose a model first"'}>Use</button><button class="btn ghost danger" data-ep-rm="${esc(e.name)}">Remove</button></div>`).join('') || '<div class="box muted small">None yet.</div>'}</div>
+          <div class="section-cap cap">Add or edit</div>
+          <div class="box" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <label class="small muted">Name<input class="field" id="ep-name" placeholder="my-vllm"></label>
+            <label class="small muted">Endpoint URL<input class="field" id="ep-url" placeholder="http://127.0.0.1:8000/v1"></label>
+            <label class="small muted">API key<input class="field" id="ep-key" type="password" autocomplete="off" placeholder="leave blank if none, or to keep the current one"></label>
+            <label class="small muted">Model<input class="field" id="ep-model" list="ep-models" placeholder="press Test to list what it serves"><datalist id="ep-models"></datalist></label>
+            <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center"><button class="btn" id="ep-test">Test</button><button class="btn primary" id="ep-save">Save</button><span class="small muted" id="ep-state"></span></div>
+          </div>`;
+        const st = (t) => ($('ep-state').textContent = t);
+        const test = async (body) => {
+          st('testing…');
+          const r = await postJson('/ox/endpoints', { action: 'test', ...body });
+          if (!r.ok) { st(r.error); return null; }
+          $('ep-models').innerHTML = r.models.map((m) => `<option value="${esc(m)}">`).join('');
+          st(`answered in ${r.ms} ms · ${r.models.length} model${r.models.length === 1 ? '' : 's'}${r.models.length ? ` — e.g. ${r.models.slice(0, 3).join(', ')}` : ''}`);
+          return r;
+        };
+        $('ep-test').onclick = () => test({ baseUrl: $('ep-url').value.trim(), key: $('ep-key').value.trim() || null, name: $('ep-name').value.trim() || null }).catch((e) => st(e.message));
+        $('ep-save').onclick = async () => {
+          try { await postJson('/ox/endpoints', { name: $('ep-name').value.trim(), baseUrl: $('ep-url').value.trim(), model: $('ep-model').value.trim(), key: $('ep-key').value.trim() || null }); toast('Endpoint saved'); renderSection(); loadModels(); }
+          catch (e) { st(e.message); }
+        };
+        el.querySelectorAll('[data-ep-test]').forEach((b) => (b.onclick = async () => { $('ep-name').value = b.dataset.epTest; $('ep-url').value = b.dataset.url; const e = eps.find((x) => x.name === b.dataset.epTest); $('ep-model').value = e?.model ?? ''; try { await test({ baseUrl: b.dataset.url, name: b.dataset.epTest }); } catch (er) { st(er.message); } }));
+        el.querySelectorAll('[data-ep-use]').forEach((b) => (b.onclick = async () => { try { await postJson('/ox/settings', { defaultBot: b.dataset.epUse }); toast(`Default model: ${b.dataset.epUse}`); loadModels(); } catch (e) { toast(e.message); } }));
+        el.querySelectorAll('[data-ep-rm]').forEach((b) => (b.onclick = async () => { if (!confirm(`Remove the endpoint ${b.dataset.epRm} and its saved key?`)) return; try { await postJson('/ox/endpoints', { action: 'remove', name: b.dataset.epRm }); renderSection(); loadModels(); } catch (e) { toast(e.message); } }));
       } else if (sec === 'local') {
         el.innerHTML = `${mobileBack}<div class="shead">${icon('cpu')}Local models</div><p class="sdesc">Looking for model servers on this machine…</p><div class="skeleton"></div><div class="skeleton"></div>`;
         const L = await getJson('/ox/local');

@@ -35,6 +35,7 @@ import { createReadStream } from 'fs';
 import { stat } from 'fs/promises';
 import { resolveTurnMode } from './modes.js';
 import { listAgents, loadAgent, agentBotSpec, agentPersonaBlock } from './agents.js';
+import { readConfigDoc } from './config.js';
 
 // Read at request time, not at module load: a supervisor (or a test) that sets
 // the key after this module is imported must not silently get the old answer.
@@ -257,6 +258,13 @@ export function serveModelCatalog(env = process.env) {
       },
     });
   }
+  // Your own endpoints (Settings › Custom endpoints), by the name you gave them.
+  let configBots = {};
+  try { configBots = readConfigDoc().bots ?? {}; } catch {}
+  for (const [id, def] of Object.entries(configBots)) {
+    if (!def || def.provider !== 'custom' || !def.baseUrl || BOTS[id]) continue;
+    data.push({ id, object: 'model', created: MODELS_CREATED, owned_by: 'you', ox: { provider: 'custom', model: def.model ?? null, available: !!def.model, endpoint: true, baseUrl: def.baseUrl, desc: def.desc ?? '' } });
+  }
   // Your agents (`ox agent new`), as `agent:<name>`: picking one in a chat
   // runs it with its bot, mode, instructions and tool grant.
   for (const name of listAgents()) {
@@ -446,7 +454,7 @@ async function handleChatCompletions(req, res) {
   }
   let target;
   try {
-    target = resolveBot(agentDef ? (agentBotSpec(agentDef) ?? defaultBotSpec({}, process.env) ?? 'ox-grok') : String(targetModel));
+    target = resolveBot(agentDef ? (agentBotSpec(agentDef) ?? defaultBotSpec({}, process.env) ?? 'ox-grok') : String(targetModel), { bots: readConfigDoc().bots ?? {} });
     target.temperature = temperature0;
   } catch {
     target = { model: targetModel, temperature: temperature0 };
@@ -509,6 +517,10 @@ async function handleChatCompletions(req, res) {
           sendSSE(res, createChatCompletionChunk(targetModel, last));
         } else if (event.type === 'usage') {
           tallyUsage(totalUsage, event);
+        } else if (event.type === 'error') {
+          // A run that stops (missing key, provider refusal, budget) says why,
+          // instead of ending as an empty reply.
+          sendSSE(res, { error: { message: String(event.error), type: 'server_error' } });
         } else if (event.type === 'tool-start' || event.type === 'tool-end') {
           // What the agent is doing, as an `ox` extension on an empty chunk:
           // OpenAI clients ignore the unknown field, the web chat draws it.
@@ -766,7 +778,7 @@ async function handleResponses(req, res) {
   // reason instead of a 200 carrying an empty string.
   let target;
   try {
-    target = resolveBot(model.trim());
+    target = resolveBot(model.trim(), { bots: readConfigDoc().bots ?? {} });
   } catch (err) {
     sendError(res, 404, `The model '${model}' does not exist or cannot be resolved: ${err.message}`, 'invalid_request_error', 'model_not_found', 'model');
     return;
@@ -984,6 +996,8 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/hf\/files\/?$/, handler: appRoute(async (_, __, req) => (await import('./hf-models.js')).modelFiles(new URL(req.url, 'http://x').searchParams.get('repo') ?? '')) },
   { method: 'POST', pattern: /^\/ox\/hf\/pull\/?$/, handler: appRoute(async (b) => (await import('./hf-models.js')).startPull(String(b.repo ?? ''), b.quant ? String(b.quant) : null)) },
   { method: 'GET', pattern: /^\/ox\/hf\/pulls\/?$/, handler: appRoute(async () => (await import('./hf-models.js')).pullJobs()) },
+  { method: 'GET', pattern: /^\/ox\/endpoints\/?$/, handler: appRoute(async () => (await import('./endpoints.js')).listEndpoints()) },
+  { method: 'POST', pattern: /^\/ox\/endpoints\/?$/, handler: appRoute(async (b) => { const e = await import('./endpoints.js'); return b.action === 'remove' ? e.removeEndpoint(String(b.name ?? '')) : b.action === 'test' ? e.testEndpoint({ baseUrl: b.baseUrl, key: b.key ?? null, name: b.name ?? null }) : e.saveEndpoint({ name: b.name, baseUrl: b.baseUrl, model: b.model || null, key: b.key || null, desc: b.desc || '' }); }) },
   { method: 'GET', pattern: /^\/ox\/about\/?$/, handler: appRoute(async () => (await appApi()).aboutView()) },
   { method: 'GET', pattern: /^\/ox\/settings\/?$/, handler: handleSettingsGet },
   { method: 'POST', pattern: /^\/ox\/settings\/?$/, handler: handleSettingsPost },

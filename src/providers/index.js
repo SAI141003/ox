@@ -112,7 +112,8 @@ export async function* streamVia(target, opts = {}) {
       `ox: provider '${pname}' has no base URL — set OX_BASE_URL or a baseUrl on the bot definition`
     );
   }
-  const keyEnv = target.keyEnv ?? cfg.keyEnv;
+  // null is a deliberate "no key" (a keyless local endpoint), not "unset".
+  const keyEnv = target.keyEnv !== undefined ? target.keyEnv : cfg.keyEnv;
   const apiKey = keyEnv ? process.env[keyEnv] : undefined;
   if (keyEnv && !apiKey) {
     // Nothing connected at all: say every way in, not just this provider's key.
