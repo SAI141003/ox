@@ -32,6 +32,7 @@ Updated October 16 2026.
 | 2.4 | Usage shown per answer, model, agent, surface | ✓ | Time and tokens under each answer; Settings › Usage |
 | 2.5 | Coding runs (with tools) are leaner | ? | Not measured yet: tool rules and subagent text still sent when the subagent tool is not offered |
 | 2.7 | Short questions the mode guesser reads as a change | ✓ | "Name the capital of Australia" 2,115 → 255 tokens |
+| 2.8 | Tools on demand (load_tools, after Anthropic's Tool Search) | ✓ | A narrowed offer lists the rest by name; the model loads one itself and the next request carries it (tested with a stand-in model) |
 | 2.6 | Follow-up suggestions cost | ✓ | Off by default (one extra call); switch in Settings › General |
 
 ## 3. Answers as interface (OpenUI)

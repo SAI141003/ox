@@ -222,9 +222,11 @@ test('runAgent emits exactly one tool-narrowing event and sends the narrowed off
   assert.equal(narrows.length, 1, 'one narrowing event per turn');
   // 7 mcp + 23 builtin (incl. 7 operator, 2 mail, web_fetch/web_search/critique, create_media, install_skill) + show_ui + 1 subagent = 32.
   assert.equal(narrows[0].total, 32);
-  assert.equal(narrows[0].offered, 11, 'core nine + two declared db tools');
+  // core nine + two declared db tools + load_tools (the withheld ones stay one call away)
+  assert.equal(narrows[0].offered, 12, 'core nine + two declared db tools + load_tools');
   const wireNames = (bodies[0]?.tools ?? []).map((x) => x.function?.name);
-  assert.equal(wireNames.length, 11);
+  assert.equal(wireNames.length, 12);
+  assert.ok(wireNames.includes('load_tools'));
   assert.ok(wireNames.includes('mcp__db__query'));
   assert.ok(!wireNames.includes('mcp__web__fetch'));
   // The network tools are relevance-gated, not unconditional: a migration-fix

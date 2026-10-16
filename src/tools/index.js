@@ -20,6 +20,7 @@ import { webFetchTool, webSearchTool, WEB_TOOL_SCHEMAS, WEB_TOOLS } from './web.
 import { webTaskTool, WEB_TASK_TOOL_SCHEMAS, WEB_TASK_TOOLS } from './web-task.js';
 import { critiqueTool, CRITIQUE_TOOL_SCHEMAS, CRITIQUE_TOOLS } from './critique.js';
 import { showUiTool, CANVAS_TOOL_SCHEMAS, CANVAS_TOOLS, CANVAS_KEYWORDS } from './canvas.js';
+import { loadToolsTool } from './load-tools.js';
 import { agentMessagingToolSchemas, AGENT_MESSAGE_TOOLS } from '../agent-teams.js';
 import { taskBoardTool, TASK_BOARD_TOOL_SCHEMAS, TASK_BOARD_TOOLS, currentTaskId } from './task-board.js';
 import { createMediaTool, MEDIA_TOOL_SCHEMAS, MEDIA_TOOLS, MEDIA_KEYWORDS } from './media.js';
@@ -50,6 +51,7 @@ export const TOOL_IMPLS = {
   show_ui: showUiTool,
   task_board: taskBoardTool,
   create_media: createMediaTool,
+  load_tools: loadToolsTool,
   install_skill: installSkillTool,
 };
 

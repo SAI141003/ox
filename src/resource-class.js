@@ -38,7 +38,7 @@ const MAILBOX_TOOLS = new Set(['agent_message.send', 'agent_observe']);
 // state that the CLI appends to the transcript, it spawns nothing, reaches no
 // network and touches no file, which is the same posture the class already
 // describes.
-const SESSION_STATE_TOOLS = new Set(['todo_write', 'task_board']);
+const SESSION_STATE_TOOLS = new Set(['todo_write', 'task_board', 'load_tools']);
 
 // The same bug again, wider: 15 of 25 registered tools had no class, so every
 // call to web_search, web_fetch, show_ui, the mail tools and the Mac tools was

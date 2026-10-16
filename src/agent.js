@@ -5,6 +5,7 @@ import { breakdownContext, buildContext, estimateTokens, instructionScopesFromTe
 import { buildSystemPrompt, renderContractBlock } from './system-prompt.js';
 import { harvestEvidence, mergeGoalTodos, progressSignature, proveGoalItems, renderGoalBlock } from './goal.js';
 import { listToolSchemas, dispatchTool, pruneToolSchemas, narrowToolSchemas } from './tools/index.js';
+import { LOAD_TOOLS_SCHEMA } from './tools/load-tools.js';
 import { alreadyLiveBroadcast, noteSubagentBatch, noteSubagentLive } from './subagent-registry.js';
 import { getProvider, streamVia } from './providers/index.js';
 import { batchPlan, resolveSubagentConcurrency } from './resource-class.js';
@@ -1293,12 +1294,28 @@ async function* runAgentLoop(opts = {}) {
       strict: strictSchemas,
     });
     if (Array.isArray(narrowed) && narrowed.length > 0 && narrowed.length < tools.length) {
-      yield { type: 'tool-narrowing', offered: narrowed.length, total: tools.length };
+      const totalBefore = tools.length;
       withheldTools = tools
         .filter((s) => !narrowed.includes(s))
         .map((s) => s?.name)
         .filter((n) => typeof n === 'string' && n);
-      tools = narrowed;
+      // Tools on demand: the withheld ones stay one call away (load_tools), so a
+      // narrowed offer never strands the model without a tool it turns out to need.
+      const everything = tools;
+      tools = withheldTools.length ? [...narrowed, LOAD_TOOLS_SCHEMA] : narrowed;
+      toolCtx.loadTools = (names) => {
+        const loaded = [], unknown = [];
+        for (const n of names) {
+          const s = everything.find((x) => x?.name === n);
+          if (!s) { unknown.push(n); continue; }
+          if (!tools.includes(s)) tools = [...tools.filter((x) => x !== LOAD_TOOLS_SCHEMA), s, LOAD_TOOLS_SCHEMA];
+          withheldTools = withheldTools.filter((w) => w !== n);
+          loaded.push(n);
+        }
+        return { loaded, unknown };
+      };
+      // Counted as sent: the narrowed set plus load_tools when anything is withheld.
+      yield { type: 'tool-narrowing', offered: tools.length, total: totalBefore };
       if (withheldTools.length && history[0]?.role === 'system') {
         history[0] = { role: 'system', content: await systemText() };
       }
