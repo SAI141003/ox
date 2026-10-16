@@ -259,6 +259,9 @@ export async function refreshOllama(base = process.env.OLLAMA_HOST ? `http://${S
   return ollamaCache.models;
 }
 export const localOllama = () => ollamaCache.models;
+// The first auto pick waits for the one quick look at Ollama (1.5 s at most),
+// so it never falls back to a model that is not installed.
+async function warmLocal() { if (!ollamaCache.at && process.env.OX_NO_KEYSTORE !== '1') await refreshOllama(); }
 
 // Could this bot answer right now? A plan must be signed in, a keyed provider
 // needs its key; local servers and your own endpoints carry no key to check.
@@ -276,10 +279,11 @@ export function runnable(spec, env = process.env) {
 // have connected. Only models that can answer right now are considered.
 const FAST_BOTS = ['ox-haiku', 'ox-flash', 'ox-grok-fast', 'ox-groq'];
 const STRONG_BOTS = ['claude-plan', 'chatgpt-plan', 'ox-opus', 'ox-claude', 'ox-gpt', 'ox-gemini', 'ox-grok', 'ox-deepseek', 'cursor-plan'];
-export function autoModel(messages = [], env = process.env) {
+export function autoModel(messages = [], env = process.env, { think = false } = {}) {
   const last = [...messages].reverse().find((m) => m?.role === 'user');
   const said = typeof last?.content === 'string' ? last.content : '';
-  const light = SMALL_TALK.test(said) || (!TOUCHES_CODE.test(said) && !NEEDS_TOOLS.test(said) && said.length < 400);
+  const seeing = Array.isArray(last?.images) && last.images.length > 0;
+  const light = !think && !seeing && (SMALL_TALK.test(said) || (!TOUCHES_CODE.test(said) && !NEEDS_TOOLS.test(said) && said.length < 400));
   let local = [];
   try { local = Object.entries(readConfigDoc().bots ?? {}).filter(([, d]) => d?.provider === 'custom' && d.model).map(([id]) => id); } catch {}
   if (Date.now() - ollamaCache.at > 5 * 60_000 && process.env.OX_NO_KEYSTORE !== '1') refreshOllama();
@@ -293,6 +297,7 @@ export function autoModel(messages = [], env = process.env) {
   const id = STRONG_BOTS.find(can) ?? FAST_BOTS.find(can) ?? local.find(can);
   if (!id) return { id: pickWorkingDefault(env), why: 'nothing else can answer here' };
   const strong = STRONG_BOTS.includes(id);
+  if (think || seeing) return { id, why: strong ? `${think ? 'think harder' : 'a photo to look at'}: the strongest model connected` : `${think ? 'think harder' : 'a photo to look at'}: the best model connected (connect a stronger one in Settings)` };
   return { id, why: light ? 'the only model that can answer' : strong ? 'work with code or tools, the strongest model connected' : 'work with code or tools; the only model that can answer (connect a stronger one in Settings)' };
 }
 
@@ -309,6 +314,7 @@ export function pickWorkingDefault(env = process.env) {
     const k = KEY_ENV[def.provider];
     if (def.model && k && env[k]) return id;
   }
+  if (localOllama()[0]) return `ox-ollama:${localOllama()[0]}`;
   return configured ?? 'ox-ollama';
 }
 
@@ -550,6 +556,15 @@ export const LIVE_UI_GUIDE = [
   'Every $var a line reads must be declared. Use 0 - x for a negative number. For anything the components cannot show, a block fenced with ```html-live holds one self-contained HTML snippet (inline style and script, no network).',
 ].join('\n');
 
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+export function cleanImages(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter((im) => im && IMAGE_TYPES.has(im.mediaType) && typeof im.data === 'string' && im.data.length < 7_000_000 && /^[A-Za-z0-9+/=]+$/.test(im.data.slice(0, 200)))
+    .slice(0, 4).map((im) => ({ mediaType: im.mediaType, data: im.data }));
+}
+export const RESEARCH_BRIEF = 'Deep research. Search several times from different angles, open and read the best sources (not just the result snippets), compare what they say, and note where they disagree. Then answer with a short summary first, the details after, and each claim followed by its source number, like [1]. End with the numbered list of sources and their links.';
+export const LEARN_BRIEF = 'Guided learning. Teach rather than tell: find out what the user already knows, explain one step at a time in plain words with a small example, then ask one short question to check they followed before moving on. Never dump the whole answer at once.';
+
 async function handleChatCompletions(req, res) {
   if (!authorized(req)) {
     unauthorized(res);
@@ -572,8 +587,18 @@ async function handleChatCompletions(req, res) {
     return;
   }
 
+  // Photos from the app's + menu ride on a user message as `images`; anything
+  // else in that field is dropped, and at most 4 photos of 5 MB each are kept.
+  messages = messages.map((m) => (m && 'images' in m ? { ...m, images: cleanImages(m.images) } : m));
+  // The app's + menu: web search, deep research, think harder, guided learning,
+  // interactive answer, and memory off for this chat.
+  const tool = {
+    web: body.ox_web === true, research: body.ox_research === true, think: body.ox_think === true,
+    learn: body.ox_learn === true, canvas: body.ox_canvas === true, noMemory: body.ox_memory === false,
+  };
   // "auto": a model per message, from what can answer here (see autoModel).
-  const autoPick = model === 'auto' ? autoModel(messages) : null;
+  if (model === 'auto') await warmLocal();
+  const autoPick = model === 'auto' ? autoModel(messages, process.env, { think: tool.think || tool.research }) : null;
   const targetModel = autoPick?.id ?? (model || pickWorkingDefault());
   const temperature0 = temperature ?? 0.7;
   // Resolve a name the registry knows (every id in /v1/models) through the same
@@ -620,6 +645,7 @@ async function handleChatCompletions(req, res) {
   if (turnMode.routed && !turnMode.answerOnly && !TOUCHES_CODE.test(said) && !NEEDS_TOOLS.test(said) && (turnMode.mode === 'ask' || SMALL_TALK.test(said) || (!BUILDS.test(said) && said.length < 400))) {
     turnMode = { mode: 'ask', routed: true, reason: turnMode.mode === 'ask' ? turnMode.reason : SMALL_TALK.test(said) ? 'small talk' : 'a question', answerOnly: true };
   }
+  if (tool.web || tool.research) turnMode = { mode: 'ask', routed: true, reason: tool.research ? 'deep research' : 'web search', answerOnly: true };
   // The same memory a terminal run starts with: the project's MEMORY.md, what ox
   // remembers about the user, and what bears on this message.
   const lastText = typeof lastUser?.content === 'string' ? lastUser.content : '';
@@ -627,6 +653,7 @@ async function handleChatCompletions(req, res) {
   // nothing learned, no usage record, memory writes refused.
   const incognito = body.ox_incognito === true || process.env.OX_INCOGNITO === '1';
   let memoryBlock = '';
+  if (!tool.noMemory) 
   try {
     const { loadMemoryBlock } = await import('./memory.js');
     const { memoryPromptBlock } = await import('./memory-graph.js');
@@ -634,11 +661,16 @@ async function handleChatCompletions(req, res) {
   } catch {}
   // `ox_ui: 'live'` is sent by ox's own app, which can run interactive answers.
   // About 600 tokens: sent only when the message asks for something to use.
-  const liveUi = body.ox_ui === 'live' && WANTS_UI.test(lastText) ? LIVE_UI_GUIDE : '';
+  const liveUi = body.ox_ui === 'live' && (tool.canvas || WANTS_UI.test(lastText)) ? LIVE_UI_GUIDE : '';
+  const howTo = [
+    tool.research ? RESEARCH_BRIEF : tool.web ? 'Search the web for this and answer from what you find, naming each source.' : '',
+    tool.think ? 'Think this through carefully before answering: weigh the alternatives, check your working, then give the answer.' : '',
+    tool.learn ? LEARN_BRIEF : '',
+  ].filter(Boolean).join('\n\n');
   // Small models follow what sits next to the question, not a guide far up in
   // the system prompt: when the message plainly asks for something to work
   // with, the reminder rides along with it (the stored chat is unchanged).
-  if (liveUi && WANTS_UI.test(lastText)) {
+  if (liveUi && (tool.canvas || WANTS_UI.test(lastText))) {
     const i = messages.lastIndexOf(lastUser);
     if (i >= 0) messages = [...messages.slice(0, i), { ...lastUser, content: `${lastText}\n\n(Answer with an \`\`\`openui block as described in your instructions.)` }, ...messages.slice(i + 1)];
   }
@@ -648,16 +680,16 @@ async function handleChatCompletions(req, res) {
     surface: 'app',
     memoryBlock,
     ...(incognito ? { incognito: true } : {}),
-    ...(agentDef || liveUi ? { personaBlock: [agentDef ? agentPersonaBlock(agentDef) : '', liveUi].filter(Boolean).join('\n\n') } : {}),
+    ...(agentDef || liveUi || howTo ? { personaBlock: [agentDef ? agentPersonaBlock(agentDef) : '', liveUi, howTo].filter(Boolean).join('\n\n') } : {}),
     ...(agentDef ? { agentName: agentDef.name } : {}),
     ...(Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools }
-      : turnMode.answerOnly ? (NEEDS_WEB.test(lastText) ? { onlyTools: ['web_search', 'web_fetch'] } : { noTools: true })
+      : turnMode.answerOnly ? (tool.web || tool.research || NEEDS_WEB.test(lastText) ? { onlyTools: ['web_search', 'web_fetch'] } : { noTools: true })
       // A question about the project in ask mode: only the four readers.
       : turnMode.mode === 'ask' && TOUCHES_CODE.test(lastText) && !NEEDS_TOOLS.test(lastText) ? { onlyTools: ['read_file', 'list_dir', 'glob', 'grep'] }
       : {}),
   };
   // Preferences the user states here are kept, as in the terminal.
-  if (process.env.OX_LEARN !== '0' && lastText && !incognito) {
+  if (process.env.OX_LEARN !== '0' && lastText && !incognito && !tool.noMemory) {
     try { (await import('./memory-graph.js')).learnFromMessages([{ role: 'user', content: lastText }], { source: 'app' }); } catch {}
   }
   const config = { maxTokens: max_tokens };
@@ -1183,8 +1215,39 @@ async function followupsRoute(b) {
   return { items: r.items };
 }
 
+// The chat box's wand: a rough message in, a clearer prompt out. "auto" uses
+// the quick pick (a local or fast model), so it costs a few hundred tokens.
+async function optimizeRoute(b) {
+  let spec = String(b.model ?? '').trim();
+  if (spec === 'auto' || !spec) { await warmLocal(); spec = autoModel([{ role: 'user', content: 'hi' }]).id; }
+  if (spec.startsWith('agent:')) { const a = loadAgent(spec.slice(6)); spec = (a && agentBotSpec(a)) || ''; }
+  if (!spec) spec = defaultBotSpec({}, process.env) ?? 'ox-grok';
+  const target = resolveBot(spec, { bots: readConfigDoc().bots ?? {} });
+  const { optimizePrompt } = await import('./prompt-optimizer.js');
+  const r = await optimizePrompt({ target, text: b.text });
+  if (r.usage && process.env.OX_USAGE_LOG !== '0') {
+    try { (await import('./usage-log.js')).recordRun({ surface: 'app', mode: 'optimize', rows: [{ id: 'aux', model: target.model, ...r.usage }] }); } catch {}
+  }
+  if (!r.text) throw new Error('The model did not return a usable prompt. Try again or pick another model.');
+  return { text: r.text, model: spec };
+}
+
+// A picture for an answer: GET /ox/image?q=Pena%20Palace -> the image bytes (cached).
+async function handleImage(req, res) {
+  if (!authorized(req)) { unauthorized(res); return; }
+  const q = new URL(req.url, 'http://x').searchParams.get('q') ?? '';
+  let r = null;
+  try { r = await (await import('./image-search.js')).findImage(q); } catch {}
+  if (!r) { sendError(res, 404, 'No picture found', 'invalid_request_error', 'not_found', null); return; }
+  const st = await stat(r.file);
+  res.writeHead(200, { 'Content-Type': r.type, 'Content-Length': st.size, 'Cache-Control': 'private, max-age=604800', 'X-Content-Type-Options': 'nosniff', 'X-Ox-Credit': encodeURIComponent(r.credit) });
+  createReadStream(r.file).pipe(res);
+}
+
 const ROUTES = [
+  { method: 'GET', pattern: /^\/ox\/image\/?$/, handler: handleImage },
   { method: 'POST', pattern: /^\/ox\/followups\/?$/, handler: appRoute(followupsRoute) },
+  { method: 'POST', pattern: /^\/ox\/optimize\/?$/, handler: appRoute(optimizeRoute) },
   // OpenUI Lang Query() lines in the app: only the read-only tools the language
   // allows, run in plan mode, so nothing an answer draws can change a file.
   { method: 'POST', pattern: /^\/ox\/canvas\/query\/?$/, handler: appRoute(async (b) => {
@@ -1327,7 +1390,7 @@ async function serveChatPage(res) {
     'Content-Length': chatPage.length,
     'Cache-Control': 'no-cache',
     // The page talks only to this server and loads nothing else.
-    'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; media-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
   });

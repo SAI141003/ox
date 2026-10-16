@@ -92,9 +92,10 @@
   @media (prefers-reduced-motion: reduce) { #splash * { animation-duration: 1ms !important; animation-delay: 0s !important; } }
   .iconbtn { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: var(--muted); }
   .iconbtn:hover { background: var(--hover); color: var(--text); }
-  .tabs { display: flex; gap: 18px; padding: 8px 14px 0; border-bottom: 1px solid var(--line); }
-  .tabs button { padding: 6px 0 9px; font-size: 10.5px; letter-spacing: .14em; font-weight: 600; color: var(--dim); border-bottom: 2px solid transparent; margin-bottom: -1px; }
-  .tabs button.on { color: var(--text); border-color: var(--text); }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin: 6px 10px 2px; padding: 3px; border-radius: 9px; background: var(--raise); }
+  .tabs button { height: 28px; border-radius: 7px; font-size: 13px; font-weight: 500; color: var(--muted); }
+  .tabs button:hover { color: var(--text); }
+  .tabs button.on { color: var(--text); background: var(--sel); box-shadow: 0 1px 2px rgba(0,0,0,.25); }
   .nav { padding: 8px 8px 4px; display: flex; flex-direction: column; gap: 1px; }
   .nav button { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; color: var(--muted); text-align: left; font-size: 13.5px; }
   .nav button:hover { background: var(--hover); color: var(--text); }
@@ -122,7 +123,7 @@
 
   main { min-width: 0; display: flex; flex-direction: column; height: 100vh; position: relative; }
   .bar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-bottom: 1px solid var(--line); min-height: 50px; }
-  .bar .title { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .bar .title { font-size: 13.5px; color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
   .bar .usage { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
   .view { flex: 1; min-height: 0; display: none; }
   .view.on { display: flex; flex-direction: column; }
@@ -184,7 +185,7 @@
   .ui-bar b { font-weight: 600; font-variant-numeric: tabular-nums; }
   .ui-choices { display: flex; flex-wrap: wrap; gap: 8px; }
   .send[hidden], .speak-btn[hidden], .round[hidden] { display: none !important; }
-  .speak-btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border-radius: 99px; background: var(--btn); color: var(--btn-ink); font-weight: 600; font-size: 13.5px; }
+  .speak-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px 0 10px; border-radius: 99px; background: var(--btn); color: var(--btn-ink); font-weight: 500; font-size: 13px; }
   .speak-btn svg { width: 16px; height: 16px; }
   #talk { position: fixed; inset: 0; z-index: 90; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; }
   #talk[hidden] { display: none; }
@@ -259,6 +260,7 @@
   .ch-pie { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; } .ch-legend { display: flex; flex-direction: column; gap: 5px; font-size: 13px; flex: 1; min-width: 140px; }
   .ch-legend div { display: flex; align-items: center; gap: 8px; } .ch-legend i { width: 10px; height: 10px; border-radius: 3px; flex: none; } .ch-legend span { flex: 1; color: var(--muted); } .ch-legend b { font-weight: 600; font-variant-numeric: tabular-nums; }
   .ch-line { width: 100%; height: 130px; display: block; } .ch-x { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); margin-top: 4px; }
+  .cv-img { margin: 0; position: relative; border-radius: 12px; overflow: hidden; background: var(--raise); } .cv-img img { width: 100%; height: 100%; object-fit: cover; display: block; } .cv-img figcaption { position: absolute; left: 8px; bottom: 6px; font-size: 11px; color: #fff; background: rgba(0,0,0,.45); padding: 2px 7px; border-radius: 6px; } .cv-img.none { display: none; }
   .cv-svg { width: 100%; max-width: 420px; height: auto; display: block; margin: 0 auto; }
   .cv-badge { border: 1px solid var(--line); }
   .cv-row:has(> .chip) { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -308,16 +310,40 @@
   .chip { padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); font-size: 13.5px; text-align: left; }
   .chip:hover { border-color: var(--line2); color: var(--text); background: var(--hover); }
 
-  .composer { padding: 10px 22px 18px; }
+  .composer { padding: 10px 22px 18px; position: relative; }
+  .pop { position: absolute; bottom: calc(100% - 4px); left: max(22px, calc(50% - var(--tw) / 2)); width: min(380px, calc(100% - 44px)); max-height: min(70vh, 640px); overflow: auto; z-index: 40; padding: 8px; border: 1px solid var(--line2); border-radius: 16px; background: var(--panel); box-shadow: 0 18px 50px rgba(0,0,0,.35); }
+  .pop-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 4px; }
+  .pop-tiles button { display: grid; justify-items: center; gap: 6px; padding: 14px 4px 12px; border-radius: 12px; background: var(--raise); color: var(--text); font-size: 12.5px; }
+  .pop-tiles button:hover { background: var(--sel); } .pop-tiles .i { width: 20px; height: 20px; }
+  .pop-h { font-size: 11.5px; color: var(--dim); padding: 10px 8px 4px; }
+  .pop-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border-radius: 10px; text-align: left; color: var(--text); }
+  .pop-row:hover, .pop-row:focus-visible { background: var(--hover); outline: 0; }
+  .pop-row > .i { flex: none; color: var(--muted); }
+  .pop-row .txt { flex: 1; min-width: 0; display: grid; gap: 1px; }
+  .pop-row b { font-weight: 500; font-size: 13.5px; } .pop-row small { color: var(--muted); font-size: 12px; line-height: 1.35; }
+  .pop-row .ck { width: 16px; height: 16px; flex: none; color: var(--text); visibility: hidden; } .pop-row.on .ck { visibility: visible; }
+  .pop-row[aria-disabled="true"] { opacity: .45; pointer-events: none; }
+  .pop-modes { width: min(440px, calc(100% - 44px)); }
+  .pop-modes .pop-row.on { background: var(--sel); }
+  .pop-modes .kbd { margin-left: auto; }
+  .tool-chips { display: inline-flex; gap: 4px; flex-wrap: wrap; min-width: 0; }
+  .tool-chip { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 6px 0 8px; border-radius: 99px; border: 1px solid var(--line2); color: var(--text); font-size: 12px; white-space: nowrap; }
+  .tool-chip .i { width: 13px; height: 13px; } .tool-chip button { color: var(--muted); padding: 0 2px; } .tool-chip button:hover { color: var(--text); }
+  #mode-btn { padding-right: 20px; }
+  #optimize.busy { animation: pulse 1s infinite; }
+  .attached .ph { padding: 0; overflow: hidden; } .attached .ph img { width: 44px; height: 44px; object-fit: cover; display: block; border-radius: 8px; }
+  .u-photos { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; } .u-photos img { width: 120px; height: 90px; object-fit: cover; border-radius: 10px; display: block; }
   .cbox { max-width: var(--tw); margin: 0 auto; border: 1px solid var(--line2); border-radius: 16px; background: var(--panel); overflow: hidden; }
   .cbox:focus-within { border-color: var(--muted); }
-  .cmeta { display: flex; align-items: center; gap: 10px; padding: 7px 14px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--dim); }
+  .cfoot { display: flex; align-items: center; gap: 12px; max-width: var(--tw); margin: 7px auto 0; padding: 0 6px; font-size: 11.5px; color: var(--dim); min-width: 0; }
+  .cmeta { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .cmeta .i { width: 13px; height: 13px; flex: none; } #cwd { overflow: hidden; text-overflow: ellipsis; }
   .cmeta .grow { flex: 1; }
   .attached { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; }
   .attached:empty { display: none; }
   .attached span { font: 12px var(--mono); padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line2); color: var(--muted); }
   .attached button { color: var(--dim); margin-left: 4px; }
-  .cbox textarea { display: block; width: 100%; border: 0; outline: 0; background: none; resize: none; max-height: 260px; padding: 12px 14px 4px; line-height: 1.5; }
+  .cbox textarea { display: block; width: 100%; border: 0; outline: 0; background: none; resize: none; max-height: 260px; padding: 14px 16px 6px; line-height: 1.5; font-size: 14.5px; }
   .crow { display: flex; align-items: center; gap: 6px; padding: 6px 8px 8px; }
   .crow .grow { flex: 1; }
   .pill { display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 8px; border-radius: 8px; color: var(--muted); font-size: 12.5px; position: relative; }
@@ -331,7 +357,8 @@
   .round.live { background: var(--red); color: #fff; }
   .send { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--btn); color: var(--btn-ink); }
   .send:disabled { opacity: .3; cursor: default; }
-  .hint { max-width: var(--tw); margin: 7px auto 0; font-size: 11.5px; color: var(--dim); text-align: center; }
+  .hint { font-size: 11.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 640px) { .hint { display: none; } }
 
   /* ---------- list + detail views (capabilities, messaging, scheduled) */
   .split { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; flex: 1; min-height: 0; }
@@ -449,8 +476,8 @@
       <button class="iconbtn" id="collapse" title="Hide the sidebar (⌘\)" aria-label="Hide the sidebar" data-i="sidebar"></button>
     </div>
     <div class="tabs" role="tablist">
-      <button class="on" data-tab="sessions" role="tab">SESSIONS</button>
-      <button data-tab="agents" role="tab">AGENTS</button>
+      <button class="on" data-tab="sessions" role="tab">Sessions</button>
+      <button data-tab="agents" role="tab">Agents</button>
     </div>
     <div id="tab-sessions">
       <div class="nav">
@@ -486,24 +513,42 @@
       <div class="thread" id="thread"><div class="inner" id="inner"></div></div>
       <div class="composer">
         <div class="cbox">
-          <div class="cmeta"><span data-i="folder"></span><span id="cwd">…</span><span class="grow"></span><span id="ro" class="dim"></span></div>
           <div class="attached" id="attached"></div>
           <textarea id="input" rows="1" placeholder="Describe what you need" aria-label="Message"></textarea>
           <div class="crow">
-            <button class="round" id="attach" title="Attach text or code files" aria-label="Attach files" data-i="plus"></button>
+            <button class="round" id="attach" title="Add photos, files and tools" aria-label="Add photos, files and tools" aria-haspopup="menu" aria-expanded="false" data-i="plus"></button>
             <input type="file" id="file" multiple hidden>
-            <label class="pill" title="Mode. Enforced, not a hint"><span data-i="mode"></span><select id="mode" aria-label="Mode">
+            <input type="file" id="photo" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
+            <input type="file" id="camera" accept="image/*" capture="environment" hidden>
+            <button class="pill" id="mode-btn" aria-haspopup="listbox" aria-expanded="false" title="Mode, enforced (⌘. next mode)"><span data-i="mode"></span><span id="mode-name">Auto</span></button>
+            <select id="mode" aria-label="Mode" hidden>
               <option value="auto">Auto</option><option value="code">Code</option><option value="ask">Ask</option><option value="plan">Plan</option>
               <option value="debug">Debug</option><option value="data">Data</option><option value="orchestrate">Orchestrate</option>
-            </select></label>
+            </select>
+            <span class="tool-chips" id="tool-chips"></span>
             <span class="grow"></span>
             <label class="pill" title="Model or agent (⌘⇧M)"><select id="model" aria-label="Model"></select></label>
+            <button class="round" id="optimize" title="Improve this prompt (⌘I)" aria-label="Improve this prompt" data-i="wand" disabled></button>
             <button class="round" id="mic" title="Talk instead of typing (⌃B)" aria-label="Talk" data-i="mic" hidden></button>
             <button class="speak-btn" id="speak" aria-label="Talk to it" title="Have a spoken conversation" hidden><span data-i="wave"></span>Speak</button>
             <button class="send" id="send" aria-label="Send" disabled></button>
           </div>
         </div>
-        <div class="hint" id="hint">Ask and Plan never change your files · ox works in this folder, on your machine</div>
+        <div class="pop" id="plus-menu" role="menu" hidden>
+          <div class="pop-tiles">
+            <button data-act="photo" role="menuitem"><span data-i="image"></span>Photos</button>
+            <button data-act="camera" role="menuitem"><span data-i="camera"></span>Camera</button>
+            <button data-act="file" role="menuitem"><span data-i="clip"></span>Files</button>
+          </div>
+          <div class="pop-h">Answer with</div>
+          <div class="pop-group" id="pop-tools"></div>
+          <div class="pop-h">This chat</div>
+          <div class="pop-group" id="pop-flags"></div>
+          <div class="pop-h">More</div>
+          <div class="pop-group" id="pop-more"></div>
+        </div>
+        <div class="pop pop-modes" id="mode-menu" role="listbox" hidden></div>
+        <div class="cfoot"><span class="cmeta" title="ox works in this folder, on your machine"><span data-i="folder"></span><span id="cwd">…</span><span id="ro" class="dim"></span></span><span class="grow"></span><span class="hint" id="hint">Ask and Plan never change your files</span></div>
       </div>
     </section>
 
@@ -607,11 +652,20 @@
     store: 'M4 9l1.5-5h13L20 9M4 9h16v11H4zM4 9a3 3 0 0 0 6 0 3 3 0 0 0 4 0 3 3 0 0 0 6 0M9 20v-5h6v5',
     film: 'M4 4h16v16H4zM8 4v16M16 4v16M4 8h4M4 12h4M4 16h4M16 8h4M16 12h4M16 16h4',
     wave: 'M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4', nextq: 'M5 4v6a4 4 0 0 0 4 4h11M16 10l4 4-4 4', speaker: 'M4 9v6h4l5 4V5L8 9H4ZM16 9a3 3 0 0 1 0 6M18.5 6.5a7 7 0 0 1 0 11', retry: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7',
-    bot: 'M12 3v3M8 7h8a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3ZM9.5 12.5h.01M14.5 12.5h.01M2 13v2M22 13v2',
+    bot: 'M12 2.6a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8ZM12 5.4V8M7 8h10a3 3 0 0 1 3 3v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4v-5a3 3 0 0 1 3-3ZM9 12.5v1.5M15 12.5v1.5M10 17h4M1.5 13v2.5M22.5 13v2.5',
     incog: 'M3 11h18M5 11l2-6h10l2 6M7 17a3 3 0 1 0 0-.01M17 17a3 3 0 1 0 0-.01M10 17h4',
     chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
     mapi: 'M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2ZM9 4v14M15 6v14',
-    shield: 'M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6Z', open: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6', back: 'M15 18l-6-6 6-6',
+    shield: 'M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6Z',
+    camera: 'M4 8h3l2-3h6l2 3h3v11H4ZM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z',
+    image: 'M4 5h16v14H4ZM4 16l5-5 4 4 2-2 5 5M15.5 9.5a1.5 1.5 0 1 0 0-.01',
+    clip: 'M20 11.5 12.6 19a5 5 0 0 1-7.1-7.1L13 4.4a3.3 3.3 0 0 1 4.7 4.7L10.2 16.6a1.7 1.7 0 0 1-2.4-2.4L14.6 7.5',
+    wand: 'M4 20 15 9M14 4v3M12.5 5.5h3M19 9v3M17.5 10.5h3M18 3l.01.01M9 4l.01.01',
+    gauge: 'M5 18a8 8 0 1 1 14 0M12 14l4-5M12 14a1 1 0 1 0 0 .01',
+    learn: 'M3 6c3-1 6-1 9 1 3-2 6-2 9-1v13c-3-1-6-1-9 1-3-2-6-2-9-1ZM12 7v13',
+    scope: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM20 20l-4-4M8 12l2-2 2 2 3-3',
+    check: 'M5 12.5 10 17 19 7', chev: 'M9 6l6 6-6 6',
+ open: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6', back: 'M15 18l-6-6 6-6',
   };
   const icon = (n, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${P[n] || ''}"/></svg>`;
   const paintIcons = (root = document) => root.querySelectorAll('[data-i]').forEach((el) => { if (!el.querySelector('svg')) el.insertAdjacentHTML('afterbegin', icon(el.dataset.i)); });
@@ -660,6 +714,15 @@
     if (!r.ok) throw new Error(plainDash(j?.error?.message || `HTTP ${r.status}`));
     return j;
   }
+  // Pictures in answers come through api() so a server with a key still serves them.
+  const imgUrls = new Map(), imgWait = new Map();
+  function loadImg(el) {
+    const q = el.dataset.oximg;
+    if (!q || el.getAttribute('src')) return;
+    if (!imgWait.has(q)) imgWait.set(q, api(`/ox/image?q=${encodeURIComponent(q)}`).then((r) => (r.ok ? r.blob() : null)).then((b) => { const u = b ? URL.createObjectURL(b) : ''; imgUrls.set(q, u); return u; }).catch(() => ''));
+    imgWait.get(q).then((u) => { if (u) el.src = u; else el.closest('figure')?.classList.add('none'); });
+  }
+  new MutationObserver(() => document.querySelectorAll('img[data-oximg]:not([src])').forEach(loadImg)).observe(document.documentElement, { childList: true, subtree: true });
   async function postJson(path, body) {
     const r = await api(path, { method: 'POST', body: JSON.stringify(body) });
     const j = await r.json().catch(() => ({}));
@@ -700,7 +763,7 @@
   let botName = 'ox';
   const applyName = (n) => { botName = n || 'ox'; document.title = botName; $('brand-name').textContent = botName; const own = botName !== 'ox'; document.querySelector('.brand').classList.toggle('own', own); const sn = document.querySelector('#splash .nm'); if (sn && own) sn.textContent = botName; if (!convo()?.messages?.length) renderChat(); };
   // Incognito chats live only in this tab: never written to storage.
-  const saveConvos = () => store.set('ox.convos', convos.filter((c) => !c.incognito).slice(0, 200));
+  const saveConvos = () => store.set('ox.convos', convos.filter((c) => !c.incognito).slice(0, 200).map((c) => (c.messages.some((m) => m.images) ? { ...c, messages: c.messages.map(({ images, ...m }) => m) } : c)));
   const convo = () => convos.find((c) => c.id === current);
 
   // ---------- views
@@ -721,7 +784,13 @@
   }
   document.querySelectorAll('.nav [data-view]').forEach((b) => (b.onclick = () => show(b.dataset.view)));
   $('menu').onclick = () => { if (matchMedia('(max-width: 860px)').matches) document.body.classList.toggle('nav'); else document.body.classList.toggle('collapsed'); };
-  $('collapse').onclick = () => document.body.classList.toggle('collapsed');
+  // On a narrow window the sidebar is an overlay (body.nav): its own button, Esc,
+  // or a click beside it closes it. Before, the button only toggled the wide
+  // layout's `collapsed`, so on a narrow window it did nothing.
+  const narrow = () => matchMedia('(max-width: 860px)').matches;
+  $('collapse').onclick = () => { if (narrow()) document.body.classList.remove('nav'); else document.body.classList.toggle('collapsed'); };
+  document.addEventListener('click', (e) => { if (document.body.classList.contains('nav') && narrow() && !e.target.closest('.side, #menu')) document.body.classList.remove('nav'); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.body.classList.contains('nav')) document.body.classList.remove('nav'); });
   document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => {
     tab = b.dataset.tab;
     document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('on', x === b));
@@ -950,6 +1019,7 @@
       }
       case 'Checkbox': return `<label class="cv-check"><input type="checkbox" ${p.value ? 'checked' : ''} ${cx && p.bind ? `data-cv-bind="${esc(p.bind)}"` : 'disabled'}><span>${esc(p.label ?? '')}</span></label>`;
       case 'Segmented': return `<div class="cv-seg">${(p.options ?? []).map((o) => { const i = cx && p.bind ? cx.actions.push({ steps: [{ step: 'set', name: p.bind, value: o }] }) - 1 : null; return `<button class="${String(o) === String(p.value) ? 'on' : ''}" ${i != null ? `data-cv-act="${i}"` : 'disabled'}>${esc(o)}</button>`; }).join('')}</div>`;
+      case 'SearchImage': { const ar = Math.max(0.4, Math.min(3, Number(p.aspect) || 1.5)); return `<figure class="cv-img" style="aspect-ratio:${ar}"><img alt="${esc(p.query ?? '')}" data-oximg="${esc(p.query ?? '')}"${imgUrls.get(p.query) ? ` src="${imgUrls.get(p.query)}"` : ''}><figcaption>${esc(p.query ?? '')} · Wikipedia</figcaption></figure>`; }
       case 'Chart': return `<div class="cv-chart">${p.title ? `<div class="ui-title">${esc(p.title)}</div>` : ''}${chartSvg(p)}</div>`;
       case 'Svg': return `<svg class="cv-svg" viewBox="${esc(/^[\d.\s-]+$/.test(p.viewBox ?? '') ? p.viewBox : '0 0 240 160')}">${(p.children ?? []).map(svgNode).join('')}</svg>`;
       case 'Text': return `<p class="cv-text${p.style ? ` t-${esc(p.style)}` : ''}"${p.color ? ` style="color:${col(p.color)}"` : ''}>${inline(String(p.text ?? ''))}</p>`;
@@ -1130,7 +1200,12 @@
     return role === 'assistant' ? m.querySelector('.body') : m;
   }
   function paint(body, msg) {
-    if (msg.role === 'user') { body.textContent = msg.content; return; }
+    if (msg.role === 'user') {
+      body.textContent = msg.content;
+      const th = (msg.thumbs ?? []).filter((t) => /^data:image\/(jpeg|png|webp|gif);base64,/.test(t));
+      if (th.length) body.insertAdjacentHTML('afterbegin', `<div class="u-photos">${th.map((t) => `<img src="${t}" alt="photo">`).join('')}</div>`);
+      return;
+    }
     const steps = (msg.tools || []).map((t) => `<div class="step"><span class="dot ${t.state === 'ok' ? 'ok' : t.state === 'err' ? 'err' : 'run'}"></span><b>${esc(t.name)}</b><span>${esc(t.preview || '')}</span></div>`).join('');
     msg.key ??= `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     const text = msg.content ? md(msg.content, msg.key) : (msg.pending ? '<span class="typing"><i></i><i></i><i></i></span>' : '');
@@ -1219,12 +1294,14 @@
     if (busy) { busy.abort(); return; }
     if (readonly) return;
     const files = takeAttachments();
-    const text = (input.value.trim() || (files ? 'Here are the files:' : '')) + files;
+    const pics = takePhotos();
+    const text = (input.value.trim() || (files ? 'Here are the files:' : pics.length ? 'What is in this photo?' : '')) + files;
     if (!text) return;
     if (!convo()) newConvo();
     const c = convo();
+    if (!c.tools && Object.keys(draftTools).length) c.tools = { ...draftTools };
     if (!c.messages.length && !c.group) c.title = text.replace(/\s+/g, ' ').slice(0, 60);
-    c.messages.push({ role: 'user', content: text });
+    c.messages.push({ role: 'user', content: text, ...(pics.length ? { images: pics.map((x) => ({ mediaType: x.mediaType, data: x.data })), thumbs: pics.map((x) => x.thumb) } : {}) });
     input.value = ''; resize();
     // A group chat: every bot answers in turn and sees what the others said, so
     // they check, build on and correct each other. "@name" asks just that one.
@@ -1266,7 +1343,7 @@
     // nothing), which is what left a group chat's second bot empty.
     const turnStart = c.messages.length - 1 - [...c.messages].reverse().findIndex((m) => m.role === 'user');
     const others = c.messages.slice(turnStart + 1).filter((m) => m !== reply && m.role === 'assistant' && m.content && !m.compare);
-    let history = c.messages.slice(0, turnStart + 1).filter((m) => !m.compare || m.compare === model).map((m) => ({ role: m.role, content: m.bot && m.role === 'assistant' ? `${m.bot}: ${m.content}` : m.content }));
+    let history = c.messages.slice(0, turnStart + 1).filter((m) => !m.compare || m.compare === model).map((m) => ({ role: m.role, content: m.bot && m.role === 'assistant' ? `${m.bot}: ${m.content}` : m.content, ...(m.images ? { images: m.images } : {}) }));
     if (group) {
       const names = group.filter((b) => b !== bot);
       const said = others.map((m) => `${m.bot} said: ${m.content}`).join('\n\n');
@@ -1280,7 +1357,7 @@
     try {
       const res = await api('/v1/chat/completions', {
         method: 'POST', signal,
-        body: JSON.stringify({ model, ox_mode: $('mode').value, ox_ui: 'live', ...(c.incognito ? { ox_incognito: true } : {}), stream: true, messages: history }),
+        body: JSON.stringify({ model, ox_mode: $('mode').value, ox_ui: 'live', ...(c.incognito ? { ox_incognito: true } : {}), ...toolFlags(c.tools), stream: true, messages: history }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error?.message || `HTTP ${res.status}`);
       const reader = res.body.getReader();
@@ -1354,7 +1431,7 @@
   });
   $('send').onclick = send;
   try { $('mode').value = store.get('ox.mode', null) || store.get('ox.prefs', {}).defaultMode || 'auto'; } catch {}
-  $('mode').onchange = () => store.set('ox.mode', $('mode').value);
+  $('mode').onchange = () => { store.set('ox.mode', $('mode').value); showMode(); };
 
   async function loadModels() {
     const sel = $('model');
@@ -1422,9 +1499,11 @@
   // ---------- attachments: text files, read here, added to the next message
   let attachments = [];
   function showAttachments() {
-    $('attached').innerHTML = attachments.map((a, i) => `<span>${esc(a.name)}<button data-i2="${i}" aria-label="Remove">✕</button></span>`).join('');
-    $('attached').querySelectorAll('button').forEach((b) => (b.onclick = () => { attachments.splice(Number(b.dataset.i2), 1); showAttachments(); }));
-    if (!busy) $('send').disabled = !$('input').value.trim() && !attachments.length;
+    $('attached').innerHTML = (typeof photos === 'undefined' ? [] : photos).map((a, i) => `<span class="ph" title="${esc(a.name)}"><img src="${a.thumb}" alt="${esc(a.name)}"><button data-p="${i}" aria-label="Remove photo">✕</button></span>`).join('')
+      + attachments.map((a, i) => `<span>${esc(a.name)}<button data-i2="${i}" aria-label="Remove">✕</button></span>`).join('');
+    $('attached').querySelectorAll('button[data-i2]').forEach((b) => (b.onclick = () => { attachments.splice(Number(b.dataset.i2), 1); showAttachments(); }));
+    $('attached').querySelectorAll('button[data-p]').forEach((b) => (b.onclick = () => { photos.splice(Number(b.dataset.p), 1); showAttachments(); }));
+    if (!busy) $('send').disabled = !$('input').value.trim() && !attachments.length && !(typeof photos !== 'undefined' && photos.length);
   }
   async function addFiles(list) {
     for (const f of list) {
@@ -1435,15 +1514,167 @@
     }
     showAttachments();
   }
-  $('attach').onclick = () => $('file').click();
   $('file').onchange = async () => { await addFiles($('file').files); $('file').value = ''; };
   $('v-chat').addEventListener('dragover', (e) => e.preventDefault());
-  $('v-chat').addEventListener('drop', (e) => { e.preventDefault(); if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files); });
+  $('v-chat').addEventListener('drop', (e) => { e.preventDefault(); const fl = [...(e.dataTransfer?.files ?? [])]; if (fl.some((f) => /^image\//.test(f.type))) addPhotos(fl.filter((f) => /^image\//.test(f.type))); const rest = fl.filter((f) => !/^image\//.test(f.type)); if (rest.length) addFiles(rest); });
   function takeAttachments() {
     const out = attachments.map((a) => `\n\n\`${a.name}\`:\n\`\`\`\n${a.text}\n\`\`\``).join('');
     attachments = []; showAttachments();
     return out;
   }
+
+  // ---------- the + menu: photos, camera, files, how to answer, this chat's switches
+  // Each row says what it does; a picked one shows as a chip by the + (✕ removes it).
+  const TOOLS = [
+    ['web', 'globe', 'Web search', 'Answers from live pages, each source named'],
+    ['research', 'scope', 'Deep research', 'Reads many sources, then a report with citations. Slower'],
+    ['learn', 'learn', 'Guided learning', 'Teaches one step at a time and checks you follow'],
+    ['canvas', 'blocks', 'Interactive answer', 'A calculator, chart, form or checklist you can use here'],
+  ];
+  const FLAGS = [
+    ['think', 'gauge', 'Think harder', 'The strongest model connected, checking its working. Slower'],
+    ['memory', 'brain', 'Memory', 'Uses and learns what ox remembers about you. Off: nothing in, nothing kept'],
+  ];
+  const MORE = [
+    ['studio', 'film', 'Create images and video', 'Opens Studio'],
+    ['skills', 'bolt', 'Skills', 'What ox knows how to do, and adding more'],
+    ['mcp', 'blocks', 'Connectors', 'MCP servers: Gmail, GitHub, files and more'],
+    ['market', 'store', 'Marketplace', 'Skills, agents and connectors to add'],
+    ['incog', 'incog', 'Incognito chat', 'Nothing saved, nothing remembered or learned'],
+  ];
+  let draftTools = {};
+  const curTools = () => convo()?.tools ?? draftTools;
+  function setTools(next) {
+    const c = convo();
+    if (c) { c.tools = next; saveConvos(); } else draftTools = next;
+    renderToolChips(); renderPlus();
+  }
+  function toolFlags(t = {}) {
+    return { ...(t.tool ? { [`ox_${t.tool}`]: true } : {}), ...(t.think ? { ox_think: true } : {}), ...(t.memory === false ? { ox_memory: false } : {}) };
+  }
+  function renderToolChips() {
+    const t = curTools();
+    const chips = [];
+    const tool = TOOLS.find((x) => x[0] === t.tool);
+    if (tool) chips.push([tool, 'tool']);
+    if (t.think) chips.push([FLAGS[0], 'think']);
+    if (t.memory === false) chips.push([['nomem', 'brain', 'Memory off'], 'memory']);
+    $('tool-chips').innerHTML = chips.map(([x, k]) => `<span class="tool-chip">${icon(x[1])}${esc(x[2])}<button data-k="${k}" aria-label="Turn off ${esc(x[2])}" title="Turn off">✕</button></span>`).join('');
+    $('tool-chips').querySelectorAll('button').forEach((b) => (b.onclick = () => { const n = { ...curTools() }; if (b.dataset.k === 'tool') delete n.tool; else if (b.dataset.k === 'think') delete n.think; else delete n.memory; setTools(n); }));
+  }
+  const popRow = (key, ic, title, sub, end = `<span class="ck">${icon('check', 'i')}</span>`, on = false, extra = '') =>
+    `<button class="pop-row${on ? ' on' : ''}" data-k="${key}" role="menuitem"${extra}>${icon(ic)}<span class="txt"><b>${esc(title)}</b><small>${esc(sub)}</small></span>${end}</button>`;
+  function renderPlus() {
+    const t = curTools(), incog = !!convo()?.incognito;
+    $('pop-tools').innerHTML = TOOLS.map(([k, ic, ti, sub]) => popRow(k, ic, ti, sub, undefined, t.tool === k)).join('');
+    $('pop-flags').innerHTML = FLAGS.map(([k, ic, ti, sub]) => {
+      const on = k === 'think' ? !!t.think : t.memory !== false && !incog;
+      return popRow(k, ic, ti, k === 'memory' && incog ? 'Off in an incognito chat' : sub, `<span class="switch"><input type="checkbox" tabindex="-1" ${on ? 'checked' : ''} aria-label="${esc(ti)}"><span></span></span>`, false, k === 'memory' && incog ? ' aria-disabled="true"' : '');
+    }).join('');
+    $('pop-more').innerHTML = MORE.map(([k, ic, ti, sub]) => popRow(k, ic, ti, sub, icon('chev'))).join('');
+    $('pop-tools').querySelectorAll('.pop-row').forEach((b) => (b.onclick = () => { const n = { ...curTools() }; n.tool = n.tool === b.dataset.k ? undefined : b.dataset.k; if (!n.tool) delete n.tool; setTools(n); closePops(); $('input').focus(); }));
+    $('pop-flags').querySelectorAll('.pop-row').forEach((b) => (b.onclick = (e) => { e.preventDefault(); const n = { ...curTools() }; if (b.dataset.k === 'think') { if (n.think) delete n.think; else n.think = true; } else if (n.memory === false) delete n.memory; else n.memory = false; setTools(n); }));
+    $('pop-more').querySelectorAll('.pop-row').forEach((b) => (b.onclick = () => {
+      closePops();
+      const k = b.dataset.k;
+      if (k === 'incog') { newConvo(true); return; }
+      if (k === 'skills' || k === 'mcp') { capsTab = k; capsSel = null; show('caps'); if (typeof renderCaps === 'function') renderCaps(); return; }
+      show(k);
+    }));
+  }
+  function closePops() {
+    for (const [pop, btn] of [['plus-menu', 'attach'], ['mode-menu', 'mode-btn']]) { $(pop).hidden = true; $(btn).setAttribute('aria-expanded', 'false'); }
+  }
+  function openPop(pop, btn) {
+    const was = !$(pop).hidden;
+    closePops();
+    if (was) return;
+    if (pop === 'plus-menu') renderPlus(); else renderModes();
+    $(pop).hidden = false; $(btn).setAttribute('aria-expanded', 'true');
+    paintIcons($(pop));
+    ($(pop).querySelector('.pop-row.on') || $(pop).querySelector('button'))?.focus();
+  }
+  $('attach').onclick = (e) => { e.stopPropagation(); openPop('plus-menu', 'attach'); };
+  $('plus-menu').querySelectorAll('.pop-tiles button').forEach((b) => (b.onclick = () => { closePops(); $(b.dataset.act).click(); }));
+  document.addEventListener('click', (e) => { if (!e.target.closest('.pop, #attach, #mode-btn')) closePops(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && (!$('plus-menu').hidden || !$('mode-menu').hidden)) { closePops(); $('input').focus(); e.stopPropagation(); }
+    const open = !$('plus-menu').hidden ? $('plus-menu') : !$('mode-menu').hidden ? $('mode-menu') : null;
+    if (open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      const items = [...open.querySelectorAll('button:not([aria-disabled="true"])')];
+      const i = items.indexOf(document.activeElement);
+      items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus(); e.preventDefault();
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === '.') { e.preventDefault(); const o = [...$('mode').options]; $('mode').value = o[(o.findIndex((x) => x.value === $('mode').value) + 1) % o.length].value; $('mode').onchange(); toast(`Mode: ${MODES[$('mode').value][0]}`); }
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'i' || e.key === 'I') && document.activeElement === $('input')) { e.preventDefault(); optimize(); }
+  }, true);
+
+  // The mode list: what each one does, in a line (Kilo's picker).
+  const MODES = {
+    auto: ['Auto', 'Picks the mode for each message from what you ask, and says which'],
+    code: ['Code', 'Reads, edits and runs, under your approval settings'],
+    ask: ['Ask', 'Answers and explanations; nothing in your project is changed'],
+    plan: ['Plan', 'Looks and writes a plan; the only files it can write are plan files'],
+    debug: ['Debug', 'Root cause first: reproduce, prove, then the smallest fix'],
+    data: ['Data', 'Analysis as notebook cells, each one run and read back'],
+    orchestrate: ['Orchestrate', 'Splits the work across helper agents in parallel, then checks and merges'],
+  };
+  function showMode() { $('mode-name').textContent = MODES[$('mode').value]?.[0] ?? 'Auto'; }
+  function renderModes() {
+    $('mode-menu').innerHTML = Object.entries(MODES).map(([k, [ti, sub]]) => popRow(k, 'mode', ti, sub, `<span class="ck">${icon('check', 'i')}</span>`, $('mode').value === k, ' role="option"')).join('') + '<div class="pop-h">⌘. next mode · enforced, not a hint</div>';
+    $('mode-menu').querySelectorAll('.pop-row').forEach((b) => (b.onclick = () => { $('mode').value = b.dataset.k; $('mode').onchange(); closePops(); $('input').focus(); }));
+  }
+  $('mode-btn').onclick = (e) => { e.stopPropagation(); openPop('mode-menu', 'mode-btn'); };
+  showMode();
+
+  // Photos: shrunk to 1600 px before sending (fewer tokens, same answer), with a
+  // small thumbnail kept for the chat; the photo itself is not stored.
+  let photos = [];
+  function shrink(file, max) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file), im = new Image();
+      im.onload = () => {
+        const k = Math.min(1, max / Math.max(im.width, im.height));
+        const cv = document.createElement('canvas'); cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k);
+        cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url);
+        resolve(cv.toDataURL('image/jpeg', max > 400 ? 0.86 : 0.7));
+      };
+      im.onerror = () => { URL.revokeObjectURL(url); reject(new Error('not an image')); };
+      im.src = url;
+    });
+  }
+  async function addPhotos(list) {
+    for (const f of list) {
+      if (photos.length >= 4) { toast('Up to 4 photos a message'); break; }
+      if (!/^image\//.test(f.type)) { toast(`${f.name} is not a photo`); continue; }
+      try {
+        const big = await shrink(f, 1600), thumb = await shrink(f, 240);
+        photos.push({ name: f.name, mediaType: 'image/jpeg', data: big.split(',')[1], thumb });
+      } catch { toast(`${f.name} could not be read`); }
+    }
+    showAttachments();
+  }
+  function takePhotos() { const p = photos; photos = []; showAttachments(); return p; }
+  $('photo').onchange = async () => { await addPhotos($('photo').files); $('photo').value = ''; };
+  $('camera').onchange = async () => { await addPhotos($('camera').files); $('camera').value = ''; };
+
+  // The wand: a rough message becomes a clear prompt, in the box, before sending.
+  // ⌘Z puts the original back (it goes through the text box's own undo).
+  async function optimize() {
+    const input = $('input'), text = input.value.trim();
+    if (!text || $('optimize').classList.contains('busy')) return;
+    $('optimize').classList.add('busy'); $('optimize').disabled = true;
+    try {
+      const r = await postJson('/ox/optimize', { text, model: $('model').value || 'auto' });
+      input.focus(); input.select();
+      if (!document.execCommand('insertText', false, r.text)) input.value = r.text;
+      resize(); input.dispatchEvent(new Event('input'));
+      toast(`Prompt improved by ${r.model}. ⌘Z puts yours back`);
+    } catch (e) { toast(e.message); }
+    finally { $('optimize').classList.remove('busy'); $('optimize').disabled = !input.value.trim(); }
+  }
+  $('optimize').onclick = optimize;
+  $('input').addEventListener('input', () => { if (!$('optimize').classList.contains('busy')) $('optimize').disabled = !$('input').value.trim(); });
 
   // ---------- voice: the browser's own recognition and voices
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1498,7 +1729,7 @@
     const run = ++speakRun;
     // Sentence-sized pieces: the first one plays while the next is being made.
     const parts = plain.match(/[^.!?\n]+[.!?]*\s*/g)?.reduce((acc, s) => { if (acc.length && (acc.at(-1) + s).length < 240) acc[acc.length - 1] += s; else acc.push(s); return acc; }, []) ?? [plain];
-    const make = (t) => fetch('/ox/speak', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: t, voice: prefs.kvoice || undefined }) })
+    const make = (t) => api('/ox/speak', { method: 'POST', body: JSON.stringify({ text: t, voice: prefs.kvoice || undefined }) })
       .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error?.message || `HTTP ${r.status}`); return URL.createObjectURL(await r.blob()); });
     let next = make(parts[0]);
     for (let i = 0; i < parts.length; i++) {

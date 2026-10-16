@@ -333,7 +333,9 @@ describe('WEB_KEYWORDS: everyday web intent', () => {
     const webSchemas = OFFER.filter((s) => ['web_fetch', 'web_search'].includes(s.name));
     // The whole cost of the fix, stated exactly: a matching offer is the web
     // group plus core and nothing else.
-    const expected = [...webSchemas, ...OFFER.filter((s) => NARROW_CORE_TOOLS.includes(s.name))];
+    // A short one-target message leaves the planning list and delegation behind
+    // load_tools (the same for both messages, so the cost below is unchanged).
+    const expected = [...webSchemas, ...OFFER.filter((s) => NARROW_CORE_TOOLS.includes(s.name) && s.name !== 'todo_write' && s.name !== 'subagent')];
     assert.deepEqual(weather.map((s) => s.name), expected.map((s) => s.name));
     // Bytes are the exact charge: same schemas, same objects, only the web pair
     // added. The two group schemas are not byte-identical to their share of the
@@ -351,7 +353,7 @@ describe('WEB_KEYWORDS: everyday web intent', () => {
     for (const s of webSchemas) assert.equal(NARROW_CORE_TOOLS.includes(s.name), false);
     // Nothing new ships on a coding turn, so the everyday fix costs nothing
     // everywhere else.
-    const coreOffered = OFFER.filter((s) => NARROW_CORE_TOOLS.includes(s.name));
+    const coreOffered = OFFER.filter((s) => NARROW_CORE_TOOLS.includes(s.name) && s.name !== 'todo_write' && s.name !== 'subagent');
     assert.equal(coding.length, coreOffered.length, 'a coding turn is core-only and unaffected');
     assert.deepEqual(coding.map((s) => s.name), coreOffered.map((s) => s.name));
     assert.ok(

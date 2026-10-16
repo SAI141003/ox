@@ -626,13 +626,6 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
   const keep = new Set(NARROW_CORE_TOOLS);
   for (const t of skillNames) keep.add(t);
   for (const t of TASK_BOARD_TOOLS) if (names.includes(t)) keep.add(t);
-  // A short task with one target ("fix the failing test in src/math.js") needs
-  // no planning list or delegation: those definitions (~450 tokens on every
-  // request) wait behind load_tools. Anything that sounds multi-step keeps them.
-  // A subagent's own offer is never trimmed this way.
-  if (!isSubagentOffer && String(message).length < 220 && !PLANNING_SIGNAL.test(message)) {
-    for (const t of ['todo_write', 'subagent', ...TASK_BOARD_TOOLS]) keep.delete(t);
-  }
   for (const n of names) {
     if (memoryOn && n.startsWith('memory_')) keep.add(n);
     if (operatorOn && OPERATOR_TOOLS.includes(n)) keep.add(n);
@@ -648,6 +641,14 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
   if (filtered.length < NARROW_FLOOR) return schemas;
   if (filtered.length === schemas.length) return schemas;
   if (dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, critiqueOn, agentOn, canvasOn, mediaOn, skillOn, skillNames })) return schemas;
+  // A short task with one target ("fix the failing test in src/math.js") needs
+  // no planning list or delegation: those definitions (~450 tokens on every
+  // request) wait behind load_tools. Anything that sounds multi-step keeps them.
+  // Applied only once the cut itself is allowed; a subagent's own offer and a
+  // task run's board (offered only to a run started for a task) are never trimmed.
+  if (!isSubagentOffer && String(message).length < 220 && !PLANNING_SIGNAL.test(message)) {
+    for (let i = filtered.length - 1; i >= 0; i--) if (filtered[i].name === 'todo_write' || filtered[i].name === 'subagent') filtered.splice(i, 1);
+  }
   const saved =
     estimateTokens(JSON.stringify(schemas)) - estimateTokens(JSON.stringify(filtered));
   if (saved < NARROW_MIN_SAVING) return schemas;

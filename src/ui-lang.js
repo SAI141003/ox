@@ -50,6 +50,7 @@ export const LIBRARY = {
   Slider: { params: [['label', 'str'], ['value', 'num'], ['min', 'num'], ['max', 'num'], ['step', 'num', true]], desc: 'slider bound to a $var' },
   // Answers composed like a page, in colour (ideas from open-intelligent-ui,
   // written here from scratch): titles, captions, grids, charts, drawings.
+  SearchImage: { params: [['query', 'str'], ['aspect', 'num', true]], desc: 'a photo of the exact subject, found by name (aspect = width/height)' },
   Title: { params: [['text', 'any'], ['size', 'sm|md|lg|xl', true]], desc: 'heading' },
   Caption: { params: [['text', 'any']], desc: 'small muted label' },
   Column: { params: [['children', 'nodes'], ['gap', 'num', true]], desc: 'vertical group (also written Col([…]), as in OpenUI)' },
@@ -853,6 +854,7 @@ function draw(node, w, actions) {
     case 'Checkbox': return [`${p.value ? '☑' : '☐'} ${p.label}`];
     case 'Segmented': return [(p.options ?? []).map((o) => (String(o) === String(p.value) ? `[${o}]` : ` ${o} `)).join(' ')];
     case 'Svg': return [paint.dim('[drawing: open it in the app]')];
+    case 'SearchImage': return [paint.dim(`[photo: ${p.query}]`)];
     case 'Chart': {
       const vals = (p.values ?? []).map(Number), max = Math.max(1e-9, ...vals.map(Math.abs));
       return [...(p.title ? [String(p.title)] : []), ...vals.map((v, k) => `${String(p.labels?.[k] ?? '').padEnd(12).slice(0, 12)} ${'█'.repeat(Math.max(1, Math.round((Math.abs(v) / max) * 24)))} ${v}`)];
