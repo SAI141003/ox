@@ -13,6 +13,7 @@
 // More CLIs: config `subscriptions: { name: { bin, args: [..., "{prompt}"], format: "text" } }`.
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 // format: how the CLI's stdout is read.
@@ -265,11 +266,87 @@ export function execPlan(where, platform = process.platform) {
   return { cmd: process.execPath, pre: [path.join(path.dirname(where), m[1])] };
 }
 
+// Where apps put their own copy of a CLI. Seen on a real Mac: the `claude` on
+// PATH was a 500-byte stub from an install that never finished and the npm
+// `codex` had lost its native part, while VS Code's Claude and ChatGPT
+// extensions and the Claude app each carried a working copy. Newest first.
+export function knownCopies(bin, home = os.homedir()) {
+  const pick = (dir, re, tail) => {
+    let names = [];
+    try { names = fs.readdirSync(dir).filter((n) => re.test(n)); } catch { return []; }
+    return names.sort((a, b) => b.localeCompare(a, undefined, { numeric: true })).map((n) => path.join(dir, n, ...tail));
+  };
+  const exts = [path.join(home, '.vscode', 'extensions'), path.join(home, '.cursor', 'extensions'), path.join(home, '.vscode-insiders', 'extensions')];
+  if (bin === 'claude') {
+    const appDir = path.join(home, 'Library', 'Application Support', 'Claude', 'claude-code');
+    const fromApp = pick(appDir, /^\d/, []).flatMap((v) => pick(v, /./, ['claude.app', 'Contents', 'MacOS', 'claude']));
+    return [...exts.flatMap((d) => pick(d, /^anthropic\.claude-code-/, ['resources', 'native-binary', 'claude'])), ...fromApp];
+  }
+  if (bin === 'codex') {
+    // openai.chatgpt-*/bin/<platform>/codex
+    return exts.flatMap((d) => pick(d, /^openai\.chatgpt-/, ['bin'])).flatMap((binDir) => {
+      try { return fs.readdirSync(binDir).map((plat) => path.join(binDir, plat, 'codex')); } catch { return []; }
+    });
+  }
+  return [];
+}
+
+const versionOf = (file, env) => {
+  const r = spawnSync(file, ['--version'], { encoding: 'utf8', timeout: 8000, env, windowsHide: true });
+  return r.status === 0 ? ((r.stdout || '').trim().split('\n')[0] || 'ok') : null;
+};
+
+// Signed in? Answering --version is not enough: a CLI that is not signed in
+// fails every prompt ("Not logged in"). Only CLIs that report it cheaply are
+// asked; for the rest the answer is null (unknown), never a guess.
+export function signInState(id, where, env = process.env) {
+  if (id === 'claude') {
+    const r = spawnSync(where, ['auth', 'status'], { encoding: 'utf8', timeout: 15000, env, windowsHide: true });
+    try { return JSON.parse(r.stdout).loggedIn === true; } catch { return null; }
+  }
+  if (id === 'chatgpt') {
+    const r = spawnSync(where, ['login', 'status'], { encoding: 'utf8', timeout: 15000, env, windowsHide: true });
+    const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+    return /logged in/i.test(out) && !/not logged in/i.test(out) ? true : /not logged in/i.test(out) ? false : null;
+  }
+  return null;
+}
+export function signInHow(id, where, cli) {
+  const q = /\s/.test(where) ? `"${where}"` : where;
+  if (id === 'claude') return `in a terminal run ${q} then type /login and sign in with your Claude account (once)`;
+  if (id === 'chatgpt') return `in a terminal run ${q} login and choose Sign in with ChatGPT (once)`;
+  return cli.login;
+}
+
+// The copy ox will run: PATH first, else the first app copy that answers --version.
+const resolved = new Map();
+export function resolveCli(cli, env = process.env) {
+  if (resolved.has(cli.bin)) return resolved.get(cli.bin);
+  let out = null;
+  const onPath = findOnPath(cli.bin, env);
+  if (onPath && execPlan(onPath).error == null && versionOf(execPlan(onPath).cmd, env)) out = { where: onPath, from: 'PATH' };
+  if (!out) {
+    for (const p of knownCopies(cli.bin)) {
+      if (fs.existsSync(p) && versionOf(p, env)) { out = { where: p, from: 'app' }; break; }
+    }
+  }
+  if (out) resolved.set(cli.bin, out);
+  return out;
+}
+
 // Installed is not enough: a half-installed CLI (a stub with no binary) is
 // common, so each one has to answer --version before it counts as connected.
 export function checkCli(id, config = {}, env = process.env) {
   const cli = allClis(config)[id];
   if (!cli) return { id, known: false };
+  // A working copy inside an app or editor extension counts: use it.
+  const app = resolveCli(cli, env);
+  if (app?.from === 'app') {
+    const version = versionOf(app.where, env);
+    const signedIn = signInState(id, app.where, env);
+    if (signedIn === false) return { id, label: cli.label, bin: cli.bin, path: app.where, installed: true, works: false, signedIn, version, via: 'app', problem: 'installed and working, but not signed in', fix: signInHow(id, app.where, cli) };
+    return { id, label: cli.label, bin: cli.bin, path: app.where, installed: true, works: true, signedIn, version, via: 'app', login: cli.login };
+  }
   const where = findOnPath(cli.bin, env);
   if (!where) {
     // On PATH but not runnable: a package whose install step never finished
@@ -410,11 +487,44 @@ function approvalFor(ctx = {}) {
 }
 
 // One turn, run by the vendor's CLI, as ox events.
-export async function* runSubscriptionTurn({ target, messages = [], ctx = {}, config = {}, signal } = {}) {
+// Codex refuses a model a ChatGPT account cannot use (seen: its own config
+// said gpt-5.5; the account allowed gpt-6-luna). With no model asked for, ox
+// reads Codex's catalog, retries once with the first listed model and says so.
+const CHATGPT_MODEL_REFUSED = /model is not supported when using Codex with a ChatGPT account/i;
+export function codexListedModel(where, env = process.env) {
+  const r = spawnSync(where, ['debug', 'models'], { encoding: 'utf8', timeout: 15000, env, windowsHide: true });
+  if (r.status !== 0) return null;
+  try {
+    const j = JSON.parse(r.stdout);
+    const list = Array.isArray(j) ? j : j.models ?? Object.values(j);
+    return list.find((m) => (m.visibility ?? m.show_in_picker) === 'list')?.slug ?? null;
+  } catch { return null; }
+}
+
+export async function* runSubscriptionTurn(opts = {}) {
+  const { target, config = {}, ctx = {} } = opts;
+  const held = [];
+  let refused = null;
+  for await (const ev of runSubscriptionOnce(opts)) {
+    if (ev.type === 'error' && CHATGPT_MODEL_REFUSED.test(ev.error) && target?.subscription === 'chatgpt' && !target.model) { refused = ev; continue; }
+    if (refused && (ev.type === 'history' || ev.type === 'turn-end')) { held.push(ev); continue; }
+    yield ev;
+  }
+  if (!refused) return;
+  const cli = allClis(config).chatgpt;
+  const env = { ...process.env, ...(ctx.env ?? {}) };
+  const where = cli && resolveCli(cli, env)?.where;
+  const model = where ? codexListedModel(where, env) : null;
+  if (!model) { yield refused; for (const ev of held) yield ev; return; }
+  process.stderr.write(`ox: Codex's own setting asks for a model your ChatGPT account cannot use (${String(refused.error).match(/'([^']+)'/)?.[1] ?? 'its default'}); used ${model} instead. Set it in ~/.codex/config.toml or pick one: ox --bot chatgpt-plan:${model}\n`);
+  yield* runSubscriptionOnce({ ...opts, target: { ...target, model } });
+}
+
+async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = {}, signal } = {}) {
   const cli = allClis(config)[target.subscription];
   const cwd = ctx.cwd ?? config.cwd ?? process.cwd();
   const env = { ...process.env, ...(ctx.env ?? {}) };
-  const where = cli ? findOnPath(cli.bin, env) : null;
+  const where = cli ? (resolveCli(cli, env)?.where ?? findOnPath(cli.bin, env)) : null;
   if (!where) {
     yield { type: 'error', error: `${target.bot}: ${cli?.bin ?? target.subscription} is not installed. Install: ${cli?.install ?? '?'} — then ${cli?.login ?? 'sign in'}. Check with: ox connect` };
     yield { type: 'turn-end', stopReason: 'error', iters: 0 };

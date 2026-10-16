@@ -1336,12 +1336,15 @@
     try {
       const { data = [] } = await getJson('/v1/models');
       sel.innerHTML = '';
-      for (const [label, list] of [['Your agents', data.filter((m) => m.ox?.agent)], ['Your endpoints', data.filter((m) => m.ox?.endpoint)], ['Models', data.filter((m) => !m.ox?.agent && !m.ox?.endpoint)]]) {
+      // What can answer comes first; models without a key are listed, greyed, last.
+      const isModel = (m) => !m.ox?.agent && !m.ox?.endpoint && !m.ox?.plan;
+      for (const [label, list, off] of [['Plans you pay for', data.filter((m) => m.ox?.plan)], ['Your agents', data.filter((m) => m.ox?.agent)], ['Your endpoints', data.filter((m) => m.ox?.endpoint)], ['Models', data.filter((m) => isModel(m) && m.ox?.available !== false)], ['Needs a key (Settings › API keys)', data.filter((m) => isModel(m) && m.ox?.available === false), true]]) {
         if (!list.length) continue;
         const g = document.createElement('optgroup'); g.label = label;
         for (const m of list) {
           const o = document.createElement('option'); o.value = m.id;
-          o.textContent = m.ox?.agent ? `${m.id.slice(6)} · ${m.ox.mode}` : m.id;
+          o.textContent = m.ox?.agent ? `${m.id.slice(6)} · ${m.ox.mode}` : m.ox?.plan ? `${m.id} · ${m.ox.desc.split(' via ')[0]}` : m.id;
+          if (off) o.disabled = true;
           g.append(o);
         }
         sel.append(g);

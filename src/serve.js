@@ -31,6 +31,7 @@ import { BOTS, KEY_ENV, resolveBot, defaultBotSpec } from './bots.js';
 
 import { readFile } from 'fs/promises';
 import { join, resolve, extname } from 'path';
+import { spawn } from 'node:child_process';
 import { createReadStream } from 'fs';
 import { stat, unlink } from 'fs/promises';
 import { resolveTurnMode } from './modes.js';
@@ -219,9 +220,64 @@ function reportExposure(exposure) {
 // number and a lie.
 const MODELS_CREATED = Math.floor(Date.now() / 1000);
 
+// Plans you already pay for (Claude, ChatGPT, Cursor… through their own CLIs).
+// Checking them runs each CLI, so it happens in a separate process, in the
+// background, and the result is kept for ten minutes: the model list itself
+// never waits on it.
+let planCache = { at: 0, list: [], running: null };
+export function refreshPlans() {
+  if (planCache.running) return planCache.running;
+  planCache.running = new Promise((resolve) => {
+    const code = "import('" + new URL('./app-api.js', import.meta.url).href + "').then(async (m) => process.stdout.write(JSON.stringify(await m.accountsView())))";
+    const child = spawn(process.execPath, ['--input-type=module', '-e', code], { stdio: ['ignore', 'pipe', 'ignore'], env: process.env });
+    let out = '';
+    child.stdout.on('data', (d) => (out += d));
+    child.on('close', () => {
+      try { planCache.list = JSON.parse(out); } catch {}
+      planCache.at = Date.now();
+      planCache.running = null;
+      resolve(planCache.list);
+    });
+    child.on('error', () => { planCache.running = null; resolve(planCache.list); });
+  });
+  return planCache.running;
+}
+export const workingPlans = () => planCache.list.filter((p) => p.works);
+
+// Could this bot answer right now? A plan must be signed in, a keyed provider
+// needs its key; local servers and your own endpoints carry no key to check.
+export function runnable(spec, env = process.env) {
+  try {
+    const t = resolveBot(String(spec), { bots: readConfigDoc().bots ?? {} }, env);
+    if (t.subscription) return workingPlans().some((p) => p.bot === `${t.subscription}-plan`);
+    return !t.keyEnv || !!env[t.keyEnv];
+  } catch { return false; }
+}
+
+// The model a chat uses when none is picked: your default if it can run, then a
+// signed-in plan, then a local model, then any provider whose key is set.
+export function pickWorkingDefault(env = process.env) {
+  let configured = null;
+  try { configured = readConfigDoc().defaultBot ?? null; } catch {}
+  if (configured && runnable(configured, env)) return configured;
+  const plan = workingPlans()[0];
+  if (plan) return plan.bot;
+  for (const [id, def] of Object.entries(readConfigDoc().bots ?? {})) if (def?.provider === 'custom' && def.model) return id;
+  for (const [id, def] of Object.entries(BOTS)) {
+    const k = KEY_ENV[def.provider];
+    if (def.model && k && env[k]) return id;
+  }
+  return configured ?? 'ox-ollama';
+}
+
 export function serveModelCatalog(env = process.env) {
   const data = [];
   const withheld = [];
+  // Tests (OX_NO_KEYSTORE=1) never run the user's real CLIs.
+  if (Date.now() - planCache.at > 10 * 60_000 && process.env.OX_NO_PLAN_CHECK !== '1' && process.env.OX_NO_KEYSTORE !== '1') refreshPlans();
+  for (const p of workingPlans()) {
+    data.push({ id: p.bot, object: 'model', created: MODELS_CREATED, owned_by: p.id, ox: { provider: p.id, plan: true, available: true, availability: 'signed-in', desc: `${p.label}${p.version ? ` · ${p.version}` : ''}` } });
+  }
   for (const [id, def] of Object.entries(BOTS)) {
     const keyEnv = KEY_ENV[def.provider] ?? null;
     // `available` answers the honest question — "could this serve right now,
@@ -472,7 +528,7 @@ async function handleChatCompletions(req, res) {
     return;
   }
 
-  const targetModel = model || 'gpt-4o';
+  const targetModel = model || pickWorkingDefault();
   const temperature0 = temperature ?? 0.7;
   // Resolve a name the registry knows (every id in /v1/models) through the same
   // resolver, so a client that lists models can actually use them here. A name
@@ -973,7 +1029,8 @@ async function settingsView() {
   return {
     name: assistantName(),
     island: { enabled: islandEnabled(), running: islandRunning({ env: {} }), platform: process.platform },
-    model: { defaultBot: config.defaultBot, source: config.defaultBotSource ?? 'config', bots },
+    // What a new chat actually uses: the configured default if it can run, else the best that can.
+    model: { defaultBot: pickWorkingDefault(), configured: config.defaultBot ?? null, source: runnable(config.defaultBot ?? '') ? (config.defaultBotSource ?? 'config') : 'auto: the configured model cannot run here', bots },
     awake: { on: doc.awake !== false && process.env.OX_NO_AWAKE !== '1' },
   };
 }
