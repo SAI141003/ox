@@ -115,7 +115,10 @@ export async function install({ name, catalog, repo, force = false } = {}) {
     const r = await addPlugin(`${name}@${catalog}`, { force });
     return { ok: r.ok, message: r.message, findings: (r.findings ?? []).length };
   }
-  if (!REPO_RE.test(String(repo))) throw new Error('a repo is owner/repo');
+  // owner/repo, or owner/repo/path/to/one-skill — never '..' or a leading dot.
+  const r0 = String(repo ?? '');
+  const [own, rname, ...sub] = r0.split('/');
+  if (!REPO_RE.test(`${own}/${rname}`) || r0.includes('..') || sub.some((p) => !/^(?!\.)[\w.-]+$/.test(p))) throw new Error('a repo is owner/repo');
   const { installSkill } = await import('./skill-add.js');
   const skill = await installSkill(repo, { force }).catch((e) => ({ ok: false, message: e.message }));
   if (skill?.ok) return { ok: true, message: skill.message ?? `installed the skill from ${repo}` };

@@ -44,7 +44,7 @@ export function classifyTool(name) {
   const toolName = String(name ?? '');
   if (PURE_READ_TOOLS.has(toolName)) return 'pure_read';
   if (FS_WRITE_TOOLS.has(toolName)) return 'fs_write';
-  if (toolName === 'bash' || toolName === 'subagent' || toolName === 'create_media' || toolName.startsWith('mcp__')) return 'approval_gated';
+  if (toolName === 'bash' || toolName === 'subagent' || toolName === 'create_media' || toolName === 'install_skill' || toolName.startsWith('mcp__')) return 'approval_gated';
   if (toolName.startsWith('memory_')) return 'memory_write';
   if (MAILBOX_TOOLS.has(toolName)) return 'memory_write';
   if (SESSION_STATE_TOOLS.has(toolName)) return 'memory_write';

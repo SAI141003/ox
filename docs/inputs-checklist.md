@@ -10,7 +10,7 @@ with the reason. Nothing here is marked done without a test or a real run.
 | Reference | Idea | Status |
 |---|---|---|
 | Hermes desktop — settings (Model, Chat, Appearance, Providers › Accounts / API keys / Custom endpoints / Local models, Gateways, Shortcuts, Tools & Keys, Archived) | One settings window with search and every area reachable | **done** — 15 sections incl. Memory, Usage; search box |
-| Hermes — Local models (RAM, "too big for this machine", Hugging Face search & download) | Show what fits, search HF, download | **partial** — RAM + fits + running servers done; Hugging Face search/download **not yet** |
+| Hermes — Local models (RAM, "too big for this machine", Hugging Face search & download) | Show what fits, search HF, download | **done** — Settings › Local models and `ox hf`; real download tested |
 | Hermes — Custom endpoints (any OpenAI-compatible URL, test, use for new chats) | Add your own endpoint from the app | **not yet** in the app (works via config / `OX_BASE_URL`) |
 | Hermes — Messaging (20+ channels, QR setup) | Phone channels with status | **partial** — Telegram, Discord; Slack/WhatsApp **not yet** |
 | Hermes — Capabilities (skills with use counts, toggles, Skills Hub) | Browse skills, install from a hub | **done** — Capabilities view + Marketplace (Anthropic catalogues + GitHub agent-skills) |
@@ -61,7 +61,7 @@ with the reason. Nothing here is marked done without a test or a real run.
 | Supermemory, Zep, Mem0, Generative Agents (papers) | Facts that update with history, dates, forgetting, ranked recall, profile | **done** — memory graph, `ox memory`, Settings › Memory |
 | Darwin Gödel Machine | ox improves its own code, judged by tests | **written, not enabled** — waiting for your permission |
 | book-to-skill | Turn a book/PDF into a skill | **not yet** |
-| alphainsider "install the skill from this GitHub link" | Install a skill by asking in chat | **not yet** as an agent tool (works in Marketplace and `ox market install`) |
+| alphainsider "install the skill from this GitHub link" | Install a skill by asking in chat | **done** — `install_skill` tool (scanned, asked first) |
 | Token use (your request) | Fewer tokens, usage shown everywhere | **done** — focused skill index, truncation warning, `ox usage`, Settings › Usage |
 | Incognito (your request) | Private mode | **done** — `--incognito`, ⌘⇧N in the app |
 

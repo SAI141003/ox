@@ -7,6 +7,20 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+test('install_skill: a GitHub link said in chat becomes a scanned, asked-for install', async () => {
+  const { normalizeSource, installSkillTool } = await import('../src/tools/install-skill.js');
+  assert.deepEqual(normalizeSource('https://github.com/AlphaInsider/skills'), { repo: 'AlphaInsider/skills', path: null });
+  assert.deepEqual(normalizeSource('https://github.com/anthropics/skills/tree/main/skills/pdf'), { repo: 'anthropics/skills', path: 'skills/pdf' });
+  assert.deepEqual(normalizeSource('pdf-tools@anthropics/skills'), { name: 'pdf-tools', catalog: 'anthropics/skills' });
+  assert.equal(normalizeSource('../etc'), null);
+  assert.equal(normalizeSource('https://evil.example/x/y'), null);
+  assert.match((await installSkillTool({ source: 'not a link' })).content, /not a GitHub link/);
+  const { classifyTool } = await import('../src/resource-class.js');
+  assert.equal(classifyTool('install_skill'), 'approval_gated');
+  const { narrowToolSchemas, BUILTIN_SCHEMAS } = await import('../src/tools/index.js');
+  assert.ok(narrowToolSchemas(BUILTIN_SCHEMAS, { message: 'install the strategy-creator skill from https://github.com/AlphaInsider/skills' }).some((s) => s.name === 'install_skill'));
+});
+
 test('search merges catalogue plugins and GitHub skill repos, filtered by the query', async (t) => {
   const catalog = { name: 'official', owner: { name: 'Anthropic' }, plugins: [
     { name: 'figma', description: 'Figma design platform integration', category: 'design', source: { source: 'url', url: 'https://github.com/x/y.git' } },

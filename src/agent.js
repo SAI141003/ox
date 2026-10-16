@@ -654,7 +654,7 @@ function needsApproval(name, ctx) {
   if (ctx?.yolo) return false;
   if (name === 'bash') return true;
   // Making an image or video spends money (or GPU time): always asked.
-  if (name === 'create_media') return true;
+  if (name === 'create_media' || name === 'install_skill') return true;
   if (name.startsWith('mcp__')) return true;
   if (name === 'write_file' || name === 'edit_file') {
     return (ctx?.approval ?? 'default') === 'default';
