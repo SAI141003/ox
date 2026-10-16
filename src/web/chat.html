@@ -229,7 +229,12 @@
   .cv-callout.bad, .ui-box.bad { border-left-color: var(--red); }
   .cv-diff { font: 12.5px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line2); border-radius: 8px; padding: 10px; overflow-x: auto; margin: 0; }
   .cv-diff .add { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); } .cv-diff .del { color: var(--red); }
+  .ol-errs { margin-top: 8px; font-size: 12px; color: var(--dim); } .ol-errs summary { cursor: pointer; } .ol-errs div { font-family: var(--mono); margin-top: 3px; }
   .cv-hr { border: 0; border-top: 1px solid var(--line); margin: 2px 0; }
+  .ol .ui-field { min-width: 0; } .ol .cv-row { align-items: end; }
+  .ui-field .cv-val { float: right; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ui-field input[type=range] { accent-color: var(--text); width: 100%; }
+  .chip.on { background: var(--btn); color: var(--btn-ink); border-color: transparent; }
   .live .cb { display: flex; justify-content: space-between; align-items: center; padding: 5px 10px; font: 11.5px var(--mono); color: var(--dim); background: var(--panel); border-bottom: 1px solid var(--line); }
   .live .cb button { color: var(--muted); font-size: 12px; }
   .worklog { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 12px; margin: 0 0 10px; }
@@ -539,6 +544,7 @@
 </dialog>
 <div class="toast" id="toast" role="status"></div>
 
+<!--OX_UI_LANG-->
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -841,11 +847,11 @@
 
   // OX Canvas (src/ui-lang.js, the show_ui tool): the same component tree the
   // terminal and the island draw, drawn here with the page's own components.
-  function canvasNode(n) {
+  function canvasNode(n, cx = null) {
     if (n == null) return '';
-    if (Array.isArray(n)) return n.map(canvasNode).join('');
+    if (Array.isArray(n)) return n.map((x) => canvasNode(x, cx)).join('');
     if (typeof n !== 'object') return esc(String(n));
-    const p = n.props ?? {}, kids = (c) => canvasNode(c ?? []);
+    const p = n.props ?? {}, kids = (c) => canvasNode(c ?? [], cx);
     const tone = (t) => (t === 'danger' || t === 'error' ? ' bad' : '');
     switch (n.type) {
       case 'Stack': return `<div class="cv-stack">${kids(p.children)}</div>`;
@@ -853,7 +859,7 @@
       case 'Card': return `<div class="ui-box${tone(p.tone)}">${p.title ? `<div class="ui-title">${esc(p.title)}</div>` : ''}<div class="cv-stack">${kids(p.children)}</div></div>`;
       case 'Header': return `<div class="cv-head"><b>${esc(p.title ?? '')}</b>${p.subtitle ? `<span>${esc(p.subtitle)}</span>` : ''}</div>`;
       case 'Text': return `<p class="cv-text${p.style === 'muted' ? ' muted' : ''}">${inline(String(p.text ?? ''))}</p>`;
-      case 'Stat': return `<div class="ui-stat"><span>${esc(p.label ?? '')}</span><b>${esc(p.value ?? '')}${p.unit ? ` <small>${esc(p.unit)}</small>` : ''}</b>${p.delta != null ? `<em>${esc(p.delta)}</em>` : ''}</div>`;
+      case 'Stat': return `<div class="ui-stat"><span>${esc(p.label ?? '')}</span><b>${esc(typeof p.value === 'number' ? p.value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : p.value ?? '')}${p.unit ? ` <small>${esc(p.unit)}</small>` : ''}</b>${p.delta != null ? `<em>${esc(p.delta)}</em>` : ''}</div>`;
       case 'Fields': return `<div class="cv-fields">${(Array.isArray(p.pairs) ? p.pairs : Object.entries(p.pairs ?? {})).map((x) => { const [k, v] = Array.isArray(x) ? x : [x.label ?? x.key, x.value]; return `<span>${esc(k)}</span><b>${esc(v)}</b>`; }).join('')}</div>`;
       case 'Table': {
         const cols = (p.columns ?? []).map((c) => c.props ?? c);
@@ -879,29 +885,97 @@
       case 'Divider': return '<hr class="cv-hr">';
       case 'Buttons': return `<div class="ui-choices">${kids(p.buttons)}</div>`;
       case 'Button': {
+        // Live answers: the page runs the action (state, queries) or sends it on.
+        if (cx) { const i = cx.actions.push(p.action ?? { steps: [{ step: 'ask', message: p.label }] }) - 1; return `<button class="chip${p.tone === 'primary' ? ' on' : ''}" data-cv-act="${i}">${esc(p.label ?? '')}</button>`; }
         const steps = p.action?.steps ?? [];
         const ask = steps.find((x) => x.step === 'ask')?.message, url = steps.find((x) => x.step === 'open' || x.step === 'url')?.url;
         if (url && /^https?:\/\//.test(url)) return `<a class="chip" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(p.label ?? '')}</a>`;
         return `<button class="chip" ${ask ? `data-ask="${esc(ask)}"` : 'disabled title="Works in the terminal and the island"'}>${esc(p.label ?? '')}</button>`;
       }
-      case 'Select': return `<label class="ui-field"><span>${esc(p.name ?? '')}</span><select disabled>${(p.options ?? []).map((o) => { const q = o.props ?? o; return `<option ${String(q.value) === String(p.value) ? 'selected' : ''}>${esc(q.label ?? q.value)}</option>`; }).join('')}</select></label>`;
+      case 'Select': return `<label class="ui-field"><span>${esc(p.name ?? '')}</span><select ${cx && p.bind ? `data-cv-bind="${esc(p.bind)}"` : 'disabled'}>${(p.options ?? []).map((o) => { const q = o.props ?? o; return `<option value="${esc(q.value)}" ${String(q.value) === String(p.value) ? 'selected' : ''}>${esc(q.label ?? q.value)}</option>`; }).join('')}</select></label>`;
+      case 'Input': return `<label class="ui-field"><span>${esc(p.label ?? '')}</span><input type="${p.type === 'text' ? 'text' : 'number'}" step="any" value="${esc(p.value ?? '')}" ${cx && p.bind ? `data-cv-bind="${esc(p.bind)}"` : 'disabled'}></label>`;
+      case 'Slider': return `<label class="ui-field"><span>${esc(p.label ?? '')} <b class="cv-val">${esc(fmtNum(Number(p.value)))}</b></span><input type="range" min="${esc(p.min)}" max="${esc(p.max)}" step="${esc(p.step ?? 'any')}" value="${esc(p.value)}" ${cx && p.bind ? `data-cv-bind="${esc(p.bind)}"` : 'disabled'}></label>`;
       default: return p.children ? kids(p.children) : '';
     }
   }
 
+  // ---------- OpenUI Lang answers (thesysdev/openui; ox's parser, src/ui-lang.js)
+  // A Canvas per block, kept by its place in the chat, so what the user typed or
+  // dragged survives while the answer is still streaming in.
+  const canvases = new Map();
+  let olSeq = 0;
+  function openuiBlock(code, key, closed = true) {
+    if (!window.OxUiLang) return null;
+    let c = canvases.get(key);
+    if (!c) { c = { canvas: new OxUiLang.Canvas(), src: null }; canvases.set(key, c); }
+    if (c.src !== code) { c.src = code; c.canvas.load(code); }
+    c.done = closed;
+    return `<div class="ui ol" data-ol="${esc(key)}">${olHtml(c)}</div>`;
+  }
+  function olHtml(c) {
+    const ev = c.canvas.last ?? c.canvas.evaluate();
+    c.actions = [];
+    const body = ev.root ? canvasNode(ev.root, c) : '<div class="ui-box muted small">Drawing…</div>';
+    // OpenUI's rule: bad lines are dropped and the rest renders. Say so, briefly.
+    const errs = [...(ev.parseErrors ?? []), ...(ev.errors ?? [])].filter((e) => e.code !== 'root' || ev.root);
+    const note = errs.length && c.done ? `<details class="ol-errs"><summary>${errs.length} line${errs.length === 1 ? '' : 's'} could not be drawn</summary>${errs.slice(0, 8).map((e) => `<div>${e.line ? `line ${e.line}: ` : ''}${esc(e.msg)}</div>`).join('')}</details>` : '';
+    return body + note;
+  }
+  async function olQuery(tool, args) {
+    return postJson('/ox/canvas/query', { tool, args });
+  }
+  function bindOpenUI(root) {
+    root.querySelectorAll('[data-ol]').forEach((el) => {
+      const c = canvases.get(el.dataset.ol);
+      if (!c || el.dataset.bound) return;
+      el.dataset.bound = '1';
+      const redraw = () => { el.innerHTML = olHtml(c); };
+      // Live data: Query() lines run ox's read-only tools once, then on @Run.
+      if ((c.canvas.last?.queries ?? []).length && !c.fetched) {
+        c.fetched = true;
+        c.canvas.refresh(olQuery).then(redraw).catch(() => {});
+      }
+      el.addEventListener('input', (e) => {
+        const b = e.target.closest('[data-cv-bind]'); if (!b) return;
+        const v = b.type === 'text' ? b.value : b.tagName === 'SELECT' ? (isNaN(Number(b.value)) ? b.value : Number(b.value)) : Number(b.value);
+        c.canvas.state[b.dataset.cvBind] = v;
+        c.canvas.evaluate();
+        // Keep the control being used; refresh everything else.
+        const focus = b.type === 'range' ? null : b.dataset.cvBind, at = b.selectionStart;
+        redraw();
+        if (focus) { const nb = el.querySelector(`[data-cv-bind="${CSS.escape(focus)}"]`); if (nb && nb.type === b.type) { nb.focus(); try { nb.setSelectionRange(at, at); } catch {} } }
+        else { const nb = el.querySelector(`[data-cv-bind="${CSS.escape(b.dataset.cvBind)}"][type=range]`); nb?.focus(); }
+      });
+      el.addEventListener('click', async (e) => {
+        const b = e.target.closest('[data-cv-act]'); if (!b) return;
+        const out = await c.canvas.act(c.actions[Number(b.dataset.cvAct)], olQuery);
+        if (out.rerender) redraw();
+        if (out.open && /^https?:\/\//.test(out.open)) window.open(out.open, '_blank', 'noopener');
+        if (out.ask) { $('input').value = out.ask; resize(); send(); }
+        if (out.mutation) { $('input').value = `Run ${out.mutation.tool} with ${JSON.stringify(out.mutation.args)}`; resize(); $('input').focus(); toast('Changes go through ox, which asks first'); }
+      });
+    });
+  }
+
   // Models sometimes add words after the fence name ("html-live code block:").
-  const fenceKind = (lang) => /^ox-?ui\b/i.test(lang) ? 'ui' : /^html-?live\b/i.test(lang) ? 'live' : '';
-  function md(text) {
+  const fenceKind = (lang) => /^(openui|open-ui|openui-lang|ox-?canvas)\b/i.test(lang) ? 'openui' : /^ox-?ui\b/i.test(lang) ? 'ui' : /^html-?live\b/i.test(lang) ? 'live' : '';
+  let mdKey = 'm';
+  function md(text, key = `m${olSeq++}`) {
+    mdKey = key;
     const out = [];
-    String(text).split(/```/).forEach((part, i) => {
+    // OpenUI hosts store answers with ]]>openui:content / ]]>openui:end marker lines.
+    text = String(text).replace(/^\]\]>openui:content\s*\n([\s\S]*?)(?:\n\]\]>openui:end\s*$|$)/gm, (_, prog) => `\n\`\`\`openui\n${prog}\n\`\`\`\n`);
+    const parts = String(text).split(/```/);
+    parts.forEach((part, i) => {
       if (i % 2 === 1) {
         const nl = part.indexOf('\n');
         let lang = nl > 0 ? part.slice(0, nl).trim() : '';
         let code = (nl >= 0 ? part.slice(nl + 1) : part).replace(/\n$/, '');
         // Some models put the block's name on the line after the fence.
-        const named = !lang && /^\s*(ox-?ui|html-?live)\s*\n/i.exec(code);
+        const named = !lang && /^\s*(openui|ox-?ui|html-?live)\s*\n/i.exec(code);
         if (named) { lang = named[1]; code = code.slice(named[0].length); }
         const kind = fenceKind(lang);
+        if (kind === 'openui') { const h = openuiBlock(code, `${mdKey}:${i}`, i < parts.length - 1); if (h) { out.push(h); return; } }
         const ui = kind === 'ui' ? renderUi(code) : null;
         if (ui) { out.push(ui); return; }
         // A model that wrote HTML where JSON belonged still gets a working (sandboxed) widget.
@@ -964,7 +1038,8 @@
   function paint(body, msg) {
     if (msg.role === 'user') { body.textContent = msg.content; return; }
     const steps = (msg.tools || []).map((t) => `<div class="step"><span class="dot ${t.state === 'ok' ? 'ok' : t.state === 'err' ? 'err' : 'run'}"></span><b>${esc(t.name)}</b><span>${esc(t.preview || '')}</span></div>`).join('');
-    const text = msg.content ? md(msg.content) : (msg.pending ? '<span class="typing"><i></i><i></i><i></i></span>' : '');
+    msg.key ??= `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    const text = msg.content ? md(msg.content, msg.key) : (msg.pending ? '<span class="typing"><i></i><i></i><i></i></span>' : '');
     const routed = msg.routed ? `<span class="routed">${icon('mode')}${esc(msg.routed)}</span>` : '';
     const PI = { completed: ['ok', '✓'], in_progress: ['run', '›'], blocked: ['err', '!'], pending: ['', ''] };
     const plan = Array.isArray(msg.plan) && msg.plan.length
@@ -972,7 +1047,7 @@
       : '';
     const canv = (msg.canvases || []).map((c) => `<div class="ui cv">${canvasNode(c.tree)}</div>`).join('');
     body.innerHTML = routed + plan + (steps ? `<div class="steps">${steps}</div>` : '') + canv + text + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : '');
-    mountLive(body); bindUi(body);
+    mountLive(body); bindUi(body); bindOpenUI(body);
     const m = body.closest('.msg');
     m.dataset.text = msg.content || '';
     const meta = m.querySelector('.mt-meta');

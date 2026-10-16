@@ -117,3 +117,22 @@ test('benchmark: the same UI costs far fewer tokens than a JSON component tree',
   assert.ok(ox < compact * 0.8, `ox ${ox} tokens vs compact JSON ${compact}`);
   assert.ok(ox < pretty * 0.5, `ox ${ox} tokens vs pretty JSON ${pretty}`);
 });
+
+test('OpenUI Lang in the app: a single action needs no wrapper, Input and Slider bind $vars, @Pow does loan maths', async () => {
+  const c = new Canvas();
+  const ev = c.load([
+    '$P = 300000', '$rate = 6', '$n = 360',
+    'r = $rate / 1200',
+    'pay = $P * r / (1 - @Pow(1 + r, 0 - $n))',
+    'root = Stack([Input("Loan amount", $P, "number"), Slider("Interest %", $rate, 0, 20, 0.1), Button("15 years", @Set($n, 180)), Stat("Monthly", @Round(pay, 2))])',
+  ].join('\n'));
+  assert.deepEqual(ev.errors, []);
+  const [input, slider, button, stat] = ev.root.props.children;
+  assert.equal(input.props.bind, 'P');
+  assert.equal(slider.props.bind, 'rate');
+  assert.equal(stat.props.value, 1798.65);
+  c.state.rate = 4;
+  assert.equal(c.evaluate().root.props.children[3].props.value, 1432.25);
+  await c.act(button.props.action);
+  assert.equal(c.last.root.props.children[3].props.value, 2219.06);
+});

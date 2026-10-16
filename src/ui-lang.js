@@ -44,6 +44,10 @@ export const LIBRARY = {
   Buttons: { params: [['buttons', 'nodes']], desc: 'button row' },
   Select: { params: [['name', 'str'], ['value', 'any'], ['options', 'nodes']], desc: 'choice bound to a $var' },
   Option: { params: [['value', 'any'], ['label', 'str', true]], desc: 'Select option', inner: true },
+  // Form controls (OpenUI's forms): each binds a $var, so every line that
+  // reads it recomputes as the user types or drags, for zero tokens.
+  Input: { params: [['label', 'str'], ['value', 'any'], ['type', 'number|text', true]], desc: 'field bound to a $var' },
+  Slider: { params: [['label', 'str'], ['value', 'num'], ['min', 'num'], ['max', 'num'], ['step', 'num', true]], desc: 'slider bound to a $var' },
 };
 
 // Tools a Query() may call: read-only, no approval needed anywhere in ox.
@@ -59,6 +63,8 @@ const BUILTINS = {
   Last: (a) => (Array.isArray(a) ? a[a.length - 1] ?? null : null),
   Round: (n, d = 0) => { const f = 10 ** (Number(d) || 0); return Math.round(Number(n) * f) / f; },
   Abs: (n) => Math.abs(Number(n)),
+  Pow: (b, e) => Math.pow(Number(b), Number(e)),
+  Sqrt: (n) => Math.sqrt(Number(n)),
   Floor: (n) => Math.floor(Number(n)),
   Ceil: (n) => Math.ceil(Number(n)),
   Join: (a, sep = ', ') => (Array.isArray(a) ? a.join(sep) : String(a ?? '')),
@@ -519,6 +525,8 @@ export function evaluate(program, env = {}) {
         }
         continue;
       }
+      // OpenUI Lang: "a single action needs no wrapper", so @Set($n, 1) alone is Action([@Set($n, 1)]).
+      if (type === 'action' && v && typeof v === 'object' && typeof v.step === 'string') v = { kind: 'action', steps: [v] };
       if (type === 'nodes' && isNode(v)) v = [v];
       if (type === 'nodes' && Array.isArray(v)) v = v.flat().filter(isNode);
       if (!typeOk(type, v)) {
@@ -529,6 +537,7 @@ export function evaluate(program, env = {}) {
     }
     // A Select's value arg binds a $var: keep the name so actions can set it.
     if (n.name === 'Select' && n.args[1]?.k === 'state') props.bind = n.args[1].name;
+    if ((n.name === 'Input' || n.name === 'Slider') && n.args[1]?.k === 'state') props.bind = n.args[1].name;
     return { type: n.name, props };
   }
 
@@ -564,7 +573,7 @@ export function languageSpec() {
   return [
     'Write OX Canvas: one `name = Expression` per line, `root = ...` renders. Positional args only.',
     'Values: "str" 12 true null [a, b] {k: v}, refs to other lines (forward refs ok), a.b plucks a field from every row, cond ? a : b, + - * / == != > < && ||.',
-    '$var = default declares state; @Count @Sum @Avg @Min @Max @First @Last @Round @Join @Filter(rows, field, op, value) @Sort(rows, field, "desc") @Each(rows, "r", Text(r.x)).',
+    '$var = default declares state; Input("Amount", $amount, "number") and Slider("Rate %", $rate, 0, 20, 0.1) let the user change it and every line using it recomputes. @Pow(b, e) @Sqrt @Abs @Floor @Ceil @Count @Sum @Avg @Min @Max @First @Last @Round(n, digits) @Join @Filter(rows, field, op, value) @Sort(rows, field, "desc") @Each(rows, "r", Text(r.x)).',
     `Live data: d = Query("${[...QUERY_TOOLS].join('|')}", {args}, {defaults}); d is the tool result ({text, lines} or parsed JSON).`,
     'Buttons: Button("Label", Action([@Set($v, 1), @Run(d), @ToAssistant("msg"), @OpenUrl("u")])). m = Mutation("tool", {args}) runs only via @Run(m) from a Button.',
     'Edit an existing canvas with patch: true and send only changed or new lines.',
@@ -769,6 +778,13 @@ function draw(node, w, actions) {
         return on ? paint.gold(`[${n}] ● ${label}`) : `${paint.dim(`[${n}]`)} ○ ${label}`;
       });
       return [`${paint.dim(`${p.name}:`)} ${parts.join('  ')}`];
+    }
+    case 'Input':
+      return [`${paint.dim(`${p.label}:`)} ${p.value ?? ''}`];
+    case 'Slider': {
+      const lo = Number(p.min), hi = Number(p.max), v = Number(p.value);
+      const w = 16, f = hi > lo ? Math.max(0, Math.min(w, Math.round(((v - lo) / (hi - lo)) * w))) : 0;
+      return [`${paint.dim(`${p.label}:`)} ${'━'.repeat(f)}●${'─'.repeat(w - f)} ${v}`];
     }
     case 'Option':
     case 'Col':

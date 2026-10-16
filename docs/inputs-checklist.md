@@ -72,7 +72,7 @@ with the reason. Nothing here is marked done without a test or a real run.
 | Reference | Idea | Status |
 |---|---|---|
 | open-higgsfield | 38 image/video models, one composer, gallery | **done** — OX Studio, `ox create`, `create_media` tool; plus fal, OpenAI, local SD |
-| GPT-6 / OpenUI interactive answers | Answers drawn as interface | **done**: the app draws `ox-ui` blocks (form with live formulas, table, cards, stats, steps, chart, follow-up buttons) and OX Canvas from the `show_ui` tool with its own components; no model-written code runs. Tested on local qwen2.5:3b (loan calculator, $1,798.65 for $300k at 6% over 30 years). html-live stays as the sandboxed fallback |
+| GPT-6 / OpenUI (thesysdev/openui, MIT) | Answers as interface, in OpenUI Lang | **done**: the app's model writes OpenUI Lang (`$vars`, `@Set`/`@Run`/`@ToAssistant`, Query, components) in an ```openui block or OpenUI's `]]>openui:content` markers; the page renders it while it streams with ox's own parser (src/ui-lang.js, inlined), recomputes on every keystroke or slider move with no model call, runs Query() through read-only tools only, and lists lines it could not draw. Prompt generated from the component library, as OpenUI does. Added Input, Slider, @Pow, @Sqrt, single actions without Action([…]) (per the spec). Tested with a stand-in model (loan maths exact) and local qwen2.5:3b (writes the language; its formulas are unreliable at 3B) |
 | Recordly | Demo videos | **no** (AGPL; a recorder, not an agent feature) |
 | ManimGX | 3D math animation | not yet (could be a skill) |
 | REA (reverse engineering MCP) | MCP add-on | listed in the Marketplace via GitHub search; not bundled |

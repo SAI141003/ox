@@ -36,6 +36,7 @@ import { stat, unlink } from 'fs/promises';
 import { resolveTurnMode } from './modes.js';
 import { listAgents, loadAgent, agentBotSpec, agentPersonaBlock } from './agents.js';
 import { readConfigDoc } from './config.js';
+import * as UI_LANG from './ui-lang.js';
 
 // Read at request time, not at module load: a supervisor (or a test) that sets
 // the key after this module is imported must not silently get the old answer.
@@ -427,13 +428,23 @@ function agentErrorShape(message) {
 const NEEDS_WEB = /\b(price|prices|cost of|latest|today|this week|news|current|rate today|search|look up|website|https?:\/\/)/i;
 const TOUCHES_CODE = /\b(file|files|repo|repository|project|codebase|function|class|module|component|test|tests|bug|fix|refactor|commit|branch|src|readme)\b|[\w-]+\.(js|ts|tsx|jsx|py|go|rs|java|rb|css|html|json|md)\b/i;
 const WANTS_UI = /\b(calculat\w*|convert\w*|compar\w*|table|chart|graph|plot|slider|interactive|estimat\w*|budget|breakdown|checklist|options|pros and cons|form)\b/i;
+// OpenUI Lang (thesysdev/openui), the way OpenUI does it: the prompt is built
+// from the component library itself, so what the model is told and what the
+// page can draw never drift apart.
 export const LIVE_UI_GUIDE = [
-  'This chat draws interface. When a form, calculator, table, comparison, step list, chart or set of next choices would answer better than prose, put it in a block fenced with ```ox-ui on its own line, containing JSON only. Keep any prose short, outside the block.',
-  'Parts (one object, or a list of them):',
-  '{"type":"form","title":"…","fields":[{"id":"P","label":"Loan amount","value":300000,"min":0,"max":2000000,"slider":true},{"id":"rate","label":"Interest % a year","value":6},{"id":"n","label":"Months","value":360}],"let":{"r":"rate/1200"},"outputs":[{"label":"Monthly payment","expr":"P*r/(1-(1+r)^(-n))","format":"money"}]}',
-  '{"type":"table","title":"…","columns":["A","B"],"rows":[["1","2"]]}  {"type":"cards","items":[{"title":"…","text":"…"}]}  {"type":"stats","items":[{"label":"…","value":"…"}]}',
-  '{"type":"steps","items":[{"title":"…","text":"…"}]}  {"type":"chart","title":"…","labels":["a","b"],"values":[3,5]}  {"type":"choices","items":[{"label":"…","prompt":"what to ask next"}]}',
-  'Formulas use field ids and let names with + - * / ^ ( ) and min max round floor ceil abs sqrt pow log exp. Every field id used in a formula must exist. For anything these parts cannot show, use a block fenced with ```html-live holding one self-contained HTML snippet (inline style and script, no network).',
+  'This chat draws interface with OpenUI Lang. When a calculator, form, table, comparison, dashboard, step list, chart or set of next choices answers better than prose, write it in a block fenced with ```openui on its own line. Keep prose short, outside the block.',
+  UI_LANG.languageSpec().replace(/^Write OX Canvas:/, 'OpenUI Lang:').split('\n').filter((l) => !l.startsWith('Edit an existing canvas')).join('\n'),
+  `Components: ${Object.keys(UI_LANG.LIBRARY).map(UI_LANG.signature).join(' ')}`,
+  'Example:',
+  '```openui',
+  '$P = 300000',
+  '$rate = 6',
+  '$n = 360',
+  'r = $rate / 1200',
+  'pay = $P * r / (1 - @Pow(1 + r, 0 - $n))',
+  'root = Card("Loan payments", [Row([Input("Loan amount", $P, "number"), Slider("Interest % a year", $rate, 0, 20, 0.1), Input("Months", $n, "number")]), Row([Stat("Monthly payment", @Round(pay, 2), null, "USD"), Stat("Total interest", @Round(pay * $n - $P, 0), null, "USD")]), Buttons([Button("Compare two loans", @ToAssistant("Compare two loans side by side"))])])',
+  '```',
+  'Every $var a line reads must be declared. Use 0 - x for a negative number. For anything the components cannot show, a block fenced with ```html-live holds one self-contained HTML snippet (inline style and script, no network).',
 ].join('\n');
 
 async function handleChatCompletions(req, res) {
@@ -512,7 +523,7 @@ async function handleChatCompletions(req, res) {
   // with, the reminder rides along with it (the stored chat is unchanged).
   if (liveUi && WANTS_UI.test(lastText)) {
     const i = messages.lastIndexOf(lastUser);
-    if (i >= 0) messages = [...messages.slice(0, i), { ...lastUser, content: `${lastText}\n\n(Answer with an \`\`\`ox-ui block as described in your instructions.)` }, ...messages.slice(i + 1)];
+    if (i >= 0) messages = [...messages.slice(0, i), { ...lastUser, content: `${lastText}\n\n(Answer with an \`\`\`openui block as described in your instructions.)` }, ...messages.slice(i + 1)];
   }
   const ctx = {
     cwd: process.cwd(),
@@ -1052,6 +1063,15 @@ async function followupsRoute(b) {
 
 const ROUTES = [
   { method: 'POST', pattern: /^\/ox\/followups\/?$/, handler: appRoute(followupsRoute) },
+  // OpenUI Lang Query() lines in the app: only the read-only tools the language
+  // allows, run in plan mode, so nothing an answer draws can change a file.
+  { method: 'POST', pattern: /^\/ox\/canvas\/query\/?$/, handler: appRoute(async (b) => {
+    const tool = String(b.tool ?? '');
+    if (!UI_LANG.QUERY_TOOLS.has(tool)) throw new Error(`${tool} is not a read-only query tool`);
+    const { dispatchTool } = await import('./tools/index.js');
+    const r = await dispatchTool(tool, b.args && typeof b.args === 'object' ? b.args : {}, { cwd: process.cwd(), approval: 'plan', mode: 'plan' });
+    return { content: String(r?.content ?? '').slice(0, 200_000), isError: !!r?.isError };
+  }) },
   { method: 'POST', pattern: /^\/ox\/speak\/?$/, handler: handleSpeak },
   { method: 'GET', pattern: /^\/ox\/voice\/?$/, handler: appRoute(async () => { const k = await import('./kokoro.js'); const st = k.kokoroStatus(); return { kokoro: st.ready, install: 'ox voice install', voices: st.ready ? (await k.kokoroVoices()).map((id) => ({ id, label: k.VOICE_LABELS[id] ?? id })) : [], default: k.DEFAULT_VOICE }; }) },
   { method: 'GET', pattern: /^\/ox\/providers\/?$/, handler: appRoute(async () => (await appApi()).providersView()) },
@@ -1160,9 +1180,22 @@ async function serveStaticFile(req, res, platformRoot) {
 // part of the OpenAI route table, and every API call it makes carries the same
 // bearer key as any other client.
 let chatPage = null;
+// The page carries the OpenUI Lang parser (src/ui-lang.js, no imports) inline,
+// so answers written in it render in the browser with the same parser the
+// terminal and island use, and the page still loads nothing from anywhere.
+export async function buildChatPage() {
+  const html = String(await readFile(new URL('./web/chat.html', import.meta.url)));
+  const lang = String(await readFile(new URL('./ui-lang.js', import.meta.url)))
+    .replace(/^export (?=const|function|class|let)/gm, '')
+    .replace(/<\/script/gi, '<\\/script');
+  const names = ['Canvas', 'parseProgram', 'evaluate', 'LIBRARY', 'QUERY_TOOLS', 'languageSpec', 'signature'];
+  const inline = `<script>window.OxUiLang = (() => {\n${lang}\nreturn { ${names.join(', ')} };\n})();</script>`;
+  // A function, not a string: the parser's source has $ sequences replace() would expand.
+  return Buffer.from(html.replace('<!--OX_UI_LANG-->', () => inline));
+}
 async function serveChatPage(res) {
   try {
-    chatPage ??= await readFile(new URL('./web/chat.html', import.meta.url));
+    chatPage ??= await buildChatPage();
   } catch {
     sendError(res, 404, 'The web chat is not bundled with this install.', 'invalid_request_error', 'not_found', null);
     return;
