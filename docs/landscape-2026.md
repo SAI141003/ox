@@ -67,6 +67,32 @@ installed and working on this machine), so none are claimed.
 | Windows | ✓ (Git Bash or PowerShell, named-pipe IPC) | ✓ | ✓ | ✓ | ✓ | ? | ✗ macOS/Linux | ? | ✓ | web/app |
 | Licence | MIT | proprietary | Apache-2.0 | Apache-2.0 | MIT | Apache-2.0 (no outside contributions) | proprietary | MIT | MIT | proprietary |
 
+## The app, memory and island, against Hermes, Claude, Coucou and Devin
+
+Hermes desktop and the Claude app are judged from screenshots of the real
+apps (October 2026); Coucou from its MIT source and changelog (0.5.0, October
+15 2026); Devin from its site and a demo video. "?" means it was not visible.
+
+| | ox | Hermes desktop | Claude app | Coucou | Devin |
+|---|---|---|---|---|---|
+| Sessions sidebar: pinned, ages, search | ✓ + your terminal sessions, read-only, continue in a chat | ✓ | ✓ | n/a | ✓ |
+| Settings with search | ✓ 14 sections | ✓ 17 sections | ✓ | ✓ sidebar | ? |
+| API keys pasted in the app | ✓ 0600 file, last 4 chars shown, shell keys win | ✓ | n/a | ✓ (chat keys) | n/a |
+| Use a subscription you already pay for | ✓ found on this machine | ✓ Nous Portal, Anthropic OAuth | n/a | ✓ plan-usage gauges | n/a |
+| Local models: what fits this machine | ✓ RAM, running servers, fit / too big | ✓ + Hugging Face search and download | ✗ | ✓ chat with Ollama / LM Studio | ✗ |
+| Skills / plugins marketplace | ✓ catalogue plugins + GitHub agent-skills, safety scan, pinned commits | ✓ Skills Hub, 100k skills | ✓ | ✗ | ✗ |
+| Memory: new facts replace old ones, with history | ✓ temporal graph | ✓ learned skills | ✓ memory | ✗ | ✓ knowledge |
+| Memory: relative dates fixed, events expire | ✓ | ? | ? | ✗ | ? |
+| Learns how a repo is tested and built | ✓ from commands that worked | ? | ✗ | ✗ | ✓ saved environment |
+| Live plan / worklog | ✓ checklist ticks off as it works | ? | ✗ | ✓ step ticker | ✓ |
+| Interactive answers (live widgets) | ✓ sandboxed html-live | ✗ | ✓ artifacts | ✗ | ✗ |
+| Phone channels | ✓ Telegram, Discord | ✓ 20+ incl. WhatsApp, Slack, Signal | ✓ mobile app | ✓ iPhone / Android apps | ✓ Slack |
+| Scheduled jobs with on/off | ✓ | ✓ | ✓ | ✗ | ✓ automations |
+| Other agents' sessions in the island, approve there | ✓ Claude Code | n/a | n/a | ✓ 10+ agents | n/a |
+| Dictation anywhere, notetaker, wake word | ✗ not yet | ✗ | ✓ voice | ✓ | ✗ |
+| Cloud machine per session | ✗ runs on yours | ✓ Hermes Cloud | ✗ | ✗ | ✓ |
+| Changes its own code, judged by tests | written, not enabled (needs your permission) | ✗ | ✗ | ✗ | ✗ |
+
 ## Where others are still ahead, plainly
 
 - **Cloud computers.** Dots and Muse each get a cloud machine and browser that
@@ -84,14 +110,23 @@ installed and working on this machine), so none are claimed.
   subagent; ox auto-approves only read-only actions.
 - **Windows island.** Built and tested by simulating Windows on a Mac; not yet
   run on a real Windows PC.
+- **Hermes' channel count.** Hermes lists 20+ messaging channels (Slack,
+  WhatsApp, Signal, iMessage, WeChat…) with QR setup; ox has two.
+- **Coucou's voice layer.** Hold-a-key dictation anywhere with a personal
+  dictionary, a call notetaker, and an "OK Coucou" wake word, all offline.
+- **Small local models.** Tested here with Qwen2.5 1.5B on Ollama: chat works
+  end to end, but the model never calls a tool even when asked directly, so it
+  cannot drive an agent. A 7B coding model is the realistic minimum.
 
 ## The interface
 
-ox's colours are one palette across the island, the web island and the web
-chat: text `#F5F6F8`, muted `#8E939C`, dim `#6B7079`, card `#141518` on black,
-and three signal colours that always mean the same thing: amber `#F5A524` (ox
-needs you), green `#34D399` (done), red `#F4505E` (failed). The terminal uses
-the same meanings through ANSI colours and honours `NO_COLOR`.
+The island uses text `#F5F6F8`, muted `#8E939C`, dim `#6B7079` and card
+`#141518` on black. The app follows the near-black, hairline-border look of
+Hermes and the Claude app: background `#050506`, sidebar `#09090B`, panels
+`#0D0E11`, borders `#1B1C21`, text `#E8E9EC`, muted `#9A9FA8`, ox gold
+`#E9A66B`, with a light theme alongside. The three signal colours mean the
+same thing everywhere: amber (ox needs you), green (done), red (failed). The
+terminal uses the same meanings through ANSI colours and honours `NO_COLOR`.
 
 Other products' exact colour values were not sampled, so they are not listed.
 
