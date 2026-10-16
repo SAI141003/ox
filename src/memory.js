@@ -511,6 +511,7 @@ function resolveTarget(argsTopic, fallbackSeed, type) {
 }
 
 function addMemory(cwd, args = {}) {
+  if (process.env.OX_INCOGNITO === '1' || args.__incognito) return err('memory_add: this is an incognito session — nothing is saved. Ask the user to repeat it outside incognito if they want it kept.');
   const type = typeof args.type === 'string' ? args.type.trim().toLowerCase() : '';
   if (!MEMORY_TYPES.includes(type)) {
     return err(`memory_add: 'type' must be one of ${MEMORY_TYPES.join(', ')}.`);

@@ -196,7 +196,6 @@ const trimBase = (b) => String(b).replace(/\/+$/, '');
 export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
   return async function* streamChat({ model, messages, tools = [], apiKey, baseUrl, signal, maxTokens } = {}) {
     if (!baseUrl) throw new Error(`ox[${name}]: no baseUrl configured for OpenAI-compatible provider`);
-    const isOllama = name === 'ollama' || trimBase(baseUrl).includes(':11434');
     const body = { model, messages: toWireMessages(messages), stream: true };
     if (tools.length) {
       body.tools = tools.map((t) => ({
@@ -204,7 +203,10 @@ export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
         function: { name: t.name, description: t.description, parameters: t.input_schema },
       }));
     }
-    if (!isOllama) body.stream_options = { include_usage: true };
+    // Ollama reports token counts when asked too (checked on 0.40); older
+    // versions ignore the field, so asking costs nothing and the usage log
+    // gets real numbers for local models instead of zeros.
+    body.stream_options = { include_usage: true };
     if (maxTokens != null) body.max_tokens = maxTokens;
     const headers = { 'content-type': 'application/json' };
     if (apiKey) headers.authorization = `Bearer ${apiKey}`;

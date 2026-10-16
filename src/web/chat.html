@@ -252,6 +252,9 @@
   .toast.on { display: block; }
 
   .mback { display: none !important; }
+  body.incog .cbox { border-color: #6E56CF; box-shadow: 0 0 0 1px #6E56CF55; }
+  body.incog .bar { background: linear-gradient(90deg, #6E56CF22, transparent 60%); }
+  .incog-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #A99BEA; letter-spacing: .02em; text-transform: none; }
   @media (max-width: 860px) {
     .mback { display: inline-flex !important; }
     .app { grid-template-columns: 1fr; }
@@ -285,6 +288,7 @@
     <div id="tab-sessions">
       <div class="nav">
         <button id="nav-new"><span data-i="plus"></span><span class="grow">New session</span><span class="kbd">⌘</span><span class="kbd">N</span></button>
+        <button id="nav-incog" title="Nothing is saved: no history, no memory used or learned, no usage record (⌘⇧N)"><span data-i="incog"></span><span class="grow">New incognito chat</span><span class="kbd">⇧</span><span class="kbd">N</span></button>
         <button data-view="caps"><span data-i="blocks"></span><span class="grow">Capabilities</span></button>
         <button data-view="studio"><span data-i="film"></span><span class="grow">Studio</span></button>
         <button data-view="market"><span data-i="store"></span><span class="grow">Marketplace</span></button>
@@ -428,6 +432,8 @@
     brain: 'M9 4a3 3 0 0 0-3 3v.2A3 3 0 0 0 4 10a3 3 0 0 0 1 2.2A3 3 0 0 0 6 17a3 3 0 0 0 3 3a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3ZM15 4a3 3 0 0 1 3 3v.2A3 3 0 0 1 20 10a3 3 0 0 1-1 2.2A3 3 0 0 1 18 17a3 3 0 0 1-3 3a3 3 0 0 1-3-3',
     store: 'M4 9l1.5-5h13L20 9M4 9h16v11H4zM4 9a3 3 0 0 0 6 0 3 3 0 0 0 4 0 3 3 0 0 0 6 0M9 20v-5h6v5',
     film: 'M4 4h16v16H4zM8 4v16M16 4v16M4 8h4M4 12h4M4 16h4M16 8h4M16 12h4M16 16h4',
+    incog: 'M3 11h18M5 11l2-6h10l2 6M7 17a3 3 0 1 0 0-.01M17 17a3 3 0 1 0 0-.01M10 17h4',
+    chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
     shield: 'M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6Z', open: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6', back: 'M15 18l-6-6 6-6',
   };
   const icon = (n, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${P[n] || ''}"/></svg>`;
@@ -510,7 +516,8 @@
   let terminalSessions = [];
   let caps = null;
   let about = null;
-  const saveConvos = () => store.set('ox.convos', convos.slice(0, 200));
+  // Incognito chats live only in this tab: never written to storage.
+  const saveConvos = () => store.set('ox.convos', convos.filter((c) => !c.incognito).slice(0, 200));
   const convo = () => convos.find((c) => c.id === current);
 
   // ---------- views
@@ -549,7 +556,7 @@
     const term = terminalSessions.filter((s) => match(s.title));
     let html = '';
     const rowFor = (c) => `<div class="row${view === 'chat' && !readonly && c.id === current ? ' on' : ''}" data-c="${esc(c.id)}" role="button" tabindex="0">
-      <span class="dot${c.running ? ' run' : ''}"></span><span class="t">${esc(c.title)}</span><span class="age">${ago(c.updated || c.at)}</span>
+      ${c.incognito ? `<span style="color:#A99BEA" title="incognito">${icon('incog')}</span>` : `<span class="dot${c.running ? ' run' : ''}"></span>`}<span class="t">${esc(c.title)}</span><span class="age">${ago(c.updated || c.at)}</span>
       <span class="acts"><button data-act="pin" title="${c.pinned ? 'Unpin' : 'Pin'}" aria-label="Pin">${icon('pin')}</button><button data-act="archive" title="Archive" aria-label="Archive">${icon('archive')}</button><button data-act="del" title="Delete" aria-label="Delete">${icon('trash')}</button></span></div>`;
     if (pinned.length) html += `<div class="group cap">Pinned</div>${pinned.map(rowFor).join('')}`;
     html += `<div class="group cap">Sessions</div>${rest.map(rowFor).join('') || `<div class="empty-note">${q ? 'Nothing matches.' : 'No chats yet. Start one with New session.'}</div>`}`;
@@ -690,7 +697,8 @@
     const inner = $('inner');
     inner.innerHTML = '';
     $('title').textContent = readonly ? readonly.title : convo()?.title || 'New session';
-    $('ro').textContent = readonly ? 'terminal session · read-only' : '';
+    document.body.classList.toggle('incog', !!convo()?.incognito && !readonly);
+    $('ro').innerHTML = readonly ? 'terminal session · read-only' : convo()?.incognito ? `<span class="incog-tag">${icon('incog')}incognito — nothing is saved</span>` : '';
     $('input').disabled = !!readonly;
     $('input').placeholder = readonly ? 'Viewing a terminal session' : 'Describe what you need';
     if (readonly) {
@@ -730,12 +738,13 @@
     }
   });
 
-  function newConvo() {
-    const c = { id: `c${Date.now()}`, at: Date.now(), title: 'New session', messages: [] };
+  function newConvo(incognito = false) {
+    const c = { id: `c${Date.now()}`, at: Date.now(), title: incognito ? 'Incognito chat' : 'New session', messages: [], ...(incognito === true ? { incognito: true } : {}) };
     convos.unshift(c); current = c.id; readonly = null; saveConvos(); show('chat'); renderChat();
     $('input').focus();
   }
-  $('nav-new').onclick = newConvo;
+  $('nav-new').onclick = () => newConvo();
+  $('nav-incog').onclick = () => newConvo(true);
 
   async function send() {
     const input = $('input');
@@ -758,7 +767,7 @@
     try {
       const res = await api('/v1/chat/completions', {
         method: 'POST', signal: busy.signal,
-        body: JSON.stringify({ model: $('model').value || undefined, ox_mode: $('mode').value, ox_ui: 'live', stream: true, messages: c.messages.filter((m) => m !== reply).map(({ role, content }) => ({ role, content })) }),
+        body: JSON.stringify({ model: $('model').value || undefined, ox_mode: $('mode').value, ox_ui: 'live', ...(c.incognito ? { ox_incognito: true } : {}), stream: true, messages: c.messages.filter((m) => m !== reply).map(({ role, content }) => ({ role, content })) }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error?.message || `HTTP ${res.status}`);
       const reader = res.body.getReader();
@@ -1132,6 +1141,7 @@
     ['desktop', 'Desktop', 'monitor', 'island notch awake sleep'],
     ['voice', 'Voice', 'mic', 'speech language read aloud'],
     ['memory', 'Memory', 'brain', 'remember forget profile facts preferences'],
+    ['usage', 'Usage', 'chart', 'tokens cost spend models agents billing'],
     ['gap'],
     ['providers', 'Providers', 'bolt', 'models'],
     ['accounts', 'Accounts', 'user', 'subscription claude chatgpt plan', true],
@@ -1212,6 +1222,19 @@
         $('s-lang').onchange = () => { prefs.lang = $('s-lang').value; savePrefs(); };
         $('s-voice').onchange = () => { prefs.voice = $('s-voice').value; savePrefs(); speakText('This is how I sound.', true); };
         $('s-speak').onchange = () => { prefs.speakReplies = $('s-speak').checked; savePrefs(); };
+      } else if (sec === 'usage') {
+        const days = Number(store.get('ox.usage.days', 30));
+        const U = await getJson(`/ox/usage?days=${days}`);
+        const fmt = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
+        const money = (c) => (c == null ? 'unpriced' : c < 0.01 ? `$${c.toFixed(4)}` : `$${c.toFixed(2)}`);
+        const max = Math.max(1, ...U.byDay.map((d) => d.in + d.out));
+        const table = (title, rows) => `<div class="section-cap cap">${title}</div>${rows.length ? `<div class="cards">${rows.map((r) => `<div class="card"><span class="t"><div class="n">${esc(r.key)}</div><div class="d"><span>${fmt(r.in)} in · ${fmt(r.out)} out</span>${r.runs ? `<span>${r.runs} run${r.runs === 1 ? '' : 's'}</span>` : ''}</div></span><span class="mono small">${money(r.cost)}</span></div>`).join('')}</div>` : '<div class="box muted small">Nothing yet.</div>'}`;
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('chart')}Usage</div><p class="sdesc">Every run's tokens, kept on this machine in ~/.ox/usage.jsonl — from the terminal, this app, the island and your phone. Prices come from ox's price table; a model with no published price (local, subscription) shows as unpriced, never $0. Incognito chats are not recorded.</p>
+          ${row('Period', '', seg('udays', [['1', 'Today'], ['7', '7 days'], ['30', '30 days'], ['90', '90 days']], String(days)))}
+          <div class="chipline" style="margin:6px 0 4px"><span class="badge">${fmt(U.total.in)} tokens in</span><span class="badge">${fmt(U.total.out)} tokens out</span><span class="badge">${U.total.runs} runs</span><span class="badge ok">${money(U.total.cost)}</span></div>
+          <div class="section-cap cap">By day</div><div style="display:flex;align-items:flex-end;gap:3px;height:90px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--panel)">${U.byDay.map((d) => `<div title="${esc(d.key)}: ${fmt(d.in + d.out)} tokens${d.cost != null ? `, ${money(d.cost)}` : ''}" style="flex:1;min-width:4px;background:var(--gold);opacity:.85;border-radius:3px 3px 0 0;height:${Math.max(3, ((d.in + d.out) / max) * 100)}%"></div>`).join('') || '<span class="dim small">no runs in this period</span>'}</div>
+          ${table('By model', U.byModel)}${table('By agent', U.byAgent)}${table('By where it ran', U.bySurface)}${table('By project', U.byProject)}`;
+        bindSegs(el, (k, v) => { store.set('ox.usage.days', Number(v)); renderSection(); });
       } else if (sec === 'memory') {
         const M = await getJson('/ox/memory');
         const item = (m) => `<div class="card"><span class="dot ${m.kind === 'event' ? 'warn' : 'ok'}"></span><span class="t"><div class="n">${esc(m.text)}</div><div class="d"><span>${esc(m.kind)}</span><span>${new Date(m.at).toLocaleDateString()}</span>${m.strength > 1 ? `<span>said ${m.strength}×</span>` : ''}${m.replaced ? '<span>replaced an older fact</span>' : ''}${m.until ? `<span>until ${new Date(m.until).toLocaleDateString()}</span>` : ''}</div></span><button class="btn ghost danger" data-forget="${esc(m.id)}">Forget</button></div>`;
@@ -1285,7 +1308,7 @@
       } else if (sec === 'shortcuts') {
         const K = (...k) => `<span class="keys">${k.map((x) => `<span class="kbd">${x}</span>`).join('')}</span>`;
         const S = [['Composer', [['Send message', prefs.sendKey === 'enter' ? K('↵') : K(MOD, '↵')], ['New line', prefs.sendKey === 'enter' ? K('⇧', '↵') : K('↵')], ['Edit your last message', K('↑')], ['Stop the running answer', K('Esc')], ['Focus the message box', K(MOD, 'L')], ['Pick the model', K(MOD, '⇧', 'M')], ['Talk instead of typing', K('⌃', 'B')]]],
-          ['App', [['New session', K(MOD, 'N')], ['Search sessions', K(MOD, 'K')], ['Settings', K(MOD, ',')], ['This list', K(MOD, '/')], ['Hide or show the sidebar', K(MOD, '\\')], ['Close settings', K('Esc')]]],
+          ['App', [['New session', K(MOD, 'N')], ['New incognito chat', K(MOD, '⇧', 'N')], ['Search sessions', K(MOD, 'K')], ['Settings', K(MOD, ',')], ['This list', K(MOD, '/')], ['Hide or show the sidebar', K(MOD, '\\')], ['Close settings', K('Esc')]]],
           ['Island (Mac)', [['Open the island chat', K('⌃', '⌥', 'Space')]]]];
         el.innerHTML = `${mobileBack}<div class="shead">${icon('keyboard')}Keyboard shortcuts</div><p class="sdesc">${MOD}/ opens this list from anywhere in the app.</p>` + S.map(([g, list]) => `<div class="section-cap cap">${g}</div>${list.map(([l, k]) => `<div class="short"><span>${l}</span>${k}</div>`).join('')}`).join('');
       } else if (sec === 'archived') {
@@ -1316,6 +1339,7 @@
       if (busy) { busy.abort(); return; }
     }
     if (mod && !e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); newConvo(); }
+    else if (mod && e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); newConvo(true); }
     else if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); if (tab !== 'sessions') document.querySelector('[data-tab="sessions"]').click(); document.body.classList.remove('collapsed'); $('q').focus(); }
     else if (mod && e.key === ',') { e.preventDefault(); openSettings(); }
     else if (mod && e.key === '/') { e.preventDefault(); openSettings('shortcuts'); }

@@ -629,6 +629,8 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
 
 export async function dispatchTool(name, args, ctx = {}) {
   try {
+    // Incognito: nothing is written to memory.
+    if (ctx?.incognito && name === 'memory_add') return { content: 'memory_add: this is an incognito chat — nothing is saved.', isError: true };
     if (typeof name !== 'string' || name === '') {
       return { content: 'dispatchTool: a tool name is required.', isError: true };
     }

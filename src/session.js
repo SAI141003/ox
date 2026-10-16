@@ -21,8 +21,23 @@ function timestamp() {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
+// Incognito (`ox --incognito`, OX_INCOGNITO=1): the transcript lives in a
+// private temp folder for this process only and is deleted when ox exits, so
+// /rewind and the rest still work while nothing is kept.
+let incognitoDir = null;
+export function isIncognito(ctx = null) {
+  return ctx?.incognito === true || process.env.OX_INCOGNITO === '1';
+}
+function privateSessionsDir() {
+  if (incognitoDir) return incognitoDir;
+  incognitoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-incognito-'));
+  try { fs.chmodSync(incognitoDir, 0o700); } catch {}
+  process.once('exit', () => { try { fs.rmSync(incognitoDir, { recursive: true, force: true }); } catch {} });
+  return incognitoDir;
+}
+
 export function createSession(cwd, meta = {}) {
-  const dir = sessionsDir();
+  const dir = isIncognito() ? privateSessionsDir() : sessionsDir();
   fs.mkdirSync(dir, { recursive: true });
   let id;
   let file;

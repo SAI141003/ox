@@ -684,7 +684,7 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
       const goalText = full.trim();
       const files = [...touchedFiles];
       const status = budgetStopped ? 'budget-stopped' : failed ? 'error' : denialCount > 0 ? 'blocked' : 'complete';
-      try {
+      if (process.env.OX_INCOGNITO !== '1') try {
         writeSessionNote(config.cwd, {
           phase: 'session-end',
           status: budgetStopped ? 'budget-stopped' : failed ? 'error' : 'ok',
@@ -697,7 +697,7 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
           model: target.model,
         });
       } catch {}
-      try {
+      if (process.env.OX_INCOGNITO !== '1') try {
         writeEpisode(config.cwd, { goal: goalText, outcome: lastAssistantText, files, lessons: [] });
       } catch {}
       if (opts.json) {
@@ -756,7 +756,7 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
     // skill (never used until accepted). OX_LEARN=0 turns this off.
     // And from what you said: preferences and facts about yourself are kept in
     // ox's memory, so the next run starts already knowing them.
-    if (process.env.OX_LEARN !== '0') {
+    if (process.env.OX_LEARN !== '0' && process.env.OX_INCOGNITO !== '1') {
       try {
         const said = [{ role: 'user', content: String(prompt ?? '') }];
         const learned = learnFromMessages(said, { source: session?.file ? path.basename(session.file) : 'headless' });
@@ -767,7 +767,7 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
         if (cmds.length && !opts.json) process.stderr.write(dimYellow(`· remembered for this project: ${cmds.map((r) => r.memory.text).join('; ')}\n`));
       } catch {}
     }
-    if (code === 0 && process.env.OX_LEARN !== '0') {
+    if (code === 0 && process.env.OX_LEARN !== '0' && process.env.OX_INCOGNITO !== '1') {
       try {
         const { draftFromSession, draftFromRecord } = await import('./skill-drafts.js');
         const drafted = session?.file

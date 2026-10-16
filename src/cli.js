@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4038,6 +4038,7 @@ const SUB_USAGE = {
   episode: 'usage: ox episode ls | ox episode promote <id>',
   'memory-loss': 'usage: ox memory-loss [--limit <n>]',
   create: 'usage: ox create "<prompt>" [--provider higgsfield|fal|openai|local] [--model <id>] [--set key=value]... [--start <url>] [--end <url>] [--ref <url>]... [--video <url>] [--audio <url>] | --models [provider] | --history',
+  usage: 'usage: ox usage [--days <n>] [--json]  — tokens and cost by model, agent, surface, project and day',
   market: 'usage: ox market ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
   hooks: 'usage: ox hooks install <claude|codex|gemini|cursor|copilot> [--yes] | uninstall <agent> [--yes] | status',
   memory: 'usage: ox memory [recall "<question>" | add "<fact>" [--project] | history <id> | forget <id> | all [--project]]',
@@ -4604,6 +4605,24 @@ async function runSubcommand(cmd, args) {
       }
       console.log(SUB_USAGE.memory);
       process.exitCode = 2;
+      return;
+    }
+    case 'usage': {
+      // Where the tokens went (src/usage-log.js).
+      const { summarize } = await import('./usage-log.js');
+      const di = args.indexOf('--days');
+      const days = di >= 0 ? Math.max(1, Number(args[di + 1]) || 30) : 30;
+      const U = summarize({ days });
+      if (args.includes('--json')) { console.log(JSON.stringify(U, null, 2)); return; }
+      const fmt = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
+      const money = (x) => (x == null ? c.dim('unpriced') : x < 0.01 ? `$${x.toFixed(4)}` : `$${x.toFixed(2)}`);
+      console.log(`${c.bold(`Last ${days} day${days === 1 ? '' : 's'}`)}  ${fmt(U.total.in)} in · ${fmt(U.total.out)} out · ${U.total.runs} runs · ${money(U.total.cost)}`);
+      for (const [title, rows] of [['model', U.byModel], ['agent', U.byAgent], ['where', U.bySurface], ['project', U.byProject]]) {
+        if (!rows.length) continue;
+        console.log(c.dim(`\n  by ${title}`));
+        for (const r of rows.slice(0, 12)) console.log(`  ${String(r.key).padEnd(28)} ${fmt(r.in).padStart(8)} in ${fmt(r.out).padStart(8)} out  ${money(r.cost)}`);
+      }
+      if (!U.total.runs) console.log(c.dim('no runs recorded yet — every run from now on is kept in ~/.ox/usage.jsonl'));
       return;
     }
     case 'create': {
@@ -7580,6 +7599,15 @@ function detachPassthrough(flags) {
 
 export async function main(argv = []) {
   const args = Array.isArray(argv) ? argv.slice() : [];
+  // Incognito: works with any command. Nothing about you is read in and nothing
+  // is kept — no transcript (it lives in a temp folder until exit), no memory,
+  // no learning, no usage record.
+  const incog = args.indexOf('--incognito');
+  if (incog >= 0) {
+    args.splice(incog, 1);
+    process.env.OX_INCOGNITO = '1';
+    if (process.stderr.isTTY) process.stderr.write(`${c.dim('◐ incognito — nothing from this session is saved, and ox does not use what it remembers about you')}\n`);
+  }
   // F5: `ox sessions resume <id|title-prefix>` is sugar for `ox --resume <ref>`.
   if (String(args[0]).toLowerCase() === 'sessions' && String(args[1] ?? '').toLowerCase() === 'resume') {
     args.splice(0, 2, '--resume');

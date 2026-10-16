@@ -356,6 +356,7 @@ export const fmtDay = (t) => { const d = new Date(t); return `${d.getFullYear()}
 
 // The block put in front of a run: the profile, then what bears on this task.
 export function memoryPromptBlock({ cwd = process.cwd(), home = os.homedir(), task = '', now = Date.now() } = {}) {
+  if (process.env.OX_INCOGNITO === '1') return ''; // private: nothing about you goes in
   const userFile = memoryFile('user', { home });
   const projFile = memoryFile('project', { cwd });
   const p = profile({ file: userFile, now });
@@ -394,8 +395,8 @@ export function learnable(message) {
 
 // Called with the user's messages after a run: remember what they told ox
 // about themselves. Returns what changed, for the "· remembered …" line.
-export function learnFromMessages(messages = [], { home = os.homedir(), source = null, ref = Date.now() } = {}) {
-  if (process.env.OX_LEARN === '0') return [];
+export function learnFromMessages(messages = [], { home = os.homedir(), source = null, ref = Date.now(), incognito = false } = {}) {
+  if (process.env.OX_LEARN === '0' || incognito || process.env.OX_INCOGNITO === '1') return [];
   const file = memoryFile('user', { home });
   const done = [];
   for (const m of messages) {
@@ -430,7 +431,7 @@ export function commandKind(command) {
 // After a run: the commands that worked are how this project is tested,
 // linted, built, installed and started. The newest working one replaces the old.
 export function learnProjectCommands(calls = [], { cwd = process.cwd(), ref = Date.now() } = {}) {
-  if (process.env.OX_LEARN === '0') return [];
+  if (process.env.OX_LEARN === '0' || process.env.OX_INCOGNITO === '1') return [];
   const file = memoryFile('project', { cwd });
   const done = [];
   const seen = new Set();

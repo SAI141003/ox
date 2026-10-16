@@ -460,11 +460,14 @@ async function handleChatCompletions(req, res) {
   // The same memory a terminal run starts with: the project's MEMORY.md, what ox
   // remembers about the user, and what bears on this message.
   const lastText = typeof lastUser?.content === 'string' ? lastUser.content : '';
+  // `ox_incognito: true` (the app's Incognito chat): no memory about the user in,
+  // nothing learned, no usage record, memory writes refused.
+  const incognito = body.ox_incognito === true || process.env.OX_INCOGNITO === '1';
   let memoryBlock = '';
   try {
     const { loadMemoryBlock } = await import('./memory.js');
     const { memoryPromptBlock } = await import('./memory-graph.js');
-    memoryBlock = [loadMemoryBlock(process.cwd()), process.env.OX_MEMORY === '0' ? '' : memoryPromptBlock({ cwd: process.cwd(), task: lastText })].filter(Boolean).join('\n\n');
+    memoryBlock = [loadMemoryBlock(process.cwd()), process.env.OX_MEMORY === '0' || incognito ? '' : memoryPromptBlock({ cwd: process.cwd(), task: lastText })].filter(Boolean).join('\n\n');
   } catch {}
   // `ox_ui: 'live'` is sent by ox's own app, which can run interactive answers.
   const liveUi = body.ox_ui === 'live'
@@ -475,12 +478,13 @@ async function handleChatCompletions(req, res) {
     mode: turnMode.mode,
     surface: 'app',
     memoryBlock,
+    ...(incognito ? { incognito: true } : {}),
     ...(agentDef || liveUi ? { personaBlock: [agentDef ? agentPersonaBlock(agentDef) : '', liveUi].filter(Boolean).join('\n\n') } : {}),
     ...(agentDef ? { agentName: agentDef.name } : {}),
     ...(Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools } : {}),
   };
   // Preferences the user states here are kept, as in the terminal.
-  if (process.env.OX_LEARN !== '0' && lastText) {
+  if (process.env.OX_LEARN !== '0' && lastText && !incognito) {
     try { (await import('./memory-graph.js')).learnFromMessages([{ role: 'user', content: lastText }], { source: 'app' }); } catch {}
   }
   const config = { maxTokens: max_tokens };
@@ -974,6 +978,7 @@ const ROUTES = [
   { method: 'POST', pattern: /^\/ox\/studio\/create\/?$/, handler: appRoute(async (b) => (await appApi()).studioCreate(b)) },
   { method: 'POST', pattern: /^\/ox\/studio\/?$/, handler: appRoute(async (b) => (await appApi()).studioAction(b)) },
   { method: 'GET', pattern: /^\/ox\/media\/([^/]+)\/([^/]+)$/, handler: serveMediaFile },
+  { method: 'GET', pattern: /^\/ox\/usage\/?$/, handler: appRoute(async (_, __, req) => (await import('./usage-log.js')).summarize({ days: Math.max(1, Math.min(365, Number(new URL(req.url, 'http://x').searchParams.get('days')) || 30)) })) },
   { method: 'GET', pattern: /^\/ox\/about\/?$/, handler: appRoute(async () => (await appApi()).aboutView()) },
   { method: 'GET', pattern: /^\/ox\/settings\/?$/, handler: handleSettingsGet },
   { method: 'POST', pattern: /^\/ox\/settings\/?$/, handler: handleSettingsPost },
