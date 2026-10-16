@@ -10,14 +10,16 @@ extension Color {
 }
 
 enum Ink {
-    static let text = Color(hex: "#F5F6F8")
-    static let muted = Color(hex: "#8E939C")
-    static let dim = Color(hex: "#6B7079")
-    static let card = Color(hex: "#141518")
-    static let amber = Color(hex: "#F5A524")
-    static let green = Color(hex: "#34D399")
+    static let text = Color(hex: "#EDEDED")
+    static let muted = Color(hex: "#A1A1A1")
+    static let dim = Color(hex: "#6B6B6B")
+    static let card = Color(hex: "#141414")
+    // Black and white like the app: "needs you" is the brightest thing on screen,
+    // "working" a calm grey, red only for errors.
+    static let amber = Color(hex: "#FFFFFF")
+    static let green = Color(hex: "#A1A1A1")
     static let red = Color(hex: "#F4505E")
-    static let gold = Color(hex: "#E9A66B")
+    static let gold = Color(hex: "#FFFFFF")
 }
 
 // MARK: - Shape

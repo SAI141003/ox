@@ -110,7 +110,7 @@ struct LaunchScene {
                 p.addLines(s.points)
                 p.closeSubpath()
                 let a = 1 - Self.clamp(lt / 0.65)
-                sg.fill(p, with: .linearGradient(Gradient(colors: [.white.opacity(0.55 * a), Color(hex: "#9FD8FF").opacity(0.18 * a)]),
+                sg.fill(p, with: .linearGradient(Gradient(colors: [.white.opacity(0.55 * a), Color(hex: "#FFFFFF").opacity(0.18 * a)]),
                                                  startPoint: .zero, endPoint: CGPoint(x: 10, y: 10)))
                 sg.stroke(p, with: .color(.white.opacity(0.7 * a)), lineWidth: 0.6)
             }
@@ -142,7 +142,7 @@ struct LaunchScene {
                 let back = CGFloat(i) * 9
                 let x = ox - back + oxSize * 0.2
                 let y = c.y + oxSize * 0.42 + sin(Double(i) + t * 30) * 2
-                g.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 6, height: 4)), with: .color(Color(hex: "#BD713B").opacity(0.25 - Double(i) * 0.03)))
+                g.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 6, height: 4)), with: .color(Color(hex: "#8A8A8A").opacity(0.25 - Double(i) * 0.03)))
             }
         }
         var og = g

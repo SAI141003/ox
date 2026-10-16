@@ -362,7 +362,8 @@ final class OxBridge: ObservableObject {
         }
     }
 
-    static let palette = ["#60A5FA", "#F472B6", "#34D399", "#FBBF24", "#A78BFA", "#22D3EE"]
+    // Black and white like the app: sessions told apart by shade, not hue.
+    static let palette = ["#FFFFFF", "#BDBDBD", "#8A8A8A", "#E2E2E2", "#A3A3A3", "#6F6F6F"]
 
     func color(of session: AgentSession) -> String {
         let i = sessions.firstIndex(where: { $0.id == session.id }) ?? 0
