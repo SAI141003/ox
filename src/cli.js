@@ -4942,7 +4942,9 @@ async function runSubcommand(cmd, args) {
         if (verb === 'accept') { if (!id) throw new Error('usage: ox evolve accept <id>'); const a = E.accept(id); console.log(`accepted ${a.id}: your checkout now has it`); return; }
         if (verb === 'reject') { if (!id) throw new Error('usage: ox evolve reject <id>'); E.reject(id); console.log(`rejected ${id}`); return; }
         const bi = args.indexOf('--bot'), mi = args.indexOf('--max-cost');
-        const skip = new Set([bi, bi + 1, mi, mi + 1].filter((i) => i >= 0));
+        // Only the flags that are there, and their values: an absent flag is -1,
+        // and -1 + 1 is 0, the goal itself (`ox evolve "<goal>"` was dropped).
+        const skip = new Set([...(bi >= 0 ? [bi, bi + 1] : []), ...(mi >= 0 ? [mi, mi + 1] : [])]);
         const goal = args.filter((a, i) => !skip.has(i) && !a.startsWith('--')).join(' ');
         const r = await E.evolve({ goal, bot: bi >= 0 ? args[bi + 1] : null, maxCost: mi >= 0 ? Number(args[mi + 1]) || 2 : 2, log: (l) => process.stderr.write(`${c.dim(l)}\n`) });
         if (!r.id) { console.log(r.why); return; }
