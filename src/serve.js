@@ -737,6 +737,21 @@ async function handleChatCompletions(req, res) {
     try { (await import('./memory-graph.js')).learnFromMessages([{ role: 'user', content: lastText }], { source: 'app' }); } catch {}
   }
   const config = { maxTokens: max_tokens };
+  // Delegation in the app, as in the terminal (src/headless.js): the subagent
+  // tool was offered here with nothing behind it ("not configured"), and agents
+  // could not see or message each other. Now a helper really runs, shows up in
+  // the Office, and agent_status / agent_message reach the other agents.
+  if (!ctx.noTools) {
+    const { makeSubagentToolHandler } = await import('./subagent.js');
+    const { makeAgentTeamsHandler } = await import('./agent-teams.js');
+    let doc = {};
+    try { doc = readConfigDoc() ?? {}; } catch {}
+    ctx.subagentHandler = makeSubagentToolHandler({ config: { ...doc, cwd: ctx.cwd }, target, auxTarget: null });
+    ctx.agentTeamsHandler = makeAgentTeamsHandler(ctx.cwd);
+    ctx.enableSubagents = true;
+    ctx.depth = 0;
+    ctx.maxDepth = doc?.subagent?.maxDepth ?? 2;
+  }
 
   if (stream) {
     res.writeHead(200, {

@@ -1292,6 +1292,7 @@ async function* runAgentLoop(opts = {}) {
       message: originalUserText,
       relevantSkillTools: skillIndex,
       strict: strictSchemas,
+      mode: ctx?.mode,
     });
     if (Array.isArray(narrowed) && narrowed.length > 0 && narrowed.length < tools.length) {
       const totalBefore = tools.length;

@@ -600,7 +600,7 @@ function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, web
 }
 // Words that mean a task has several steps or parts: planning and delegation stay offered.
 const PLANNING_SIGNAL = /\b(plan|planning|steps?|step by step|refactor|migrate|migration|across|every|all (?:the )?files|several|multiple|many|feature|implement|build|project|parallel|subagents?|delegate|investigate|audit|review|then|and then|todo|checklist)\b/i;
-export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, strict = false } = {}) {
+export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, strict = false, mode = null } = {}) {
   if (!Array.isArray(schemas)) return schemas;
   if (schemas.length <= NARROW_THRESHOLD) return schemas;
   const names = schemas.map((s) => s?.name).filter((n) => typeof n === 'string');
@@ -654,7 +654,8 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
   // request) wait behind load_tools. Anything that sounds multi-step keeps them.
   // Applied only once the cut itself is allowed; a subagent's own offer and a
   // task run's board (offered only to a run started for a task) are never trimmed.
-  if (!isSubagentOffer && String(message).length < 220 && !PLANNING_SIGNAL.test(message)) {
+  // Orchestrate's whole job is handing work out: it always keeps them.
+  if (!isSubagentOffer && mode !== 'orchestrate' && String(message).length < 220 && !PLANNING_SIGNAL.test(message)) {
     for (let i = filtered.length - 1; i >= 0; i--) if (filtered[i].name === 'todo_write' || filtered[i].name === 'subagent') filtered.splice(i, 1);
   }
   const saved =

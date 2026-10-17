@@ -320,9 +320,12 @@ struct ExpandedContent: View {
                 Usage(session: s)
             }
         } else if bridge.sessions.isEmpty {
-            HStack(spacing: 6) {
-                Text("Nothing running").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Ink.text)
-                Text("· type or talk to ox, or start it in a terminal").font(.system(size: 12)).foregroundStyle(Ink.muted).lineLimit(1)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    Text("Nothing running").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Ink.text)
+                    Text("· type or talk to ox, or start it in a terminal").font(.system(size: 12)).foregroundStyle(Ink.muted).lineLimit(1)
+                }
+                if let t = bridge.today { TodayMeter(today: t) }
             }
         } else {
             VStack(alignment: .leading, spacing: 7) {
@@ -403,6 +406,23 @@ struct Who: View {
             Text(name).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Ink.text).lineLimit(1)
             Text(label).font(.system(size: 12)).foregroundStyle(Ink.muted).lineLimit(1)
         }
+    }
+}
+
+/// Today's AI use at a glance (the usage meter in Coucou's widget gallery):
+/// tokens, runs, cost when the models are priced, and the model used most.
+struct TodayMeter: View {
+    let today: OxBridge.Today
+    var body: some View {
+        let tok = today.tokens >= 1_000_000 ? String(format: "%.2fM", Double(today.tokens) / 1e6)
+            : today.tokens >= 1000 ? String(format: "%.1fk", Double(today.tokens) / 1000) : "\(today.tokens)"
+        let cost = today.cost.map { $0 < 0.01 ? String(format: " · $%.4f", $0) : String(format: " · $%.2f", $0) } ?? ""
+        HStack(spacing: 6) {
+            Image(systemName: "gauge.with.dots.needle.33percent").font(.system(size: 10)).foregroundStyle(Ink.dim)
+            Text("Today \(tok) tokens · \(today.runs) run\(today.runs == 1 ? "" : "s")\(cost)\(today.topModel.isEmpty ? "" : " · mostly \(today.topModel)")")
+                .font(.system(size: 11)).foregroundStyle(Ink.dim).lineLimit(1).truncationMode(.tail)
+        }
+        .accessibilityLabel("Today: \(today.tokens) tokens over \(today.runs) runs")
     }
 }
 

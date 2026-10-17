@@ -60,7 +60,9 @@ struct AgentSession: Identifiable, Equatable {
     var buddyReply = ""
 
     var project: String {
-        cwd.isEmpty ? "ox" : (cwd as NSString).lastPathComponent
+        // A run from the app has no folder of its own: it is named by its bot.
+        if cwd.isEmpty, id.hasPrefix("app:"), !bot.isEmpty { return bot }
+        return cwd.isEmpty ? "ox" : (cwd as NSString).lastPathComponent
     }
 }
 
@@ -170,6 +172,29 @@ final class OxBridge: ObservableObject {
     /// app server says where it is (~/.ox/serve.json) and reports every run on
     /// /ox/live, the same board its Office page shows. Read-only here.
     private var appPolling = false
+    private var usagePolledAt = Date.distantPast
+
+    /// Today's tokens across every surface (Settings › Usage in the app), for the
+    /// meter the idle island shows. Nil until the app server has answered.
+    struct Today: Equatable { let tokens: Int; let runs: Int; let cost: Double?; let topModel: String }
+    @Published private(set) var today: Today?
+
+    private func pollUsage(port: Int) {
+        guard Date().timeIntervalSince(usagePolledAt) > 30, let url = URL(string: "http://127.0.0.1:\(port)/ox/usage?days=1") else { return }
+        usagePolledAt = Date()
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 2
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let doc = data.flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }),
+                  let total = doc["total"] as? [String: Any] else { return }
+            let tokens = ((total["in"] as? Int) ?? 0) + ((total["out"] as? Int) ?? 0)
+            let top = ((doc["byModel"] as? [[String: Any]])?.first?["key"] as? String) ?? ""
+            let t = Today(tokens: tokens, runs: total["runs"] as? Int ?? 0, cost: total["cost"] as? Double, topModel: top)
+            DispatchQueue.main.async { self?.today = t }
+        }.resume()
+    }
+
     private func pollApp() {
         guard !appPolling else { return }
         let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/serve.json")
@@ -177,6 +202,7 @@ final class OxBridge: ObservableObject {
               let doc = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let port = doc["port"] as? Int,
               let url = URL(string: "http://127.0.0.1:\(port)/ox/live") else { dropAppSessions(keep: []); return }
+        pollUsage(port: port)
         appPolling = true
         var req = URLRequest(url: url)
         req.timeoutInterval = 1.2

@@ -174,6 +174,33 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-office"), i + 1 < Comm
     exit(0)
 }
 
+// Dev aid: `OxIsland --render-meter <dir>` draws the idle card with today's usage meter.
+if let i = CommandLine.arguments.firstIndex(of: "--render-meter"), i + 1 < CommandLine.arguments.count {
+    let dir = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    MainActor.assumeIsolated {
+        let view = Card(wash: nil) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    Text("Nothing running").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Ink.text)
+                    Text("· type or talk to ox, or start it in a terminal").font(.system(size: 12)).foregroundStyle(Ink.muted).lineLimit(1)
+                }
+                TodayMeter(today: .init(tokens: 40368, runs: 16, cost: nil, topModel: "qwen2.5:1.5b"))
+            }
+        }
+        .frame(width: 560, height: 70)
+        .padding(10)
+        .background(Color.black)
+        let r = ImageRenderer(content: view)
+        r.scale = 2
+        if let img = r.nsImage, let tiff = img.tiffRepresentation,
+           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: dir.appendingPathComponent("meter.png"))
+        }
+    }
+    exit(0)
+}
+
 // Dev aid: `OxIsland --render-reactions <dir>` draws the touch reactions
 // (art/CHARACTERS.md): the bull's bubbles and doze, and poked helpers.
 if let i = CommandLine.arguments.firstIndex(of: "--render-reactions"), i + 1 < CommandLine.arguments.count {
