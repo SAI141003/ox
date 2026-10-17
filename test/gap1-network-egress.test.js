@@ -518,7 +518,8 @@ test('honesty: the capability probe reflects this machine, and the docs say what
   assert.ok(!/ox cannot yet enforce egress at the\s+OS layer/.test(web), 'the stale "cannot enforce" note is gone');
   const sb = fs.readFileSync(new URL('../src/sandbox.js', import.meta.url), 'utf8');
   assert.match(sb, /NOT enforceable\. bwrap has no host or port allow-list/);
-  const readme = fs.readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  // The full reference (it moved from README.md when the README became the front page).
+  const readme = fs.readFileSync(new URL('../docs/REFERENCE.md', import.meta.url), 'utf8');
   assert.ok(!/but that refusal is a\s+userspace check against the profile setting, \*\*not\*\* OS-enforced egress control/.test(readme), 'README no longer claims egress is not OS-enforced at all');
   assert.match(readme, /network_allow/);
   const comp = fs.readFileSync(new URL('../docs/COMPETITIVE.md', import.meta.url), 'utf8');

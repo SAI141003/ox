@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ox setup — one command to install and verify everything
-# Usage: curl -fsSL https://raw.githubusercontent.com/<YOUR_ORG>/ox/main/ox-setup.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/SAI141003/ox/main/ox-setup.sh | bash
 # Or:    bash ox-setup.sh
-# Env:   OX_REPO=https://github.com/<YOUR_ORG>/ox.git  (override clone URL)
+# Env:   OX_REPO=https://github.com/SAI141003/ox.git  (override clone URL)
 #        OPENROUTER_API_KEY=sk-or-...                 (provide key non-interactively)
 
 set -euo pipefail
 
 OX_DIR="${OX_DIR:-$HOME/ox}"
-OX_REPO="${OX_REPO:-https://github.com/<YOUR_ORG>/ox.git}"
+OX_REPO="${OX_REPO:-https://github.com/SAI141003/ox.git}"
 
 echo "=== ox setup ==="
 echo ""
@@ -19,7 +19,10 @@ if ! command -v node &>/dev/null; then
   if command -v brew &>/dev/null; then
     brew install node
   else
-    curl -fsSL https://nodejs.org/install.sh | bash
+    # No package manager we can drive: point to the official installer
+    # instead of piping a script from the internet into a shell.
+    echo "Install Node.js 18 or later from https://nodejs.org (or your package manager), then run this again."
+    exit 1
   fi
 fi
 echo "Node: $(node --version)"

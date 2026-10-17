@@ -36,7 +36,18 @@ function copyOx(dest) {
   }
 }
 
+// The Node copied into a download must run on any Mac: a Homebrew Node loads a
+// dozen libraries from /opt/homebrew and would start nowhere else (a 14 MB
+// "OX.app" was built that way once). The official build links only system ones.
+function assertPortableNode() {
+  const r = spawnSync('otool', ['-L', process.execPath], { encoding: 'utf8' });
+  if (r.status !== 0) return;
+  const foreign = r.stdout.split('\n').slice(1).map((l) => l.trim().split(' ')[0]).filter((l) => l && !/^\/(?:System|usr\/lib)\//.test(l));
+  if (foreign.length) throw new Error(`this Node (${process.execPath}) depends on ${foreign.slice(0, 3).join(', ')}${foreign.length > 3 ? '…' : ''}: it would not run on another Mac. Run this script with the official Node from nodejs.org (or nvm, volta).`);
+}
+
 function packageMac() {
+  assertPortableNode();
   const pkg = path.join(ROOT, 'desktop', 'island');
   run('swift', ['build', '-c', 'release'], { cwd: pkg });
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-pkg-'));
