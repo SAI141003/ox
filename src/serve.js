@@ -1280,6 +1280,43 @@ async function flowsRoute(b) {
   }
 }
 
+// The task board (src/tasks.js, Paperclip's model): every task with whether
+// it is ready, who holds it, and the activity log; add / move / run / review.
+export async function tasksView() {
+  const T = await import('./tasks.js');
+  const ready = new Set(T.readyTasks().map((t) => t.id));
+  const tasks = T.listTasks().map((t) => ({ ...t, ready: ready.has(t.id), owner: T.taskOwner(t.id)?.owner ?? null }));
+  return { tasks, activity: T.taskActivity({ limit: 40 }).reverse(), statuses: T.STATUSES };
+}
+async function tasksRoute(b) {
+  const T = await import('./tasks.js');
+  const id = String(b.id ?? '');
+  const by = { actor: 'you (app)' };
+  switch (b.action) {
+    case 'add': {
+      const title = String(b.title ?? '').trim();
+      if (!title) throw new Error('a task needs a title');
+      const budget = b.budgetUsd === '' || b.budgetUsd == null ? null : Number(b.budgetUsd);
+      return { task: T.addTask({ title: title.slice(0, 200), description: String(b.description ?? '').slice(0, 4000), review: b.review === true, budgetUsd: Number.isFinite(budget) ? budget : null, blockedBy: Array.isArray(b.blockedBy) ? b.blockedBy : [], parentId: b.parentId || null }, by) };
+    }
+    case 'move': {
+      if (!T.STATUSES.includes(b.status)) throw new Error(`status is one of ${T.STATUSES.join(', ')}`);
+      return { task: T.updateTask(id, { status: b.status }, by) };
+    }
+    case 'approve': return T.approveTask(id, by);
+    case 'reject': return T.rejectTask(id, { ...by, reason: String(b.reason ?? 'sent back from the app') });
+    case 'release': return T.releaseTask(id, by);
+    case 'delete': return { ok: T.deleteTask(id, by) };
+    case 'run': {
+      // An ox run claims it and works on it; the board shows it as it goes.
+      if (!T.getTask(id)) throw new Error('no such task');
+      T.runTask(id, { owner: 'ox (app)' }).catch(() => {});
+      return { started: true };
+    }
+    default: throw new Error('action is add, move, approve, reject, release, delete or run');
+  }
+}
+
 // A flow's webhook: POST /ox/flows/hook/<id>?secret=<its secret>; the JSON body is {{input}}.
 async function flowHook(req, res, m) {
   const F = await import('./flows.js');
@@ -1396,6 +1433,8 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/connected\/?$/, handler: appRoute(connectedRoute) },
   { method: 'GET', pattern: /^\/ox\/plan-usage\/?$/, handler: appRoute(async () => ({ plans: (await import('./plan-usage.js')).planUsage() })) },
   { method: 'POST', pattern: /^\/ox\/flows\/hook\/([a-z0-9-]{1,40})\/?$/, handler: flowHook },
+  { method: 'GET', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksView) },
+  { method: 'POST', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksRoute) },
   { method: 'GET', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async () => (await appApi()).scheduledView()) },
   { method: 'POST', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async (b) => { const a = await appApi(); return b.action === 'add' ? a.scheduleAdd({ prompt: b.prompt, when: b.when, enabled: true }) : a.setScheduleEnabled(String(b.id ?? ''), b.enabled); }) },
   { method: 'GET', pattern: /^\/ox\/sessions\/?$/, handler: appRoute(async () => (await appApi()).sessionsView()) },

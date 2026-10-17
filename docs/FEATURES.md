@@ -152,7 +152,7 @@ Updated October 16 2026.
 | 12.3 | Marketplace with every skill (Karpathy's; languages and stacks: Java, Python, Go, Spring, SQL Server, Postgres, Oracle, MongoDB, Redis, React, Angular, Azure, AWS, GCP, Docker, Kubernetes, Kafka, gRPC, GraphQL, Terraform…; markets, finance, other professions) | ~ | 329 plugins, 30 GitHub skills listed (7.4); far from everything |
 | 12.4 | ox's own deep learning (Andrew Ng's course ideas) | ✗ | To be scoped: what it should learn, from what data |
 | 12.6 | ox evolve: ox improves ox, kept only when measured better | ✓ | Wired as ox evolve list, failures, diff, accept, reject; its test found crash recording had never saved anything (fixed). A full attempt has not been run yet |
-| 12.5 | Paperclip's task board in the app | ~ | Board, claims, blockers, budgets, review gates exist in ox's engine (src/tasks.js); no page in the app |
+| 12.5 | Paperclip's task board in the app | ✓ | Sidebar › Task board: To do, Working, In review, Blocked, Done; add with a budget and a review step; Run with ox, Approve, Send back, Release, Reopen; blockers shown; activity log. Tested on a throwaway server |
 
 ## 13. From the October 16 evening videos and images (and Devin)
 

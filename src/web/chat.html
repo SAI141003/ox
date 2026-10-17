@@ -421,6 +421,21 @@
   .card .d { font-size: 12px; color: var(--dim); display: flex; gap: 8px; flex-wrap: wrap; }
   .page { flex: 1; overflow-y: auto; padding: 28px 36px; }
   .fl-steps { display: grid; gap: 0; margin: 10px 0; }
+  .tk-new { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .tk-board { display: grid; grid-template-columns: repeat(5, minmax(180px, 1fr)); gap: 12px; margin-top: 16px; overflow-x: auto; padding-bottom: 4px; }
+  .tk-col { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px; min-height: 120px; display: flex; flex-direction: column; gap: 8px; }
+  .tk-head { display: flex; justify-content: space-between; font-weight: 600; font-size: 13px; padding: 2px 4px 6px; }
+  .tk-card { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .tk-card b { font-weight: 600; font-size: 13.5px; line-height: 1.35; }
+  .tk-desc { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+  .tk-meta { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tk-tag { font-size: 11px; padding: 2px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .tk-tag.live { color: var(--ok, #3ecf8e); border-color: currentColor; }
+  .tk-tag.warn { color: var(--warn, #e5a50a); border-color: currentColor; }
+  .tk-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tk-actions .btn.small { padding: 4px 9px; font-size: 12px; }
+  .tk-empty { padding: 8px 4px; }
+  @media (max-width: 900px) { .tk-board { grid-template-columns: repeat(5, 220px); } }
   .fl-step { display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: start; }
   .fl-step .rail { display: grid; justify-items: center; height: 100%; }
   .fl-step .num { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 11.5px; font-weight: 600; background: var(--raise); border: 1px solid var(--line2); }
@@ -452,6 +467,7 @@
   .lounge-h { margin: 16px 2px 8px; }
   .office-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; background: var(--text); color: var(--bg); font-size: 11px; font-weight: 600; display: grid; place-items: center; }
   .page-inner { max-width: 820px; margin: 0 auto; }
+  .page-inner.wide { max-width: 1280px; }
 
   /* ---------- settings */
   .ovl { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 20; padding: 34px; }
@@ -549,6 +565,7 @@
         <button data-view="msg"><span data-i="chat"></span><span class="grow">Messaging</span></button>
         <button data-view="sched"><span data-i="clock"></span><span class="grow">Scheduled</span></button>
         <button data-view="flows"><span data-i="flow"></span><span class="grow">Automations</span></button>
+        <button data-view="tasks"><span data-i="list"></span><span class="grow">Task board</span></button>
         <button data-view="office"><span data-i="office"></span><span class="grow">Office</span><span class="office-count" id="office-count" hidden></span></button>
       </div>
       <label class="search"><span data-i="search"></span><input id="q" placeholder="Search sessions…" aria-label="Search sessions"><span class="kbd">⌘K</span></label>
@@ -672,6 +689,7 @@
     </div></div></section>
     <section class="view" id="v-bots"><div class="page"><div class="page-inner" style="max-width:1100px" id="bots"></div></div></section>
     <section class="view" id="v-flows"><div class="page"><div class="page-inner" id="flows"></div></div></section>
+    <section class="view" id="v-tasks"><div class="page"><div class="page-inner wide" id="tasks"></div></div></section>
     <section class="view" id="v-sched"><div class="page"><div class="page-inner" id="sched"></div></div></section>
   </main>
   <div class="sizer" id="sizer-pane" role="separator" aria-orientation="vertical" aria-label="Resize the side panel" tabindex="0" title="Drag to resize · double-click to reset" hidden></div>
@@ -741,6 +759,7 @@
     scope: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM20 20l-4-4M8 12l2-2 2 2 3-3',
     check: 'M5 12.5 10 17 19 7', chev: 'M9 6l6 6-6 6',
     office: 'M3 20h18M5 20v-7h14v7M8 13V9h8v4M9 9V6h6v3',
+    list: 'M4 5h4v4H4zM4 15h4v4H4zM11 7h9M11 17h9',
     flow: 'M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM6 9v3a3 3 0 0 0 3 3h6',
  open: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6', back: 'M15 18l-6-6 6-6',
   };
@@ -873,7 +892,7 @@
     view = v;
     document.querySelectorAll('.view').forEach((el) => el.classList.toggle('on', el.id === `v-${v}`));
     document.querySelectorAll('.nav [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
-    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : v === 'flows' ? 'Automations' : (readonly ? readonly.title : convo()?.title || 'New session');
+    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : v === 'flows' ? 'Automations' : v === 'tasks' ? 'Task board' : (readonly ? readonly.title : convo()?.title || 'New session');
     document.body.classList.remove('nav');
     if (v === 'caps') loadCaps();
     if (v === 'msg') loadMessaging();
@@ -883,6 +902,7 @@
     if (v === 'studio') loadStudio();
     if (v === 'office') pollOffice();
     if (v === 'flows') loadFlows();
+    if (v === 'tasks') loadTasks();
     if (v === 'map') loadMap();
     renderLists();
   }
@@ -1681,7 +1701,7 @@
     $('pane2').hidden = false; $('sizer-pane').hidden = false;
     paintIcons($('pane2'));
     if (view === v) show('chat'); else renderLists();
-    if (v === 'studio') loadStudio(); else if (v === 'map') loadMap(); else if (v === 'office') pollOffice(); else if (v === 'flows') loadFlows(); else if (v === 'sched') loadScheduled(); else if (v === 'bots') loadBots();
+    if (v === 'studio') loadStudio(); else if (v === 'map') loadMap(); else if (v === 'office') pollOffice(); else if (v === 'flows') loadFlows(); else if (v === 'tasks') loadTasks(); else if (v === 'sched') loadScheduled(); else if (v === 'bots') loadBots();
     prefs.beside = v; savePrefs();
   }
   function closeBeside(save = true) {
@@ -2446,6 +2466,66 @@ files: [src/billing/**]
     }));
   }
 
+  // ---------- Task board (src/tasks.js): Paperclip's model, on a page. A task
+  // has one owner at a time, waits for its blockers, can carry a budget, and
+  // with review on it waits for you before it counts as done.
+  const TASK_COLS = [
+    ['To do', (t) => t.status === 'pending'],
+    ['Working', (t) => t.status === 'running'],
+    ['In review', (t) => t.status === 'in_review'],
+    ['Blocked', (t) => t.status === 'blocked' || t.status === 'failed'],
+    ['Done', (t) => t.status === 'done' || t.status === 'cancelled'],
+  ];
+  let tasksTimer = null;
+  async function loadTasks() {
+    const el = $('tasks');
+    let T;
+    try { T = await getJson('/ox/tasks'); } catch (e) { el.innerHTML = `<div class="empty-note">${esc(e.message)}</div>`; return; }
+    const byId = Object.fromEntries(T.tasks.map((t) => [t.id, t]));
+    const card = (t) => {
+      const blockers = (t.blockedBy || []).filter((b) => byId[b]?.status !== 'done');
+      const money = t.budgetUsd != null ? `<span class="tk-tag">$${Number(t.spentUsd || 0).toFixed(2)} / $${Number(t.budgetUsd).toFixed(2)}</span>` : '';
+      const who = t.owner ? `<span class="tk-tag live">${esc(t.owner)}</span>` : t.assignee ? `<span class="tk-tag">${esc(t.assignee)}</span>` : '';
+      const actions = [
+        t.status === 'pending' && t.ready ? `<button class="btn primary small" data-tk="run" data-id="${esc(t.id)}">Run with ox</button>` : '',
+        t.status === 'in_review' ? `<button class="btn primary small" data-tk="approve" data-id="${esc(t.id)}">Approve</button><button class="btn ghost small" data-tk="reject" data-id="${esc(t.id)}">Send back</button>` : '',
+        t.owner ? `<button class="btn ghost small" data-tk="release" data-id="${esc(t.id)}">Release</button>` : '',
+        ['blocked', 'failed', 'cancelled', 'done'].includes(t.status) ? `<button class="btn ghost small" data-tk="move" data-st="pending" data-id="${esc(t.id)}">Reopen</button>` : '',
+        `<button class="btn ghost small" data-tk="delete" data-id="${esc(t.id)}" title="Delete">${icon('trash')}</button>`,
+      ].join('');
+      return `<div class="tk-card"><b>${esc(t.title)}</b>${t.description ? `<div class="dim small tk-desc">${esc(t.description)}</div>` : ''}
+        <div class="tk-meta">${who}${money}${t.review ? '<span class="tk-tag">review</span>' : ''}${blockers.length ? `<span class="tk-tag warn">waits for ${blockers.map((b) => esc(byId[b]?.title || b)).join(', ')}</span>` : ''}</div>
+        <div class="tk-actions">${actions}</div></div>`;
+    };
+    el.innerHTML = `
+      <div class="shead">${icon('list')}Task board</div>
+      <p class="sdesc">Work for you and your agents, Paperclip-style: one owner per task at a time, tasks that wait for others, a spending cap, and a review step before something counts as done. Agents pick tasks up with their <code>task_board</code> tool; you can start one here.</p>
+      <div class="box tk-new"><input class="field" id="tk-title" placeholder="What needs doing" style="flex:2">
+        <input class="field" id="tk-budget" placeholder="Budget $ (optional)" inputmode="decimal" style="width:150px">
+        <label class="dim small" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="tk-review"> review before done</label>
+        <button class="btn primary" id="tk-add">Add task</button>
+        <textarea class="field" id="tk-desc" rows="2" placeholder="Details for whoever picks it up (optional)" style="flex-basis:100%;resize:vertical"></textarea></div>
+      <div class="tk-board">${TASK_COLS.map(([name, f]) => { const list = T.tasks.filter(f); return `<div class="tk-col"><div class="tk-head">${name}<span class="dim">${list.length}</span></div>${list.map(card).join('') || '<div class="dim small tk-empty">Nothing here</div>'}</div>`; }).join('')}</div>
+      <div class="shead" style="margin-top:28px">Activity</div>
+      <div class="box">${T.activity.length ? T.activity.map((a) => `<div class="small" style="display:flex;gap:10px;padding:3px 0"><span class="dim" style="width:70px;flex:none">${ago(Date.parse(a.at))}</span><span><b>${esc(a.by || 'ox')}</b> ${esc(a.action)} ${esc(byId[a.task]?.title || a.title || a.task || '')}${a.reason ? ` <span class="dim">(${esc(a.reason)})</span>` : ''}</span></div>`).join('') : '<div class="dim small">Nothing yet. Add a task above.</div>'}</div>`;
+    $('tk-add').onclick = async () => {
+      try { await postJson('/ox/tasks', { action: 'add', title: $('tk-title').value, description: $('tk-desc').value, budgetUsd: $('tk-budget').value.trim(), review: $('tk-review').checked }); toast('Task added'); loadTasks(); }
+      catch (e) { toast(e.message); }
+    };
+    el.querySelectorAll('[data-tk]').forEach((b) => (b.onclick = async () => {
+      const action = b.dataset.tk;
+      if (action === 'delete' && !(await askSure('Delete this task?'))) return;
+      try {
+        await postJson('/ox/tasks', { action, id: b.dataset.id, status: b.dataset.st });
+        toast(action === 'run' ? 'ox is working on it' : action === 'approve' ? 'Approved: done' : action === 'reject' ? 'Sent back' : 'Updated');
+        loadTasks();
+      } catch (e) { toast(e.message); }
+    }));
+    // While anything is being worked on, the board follows it.
+    clearTimeout(tasksTimer);
+    if (T.tasks.some((t) => t.status === 'running' || t.owner)) tasksTimer = setTimeout(() => { if (document.querySelector('#v-tasks.on, #v-tasks.active') || $('tasks').offsetParent) loadTasks(); }, 4000);
+  }
+
   // ---------- Automations (ox Flows): describe it, check it, save it, run it
   let flowsData = null, flowDraft = null, flowProblems = [];
   const FLOW_WHAT = (st) => st.type === 'http' ? `${(st.method || 'GET').toUpperCase()} ${st.url}` : st.type === 'ask' ? st.prompt : st.type === 'extract' ? `${st.from} → ${st.path}` : st.type === 'if' ? `${st.value} ${st.op} ${st.to ?? ''}` : st.type === 'notify' ? st.text : st.type === 'write' ? `${st.path}${st.append ? ' (append)' : ''}` : st.command;
@@ -2580,13 +2660,19 @@ files: [src/billing/**]
       if (sec === 'general') {
         const st = await getJson('/ox/settings');
         if (!caps) await loadCaps().catch(() => {});
-        el.innerHTML = `${mobileBack}<div class="sblock"><div class="shead">${icon('monitor')}OX Island</div><p class="sdesc">ox in your notch: what each run is doing, approvals to answer, and your buddy to talk to (hold ⌃⌥Space).</p>
+        el.innerHTML = `${mobileBack}<div class="sblock"><div class="shead">${icon('monitor')}OX Island</div><p class="sdesc">ox in your notch: what each run is doing, approvals to answer, and your buddy to talk to (hold Fn, or ⌃⌥Space).</p>
           ${row('OX Island', st.island.enabled ? (st.island.running ? 'On, in your notch now' : 'On. It starts with your next run, or press Restart') : `Off. ${st.island.platform === 'darwin' ? 'Turn it on and ox lives in your notch: runs, approvals, your voice' : 'Turn it on and a slim bar shows ox at the top of the screen'}`, `<span style="display:flex;gap:8px;align-items:center">${st.island.enabled ? '<button class="btn ghost" data-island-restart>Restart</button>' : ''}${sw('s-island', st.island.enabled)}</span>`)}</div>
           <div class="sblock"><div class="shead">${icon('chat')}Name</div><p class="sdesc">Call it whatever you like. It answers to this name when you say it while talking to it, in this app, the terminal, the island and your phone, and calls itself by it. Your agents keep their own names (rename them below).</p>
           ${row('Name', st.name === 'ox' ? 'The default' : `Was ox. Clear it to go back`, `<span style="display:flex;gap:6px"><input class="field" id="s-name" maxlength="24" style="width:160px" placeholder="ox"><button class="btn" id="s-name-save">Save</button></span>`)}
           ${(caps?.agents ?? []).map((a) => row(`Agent “${esc(a.name)}”`, esc(a.desc || a.mode || ''), `<span style="display:flex;gap:6px"><input class="field" data-ag-from="${esc(a.name)}" value="${esc(a.name)}" maxlength="48" style="width:160px"><button class="btn" data-ag-save="${esc(a.name)}">Rename</button></span>`)).join('')}</div>
           <div class="sblock"><div class="shead">${icon('bolt')}Model</div><p class="sdesc">The model ox uses everywhere (the terminal, this app, the island and your phone) unless you pick another for a session. Saved in ~/.ox/config.json.</p>
-          ${row('Default model', st.model.source.startsWith('auto') ? (st.model.configured ? `Your choice, ${esc(st.model.configured)}, cannot run here (no key or not signed in), so ox uses ${esc(st.model.defaultBot)}` : `Chosen for you: ${esc(st.model.defaultBot)}, the best model that can answer here`) : st.model.source === 'config' ? 'Your choice' : 'Nothing connected yet. Add a key in API keys, an account, or a local model', `<select id="s-model">${st.model.bots.map((b) => `<option value="${esc(b.id)}">${esc(b.id)}${b.ready ? '' : ' (no key)'}</option>`).join('')}</select>`)}</div>
+          ${row('Default model', st.model.source.startsWith('auto') ? (st.model.configured ? `Your choice, ${esc(st.model.configured)}, cannot run here (no key or not signed in), so ox uses ${esc(st.model.defaultBot)}` : `Chosen for you: ${esc(st.model.defaultBot)}, the best model that can answer here`) : st.model.source === 'config' ? 'Your choice' : 'Nothing connected yet. Add a key in API keys, an account, or a local model', (() => {
+            // The box shows what is chosen: your saved model, else the one ox uses.
+            const chosen = st.model.configured || st.model.defaultBot || '';
+            const list = st.model.bots.some((b) => b.id === chosen) || !chosen ? st.model.bots : [{ id: chosen, ready: !st.model.configured }, ...st.model.bots];
+            if (!list.length) return '<span class="dim small">None yet</span>';
+            return `<select id="s-model">${list.map((b) => `<option value="${esc(b.id)}"${b.id === chosen ? ' selected' : ''}>${esc(b.id)}${b.ready ? '' : ' (no key)'}</option>`).join('')}</select>`;
+          })())}</div>
           <div class="sblock"><div class="shead">${icon('chat')}Chat</div><p class="sdesc">How this app behaves. Kept in this browser.</p>
           ${row('Default mode', 'What new chats start in. Auto picks per message.', `<select id="s-mode">${['auto', 'code', 'ask', 'plan', 'debug', 'data', 'orchestrate'].map((m) => `<option value="${m}">${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}</select>`)}
           ${row('Send with', 'The other key adds a new line.', seg('sendKey', [['enter', 'Enter'], ['mod', `${MOD}+Enter`]], prefs.sendKey))}
@@ -2600,7 +2686,7 @@ files: [src/billing/**]
           try { await postJson('/ox/agents/rename', { from, to }); toast(`${from} is now ${to}`); caps = null; await loadCaps(); loadModels(); renderSection(); renderLists(); } catch (e) { toast(e.message); }
         }));
         $('s-model').value = st.model.defaultBot;
-        $('s-model').onchange = async () => { try { await postJson('/ox/settings', { defaultBot: $('s-model').value }); toast('Default model saved'); } catch (e) { toast(e.message); } };
+        if ($('s-model')) $('s-model').onchange = async () => { try { await postJson('/ox/settings', { defaultBot: $('s-model').value }); toast('Default model saved'); } catch (e) { toast(e.message); } };
         $('s-mode').value = store.get('ox.prefs', {}).defaultMode || 'auto';
         $('s-mode').onchange = () => { prefs.defaultMode = $('s-mode').value; savePrefs(); };
         $('s-follow').onchange = () => { prefs.followups = $('s-follow').checked; savePrefs(); };
