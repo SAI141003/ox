@@ -14,7 +14,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         writePresence()
         let buddy = bridge.buddy
-        BuddyHotKey.install(press: { buddy.startListening() }, release: { buddy.stopListening() })
+        let wake = bridge.wake
+        // The microphone is handed over, never shared: « OK ox » steps aside.
+        BuddyHotKey.install(press: { MainActor.assumeIsolated { wake.stop() }; buddy.startListening() },
+                            release: { buddy.stopListening(); DispatchQueue.main.asyncAfter(deadline: .now() + 6) { MainActor.assumeIsolated { wake.start() } } })
+        MainActor.assumeIsolated { bridge.dictation.install() }
         let panel = IslandPanel(bridge: bridge)
         panel.orderFrontRegardless()
         self.panel = panel

@@ -104,7 +104,7 @@ struct IslandRoot: View {
         }
         .frame(width: IslandLayout.panel.width, height: IslandLayout.panel.height, alignment: .top)
         .clipShape(IslandShape(width: s.w, height: s.h, corner: s.corner, top: s.top))
-        .contextMenu { IslandMenu(buddy: bridge.buddy) }
+        .contextMenu { IslandMenu(buddy: bridge.buddy, bridge: bridge) }
         // Drop files on the notch: they land on the shelf.
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             var urls: [URL] = []
@@ -358,6 +358,8 @@ struct Header: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Ink.muted)
                 .lineLimit(1)
+            VoiceStatusChip(bridge: bridge).padding(.leading, 8)
+            ForEach(bridge.gauges) { g in PlanGaugePill(gauge: g).padding(.leading, 8) }
             TrayButtons(bridge: bridge)
                 .padding(.leading, 10)
             MicButton(buddy: bridge.buddy)
@@ -408,6 +410,55 @@ struct Who: View {
             Text(name).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Ink.text).lineLimit(1)
             Text(label).font(.system(size: 12)).foregroundStyle(Ink.muted).lineLimit(1)
         }
+    }
+}
+
+/// What the microphone is doing: call notes (red, with the time), dictation
+/// (what it heard), « OK ox » listening (an ear), or a message for you.
+struct VoiceStatusChip: View {
+    @ObservedObject var bridge: OxBridge
+    var body: some View {
+        let notes = MainActor.assumeIsolated { bridge.notes }
+        let dict = MainActor.assumeIsolated { bridge.dictation }
+        let wake = MainActor.assumeIsolated { bridge.wake }
+        Group {
+            if notes.recording, let s = notes.startedAt {
+                TimelineView(.periodic(from: s, by: 1)) { ctx in
+                    let secs = Int(ctx.date.timeIntervalSince(s))
+                    HStack(spacing: 4) {
+                        Circle().fill(Ink.red).frame(width: 6, height: 6)
+                        Text(String(format: "notes %d:%02d", secs / 60, secs % 60)).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Ink.text)
+                    }
+                }
+                .help(notes.live.isEmpty ? "Recording call notes" : notes.live)
+                .onTapGesture { notes.stop() }
+            } else if dict.phase == .listening {
+                Text(dict.heard.isEmpty ? "dictating…" : "“\(dict.heard.suffix(28))”").font(.system(size: 10.5)).foregroundStyle(Ink.text).lineLimit(1)
+            } else if case .message(let m) = dict.phase {
+                Text(m).font(.system(size: 10.5)).foregroundStyle(Ink.muted).lineLimit(1).help(m)
+            } else if let m = notes.message {
+                Text(m).font(.system(size: 10.5)).foregroundStyle(Ink.muted).lineLimit(1).help(m).onTapGesture { notes.message = nil }
+            } else if wake.listening {
+                Image(systemName: "ear").font(.system(size: 10)).foregroundStyle(Ink.dim).help("Listening for “OK ox” (on this Mac)")
+            }
+        }
+    }
+}
+
+/// One plan's usage (Coucou's gauge): green under 50 %, amber to 80 %, red past it.
+struct PlanGaugePill: View {
+    let gauge: OxBridge.PlanGauge
+    var body: some View {
+        let tint = gauge.percent >= 80 ? Ink.red : gauge.percent >= 50 ? Ink.amber : Ink.green
+        HStack(spacing: 4) {
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.12)).frame(width: 22, height: 4)
+                Capsule().fill(tint).frame(width: max(2, 22 * min(1, gauge.percent / 100)), height: 4)
+            }
+            Text("\(Int(gauge.percent.rounded()))%").font(.system(size: 10, weight: .medium)).foregroundStyle(Ink.muted)
+        }
+        .help("\(gauge.label): \(Int(gauge.percent.rounded()))% of the \(gauge.window) limit used\(gauge.resetsAt.map { ", resets " + $0.formatted(date: .abbreviated, time: .shortened) } ?? "")")
+        .accessibilityLabel("\(gauge.label) plan, \(Int(gauge.percent.rounded())) percent used")
     }
 }
 

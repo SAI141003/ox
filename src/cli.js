@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4658,6 +4658,39 @@ async function runSubcommand(cmd, args) {
       console.log(SUB_USAGE.hf); process.exitCode = 2;
       return;
     }
+    case 'dictionary': {
+      // Words dictation gets wrong, and snippets (src/dictionary.js; the island uses it too).
+      const D = await import('./dictionary.js');
+      const d = D.loadDictionary();
+      const [verb = 'list', ...rest] = args;
+      const usage = 'usage: ox dictionary list | add "<heard>" "<meant>" | snippet "<phrase>" "<text>" | remove "<word>" | test "<sentence>"';
+      if (verb === 'list') {
+        const r = Object.entries(d.replace), s = Object.entries(d.snippets);
+        if (!r.length && !s.length) { console.log(`nothing yet. ${usage}`); return; }
+        for (const [a, b] of r) console.log(`  ${a} → ${b}`);
+        for (const [a, b] of s) console.log(`  ${c.dim('snippet')} ${a} → ${b.length > 60 ? `${b.slice(0, 57)}…` : b}`);
+        console.log(c.dim(`  ${D.DICT_FILE()}`));
+        return;
+      }
+      if ((verb === 'add' || verb === 'snippet') && rest.length >= 2) {
+        const [from, ...to] = rest;
+        (verb === 'add' ? d.replace : d.snippets)[from.trim()] = to.join(' ').trim();
+        D.saveDictionary(d);
+        console.log(`${verb === 'add' ? 'replace' : 'snippet'}: ${from.trim()} → ${to.join(' ').trim()}`);
+        return;
+      }
+      if (verb === 'remove' && rest[0]) {
+        const k = rest.join(' ').trim();
+        const had = k in d.replace || k in d.snippets;
+        delete d.replace[k]; delete d.snippets[k];
+        D.saveDictionary(d);
+        console.log(had ? `removed ${k}` : `no entry ${k}`);
+        return;
+      }
+      if (verb === 'test' && rest.length) { console.log(D.applyDictionary(rest.join(' '), d)); return; }
+      process.stderr.write(`${usage}\n`); process.exitCode = 2;
+      return;
+    }
     case 'flow':
     case 'flows': {
       // ox Flows: automations like n8n's, native (src/flows.js).
@@ -4803,6 +4836,16 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'usage': {
+      if (args[0] === 'plans') {
+        // How much of each plan you pay for is used (src/plan-usage.js).
+        const P = await import('./plan-usage.js');
+        for (const p of P.planUsage()) {
+          if (!p.windows.length) { console.log(`${c.bold(p.label)}  ${c.dim(p.missing ?? 'no data')}`); continue; }
+          const w = p.windows.map((x) => `${x.name} ${Math.round(x.usedPercent)}%${x.resetsAt ? c.dim(` (resets ${new Date(x.resetsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })})`) : ''}`).join('  ·  ');
+          console.log(`${c.bold(p.label)}${p.plan ? c.dim(` ${p.plan} plan`) : ''}  ${w}${p.reached ? c.red(`  limit reached (${p.reached})`) : ''}`);
+        }
+        return;
+      }
       // Where the tokens went (src/usage-log.js).
       const { summarize } = await import('./usage-log.js');
       const di = args.indexOf('--days');

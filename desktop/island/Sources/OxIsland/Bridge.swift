@@ -89,6 +89,10 @@ final class OxBridge: ObservableObject {
     let focus = FocusTimer()
     let clips = ClipHistory()
     let player = NowPlaying()
+    /// Dictation anywhere (⌃⌥D), « OK ox », call notes.
+    let dictation: Dictation = MainActor.assumeIsolated { Dictation() }
+    let wake: WakeWord = MainActor.assumeIsolated { WakeWord() }
+    let notes: Notetaker = MainActor.assumeIsolated { Notetaker() }
     private var traySinks = Set<AnyCancellable>()
 
     var pendingSession: AgentSession? { sessions.first { $0.pending != nil } }
@@ -118,6 +122,24 @@ final class OxBridge: ObservableObject {
         clips.start()
         player.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &traySinks)
         player.start()
+        MainActor.assumeIsolated {
+            for o in [dictation.objectWillChange.eraseToAnyPublisher(), wake.objectWillChange.eraseToAnyPublisher(), notes.objectWillChange.eraseToAnyPublisher()] {
+                o.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &traySinks)
+            }
+            dictation.willListen = { [weak self] in self?.wake.stop() }
+            notes.willListen = { [weak self] in self?.wake.stop() }
+            dictation.didFinish = { [weak self] in DispatchQueue.main.asyncAfter(deadline: .now() + 2) { MainActor.assumeIsolated { self?.wake.start() } } }
+            wake.micBusy = { [weak self] in
+                guard let self else { return true }
+                return self.buddy.phase == .listening || self.dictation.phase == .listening || self.notes.recording
+            }
+            // What was asked after « OK ox » goes where ⌃⌥Space goes: island commands, a live run, or the chat.
+            wake.onCommand = { [weak self] text in
+                guard let self else { return }
+                if self.buddy.send?(text, [], nil) != true { self.buddy.speak("Start ox in a terminal, then ask me again.") }
+            }
+            wake.start()
+        }
         MainActor.assumeIsolated {
             buddy.send = { [weak self] text, shots, audio in
                 guard let self else { return false }
@@ -205,6 +227,30 @@ final class OxBridge: ObservableObject {
     @Published private(set) var connected: [ConnectedTool] = []
     private var connectedPolledAt = Date.distantPast
 
+    /// Plan usage (Coucou's gauges): the most-used window of each plan.
+    struct PlanGauge: Identifiable, Equatable { let id: String; let label: String; let window: String; let percent: Double; let resetsAt: Date? }
+    @Published private(set) var gauges: [PlanGauge] = []
+    private var gaugesPolledAt = Date.distantPast
+
+    private func pollGauges(port: Int) {
+        guard Date().timeIntervalSince(gaugesPolledAt) > 60, let url = URL(string: "http://127.0.0.1:\(port)/ox/plan-usage") else { return }
+        gaugesPolledAt = Date()
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 3
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let doc = data.flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }),
+                  let plans = doc["plans"] as? [[String: Any]] else { return }
+            let gs = plans.compactMap { p -> PlanGauge? in
+                guard let id = p["id"] as? String, let windows = p["windows"] as? [[String: Any]], !windows.isEmpty else { return nil }
+                let top = windows.max { (($0["usedPercent"] as? Double) ?? 0) < (($1["usedPercent"] as? Double) ?? 0) } ?? windows[0]
+                let reset = (top["resetsAt"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
+                return PlanGauge(id: id, label: id == "codex" ? "ChatGPT" : "Claude", window: top["name"] as? String ?? "", percent: (top["usedPercent"] as? Double) ?? 0, resetsAt: reset)
+            }
+            DispatchQueue.main.async { self?.gauges = gs }
+        }.resume()
+    }
+
     private func pollConnected(port: Int) {
         guard Date().timeIntervalSince(connectedPolledAt) > 60, let url = URL(string: "http://127.0.0.1:\(port)/ox/connected") else { return }
         connectedPolledAt = Date()
@@ -231,6 +277,7 @@ final class OxBridge: ObservableObject {
               let url = URL(string: "http://127.0.0.1:\(port)/ox/live") else { dropAppSessions(keep: []); return }
         pollUsage(port: port)
         pollConnected(port: port)
+        pollGauges(port: port)
         appPolling = true
         var req = URLRequest(url: url)
         req.timeoutInterval = 1.2

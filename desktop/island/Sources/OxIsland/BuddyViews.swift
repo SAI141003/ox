@@ -102,6 +102,9 @@ struct IslandMenu: View {
     @ObservedObject var buddy: Buddy
     @AppStorage("buddy.naturalVoice") private var naturalVoice = true
     @AppStorage("island.size") private var islandSize = "standard"
+    @AppStorage("dictation.enabled") private var dictationOn = true
+    @AppStorage("wake.enabled") private var wakeOn = false
+    var bridge: OxBridge? = nil
     @AppStorage("island.autoClose") private var autoClose = 6.0
     var body: some View {
         Button(buddy.phase == .listening ? "Stop listening" : "Talk to ox (⌃⌥Space)") { buddy.toggle() }
@@ -109,6 +112,12 @@ struct IslandMenu: View {
             ForEach(AvatarKind.allCases) { Text($0.title).tag($0) }
         }
         Toggle("Natural voice (Kokoro)", isOn: $naturalVoice)
+        Divider()
+        Toggle("Dictation anywhere (hold ⌃⌥D)", isOn: $dictationOn)
+        Toggle("Listen for “OK ox”", isOn: Binding(get: { wakeOn }, set: { on in wakeOn = on; bridge?.wake.setEnabled(on) }))
+        Button(bridge?.notes.recording == true ? "Stop call notes" : "Record call notes (your microphone)") { bridge?.notes.toggle() }
+        Button("Edit my dictionary…") { NSWorkspace.shared.open(PersonalDictionary.ensureFile()) }
+        Divider()
         Picker("Island size", selection: $islandSize) {
             Text("Standard").tag("standard")
             Text("Compact").tag("compact")

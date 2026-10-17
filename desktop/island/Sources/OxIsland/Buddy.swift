@@ -388,26 +388,39 @@ extension Buddy: AVSpeechSynthesizerDelegate {
 // MARK: - hold-to-talk hotkey (⌃⌥Space), via Carbon: no Accessibility permission needed
 
 enum BuddyHotKey {
-    private static var ref: EventHotKeyRef?
-    private static var onPress: (() -> Void)?
-    private static var onRelease: (() -> Void)?
+    /// Several hold-keys (⌃⌥Space asks ox, ⌃⌥D dictates), told apart by their id.
+    private static var refs: [EventHotKeyRef?] = []
+    private static var actions: [UInt32: (press: () -> Void, release: () -> Void)] = [:]
+    private static var handlerInstalled = false
 
     static func install(press: @escaping () -> Void, release: @escaping () -> Void) {
-        onPress = press
-        onRelease = release
-        var types = [
-            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
-            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
-        ]
-        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
-            let kind = GetEventKind(event)
-            DispatchQueue.main.async {
-                if kind == UInt32(kEventHotKeyPressed) { BuddyHotKey.onPress?() } else { BuddyHotKey.onRelease?() }
-            }
-            return noErr
-        }, 2, &types, nil, nil)
-        let id = EventHotKeyID(signature: OSType(0x4F584259), id: 1) // 'OXBY'
-        RegisterEventHotKey(UInt32(kVK_Space), UInt32(controlKey | optionKey), id, GetApplicationEventTarget(), 0, &ref)
+        register(id: 1, keyCode: kVK_Space, modifiers: controlKey | optionKey, press: press, release: release)
+    }
+
+    static func register(id: UInt32, keyCode: Int, modifiers: Int, press: @escaping () -> Void, release: @escaping () -> Void) {
+        actions[id] = (press, release)
+        if !handlerInstalled {
+            handlerInstalled = true
+            var types = [
+                EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+                EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
+            ]
+            InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+                guard let event else { return noErr }
+                var hk = EventHotKeyID()
+                GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &hk)
+                let kind = GetEventKind(event)
+                let id = hk.id
+                DispatchQueue.main.async {
+                    guard let a = BuddyHotKey.actions[id] else { return }
+                    if kind == UInt32(kEventHotKeyPressed) { a.press() } else { a.release() }
+                }
+                return noErr
+            }, 2, &types, nil, nil)
+        }
+        var ref: EventHotKeyRef?
+        RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), EventHotKeyID(signature: OSType(0x4F584259), id: id), GetApplicationEventTarget(), 0, &ref) // 'OXBY'
+        refs.append(ref)
     }
 }
 
