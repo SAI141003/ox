@@ -40,11 +40,8 @@ test('operator: open_url validates scheme', async () => {
 
 test('operator: open_url runs with approval', async () => {
   const r = await import('../src/tools/operator.js').then(m => m.open_url({ url: 'https://backboard.io' }, ctx(true)));
-  if (HAS_CHROME || PLATFORM === 'linux') {
-    assert.match(r.content, /done/);
-  } else {
-    assert.ok(typeof r.content === 'string');
-  }
+  // A dry run under the test runner (src/tools/operator.js): nothing opens on the machine.
+  assert.match(r.content, /done \(dry run: would open https:\/\/backboard\.io\)/);
 });
 
 test('operator: open_path runs with approval', async () => {

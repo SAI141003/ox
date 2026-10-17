@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -123,7 +123,7 @@ function packageLinux() {
 function awaitImport(p) {
   return globalThis.__oxImports[p];
 }
-globalThis.__oxImports = { [path.join(ROOT, 'src', 'app.js')]: await import(path.join(ROOT, 'src', 'app.js')) };
+globalThis.__oxImports = { [path.join(ROOT, 'src', 'app.js')]: await import(pathToFileURL(path.join(ROOT, 'src', 'app.js')).href) }; // a URL: Windows paths are not import specifiers
 
 const built = process.platform === 'darwin' ? packageMac() : process.platform === 'win32' ? packageWindows() : packageLinux();
 const size = (fs.statSync(built).size / 1e6).toFixed(1);

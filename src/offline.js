@@ -173,7 +173,7 @@ export function parseIntent(text) {
   if ((m = /^(?:open|go to|visit|show me|pull up|launch)\s+(?:the\s+)?(.+?)(?:\s+(?:in|on|with|using)\s+(chrome|google chrome|safari|arc|firefox|brave|edge|microsoft edge|opera))?$/i.exec(t))) {
     const name = m[1].trim().toLowerCase().replace(/\.com$/, '');
     const browser = m[2] ? BROWSERS[m[2].toLowerCase()] : '';
-    if (SITE_NAMES[name] && (browser || !resolveApp(m[1]))) return { intent: 'url', url: SITE_NAMES[name], ...(browser ? { browser } : {}) };
+    if (SITE_NAMES[name] && (browser || !installedApps().has(String(m[1]).trim().toLowerCase()))) return { intent: 'url', url: SITE_NAMES[name], ...(browser ? { browser } : {}) };
     if (browser && SITE.test(m[1].trim())) return { intent: 'url', url: /^https?:\/\//i.test(m[1].trim()) ? m[1].trim() : `https://${m[1].trim()}`, browser };
   }
   // Opening an app: only an app that is on this Mac, named on its own. Anything

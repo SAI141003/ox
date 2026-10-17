@@ -1318,6 +1318,10 @@ async function cmdDoctor(args = []) {
   if (localFound.some(f => !localApproved.some(r => r.baseUrl === f.baseUrl))) {
     localNotes.push(c.dim('  approve with: ox local    revoke with: ox local forget <endpoint>'));
   }
+  // None at all (a fresh machine): the next step, not just the absence.
+  if (!localFound.length) {
+    localNotes.push(c.dim('  none found. For a model on this machine: install Ollama (https://ollama.com) or LM Studio, start it, then approve with: ox local'));
+  }
 // ---- the capability layer: the part doctor CONSUMES --------------------------
 //
 // Everything above this point prints and discards. That is what made doctor a

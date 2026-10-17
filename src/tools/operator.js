@@ -157,6 +157,12 @@ export async function notify(args = {}, ctx = {}) {
 }
 
 function runCmd(cmd, label, env = {}) {
+  // Under the test runner nothing is opened or typed on the real machine: every
+  // unit run used to open a browser tab and a Finder window on the owner's Mac,
+  // and failed on a CI runner with no desktop. OX_OPERATOR_DRY=1 does the same.
+  if (process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1') {
+    return Promise.resolve({ content: `done (dry run: would ${label})` });
+  }
   return new Promise((resolve) => {
     const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: { ...process.env, ...env } });
     let stdout = '';
