@@ -29,12 +29,17 @@ const BACKEND_PACKAGES = {
   'browser-harness': '@playwright/mcp',
   'stagehand': '@browserbasehq/stagehand-mcp',
   'camoufox': '@camoufox/mcp-server',
+  // Your own Chrome, signed in (Polar's idea: agents work inside the sites you
+  // already use). Playwright MCP's extension mode attaches to your tabs through
+  // its "Playwright MCP Bridge" Chrome extension, which you install and allow.
+  'my-browser': '@playwright/mcp',
 };
 
 const BACKEND_TOOL_HINTS = {
   'browser-harness': ['navigate', 'click', 'type', 'screenshot', 'wait', 'evaluate'],
   'stagehand': ['goto', 'click', 'type', 'screenshot', 'wait', 'act', 'extract'],
   'camoufox': ['navigate', 'click', 'type', 'screenshot', 'wait', 'evaluate'],
+  'my-browser': ['navigate', 'click', 'type', 'screenshot', 'wait', 'evaluate'],
 };
 
 function err(msg, meta = {}) {
@@ -72,7 +77,9 @@ function buildMcpConfig(backend, headless, url) {
   if (!pkg) throw new Error(`Unknown backend: ${backend}`);
 
   const args = ['-y', pkg];
-  if (headless !== false) args.push('--headless');
+  // Your own browser is never headless: you watch it work in your tabs.
+  if (backend === 'my-browser') args.push('--extension');
+  else if (headless !== false) args.push('--headless');
   if (url) args.push('--url', url);
 
   return {
@@ -520,7 +527,7 @@ export const WEB_TASK_TOOL_SCHEMAS = [
     description:
       'Complete a web task (booking, scheduling, form filling, etc.) using a browser automation backend. ' +
       'Args: task (REQUIRED string describing the goal), url (optional starting URL), ' +
-      'backend (optional: "browser-harness" | "stagehand" | "camoufox", default "browser-harness"), ' +
+      'backend (optional: "browser-harness" | "stagehand" | "camoufox" | "my-browser" (the user\'s own signed-in Chrome, through the Playwright MCP Bridge extension), default "browser-harness"), ' +
       'headless (optional boolean, default true), timeoutMs (optional, default 120000), maxSteps (optional, default 50). ' +
       'Returns screenshots, confirmations, and step count. All output is screened for credentials/injections and wrapped as untrusted content.',
     input_schema: {
@@ -528,7 +535,7 @@ export const WEB_TASK_TOOL_SCHEMAS = [
       properties: {
         task: { type: 'string', description: 'Natural language description of the web task to complete' },
         url: { type: 'string', description: 'Optional starting URL (http/https only)' },
-        backend: { type: 'string', enum: ['browser-harness', 'stagehand', 'camoufox'], description: 'Browser automation backend to use' },
+        backend: { type: 'string', enum: ['browser-harness', 'stagehand', 'camoufox', 'my-browser'], description: 'Browser automation backend to use; my-browser works in the user\'s own signed-in Chrome' },
         headless: { type: 'boolean', description: 'Run browser in headless mode (default: true)' },
         timeoutMs: { type: 'number', description: 'Total timeout in milliseconds (default: 120000, max: 300000)' },
         maxSteps: { type: 'number', description: 'Maximum automation steps (default: 50, max: 200)' },

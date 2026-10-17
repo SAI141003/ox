@@ -50,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             _ = Self.ox(["island", "start"])
             DispatchQueue.main.async {
                 if let url { self.web.load(URLRequest(url: url)) }
-                else { self.showMessage("Could not start ox. Run  ox app  once in a terminal, then open OX again.") }
+                else { self.showMessage(Self.oxPaths() == nil ? "ox is not on this Mac yet. Download OX for Mac from github.com/SAI141003/ox/releases and open it from there." : "ox did not start. Open OX again; if it still does not start, run  ox doctor  in a terminal to see why.") }
             }
         }
     }
@@ -99,14 +99,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     /// The ox to run: the one inside this app (a downloaded release carries its
     /// own Node and ox), else the one that last opened it.
     static func oxPaths() -> (node: String, cli: String)? {
+        let fm = FileManager.default
+        // Every candidate is checked on disk: a path that is gone (a deleted
+        // test build) is skipped, never handed to Process.
+        let usable = { (n: String?, c: String?) -> (String, String)? in
+            guard let n, let c, fm.isExecutableFile(atPath: n), fm.fileExists(atPath: c) else { return nil }
+            return (n, c)
+        }
         let env = ProcessInfo.processInfo.environment
-        if let n = env["OX_NODE"], let c = env["OX_CLI"] { return (n, c) }
+        if let p = usable(env["OX_NODE"], env["OX_CLI"]) { return p }
         if let res = Bundle.main.resourceURL {
-            let n = res.appendingPathComponent("node").path, c = res.appendingPathComponent("ox/bin/ox.js").path
-            if FileManager.default.isExecutableFile(atPath: n), FileManager.default.fileExists(atPath: c) { return (n, c) }
+            // A downloaded release: its own Node and ox inside.
+            if let p = usable(res.appendingPathComponent("node").path, res.appendingPathComponent("ox/bin/ox.js").path) { return p }
+            // `ox app install`: the Node and ox it was installed from.
+            if let d = fm.contents(atPath: res.appendingPathComponent("ox-paths.json").path),
+               let j = try? JSONSerialization.jsonObject(with: d) as? [String: String],
+               let p = usable(j["node"], j["cli"]) { return p }
         }
         let saved = savedState()
-        if let n = saved["node"], let c = saved["cli"] { return (n, c) }
+        if let p = usable(saved["node"], saved["cli"]) { return p }
+        // Last: the usual places for Node and an ox checkout.
+        let home = NSHomeDirectory()
+        for n in ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node", home + "/.volta/bin/node"] {
+            for c in [home + "/ox/bin/ox.js", "/opt/homebrew/lib/node_modules/ox-agent/bin/ox.js", "/usr/local/lib/node_modules/ox-agent/bin/ox.js"] {
+                if let p = usable(n, c) { return p }
+            }
+        }
         return nil
     }
 

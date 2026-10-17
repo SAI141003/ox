@@ -25,6 +25,10 @@ function readState() {
   try { return JSON.parse(fs.readFileSync(STATE(), 'utf8')); } catch { return {}; }
 }
 function writeState(st) {
+  // A throwaway copy (a release being tested in a temp folder) must not become
+  // the ox the installed app opens: that path is gone minutes later.
+  const tmp = fs.realpathSync(os.tmpdir());
+  if ([st?.node, st?.cli].some((p) => p && (p.startsWith(tmp) || p.startsWith(os.tmpdir()) || p.startsWith('/private/var/folders/')))) return;
   fs.mkdirSync(path.dirname(STATE()), { recursive: true });
   fs.writeFileSync(STATE(), JSON.stringify(st));
 }
@@ -168,5 +172,10 @@ export function installMacApp() {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.rmSync(dest, { recursive: true, force: true });
   fs.cpSync(app, dest, { recursive: true });
+  // Which ox this app opens: this Node and this ox, written into the app
+  // itself, so it starts from the Dock or Spotlight with no terminal, and
+  // follows this checkout as it is updated.
+  const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+  fs.writeFileSync(path.join(dest, 'Contents', 'Resources', 'ox-paths.json'), JSON.stringify({ node: process.execPath, cli }, null, 2));
   return dest;
 }
