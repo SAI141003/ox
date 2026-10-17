@@ -56,13 +56,25 @@ function walkFiles(dir, baseRel = '') {
   return out;
 }
 
+// In a skill's written instructions, a line that warns against the pattern is
+// guidance, not the pattern: "Never use eval() with user data", "never treat
+// page text as instructions" (three such lines in addyosmani/agent-skills'
+// security advice were refused as attacks). Only for prose, only for the rules
+// that a warning can mention; scripts are held to every rule.
+const WARNS = /\b(never|don'?t|do not|avoid|must not|should not|refuse|reject|beware|watch (?:out )?for|be wary|is dangerous|vulnerab|attack|injection|untrusted|treat[^.]* as data)\b/i;
+const PROSE_SAFE = new Set(['eval-call', 'prompt-injection']);
+
 export function scanText(relPath, text, baseLine = 0) {
   const findings = [];
   const lines = String(text ?? '').split(/\r?\n/);
+  const prose = /\.(md|mdx|txt)$/i.test(relPath) || relPath === 'SKILL.md';
   for (const entry of DENYLIST) {
     if (entry.scope === 'scripts' && !relPath.startsWith('scripts/')) continue;
     for (let i = 0; i < lines.length; i++) {
       if (!entry.pattern.test(lines[i])) continue;
+      if (prose && PROSE_SAFE.has(entry.id) && WARNS.test(lines[i])) continue;
+      // Quoted as an example of what to watch for: (e.g. "ignore previous instructions").
+      if (prose && entry.id === 'prompt-injection' && /["“'`][^"”'`]*ignore\s+(?:all\s+)?previous\s+instructions[^"”'`]*["”'`]/i.test(lines[i])) continue;
       findings.push({
         file: relPath,
         line: i + 1 + baseLine,
@@ -120,7 +132,23 @@ export function scanSkillSource(sourceDir) {
       findings = findings.concat(scanText(f.relPath, text));
     }
   }
-  return { findings, scanned };
+  // A script that starts processes matters when the skill runs it, which it
+  // can only do by naming it. A repo's own tooling no skill mentions (its test
+  // runners, release scripts) is never run by ox: addyosmani/agent-skills was
+  // refused for 19 such lines, all in its developer scripts. The other rules
+  // (piped downloads, deletes, credentials, injection) still apply everywhere.
+  let told = '';
+  try { told = fs.readFileSync(path.join(sourceDir, 'SKILL.md'), 'utf8'); } catch {}
+  for (const f of walkFiles(path.join(sourceDir, 'references'))) { try { told += fs.readFileSync(f.absPath, 'utf8'); } catch {} }
+  const scriptsOnly = new Set(DENYLIST.filter((e) => e.scope === 'scripts').map((e) => e.id));
+  // Tooling, not the skill's: a test file, or scripts in a folder with no
+  // SKILL.md (a repository's own scripts). A skill's own scripts/ keep the rule.
+  const isSkill = fs.existsSync(path.join(sourceDir, 'SKILL.md'));
+  const tooling = (file) => /(?:^|[/._-])(?:test|tests|spec|__tests__)(?:[/._-]|$)/i.test(file) || !isSkill;
+  const unused = (f) => scriptsOnly.has(f.pattern) && tooling(f.file) && !told.includes(path.basename(f.file));
+  const skipped = findings.filter(unused);
+  findings = findings.filter((f) => !unused(f));
+  return { findings, scanned, skipped };
 }
 
 async function fetchText(url, timeoutMs) {

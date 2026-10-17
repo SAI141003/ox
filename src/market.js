@@ -15,7 +15,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export const DEFAULT_CATALOGS = Object.freeze(['anthropics/claude-plugins-official', 'anthropics/skills']);
+// Shown without searching. Each is a real catalogue (a .claude-plugin/
+// marketplace.json), MIT or Apache licensed (anthropics/skills is Anthropic's
+// own): about 1,130 plugins together, counted from the catalogues themselves.
+export const DEFAULT_CATALOGS = Object.freeze([
+  'anthropics/claude-plugins-official', 'anthropics/skills', 'anthropics/knowledge-work-plugins',
+  'addyosmani/agent-skills', 'obra/superpowers', 'wshobson/agents', 'alirezarezvani/claude-skills',
+  'ruvnet/ruflo', 'jeremylongshore/claude-code-plugins-plus-skills', 'VoltAgent/awesome-claude-code-subagents',
+  'huggingface/skills',
+]);
 const RAW = () => process.env.OX_MARKET_RAW_BASE || 'https://raw.githubusercontent.com';
 const API = () => process.env.OX_MARKET_API_BASE || 'https://api.github.com';
 const CACHE = () => path.join(process.env.OX_MARKET_CACHE || path.join(os.homedir(), '.ox', 'cache', 'market'));
