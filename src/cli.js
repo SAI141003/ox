@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4658,6 +4658,56 @@ async function runSubcommand(cmd, args) {
       console.log(SUB_USAGE.hf); process.exitCode = 2;
       return;
     }
+    case 'build': {
+      // A business requirement → a spec with acceptance criteria → tests first
+      // → code until the tests pass → each criterion traced to its test
+      // (src/build-spec.js).
+      if (!args.length || args[0] === '--help' || args[0] === 'help') {
+        console.log(`${c.bold('ox build')} "<requirement>": from a business requirement to code proven to meet it`);
+        console.log(c.dim('  1. a spec: acceptance criteria AC-1… (Given/When/Then), constraints, out of scope, open questions → .agent/specs/'));
+        console.log(c.dim('  2. tests first, one per criterion, named with its id   3. code until the test command passes'));
+        console.log(c.dim('  4. a trace: each criterion\'s tests run on their own: passes, fails, or no test'));
+        console.log(c.dim('  --spec-only   stop after the spec (review it, then: ox build --from-spec <id>)'));
+        console.log(c.dim('  --bot <model> -y   as for any run.   ox spec trace [id]: the trace again, any time'));
+        return;
+      }
+      const B = await import('./build-spec.js');
+      const cwd = process.cwd();
+      const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
+      const bot = val('--bot') ?? val('--model');
+      const fromSpec = val('--from-spec');
+      const yolo = args.includes('-y') || args.includes('--yes');
+      const requirement = args.filter((a, i) => !a.startsWith('-') && !['--bot', '--model', '--from-spec'].includes(args[i - 1])).join(' ').trim();
+      const config = loadConfig({ cwd });
+      const tests = B.detectTests(cwd);
+      let spec;
+      if (fromSpec) {
+        spec = B.loadSpec(cwd, fromSpec);
+        if (!spec) { process.stderr.write(`ox build: no spec ${fromSpec} in .agent/specs\n`); process.exitCode = 2; return; }
+      } else {
+        if (!requirement) { process.stderr.write('ox build: say what to build, in your words\n'); process.exitCode = 2; return; }
+        const { workingModelSpec } = await import('./working-model.js');
+        const { quickText } = await import('./quick-text.js');
+        let target;
+        try { target = resolveBot(await workingModelSpec(config, { explicit: bot }), config); }
+        catch (e) { process.stderr.write(`ox build: ${e.message}\n`); process.exitCode = 2; return; }
+        process.stderr.write(c.dim(`· writing the spec with ${target.bot ?? target.model} (reading the project: ${tests.framework})\n`));
+        let text = '';
+        try { text = (await quickText(target, { system: B.SPEC_SYSTEM, user: `Requirement:\n${requirement}\n\nProject map:\n${B.projectContext(cwd)}`, maxTokens: 2500 })).text; }
+        catch (e) { process.stderr.write(`ox build: the spec could not be written: ${e.message}\n`); process.exitCode = 1; return; }
+        try { spec = B.saveSpec(cwd, { ...B.parseSpec(text), requirement }); }
+        catch (e) { process.stderr.write(`ox build: ${e.message}\n${c.dim(String(text).slice(0, 400))}\n`); process.exitCode = 1; return; }
+      }
+      console.log(B.specMarkdown(spec));
+      console.log(c.dim(`spec saved: .agent/specs/${spec.id}.md`));
+      if (args.includes('--spec-only')) return;
+      const { brief, contract } = B.buildBrief(spec, tests);
+      await runPrint(brief, config, { yolo, verify: true, bot, goalContract: contract });
+      const t = B.traceSpec(cwd, spec, { tests });
+      console.log(`\n${B.formatTrace(spec, t)}`);
+      if (t.passed < t.rows.length) process.exitCode = 1;
+      return;
+    }
     case 'secure': {
       // A security scan of code (src/security-scan.js): offline, every finding
       // with its CWE and a fix. --diff: only the lines you changed.
@@ -5488,7 +5538,7 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'verify': { const v = createVerifier(process.cwd()); const report = await v.verify('project verification', null, {}); console.log(formatVerificationReport(report)); return; }
-    case 'spec': { const action = String(args[0] ?? '').trim().toLowerCase(); const restArgs = args.slice(1); const st = createSpecTracker(process.cwd()); if (action === 'create') { const title = restArgs.join(' '); if (!title) { console.log(c.red('usage: ox spec create <title>')); return; } const spec = st.createSpec(title, []); console.log(c.green('created spec ' + spec.id + ': ' + spec.title)); return; } if (action === 'list') { const specs = st.listSpecs(); if (!specs.length) { console.log(c.dim('no specs')); return; } for (const s of specs) console.log('  ' + s.id + ' ' + s.title); return; } console.log(c.dim('usage: ox spec create <title> | ox spec list')); return; }
+    case 'spec': { const action = String(args[0] ?? '').trim().toLowerCase(); const restArgs = args.slice(1); const st = createSpecTracker(process.cwd()); if (action === 'create') { const title = restArgs.join(' '); if (!title) { console.log(c.red('usage: ox spec create <title>')); return; } const spec = st.createSpec(title, []); console.log(c.green('created spec ' + spec.id + ': ' + spec.title)); return; } if (action === 'list') { const specs = st.listSpecs(); if (!specs.length) { console.log(c.dim('no specs')); return; } for (const s of specs) console.log('  ' + s.id + ' ' + s.title); return; } if (action === 'trace' || action === 'show') { const B = await import('./build-spec.js'); const spec = B.loadSpec(process.cwd(), restArgs[0] ?? null); if (!spec) { console.log(c.dim('no spec in .agent/specs (ox build "<requirement>" writes one)')); return; } if (action === 'show') { console.log(B.specMarkdown(spec)); return; } const t = B.traceSpec(process.cwd(), spec); console.log(B.formatTrace(spec, t)); if (t.passed < t.rows.length) process.exitCode = 1; return; } console.log(c.dim('usage: ox spec create <title> | ox spec list | ox spec show [id] | ox spec trace [id]')); return; }
     case 'arch': {
       const action = String(args[0] ?? '').trim().toLowerCase();
       const restArgs = args.slice(1);
