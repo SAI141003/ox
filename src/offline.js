@@ -118,6 +118,18 @@ export function parseIntent(text) {
   if (/^(?:pause|stop)(?: the)?(?: music| song| spotify| playback)?$/i.test(low) && low !== 'stop') return { intent: 'music', command: 'pause' };
   if (/^(?:play|resume)(?: the)? (?:music|song|spotify)$|^resume$/i.test(low)) return { intent: 'music', command: 'play' };
   if (/^(?:next|skip)(?: the)?(?: song| track)?$/i.test(low)) return { intent: 'music', command: 'next track' };
+  // "lower the music", "turn the music down", "make it quieter": the Mac's volume.
+  if (/^(?:lower|reduce|turn down|quieten)(?: the)? (?:music|volume|sound|song)(?: a bit| a little)?$|^turn(?: the)? (?:music|volume|sound) down$|^(?:make it |a bit )?quieter$/i.test(low)) return { intent: 'volume', delta: -15 };
+  if (/^(?:raise|turn up|increase)(?: the)? (?:music|volume|sound|song)(?: a bit| a little)?$|^turn(?: the)? (?:music|volume|sound) up$|^(?:make it |a bit )?louder$/i.test(low)) return { intent: 'volume', delta: 15 };
+  // "play Billie Jean by Michael Jackson": a song, by name.
+  if ((m = /^(?:can you |please )?play (?:me )?(?:the song |some )?(.+?)(?:\s+by\s+(.+?))?(?:\s+on\s+(spotify|apple music|music))?$/i.exec(t))
+    && !/^(?:the )?(?:music|song|spotify|it)$/i.test(m[1])) {
+    return { intent: 'play', song: m[1].trim(), artist: (m[2] ?? '').trim(), app: /spotify/i.test(m[3] ?? '') ? 'Spotify' : m[3] ? 'Music' : '' };
+  }
+  // "what's on my to-do list today", "read my reminders", "what do I have today".
+  if (/^(?:can you |please )?(?:open |read |show |check )?(?:me )?(?:what(?:'s| is) on )?(?:my )?(?:to-?do(?: list)?|todos|tasks|task list|reminders)(?: (?:for )?today)?(?: and tell me.*)?\??$|^what (?:do i have|have i got|is on|'s on)(?: to do)?(?: for)? today\??$/i.test(low)) {
+    return { intent: 'todos' };
+  }
   if (/^(?:previous|last|go back)(?: the)?(?: song| track)$/i.test(low)) return { intent: 'music', command: 'previous track' };
   if (/^(?:take (?:a )?)?screenshot$|^capture (?:the )?screen$/i.test(low)) return { intent: 'screenshot' };
   if (/^(?:what(?:'s| is) the )?time(?: is it)?(?: now)?$|^what time is it$/i.test(low)) return { intent: 'time' };
@@ -197,6 +209,112 @@ function music(command) {
   return { ok: false, err: 'open Spotify or Music first' };
 }
 
+// A song by name: from your Apple Music library first (it plays), else
+// Spotify's search (it opens; Spotify only plays a link, so ox says so).
+function appInstalled(name) {
+  return ['/Applications', '/System/Applications', path.join(os.homedir(), 'Applications')].some((d) => fs.existsSync(path.join(d, `${name}.app`)));
+}
+function playSong({ song, artist = '', app = '' }) {
+  if (process.platform !== 'darwin') return { ok: false, err: 'playing a song by name is macOS only for now' };
+  const label = artist ? `${song} by ${artist}` : song;
+  if (app !== 'Spotify') {
+    const script = [
+      'on run argv',
+      'set s to item 1 of argv',
+      'set a to item 2 of argv',
+      'tell application "Music"',
+      'if a is "" then',
+      'set hits to (every track of library playlist 1 whose name contains s)',
+      'else',
+      'set hits to (every track of library playlist 1 whose name contains s and artist contains a)',
+      'end if',
+      'if (count of hits) is 0 then return ""',
+      'play item 1 of hits',
+      'return (name of item 1 of hits) & " by " & (artist of item 1 of hits)',
+      'end tell',
+      'end run',
+    ];
+    const r = spawnSync('osascript', [...script.flatMap((l) => ['-e', l]), song, artist], { encoding: 'utf8', timeout: 20000 });
+    const got = String(r.stdout ?? '').trim();
+    if (r.status === 0 && got) return { ok: true, message: `playing ${got} in Music` };
+    if (app === 'Music') return { ok: false, err: `${label} is not in your Music library` };
+  }
+  if (appInstalled('Spotify')) {
+    // Spotify plays its top search result for a search link, then needs a
+    // "play" to start (checked on this Mac: Billie Jean, playing).
+    const script = ['on run argv', 'tell application "Spotify"', 'play track (item 1 of argv)', 'delay 1.5', 'play', 'delay 0.5',
+      'return (player state as text) & tab & (name of current track) & tab & (artist of current track)', 'end tell', 'end run'];
+    const r = spawnSync('osascript', [...script.flatMap((l) => ['-e', l]), `spotify:search:${encodeURIComponent(label)}`], { encoding: 'utf8', timeout: 30000 });
+    const [state, name, by] = String(r.stdout ?? '').trim().split('\t');
+    if (r.status === 0 && state === 'playing' && name) return { ok: true, message: `playing ${name} by ${by} on Spotify` };
+    return { ok: false, err: r.status === 0 ? `Spotify found ${name || 'nothing'} but did not start playing` : `Spotify did not answer: ${String(r.stderr).trim().slice(0, 120)}` };
+  }
+  const r = run(['open', `music://music.apple.com/search?term=${encodeURIComponent(label)}`]);
+  return r.ok ? { ok: true, message: `${label} is not in your Music library: Apple Music is open on it, press play` } : { ok: false, err: r.err };
+}
+
+// Today's to-dos, read out: Reminders due today or overdue, else the open ones;
+// ~/ox-tasks.md when there is no Reminders.
+export function speakTodos(items) {
+  if (!items.length) return 'nothing on your to-do list';
+  const today = items.filter((x) => x.at && x.at !== 'overdue');
+  const late = items.filter((x) => x.at === 'overdue');
+  const rest = items.filter((x) => !x.at);
+  const and = (l) => (l.length > 1 ? `${l.slice(0, -1).join(', ')} and ${l.at(-1)}` : l[0]);
+  if (today.length || late.length) {
+    return [today.length && `today: ${and(today.map((x) => `${x.name} at ${x.at}`))}`, late.length && `overdue: ${and(late.map((x) => x.name))}`].filter(Boolean).join('. ');
+  }
+  const say = rest.map((x) => x.name);
+  return `you have ${items.length === 1 ? 'one thing' : `${items.length} things`}: ${say.length > 1 ? `${say.slice(0, -1).join(', ')} and ${say.at(-1)}` : say[0]}`;
+}
+function readTodos(now = new Date()) {
+  if (process.platform === 'darwin') {
+    // Names and due dates in two bulk reads (one Apple event each: reading
+    // reminder by reminder took 38 s for 7 of them); dates as y-m-d-h-m, since
+    // big numbers come back from AppleScript rounded.
+    const script = [
+      'tell application "Reminders"',
+      'set ns to name of every reminder whose completed is false',
+      'set ds to due date of every reminder whose completed is false',
+      'end tell',
+      'set out to ""',
+      'repeat with i from 1 to count of ns',
+      'set dd to item i of ds',
+      'set d to ""',
+      'if dd is not missing value then set d to ((year of dd) as text) & "-" & ((month of dd as integer) as text) & "-" & ((day of dd) as text) & "-" & ((hours of dd) as text) & "-" & ((minutes of dd) as text)',
+      'set out to out & (item i of ns) & tab & d & linefeed',
+      'end repeat',
+      'return out',
+    ];
+    const r = spawnSync('osascript', script.flatMap((l) => ['-e', l]), { encoding: 'utf8', timeout: 45000 });
+    if (r.status === 0) {
+      const all = String(r.stdout).split('\n').filter((l) => l.trim()).map((l) => {
+        const [name, when = ''] = l.split('\t');
+        const p = when.trim() ? when.trim().split('-').map(Number) : null;
+        const short = name.trim().length > 70 ? `${name.trim().slice(0, 67)}…` : name.trim();
+        return { name: short, due: p ? new Date(p[0], p[1] - 1, p[2], p[3], p[4]) : null };
+      });
+      const items = pickToday(all, now);
+      return { ok: true, message: speakTodos(items), items };
+    }
+    const err = String(r.stderr ?? '');
+    return { ok: false, err: /not allowed|not authori[sz]ed|-1743/i.test(err) ? 'allow ox to use Reminders in System Settings › Privacy & Security › Automation' : `Reminders did not answer: ${err.trim().slice(0, 120)}` };
+  }
+  const file = path.join(os.homedir(), 'ox-tasks.md');
+  const lines = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter((l) => /^- \[ \]/.test(l)).map((l) => ({ name: l.replace(/^- \[ \]\s*/, '') })) : [];
+  return { ok: true, message: speakTodos(lines), items: lines };
+}
+
+// Due today or overdue, by time; when nothing is due, everything still open.
+export function pickToday(all, now = new Date()) {
+  const end = new Date(now); end.setHours(23, 59, 59, 999);
+  const due = all.filter((x) => x.due && x.due <= end).sort((a, b) => a.due - b.due);
+  const list = due.length ? due : all;
+  const start = new Date(now); start.setHours(0, 0, 0, 0);
+  // Today's at their time; an earlier day's is said to be overdue, not "at 11 AM".
+  return list.slice(0, 12).map((x) => ({ name: x.name, at: !x.due || !due.length ? '' : x.due < start ? 'overdue' : x.due.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(':00', '') }));
+}
+
 function setVolume({ level, delta }) {
   if (process.platform === 'darwin') {
     if (level != null) return run(['osascript', '-e', `set volume output volume ${Number(level)}`]);
@@ -232,6 +350,14 @@ export function perform(it) {
       const r = spawnSync('osascript', ['-e', 'tell application "Mail" to get unread count of inbox'], { encoding: 'utf8', timeout: 15000 });
       const n = Number(String(r.stdout).trim());
       return r.status === 0 && Number.isFinite(n) ? { ok: true, message: n === 0 ? 'no unread email' : `${n} unread email${n === 1 ? '' : 's'} in Mail` } : { ok: false, message: (r.stderr || 'Mail did not answer').trim() };
+    }
+    case 'play': {
+      const r = playSong(it);
+      return r.ok ? { ok: true, message: r.message } : { ok: false, message: r.err };
+    }
+    case 'todos': {
+      const r = readTodos();
+      return r.ok ? { ok: true, message: r.message } : { ok: false, message: r.err };
     }
     case 'music': {
       const r = music(it.command);

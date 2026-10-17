@@ -82,3 +82,25 @@ test('only an installed app, named on its own, is opened without a model', () =>
   assert.equal(resolveApp('whatsapp and all my friends', apps), null);
   assert.equal(resolveApp('', apps), null);
 });
+
+test('the Pixie requests: a song by name, lower the music, today\'s to-dos', async () => {
+  const { pickToday, speakTodos } = await import('../src/offline.js');
+  assert.deepEqual(parseIntent('ox, can you play Billie Jean by Jackson'), { intent: 'play', song: 'Billie Jean', artist: 'Jackson', app: '' });
+  assert.deepEqual(parseIntent('play lofi beats on spotify'), { intent: 'play', song: 'lofi beats', artist: '', app: 'Spotify' });
+  assert.deepEqual(parseIntent('play the music'), { intent: 'music', command: 'play' });
+  assert.deepEqual(parseIntent('lower the music'), { intent: 'volume', delta: -15 });
+  assert.deepEqual(parseIntent('turn the music up'), { intent: 'volume', delta: 15 });
+  for (const s of ['can you open my to-do list and tell me what I have today?', 'what do I have today', 'read my reminders']) assert.deepEqual(parseIntent(s), { intent: 'todos' }, s);
+  const now = new Date(2026, 9, 17, 9, 0);
+  const items = pickToday([
+    { name: 'physics assignment', due: new Date(2026, 9, 17, 20, 0) },
+    { name: 'submit handles', due: new Date(2026, 9, 17, 21, 0) },
+    { name: 'old one', due: new Date(2026, 9, 10, 11, 0) },
+    { name: 'someday', due: null },
+    { name: 'next year', due: new Date(2027, 0, 1) },
+  ], now);
+  assert.deepEqual(items.map((x) => x.at), ['overdue', '8 PM', '9 PM']);
+  assert.equal(speakTodos(items), 'today: physics assignment at 8 PM and submit handles at 9 PM. overdue: old one');
+  assert.equal(speakTodos(pickToday([{ name: 'a', due: null }, { name: 'b', due: null }], now)), 'you have 2 things: a and b');
+  assert.equal(speakTodos([]), 'nothing on your to-do list');
+});

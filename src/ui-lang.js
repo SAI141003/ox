@@ -59,7 +59,7 @@ export const LIBRARY = {
   Pressable: { params: [['children', 'nodes'], ['action', 'action', true], ['selected', 'bool', true]], desc: 'clickable area' },
   Checkbox: { params: [['label', 'str'], ['value', 'bool']], desc: 'tick bound to a $var' },
   Segmented: { params: [['value', 'any'], ['options', 'list']], desc: 'one-of choice bound to a $var' },
-  Chart: { params: [['type', 'bar|line|area|pie|donut'], ['labels', 'list'], ['values', 'list'], ['title', 'str', true], ['format', 'number|currency|percent', true]], desc: 'chart in colour' },
+  Chart: { params: [['type', 'bar|line|area|pie|donut'], ['labels', 'list'], ['values', 'list'], ['title', 'str', true], ['format', 'number|currency|percent|compact', true]], desc: 'chart in colour' },
   Svg: { params: [['children', 'nodes'], ['viewBox', 'str', true]], desc: 'drawing (about 240 wide)' },
   Rect: { params: [['x', 'num'], ['y', 'num'], ['w', 'num'], ['h', 'num'], ['fill', 'str', true], ['stroke', 'str', true], ['width', 'num', true]], desc: 'drawing rectangle', inner: true },
   Circle: { params: [['cx', 'num'], ['cy', 'num'], ['r', 'num'], ['fill', 'str', true], ['stroke', 'str', true]], desc: 'drawing circle', inner: true },
@@ -601,8 +601,16 @@ export function evaluate(program, env = {}) {
       if (type === 'action' && v && typeof v === 'object' && typeof v.step === 'string') v = { kind: 'action', steps: [v] };
       if (type === 'nodes' && isNode(v)) v = [v];
       if (type === 'nodes' && Array.isArray(v)) v = v.flat().filter(isNode);
+      // Title("Planets", 2): a heading level, as models write it.
+      if (type === 'sm|md|lg|xl' && typeof v === 'number') v = ['xl', 'xl', 'lg', 'md', 'sm'][Math.min(4, Math.max(0, Math.round(v)))];
+      if (typeof v === 'string' && type.includes('|') && !typeOk(type, v)) {
+        const near = type.split('|').find((o) => o === v.toLowerCase());
+        if (near) v = near;
+      }
       if (!typeOk(type, v)) {
-        err(id, 'type', `${n.name}.${name} expects ${type.includes('|') ? `one of ${type.replace(/\|/g, ', ')}` : type}, got ${JSON.stringify(v)?.slice(0, 40)}`);
+        // A wrong optional setting is left out and the component still draws:
+        // the model hears about it ('ignored'), the reader is not told a line failed.
+        err(id, optional ? 'ignored' : 'type', `${n.name}.${name} expects ${type.includes('|') ? `one of ${type.replace(/\|/g, ', ')}` : type}, got ${JSON.stringify(v)?.slice(0, 40)}${optional ? ' (left out; the rest drew)' : ''}`);
         continue;
       }
       props[name] = v;
@@ -703,6 +711,7 @@ function fmtValue(v, type) {
     case 'number': return Number.isFinite(n) ? n.toLocaleString('en-US', { maximumFractionDigits: 2 }) : String(v);
     case 'currency': return Number.isFinite(n) ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : String(v);
     case 'percent': return Number.isFinite(n) ? `${n.toLocaleString('en-US', { maximumFractionDigits: 1 })}%` : String(v);
+    case 'compact': return Number.isFinite(n) ? n.toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 1 }) : String(v);
     case 'status': {
       const s = String(v).toLowerCase();
       const tone = /fail|error|red|down|blocked/.test(s) ? 'error' : /pass|ok|done|green|up|success/.test(s) ? 'success' : /warn|pending|slow|skip/.test(s) ? 'warning' : 'plain';

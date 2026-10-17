@@ -1071,7 +1071,7 @@
   const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   function chartSvg(p) {
     const vals = (p.values ?? []).map(num), labels = p.labels ?? [];
-    const fmt = (v) => (p.format === 'currency' ? '$' : '') + v.toLocaleString(undefined, { maximumFractionDigits: 2 }) + (p.format === 'percent' ? '%' : '');
+    const fmt = (v) => (p.format === 'currency' ? '$' : '') + v.toLocaleString(undefined, p.format === 'compact' ? { notation: 'compact', maximumFractionDigits: 1 } : { maximumFractionDigits: 2 }) + (p.format === 'percent' ? '%' : '');
     if (!vals.length) return '';
     if (p.type === 'pie' || p.type === 'donut') {
       const total = vals.reduce((a, b) => a + Math.max(0, b), 0) || 1;
@@ -1194,7 +1194,7 @@
     c.actions = [];
     const body = ev.root ? canvasNode(ev.root, c) : '<div class="ui-box muted small">Drawing…</div>';
     // OpenUI's rule: bad lines are dropped and the rest renders. Say so, briefly.
-    const errs = [...(ev.parseErrors ?? []), ...(ev.errors ?? [])].filter((e) => e.code !== 'root' || ev.root);
+    const errs = [...(ev.parseErrors ?? []), ...(ev.errors ?? [])].filter((e) => (e.code !== 'root' || ev.root) && e.code !== 'ignored');
     const note = errs.length && c.done ? `<details class="ol-errs"><summary>${errs.length} line${errs.length === 1 ? '' : 's'} could not be drawn</summary>${errs.slice(0, 8).map((e) => `<div>${e.line ? `line ${e.line}: ` : ''}${esc(e.msg)}</div>`).join('')}</details>` : '';
     return body + note;
   }
