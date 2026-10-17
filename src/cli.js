@@ -5243,10 +5243,28 @@ async function runSubcommand(cmd, args) {
         }
         return;
       }
+      if (action === 'slack') {
+        const sl = await import('./slack-gateway.js');
+        const saved = sl.loadState();
+        const appToken = flag('--app-token') ?? process.env.SLACK_APP_TOKEN ?? saved.appToken;
+        const botToken = flag('--bot-token') ?? process.env.SLACK_BOT_TOKEN ?? saved.botToken;
+        const mode = flag('--mode') ? normalizeMode(flag('--mode')) : null;
+        if (flag('--mode') && !mode) { console.log(c.red(`--mode must be one of: auto, ${MODE_NAMES.join(', ')}`)); process.exitCode = 3; return; }
+        const ac = new AbortController();
+        process.on('SIGINT', () => { ac.abort(); process.exit(0); });
+        try {
+          await sl.runSlackGateway({ appToken, botToken, cwd: path.resolve(flag('--cwd') ?? process.cwd()), agent: flag('--agent') ?? null, mode, signal: ac.signal });
+        } catch (e) {
+          console.log(c.red(String(e?.message ?? e)));
+          process.exitCode = 1;
+        }
+        return;
+      }
       if (action === 'unpair') {
         const which = String(args[1] ?? 'all').toLowerCase();
         if (which === 'all' || which === 'telegram') { const st = tg.loadState(); delete st.owner; tg.saveState(st); }
         if (which === 'all' || which === 'discord') { const dc = await import('./discord-gateway.js'); const st = dc.loadState(); delete st.owner; dc.saveState(st); }
+        if (which === 'all' || which === 'slack') { const sl = await import('./slack-gateway.js'); const st = sl.loadState(); delete st.owner; sl.saveState(st); }
         console.log(c.green('unpaired — the next start of the gateway prints a new pairing code'));
         return;
       }
@@ -5256,9 +5274,12 @@ async function runSubcommand(cmd, args) {
       console.log(`${c.bold('ox gateway')} — talk to ox from your phone`);
       console.log(c.dim('  ox gateway telegram --token <token from @BotFather> [--cwd <project>] [--mode <mode>] [--agent <name>]'));
       console.log(c.dim('  ox gateway discord  --token <bot token from discord.com/developers> [--cwd <project>] [--mode <mode>] [--agent <name>]'));
-      console.log(c.dim('  ox gateway unpair [telegram|discord]'));
+      console.log(c.dim('  ox gateway slack    --app-token xapp-… --bot-token xoxb-… (api.slack.com/apps, Socket Mode) [--cwd <project>] [--mode <mode>] [--agent <name>]'));
+      console.log(c.dim('  ox gateway unpair [telegram|discord|slack]'));
       console.log(line('telegram', st));
       console.log(line('discord', dst));
+      const sst = (await import('./slack-gateway.js')).loadState();
+      console.log(line('slack', { ...sst, token: sst.appToken && sst.botToken }));
       console.log(c.dim('  Each message runs ox in your project; approvals come as Allow/Deny buttons. Pair first: the code is printed when the gateway starts.'));
       return;
     }

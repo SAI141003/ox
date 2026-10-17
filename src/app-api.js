@@ -121,10 +121,11 @@ export function skillBody(name, cwd = process.cwd()) {
 export async function messagingView(env = process.env) {
   const tg = await import('./telegram-gateway.js');
   const dc = await import('./discord-gateway.js');
+  const sl = await import('./slack-gateway.js');
   const one = (id, label, st, tokenEnv, how) => ({
     id, label,
-    configured: !!(env[tokenEnv] || st.token),
-    tokenFrom: env[tokenEnv] ? 'environment' : st.token ? 'saved' : null,
+    configured: !!(env[tokenEnv] || st.token || (st.appToken && st.botToken)),
+    tokenFrom: env[tokenEnv] ? 'environment' : st.token || st.appToken ? 'saved' : null,
     paired: !!st.owner,
     pairing: !!st.pairCode && !st.owner,
     command: `ox gateway ${id}`,
@@ -141,6 +142,11 @@ export async function messagingView(env = process.env) {
       'Invite the bot, then run: ox gateway discord --token <token>.',
       'DM the bot /pair <code> with the code ox shows. It answers DMs only.',
     ]),
+    { ...one('slack', 'Slack', sl.loadState(), 'SLACK_BOT_TOKEN', [
+      'At api.slack.com/apps create an app. Turn on Socket Mode and generate an app token (xapp-…, scope connections:write).',
+      'Bot scopes chat:write and im:history; Event Subscriptions: message.im; Interactivity on; App Home: allow messages. Install it and copy the Bot token (xoxb-…).',
+      'Run: ox gateway slack --app-token xapp-… --bot-token xoxb-…, then DM the app "pair <code>" with the code ox shows. It answers DMs only.',
+    ]), slashless: true },
   ];
 }
 

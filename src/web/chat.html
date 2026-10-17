@@ -67,10 +67,29 @@
   @keyframes pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
 
   /* ---------- shell */
-  .app { display: grid; grid-template-columns: 268px 1fr; height: 100vh; }
-  body.collapsed .app { grid-template-columns: 0 1fr; }
-  body.collapsed .side { visibility: hidden; }
-  .side { background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+  .app { display: flex; height: 100vh; }
+  .app > main { flex: 1; }
+  body.collapsed .side, body.collapsed #sizer-side { display: none; }
+  .side { width: var(--sw, 268px); flex: none; background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+  /* Everything between the top and the foot scrolls as one: pages, search and sessions. */
+  .side-mid { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .side-mid .lists { overflow: visible; flex: none; }
+  /* Drag to resize (double-click resets); arrow keys too. */
+  .sizer { flex: none; width: 5px; margin: 0 -2px; z-index: 3; cursor: col-resize; position: relative; background: transparent; }
+  .sizer::after { content: ""; position: absolute; inset: 0 2px; background: transparent; transition: background .12s; }
+  .sizer:hover::after, .sizer.drag::after, .sizer:focus-visible::after { background: var(--muted); }
+  .sizer:focus-visible { outline: none; }
+  body.resizing, body.resizing * { cursor: col-resize !important; user-select: none !important; }
+  .pane2 { width: var(--pw, 440px); flex: none; min-width: 0; display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--bg); height: 100vh; }
+  .pane2[hidden], .sizer[hidden] { display: none; }
+  .pane2-bar { display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 10px 0 16px; border-bottom: 1px solid var(--line); flex: none; }
+  .pane2-bar b { flex: 1; font-weight: 500; font-size: 13.5px; }
+  .pane2-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .pane2-body > .view { display: flex; flex-direction: column; }
+  .pane2-body .page { padding: 20px 18px; }
+  .nav button .beside { margin-left: auto; opacity: 0; color: var(--dim); width: 22px; height: 22px; border-radius: 5px; display: grid; place-items: center; flex: none; }
+  .nav button:hover .beside, .nav button:focus-visible .beside { opacity: 1; }
+  .nav button .beside:hover { color: var(--text); background: var(--raise); }
   .side-top { display: flex; align-items: center; gap: 10px; padding: 14px 14px 6px; }
   .brand { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 16px; letter-spacing: -.02em; flex: 1; }
   .brand .brand-word { width: 26px; height: 26px; }
@@ -104,7 +123,7 @@
   .search { margin: 6px 12px 4px; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; color: var(--dim); }
   .search:focus-within { background: var(--panel); box-shadow: inset 0 0 0 1px var(--line2); }
   .search input { border: 0; outline: 0; background: none; flex: 1; min-width: 0; font-size: 13px; }
-  .lists { flex: 1; overflow-y: auto; padding: 4px 8px 12px; }
+  .lists { padding: 4px 8px 12px; }
   .group { display: flex; align-items: center; gap: 8px; padding: 14px 8px 6px; }
   .group::after { content: ""; flex: 1; height: 1px; background: var(--line); }
   .row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border-radius: 7px; color: var(--muted); font-size: 13.5px; text-align: left; position: relative; }
@@ -477,7 +496,8 @@
   .incog-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); letter-spacing: .02em; text-transform: none; }
   @media (max-width: 860px) {
     .mback { display: inline-flex !important; }
-    .app { grid-template-columns: 1fr; }
+    #sizer-side, #sizer-pane { display: none !important; }
+    .pane2 { position: fixed; inset: 0 0 0 auto; width: min(100%, 520px); z-index: 12; box-shadow: 0 0 40px rgba(0,0,0,.5); }
     .side { position: fixed; inset: 0 auto 0 0; width: 280px; z-index: 10; transform: translateX(-100%); transition: transform .2s; }
     body.nav .side { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.5); visibility: visible; }
     .split { grid-template-columns: 1fr; }
@@ -516,6 +536,7 @@
       <button class="on" data-tab="sessions" role="tab">Sessions</button>
       <button data-tab="agents" role="tab">Agents</button>
     </div>
+    <div class="side-mid" id="side-mid">
     <div id="tab-sessions">
       <div class="nav">
         <button id="nav-new"><span data-i="plus"></span><span class="grow">New session</span><span class="kbd">⌘</span><span class="kbd">N</span></button>
@@ -533,6 +554,7 @@
       <label class="search"><span data-i="search"></span><input id="q" placeholder="Search sessions…" aria-label="Search sessions"><span class="kbd">⌘K</span></label>
     </div>
     <div class="lists" id="lists"></div>
+    </div>
     <div class="side-foot">
       <button class="iconbtn" id="open-settings" title="Settings (⌘,)" aria-label="Settings" data-i="gear"></button>
       <button class="iconbtn" id="theme" title="Light or dark" aria-label="Light or dark" data-i="contrast"></button>
@@ -540,6 +562,7 @@
       <span class="host" id="host"></span>
     </div>
   </aside>
+  <div class="sizer" id="sizer-side" role="separator" aria-orientation="vertical" aria-label="Resize the sidebar" tabindex="0" title="Drag to resize · double-click to reset"></div>
 
   <main>
     <div class="bar">
@@ -651,6 +674,11 @@
     <section class="view" id="v-flows"><div class="page"><div class="page-inner" id="flows"></div></div></section>
     <section class="view" id="v-sched"><div class="page"><div class="page-inner" id="sched"></div></div></section>
   </main>
+  <div class="sizer" id="sizer-pane" role="separator" aria-orientation="vertical" aria-label="Resize the side panel" tabindex="0" title="Drag to resize · double-click to reset" hidden></div>
+  <aside class="pane2" id="pane2" hidden aria-label="Side panel">
+    <div class="pane2-bar"><b id="pane2-title"></b><button class="iconbtn" id="pane2-swap" title="Open it in the middle instead" aria-label="Open it in the middle" data-i="open"></button><button class="iconbtn" id="pane2-close" title="Close the side panel" aria-label="Close the side panel" data-i="x"></button></div>
+    <div class="pane2-body" id="pane2-body"></div>
+  </aside>
 </div>
 
 <div class="ovl" id="ovl" role="dialog" aria-modal="true" aria-label="Settings">
@@ -841,6 +869,7 @@
 
   // ---------- views
   function show(v) {
+    if (v !== 'chat' && v === besideView) { $('pane2').querySelector('.page, .thread, .split')?.focus?.(); toast(`${viewTitle(v)} is open beside the chat`); return; }
     view = v;
     document.querySelectorAll('.view').forEach((el) => el.classList.toggle('on', el.id === `v-${v}`));
     document.querySelectorAll('.nav [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
@@ -1607,6 +1636,73 @@
     return out;
   }
 
+  // ---------- panes: drag to resize the sidebar and the side panel (Claude's three
+  // panes): sizes are kept; double-click a divider to reset; arrows move it too.
+  const PANE = { side: { v: '--sw', min: 200, max: 480, def: 268 }, pane: { v: '--pw', min: 320, max: 900, def: 440 } };
+  function setPane(which, px, save = true) {
+    const p = PANE[which];
+    const w = Math.round(Math.max(p.min, Math.min(p.max, px, innerWidth - 360)));
+    document.documentElement.style.setProperty(p.v, `${w}px`);
+    if (save) { prefs[`${which}W`] = w; savePrefs(); }
+  }
+  for (const which of ['side', 'pane']) {
+    if (prefs[`${which}W`]) setPane(which, prefs[`${which}W`], false);
+    const el = $(`sizer-${which}`);
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); el.setPointerCapture(e.pointerId); el.classList.add('drag'); document.body.classList.add('resizing');
+      const start = e.clientX, w0 = (which === 'side' ? $('side') : $('pane2')).getBoundingClientRect().width;
+      const move = (ev) => setPane(which, which === 'side' ? w0 + (ev.clientX - start) : w0 - (ev.clientX - start), false);
+      const up = (ev) => { el.releasePointerCapture(e.pointerId); el.classList.remove('drag'); document.body.classList.remove('resizing'); el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); setPane(which, (which === 'side' ? $('side') : $('pane2')).getBoundingClientRect().width); };
+      el.addEventListener('pointermove', move); el.addEventListener('pointerup', up);
+    });
+    el.addEventListener('dblclick', () => setPane(which, PANE[which].def));
+    el.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      const cur = (which === 'side' ? $('side') : $('pane2')).getBoundingClientRect().width;
+      const step = (e.key === 'ArrowRight' ? 1 : -1) * (which === 'side' ? 1 : -1) * (e.shiftKey ? 60 : 20);
+      setPane(which, cur + step);
+    });
+  }
+
+  // The side panel: any page (Office, Automations, Project map…) beside the chat.
+  // The page itself moves over (one copy, so it stays live) and moves back on close.
+  let besideView = null;
+  const viewTitle = (v) => document.querySelector(`.nav [data-view="${v}"] .grow`)?.textContent ?? v;
+  function openBeside(v) {
+    if (besideView === v) return;
+    closeBeside(false);
+    const sec = $(`v-${v}`);
+    if (!sec) return;
+    besideView = v;
+    $('pane2-body').appendChild(sec);
+    sec.classList.add('on');
+    $('pane2-title').textContent = viewTitle(v);
+    $('pane2').hidden = false; $('sizer-pane').hidden = false;
+    paintIcons($('pane2'));
+    if (view === v) show('chat'); else renderLists();
+    if (v === 'studio') loadStudio(); else if (v === 'map') loadMap(); else if (v === 'office') pollOffice(); else if (v === 'flows') loadFlows(); else if (v === 'sched') loadScheduled(); else if (v === 'bots') loadBots();
+    prefs.beside = v; savePrefs();
+  }
+  function closeBeside(save = true) {
+    if (!besideView) return;
+    const sec = $(`v-${besideView}`);
+    if (sec) { sec.classList.remove('on'); $('v-chat').parentNode.appendChild(sec); }
+    besideView = null;
+    $('pane2').hidden = true; $('sizer-pane').hidden = true;
+    if (save) { prefs.beside = null; savePrefs(); }
+  }
+  $('pane2-close').onclick = () => closeBeside();
+  $('pane2-swap').onclick = () => { const v = besideView; closeBeside(); show(v); };
+  document.querySelectorAll('.nav [data-view]').forEach((b) => {
+    const s2 = document.createElement('span');
+    s2.className = 'beside'; s2.title = 'Open beside the chat'; s2.setAttribute('role', 'button'); s2.setAttribute('aria-label', `Open ${viewTitle(b.dataset.view)} beside the chat`);
+    s2.innerHTML = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4ZM14 5v14"/></svg>';
+    s2.addEventListener('click', (e) => { e.stopPropagation(); openBeside(b.dataset.view); });
+    b.appendChild(s2);
+  });
+  setTimeout(() => { if (prefs.beside && innerWidth > 860) openBeside(prefs.beside); }, 0);
+
   // ---------- the + menu: photos, camera, files, how to answer, this chat's switches
   // Each row says what it does; a picked one shows as a chip by the + (✕ removes it).
   const TOOLS = [
@@ -1836,11 +1932,12 @@
       officeRuns = live.runs ?? [];
       const n = officeRuns.filter((r) => !r.ended).length;
       $('office-count').hidden = !n; $('office-count').textContent = n;
-      if (view === 'office') renderOffice();
+      if (officeShown()) renderOffice();
     } catch {}
-    officeTimer = setTimeout(pollOffice, view === 'office' ? 1000 : 5000);
+    officeTimer = setTimeout(pollOffice, officeShown() ? 1000 : 5000);
   }
-  setInterval(() => { if (view === 'office') { officeFrame++; paintOffice(); } }, 350);
+  const officeShown = () => view === 'office' || besideView === 'office';
+  setInterval(() => { if (officeShown()) { officeFrame++; paintOffice(); } }, 350);
   setTimeout(pollOffice, 0); // after the rest of the page's setup has run
 
   // ---------- voice: the browser's own recognition and voices
@@ -2017,12 +2114,12 @@
 
   // ---------- messaging
   let msgSel = 'telegram', channels = null;
-  const CH = { telegram: { bg: 'var(--raise)', l: 'T' }, discord: { bg: 'var(--raise)', l: 'D' } };
+  const CH = { telegram: { bg: 'var(--raise)', l: 'T' }, discord: { bg: 'var(--raise)', l: 'D' }, slack: { bg: 'var(--raise)', l: 'S' } };
   async function loadMessaging() {
     try { channels = await getJson('/ox/messaging'); } catch (e) { $('msg-list').innerHTML = `<div class="empty-note">${esc(e.message)}</div>`; return; }
     const state = (c) => c.paired ? ['ok', 'Paired'] : c.configured ? ['warn', c.pairing ? 'Waiting for /pair' : 'Token saved. Run it to pair'] : ['warn', 'Needs setup'];
     $('msg-list').innerHTML = `<label class="search"><span data-i="search"></span><input placeholder="Filter channels…" aria-label="Filter channels" id="msg-q"></label>` + channels.map((c) => `<button class="item${msgSel === c.id ? ' on' : ''}" data-ch="${c.id}"><span class="ch-icon" style="background:${CH[c.id]?.bg || '#555'}">${CH[c.id]?.l || '?'}</span><span class="t"><div class="n">${esc(c.label)}</div><div class="d">${esc(state(c)[1])}</div></span><span class="dot ${state(c)[0]}"></span></button>`).join('')
-      + '<div class="empty-note" style="padding:12px 16px">More channels (Slack, WhatsApp, email) are on the way. These two work today.</div>';
+      + '<div class="empty-note" style="padding:12px 16px">These three work today. WhatsApp, iMessage and email are not built yet.</div>';
     paintIcons($('msg-list'));
     $('msg-list').querySelectorAll('[data-ch]').forEach((b) => (b.onclick = () => { msgSel = b.dataset.ch; loadMessaging(); $('msg-split').classList.add('show-detail'); }));
     $('msg-q').oninput = () => { const q = $('msg-q').value.toLowerCase(); $('msg-list').querySelectorAll('[data-ch]').forEach((b) => (b.hidden = !b.textContent.toLowerCase().includes(q))); };
@@ -2035,9 +2132,9 @@
       ${c.paired ? '<div class="alert ok">' + icon('shield') + 'Paired with your chat.</div>' : c.configured ? '<div class="alert" style="color:var(--amber);border-color:color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 8%,transparent)">' + icon('info') + `Bot token found (${esc(c.tokenFrom)}). Run the gateway to pair.</div>` : '<div class="alert note">' + icon('info') + 'Not set up yet. Three steps below.</div>'}
       <div class="section-cap cap">Set up</div>
       <div class="box"><ol class="steps-ol">${c.how.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>
-      <div class="cmd"><code>${esc(c.command)}${c.configured ? '' : ' --token &lt;token&gt;'}</code><button data-copy-cmd="${esc(c.command)}${c.configured ? '' : ' --token '}">${icon('copy')}</button></div></div>
+      ${(() => { const args = c.configured ? '' : c.id === 'slack' ? ' --app-token xapp-… --bot-token xoxb-…' : ' --token <token>'; return `<div class="cmd"><code>${esc(c.command + args)}</code><button data-copy-cmd="${esc(c.command + args)}">${icon('copy')}</button></div>`; })()}</div>
       <div class="section-cap cap">From your phone</div>
-      <div class="box small muted">/status: what ox is doing · /stop: stop the run · /mode ask|code|plan: switch mode · /new: start fresh · /where: the folder it works in</div>`;
+      <div class="box small muted">${['status: what ox is doing', 'stop: stop the run', 'mode ask|code|plan: switch mode', 'new: start fresh', 'where: the folder it works in'].map((x) => (c.slashless ? x : `/${x}`)).join(' · ')}</div>`;
   }
 
   // ---------- project map (PLAN.md in agenttrail's convention, against git)
@@ -2420,7 +2517,7 @@ files: [src/billing/**]
   const SECTIONS = [
     ['general', 'General', 'gear', 'name rename call it default model mode send enter agents'],
     ['appearance', 'Appearance', 'palette', 'theme dark light text size width motion'],
-    ['desktop', 'Desktop', 'monitor', 'island notch awake sleep'],
+    ['desktop', 'OX Island & desktop', 'monitor', 'island notch awake sleep buddy restart'],
     ['voice', 'Voice', 'mic', 'speech language read aloud'],
     ['memory', 'Memory', 'brain', 'remember forget profile facts preferences'],
     ['usage', 'Usage', 'chart', 'tokens cost spend models agents billing'],
@@ -2466,6 +2563,16 @@ files: [src/billing/**]
   const mobileBack = `<button class="btn ghost mback" style="margin:-8px 0 14px" onclick="document.getElementById('sheet').classList.add('nav-open')">${icon('back')}Settings</button>`;
   function bindSegs(root, onPick) { root.querySelectorAll('[data-seg]').forEach((g) => g.querySelectorAll('button').forEach((b) => (b.onclick = () => { onPick(g.dataset.seg, b.dataset.v); g.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); }))); }
 
+  // The island switch and Restart, wherever they are shown.
+  function bindIsland(el) {
+    if ($('s-island')) $('s-island').onchange = async () => { const on = $('s-island').checked; try { await postJson('/ox/settings', { island: on }); toast(on ? 'OX Island on' : 'OX Island off'); renderSection(); } catch (e) { toast(e.message); $('s-island').checked = !on; } };
+    el.querySelectorAll('[data-island-restart]').forEach((b) => (b.onclick = async () => {
+      b.disabled = true; b.textContent = 'Restarting…';
+      try { const r = await postJson('/ox/settings', { islandRestart: true }); toast(r.island?.running ? 'OX Island restarted' : 'OX Island is starting'); } catch (e) { toast(e.message); }
+      renderSection();
+    }));
+  }
+
   async function renderSection() {
     const el = $('sbody');
     el.innerHTML = '<div class="skeleton" style="width:40%"></div><div class="skeleton"></div><div class="skeleton"></div>';
@@ -2473,15 +2580,18 @@ files: [src/billing/**]
       if (sec === 'general') {
         const st = await getJson('/ox/settings');
         if (!caps) await loadCaps().catch(() => {});
-        el.innerHTML = `${mobileBack}<div class="sblock"><div class="shead">${icon('chat')}Name</div><p class="sdesc">Call it whatever you like. It answers to this name when you say it while talking to it, in this app, the terminal, the island and your phone, and calls itself by it. Your agents keep their own names (rename them below).</p>
+        el.innerHTML = `${mobileBack}<div class="sblock"><div class="shead">${icon('monitor')}OX Island</div><p class="sdesc">ox in your notch: what each run is doing, approvals to answer, and your buddy to talk to (hold ⌃⌥Space).</p>
+          ${row('OX Island', st.island.enabled ? (st.island.running ? 'On, in your notch now' : 'On. It starts with your next run, or press Restart') : `Off. ${st.island.platform === 'darwin' ? 'Turn it on and ox lives in your notch: runs, approvals, your voice' : 'Turn it on and a slim bar shows ox at the top of the screen'}`, `<span style="display:flex;gap:8px;align-items:center">${st.island.enabled ? '<button class="btn ghost" data-island-restart>Restart</button>' : ''}${sw('s-island', st.island.enabled)}</span>`)}</div>
+          <div class="sblock"><div class="shead">${icon('chat')}Name</div><p class="sdesc">Call it whatever you like. It answers to this name when you say it while talking to it, in this app, the terminal, the island and your phone, and calls itself by it. Your agents keep their own names (rename them below).</p>
           ${row('Name', st.name === 'ox' ? 'The default' : `Was ox. Clear it to go back`, `<span style="display:flex;gap:6px"><input class="field" id="s-name" maxlength="24" style="width:160px" placeholder="ox"><button class="btn" id="s-name-save">Save</button></span>`)}
           ${(caps?.agents ?? []).map((a) => row(`Agent “${esc(a.name)}”`, esc(a.desc || a.mode || ''), `<span style="display:flex;gap:6px"><input class="field" data-ag-from="${esc(a.name)}" value="${esc(a.name)}" maxlength="48" style="width:160px"><button class="btn" data-ag-save="${esc(a.name)}">Rename</button></span>`)).join('')}</div>
           <div class="sblock"><div class="shead">${icon('bolt')}Model</div><p class="sdesc">The model ox uses everywhere (the terminal, this app, the island and your phone) unless you pick another for a session. Saved in ~/.ox/config.json.</p>
-          ${row('Default model', st.model.source.startsWith('auto') ? `Chosen for you: ${esc(st.model.source.slice(6))}` : st.model.source === 'config' ? 'Your choice' : 'Nothing connected yet. Add a key in API keys, an account, or a local model', `<select id="s-model">${st.model.bots.map((b) => `<option value="${esc(b.id)}">${esc(b.id)}${b.ready ? '' : ' (no key)'}</option>`).join('')}</select>`)}</div>
+          ${row('Default model', st.model.source.startsWith('auto') ? (st.model.configured ? `Your choice, ${esc(st.model.configured)}, cannot run here (no key or not signed in), so ox uses ${esc(st.model.defaultBot)}` : `Chosen for you: ${esc(st.model.defaultBot)}, the best model that can answer here`) : st.model.source === 'config' ? 'Your choice' : 'Nothing connected yet. Add a key in API keys, an account, or a local model', `<select id="s-model">${st.model.bots.map((b) => `<option value="${esc(b.id)}">${esc(b.id)}${b.ready ? '' : ' (no key)'}</option>`).join('')}</select>`)}</div>
           <div class="sblock"><div class="shead">${icon('chat')}Chat</div><p class="sdesc">How this app behaves. Kept in this browser.</p>
           ${row('Default mode', 'What new chats start in. Auto picks per message.', `<select id="s-mode">${['auto', 'code', 'ask', 'plan', 'debug', 'data', 'orchestrate'].map((m) => `<option value="${m}">${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}</select>`)}
           ${row('Send with', 'The other key adds a new line.', seg('sendKey', [['enter', 'Enter'], ['mod', `${MOD}+Enter`]], prefs.sendKey))}
           ${row('Suggest follow-ups', 'Three questions to ask next under each answer. Costs one small extra model call per answer (about 250 tokens).', sw('s-follow', prefs.followups === true))}</div>`;
+        bindIsland(el);
         $('s-name').value = st.name === 'ox' ? '' : st.name;
         $('s-name-save').onclick = async () => { try { const r = await postJson('/ox/settings', { name: $('s-name').value }); applyName(r.name); toast(`Name: ${r.name}`); renderSection(); } catch (e) { toast(e.message); } };
         $('s-name').onkeydown = (e) => { if (e.key === 'Enter') $('s-name-save').click(); };
@@ -2504,15 +2614,15 @@ files: [src/billing/**]
         bindSegs(el, (k, v) => { prefs[k] = v || null; savePrefs(); });
       } else if (sec === 'desktop') {
         const st = await getJson('/ox/settings');
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('monitor')}Desktop</div><p class="sdesc">Same settings as <code>ox island on|off</code> and <code>ox awake</code>.</p>
-          ${row('OX Island', st.island.enabled ? (st.island.running ? 'On and running' : 'On. Starts with the next run') : `Off. ${st.island.platform === 'darwin' ? 'When on, ox lives in your notch' : 'When on, a slim bar sits at the top of the screen'}`, sw('s-island', st.island.enabled))}
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('monitor')}OX Island &amp; desktop</div><p class="sdesc">Same as <code>ox island on</code> / <code>off</code> / <code>restart</code> and <code>ox awake</code> in a terminal.</p>
+          ${row('OX Island', st.island.enabled ? (st.island.running ? 'On, in your notch now' : 'On. It starts with your next run, or press Restart') : `Off. ${st.island.platform === 'darwin' ? 'Turn it on and ox lives in your notch: runs, approvals, your voice' : 'Turn it on and a slim bar shows ox at the top of the screen'}`, `<span style="display:flex;gap:8px;align-items:center">${st.island.enabled ? '<button class="btn ghost" data-island-restart>Restart</button>' : ''}${sw('s-island', st.island.enabled)}</span>`)}
           ${row('Keep the computer awake', 'While ox works, so long runs are not cut off by sleep.', sw('s-awake', st.awake.on))}`;
-        $('s-island').onchange = async () => { try { await postJson('/ox/settings', { island: $('s-island').checked }); toast($('s-island').checked ? 'Island on' : 'Island off'); renderSection(); } catch (e) { toast(e.message); } };
+        bindIsland(el);
         $('s-awake').onchange = async () => { try { await postJson('/ox/settings', { awake: $('s-awake').checked }); } catch (e) { toast(e.message); } };
       } else if (sec === 'voice') {
         const voices = ('speechSynthesis' in window) ? speechSynthesis.getVoices() : [];
         const V = await voiceStatus();
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('mic')}Voice</div><p class="sdesc">Talking to ox here uses this browser's speech recognition${Speech ? '' : '. This browser has none, so the mic is hidden'}. In the terminal, <code>ox speak</code> uses your system voice or VoxCPM.</p>
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('mic')}Voice</div><p class="sdesc">Talking to ox here uses this browser's speech recognition${Speech ? '' : '. This browser has none, so the mic is hidden'}. Answers are read in the natural voice below (Kokoro, offline); <code>ox speak</code> in a terminal uses the same voice.</p>
           ${row('Language', 'What you speak in.', `<select id="s-lang"><option value="">Same as this browser (${esc(navigator.language)})</option>${['en-US', 'en-GB', 'en-IN', 'fr-FR', 'de-DE', 'es-ES', 'it-IT', 'pt-BR', 'hi-IN', 'zh-CN', 'ja-JP', 'ko-KR', 'ar-SA', 'ru-RU'].map((l) => `<option>${l}</option>`).join('')}</select>`)}
           ${row('Read answers aloud', 'ox says each finished answer.', sw('s-speak', prefs.speakReplies))}
           <div class="section-cap cap">How ox sounds</div>
@@ -2688,10 +2798,14 @@ files: [src/billing/**]
         $('hf-q').oninput = () => { clearTimeout(hfTimer); hfTimer = setTimeout(hfSearch, 450); };
         if (pendingHf !== null) { $('hf-q').value = pendingHf; pendingHf = null; $('hf-q').scrollIntoView({ block: 'center' }); $('hf-q').focus(); if ($('hf-q').value) hfSearch(); }
       } else if (sec === 'messaging') {
-        closeSettings(); show('msg'); return;
+        // Shown here (it used to close Settings and jump away, with no way back).
+        const chs = await getJson('/ox/messaging');
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('chat')}Messaging</div><p class="sdesc">Drive ox from your phone: send a task, answer its Allow / Deny, get the answer back. Only the chat you pair can use it.</p>
+          ${chs.map((c) => row(esc(c.label), c.paired ? 'Paired with your chat' : c.configured ? `Token ${esc(c.tokenFrom)}. Start it to pair: <code>${esc(c.command)}</code>` : 'Not set up yet', `<button class="btn" data-msg-open="${esc(c.id)}">${c.paired || c.configured ? 'Details' : 'Set up'}</button>`)).join('')}`;
+        el.querySelectorAll('[data-msg-open]').forEach((b) => (b.onclick = () => { msgSel = b.dataset.msgOpen; closeSettings(); show('msg'); $('msg-split')?.classList.add('show-detail'); }));
       } else if (sec === 'shortcuts') {
         const K = (...k) => `<span class="keys">${k.map((x) => `<span class="kbd">${x}</span>`).join('')}</span>`;
-        const S = [['Composer', [['Send message', prefs.sendKey === 'enter' ? K('↵') : K(MOD, '↵')], ['New line', prefs.sendKey === 'enter' ? K('⇧', '↵') : K('↵')], ['Edit your last message', K('↑')], ['Stop the running answer', K('Esc')], ['Focus the message box', K(MOD, 'L')], ['Pick the model', K(MOD, '⇧', 'M')], ['Talk instead of typing', K('⌃', 'B')]]],
+        const S = [['Composer', [['Send message', prefs.sendKey === 'enter' ? K('↵') : K(MOD, '↵')], ['New line', prefs.sendKey === 'enter' ? K('⇧', '↵') : K('↵')], ['Edit your last message', K('↑')], ['Stop the running answer', K('Esc')], ['Focus the message box', K(MOD, 'L')], ['Pick the model', K(MOD, '⇧', 'M')], ['Next mode', K(MOD, '.')], ['Improve the prompt', K(MOD, 'I')], ['Talk instead of typing', K('⌃', 'B')]]],
           ['App', [['New session', K(MOD, 'N')], ['New incognito chat', K(MOD, '⇧', 'N')], ['Search sessions', K(MOD, 'K')], ['Settings', K(MOD, ',')], ['This list', K(MOD, '/')], ['Hide or show the sidebar', K(MOD, '\\')], ['Close settings', K('Esc')]]],
           ['Island (Mac)', [['Open the island chat', K('⌃', '⌥', 'Space')]]]];
         el.innerHTML = `${mobileBack}<div class="shead">${icon('keyboard')}Keyboard shortcuts</div><p class="sdesc">${MOD}/ opens this list from anywhere in the app.</p>` + S.map(([g, list]) => `<div class="section-cap cap">${g}</div>${list.map(([l, k]) => `<div class="short"><span>${l}</span>${k}</div>`).join('')}`).join('');
@@ -2704,7 +2818,7 @@ files: [src/billing/**]
         el.querySelectorAll('[data-purge]').forEach((b) => (b.onclick = async () => { if (!(await askSure('Delete this chat for good?'))) return; convos = convos.filter((x) => x.id !== b.dataset.purge); saveConvos(); renderSection(); }));
       } else if (sec === 'about') {
         about = about || await getJson('/ox/about');
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('info')}About ox</div><p class="sdesc">The featherweight coding agent. One ox in your terminal, this app, your notch and your phone.</p>
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('info')}About ox</div><p class="sdesc">Your agent for code and everything around it. One ox in your terminal, this app, your notch and your phone.</p>
           <dl class="kv"><dt>version</dt><dd>${esc(about.version)}</dd><dt>licence</dt><dd>${esc(about.license)}</dd><dt>runtime</dt><dd>Node ${esc(about.node)} · ${esc(about.platform)} ${esc(about.arch)}</dd><dt>folder</dt><dd class="mono">${esc(about.cwd)}</dd><dt>settings</dt><dd class="mono">${esc(about.config)}</dd><dt>keys</dt><dd class="mono">${esc(about.keys)}</dd></dl>
           <div class="cmd"><code>ox doctor</code><button data-copy-cmd="ox doctor">${icon('copy')}</button></div>`;
       }

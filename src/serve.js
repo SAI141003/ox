@@ -1196,6 +1196,11 @@ async function handleSettingsPost(req, res) {
     const { cmdIsland } = await import('./island.js');
     await cmdIsland([body.island ? 'on' : 'off'], { log: () => {}, err: () => {} });
   }
+  // Restart: stop, rebuild (macOS) and start, so a new version of the island loads.
+  if (body.islandRestart === true && !process.env.NODE_TEST_CONTEXT) {
+    const { cmdIsland } = await import('./island.js');
+    await cmdIsland(['restart'], { log: () => {}, err: () => {} });
+  }
   if (typeof body.defaultBot === 'string') {
     try {
       resolveBot(body.defaultBot, { bots: readConfigDoc().bots ?? {} });

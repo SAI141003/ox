@@ -109,5 +109,5 @@ test('island off/on persists and a disabled island is never bound', async () => 
   assert.equal(islandRunning({ home, env: {} }), true);
   const out = [];
   assert.equal(await cmdIsland(['nope'], { log: (s) => out.push(s), err: (s) => out.push(s) }), 3);
-  assert.match(out.join(''), /start, stop, on, off, status, build/);
+  assert.match(out.join(''), /start, stop, restart, on, off, status, build/);
 });

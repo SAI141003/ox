@@ -116,6 +116,19 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
     log('OX Island is on');
     return cmdIsland(['start'], { log, err });
   }
+  // A new version of the island (after an update): stop it, rebuild, start it.
+  if (action === 'restart') {
+    if (!islandEnabled()) { log('OX Island is turned off. Turn it on with: ox island on'); return 1; }
+    if (live()) {
+      try { process.kill(Number(JSON.parse(fs.readFileSync(islandFile(), 'utf8')).pid), 'SIGTERM'); } catch {}
+      for (let i = 0; i < 30 && live(); i++) await new Promise((r) => setTimeout(r, 100));
+    }
+    if (process.platform === 'darwin') {
+      const b = await cmdIsland(['build'], { log, err });
+      if (b !== 0) return b;
+    }
+    return cmdIsland(['start'], { log, err });
+  }
   if (action === 'stop') {
     try {
       process.kill(Number(JSON.parse(fs.readFileSync(islandFile(), 'utf8')).pid), 'SIGTERM');
@@ -138,7 +151,7 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
     await new Promise(() => {}); // until SIGINT/SIGTERM
   }
   if (action !== 'start' && action !== 'build') {
-    err(`ox: unknown island action '${action}' (use start, stop, on, off, status, build, web)\n`);
+    err(`ox: unknown island action '${action}' (use start, stop, restart, on, off, status, build, web)\n`);
     return 3;
   }
   if (action === 'start' && !islandEnabled()) {
