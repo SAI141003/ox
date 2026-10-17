@@ -4,11 +4,30 @@ Everything someone taking over ox needs, top to bottom: what it is, how it is
 built and run, every feature with its state and where its code is, every
 connection, the GitHub setup, the benchmarks, the repositories studied, the
 screenshots and videos that shaped it, what is broken or missing, and the rules
-the owner set. Written October 17, 2026, from the code as it is on `main`
-(commit noted in section 6), not from memory.
+the owner set. Written October 17, 2026 and updated the same evening (release
+v0.1.1), from the code as it is on `main`, not from memory. Section 0 is the
+latest round; everything after it is the full picture.
 
 States used: **✓** works and was tested for real (how, is said) · **~** works
 with a named gap · **✗** missing or broken · **?** not tested.
+
+---
+
+## 0. Latest round (October 17, evening)
+
+| What | State | Evidence |
+|---|---|---|
+| **ox improved itself**: the first `ox evolve` change kept. ox wrote a CWE-377 rule (Python `tempfile.mktemp`) with its test, in its own worktree; the suite measured it better (1,875 pass vs 1,874, 0 fail); reviewed and accepted | ✓ | commit `9b5a873`, author "ox" |
+| `ox evolve` judge re-runs newly failing tests alone before rejecting (the first real attempt was rejected for an unrelated flaky test) | ✓ | `recheck()` in src/evolve.js, test |
+| `ox evolve "<goal>"` was ignoring its goal (an absent flag's position, −1 + 1 = 0, skipped the goal) | ✓ fixed | |
+| Attempts run their own committed ox, not the half-edited working copy beside them | ✓ fixed | |
+| **Photos reach the plans** (ChatGPT, Claude): a message with an image was dropped whole; now the words are kept, Codex gets `--image`, Claude Code is told the file path | ✓ | ChatGPT plan read a Task-board screenshot: title, 5 columns, their names (68 s) |
+| **CI on clean machines** found: `ox doctor` gave no next step without a local model; unit tests opened a real browser tab and Finder window on the owner's Mac on every run (now a dry run under the test runner); "open youtube" became an app on Linux/Windows; the Windows download never built (raw `C:\` import) | ✓ fixed | release v0.1.0 builds failed on all three; fixes in v0.1.1 |
+| **Head-to-head**, first full run on qwen2.5:3b: ox, Hermes, Codex, Claude Code all **0/9** (a floor effect, no ranking) | recorded | `bench/h2h/RESULTS.md`, 36-row JSON |
+| Release **v0.1.1** with the Mac zip; CI building Windows/Linux/Mac from the tag | ~ | at this update the CI run was queued; check `gh run list --repo SAI141003/ox` |
+| Unit suite **1,875 pass, 0 fail**; launch check **141/142** (`/doctor` in the REPL timed out once under load; 4 s and exit 0 when run alone) | ✓ / ~ | |
+| `docs/HANDOFF.md` (this file) | ✓ | |
+| The user's Mac: `~/ox` merged, OX.app reinstalled; the island rebuild was interrupted at the user's request, so its relaunch is unconfirmed (`ox island restart`) | ~ | |
 
 ---
 
@@ -28,7 +47,7 @@ pays for (Claude, ChatGPT, Cursor…) through those vendors' own CLIs.
 
 Size at handoff: 162 modules in `src/` (~70,700 lines with tools and providers),
 16 agent-tool modules exposing 27 tools, 20 Swift files for the island (~6,700
-lines with the app launcher), 187 test files (1,867 unit tests, all passing).
+lines with the app launcher), 188 test files (1,875 unit tests, all passing).
 
 ---
 
@@ -86,7 +105,7 @@ ox app install                 # put OX.app in ~/Applications (rebuilds if its s
 **Test** (always with the test environment; machine features off):
 
 ```bash
-node scripts/verify.mjs --only unit     # 1,867 tests, ~4–7 min on this Mac
+node scripts/verify.mjs --only unit     # 1,875 tests, ~4–7 min on this Mac
 node scripts/launch-check.mjs           # 139 commands/slash commands smoke-run in a fresh HOME
 ```
 
@@ -95,9 +114,10 @@ OX_NO_BUILTIN_SKILLS=1 OX_NO_PLUGINS=1`. Running a single file without them give
 false failures (e.g. 15 skills found instead of 1). On Node 25 pass
 `--test-reporter=tap` to read `# pass / # fail`.
 
-**Known flaky under heavy load** (pass alone): daemon 3, serve-settings
-("another website cannot change settings"), probe cache TTL, docker-backend,
-prompt-layering. The Mac this was built on routinely runs at a very high load.
+**Known flaky under heavy load** (pass alone): daemon 3 and daemon 7,
+serve-settings ("another website cannot change settings"), probe cache TTL,
+docker-backend, prompt-layering, mcp restart, local-discovery's mixed-origin
+scan and concurrent dead ports, subscriptions when run beside other suites. The Mac this was built on routinely runs at a very high load.
 
 **Branch flow used**: work happens in the worktree `~/ox/.claude/worktrees/ox-repair`
 on branch `claude/ox-repair`; the user's checkout `~/ox` (branch `main`) is
@@ -166,6 +186,7 @@ failures, baselines), `cache/` (images, market), `laya/` (System 1 model, 680 MB
 | 22 API providers (Anthropic, OpenAI, Gemini, xAI, Groq, DeepSeek, Mistral, OpenRouter, Together, Fireworks, Cerebras, Moonshot/Kimi, Zhipu, MiniMax, Baichuan, Yi, StepFun, Ollama, LM Studio, llama.cpp, vLLM, custom) | ✓ | `src/bots.js`, `src/providers/` |
 | Plans you pay for, via their CLIs (`ox connect` knows 16 CLIs) | ✓ | ChatGPT plan: 9/9 real tasks today; Claude plan: works when signed in |
 | Expired plan sign-in said plainly, plan stops being offered | ✓ | Claude's "OAuth session expired" caught today; `expiredPlans` in subscriptions.js |
+| Photos and screenshots reach the plans (Codex `--image`, Claude Code told the file path) | ✓ | a Task-board screenshot read correctly on the ChatGPT plan |
 | Plans get ox's Mac actions (MCP) | ✓ | Codex (approved ahead) and Claude Code (`--mcp-config`, 6 tools allowed); "open whatsapp" opened WhatsApp via `mcp__ox__open_app` |
 | Auto model per message; Compare several models | ✓ | serve.js `autoModel`; picker |
 | Custom endpoints, local models, Hugging Face search and download | ✓ | Settings › Custom endpoints / Local models |
@@ -194,7 +215,7 @@ failures, baselines), `cache/` (images, market), `laya/` (System 1 model, 680 MB
 
 | Feature | State | Evidence |
 |---|---|---|
-| `ox evolve "<goal>"`: change in its own worktree, judged by the unit suite, kept only if better, merged only by `ox evolve accept` | ~ | First real run today: a correct change (a CWE-377 rule) was rejected for a flaky unrelated test → judge fixed (newly failing tests re-run alone). The rerun's verdict: see `ox evolve list` |
+| `ox evolve "<goal>"`: change in its own worktree, judged by the unit suite, kept only if better, merged only by `ox evolve accept` | ✓ | First kept change: `9b5a873` (a CWE-377 rule), measured 1,875 vs 1,874 pass. On the way: the judge rejected a correct change for a flaky test (now re-run alone), the goal argument was ignored, and attempts ran the half-edited working copy (all fixed) |
 | Crash recording → `ox evolve` with no goal fixes the most frequent | ✓ | `~/.ox/self/failures.jsonl` |
 | Follows "market trends" by itself | ✗ | Not built: there is no trend source wired to evolve; would need a scheduled flow that reads release notes / repos and files goals |
 
@@ -249,8 +270,10 @@ failures, baselines), `cache/` (images, market), `laya/` (System 1 model, 680 MB
 
 | Item | State |
 |---|---|
-| Unit suite | ✓ 1,867 pass, 0 fail (full run today) |
-| Launch check | ✓ 139/139 |
+| Unit suite | ✓ 1,875 pass, 0 fail (full run, evening) |
+| Launch check | ~ 141/142: `/doctor` in the REPL timed out once on the loaded Mac (4 s, exit 0 alone) |
+| Clean-machine CI (GitHub Actions) | ~ v0.1.0 failed on Linux, Mac, Windows (fixed); v0.1.1 building |
+| Tests never act on the real machine (operator tools dry-run under the test runner) | ✓ |
 | Download self-contained (official Node; packaging refuses Homebrew's) | ✓ |
 
 ---
@@ -260,6 +283,10 @@ failures, baselines), `cache/` (images, market), `laya/` (System 1 model, 680 MB
 - Repository: **https://github.com/SAI141003/ox** (private at handoff; making it
   public is the owner's decision and one click in Settings).
 - Branch: `main` (pushed from `claude/ox-repair`). Remote `origin`.
+- Release **v0.1.1** (current): https://github.com/SAI141003/ox/releases/tag/v0.1.1
+  with `ox-mac-arm64.zip`; its tag runs the release workflow for Windows, Linux
+  and Mac (v0.1.0's run failed on all three; the causes are fixed in v0.1.1).
+  Intel-Mac runners (macos-13) queue for hours on GitHub.
 - Release **v0.1.0**: https://github.com/SAI141003/ox/releases/tag/v0.1.0 with
   `ox-mac-arm64.zip` (51 MB, official Node 22, island included, ad-hoc signed,
   not notarized: first open is right-click › Open). The tag started the release
@@ -280,7 +307,7 @@ failures, baselines), `cache/` (images, market), `laya/` (System 1 model, 680 MB
 | Requirements to code | 7/7 criteria | `bench/build/RESULTS.md` |
 | Language port | 11/11 tests | `bench/port/RESULTS.md` |
 | ox vs Hermes overhead (same stand-in model) | start 166 ms vs 2,250 ms; 2,073 vs 10,923 tokens per request; 1 vs 3 requests | `bench/compare-hermes.mjs` |
-| Head-to-head ox / Hermes / Codex / Claude Code, same 9 tasks, same local model, tokens by proxy | running at handoff; first task: ox passed in 42 s, 3 requests, 10.7k tokens; the others failed | `bench/h2h/` |
+| Head-to-head ox / Hermes / Codex / Claude Code, same 9 tasks, same local model (qwen2.5:3b, 64k), tokens by proxy | **0/9 for every agent**: a floor effect, no ranking. Tokens in: ox 181,544 (58 requests), Hermes 267,764 (35), Codex 53,541 (18), Claude Code 0 (no usable answer from the local model) | `bench/h2h/RESULTS.md`, `results-qwen2.5-3b-64k.json` |
 | SWE-bench, GAIA, full Terminal-Bench | not run | |
 
 ---
@@ -353,17 +380,22 @@ feature by feature in `docs/FEATURES.md` sections 10–13.
 1. **Island**: draw on the screen to explain (Pixie); Coucou's cards (question
    chips, live diff, Mail/GitHub/Stripe/Vercel); approving other CLIs' commands
    from the notch (needs the owner's OK to install hooks).
-2. **Head-to-head benchmark**: finish the run, publish it whatever it says; then
-   SWE-bench Lite / Terminal-Bench with a strong model.
+2. **Head-to-head benchmark**: rerun with a shared model strong enough to
+   separate the agents (a 7B+ coder model, ~5 GB download, owner's OK; or an
+   API key); then SWE-bench Lite / Terminal-Bench with a strong model.
 3. **open-intelligent-ui components** (28) and functions (~25), written from scratch.
 4. **Agent canvas / Harness board**: live panes per agent CLI.
-5. **ox evolve**: a trend source (release notes, repos) that files goals on a schedule.
+5. **ox evolve**: it works (one change kept); next is a trend source (release
+   notes, repos) that files goals on a schedule, and a scheduled run.
 6. **ruflo ideas**: cost/replay cockpit, missions, permission ladder.
 7. **Devin parity**: Jira/Linear, PR flow, codebase wiki.
 8. Notarized Mac app (needs an Apple developer account), Windows island.
 9. `docs/FEATURES.md` predates October 17: this handoff is the current state;
    FEATURES.md should be brought in line.
 10. Amoeba, Nixi, prime-agent, grok-build: not reviewed yet.
+11. Confirm the v0.1.1 CI builds finished and attached Windows/Linux zips.
+12. The owner's decisions: make the repo public; sign Claude back in
+    (`claude`, then `/login`); allow the island's hooks into Claude Code/Codex.
 
 ---
 
