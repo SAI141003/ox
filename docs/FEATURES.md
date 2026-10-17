@@ -147,7 +147,7 @@ Updated October 16 2026.
 
 | # | Feature | State | Note |
 |---|---|---|---|
-| 12.1 | OX Island upgrade from the Coucou repo and the Pixie video (section 8) | ✗ | Next, as you asked |
+| 12.1 | OX Island upgrade from the Coucou repo and the Pixie video (section 8) | ~ | Started: natural voice (8.14) and the app's runs on the island (8.15) built; the cards in 8.4-8.13 are next |
 | 12.2 | ox's own automations (n8n-style flows), no n8n needed | ✗ | Scheduled runs exist (7.6); no flow builder |
 | 12.3 | Marketplace with every skill (Karpathy's; languages and stacks: Java, Python, Go, Spring, SQL Server, Postgres, Oracle, MongoDB, Redis, React, Angular, Azure, AWS, GCP, Docker, Kubernetes, Kafka, gRPC, GraphQL, Terraform…; markets, finance, other professions) | ~ | 329 plugins, 30 GitHub skills listed (7.4); far from everything |
 | 12.4 | ox's own deep learning (Andrew Ng's course ideas) | ✗ | To be scoped: what it should learn, from what data |
@@ -162,12 +162,12 @@ Updated October 16 2026.
 | 13.2 | Each agent on its own branch, keeps going when the laptop closes (Harness) | Worktrees exist for teams, arena and evolve; the daemon runs schedules | ~ not per chat agent in the app |
 | 13.3 | Every machine linked: Mac, home server, office, GPU box (Harness) | — | ✗ (same as 10.2) |
 | 13.4 | Reply by voice from the phone (Harness) | Telegram and Discord, voice notes transcribed | ~ no phone app |
-| 13.5 | One-command skill to research LinkedIn, YouTube transcripts, X talk (AgentReach for Hermes, video 2) | web_search / web_fetch; username search across sites (osint); yt-dlp named as a capability | ~ no YouTube-transcript or social-research skill yet |
+| 13.5 | One-command skill to research LinkedIn, YouTube transcripts, X talk (AgentReach for Hermes, video 2) | youtube_transcript reads any video's transcript (tested: 3Blue1Brown, 31 languages, 18,895 chars), no yt-dlp; web search for the rest | ~ no LinkedIn or X research channel (both need a signed-in session) |
 | 13.6 | Every language and stack a recruiter asks for: Java, Go, Spring, SQL Server, Postgres, Oracle, MongoDB, Redis, Cosmos, React, Angular, Azure/AWS/GCP, Docker, Kubernetes, RabbitMQ, Kafka, gRPC, GraphQL, SOAP, SignalR, MAUI, Unity, GitHub Actions, Azure DevOps, Terraform (image) | General coding works in any language; no per-stack skills | ~ (12.3) |
 | 13.7 | Precise one-prompt image edits at 2K (Krea, image) | Studio makes images and video with your provider keys | ✗ editing an existing image |
 | 13.8 | Make agents from plain language, self-developing (AutoAgent, HKUDS, image) | Bots page and `ox agent new`; ox evolve improves ox | ~ no "describe the agent, ox builds it" |
 | 13.9 | Chat bar with Build / Plan / Mission / Skills and a model picker (Freebuff, image) | Mode list with descriptions, + menu, model picker | ✓ (11.1, 11.9) |
-| 13.10 | Subagents with isolated context, pluggable filesystem, summarize long threads and offload tool outputs to disk, shell, persistent memory (deepagents, MIT, image) | Subagents, compaction, sandbox, memory | ~ big tool outputs are cut, not offloaded to a file the agent can read back |
+| 13.10 | Subagents with isolated context, pluggable filesystem, summarize long threads and offload tool outputs to disk, shell, persistent memory (deepagents, MIT, image) | Subagents, compaction, sandbox, memory; tool results over 20,000 characters are kept whole in a file, the model gets the ends and the path (test) | ✓ |
 | 13.11 | Video editing by an agent: watch, hear (Whisper), cut (ffmpeg), animate (Remotion), HTML→MP4, captions (image) | Whisper dictation; an ffmpeg video MCP | ~ no editing workflow |
 | 13.12 | Errands from one sentence with suggestion chips: cancel a subscription, track a package, book a plumber (Wajo, image) | Mail, browser and operator tools; scheduled runs | ~ no errand chips; no phone calls |
 | 13.13 | /anatomy: an interactive drawing that explains how a machine works (skill, image) | OpenUI answers draw SVG and sliders | ~ no ready-made skill |
