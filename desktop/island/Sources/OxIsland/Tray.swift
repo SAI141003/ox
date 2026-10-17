@@ -31,6 +31,57 @@ enum TrayTab: String, CaseIterable, Identifiable {
 // MARK: - Running ox
 
 /// Runs the ox that started this island (`ox island start` passes OX_NODE and OX_CLI).
+/// ~/.ox/island.log: what the island heard, which way it went, how long it
+/// took and what came back. One line each, kept under a megabyte.
+enum IslandLog {
+    static let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/island.log")
+    static func write(_ line: String) {
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        let text = "\(stamp) \(line.replacingOccurrences(of: "\n", with: " "))\n"
+        let fm = FileManager.default
+        if let size = (try? fm.attributesOfItem(atPath: file.path))?[.size] as? Int, size > 1_000_000 {
+            try? fm.removeItem(at: file)
+        }
+        if let h = try? FileHandle(forWritingTo: file) {
+            h.seekToEndOfFile(); h.write(Data(text.utf8)); try? h.close()
+        } else {
+            try? fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? Data(text.utf8).write(to: file)
+        }
+    }
+}
+
+/// The ox server that is already running (OX.app's, or `ox serve`), asked over
+/// HTTP on this Mac: POST /ox/voice.
+enum VoiceServer {
+    struct Result: Decodable { let route: String; let handled: Bool; let say: String?; let why: String?; let model: String? }
+
+    static func url() -> URL? {
+        let home = NSHomeDirectory()
+        for name in ["app.json", "serve.json"] {
+            guard let d = FileManager.default.contents(atPath: home + "/.ox/" + name),
+                  let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
+            if let pid = j["pid"] as? Int, kill(pid_t(pid), 0) != 0 { continue }
+            if let s = j["url"] as? String, let u = URL(string: s) { return u.appendingPathComponent("ox/voice") }
+            if let p = j["port"] as? Int { return URL(string: "http://127.0.0.1:\(p)/ox/voice") }
+        }
+        return nil
+    }
+
+    static func ask(_ text: String, done: @escaping (Result?) -> Void) {
+        guard let u = url() else { done(nil); return }
+        var req = URLRequest(url: u, timeoutInterval: 75)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "content-type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text])
+        URLSession.shared.dataTask(with: req) { data, resp, _ in
+            let ok = (resp as? HTTPURLResponse)?.statusCode == 200
+            let r = ok ? data.flatMap { try? JSONDecoder().decode(Result.self, from: $0) } : nil
+            DispatchQueue.main.async { done(r) }
+        }.resume()
+    }
+}
+
 enum OxRunner {
     static var available: Bool { paths() != nil }
 
@@ -582,13 +633,27 @@ final class IslandChat: ObservableObject {
 
     /// Called with the answer, for the voice to speak it.
     private var onReply: ((String) -> Void)?
+    /// What you sent while ox was busy: done next, in order (it used to be dropped).
+    private var queued: [(text: String, bridge: OxBridge, onReply: ((String) -> Void)?)] = []
 
     func send(_ raw: String, bridge: OxBridge, onReply: ((String) -> Void)? = nil) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !busy else { return }
+        guard !text.isEmpty else { return }
+        if busy {
+            queued.append((text, bridge, onReply))
+            lines.append(Line(mine: true, text: text))
+            lines.append(Line(mine: false, text: "Queued: I'll do this next (\(queued.count) waiting)."))
+            IslandLog.write("queued: \(text)")
+            return
+        }
+        start(text, bridge: bridge, onReply: onReply, echo: true)
+    }
+
+    private func start(_ text: String, bridge: OxBridge, onReply: ((String) -> Void)?, echo: Bool) {
         self.onReply = onReply
-        lines.append(Line(mine: true, text: text))
-        if let said = bridge.islandCommand(text) { reply(said, who: nil); return }
+        if echo { lines.append(Line(mine: true, text: text)) }
+        IslandLog.write("heard: \(text)")
+        if let said = bridge.islandCommand(text) { IslandLog.write("island command: \(said)"); reply(said, who: nil); return }
         if let name = agent {
             run(text, extra: ["--agent", name], key: name, who: name)
             return
@@ -598,6 +663,33 @@ final class IslandChat: ObservableObject {
             return
         }
         busy = true
+        // The ox that is already running answers first (Coucou's shape): no new
+        // process per request, small tasks in a quarter second, questions from
+        // the quickest model, and only real tasks become an agent run.
+        let started = Date()
+        VoiceServer.ask(text) { [weak self] r in
+            guard let self else { return }
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            if let r, r.handled {
+                IslandLog.write("\(r.route) in \(ms) ms\(r.model.map { " (\($0))" } ?? ""): \(r.say ?? "")")
+                self.busy = false
+                self.reply(r.say ?? "Done.", who: nil)
+                return
+            }
+            if let r, r.route == "agent" {
+                IslandLog.write("agent run (\(r.why ?? "")) after \(ms) ms")
+                self.lines.append(Line(mine: false, text: "On it…"))
+                MainActor.assumeIsolated { bridge.buddy.speak("On it.") }
+                self.run(text, extra: ["--mode", "auto"], key: "ox", who: nil)
+                return
+            }
+            IslandLog.write("no running ox answered (\(ms) ms): starting ox for it")
+            self.runLocally(text)
+        }
+    }
+
+    /// No ox server running: start ox for this one request (the old way).
+    private func runLocally(_ text: String) {
         OxRunner.run(["do", "--json", text], cwd: URL(fileURLWithPath: folder)) { [weak self] _, out in
             guard let self else { return }
             struct R: Decodable { let handled: Bool; let message: String? }
@@ -631,8 +723,16 @@ final class IslandChat: ObservableObject {
 
     private func reply(_ text: String, who: String?) {
         lines.append(Line(mine: false, text: text, who: who))
+        IslandLog.write("replied: \(text.prefix(200))")
         onReply?(text)
         onReply = nil
+        // The next thing you sent while ox was busy.
+        if !busy, !queued.isEmpty {
+            let next = queued.removeFirst()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.start(next.text, bridge: next.bridge, onReply: next.onReply, echo: false)
+            }
+        }
     }
 
     func clear() { lines = []; startedFor = [] }

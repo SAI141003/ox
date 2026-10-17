@@ -327,6 +327,9 @@ export function claudeMacMcpArgs(env = process.env) {
   return ['--mcp-config', JSON.stringify({ mcpServers: { ox: { command: process.execPath, args: [cli, 'mcp-mac'] } } }), '--allowedTools', tools.join(',')];
 }
 
+// Plans whose sign-in turned out to have expired while ox was running.
+export const expiredPlans = new Set();
+
 export function signInState(id, where, env = process.env) {
   if (id === 'claude') {
     const r = spawnSync(where, ['auth', 'status'], { encoding: 'utf8', timeout: 15000, env, windowsHide: true });
@@ -651,6 +654,13 @@ async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = 
     let why = spawnError?.message ?? st.error ?? (said ?? (lines.slice(-3).join(' ') || `exit ${exitCode}`));
     // A CLI whose own program file is missing (an npm install that never finished).
     if (/ENOENT/.test(why) && /vendor|node_modules/.test(why)) why = `this copy of ${cli.bin} is broken (its program file is missing): reinstall it with ${cli.install}. ${why.slice(0, 160)}`;
+    // "auth status" still says logged in when the saved session has expired;
+    // the run is what tells. Say it plainly, and stop offering the plan.
+    const out = `${why} ${stderr} ${st.text ?? ''}`;
+    if (/OAuth session expired|could not be refreshed|Failed to authenticate|session (?:has )?expired|re-?authenticate|invalid (?:api key|token)|401\b/i.test(out)) {
+      expiredPlans.add(target.subscription);
+      why = `your ${target.subscription} sign-in has expired: ${signInHow(target.subscription, cli.bin, cli)}`;
+    }
     yield { type: 'error', error: `${target.bot} (${cli.bin}): ${why}` };
   }
   const message = { role: 'assistant', content: st.text.trim() };

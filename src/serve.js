@@ -245,7 +245,10 @@ export function refreshPlans() {
   });
   return planCache.running;
 }
-export const workingPlans = () => planCache.list.filter((p) => p.works);
+export const workingPlans = () => planCache.list.filter((p) => p.works && !expiredPlansNow().has(p.id));
+let expiredRef = null;
+import('./subscriptions.js').then((m) => { expiredRef = m.expiredPlans; }).catch(() => {});
+const expiredPlansNow = () => expiredRef ?? new Set();
 
 // Chat models Ollama has on this machine, biggest first (refreshed in the background).
 let ollamaCache = { at: 0, models: [] };
@@ -1280,6 +1283,55 @@ async function flowsRoute(b) {
   }
 }
 
+// OX Island's voice (Coucou's shape): what you said, answered by the ox that is
+// already running instead of a new process per request (on a busy Mac starting
+// Node alone took 1.9 s, and a question went through a whole agent run: 41 s).
+// Small tasks are done here with no AI; a question or small talk gets one short
+// spoken answer from the quickest model that can answer; anything that has to
+// act (open, send, play, write…) comes back as a task for an agent run.
+const VOICE_SYSTEM = (name) => `You are ${name}, a voice assistant in the notch of the user's Mac: quick, warm, a little playful. Everything you write is read aloud: one or two short sentences, no markdown, no lists, no emojis, no links. Never invent the user's own data; if you would need to act on the Mac or look something up, say so in a few words. Today is ${new Date().toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.`;
+const ACTS = /\b(open|launch|close|quit|send|message|text|whatsapp|email|mail|play|pause|create|make|write|draft|delete|remove|move|rename|book|order|buy|schedule|remind|call|download|install|draw|annotate|search|look up|find|fix|build|run|deploy|commit|push|edit|change|update|turn (?:on|off)|set)\b/i;
+export async function voiceTurn(body) {
+  const started = Date.now();
+  const text = String(body?.text ?? '').trim().slice(0, 2000);
+  if (!text) throw new Error('nothing was said');
+  const { doOffline } = await import('./offline.js');
+  const done = doOffline(text, { dryRun: body?.dryRun === true });
+  if (done.handled) return { route: 'offline', handled: true, ok: done.ok !== false, say: done.message, ms: Date.now() - started };
+  const { assistantName } = await import('./identity.js');
+  // Small talk and questions: one short answer. Anything that acts: an agent.
+  await warmLocal();
+  const pick = autoModel([{ role: 'user', content: text }]);
+  const light = /^a quick answer/.test(pick.why) && !ACTS.test(text);
+  if (!light) return { route: 'agent', handled: false, why: 'this needs ox to act', ms: Date.now() - started };
+  let target;
+  try { target = resolveBot(pick.id, { bots: readConfigDoc().bots ?? {} }); } catch (e) { return { route: 'agent', handled: false, why: e.message, ms: Date.now() - started }; }
+  const { quickText } = await import('./quick-text.js');
+  try {
+    const r = await quickText(target, { system: VOICE_SYSTEM(assistantName()), user: text, maxTokens: 160 });
+    const say = String(r.text ?? '').replace(/[*_`#>]+/g, '').trim();
+    if (!say) return { route: 'agent', handled: false, why: `${pick.id} said nothing`, ms: Date.now() - started };
+    return { route: 'answer', handled: true, ok: true, say, model: pick.id, ms: Date.now() - started };
+  } catch (e) {
+    return { route: 'agent', handled: false, why: String(e?.message ?? e).slice(0, 200), ms: Date.now() - started };
+  }
+}
+
+// While OX Island is running, the local model the voice answers with stays
+// loaded: a cold start took 24 s on this Mac, a warm answer 7 s. Ollama only,
+// on this machine, nothing sent anywhere.
+export async function warmVoiceModel() {
+  try {
+    if (!existsSync(join(homedir(), '.ox', 'island.json'))) return false;
+    await warmLocal();
+    const model = localOllama()[0];
+    if (!model) return false;
+    const base = (process.env.OLLAMA_HOST ? `http://${process.env.OLLAMA_HOST.replace(/^https?:\/\//, '')}` : 'http://127.0.0.1:11434');
+    const r = await fetch(`${base}/api/generate`, { method: 'POST', body: JSON.stringify({ model, keep_alive: '30m' }), signal: AbortSignal.timeout(60_000) });
+    return r.ok;
+  } catch { return false; }
+}
+
 // The task board (src/tasks.js, Paperclip's model): every task with whether
 // it is ready, who holds it, and the activity log; add / move / run / review.
 export async function tasksView() {
@@ -1433,6 +1485,7 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/connected\/?$/, handler: appRoute(connectedRoute) },
   { method: 'GET', pattern: /^\/ox\/plan-usage\/?$/, handler: appRoute(async () => ({ plans: (await import('./plan-usage.js')).planUsage() })) },
   { method: 'POST', pattern: /^\/ox\/flows\/hook\/([a-z0-9-]{1,40})\/?$/, handler: flowHook },
+  { method: 'POST', pattern: /^\/ox\/voice\/?$/, handler: appRoute(voiceTurn) },
   { method: 'GET', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksView) },
   { method: 'POST', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksRoute) },
   { method: 'GET', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async () => (await appApi()).scheduledView()) },
@@ -1654,6 +1707,9 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
   // (each is marked as started first, so the two never run one twice).
   if (!process.env.NODE_TEST_CONTEXT && process.env.OX_FLOWS !== '0') {
     setInterval(() => { import('./flows.js').then((F) => F.tickFlows()).catch(() => {}); }, 60_000).unref();
+    // The island's local voice model stays loaded (renewed before its 30 min run out).
+    warmVoiceModel();
+    setInterval(() => { warmVoiceModel(); }, 20 * 60_000).unref();
   }
   const exposure = authExposure({ host, key: config.apiKey ?? apiKey() });
   if (exposure.level === 'refuse') {
