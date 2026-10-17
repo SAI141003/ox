@@ -30,6 +30,7 @@ import { agentMessagingToolSchemas, AGENT_MESSAGE_TOOLS } from '../agent-teams.j
 import { taskBoardTool, TASK_BOARD_TOOL_SCHEMAS, TASK_BOARD_TOOLS, currentTaskId } from './task-board.js';
 import { createMediaTool, MEDIA_TOOL_SCHEMAS, MEDIA_TOOLS, MEDIA_KEYWORDS } from './media.js';
 import { installSkillTool, INSTALL_SKILL_SCHEMAS, INSTALL_SKILL_TOOLS, INSTALL_SKILL_KEYWORDS } from './install-skill.js';
+import { codeGraphTool, CODE_GRAPH_TOOL_SCHEMAS, CODE_GRAPH_TOOLS, CODE_GRAPH_KEYWORDS } from './code-graph.js';
 
 export const TOOL_IMPLS = {
   read_file: readFileTool,
@@ -60,9 +61,10 @@ export const TOOL_IMPLS = {
   create_media: createMediaTool,
   load_tools: loadToolsTool,
   install_skill: installSkillTool,
+  code_graph: codeGraphTool,
 };
 
-const PLAN_READ_ONLY = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'show_ui', 'agent_status'];
+const PLAN_READ_ONLY = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'show_ui', 'agent_status', 'code_graph'];
 
 export const BUILTIN_SCHEMAS = [
   ...OPERATOR_TOOL_SCHEMAS,
@@ -72,6 +74,7 @@ export const BUILTIN_SCHEMAS = [
   ...CRITIQUE_TOOL_SCHEMAS,
   ...MEDIA_TOOL_SCHEMAS,
   ...INSTALL_SKILL_SCHEMAS,
+  ...CODE_GRAPH_TOOL_SCHEMAS,
   {
     name: 'read_file',
     description:
@@ -582,7 +585,7 @@ export function relevantSkillToolNames({ skillIndex = '', message = '', availabl
 // True when the candidate cut would drop a tool from a group this message is
 // about. Such a cut is refused — a dropped tool the request needs is silently
 // unsatisfiable, which is worse than carrying the bytes.
-function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, critiqueOn, agentOn, canvasOn, mediaOn, skillOn, skillNames }) {
+function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, critiqueOn, agentOn, canvasOn, mediaOn, skillOn, graphOn, skillNames }) {
   const kept = new Set(filtered.map((s) => s?.name));
   const skillSet = new Set(skillNames);
   for (const s of schemas) {
@@ -597,6 +600,7 @@ function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, web
     if (canvasOn && CANVAS_TOOLS.includes(n)) return true;
     if (mediaOn && MEDIA_TOOLS.includes(n)) return true;
     if (skillOn && INSTALL_SKILL_TOOLS.includes(n)) return true;
+    if (graphOn && CODE_GRAPH_TOOLS.includes(n)) return true;
     if (skillSet.has(n)) return true;
   }
   return false;
@@ -633,6 +637,8 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
   const canvasOn = keywordSignal(message, CANVAS_KEYWORDS) !== null;
   const mediaOn = keywordSignal(message, MEDIA_KEYWORDS) !== null;
   const skillOn = keywordSignal(message, INSTALL_SKILL_KEYWORDS) !== null;
+  // "what calls X", "how does A reach B": the code graph answers before a grep.
+  const graphOn = keywordSignal(message, CODE_GRAPH_KEYWORDS) !== null;
   const keep = new Set(NARROW_CORE_TOOLS);
   for (const t of skillNames) keep.add(t);
   for (const t of TASK_BOARD_TOOLS) if (names.includes(t)) keep.add(t);
@@ -649,11 +655,12 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
     if (canvasOn && CANVAS_TOOLS.includes(n)) keep.add(n);
     if (mediaOn && MEDIA_TOOLS.includes(n)) keep.add(n);
     if (skillOn && INSTALL_SKILL_TOOLS.includes(n)) keep.add(n);
+    if (graphOn && CODE_GRAPH_TOOLS.includes(n)) keep.add(n);
   }
   const filtered = schemas.filter((s) => typeof s?.name === 'string' && keep.has(s.name));
   if (filtered.length < NARROW_FLOOR) return schemas;
   if (filtered.length === schemas.length) return schemas;
-  if (dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, critiqueOn, agentOn, canvasOn, mediaOn, skillOn, skillNames })) return schemas;
+  if (dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, critiqueOn, agentOn, canvasOn, mediaOn, skillOn, graphOn, skillNames })) return schemas;
   // A short task with one target ("fix the failing test in src/math.js") needs
   // no planning list or delegation: those definitions (~450 tokens on every
   // request) wait behind load_tools. Anything that sounds multi-step keeps them.

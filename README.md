@@ -61,6 +61,7 @@ DeepSeek, Mistral, OpenRouter… 22 providers); or run a local model with Ollama
 - **Agent** with modes (ask, plan, code, orchestrate), approvals for every
   write and command, subagents that delegate and report back, a task board,
   memory that persists across sessions, and goals that refuse "done" until proven.
+- **`ox graph`**: the code as a graph (functions, classes, imports, calls, each link marked as read or inferred) you and the agent query instead of grepping: `explain`, `path`, `query`, a report and a clickable page. No model, under a second on ox itself.
 - **Interactive answers**: calculators, charts, tables and forms drawn in the
   chat by any model, even a 3B local one.
 - **OX Island**, the notch assistant: "play Billie Jean", "lower the music",

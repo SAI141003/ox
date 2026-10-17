@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4792,6 +4792,55 @@ async function runSubcommand(cmd, args) {
       else console.log(S.formatReport(r));
       const rank = { high: 0, medium: 1, low: 2 };
       if (r.findings.some((f) => rank[f.severity] <= (rank[failOn] ?? 0) && !f.test)) process.exitCode = 1;
+      return;
+    }
+    case 'graph': {
+      // The project as a graph you query instead of grepping (src/code-graph.js,
+      // graphify's idea, ox's own zero-dependency implementation).
+      const G = await import('./code-graph.js');
+      const [verb = 'build', ...rest] = args;
+      if (verb === '--help' || verb === 'help') {
+        console.log(`${c.bold('ox graph')}: map this project's code (files, functions, classes, imports, calls) into a graph, with no model`);
+        console.log(c.dim('  ox graph                     build it: .agent/graph/graph.json, GRAPH_REPORT.md, graph.html'));
+        console.log(c.dim('  ox graph update              rebuild, re-reading only the files that changed'));
+        console.log(c.dim('  ox graph query "<question>"  the part of the graph a question is about'));
+        console.log(c.dim('  ox graph path A B            how A reaches B (--directed: follow edge direction)'));
+        console.log(c.dim('  ox graph explain X           what X is and what it is connected to (--all)'));
+        console.log(c.dim('  ox graph report | open       print the report | open graph.html'));
+        console.log(c.dim('  Every edge says how it was found: EXTRACTED (in the source) or INFERRED (resolved by ox).'));
+        return;
+      }
+      const cwd = process.cwd();
+      const json = rest.includes('--json');
+      const words = rest.filter((a) => !a.startsWith('--'));
+      if (verb === 'build' || verb === 'update' || verb === '.') {
+        const { graph, paths } = G.writeGraph(cwd, { update: verb === 'update' });
+        const st = graph.stats;
+        if (json) { console.log(JSON.stringify({ stats: st, communities: graph.communities.length, paths }, null, 2)); return; }
+        console.log(`${st.files} files · ${st.symbols} functions and classes · ${st.edges} edges (${st.extracted} extracted, ${st.inferred} inferred) · ${graph.communities.length} subsystems · ${st.ms} ms${st.reused ? ` · ${st.reused} files unchanged` : ''}`);
+        console.log(c.dim(`  most connected: ${G.godNodes(graph, 5).map((n) => n.name).join(', ')}`));
+        console.log(c.dim(`  ${path.relative(cwd, paths.report)} · ${path.relative(cwd, paths.html)} · ${path.relative(cwd, paths.json)}`));
+        return;
+      }
+      if (verb === 'report') { const g = G.ensureGraph(cwd); console.log(G.graphReport(g)); return; }
+      if (verb === 'open') {
+        const p = G.graphPaths(cwd);
+        if (!fs.existsSync(p.html)) G.writeGraph(cwd);
+        const { osCmd } = await import('./tools/operator.js');
+        const cmd = osCmd('open_path', p.html);
+        if (cmd) (await import('node:child_process')).spawnSync(cmd[0], cmd.slice(1), { stdio: 'ignore' });
+        console.log(p.html);
+        return;
+      }
+      const g = G.ensureGraph(cwd);
+      let r;
+      if (verb === 'query') r = G.queryGraph(g, words.join(' '));
+      else if (verb === 'path') r = words.length >= 2 ? G.shortestPath(g, words[0], words[1], { directed: rest.includes('--directed') }) : { found: false, text: 'usage: ox graph path "<from>" "<to>"' };
+      else if (verb === 'explain') r = G.explainNode(g, words.join(' '), { all: rest.includes('--all') });
+      else { process.stderr.write(`ox graph: unknown "${verb}" (ox graph help)\n`); process.exitCode = 2; return; }
+      if (json) console.log(JSON.stringify({ ...r, text: undefined, path: r.path?.map((n) => n.id), node: r.node?.id, seeds: r.seeds?.map((n) => n.id), nodes: r.nodes?.map((n) => n.id), links: undefined, edges: r.edges?.length }, null, 2));
+      else console.log(r.text);
+      if (r.found === false) process.exitCode = 1;
       return;
     }
     case 'mcp-mac': {

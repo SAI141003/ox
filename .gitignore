@@ -11,3 +11,4 @@ desktop/dist/
 desktop/island/.build/
 bench/results/2026-10-1*/
 /dist/
+graphify-out/

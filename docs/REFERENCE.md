@@ -430,6 +430,43 @@ compact JSON and 1,094 for pretty-printed JSON. It is built for an agent:
 
 `/ui` redraws the last canvas.
 
+## The project as a graph: `ox graph`
+
+`ox graph` maps the code into files, functions and classes joined by imports,
+calls and definitions, with no model and no dependencies (on ox's own 467 files:
+about 0.8 s). The idea is [graphify](https://github.com/Graphify-Labs/graphify)'s
+(Apache-2.0); this is ox's own implementation, written from its documentation.
+
+```
+ox graph                       build: .agent/graph/graph.json, GRAPH_REPORT.md, graph.html
+ox graph update                rebuild, re-reading only the files that changed
+ox graph explain runAgentLoop  where it is, what calls it, what it calls
+ox graph path runAgent scanText   how one reaches the other (calls first)
+ox graph query "how does the security check run"   the code a question is about
+ox graph report | open         the report | the clickable page
+```
+
+Every link says how it was found: **EXTRACTED** (written in the source: a call
+to a name imported from, or defined in, the file) or **INFERRED** (resolved by
+ox: `this.method()`, or the only symbol with that name in a language whose
+package shares one namespace: Go, Swift, Ruby, Java/Kotlin). A name defined in
+several files and not imported is left out rather than guessed, and so is
+`obj.method()` on an object whose type is unknown. `NOTE:` / `WHY:` / `HACK:`
+comments become nodes linked to the code they sit on.
+
+The agent has the same graph as a tool, `code_graph` (explain / path / query /
+overview), offered when a message is about structure ("what calls…", "what
+depends on…", architecture); it is read-only and allowed in ask and plan modes.
+
+Measured against graphify 0.9.92 on ox's `src/` (same files, function-to-function
+calls): ox finds 86% of graphify's call links and 81.5% of ox's are in
+graphify's; in the samples read by hand the links only one of them found were
+mostly real on both sides (graphify: calls through aliases ox does not follow;
+ox: nested closures graphify skips), with a few guesses on each side
+(graphify linked `array.push()` to a function named `push`). Languages: JS/TS,
+Python, Go, Swift, Ruby, Java/Kotlin, Rust, each with a light parser instead of
+a full AST, so it is less exact than tree-sitter and says INFERRED where it guesses.
+
 ## Task board: many agents, no collisions
 
 `ox task` is a board that agents and people share:
