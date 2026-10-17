@@ -33,3 +33,14 @@ test('reads the verify report', () => {
   const r = E.parseVerify('noise\n{"results":[{"stage":"unit","detail":"5 pass · 2 fail · 0 cancelled\\n  - t one\\n  - t two"}]}');
   assert.deepEqual([r.pass, r.fail, r.failing], [5, 2, ['t one', 't two']]);
 });
+
+test('a test that fails once and passes alone is flaky, not broken by the change', async () => {
+  const { recheck } = await import('../src/evolve.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-recheck-'));
+  fs.mkdirSync(path.join(dir, 'test'));
+  fs.writeFileSync(path.join(dir, 'test', 'x.test.js'), "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\ntest('alpha passes', () => assert.ok(true));\ntest('beta fails', () => assert.ok(false));\n");
+  const r = recheck(dir, ['alpha passes', 'beta fails', 'gamma is nowhere']);
+  assert.deepEqual(r.flaky, ['alpha passes']);
+  assert.deepEqual(r.broken.sort(), ['beta fails', 'gamma is nowhere']);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

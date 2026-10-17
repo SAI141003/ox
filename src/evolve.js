@@ -129,6 +129,32 @@ export function parseVerify(out) {
   return { pass: m ? Number(m[1]) : NaN, fail: m ? Number(m[2]) : NaN, failing, ok: !!m, tail: detail.split('\n').slice(0, 12).join('\n') || String(out).slice(-800) };
 }
 
+// A test that fails once in a full run on a busy machine is not proof of a
+// break: the first real attempt (a correct one-rule change to ox secure) was
+// rejected for a server test it never touched, which then passed alone. Each
+// newly failing test is run again on its own, twice at most; only one that
+// keeps failing counts. Returns { broken, flaky }.
+export function recheck(dir, names, { tries = 2, timeoutMs = 180_000 } = {}) {
+  const broken = [], flaky = [];
+  const files = (() => { try { return fs.readdirSync(path.join(dir, 'test')).filter((f) => f.endsWith('.test.js')); } catch { return []; } })();
+  const env = { ...process.env, OX_ISLAND: '0', OX_LEARN: '0', OX_NO_KEYSTORE: '1', OX_USAGE_LOG: '0', OX_NO_BUILTIN_SKILLS: '1', OX_NO_PLUGINS: '1' };
+  delete env.NODE_TEST_CONTEXT;
+  for (const name of names) {
+    const file = files.find((f) => { try { return fs.readFileSync(path.join(dir, 'test', f), 'utf8').includes(name); } catch { return false; } });
+    if (!file) { broken.push(name); continue; }
+    const pattern = `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`;
+    let passed = false;
+    for (let i = 0; i < tries && !passed; i++) {
+      const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-name-pattern', pattern, path.join('test', file)], { cwd: dir, env, encoding: 'utf8', timeout: timeoutMs });
+      const failN = /^# fail (\d+)/m.exec(r.stdout ?? '');
+      const ranN = /^# tests (\d+)/m.exec(r.stdout ?? '');
+      passed = r.status === 0 && failN && Number(failN[1]) === 0 && ranN && Number(ranN[1]) > 0;
+    }
+    (passed ? flaky : broken).push(name);
+  }
+  return { broken, flaky };
+}
+
 function baselineFile(sha) { return path.join(SELF(), `baseline-${sha}.json`); }
 
 export async function baseline(root = OX_ROOT, opts = {}) {
@@ -199,7 +225,20 @@ export async function evolve({ goal = '', root = OX_ROOT, maxCost = 2, bot = nul
 
   let after = { ok: false, pass: NaN, fail: NaN, failing: [] };
   if (diffFiles.length) { log('measuring the attempt…'); after = await measure(dir); }
+  // New failures are re-run alone before they decide anything (see recheck).
+  let flaky = [];
+  const fresh = after.ok ? after.failing.filter((f) => !before.failing.includes(f)) : [];
+  if (fresh.length) {
+    log(`re-running ${fresh.length} newly failing test(s) on their own…`);
+    const r = recheck(dir, fresh);
+    flaky = r.flaky;
+    if (flaky.length) {
+      log(`passed when run alone (flaky, not broken by this change): ${flaky.join('; ')}`);
+      after = { ...after, fail: after.fail - flaky.length, pass: after.pass + flaky.length, failing: after.failing.filter((f) => !flaky.includes(f)) };
+    }
+  }
   const verdict = judge(before, after, { diffFiles });
+  if (flaky.length) verdict.why = `${verdict.why} (flaky on the full run, passed alone: ${flaky.slice(0, 3).join('; ')})`;
   if (diffFiles.length) {
     git(dir, ['add', '-A']);
     git(dir, ['-c', 'user.name=ox', '-c', 'user.email=ox@localhost', 'commit', '-q', '-m', `ox evolve ${id}: ${goalText.slice(0, 120)}\n\n${verdict.why}`]);
