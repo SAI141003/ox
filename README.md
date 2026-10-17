@@ -27,7 +27,9 @@ built, `bench/h2h/`; the full run is pending), and the public benchmarks
 
 **Mac app** (Apple Silicon): download `ox-mac-arm64.zip` from
 [Releases](https://github.com/SAI141003/ox/releases), unzip, drag **OX** to
-Applications. It brings its own runtime; nothing else to install.
+Applications. It brings its own runtime; nothing else to install. The app is
+not notarized by Apple yet: the first time, right-click **OX** › Open (or
+System Settings › Privacy & Security › Open Anyway).
 
 **Terminal** (macOS, Linux, Windows; Node 18 or later):
 
