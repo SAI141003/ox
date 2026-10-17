@@ -199,7 +199,8 @@ import {createModelBenchmarker, MODEL_BENCHMARKS} from './model-benchmark.js';
 import {formatModelRecommendation} from './model-router.js';
 import * as osint from './osint.js';
 import * as userProfile from './user-profile.js';
-const VERSION = '0.1.0';
+// package.json's version, the one `ox --version` prints (bin/ox.js) and the release is tagged with.
+const VERSION = (() => { try { return JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version; } catch { return '0.0.0'; } })();
 
 // The banner is for humans on a terminal. Piped/CI runs stay byte-identical to
 // the plain `ox ${VERSION}` line that scripts and tests match on.
@@ -210,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4841,6 +4842,70 @@ async function runSubcommand(cmd, args) {
       if (json) console.log(JSON.stringify({ ...r, text: undefined, path: r.path?.map((n) => n.id), node: r.node?.id, seeds: r.seeds?.map((n) => n.id), nodes: r.nodes?.map((n) => n.id), links: undefined, edges: r.edges?.length }, null, 2));
       else console.log(r.text);
       if (r.found === false) process.exitCode = 1;
+      return;
+    }
+    case 'transfer':
+    case 'handoff': {
+      // Carry a session from one AI tool to another (src/session-transfer.js):
+      // other tools' stores are only read; the target gets a handoff file and
+      // is started through its own command line, or resumes its own session.
+      const T = await import('./session-transfer.js');
+      const flagVal = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : null; };
+      const valueFlags = new Set(['--to', '--company', '--tool']);
+      const positional = args.filter((a, i) => !a.startsWith('--') && !valueFlags.has(args[i - 1]));
+      const here = args.includes('--here') ? process.cwd() : null;
+      if (positional[0] === 'help' || args.includes('--help')) {
+        console.log(`${c.bold('ox transfer')}: carry a session from one AI tool to another, without touching either tool's own files`);
+        console.log(c.dim('  ox transfer list [--here] [--tool claude]      recent sessions of Claude Code, Codex, Hermes and ox'));
+        console.log(c.dim('  ox transfer <from> --to <tool>                 from: latest | claude | codex:<id> | hermes:<id> | ox:<id>'));
+        console.log(c.dim(`  targets: ${T.TARGETS.join(', ')}`));
+        console.log(c.dim('  --here   only sessions from this folder     --print   show the command instead of starting the tool'));
+        console.log(c.dim('  --company <id>   the Paperclip company (or PAPERCLIP_COMPANY_ID)'));
+        console.log(c.dim('  The handoff is written to .agent/handoff/ in the project; the same tool resumes its own session.'));
+        return;
+      }
+      if (positional[0] === 'list' || positional[0] === 'ls') {
+        const tool = flagVal('--tool');
+        const rows = T.listSessions({ cwd: here, limit: 25, ...(tool ? { tools: [T.toolName(tool)] } : {}) });
+        if (args.includes('--json')) { console.log(JSON.stringify(rows.map(({ ref, ...r }) => r), null, 2)); return; }
+        if (!rows.length) { console.log(`no sessions found${here ? ' for this folder' : ''}`); return; }
+        for (const r of rows) console.log(`${r.tool.padEnd(7)} ${String(r.id).slice(0, 12).padEnd(13)} ${new Date(r.updatedAt).toISOString().slice(0, 16).replace('T', ' ')}  ${(r.title ?? '—').slice(0, 56).padEnd(57)} ${c.dim((r.cwd ?? '').replace(os.homedir(), '~'))}`);
+        console.log(c.dim('\n  ox transfer <tool>:<id> --to <claude|codex|hermes|ox|gemini|cursor|paperclip|file>'));
+        return;
+      }
+      const to = flagVal('--to');
+      if (!to) { process.stderr.write('ox transfer: say where to: --to claude | codex | hermes | ox | gemini | cursor | paperclip | file (ox transfer help)\n'); process.exitCode = 2; return; }
+      let session, handoff, plan;
+      try {
+        const entry = T.findSession(positional[0] ?? 'latest', { cwd: here });
+        session = T.readSession(entry);
+        handoff = T.writeHandoff(session);
+        plan = T.deliveryPlan(session, to, handoff, { company: flagVal('--company') ?? undefined });
+      } catch (e) { process.stderr.write(`ox transfer: ${e.message}\n`); process.exitCode = 1; return; }
+      const from = `${T.TOOLS[session.tool].label} session ${String(session.id).slice(0, 12)}`;
+      console.log(`${from}: ${session.messages.length} messages, ${session.files.length} files changed${session.cwd ? `, in ${session.cwd.replace(os.homedir(), '~')}` : ''}`);
+      console.log(c.dim(`  handoff: ${handoff.md.replace(os.homedir(), '~')}`));
+      const q = (a) => (/^[\w./:@%+=,-]+$/.test(a) ? a : `'${String(a).replace(/'/g, "'\\''")}'`);
+      if (plan.kind === 'file') return;
+      if (plan.kind === 'import') {
+        const r = T.importToOx(session, { handoff });
+        console.log(`imported into ox: ${c.bold(`ox --resume ${r.id}`)}`);
+        return;
+      }
+      if (plan.kind === 'paperclip') {
+        if (!plan.cmd) { console.log(`${plan.note}; the handoff above is ready to attach.`); process.exitCode = 1; return; }
+        if (!T.onPath('paperclipai')) { console.log(`Paperclip's CLI is not installed here (npm install -g paperclipai). Then: paperclipai issue create -C ${q(plan.args[3])} --title ${q(plan.title)} --description "$(cat ${q(handoff.md)})"`); process.exitCode = 1; return; }
+        const r = (await import('node:child_process')).spawnSync(plan.cmd, plan.args, { cwd: plan.cwd, encoding: 'utf8', timeout: 60000 });
+        if (r.status === 0) console.log(`Paperclip task created: ${(r.stdout || '').trim().split('\n').slice(-1)[0] ?? plan.title}`);
+        else { process.stderr.write(`ox transfer: paperclipai failed: ${(r.stderr || r.stdout || '').trim().slice(0, 300)}\n`); process.exitCode = 1; }
+        return;
+      }
+      const shown = `cd ${q(plan.cwd)} && ${[plan.cmd, ...plan.args].map(q).join(' ')}`;
+      if (args.includes('--print') || !process.stdout.isTTY) { console.log(shown); return; }
+      if (!T.onPath(plan.cmd)) { console.log(`${plan.cmd} is not installed here; when it is: ${shown}`); process.exitCode = 1; return; }
+      console.log(c.dim(`  ${plan.kind === 'resume' ? plan.note : `starting ${T.TOOLS[T.toolName(to)].label} in ${plan.cwd.replace(os.homedir(), '~')}`}`));
+      const r = (await import('node:child_process')).spawnSync(plan.cmd, plan.args, { cwd: plan.cwd, stdio: 'inherit' });
+      process.exitCode = r.status ?? 0;
       return;
     }
     case 'mcp-mac': {

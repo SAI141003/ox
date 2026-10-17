@@ -17,6 +17,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+// One version, package.json's: it was written here too, and drifted.
+const APP_VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(HERE, '..', 'package.json'), 'utf8')).version; } catch { return '0.0.0'; } })();
 const OX_CLI = path.join(HERE, '..', 'bin', 'ox.js');
 const PKG = path.join(HERE, '..', 'desktop', 'island');
 const STATE = () => path.join(os.homedir(), '.ox', 'app.json');
@@ -110,7 +112,7 @@ export function buildMacApp({ home = os.homedir() } = {}) {
 \t<key>CFBundleDisplayName</key><string>ox</string>
 \t<key>CFBundleExecutable</key><string>OxApp</string>
 \t<key>CFBundlePackageType</key><string>APPL</string>
-\t<key>CFBundleShortVersionString</key><string>0.1.0</string>
+\t<key>CFBundleShortVersionString</key><string>${APP_VERSION}</string>
 \t<key>CFBundleVersion</key><string>1</string>
 \t<key>LSMinimumSystemVersion</key><string>14.0</string>
 \t<key>NSHighResolutionCapable</key><true/>

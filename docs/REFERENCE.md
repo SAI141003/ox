@@ -430,6 +430,38 @@ compact JSON and 1,094 for pretty-printed JSON. It is built for an agent:
 
 `/ui` redraws the last canvas.
 
+## Move a session to another AI tool: `ox transfer`
+
+Carry a conversation from Claude Code, Codex, Hermes or ox to any of them, or
+to Gemini CLI, Cursor or Paperclip, without breaking either tool.
+
+```
+ox transfer list [--here]                 recent sessions of every tool (--here: this folder)
+ox transfer claude --to codex             the latest Claude Code session, continued in Codex
+ox transfer codex:01a14ac4 --to claude    a session by id (or its start)
+ox transfer latest --to ox                into ox: then `ox --resume <id>`
+ox transfer hermes --to paperclip --company <id>   a Paperclip task, by Paperclip's own CLI
+ox transfer claude --to file              only the handoff file
+```
+
+How it stays safe for the other tools: ox only **reads** their stores (Claude
+Code's and Codex's session files, Hermes's database opened read-only) and never
+writes to them. A session moves as a handoff, `.agent/handoff/<date>-<tool>-<id>.md`
+(+ `.json`) in the project: what it was for, the tool's own summary of earlier
+turns when it made one, the conversation (the first request whole, then the
+latest turns within a budget), the files it changed, and the folder's git state.
+Secrets are redacted with both of ox's redactors, and the folder ignores itself
+in git, so nothing turns up untracked. The target is started in the same folder
+through its own command line, told to read the handoff first; when the target is
+the tool the session came from, its own resume is used instead (`claude
+--resume`, `codex resume`, `hermes --resume`, `cursor-agent --resume`). The
+working copy of each CLI is used, as for plans: an editor's copy when the one on
+PATH is broken, and for Codex a model the ChatGPT account allows when its config
+names one it refuses. `--print` shows the command instead of starting the tool.
+
+Checked for real: a 6,941-message Claude Code session handed to Codex (read-only),
+which named the project, the worktree and the next steps that session had left.
+
 ## The project as a graph: `ox graph`
 
 `ox graph` maps the code into files, functions and classes joined by imports,

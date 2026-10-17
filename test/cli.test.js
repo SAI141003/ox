@@ -37,11 +37,12 @@ function runOx(t, args) {
   return { ...r, ms: Date.now() - started };
 }
 
-test('--version prints "ox 0.1.0" exactly and fast', (t) => {
+test('--version prints "ox <package.json version>" exactly and fast', (t) => {
   const r = runOx(t, ['--version']);
   console.log(`[measure] ox --version took ${r.ms}ms`);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.stdout.trim(), 'ox 0.1.0');
+  const { version } = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(r.stdout.trim(), `ox ${version}`);
   assert.ok(r.ms < 1000, `--version took ${r.ms}ms (budget <1000ms)`);
 });
 

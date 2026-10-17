@@ -4,16 +4,29 @@ Everything someone taking over ox needs, top to bottom: what it is, how it is
 built and run, every feature with its state and where its code is, every
 connection, the GitHub setup, the benchmarks, the repositories studied, the
 screenshots and videos that shaped it, what is broken or missing, and the rules
-the owner set. Written October 17, 2026 and updated the same evening (release
-v0.1.1), from the code as it is on `main`, not from memory. Section 0 is the
-latest round; everything after it is the full picture.
+the owner set. Written October 17, 2026 and updated twice the same evening
+(releases v0.1.1, v0.1.2), from the code as it is on `main`, not from memory.
+Section 0 is the latest round; everything after it is the full picture.
 
 States used: **✓** works and was tested for real (how, is said) · **~** works
 with a named gap · **✗** missing or broken · **?** not tested.
 
 ---
 
-## 0. Latest round (October 17, evening)
+## 0. Latest round (October 17, late evening: v0.1.2)
+
+| What | State | Evidence |
+|---|---|---|
+| **`ox transfer`**: move a session between Claude Code, Codex, Hermes, ox (read) and to those plus Gemini CLI, Cursor, Paperclip. Other tools' stores only read (Hermes's SQLite opened read-only); the session moves as `.agent/handoff/*.md` (self-ignoring in git, secrets redacted by both redactors); the target starts on it through its own CLI, or resumes its own session | ✓ | real: a 6,941-message Claude Code session handed to Codex (read-only), which named the project, worktree and next steps correctly; 9 tests incl. "source files byte-identical after transfer"; `src/session-transfer.js` |
+| **`ox graph`** (graphify's idea, own zero-dependency code): files, functions, classes, imports, calls, NOTE/WHY comments; EXTRACTED vs INFERRED on every edge; subsystems; `query` / `path` / `explain` / report / graph.html; `code_graph` agent tool | ✓ | vs graphify 0.9.92 on `src/`: finds 86.0% of its call links, 81.5% of ox's are in graphify's; 0.8 s vs 60 s; `src/code-graph.js`, 9 tests |
+| graphify itself installed for Claude Code (owner ran `graphify install`); its graph of ox in `graphify-out/` (gitignored) | ✓ | 4,739 nodes, 12,875 edges |
+| Linux CI: uncaught EPIPE when an MCP server exits at once (`src/mcp.js`); ACP `close()` racing `start()` (`src/acp.js`); "open chrome and open youtube" taken as one app off macOS (`src/offline.js`) | ✓ fixed | reproduced in a `node:22` container; Linux, Intel Mac, Apple Silicon green on `6b43eb9` |
+| Parallel reads of different files shared one self-heal key, so 3 failed reads stopped a run | ✓ fixed | `src/agent.js`, test |
+| CI: Intel Mac job queued forever (`macos-13` retired) → `macos-15-intel`; actions v5; **Windows unit tests hang** (25+ min) → step cut at 15 min there, job limit 60 min, so the Windows download is built anyway | ✓ / ~ | which Windows test hangs is **not yet known** (next: run the suite file by file on a Windows runner) |
+| Version was hard-coded in 3 places and drifted (`ox --version` said 0.1.0 after v0.1.1): now package.json only | ✓ | |
+| Island relaunch after the interrupted rebuild | ✓ | running since 18:41, built after its last source change |
+
+## 0b. Previous round (October 17, evening: v0.1.1)
 
 | What | State | Evidence |
 |---|---|---|
@@ -24,10 +37,10 @@ with a named gap · **✗** missing or broken · **?** not tested.
 | **Photos reach the plans** (ChatGPT, Claude): a message with an image was dropped whole; now the words are kept, Codex gets `--image`, Claude Code is told the file path | ✓ | ChatGPT plan read a Task-board screenshot: title, 5 columns, their names (68 s) |
 | **CI on clean machines** found: `ox doctor` gave no next step without a local model; unit tests opened a real browser tab and Finder window on the owner's Mac on every run (now a dry run under the test runner); "open youtube" became an app on Linux/Windows; the Windows download never built (raw `C:\` import) | ✓ fixed | release v0.1.0 builds failed on all three; fixes in v0.1.1 |
 | **Head-to-head**, first full run on qwen2.5:3b: ox, Hermes, Codex, Claude Code all **0/9** (a floor effect, no ranking) | recorded | `bench/h2h/RESULTS.md`, 36-row JSON |
-| Release **v0.1.1** with the Mac zip; CI building Windows/Linux/Mac from the tag | ~ | at this update the CI run was queued; check `gh run list --repo SAI141003/ox` |
+| Release **v0.1.1** with the Mac zip; CI building Windows/Linux/Mac from the tag | ~ | Linux failed (2 tests), Intel never ran (retired runner), Windows hung: superseded by v0.1.2 |
 | Unit suite **1,875 pass, 0 fail**; launch check **141/142** (`/doctor` in the REPL timed out once under load; 4 s and exit 0 when run alone) | ✓ / ~ | |
 | `docs/HANDOFF.md` (this file) | ✓ | |
-| The user's Mac: `~/ox` merged, OX.app reinstalled; the island rebuild was interrupted at the user's request, so its relaunch is unconfirmed (`ox island restart`) | ~ | |
+| The user's Mac: `~/ox` merged, OX.app reinstalled; island relaunch confirmed in the next round | ✓ | |
 
 ---
 

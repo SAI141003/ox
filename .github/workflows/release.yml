@@ -22,6 +22,8 @@ jobs:
           - os: windows-latest
           - os: ubuntu-latest
     runs-on: ${{ matrix.os }}
+    # A hung step must not hold a download back for GitHub's 6-hour limit.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -32,6 +34,9 @@ jobs:
         # The suite has not yet been run on Windows: report its failures there
         # without blocking the download, until it has been.
         continue-on-error: ${{ runner.os == 'Windows' }}
+        # On Windows the suite has hung (25+ minutes, v0.1.1 and the next run):
+        # it is cut off there and the package is still built.
+        timeout-minutes: ${{ runner.os == 'Windows' && 15 || 30 }}
         run: OX_ISLAND=0 OX_LEARN=0 OX_NO_KEYSTORE=1 OX_USAGE_LOG=0 OX_NO_PLUGINS=1 OX_NO_BUILTIN_SKILLS=1 node scripts/verify.mjs --only unit
       - name: Package
         shell: bash

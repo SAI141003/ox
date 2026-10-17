@@ -61,6 +61,7 @@ DeepSeek, Mistral, OpenRouter… 22 providers); or run a local model with Ollama
 - **Agent** with modes (ask, plan, code, orchestrate), approvals for every
   write and command, subagents that delegate and report back, a task board,
   memory that persists across sessions, and goals that refuse "done" until proven.
+- **`ox transfer`**: move a whole session between Claude Code, Codex, Hermes, ox, Gemini CLI, Cursor and Paperclip. Other tools' files are only read, never written; the target starts on a handoff (or resumes its own session).
 - **`ox graph`**: the code as a graph (functions, classes, imports, calls, each link marked as read or inferred) you and the agent query instead of grepping: `explain`, `path`, `query`, a report and a clickable page. No model, under a second on ox itself.
 - **Interactive answers**: calculators, charts, tables and forms drawn in the
   chat by any model, even a 3B local one.
