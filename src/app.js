@@ -84,7 +84,12 @@ export function stopServer() {
 // OX.app from the build: the binary, an Info.plist, an icon made from the ox art.
 export function buildMacApp({ home = os.homedir() } = {}) {
   let bin = path.join(PKG, '.build', 'release', 'OxApp');
-  if (!fs.existsSync(bin)) {
+  // Rebuilt when its source is newer than the binary: installing used to copy
+  // whatever binary was there, so a fix to the app never reached the Mac.
+  const srcDir = path.join(PKG, 'Sources', 'OxApp');
+  const newest = (() => { try { return Math.max(...fs.readdirSync(srcDir).map((f) => fs.statSync(path.join(srcDir, f)).mtimeMs)); } catch { return 0; } })();
+  const stale = !fs.existsSync(bin) || fs.statSync(bin).mtimeMs < newest;
+  if (stale) {
     const r = spawnSync('swift', ['build', '-c', 'release', '--product', 'OxApp'], { cwd: PKG, stdio: 'ignore' });
     if (r.status !== 0 || !fs.existsSync(bin)) return null;
   }
