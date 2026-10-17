@@ -339,9 +339,12 @@ export function parseProgram(src, { streaming = false } = {}) {
     const [, id, body] = m;
     try {
       const ast = parseExpr(tokenize(body));
-      if (id.startsWith('$')) {
-        if (ast.k !== 'lit' && ast.k !== 'arr' && ast.k !== 'obj') throw new SyntaxError('a $variable default must be a literal');
+      if (id.startsWith('$') && (ast.k === 'lit' || ast.k === 'arr' || ast.k === 'obj' || (ast.k === 'un' && ast.x?.k === 'lit'))) {
         state[id.slice(1)] = literal(ast);
+      } else if (id.startsWith('$')) {
+        // \`$r = $rate / 1200\` is how models write a value worked out from
+        // others: a computed line read through $r, never something to set.
+        stmts.set(id, { ast, src: s.src, line: s.line, computed: true });
       } else {
         stmts.set(id, { ast, src: s.src, line: s.line });
       }
@@ -485,7 +488,7 @@ export function evaluate(program, env = {}) {
   function value(n, id) {
     switch (n.k) {
       case 'lit': return n.v;
-      case 'state': return state[n.name] ?? null;
+      case 'state': return n.name in state || !program.stmts.has(`$${n.name}`) ? state[n.name] ?? null : resolve(`$${n.name}`, id);
       case 'ref': return resolve(n.name, id);
       case 'arr': return n.items.map((x) => value(x, id)).filter((x) => x !== undefined);
       case 'obj': return Object.fromEntries(n.entries.map(([k, v]) => [k, value(v, id)]));
@@ -568,6 +571,18 @@ export function evaluate(program, env = {}) {
       err(id, 'component', `unknown component ${n.name}${near ? ` (use ${near})` : ''}`);
       return null;
     }
+    // Card("T", [a], b): a component after the list (one closing bracket too
+    // early) goes into the list rather than being lost.
+    const listAt = spec.params.findIndex(([, type]) => type === 'nodes');
+    const strays = [];
+    if (listAt >= 0) {
+      const kept = [];
+      n.args.forEach((a, i) => {
+        if (i > listAt && a.k === 'call' && LIBRARY[a.name === 'Col' && a.args[0]?.k === 'arr' ? 'Column' : a.name]) strays.push(a);
+        else kept.push(a);
+      });
+      if (strays.length) n = { ...n, args: kept };
+    }
     if (n.args.length > spec.params.length) {
       err(id, 'arity', `${n.name} takes ${spec.params.length} argument(s): ${signature(n.name)}`);
     }
@@ -591,6 +606,10 @@ export function evaluate(program, env = {}) {
         continue;
       }
       props[name] = v;
+    }
+    if (strays.length) {
+      const name = spec.params[listAt][0];
+      props[name] = [...(props[name] ?? []), ...strays.map((a) => value(a, id))].flat().filter(isNode);
     }
     // A Select's value arg binds a $var: keep the name so actions can set it.
     if (n.name === 'Select' && n.args[1]?.k === 'state') props.bind = n.args[1].name;
@@ -947,8 +966,14 @@ export class Canvas {
   load(src, { patch = false } = {}) {
     this.source = patch && this.source ? mergePrograms(this.source, src) : String(src ?? '');
     const prog = parseProgram(this.source);
-    // New $vars take their declared default; existing ones keep the user's choice.
-    for (const [k, v] of Object.entries(prog.state)) if (!(k in this.state)) this.state[k] = v;
+    // New $vars take their declared default; one the user changed keeps their
+    // choice. A value still at its old default follows the source: while an
+    // answer streams in, \`$amount = 300000\` first arrives as \`$amount = 3\`.
+    this.defaults ??= {};
+    for (const [k, v] of Object.entries(prog.state)) {
+      if (!(k in this.state) || JSON.stringify(this.state[k]) === JSON.stringify(this.defaults[k])) this.state[k] = v;
+      this.defaults[k] = v;
+    }
     return this.evaluate(prog);
   }
 

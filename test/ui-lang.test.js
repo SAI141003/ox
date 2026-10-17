@@ -136,3 +136,31 @@ test('OpenUI Lang in the app: a single action needs no wrapper, Input and Slider
   await c.act(button.props.action);
   assert.equal(c.last.root.props.children[3].props.value, 2219.06);
 });
+
+// What a 3B local model really wrote for "a loan calculator with sliders":
+// three lines were lost and both fields showed "3".
+test('a computed $var, a card closed one bracket early and a streamed default all draw', () => {
+  const src = [
+    '$amount = 300000', '$rate = 6', '$months = 360',
+    '$r = $rate / 1200',
+    '$p = $amount * $r / (1 - @Pow(1 + $r, -$months))',
+    'root = Card("Loan", [', 'Row([Input("Amount", $amount, "number"), Slider("Rate", $rate, 0, 20, 0.1)])', '],',
+    'Row([Stat("Monthly", @Round($p, 2))])', ')',
+  ].join('\n');
+  const prog = parseProgram(src);
+  assert.deepEqual(prog.errors, []);
+  const ev = evaluate(prog);
+  assert.deepEqual(ev.errors, []);
+  assert.equal(ev.root.props.children.length, 2);
+  assert.equal(ev.root.props.children[1].props.children[0].props.value, 1798.65);
+
+  // Streaming: the first chunk says 3, the next 300000; the field follows it.
+  const c = new Canvas();
+  c.load('$amount = 3\nroot = Input("Amount", $amount, "number")');
+  c.load('$amount = 300000\nroot = Input("Amount", $amount, "number")');
+  assert.equal(c.state.amount, 300000);
+  // ...but a value the user changed is theirs.
+  c.state.amount = 5000;
+  c.load('$amount = 300000\nroot = Input("Amount (USD)", $amount, "number")');
+  assert.equal(c.state.amount, 5000);
+});
