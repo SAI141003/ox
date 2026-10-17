@@ -74,7 +74,8 @@ function startProxy() {
           s.tokensOut += tout;
         });
       });
-      up.on('error', (e) => { res.writeHead(502); res.end(String(e)); });
+      // An upstream error after the answer began (a client gone): end it, never rewrite headers.
+      up.on('error', (e) => { if (!res.headersSent) res.writeHead(502); res.end(String(e)); });
       up.end(body);
     });
   });

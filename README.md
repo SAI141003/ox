@@ -20,7 +20,8 @@ Models write plausible code. ox makes them prove it, whichever model it is.
 
 What is **not** proven yet, and is on the list: a head-to-head on real coding
 tasks against Claude Code, Codex and others on the same model (the runner is
-built, `bench/h2h/`; the full run is pending), and the public benchmarks
+built; its first full run, on a 3B local model, passed nothing under any agent,
+see `bench/h2h/RESULTS.md`), and the public benchmarks
 (SWE-bench, Terminal-Bench). No claim here goes beyond the linked files.
 
 ## Get it
@@ -89,7 +90,7 @@ DeepSeek, Mistral, OpenRouter… 22 providers); or run a local model with Ollama
 | [Harness](bench/RESULTS.md) | ox's machinery (tools, recovery, safety, memory) with a scripted model | 25/25 |
 | [Real tasks](bench/real/README.md) | 9 coding tasks (find, edit, debug, refactor, create, add a feature, recover, leave files alone, multi-step), graded by running code; the model decides everything | **9/9** on the ChatGPT plan, 150 s ([results](bench/real/results-chatgpt-plan-2026-10-17.json)). On a plan the loop runs inside the vendor's CLI (Codex here), so the 42k–142k tokens per task are Codex's, not ox's |
 | [Security](bench/security/RESULTS.md) | caught / false alarms on labelled, held-out and real vulnerable apps | above |
-| [Head-to-head](bench/h2h/run-h2h.mjs) | ox vs Hermes vs Codex vs Claude Code, same tasks, same model, tokens counted by a proxy | runner ready, full run pending |
+| [Head-to-head](bench/h2h/RESULTS.md) | ox vs Hermes vs Codex vs Claude Code, same tasks, same model, tokens counted by a proxy | first full run on a 3B local model: **0/9 for every agent**, so no ranking; needs a stronger shared model |
 
 ## Everything else
 
