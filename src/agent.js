@@ -984,6 +984,9 @@ async function* runAgentLoop(opts = {}) {
   const ownsSubagentEvents = !Array.isArray(ctx?._subagentEvents);
   const subagentEvents = ownsSubagentEvents ? [] : null;
   if (toolCtx && typeof toolCtx === 'object') toolCtx._subagentEvents = subagentEvents ?? ctx._subagentEvents;
+  // Files this run wrote or edited (src/tools/fs.js), for the security check.
+  if (toolCtx && typeof toolCtx === 'object' && !(toolCtx.writtenFiles instanceof Set)) toolCtx.writtenFiles = new Set();
+  let securityRounds = 0;
   // Yields whatever the subagent calls have queued since the last drain. A
   // no-op on a nested loop, which is exactly right.
   const flushSubagentEvents = function* () {
@@ -1833,6 +1836,32 @@ async function* runAgentLoop(opts = {}) {
     if (!calls.length) {
       const message = { role: 'assistant', content: text };
       history.push(message);
+
+      // Security check of what this run changed (src/security-scan.js): the
+      // model is told what it just introduced, once, and fixes it or says why
+      // it is safe. Whatever the model, the harness looks. Off: OX_SECURE=0.
+      if (securityRounds < 1 && toolCtx?.writtenFiles?.size && process.env.OX_SECURE !== '0') {
+        securityRounds++;
+        try {
+          const { scanText, findingsForModel } = await import('./security-scan.js');
+          const fsMod = await import('node:fs');
+          const pathMod = await import('node:path');
+          const findings = [];
+          for (const f of toolCtx.writtenFiles) {
+            const abs = pathMod.isAbsolute(f) ? f : pathMod.join(cwd, f);
+            let text = '';
+            try { text = fsMod.readFileSync(abs, 'utf8'); } catch { continue; }
+            findings.push(...scanText(pathMod.relative(cwd, abs) || abs, text));
+          }
+          const note = findingsForModel(findings);
+          yield { type: 'security-check', files: toolCtx.writtenFiles.size, findings: findings.length, high: findings.filter((x) => x.severity === 'high').length };
+          if (note) {
+            history.push({ role: 'user', content: note });
+            yield { type: 'turn-end', stopReason, iters };
+            continue outer;
+          }
+        } catch {}
+      }
 
       // Completion is emitted only after all required checks pass. Streamed
       // text is a draft, not evidence that the run has completed.

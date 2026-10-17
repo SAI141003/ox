@@ -25,6 +25,7 @@ const CATASTROPHIC = [
   // file, read it, then run it: three visible steps instead of one blind one.
   {
     re: /(?<![\w-])(?:curl|wget)\b[^|;&]*\|\s*(?:sudo\s+)?(?:ba|z|da|fi)?sh\b/,
+    // ox-secure-ignore: the message of the rule that blocks this pattern.
     reason: 'piping remote content into a shell (curl/wget | sh) — save it to a file and read it before running it',
   },
   {

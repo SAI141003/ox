@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -80,7 +80,8 @@ export function scanSkillsDir(dir) {
 
 export function fetchCatalogFromNpm(packageName, version) {
   try {
-    const output = execSync(`npm view ${packageName}@${version} skills_index.json --json`, { encoding: 'utf8' });
+    // Arguments, not a shell string: a package name with ; or $( ) is just a bad name (ox secure).
+    const output = execFileSync('npm', ['view', `${packageName}@${version}`, 'skills_index.json', '--json'], { encoding: 'utf8' });
     const data = JSON.parse(output);
     return Array.isArray(data) ? data : [];
   } catch {
@@ -90,7 +91,8 @@ export function fetchCatalogFromNpm(packageName, version) {
 
 export function fetchCatalogFromGithub(owner, repo, branch) {
   try {
-    const output = execSync(`curl -fsSL https://raw.githubusercontent.com/${owner}/${repo}/${branch}/skills_index.json`, { encoding: 'utf8' });
+    if (![owner, repo, branch].every((p) => /^[\w.-]+$/.test(String(p)))) return [];
+    const output = execFileSync('curl', ['-fsSL', `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/skills_index.json`], { encoding: 'utf8' });
     const data = JSON.parse(output);
     return Array.isArray(data) ? data : [];
   } catch {

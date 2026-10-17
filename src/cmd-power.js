@@ -14,6 +14,7 @@ const SAFE_GIT_TIMEOUT = 5_000;
 
 function safeExec(cmd, cwd) {
   try {
+    // ox-secure-ignore: every caller passes a fixed command or the project's own lint script.
     return execSync(cmd, {
       cwd,
       timeout: SAFE_GIT_TIMEOUT,

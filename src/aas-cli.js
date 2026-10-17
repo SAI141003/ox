@@ -34,8 +34,20 @@ export const RISK_SUMMARY = {
 const DEFAULT_HOST = process.env.OX_AAS_DEFAULT_HOST || 'codex';
 const DEFAULT_DRY_RUN = process.env.OX_AAS_DRY_RUN === '1' || process.env.OX_AAS_DRY_RUN === 'true';
 
+// Every part goes into a shell command line: a skill name from a catalogue
+// like "x; rm -rf ~" would run. Plain names, versions and paths only (ox secure).
+const SAFE_PART = /^[\w.,@/:~+=-]+$/;
+function plain(label, v) {
+  const s = String(v);
+  if (!SAFE_PART.test(s)) throw new Error(`refused: the ${label} "${s.slice(0, 60)}" has characters a shell would run`);
+  return s;
+}
+
 export function buildInstallCommand({ host, skills, category, risk, dryRun, release, path: p } = {}) {
   const cfg = getHost(host);
+  for (const [label, v] of [['skills', Array.isArray(skills) ? skills.join(',') : skills], ['category', Array.isArray(category) ? category.join(',') : category], ['risk', risk], ['release', release], ['path', p]]) {
+    if (v != null && v !== '') plain(label, v);
+  }
   const parts = [cfg.installCmd];
   if (skills) {
     const ids = Array.isArray(skills) ? skills.join(',') : String(skills);
@@ -70,6 +82,7 @@ export function executeInstall({ host = DEFAULT_HOST, skills, category, risk, dr
     }
   }
   try {
+    // ox-secure-ignore: every part was checked by buildInstallCommand above.
     const stdout = execSync(command, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
     return { ok: true, stdout, command };
   } catch (err) {

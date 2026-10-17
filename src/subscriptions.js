@@ -103,6 +103,7 @@ export const SUBSCRIPTION_CLIS = Object.freeze({
   cursor: {
     label: 'Cursor (Pro) via Cursor CLI',
     bin: 'cursor-agent',
+    // ox-secure-ignore: the vendor's own install line, shown to you, never run by ox.
     install: 'curl https://cursor.com/install -fsS | bash',
     login: 'run `cursor-agent login`',
     format: 'text',
@@ -176,6 +177,7 @@ export const SUBSCRIPTION_CLIS = Object.freeze({
   droid: {
     label: 'Droid (Factory account)',
     bin: 'droid',
+    // ox-secure-ignore: the vendor's own install line, shown to you, never run by ox.
     install: 'curl -fsSL https://app.factory.ai/cli | sh',
     login: 'run `droid` once and sign in',
     format: 'text',

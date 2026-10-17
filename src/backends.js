@@ -9,6 +9,7 @@ const LOCAL = {
   connect: () => ({ ok: true, backend: 'local' }),
   async execute(command, opts = {}) {
     return new Promise((resolve, reject) => {
+      // ox-secure-ignore: this backend runs the agent's shell command, under ox's approval gate.
       const p = spawn(command, opts.args ?? [], { shell: true, stdio: ['ignore', 'pipe', 'pipe'], cwd: opts.cwd });
       let out = '', err = '';
       p.stdout.on('data', (d) => { out += d; });

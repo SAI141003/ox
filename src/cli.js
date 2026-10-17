@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4656,6 +4656,32 @@ async function runSubcommand(cmd, args) {
         }
       } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; return; }
       console.log(SUB_USAGE.hf); process.exitCode = 2;
+      return;
+    }
+    case 'secure': {
+      // A security scan of code (src/security-scan.js): offline, every finding
+      // with its CWE and a fix. --diff: only the lines you changed.
+      if (args[0] === '--help' || args[0] === 'help') {
+        console.log(`${c.bold('ox secure')}: find security problems in code (injection, XSS, path traversal, SSRF, secrets, weak crypto, TLS off…), JS/TS, Python, Go, Java, PHP, Ruby, shell`);
+        console.log(c.dim('  ox secure                 this folder'));
+        console.log(c.dim('  ox secure src app.py      files and folders'));
+        console.log(c.dim('  ox secure --diff          only the lines changed since the last commit (and new files)'));
+        console.log(c.dim('  ox secure --json          machine-readable; --fail-on high|medium|low sets the exit code'));
+        console.log(c.dim('  The agent runs it on the files it edits and fixes what it finds. Silence a line with a comment: ox-secure-ignore: <why>'));
+        return;
+      }
+      const S = await import('./security-scan.js');
+      const json = args.includes('--json');
+      const fi = args.indexOf('--fail-on');
+      const failOn = fi >= 0 ? String(args[fi + 1] ?? 'high') : 'high';
+      const paths = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--fail-on');
+      let r;
+      try { r = args.includes('--diff') ? S.scanDiff({ cwd: process.cwd() }) : S.scanPaths(paths.length ? paths : ['.'], { cwd: process.cwd() }); }
+      catch (e) { process.stderr.write(`ox secure: ${e.message}\n`); process.exitCode = 2; return; }
+      if (json) console.log(JSON.stringify(r, null, 2));
+      else console.log(S.formatReport(r));
+      const rank = { high: 0, medium: 1, low: 2 };
+      if (r.findings.some((f) => rank[f.severity] <= (rank[failOn] ?? 0) && !f.test)) process.exitCode = 1;
       return;
     }
     case 'mcp-mac': {

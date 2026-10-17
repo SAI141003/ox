@@ -13,7 +13,7 @@
 
 import os from 'node:os';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import { listTemplates, getTemplate, cloneWebsite } from './website-cloner.js';
 import { AASCoreMcp, createAasMcp, AAS_MCP_TOOLS, MAX_STACK_SIZE } from './aas-mcp.js';
 import { AasStackManager, validateStack, buildPlan, diffStacks, saveStack, loadStack, saveEvidence, loadEvidence, verifyPlan, formatStack, formatPlan } from './aas-stack.js';
@@ -275,7 +275,7 @@ function createVoice(opts, onProgress) {
 
 function existsBin(name) {
   try {
-    execSync(`which ${name} 2>/dev/null`, { stdio: 'ignore' });
+    execFileSync('which', [name], { stdio: 'ignore' });
     return true;
   } catch { return false; }
 }

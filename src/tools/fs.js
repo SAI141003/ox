@@ -106,6 +106,8 @@ function ok(content) {
 // guessed at here -- a shell command can touch anything, and the honest source
 // for that is a tree diff, not the tool call's arguments.
 function touched(result, p, ctx) {
+  // The run's list of files it changed: the security check reads it (agent.js).
+  try { ctx?.writtenFiles?.add?.(p); } catch {}
   return { ...result, filesTouched: [displayPath(p, ctx)] };
 }
 
