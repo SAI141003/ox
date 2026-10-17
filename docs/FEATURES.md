@@ -95,7 +95,9 @@ Updated October 16 2026.
 |---|---|---|---|
 | 8.1 | Black and white palette | ✓ | Builds |
 | 8.2 | On / off from the app | ~ | Off tested (terminal agrees); on not tested here, to avoid a second island beside yours |
-| 8.3 | Live transcript as you speak (Pixie) | ✗ | Not built in the island |
+| 8.3 | Live transcript as you speak (Pixie) | ~ | Was marked missing, wrongly: hold ⌃⌥Space and your words show live in the buddy panel (on-device speech, punctuation). Not in the collapsed notch itself |
+| 8.14 | The island's buddy speaks in ox's natural voice (Kokoro), not the system voice | ~ | Built: it runs `ox speak … --out`, plays it, the mouth follows the voice's loudness; system voice only as fallback; switch in the island menu. The command is proven (Kokoro WAV, 3.3 s); the island itself not heard yet, it needs `ox island restart` |
+| 8.15 | The island shows the app's runs (chats, bots, helpers), not only terminal runs | ~ | Built: the app server writes ~/.ox/serve.json, the island reads /ox/live every 1.5 s; voice questions still go only to runs with a socket. Island builds; not watched live yet |
 | 8.4 | Inbox card in the notch: unread list, open, Reply, Mark as read (Coucou video 1) | ✗ | Mail tool exists; no notch card |
 | 8.5 | Widget gallery for the island, incl. an AI usage meter (video 2) | ✗ | Usage is recorded; not shown in the island |
 | 8.6 | Draft-then-send email card with Send / Cancel from voice (video 4) | ✗ | Mail tool drafts; no notch card |
@@ -151,6 +153,26 @@ Updated October 16 2026.
 | 12.4 | ox's own deep learning (Andrew Ng's course ideas) | ✗ | To be scoped: what it should learn, from what data |
 | 12.6 | ox evolve: ox improves ox, kept only when measured better | ✓ | Wired as ox evolve list, failures, diff, accept, reject; its test found crash recording had never saved anything (fixed). A full attempt has not been run yet |
 | 12.5 | Paperclip's task board in the app | ~ | Board, claims, blockers, budgets, review gates exist in ox's engine (src/tasks.js); no page in the app |
+
+## 13. From the October 16 evening videos and images (and Devin)
+
+| # | Idea (source) | ox today | State |
+|---|---|---|---|
+| 13.1 | One command center: Claude Code, Codex, Cursor, OpenCode, Pi, Hermes side by side in one window (Harness by Autonomous, video 1) | Plans you pay for answer as bots; Compare runs one message on several models side by side; the Office shows who works on what | ~ no live terminal panes per agent CLI |
+| 13.2 | Each agent on its own branch, keeps going when the laptop closes (Harness) | Worktrees exist for teams, arena and evolve; the daemon runs schedules | ~ not per chat agent in the app |
+| 13.3 | Every machine linked: Mac, home server, office, GPU box (Harness) | — | ✗ (same as 10.2) |
+| 13.4 | Reply by voice from the phone (Harness) | Telegram and Discord, voice notes transcribed | ~ no phone app |
+| 13.5 | One-command skill to research LinkedIn, YouTube transcripts, X talk (AgentReach for Hermes, video 2) | web_search / web_fetch; username search across sites (osint); yt-dlp named as a capability | ~ no YouTube-transcript or social-research skill yet |
+| 13.6 | Every language and stack a recruiter asks for: Java, Go, Spring, SQL Server, Postgres, Oracle, MongoDB, Redis, Cosmos, React, Angular, Azure/AWS/GCP, Docker, Kubernetes, RabbitMQ, Kafka, gRPC, GraphQL, SOAP, SignalR, MAUI, Unity, GitHub Actions, Azure DevOps, Terraform (image) | General coding works in any language; no per-stack skills | ~ (12.3) |
+| 13.7 | Precise one-prompt image edits at 2K (Krea, image) | Studio makes images and video with your provider keys | ✗ editing an existing image |
+| 13.8 | Make agents from plain language, self-developing (AutoAgent, HKUDS, image) | Bots page and `ox agent new`; ox evolve improves ox | ~ no "describe the agent, ox builds it" |
+| 13.9 | Chat bar with Build / Plan / Mission / Skills and a model picker (Freebuff, image) | Mode list with descriptions, + menu, model picker | ✓ (11.1, 11.9) |
+| 13.10 | Subagents with isolated context, pluggable filesystem, summarize long threads and offload tool outputs to disk, shell, persistent memory (deepagents, MIT, image) | Subagents, compaction, sandbox, memory | ~ big tool outputs are cut, not offloaded to a file the agent can read back |
+| 13.11 | Video editing by an agent: watch, hear (Whisper), cut (ffmpeg), animate (Remotion), HTML→MP4, captions (image) | Whisper dictation; an ffmpeg video MCP | ~ no editing workflow |
+| 13.12 | Errands from one sentence with suggestion chips: cancel a subscription, track a package, book a plumber (Wajo, image) | Mail, browser and operator tools; scheduled runs | ~ no errand chips; no phone calls |
+| 13.13 | /anatomy: an interactive drawing that explains how a machine works (skill, image) | OpenUI answers draw SVG and sliders | ~ no ready-made skill |
+| 13.14 | A teammate with its own cloud computer (Sauna, image; Devin) | Runs on your Mac; the daemon keeps schedules | ✗ no cloud machine |
+| 13.15 | Devin: works in its own sandbox from a ticket, plans, opens pull requests, answers in Slack, Jira, Linear, wiki of the codebase, playbooks, many in parallel | Plans, modes, subagents, task board, playbooks (procedural memory), Telegram/Discord; GitHub through the gh CLI and MCP | ~ no Slack, Jira or Linear; no PR flow; no codebase wiki |
 
 ## 9. Reliability
 

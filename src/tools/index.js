@@ -6,6 +6,9 @@ import {
   globTool,
   grepTool,
 } from './fs.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { bashTool } from './exec.js';
 import { todoWriteTool } from './todo.js';
 import { estimateTokens } from '../context.js';
@@ -17,6 +20,7 @@ import {
 import { modeRefusal, grantRefusal } from '../modes.js';
 import { mail_accounts, mail_compose, MAIL_TOOL_SCHEMAS } from './mail.js';
 import { webFetchTool, webSearchTool, WEB_TOOL_SCHEMAS, WEB_TOOLS } from './web.js';
+import { youtubeTranscriptTool, YOUTUBE_TOOL_SCHEMAS, YOUTUBE_TOOLS, YOUTUBE_SIGNAL } from './youtube.js';
 import { webTaskTool, WEB_TASK_TOOL_SCHEMAS, WEB_TASK_TOOLS } from './web-task.js';
 import { critiqueTool, CRITIQUE_TOOL_SCHEMAS, CRITIQUE_TOOLS } from './critique.js';
 import { showUiTool, CANVAS_TOOL_SCHEMAS, CANVAS_TOOLS, CANVAS_KEYWORDS } from './canvas.js';
@@ -46,6 +50,7 @@ export const TOOL_IMPLS = {
   mail_compose,
   web_fetch: webFetchTool,
   web_search: webSearchTool,
+  youtube_transcript: (args) => youtubeTranscriptTool(args),
   critique: critiqueTool,
   web_task: webTaskTool,
   show_ui: showUiTool,
@@ -184,6 +189,8 @@ export const BUILTIN_SCHEMAS = [
       required: ['todos'],
     },
   },
+  // Last, so when it is withheld it falls into the "+N more" of the withheld line.
+  ...YOUTUBE_TOOL_SCHEMAS,
 ];
 
 function normalizeMcpResult(result) {
@@ -630,6 +637,7 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
     if (memoryOn && n.startsWith('memory_')) keep.add(n);
     if (operatorOn && OPERATOR_TOOLS.includes(n)) keep.add(n);
     if (webOn && WEB_TOOLS.includes(n)) keep.add(n);
+    if (YOUTUBE_SIGNAL.test(String(message)) && YOUTUBE_TOOLS.includes(n)) keep.add(n);
     if (webTaskOn && WEB_TASK_TOOLS.includes(n)) keep.add(n);
     if (critiqueOn && CRITIQUE_TOOLS.includes(n)) keep.add(n);
     if (agentOn && AGENT_MESSAGE_TOOLS.includes(n)) keep.add(n);
@@ -689,7 +697,7 @@ export async function dispatchTool(name, args, ctx = {}) {
         return { content: `${name}: MCP unavailable — no MCP client is connected.`, isError: true };
       }
       const raw = await ctx.mcpCall(name, args ?? {}, ctx);
-      return normalizeMcpResult(raw);
+      return offloadLarge(name, normalizeMcpResult(raw), ctx);
     }
     // Wave 6b: subagent delegation — spawn a nested agent loop.
     if (name === 'subagent') {
@@ -745,10 +753,37 @@ export async function dispatchTool(name, args, ctx = {}) {
       if (Array.isArray(result.filesTouched) && result.filesTouched.length) {
         out.filesTouched = [...result.filesTouched];
       }
-      return out;
+      return offloadLarge(name, out, ctx);
     }
-    return { content: String(result ?? '') };
+    return offloadLarge(name, { content: String(result ?? '') }, ctx);
   } catch (e) {
     return { content: String((e && e.message) || e), isError: true };
   }
+}
+
+// A huge tool result (a long log, a whole web page) is kept whole in a file and
+// the model gets its start, its end and where the rest is: it reads more with
+// read_file (offset/limit) only if it needs to. The idea is deepagents' "offload
+// tool outputs to disk": nothing is lost and every later turn stops paying for
+// the whole thing. read_file itself is never offloaded (it already pages).
+export const OFFLOAD_OVER = 20_000;
+const OFFLOAD_HEAD = 4_000;
+const OFFLOAD_TAIL = 1_500;
+export function offloadLarge(name, out, ctx = {}) {
+  const text = String(out?.content ?? '');
+  if (text.length <= OFFLOAD_OVER || name === 'read_file' || ctx?.noOffload || process.env.OX_OFFLOAD === '0') return out;
+  let file;
+  try {
+    const dir = path.join(os.tmpdir(), 'ox-tool-outputs');
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    file = path.join(dir, `${String(name).replace(/[^\w.-]+/g, '_').slice(0, 40)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}.txt`);
+    fs.writeFileSync(file, text, { mode: 0o600 });
+  } catch {
+    return out;
+  }
+  const lines = text.split('\n').length;
+  const head = text.slice(0, OFFLOAD_HEAD);
+  const tail = text.slice(-OFFLOAD_TAIL);
+  const note = `\n\n[ox: this result is ${text.length.toLocaleString('en-US')} characters (${lines.toLocaleString('en-US')} lines); the start and the end are shown. The whole of it is in ${file} — read_file it with offset/limit for the part you need.]\n\n`;
+  return { ...out, content: `${head}${note}…${tail}`, meta: { ...(out.meta ?? {}), offloaded: { file, chars: text.length, lines } } };
 }
