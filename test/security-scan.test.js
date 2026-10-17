@@ -46,6 +46,14 @@ test('comments, ignore markers, test files and secrets', () => {
   assert.ok(!s[0].excerpt.includes('AKIA'), 'a secret is never echoed into the report');
 });
 
+test('Python tempfile.mktemp is flagged, but mkstemp is safe', () => {
+  const finding = scanText('app.py', 'name = tempfile.mktemp()')[0];
+  assert.equal(finding.cwe, 'CWE-377');
+  assert.equal(finding.severity, 'high');
+  assert.match(finding.fix, /tempfile\.mkstemp.*NamedTemporaryFile/);
+  assert.equal(scanText('app.py', 'fd, name = tempfile.mkstemp()').length, 0);
+});
+
 test('--diff looks only at the lines you changed', () => {
   const dir = fs.mkdtempSync(path.join(home, 'repo-'));
   const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
