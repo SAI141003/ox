@@ -3,6 +3,7 @@
 // action, so the island and `ox do` keep working on a plane, offline, or with
 // no model configured. It never guesses: anything it does not recognise is
 // handed back as "not a small task" for a model to take, if there is one.
+import { assistantName } from './identity.js';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -89,9 +90,23 @@ export function resolveApp(name, apps = installedApps()) {
 const SITE = /^(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:\/\S*)?$/i;
 
 // text -> { intent, ...args } | null. Order matters: the first rule wins.
+// "hey ox, …", "Pixie, can you …": the name ox answers to (yours, after a
+// rename) and the politeness around it, off the front of a request.
+let nameCache = null;
+function namePrefix() {
+  let name = 'ox';
+  try { name = assistantName(); } catch {}
+  if (nameCache?.name !== name) {
+    const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const names = [...new Set(['ox', name.toLowerCase()])].map(esc).join('|');
+    nameCache = { name, re: new RegExp(`^(?:(?:(?:hey|ok|okay|hi)\\s+)?(?:${names})[,\\s]+|(?:please|can you|could you|would you)[,\\s]+)+`, 'i') };
+  }
+  return nameCache.re;
+}
+
 export function parseIntent(text) {
   // `t` keeps the person's casing (app names, note text); `low` is for matching.
-  const t = String(text ?? '').trim().replace(/[.!?]+$/, '').replace(/^(?:(?:hey ox|ox|please|can you|could you)[,\s]+)+/i, '').trim();
+  const t = String(text ?? '').trim().replace(/[.!?]+$/, '').replace(namePrefix(), '').trim();
   const low = t.toLowerCase();
   let m;
   if ((m = /^(?:set (?:a )?)?(?:timer|countdown)(?: for)? (\d+(?:\.\d+)?)\s*(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)\b(?:\s+(?:for|to|called)\s+(.+))?$/i.exec(low))) {

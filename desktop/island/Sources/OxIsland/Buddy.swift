@@ -424,6 +424,50 @@ enum BuddyHotKey {
     }
 }
 
+// MARK: - hold Fn to talk
+
+enum FnKey {
+    private static var monitors: [Any] = []
+    private static var pending: DispatchWorkItem?
+    private static var down = false
+    private static var talking = false
+
+    static var enabled: Bool { UserDefaults.standard.object(forKey: "fn.talk") as? Bool ?? true }
+
+    /// macOS's own use of the 🌐/Fn key (Keyboard settings), read only.
+    static var globeUsage: Int { UserDefaults(suiteName: "com.apple.HIToolbox")?.object(forKey: "AppleFnUsageType") as? Int ?? 2 }
+    static var globeOpensSomething: Bool { [1, 2].contains(globeUsage) } // 3 is dictation on a double press: holding Fn does not clash
+    static var globeAction: String { [1: "the input source switcher", 2: "the emoji picker", 3: "Apple's dictation"][globeUsage] ?? "something" }
+
+    /// Needs Accessibility (the same permission dictation's paste asks for).
+    static func install(press: @escaping () -> Void, release: @escaping () -> Void) {
+        let flags: (NSEvent) -> Void = { e in
+            guard enabled else { return }
+            let fnNow = e.modifierFlags.contains(.function) && e.keyCode == 63
+            let others: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
+            if fnNow, !down, e.modifierFlags.intersection(others).isEmpty {
+                down = true
+                let work = DispatchWorkItem { talking = true; press() }
+                pending = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+            } else if !e.modifierFlags.contains(.function), down {
+                down = false
+                pending?.cancel(); pending = nil
+                if talking { talking = false; release() }
+            }
+        }
+        // Fn + another key (F-keys, arrows, Fn-Delete): not a request to talk.
+        let key: (NSEvent) -> Void = { _ in
+            guard down, !talking else { return }
+            pending?.cancel(); pending = nil
+        }
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: flags) { monitors.append(m) }
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: key) { monitors.append(m) }
+        if let m = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged, handler: { flags($0); return $0 }) { monitors.append(m) }
+        if let m = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { key($0); return $0 }) { monitors.append(m) }
+    }
+}
+
 // MARK: - the pointer that flies to what the answer is about
 
 final class PointerOverlay: NSPanel {

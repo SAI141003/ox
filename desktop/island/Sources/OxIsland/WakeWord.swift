@@ -24,7 +24,13 @@ final class WakeWord: ObservableObject {
     private var command = ""
 
     static var enabled: Bool { UserDefaults.standard.bool(forKey: "wake.enabled") }
-    static let phrase = try! NSRegularExpression(pattern: #"\b(?:ok(?:ay)?|hey)[\s,]+ox\b[\s,.:!]*"#, options: [.caseInsensitive])
+    /// « OK ox », « hey Pixie », or the name on its own when it is long
+    /// enough not to be heard by accident (four letters or more: "Pixie, …").
+    static var phrase: NSRegularExpression {
+        let name = NSRegularExpression.escapedPattern(for: OxName.current)
+        let lead = OxName.current.count >= 4 ? #"(?:(?:ok(?:ay)?|hey|hi)[\s,]+)?"# : #"(?:ok(?:ay)?|hey|hi)[\s,]+"#
+        return try! NSRegularExpression(pattern: #"\b"# + lead + name + #"\b[\s,.:!]*"#, options: [.caseInsensitive])
+    }
 
     func setEnabled(_ on: Bool) {
         UserDefaults.standard.set(on, forKey: "wake.enabled")

@@ -141,8 +141,10 @@ final class OxBridge: ObservableObject {
             wake.start()
         }
         MainActor.assumeIsolated {
-            buddy.send = { [weak self] text, shots, audio in
+            buddy.send = { [weak self] raw, shots, audio in
                 guard let self else { return false }
+                // "Pixie, play Billie Jean": the name is how you called it, not the request.
+                let text = Self.withoutName(raw)
                 if let said = self.islandCommand(text) { MainActor.assumeIsolated { self.buddy.speak(said) }; return true }
                 if self.ask(text, imagePaths: shots, audioPath: audio) { return true }
                 // No live run: the chat takes it. Small tasks are done offline; the
@@ -588,14 +590,28 @@ final class OxBridge: ObservableObject {
 
     /// Commands about the island itself, typed or said ("make the island
     /// smaller", "bigger", "stay open", "close"): done here, no model, no AI.
+    static func withoutName(_ raw: String) -> String {
+        let name = NSRegularExpression.escapedPattern(for: OxName.current)
+        let re = try! NSRegularExpression(pattern: #"^\s*(?:(?:ok(?:ay)?|hey|hi)[\s,]+)?(?:ox|"# + name + #")\b[\s,.:!]*"#, options: [.caseInsensitive])
+        let ns = raw as NSString
+        let out = re.stringByReplacingMatches(in: raw, range: NSRange(location: 0, length: ns.length), withTemplate: "")
+        return out.isEmpty ? raw : out
+    }
+
     func islandCommand(_ raw: String) -> String? {
         let t = raw.lowercased()
+        // "call yourself Pixie", "your name is Pixie", "rename yourself to Pixie".
+        if let m = try? NSRegularExpression(pattern: #"^(?:please\s+)?(?:call yourself|your name is|rename yourself(?: to)?|i(?:'ll| will) call you|be called)\s+([A-Za-z0-9][A-Za-z0-9 .'-]{0,23}?)[.!]*$"#, options: [.caseInsensitive])
+            .firstMatch(in: raw, range: NSRange(location: 0, length: (raw as NSString).length)) {
+            let name = (raw as NSString).substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespaces)
+            return OxName.set(name) ? "I'm \(OxName.current) now. Say \"\(OxName.current), …\" to talk to me." : "A name is up to 24 letters or digits."
+        }
         guard t.range(of: #"\b(island|notch|yourself|you)\b"#, options: .regularExpression) != nil || t.count < 40 else { return nil }
         let set = { (k: String, v: Any?) in UserDefaults.standard.set(v, forKey: k); self.objectWillChange.send() }
-        if t.range(of: #"\b(smaller|shrink|reduce|compact|less space|tiny|small)\b"#, options: .regularExpression) != nil, t.contains("island") || t.contains("size") || t.contains("yourself") {
+        if t.range(of: #"\b(smaller|shrink|reduce|compact|less space|tiny|small)\b"#, options: .regularExpression) != nil, t.contains("island") || t.contains("size") || t.contains("yourself") || t.count < 24 {
             set("island.size", "compact"); return "Island is compact now. Say \"make the island bigger\" to undo."
         }
-        if t.range(of: #"\b(bigger|larger|full size|normal size|standard size|grow)\b"#, options: .regularExpression) != nil, t.contains("island") || t.contains("size") || t.contains("yourself") {
+        if t.range(of: #"\b(bigger|larger|full size|normal size|standard size|grow)\b"#, options: .regularExpression) != nil, t.contains("island") || t.contains("size") || t.contains("yourself") || t.count < 24 {
             set("island.size", "standard"); return "Island is back to its standard size."
         }
         if t.range(of: #"\b(stay open|keep (it )?open|don.t close)\b"#, options: .regularExpression) != nil {

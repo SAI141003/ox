@@ -104,17 +104,21 @@ struct IslandMenu: View {
     @AppStorage("island.size") private var islandSize = "standard"
     @AppStorage("dictation.enabled") private var dictationOn = true
     @AppStorage("wake.enabled") private var wakeOn = false
+    @AppStorage("fn.talk") private var fnTalk = true
     var bridge: OxBridge? = nil
     @AppStorage("island.autoClose") private var autoClose = 6.0
     var body: some View {
-        Button(buddy.phase == .listening ? "Stop listening" : "Talk to ox (⌃⌥Space)") { buddy.toggle() }
+        Button(buddy.phase == .listening ? "Stop listening" : "Talk to \(OxName.current) (hold Fn or ⌃⌥Space)") { buddy.toggle() }
+        Button("Rename \(OxName.current)…") { OxName.askRename() }
         Picker("Buddy character", selection: $buddy.character) {
             ForEach(AvatarKind.allCases) { Text($0.title).tag($0) }
         }
         Toggle("Natural voice (Kokoro)", isOn: $naturalVoice)
         Divider()
         Toggle("Dictation anywhere (hold ⌃⌥D)", isOn: $dictationOn)
-        Toggle("Listen for “OK ox”", isOn: Binding(get: { wakeOn }, set: { on in wakeOn = on; bridge?.wake.setEnabled(on) }))
+        Toggle("Hold Fn to talk", isOn: $fnTalk)
+        if fnTalk, FnKey.globeOpensSomething { Text("The Fn key also opens \(FnKey.globeAction): set Keyboard › “Press 🌐 key to” to Do Nothing").font(.caption) }
+        Toggle(OxName.current.count >= 4 ? "Listen for “\(OxName.current)”" : "Listen for “OK \(OxName.current)”", isOn: Binding(get: { wakeOn }, set: { on in wakeOn = on; bridge?.wake.setEnabled(on) }))
         Button(bridge?.notes.recording == true ? "Stop call notes" : "Record call notes (your microphone)") { bridge?.notes.toggle() }
         Button("Edit my dictionary…") { NSWorkspace.shared.open(PersonalDictionary.ensureFile()) }
         Divider()
@@ -143,6 +147,37 @@ enum OxName {
               let n = doc["name"] as? String else { return "ox" }
         let t = n.trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty || t.count > 24 ? "ox" : t
+    }
+
+    /// The same rule and the same file as `ox name` (src/identity.js).
+    @discardableResult
+    static func set(_ raw: String) -> Bool {
+        let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let reset = t.isEmpty || t.lowercased() == "ox"
+        guard reset || t.range(of: #"^[A-Za-z0-9][A-Za-z0-9 .'-]{0,23}$"#, options: .regularExpression) != nil else { return false }
+        var doc: [String: Any] = [:]
+        if let data = try? Data(contentsOf: IslandSwitch.config), let d = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { doc = d }
+        if reset { doc.removeValue(forKey: "name") } else { doc["name"] = t }
+        try? FileManager.default.createDirectory(at: IslandSwitch.config.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard let out = try? JSONSerialization.data(withJSONObject: doc, options: [.prettyPrinted, .sortedKeys]) else { return false }
+        return (try? (out + Data("\n".utf8)).write(to: IslandSwitch.config, options: .atomic)) != nil
+    }
+
+    /// Asked in a small window from the island's menu.
+    @MainActor static func askRename() {
+        let alert = NSAlert()
+        alert.messageText = "Rename \(current)"
+        alert.informativeText = "What should it be called? It answers to this name (\"\(current), play some music\") everywhere: the island, the app and the terminal."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = current
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.window.initialFirstResponder = field
+        if alert.runModal() == .alertFirstButtonReturn, !set(field.stringValue) {
+            let bad = NSAlert(); bad.messageText = "That name can't be used"; bad.informativeText = "Up to 24 letters, digits, spaces, dots, dashes or apostrophes, starting with a letter or digit."; bad.runModal()
+        }
     }
 }
 

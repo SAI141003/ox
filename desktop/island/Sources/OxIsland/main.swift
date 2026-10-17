@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The microphone is handed over, never shared: « OK ox » steps aside.
         BuddyHotKey.install(press: { MainActor.assumeIsolated { wake.stop() }; buddy.startListening() },
                             release: { buddy.stopListening(); DispatchQueue.main.asyncAfter(deadline: .now() + 6) { MainActor.assumeIsolated { wake.start() } } })
+        FnKey.install(press: { MainActor.assumeIsolated { wake.stop() }; buddy.startListening() },
+                      release: { buddy.stopListening(); DispatchQueue.main.asyncAfter(deadline: .now() + 6) { MainActor.assumeIsolated { wake.start() } } })
         MainActor.assumeIsolated { bridge.dictation.install() }
         let panel = IslandPanel(bridge: bridge)
         panel.orderFrontRegardless()
