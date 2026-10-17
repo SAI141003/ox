@@ -104,3 +104,15 @@ test('the Pixie requests: a song by name, lower the music, today\'s to-dos', asy
   assert.equal(speakTodos(pickToday([{ name: 'a', due: null }, { name: 'b', due: null }], now)), 'you have 2 things: a and b');
   assert.equal(speakTodos([]), 'nothing on your to-do list');
 });
+
+test('chains and sites: "open chrome and open youtube" is done without a model', async () => {
+  const { parseChain } = await import('../src/offline.js');
+  assert.deepEqual(parseIntent('open youtube in chrome'), { intent: 'url', url: 'https://www.youtube.com', browser: 'Google Chrome' });
+  assert.equal(parseIntent('open gmail').url, 'https://mail.google.com');
+  assert.equal(doOffline('open chrome and open youtube', { dryRun: true }).handled, true);
+  assert.equal(doOffline('ox, open chrome and youtube', { dryRun: true }).intent.steps.at(-1).url, 'https://www.youtube.com');
+  assert.deepEqual(parseChain('open gmail then pause the music').map((x) => x.intent), ['url', 'music']);
+  // More than a list of small tasks goes to a model, whole.
+  assert.equal(doOffline('open whatsapp and all my friends', { dryRun: true }).handled, false);
+  assert.equal(parseIntent('add milk and eggs to my list').text, 'milk and eggs');
+});

@@ -87,6 +87,19 @@ export function resolveApp(name, apps = installedApps()) {
   return null;
 }
 
+// Sites people open by name ("open youtube"), when no app has that name.
+export const SITE_NAMES = {
+  youtube: 'https://www.youtube.com', gmail: 'https://mail.google.com', google: 'https://www.google.com',
+  github: 'https://github.com', netflix: 'https://www.netflix.com', twitter: 'https://x.com', x: 'https://x.com',
+  instagram: 'https://www.instagram.com', facebook: 'https://www.facebook.com', linkedin: 'https://www.linkedin.com',
+  reddit: 'https://www.reddit.com', chatgpt: 'https://chatgpt.com', claude: 'https://claude.ai', perplexity: 'https://www.perplexity.ai',
+  'google maps': 'https://maps.google.com', 'google drive': 'https://drive.google.com', 'google docs': 'https://docs.google.com',
+  'google calendar': 'https://calendar.google.com', amazon: 'https://www.amazon.com', wikipedia: 'https://www.wikipedia.org',
+  'hacker news': 'https://news.ycombinator.com', tiktok: 'https://www.tiktok.com', twitch: 'https://www.twitch.tv',
+  'whatsapp web': 'https://web.whatsapp.com', outlook: 'https://outlook.live.com', notion: 'https://www.notion.so',
+};
+const BROWSERS = { chrome: 'Google Chrome', 'google chrome': 'Google Chrome', safari: 'Safari', arc: 'Arc', firefox: 'Firefox', brave: 'Brave Browser', edge: 'Microsoft Edge', 'microsoft edge': 'Microsoft Edge', opera: 'Opera' };
+
 const SITE = /^(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:\/\S*)?$/i;
 
 // text -> { intent, ...args } | null. Order matters: the first rule wins.
@@ -156,6 +169,12 @@ export function parseIntent(text) {
   if ((m = /^(?:search(?: the web| google)?(?: for)?|google|look up)\s+(.+)$/i.exec(t))) return { intent: 'search', query: m[1].trim() };
   if ((m = /^(?:open|go to|visit)\s+(\S+)$/i.exec(t)) && SITE.test(m[1])) {
     return { intent: 'url', url: /^https?:\/\//i.test(m[1]) ? m[1] : `https://${m[1]}` };
+  }
+  if ((m = /^(?:open|go to|visit|show me|pull up|launch)\s+(?:the\s+)?(.+?)(?:\s+(?:in|on|with|using)\s+(chrome|google chrome|safari|arc|firefox|brave|edge|microsoft edge|opera))?$/i.exec(t))) {
+    const name = m[1].trim().toLowerCase().replace(/\.com$/, '');
+    const browser = m[2] ? BROWSERS[m[2].toLowerCase()] : '';
+    if (SITE_NAMES[name] && (browser || !resolveApp(m[1]))) return { intent: 'url', url: SITE_NAMES[name], ...(browser ? { browser } : {}) };
+    if (browser && SITE.test(m[1].trim())) return { intent: 'url', url: /^https?:\/\//i.test(m[1].trim()) ? m[1].trim() : `https://${m[1].trim()}`, browser };
   }
   // Opening an app: only an app that is on this Mac, named on its own. Anything
   // more ("…and message my friends") is a task for a model.
@@ -388,7 +407,14 @@ export function perform(it) {
       const r = run(osCmd('open_url', url));
       return r.ok ? { ok: true, message: `searching: ${it.query}` } : { ok: false, message: r.err };
     }
-    case 'url': { const r = run(osCmd('open_url', it.url)); return r.ok ? { ok: true, message: `opened ${it.url}` } : { ok: false, message: r.err }; }
+    case 'url': {
+      if (it.browser && process.platform === 'darwin') {
+        const r = run(['open', '-a', it.browser, it.url]);
+        return r.ok ? { ok: true, message: `opened ${it.url} in ${it.browser}` } : { ok: false, message: `${it.browser} could not open it: ${r.err}` };
+      }
+      const r = run(osCmd('open_url', it.url));
+      return r.ok ? { ok: true, message: `opened ${it.url}` } : { ok: false, message: r.err };
+    }
     case 'app': { const r = run(osCmd('open_app', it.name)); return r.ok ? { ok: true, message: `opened ${it.name}` } : { ok: false, message: `could not open "${it.name}": ${r.err}` }; }
     case 'volume': { const r = setVolume(it); return r.ok ? { ok: true, message: it.level != null ? `volume ${it.level}%` : `volume ${it.delta > 0 ? 'up' : 'down'}` } : { ok: false, message: r.err }; }
     case 'mute': {
@@ -399,9 +425,43 @@ export function perform(it) {
   }
 }
 
+// "open chrome and open youtube": a few small tasks in a row. Every part has to
+// be one ox knows, or none is done (the whole goes to a model). A browser
+// followed by a site opens the site in that browser; "open chrome and youtube"
+// reads the bare second part as another open.
+export function parseChain(text) {
+  const t = String(text ?? '').trim().replace(/[.!?]+$/, '').replace(namePrefix(), '');
+  const parts = t.split(/\s*(?:,\s*(?:and\s+)?(?:then\s+)?|\s+and then\s+|\s+then\s+|\s+and\s+)\s*/i).filter(Boolean);
+  if (parts.length < 2 || parts.length > 5) return null;
+  const out = [];
+  let verb = '';
+  for (const part of parts) {
+    let it = parseIntent(part);
+    if (!it && verb) it = parseIntent(`${verb} ${part}`);
+    if (!it) return null;
+    verb = (/^(open|go to|visit|launch|play)\b/i.exec(part) ?? [])[1] ?? verb;
+    const prev = out.at(-1);
+    if (it.intent === 'url' && !it.browser && prev?.intent === 'app' && Object.values(BROWSERS).includes(prev.name)) {
+      out[out.length - 1] = { ...it, browser: prev.name };
+      continue;
+    }
+    out.push(it);
+  }
+  return out.length >= 2 || out[0]?.browser ? out : null;
+}
+
 export function doOffline(text, { dryRun = false } = {}) {
   const it = parseIntent(text);
-  if (!it) return { handled: false, message: 'Not a small task I can do offline. Ask ox with a model for this one.' };
+  if (!it) {
+    const chain = parseChain(text);
+    if (chain) {
+      if (dryRun) return { handled: true, intent: { intent: 'chain', steps: chain }, message: `would ${chain.map((x) => x.intent).join(', then ')}` };
+      const done = chain.map((step) => perform(step));
+      const ok = done.every((d) => d.ok !== false);
+      return { handled: true, intent: { intent: 'chain', steps: chain }, ok, message: done.map((d) => d.message).join('; ') };
+    }
+    return { handled: false, message: 'Not a small task I can do offline. Ask ox with a model for this one.' };
+  }
   if (dryRun) return { handled: true, intent: it, message: `would ${it.intent}` };
   return { handled: true, intent: it, ...perform(it) };
 }

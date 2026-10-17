@@ -110,6 +110,14 @@ struct IslandMenu: View {
     var body: some View {
         Button(buddy.phase == .listening ? "Stop listening" : "Talk to \(OxName.current) (hold Fn or ⌃⌥Space)") { buddy.toggle() }
         Button("Rename \(OxName.current)…") { OxName.askRename() }
+        if !CGPreflightScreenCaptureAccess() {
+            Button("Let \(OxName.current) see your screen…") {
+                // Asked once, when you choose it; until then, nothing asks.
+                if !CGRequestScreenCaptureAccess() {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+                }
+            }
+        }
         Picker("Buddy character", selection: $buddy.character) {
             ForEach(AvatarKind.allCases) { Text($0.title).tag($0) }
         }

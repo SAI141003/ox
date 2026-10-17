@@ -32,15 +32,46 @@ enum TrayTab: String, CaseIterable, Identifiable {
 
 /// Runs the ox that started this island (`ox island start` passes OX_NODE and OX_CLI).
 enum OxRunner {
-    static var available: Bool {
+    static var available: Bool { paths() != nil }
+
+    /// Which ox to run. Started by `ox island start` it is told (OX_NODE,
+    /// OX_CLI); started any other way (at login, its own Restart, OX.app) it
+    /// used to know nothing, and every request ended in "start ox in a
+    /// terminal". Now: the ox OX.app runs, the one OX.app was installed from,
+    /// then the usual places. Every path is checked on disk first.
+    static func paths() -> (node: String, cli: String)? {
+        let fm = FileManager.default
+        let usable = { (n: String?, c: String?) -> (String, String)? in
+            guard let n, let c, fm.isExecutableFile(atPath: n), fm.fileExists(atPath: c) else { return nil }
+            return (n, c)
+        }
         let env = ProcessInfo.processInfo.environment
-        return env["OX_NODE"] != nil && env["OX_CLI"] != nil
+        if let p = usable(env["OX_NODE"], env["OX_CLI"]) { return p }
+        let home = NSHomeDirectory()
+        let read = { (path: String) -> [String: Any] in
+            guard let d = fm.contents(atPath: path), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
+            return j
+        }
+        let app = read(home + "/.ox/app.json")
+        if let p = usable(app["node"] as? String, app["cli"] as? String) { return p }
+        for bundle in [home + "/Applications/OX.app", "/Applications/OX.app"] {
+            let res = bundle + "/Contents/Resources"
+            if let p = usable(res + "/node", res + "/ox/bin/ox.js") { return p }
+            let j = read(res + "/ox-paths.json")
+            if let p = usable(j["node"] as? String, j["cli"] as? String) { return p }
+        }
+        for n in ["/opt/homebrew/bin/node", "/usr/local/bin/node", home + "/.hermes/node/bin/node", home + "/.volta/bin/node"] {
+            for c in [home + "/ox/bin/ox.js", "/opt/homebrew/lib/node_modules/ox-agent/bin/ox.js", "/usr/local/lib/node_modules/ox-agent/bin/ox.js"] {
+                if let p = usable(n, c) { return p }
+            }
+        }
+        return nil
     }
 
     static func run(_ args: [String], cwd: URL, env extra: [String: String] = [:], completion: @escaping (Int32, String) -> Void) {
         let env = ProcessInfo.processInfo.environment
-        guard let node = env["OX_NODE"], let cli = env["OX_CLI"] else {
-            completion(127, "Start the island with `ox island start` so it knows which ox to run.")
+        guard let (node, cli) = paths() else {
+            completion(127, "ox is not installed where the island can find it. Open OX once, or run  ox island start .")
             return
         }
         let p = Process()

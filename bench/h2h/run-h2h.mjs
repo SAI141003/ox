@@ -121,6 +121,8 @@ const AGENTS = {
 };
 
 function runAgent({ cmd, args, env }, cwd, timeoutMs) {
+  // Config folders an agent expects to exist (Codex refuses a missing CODEX_HOME).
+  for (const k of ['CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'HERMES_HOME']) if (env[k]) fs.mkdirSync(env[k], { recursive: true });
   return new Promise((resolve) => {
     const started = Date.now();
     const child = spawn(cmd, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -165,7 +167,7 @@ export async function main(argv = process.argv.slice(2)) {
           requests: s.requests, bytesOut: s.bytesOut, tokensIn: s.tokensIn, tokensOut: s.tokensOut, usageReported: s.withUsage,
           detail: String(verdict.detail ?? '').slice(0, 200), stderr: String(run?.err ?? '').trim().split('\n').slice(-2).join(' | ').slice(0, 200) };
         rows.push(row);
-        console.log(`${name.padEnd(7)} ${task.id.padEnd(26)} ${row.pass ? 'PASS' : 'FAIL'} ${String(Math.round(row.ms / 1000)).padStart(4)}s  req ${String(row.requests).padStart(3)}  in ${String(row.tokensIn).padStart(7)}  out ${String(row.tokensOut).padStart(6)}${row.pass ? '' : `  ${row.timedOut ? 'TIMEOUT ' : ''}${row.detail.slice(0, 90)}`}`);
+        console.log(`${name.padEnd(7)} ${task.id.padEnd(26)} ${row.pass ? 'PASS' : 'FAIL'} ${String(Math.round(row.ms / 1000)).padStart(4)}s  req ${String(row.requests).padStart(3)}  in ${String(row.tokensIn).padStart(7)}  out ${String(row.tokensOut).padStart(6)}${row.pass ? '' : `  ${row.timedOut ? 'TIMEOUT ' : ''}${row.detail.slice(0, 90)}`}${row.requests === 0 ? `\n        never reached the model (exit ${row.exitCode}): ${row.stderr || String(run?.out ?? '').trim().split('\n').slice(-2).join(' | ').slice(0, 200)}` : ''}`);
       }
     }
   }

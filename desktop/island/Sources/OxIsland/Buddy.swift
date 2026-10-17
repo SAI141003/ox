@@ -349,7 +349,11 @@ final class Buddy: NSObject, ObservableObject {
     }()
 
     /// Silent full-screen capture of the main display, for ox to look at.
+    /// Only when screen recording is already allowed: asking macOS on every
+    /// request put its permission window up each time you spoke ("open Chrome"
+    /// needs no screenshot). Turn it on once from the island's menu.
     static func captureScreen() -> String? {
+        guard CGPreflightScreenCaptureAccess() else { return nil }
         let path = (NSTemporaryDirectory() as NSString).appendingPathComponent("ox-buddy-\(Int(Date().timeIntervalSince1970 * 1000)).png")
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")

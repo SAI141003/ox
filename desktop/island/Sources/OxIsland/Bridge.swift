@@ -136,7 +136,7 @@ final class OxBridge: ObservableObject {
             // What was asked after « OK ox » goes where ⌃⌥Space goes: island commands, a live run, or the chat.
             wake.onCommand = { [weak self] text in
                 guard let self else { return }
-                if self.buddy.send?(text, [], nil) != true { self.buddy.speak("Start ox in a terminal, then ask me again.") }
+                if self.buddy.send?(text, [], nil) != true { self.buddy.speak("I can't find ox on this Mac. Open the OX app once, then ask me again.") }
             }
             wake.start()
         }
