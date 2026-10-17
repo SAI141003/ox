@@ -42,7 +42,7 @@ async function chat(body) {
 
 test('Ask from the web chat cannot write, and says so', async () => {
   const r = await chat({ ox_mode: 'ask', messages: [{ role: 'user', content: 'write web.txt' }] });
-  assert.deepEqual(r.frames.find((f) => f.ox?.type === 'mode').ox, { type: 'mode', mode: 'ask', routed: false, reason: null });
+  assert.deepEqual(r.frames.find((f) => f.ox?.type === 'mode').ox, { type: 'mode', mode: 'ask', routed: false, reason: null, route: 'tools' });
   assert.match(r.content, /ask mode only reads/);
   assert.equal(fs.existsSync(path.join(cwd, 'web.txt')), false);
 });

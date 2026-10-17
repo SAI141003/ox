@@ -30,7 +30,9 @@ import { runAgent } from './agent.js';
 import { BOTS, KEY_ENV, resolveBot, defaultBotSpec } from './bots.js';
 
 import { readFile } from 'fs/promises';
-import { join, resolve, extname } from 'path';
+import { join, resolve, extname, dirname } from 'path';
+import { homedir } from 'os';
+import { mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
 import { spawn } from 'node:child_process';
 import { createReadStream } from 'fs';
 import { stat, unlink } from 'fs/promises';
@@ -721,7 +723,7 @@ async function handleChatCompletions(req, res) {
     ...(agentDef || liveUi || howTo ? { personaBlock: [agentDef ? agentPersonaBlock(agentDef) : '', liveUi, howTo].filter(Boolean).join('\n\n') } : {}),
     ...(agentDef ? { agentName: agentDef.name } : {}),
     ...(Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools }
-      : turnMode.answerOnly ? (tool.web || tool.research || needsWeb ? { onlyTools: ['web_search', 'web_fetch'] } : { noTools: true })
+      : turnMode.answerOnly ? (tool.web || tool.research || needsWeb || /youtube\.com|youtu\.be/i.test(lastText) ? { onlyTools: ['web_search', 'web_fetch', 'youtube_transcript'] } : { noTools: true })
       // A question about the project in ask mode: only the four readers.
       : turnMode.mode === 'ask' && TOUCHES_CODE.test(lastText) && !NEEDS_TOOLS.test(lastText) ? { onlyTools: ['read_file', 'list_dir', 'glob', 'grep'] }
       : {}),
@@ -1511,6 +1513,21 @@ async function handleRequest(req, res) {
   sendError(res, 404, `Unknown request URL: ${req.method} ${path}. GET /v1/models lists the routes this server serves.`, 'invalid_request_error', 'unknown_url', null);
 }
 
+// Where the island finds this server: ~/.ox/serve.json { port, pid } (loopback
+// only, no key in it). It reads /ox/live from here to show the app's runs.
+// Returns the clean-up, or null when nothing was written (tests, a key, a wide bind).
+function announceServer(port, host, keyed) {
+  if (process.env.NODE_TEST_CONTEXT || keyed || !['127.0.0.1', 'localhost', '::1'].includes(host)) return null;
+  const file = join(process.env.OX_HOME || join(homedir(), '.ox'), 'serve.json');
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify({ port, pid: process.pid, at: Date.now() }));
+  } catch { return null; }
+  const clean = () => { try { if (JSON.parse(readFileSync(file, 'utf8')).pid === process.pid) unlinkSync(file); } catch {} };
+  process.once('exit', clean);
+  return clean;
+}
+
 // `host` defaults to loopback rather than 0.0.0.0: the wide bind is opt-in, and
 // it is only reachable with auth configured at all.
 export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
@@ -1534,8 +1551,9 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       reportExposure(exposure);
       console.log(`[serve] listening on http://${host}:${port}`);
       console.log(`[serve] web chat: http://${host.includes(':') ? `[${host}]` : host}:${port}/`);
+      const announced = announceServer(server.address()?.port ?? port, host, !!(config.apiKey ?? apiKey()));
       resolve({
-        close: () => new Promise((resolveClose) => server.close(() => resolveClose()))
+        close: () => new Promise((resolveClose) => server.close(() => { announced?.(); resolveClose(); }))
       });
     });
   });

@@ -185,6 +185,8 @@ final class Buddy: NSObject, ObservableObject {
     // MARK: speaking
 
     /// Speak an agent reply; a [POINT:x,y:label] in it flies the pointer.
+    /// The voice is ox's natural one (Kokoro, through `ox speak`); the system
+    /// voice is only the fallback when ox cannot make the recording.
     func speak(_ reply: String) {
         let (say, point) = Self.parsePoint(reply)
         let text = say.isEmpty ? "Done." : say
@@ -193,16 +195,73 @@ final class Buddy: NSObject, ObservableObject {
         wordCount = 0
         phase = .speaking
         gesture = point != nil ? .point : .open
-        let u = AVSpeechUtterance(string: Self.speakable(text))
+        if let point { showPointer(point) }
+        let spoken = Self.speakable(text)
+        guard Self.naturalVoice, OxRunner.available else { systemSpeak(spoken); return }
+        let out = (NSTemporaryDirectory() as NSString).appendingPathComponent("ox-buddy-say-\(Int(Date().timeIntervalSince1970 * 1000)).wav")
+        let token = UUID()
+        speakToken = token
+        OxRunner.run(["speak", spoken, "--out", out], cwd: FileManager.default.homeDirectoryForCurrentUser) { [weak self] code, _ in
+            guard let self, self.speakToken == token, self.phase == .speaking else { try? FileManager.default.removeItem(atPath: out); return }
+            if code == 0, let p = try? AVAudioPlayer(contentsOf: URL(fileURLWithPath: out)) {
+                self.playRecording(p, file: out)
+            } else {
+                self.systemSpeak(spoken)
+            }
+        }
+    }
+
+    /// Kokoro on (the default) or the system voice, from the island's settings.
+    static var naturalVoice: Bool {
+        UserDefaults.standard.object(forKey: "buddy.naturalVoice") as? Bool ?? true
+    }
+
+    private var speakToken: UUID?
+    private var player: AVAudioPlayer?
+    private var playerFile: String?
+    private var meter: Timer?
+
+    private func systemSpeak(_ text: String) {
+        let u = AVSpeechUtterance(string: text)
         u.voice = Self.bestVoice
         u.rate = 0.5
         u.pitchMultiplier = character == .ox ? 0.85 : 1.0
         synth.speak(u)
-        if let point { showPointer(point) }
+    }
+
+    /// Plays ox's recording; the mouth follows the loudness of the voice itself.
+    private func playRecording(_ p: AVAudioPlayer, file: String) {
+        player = p
+        playerFile = file
+        p.isMeteringEnabled = true
+        p.delegate = self
+        p.play()
+        var tick = 0
+        meter = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self, let p = self.player, p.isPlaying else { return }
+                p.updateMeters()
+                let amp = pow(10, Double(p.averagePower(forChannel: 0)) / 20)
+                tick += 1
+                self.level = min(1, amp * 3)
+                self.mouth = amp < 0.02 ? .rest : amp < 0.06 ? .closed : amp < 0.12 ? .small : [Viseme.open, .wide, .round][tick % 3]
+                if self.pendingPoint == nil, tick % 8 == 0 { self.gesture = .beat(tick / 8) }
+            }
+        }
+    }
+
+    private func stopRecording() {
+        meter?.invalidate(); meter = nil
+        player?.stop(); player = nil
+        if let f = playerFile { try? FileManager.default.removeItem(atPath: f) }
+        playerFile = nil
+        level = 0
     }
 
     func stopSpeaking() {
+        speakToken = nil
         synth.stopSpeaking(at: .immediate)
+        stopRecording()
         finishSpeaking()
     }
 
@@ -302,6 +361,12 @@ final class Buddy: NSObject, ObservableObject {
             return nil
         }
         return FileManager.default.fileExists(atPath: path) ? path : nil
+    }
+}
+
+extension Buddy: AVAudioPlayerDelegate {
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        DispatchQueue.main.async { self.stopRecording(); self.finishSpeaking() }
     }
 }
 

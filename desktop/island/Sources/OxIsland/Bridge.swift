@@ -161,6 +161,85 @@ final class OxBridge: ObservableObject {
         // Forget runs that ended a few seconds ago.
         let now = Date()
         sessions.removeAll { s in s.closedAt.map { now.timeIntervalSince($0) > 6 } ?? false }
+        pollApp()
+    }
+
+    // MARK: the app's runs (ox serve)
+
+    /// Chats, bots and their helpers running in ox's app have no socket: the
+    /// app server says where it is (~/.ox/serve.json) and reports every run on
+    /// /ox/live, the same board its Office page shows. Read-only here.
+    private var appPolling = false
+    private func pollApp() {
+        guard !appPolling else { return }
+        let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/serve.json")
+        guard let data = try? Data(contentsOf: file),
+              let doc = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let port = doc["port"] as? Int,
+              let url = URL(string: "http://127.0.0.1:\(port)/ox/live") else { dropAppSessions(keep: []); return }
+        appPolling = true
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 1.2
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
+            let runs = (data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] })?["runs"] as? [[String: Any]]
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.appPolling = false
+                guard (resp as? HTTPURLResponse)?.statusCode == 200, let runs else { self.dropAppSessions(keep: []); return }
+                self.mergeApp(runs)
+            }
+        }.resume()
+    }
+
+    private func dropAppSessions(keep: Set<String>) {
+        sessions.removeAll { $0.id.hasPrefix("app:") && !keep.contains($0.id) }
+    }
+
+    private func mergeApp(_ runs: [[String: Any]]) {
+        let leads = runs.filter { ($0["parent"] as? String) == nil }
+        var keep = Set<String>()
+        for r in leads {
+            guard let rid = r["id"] as? String else { continue }
+            let id = "app:\(rid)"
+            keep.insert(id)
+            let state = r["state"] as? String ?? "thinking"
+            let tool = r["tool"] as? String ?? ""
+            let detail = r["detail"] as? String ?? ""
+            let ended = (r["ended"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
+            // Gone from the island 6 s after it ends, like a terminal run.
+            if let ended, Date().timeIntervalSince(ended) > 6 { keep.remove(id); continue }
+            update(id) { s in
+                s.bot = r["who"] as? String ?? "ox"
+                s.model = r["model"] as? String ?? ""
+                s.cwd = ""
+                s.lastText = r["title"] as? String ?? ""
+                s.toolCount = r["steps"] as? Int ?? s.toolCount
+                switch state {
+                case "tool":
+                    let what = OxBridge.describe(tool: tool, preview: detail)
+                    s.mood = .working(what); s.activity = what
+                case "writing": s.mood = .thinking; s.activity = "writing the answer"
+                case "done": s.mood = .done; s.activity = "done"
+                case "failed": s.mood = .error(detail.isEmpty ? "stopped" : detail); s.activity = "stopped"
+                default: s.mood = .thinking; s.activity = "thinking"
+                }
+                s.closedAt = ended
+                s.agents = runs.filter { ($0["parent"] as? String) == rid }.map { h in
+                    var a = SubAgent(id: h["id"] as? String ?? UUID().uuidString, label: h["title"] as? String ?? "helper")
+                    a.model = h["model"] as? String ?? ""
+                    a.tool = h["tool"] as? String ?? ""
+                    switch h["state"] as? String {
+                    case "tool": a.phase = .working
+                    case "done": a.phase = .done
+                    case "failed": a.phase = .failed
+                    default: a.phase = .thinking
+                    }
+                    a.endedAt = (h["ended"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
+                    return a
+                }
+            }
+        }
+        dropAppSessions(keep: keep)
     }
 
     private func connect(_ path: String) {
@@ -373,7 +452,8 @@ final class OxBridge: ObservableObject {
     /// Send a spoken question (and the screenshot) to the newest live run.
     /// False when no ox run is connected.
     func ask(_ text: String, imagePaths: [String], audioPath: String? = nil, voice: Bool = true) -> Bool {
-        guard let s = sessions.last(where: { $0.closedAt == nil && $0.pending == nil }), let conn = connections[s.id] else { return false }
+        // Only a run with a socket can take a question (the app's runs are shown, not driven).
+        guard let s = sessions.last(where: { $0.closedAt == nil && $0.pending == nil && connections[$0.id] != nil }), let conn = connections[s.id] else { return false }
         var msg: [String: Any] = ["type": "user-message", "text": text, "imagePaths": imagePaths, "voice": voice]
         if let audioPath { msg["audioPath"] = audioPath }
         conn.send(msg)

@@ -100,11 +100,13 @@ struct MicButton: View {
 
 struct IslandMenu: View {
     @ObservedObject var buddy: Buddy
+    @AppStorage("buddy.naturalVoice") private var naturalVoice = true
     var body: some View {
         Button(buddy.phase == .listening ? "Stop listening" : "Talk to ox (⌃⌥Space)") { buddy.toggle() }
         Picker("Buddy character", selection: $buddy.character) {
             ForEach(AvatarKind.allCases) { Text($0.title).tag($0) }
         }
+        Toggle("Natural voice (Kokoro)", isOn: $naturalVoice)
         Divider()
         Button("Turn off OX Island") { IslandSwitch.turnOff() }
     }
