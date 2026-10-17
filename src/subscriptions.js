@@ -28,8 +28,9 @@ export const SUBSCRIPTION_CLIS = Object.freeze({
     install: 'npm install -g @anthropic-ai/claude-code',
     login: 'run `claude` once and sign in with your Claude account',
     format: 'claude-stream',
-    args: ({ prompt, model, approval }) => [
-      '-p', prompt, '--output-format', 'stream-json', '--verbose',
+    // Claude Code opens image files with its Read tool: it is told where they are.
+    args: ({ prompt, model, approval, images = [] }) => [
+      '-p', images.length ? `${prompt}\n\n[Attached image${images.length > 1 ? 's' : ''}: read ${images.length > 1 ? 'these files' : 'this file'} to see ${images.length > 1 ? 'them' : 'it'}: ${images.join(', ')}]` : prompt, '--output-format', 'stream-json', '--verbose',
       '--permission-mode', approval === 'yolo' ? 'bypassPermissions' : approval === 'edits' ? 'acceptEdits' : approval === 'read' ? 'plan' : 'default',
       // ox's Mac actions (src/mac-mcp.js), pre-allowed: they are the safe ones
       // (open an app or a page, notes, to-dos, drafts never sent, music).
@@ -43,7 +44,7 @@ export const SUBSCRIPTION_CLIS = Object.freeze({
     install: 'npm install -g @openai/codex',
     login: 'run `codex login` and choose "Sign in with ChatGPT"',
     format: 'codex-jsonl',
-    args: ({ prompt, model, approval }) => [
+    args: ({ prompt, model, approval, images = [] }) => [
       'exec', '--json', '--skip-git-repo-check',
       // ox's Mac actions (open an app or a page, notes, to-dos, music…) as an MCP
       // server, so a run on the ChatGPT plan can act on this Mac too.
@@ -54,6 +55,8 @@ export const SUBSCRIPTION_CLIS = Object.freeze({
       ...(approval === 'yolo' ? ['-c', 'approval_policy="never"'] : []),
       ...(model ? ['--model', model] : []),
       prompt,
+      // After the prompt: --image takes every value that follows it.
+      ...(images.length ? ['--image', ...images] : []),
     ],
   },
   gemini: {
@@ -514,8 +517,35 @@ export function parseLine(format, line, st) {
 
 // The transcript so far, folded into one prompt: these CLIs take a single
 // message, so earlier turns ride along as context rather than being lost.
+// A message's words, whether its content is a string or parts (text + images):
+// a message with a photo is parts, and was dropped whole, words included.
+export function messageText(m) {
+  if (typeof m?.content === 'string') return m.content;
+  if (Array.isArray(m?.content)) return m.content.filter((p) => p?.type === 'text' || typeof p?.text === 'string').map((p) => p.text ?? '').join('\n');
+  return '';
+}
+
+// The images of the last user message, as files a CLI can open: data: URLs
+// are written to a temporary file; paths are kept as they are.
+export function imagesOf(messages = [], dir = os.tmpdir()) {
+  const last = [...messages].reverse().find((m) => m?.role === 'user');
+  if (!last) return [];
+  const out = [];
+  for (const p of Array.isArray(last.images) ? last.images : []) if (typeof p === 'string' && fs.existsSync(p)) out.push(p);
+  for (const part of Array.isArray(last.content) ? last.content : []) {
+    const url = part?.image_url?.url ?? part?.image_url ?? (part?.type === 'image' ? part?.source?.data && `data:${part.source.media_type};base64,${part.source.data}` : null);
+    if (typeof url !== 'string') continue;
+    const m = /^data:image\/(png|jpe?g|gif|webp);base64,(.+)$/i.exec(url);
+    if (m) {
+      const f = path.join(dir, `ox-plan-image-${Date.now()}-${out.length}.${m[1].toLowerCase().replace('jpeg', 'jpg')}`);
+      try { fs.writeFileSync(f, Buffer.from(m[2], 'base64')); out.push(f); } catch {}
+    } else if (fs.existsSync(url)) out.push(url);
+  }
+  return out.slice(0, 8);
+}
+
 export function foldPrompt(messages = []) {
-  const turns = messages.filter((m) => (m?.role === 'user' || m?.role === 'assistant') && typeof m.content === 'string' && m.content.trim());
+  const turns = messages.filter((m) => (m?.role === 'user' || m?.role === 'assistant') && messageText(m).trim()).map((m) => ({ role: m.role, content: messageText(m) }));
   const last = turns.at(-1);
   if (!last) return '';
   const earlier = turns.slice(0, -1).slice(-8);
@@ -598,7 +628,8 @@ async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = 
   const brief = planBrief(ctx);
   const prompt = brief ? `${brief}\n\n---\n\n${foldPrompt(messages)}` : foldPrompt(messages);
   const approval = approvalFor(ctx);
-  const args = cli.args({ prompt, model: target.model, approval });
+  const images = imagesOf(messages);
+  const args = cli.args({ prompt, model: target.model, approval, images });
   const st = { text: '', tools: new Map(), done: false, error: null, usage: null, estimateUsd: null, model: null };
   const plan = execPlan(where);
   if (plan.error) {

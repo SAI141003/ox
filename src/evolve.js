@@ -212,7 +212,10 @@ export async function evolve({ goal = '', root = OX_ROOT, maxCost = 2, bot = nul
   if (add.status !== 0) { note({ id, state: 'failed', why: add.stderr.trim() }); throw new Error(`git worktree add failed: ${add.stderr.trim()}`); }
 
   log(`attempt ${id}: ox is working on itself in ${dir}`);
-  const args = [path.join(root, 'bin', 'ox.js'), '-p', promptFor(goal, failure), '-y', '--sandbox', 'workspace', '--max-cost', String(maxCost), ...(bot ? ['--bot', bot] : [])];
+  // The attempt's own ox (the committed version in its worktree), not the live
+  // working copy beside it: a half-edited file there crashed an attempt before
+  // it did anything.
+  const args = [path.join(dir, 'bin', 'ox.js'), '-p', promptFor(goal, failure), '-y', '--sandbox', 'workspace', '--max-cost', String(maxCost), ...(bot ? ['--bot', bot] : [])];
   const code = await new Promise((resolve) => {
     const p = spawn(process.execPath, args, { cwd: dir, env: { ...process.env, OX_ISLAND: process.env.OX_ISLAND ?? '0', OX_SELF_REPORT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
     p.stdout.on('data', (d) => log(String(d).trimEnd()));
