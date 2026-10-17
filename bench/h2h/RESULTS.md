@@ -35,6 +35,6 @@ model locally (a ~5 GB download), or an API model all four agents can use.
 The runner is ready: `node bench/h2h/run-h2h.mjs --model <ollama model>
 --agents ox,hermes,codex,claude --json out.json`.
 
-Fixed after this run: the proxy crashed after the summary (an upstream error on
-a finished response), so the JSON file was not written; the table above is the
-runner's printed summary.
+Every row (36 runs: agent, task, time, requests, bytes, tokens, verdict) is in
+`results-qwen2.5-3b-64k.json`. Fixed after this run: the proxy crashed on an
+upstream error after a response had finished (after the data was saved).
