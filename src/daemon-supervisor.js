@@ -610,8 +610,24 @@ function goalForSession(file) {
   }
 }
 
+// ox Flows (src/flows.js) with a schedule trigger: looked at once a minute,
+// one tick at a time; each flow is marked as started before it runs.
+let flowsTickAt = 0;
+let flowsTicking = false;
+function tickFlowsOnce() {
+  if (flowsTicking || Date.now() - flowsTickAt < 60_000) return;
+  flowsTickAt = Date.now();
+  flowsTicking = true;
+  import('./flows.js')
+    .then((F) => F.tickFlows())
+    .then((runs) => { for (const r of runs ?? []) appendLog(`flow ${r.flow}: ${r.status}${r.error ? ` — ${r.error}` : ''}`); })
+    .catch((e) => appendLog(`flows tick failed: ${e?.message ?? e}`))
+    .finally(() => { flowsTicking = false; });
+}
+
 function tickSchedules() {
   if (shuttingDown) return { skipped: true };
+  tickFlowsOnce();
   const policy = readPolicy();
   const now = Date.now();
   const due = dueSchedules({ now, policy });

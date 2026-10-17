@@ -401,6 +401,19 @@
   .card .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .d { font-size: 12px; color: var(--dim); display: flex; gap: 8px; flex-wrap: wrap; }
   .page { flex: 1; overflow-y: auto; padding: 28px 36px; }
+  .fl-steps { display: grid; gap: 0; margin: 10px 0; }
+  .fl-step { display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: start; }
+  .fl-step .rail { display: grid; justify-items: center; height: 100%; }
+  .fl-step .num { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 11.5px; font-weight: 600; background: var(--raise); border: 1px solid var(--line2); }
+  .fl-step .line { width: 2px; flex: 1; min-height: 14px; background: var(--line2); }
+  .fl-step:last-child .line { display: none; }
+  .fl-step .body { padding: 2px 0 14px; min-width: 0; }
+  .fl-step .ty { font: 11px var(--mono); padding: 1px 6px; border-radius: 5px; border: 1px solid var(--line2); color: var(--muted); margin-left: 6px; }
+  .fl-step .what { font: 12px var(--mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
+  .fl-step.ok .num { border-color: var(--text); } .fl-step.failed .num { border-color: var(--red); color: var(--red); } .fl-step.stopped .num { opacity: .5; }
+  .fl-json { width: 100%; min-height: 200px; font: 12px/1.5 var(--mono); background: var(--panel); color: var(--text); border: 1px solid var(--line2); border-radius: 10px; padding: 10px; resize: vertical; }
+  .fl-problems { color: var(--red); font-size: 12.5px; margin: 6px 0; } .fl-ok { color: var(--muted); font-size: 12.5px; margin: 6px 0; }
+  .fl-runs .card .d span { white-space: nowrap; }
   .office-head { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
   .room { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; padding: 14px; border-radius: 16px; border: 1px solid var(--line); min-height: 150px;
     background: repeating-conic-gradient(var(--raise) 0 25%, var(--panel) 0 50%) 0 0 / 28px 28px; }
@@ -514,6 +527,7 @@
         <button data-view="market"><span data-i="store"></span><span class="grow">Marketplace</span></button>
         <button data-view="msg"><span data-i="chat"></span><span class="grow">Messaging</span></button>
         <button data-view="sched"><span data-i="clock"></span><span class="grow">Scheduled</span></button>
+        <button data-view="flows"><span data-i="flow"></span><span class="grow">Automations</span></button>
         <button data-view="office"><span data-i="office"></span><span class="grow">Office</span><span class="office-count" id="office-count" hidden></span></button>
       </div>
       <label class="search"><span data-i="search"></span><input id="q" placeholder="Search sessions…" aria-label="Search sessions"><span class="kbd">⌘K</span></label>
@@ -634,6 +648,7 @@
       <p class="small dim" style="margin-top:14px">Shown from what each run reports as it works (the tool, the file or page). Runs started in a terminal are not shown here yet.</p>
     </div></div></section>
     <section class="view" id="v-bots"><div class="page"><div class="page-inner" style="max-width:1100px" id="bots"></div></div></section>
+    <section class="view" id="v-flows"><div class="page"><div class="page-inner" id="flows"></div></div></section>
     <section class="view" id="v-sched"><div class="page"><div class="page-inner" id="sched"></div></div></section>
   </main>
 </div>
@@ -698,6 +713,7 @@
     scope: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM20 20l-4-4M8 12l2-2 2 2 3-3',
     check: 'M5 12.5 10 17 19 7', chev: 'M9 6l6 6-6 6',
     office: 'M3 20h18M5 20v-7h14v7M8 13V9h8v4M9 9V6h6v3',
+    flow: 'M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM6 9v3a3 3 0 0 0 3 3h6',
  open: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6', back: 'M15 18l-6-6 6-6',
   };
   const icon = (n, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${P[n] || ''}"/></svg>`;
@@ -828,7 +844,7 @@
     view = v;
     document.querySelectorAll('.view').forEach((el) => el.classList.toggle('on', el.id === `v-${v}`));
     document.querySelectorAll('.nav [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
-    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : (readonly ? readonly.title : convo()?.title || 'New session');
+    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : v === 'flows' ? 'Automations' : (readonly ? readonly.title : convo()?.title || 'New session');
     document.body.classList.remove('nav');
     if (v === 'caps') loadCaps();
     if (v === 'msg') loadMessaging();
@@ -837,6 +853,7 @@
     if (v === 'market') loadMarket();
     if (v === 'studio') loadStudio();
     if (v === 'office') pollOffice();
+    if (v === 'flows') loadFlows();
     if (v === 'map') loadMap();
     renderLists();
   }
@@ -2330,6 +2347,73 @@ files: [src/billing/**]
     el.querySelectorAll('[data-sch]').forEach((i) => (i.onchange = async () => {
       try { await postJson('/ox/scheduled', { id: i.dataset.sch, enabled: i.checked }); toast(i.checked ? 'Schedule on' : 'Schedule paused'); } catch (e) { toast(e.message); i.checked = !i.checked; }
     }));
+  }
+
+  // ---------- Automations (ox Flows): describe it, check it, save it, run it
+  let flowsData = null, flowDraft = null, flowProblems = [];
+  const FLOW_WHAT = (st) => st.type === 'http' ? `${(st.method || 'GET').toUpperCase()} ${st.url}` : st.type === 'ask' ? st.prompt : st.type === 'extract' ? `${st.from} → ${st.path}` : st.type === 'if' ? `${st.value} ${st.op} ${st.to ?? ''}` : st.type === 'notify' ? st.text : st.type === 'write' ? `${st.path}${st.append ? ' (append)' : ''}` : st.command;
+  function flowStepsHtml(steps, results = null) {
+    return `<div class="fl-steps">${steps.map((st, i) => {
+      const r = results?.find((x) => x.name === st.name);
+      return `<div class="fl-step ${r ? r.status : ''}"><div class="rail"><span class="num">${i + 1}</span><span class="line"></span></div><div class="body"><b>${esc(st.name)}</b><span class="ty">${esc(st.type)}</span>${r ? `<span class="dim small" style="margin-left:6px">${r.status}${r.ms != null ? ` · ${r.ms} ms` : ''}</span>` : ''}<div class="what" title="${esc(FLOW_WHAT(st) ?? '')}">${esc(r?.error || r?.out || FLOW_WHAT(st) || '')}</div></div></div>`;
+    }).join('')}</div>`;
+  }
+  const flowTrigger = (f) => f.trigger?.type === 'schedule' ? esc(f.trigger.every) : f.trigger?.type === 'webhook' ? 'webhook' : 'run by hand';
+  async function loadFlows() {
+    const el = $('flows');
+    if (!flowsData) el.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
+    try { flowsData = await getJson('/ox/flows'); } catch (e) { el.innerHTML = `<div class="empty-note">${esc(e.message)}</div>`; return; }
+    const F = flowsData;
+    el.innerHTML = `
+      <div class="shead">${icon('flow')}Automations</div>
+      <p class="sdesc">Like n8n, built in: a trigger and steps (call an API, ask a model, pick a field, check a condition, notify you, write a file). Describe one in a sentence and ox drafts it; it checks every call before you rely on it. Scheduled ones run while the app or <code>ox daemon</code> is up.</p>
+      <div class="box"><textarea class="field" id="fl-desc" rows="2" placeholder="Every day at 8am, get the top 3 Hacker News stories and save their titles to a file" style="width:100%;resize:vertical"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px"><button class="btn primary" id="fl-draft">${icon('wand')}Draft it</button><button class="btn ghost" id="fl-blank">Start from an empty flow</button></div></div>
+      <div id="fl-editor"></div>
+      <div class="shead" style="margin-top:28px">Your automations</div>
+      <div class="cards">${F.flows.length ? F.flows.map((f) => `<div class="card" style="flex-wrap:wrap"><span class="dot ${f.enabled === false ? '' : 'ok'}"></span><span class="t"><div class="n">${esc(f.name)}</div><div class="d"><span>${flowTrigger(f)}</span><span>${f.steps.length} steps</span><span class="mono">${esc(f.id)}</span>${f.lastRunAt ? `<span>last run ${ago(Date.parse(f.lastRunAt))}</span>` : ''}</div>
+          ${f.trigger?.type === 'webhook' ? `<div class="d mono small" style="margin-top:4px">POST ${esc(location.origin)}/ox/flows/hook/${esc(f.id)}?secret=${esc(f.trigger.secret)}</div>` : ''}</span>
+          <button class="btn" data-fl-run="${esc(f.id)}">${icon('play')}Run now</button><button class="btn ghost" data-fl-edit="${esc(f.id)}">Edit</button><button class="btn ghost danger" data-fl-rm="${esc(f.id)}">Delete</button>
+          <label class="switch" title="${f.enabled === false ? 'Off' : 'On'}"><input type="checkbox" data-fl-on="${esc(f.id)}" ${f.enabled === false ? '' : 'checked'} aria-label="On"><span></span></label></div>`).join('')
+        : '<div class="box muted small">None yet. Describe one above.</div>'}</div>
+      <div class="shead" style="margin-top:28px">Recent runs</div>
+      <div class="cards fl-runs">${F.runs.length ? F.runs.slice(0, 15).map((r) => `<details class="card" style="display:block"><summary style="cursor:pointer;display:flex;gap:10px;align-items:center"><span class="dot ${r.status === 'ok' ? 'ok' : r.status === 'failed' ? 'warn' : ''}"></span><b>${esc(r.name || r.flow)}</b><span class="dim small">${esc(r.status)} · ${esc(r.trigger)} · ${ago(Date.parse(r.at))} · ${((r.ms || 0) / 1000).toFixed(1)} s</span></summary>${r.error ? `<div class="fl-problems">${esc(r.error)}</div>` : ''}${flowStepsHtml(r.steps.map((x) => ({ name: x.name, type: x.type })), r.steps)}</details>`).join('')
+        : '<div class="box muted small">No runs yet.</div>'}</div>`;
+    paintIcons(el);
+    renderFlowEditor();
+    $('fl-draft').onclick = async () => {
+      const text = $('fl-desc').value.trim();
+      if (!text) { toast('Describe what it should do'); return; }
+      $('fl-draft').disabled = true; $('fl-draft').textContent = 'Drafting with your strongest model…';
+      try { const r = await postJson('/ox/flows', { action: 'draft', text }); flowDraft = r.flow; flowProblems = r.problems ?? []; renderFlowEditor(); }
+      catch (e) { toast(e.message); }
+      finally { $('fl-draft').disabled = false; $('fl-draft').innerHTML = `${icon('wand')}Draft it`; }
+    };
+    $('fl-blank').onclick = () => { flowDraft = { name: 'My automation', trigger: { type: 'manual' }, steps: [{ name: 'get', type: 'http', url: 'https://hn.algolia.com/api/v1/search?tags=front_page' }, { name: 'top', type: 'extract', from: 'get', path: 'hits.0.title' }, { name: 'tell', type: 'notify', text: '{{steps.top.output}}' }] }; flowProblems = null; renderFlowEditor(); };
+    el.querySelectorAll('[data-fl-run]').forEach((b) => (b.onclick = async () => {
+      b.disabled = true; b.textContent = 'Running…';
+      try { const { run } = await postJson('/ox/flows', { action: 'run', id: b.dataset.flRun }); toast(run.status === 'ok' ? `${run.name}: done in ${(run.ms / 1000).toFixed(1)} s` : `${run.name}: ${run.error || run.status}`); }
+      catch (e) { toast(e.message); }
+      loadFlows();
+    }));
+    el.querySelectorAll('[data-fl-edit]').forEach((b) => (b.onclick = () => { const f = F.flows.find((x) => x.id === b.dataset.flEdit); flowDraft = JSON.parse(JSON.stringify(f)); ['createdAt', 'updatedAt', 'lastRunAt'].forEach((k) => delete flowDraft[k]); flowProblems = null; renderFlowEditor(); $('fl-editor').scrollIntoView({ block: 'start', behavior: 'smooth' }); }));
+    el.querySelectorAll('[data-fl-rm]').forEach((b) => (b.onclick = async () => { if (!(await askSure(`Delete the automation ${b.dataset.flRm}?`))) return; try { await postJson('/ox/flows', { action: 'remove', id: b.dataset.flRm }); loadFlows(); } catch (e) { toast(e.message); } }));
+    el.querySelectorAll('[data-fl-on]').forEach((i) => (i.onchange = async () => { try { await postJson('/ox/flows', { action: 'enable', id: i.dataset.flOn, enabled: i.checked }); toast(i.checked ? 'On' : 'Off'); } catch (e) { toast(e.message); i.checked = !i.checked; } }));
+  }
+  function renderFlowEditor() {
+    const el = $('fl-editor');
+    if (!el) return;
+    if (!flowDraft) { el.innerHTML = ''; return; }
+    el.innerHTML = `<div class="box" style="margin-top:12px"><div style="display:flex;align-items:center;gap:8px"><b>${esc(flowDraft.name || 'Draft')}</b><span class="dim small">${esc(flowTrigger(flowDraft))}</span></div>
+      ${flowStepsHtml(flowDraft.steps || [])}
+      ${flowProblems === null ? '<div class="fl-ok">Not checked yet: open the JSON and press Check again.</div>' : flowProblems.length ? `<div class="fl-problems">${flowProblems.map((p) => `✗ ${esc(p)}`).join('<br>')}</div>` : '<div class="fl-ok">Check: every call answered and every field was found.</div>'}
+      <details><summary class="small dim" style="cursor:pointer">Edit it as JSON</summary><textarea class="fl-json" id="fl-json" spellcheck="false">${esc(JSON.stringify(flowDraft, null, 2))}</textarea>
+        <button class="btn ghost" id="fl-recheck" style="margin-top:6px">Check again</button></details>
+      <div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="fl-save">Save</button><button class="btn ghost" id="fl-cancel">Discard</button></div></div>`;
+    const read = () => { try { return JSON.parse($('fl-json').value); } catch (e) { toast(`JSON: ${e.message}`); return null; } };
+    $('fl-recheck').onclick = async () => { const f = read(); if (!f) return; try { const r = await postJson('/ox/flows', { action: 'check', flow: f }); flowDraft = f; flowProblems = r.problems; renderFlowEditor(); } catch (e) { toast(e.message); } };
+    $('fl-save').onclick = async () => { const f = $('fl-json') ? read() : flowDraft; if (!f) return; try { const r = await postJson('/ox/flows', { action: 'save', flow: { ...f, ...(flowProblems?.length ? { enabled: false } : {}) } }); toast(`Saved ${r.flow.id}${flowProblems?.length ? ' (off until the check passes)' : ''}`); flowDraft = null; flowProblems = []; loadFlows(); } catch (e) { toast(e.message); } };
+    $('fl-cancel').onclick = () => { flowDraft = null; flowProblems = []; renderFlowEditor(); };
   }
 
   // ---------- settings

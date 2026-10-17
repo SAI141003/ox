@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4657,6 +4657,70 @@ async function runSubcommand(cmd, args) {
       } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; return; }
       console.log(SUB_USAGE.hf); process.exitCode = 2;
       return;
+    }
+    case 'flow':
+    case 'flows': {
+      // ox Flows: automations like n8n's, native (src/flows.js).
+      const F = await import('./flows.js');
+      const [verb = 'list', ...rest] = args;
+      const id = rest[0];
+      const fail = (m) => { process.stderr.write(`ox: ${m}\n`); process.exitCode = 1; };
+      const showRun = (r) => {
+        console.log(`${c.bold(r.name ?? r.flow)} ${r.status === 'ok' ? 'ran' : r.status} in ${((r.ms ?? 0) / 1000).toFixed(1)} s`);
+        for (const s of r.steps ?? []) console.log(`  ${s.status === 'ok' ? '✓' : s.status === 'stopped' ? '■' : '✗'} ${s.name.padEnd(12)} ${c.dim(`${s.type} · ${s.ms} ms${s.tokens ? ` · ${s.tokens} tok` : ''}`)}  ${String(s.out ?? s.error ?? '').replace(/\s+/g, ' ').slice(0, 90)}`);
+      };
+      try {
+        if (verb === 'list') {
+          const all = F.listFlows();
+          if (!all.length) { console.log('no flows yet. Describe one: ox flow new "every day at 8am, tell me the top Hacker News story"'); return; }
+          for (const f of all) console.log(`${f.id.padEnd(24)} ${String(f.trigger?.type ?? 'manual').padEnd(8)} ${f.trigger?.every ?? ''}${f.enabled === false ? c.dim(' (off)') : ''}  ${c.dim(`${f.steps.length} steps`)}`);
+          return;
+        }
+        if (verb === 'show') { const f = F.loadFlow(id ?? ''); if (!f) return fail(`no flow ${id}`); console.log(JSON.stringify(f, null, 2)); return; }
+        if (verb === 'run') {
+          const ii = rest.indexOf('--input');
+          const input = ii >= 0 ? JSON.parse(rest[ii + 1] ?? 'null') : null;
+          const r = await F.runFlow(id ?? '', { input, trigger: 'manual' });
+          showRun(r);
+          if (r.status === 'failed') process.exitCode = 1;
+          return;
+        }
+        if (verb === 'new') {
+          const text = rest.join(' ').trim();
+          if (!text) return fail('usage: ox flow new "<what it should do, and when>"');
+          const draft = await F.draftFlow(text);
+          // A dry run of what only reads (GET calls, extracts): a draft's mistakes show now.
+          const problems = await F.checkFlow(draft);
+          const saved = F.saveFlow({ ...draft, ...(problems.length ? { enabled: false } : {}) });
+          console.log(`${c.bold(`saved ${saved.id}`)} (${saved.trigger.type}${saved.trigger.every ? `, ${saved.trigger.every}` : ''}${problems.length ? ', off until fixed' : ''}):`);
+          for (const s of saved.steps) console.log(`  ${s.name.padEnd(12)} ${s.type}  ${c.dim(String(s.url ?? s.prompt ?? s.path ?? s.text ?? s.value ?? '').slice(0, 80))}`);
+          if (problems.length) console.log(`${c.bold('check found:')}\n${problems.map((p) => `  ✗ ${p}`).join('\n')}`);
+          else console.log('check: every GET answered and every extract found something');
+          console.log(c.dim(`try it: ox flow run ${saved.id} · change it: ox flow show ${saved.id} > f.json, edit, ox flow add f.json · remove: ox flow rm ${saved.id}`));
+          return;
+        }
+        if (verb === 'add') {
+          if (!id) return fail('usage: ox flow add <flow.json>');
+          const saved = F.saveFlow(JSON.parse(fs.readFileSync(id, 'utf8')));
+          console.log(`saved ${saved.id}${saved.trigger.type === 'webhook' ? `\n  webhook: POST /ox/flows/hook/${saved.id}?secret=${saved.trigger.secret}` : ''}`);
+          return;
+        }
+        if (verb === 'rm' || verb === 'remove') { console.log(F.removeFlow(id ?? '') ? `removed ${id}` : `no flow ${id}`); return; }
+        if (verb === 'on' || verb === 'off') {
+          const f = F.loadFlow(id ?? '');
+          if (!f) return fail(`no flow ${id}`);
+          F.saveFlow({ ...f, enabled: verb === 'on' });
+          console.log(`${id} is ${verb}`);
+          return;
+        }
+        if (verb === 'runs') {
+          const rows = F.flowRuns({ id: id ?? null, limit: 15 });
+          if (!rows.length) { console.log('no runs yet'); return; }
+          for (const r of rows) console.log(`${r.at.slice(0, 16).replace('T', ' ')}  ${String(r.flow).padEnd(20)} ${r.status.padEnd(7)} ${String(r.trigger).padEnd(8)} ${r.error ? c.dim(r.error.slice(0, 80)) : ''}`);
+          return;
+        }
+        return fail('usage: ox flow list | new "<description>" | run <id> [--input JSON] | show <id> | add <file.json> | runs [id] | on|off <id> | rm <id>');
+      } catch (e) { return fail(e.message); }
     }
     case 'system1': {
       // Fast typed decisions about a message (Laya, src/system1.js).

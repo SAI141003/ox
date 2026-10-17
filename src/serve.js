@@ -1237,6 +1237,43 @@ function appRoute(fn) {
 }
 const appApi = () => import('./app-api.js');
 
+// ox Flows (src/flows.js): list with recent runs, save / remove / run / draft.
+async function flowsRoute(b) {
+  const F = await import('./flows.js');
+  switch (b.action) {
+    case 'save': return { flow: F.saveFlow(b.flow ?? {}) };
+    case 'remove': return { removed: F.removeFlow(String(b.id ?? '')) };
+    case 'run': return { run: await F.runFlow(String(b.id ?? ''), { input: b.input ?? null, trigger: 'manual' }) };
+    case 'draft': {
+      if (!String(b.text ?? '').trim()) throw new Error('Describe what the automation should do.');
+      const flow = await F.draftFlow(String(b.text));
+      return { flow, problems: await F.checkFlow(flow) };
+    }
+    case 'check': return { problems: [...F.validateFlow(b.flow ?? {}), ...(F.validateFlow(b.flow ?? {}).length ? [] : await F.checkFlow(b.flow))] };
+    case 'enable': {
+      const f = F.loadFlow(String(b.id ?? ''));
+      if (!f) return null;
+      return { flow: F.saveFlow({ ...f, enabled: b.enabled !== false }) };
+    }
+    default: throw new Error('action must be save, remove, run, draft or enable');
+  }
+}
+
+// A flow's webhook: POST /ox/flows/hook/<id>?secret=<its secret>; the JSON body is {{input}}.
+async function flowHook(req, res, m) {
+  const F = await import('./flows.js');
+  const f = F.loadFlow(m[1]);
+  const given = new URL(req.url, 'http://x').searchParams.get('secret') ?? req.headers['x-ox-secret'] ?? '';
+  if (!f || f.trigger?.type !== 'webhook' || !f.trigger.secret || !constantTimeEqual(String(given), f.trigger.secret)) {
+    sendError(res, 404, 'No such flow, or the secret is wrong.', 'invalid_request_error', 'not_found', null);
+    return;
+  }
+  let input = null;
+  try { input = await parseBody(req); } catch { input = null; }
+  try { sendJson(res, 200, { run: await F.runFlow(f, { input, trigger: 'webhook' }) }); }
+  catch (e) { sendError(res, 400, String(e?.message ?? e), 'invalid_request_error', 'bad_request', null); }
+}
+
 const MEDIA_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm' };
 async function serveMediaFile(req, res, m) {
   if (!authorized(req)) { unauthorized(res); return; }
@@ -1333,6 +1370,9 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/capabilities\/?$/, handler: appRoute(async () => (await appApi()).capabilitiesView()) },
   { method: 'GET', pattern: /^\/ox\/skills\/([^/]+)$/, handler: appRoute(async (_, m) => (await appApi()).skillBody(decodeURIComponent(m[1]))) },
   { method: 'GET', pattern: /^\/ox\/messaging\/?$/, handler: appRoute(async () => (await appApi()).messagingView()) },
+  { method: 'GET', pattern: /^\/ox\/flows\/?$/, handler: appRoute(async () => { const F = await import('./flows.js'); return { flows: F.listFlows(), runs: F.flowRuns({ limit: 40 }), steps: F.FLOW_STEP_TYPES, triggers: F.FLOW_TRIGGERS }; }) },
+  { method: 'POST', pattern: /^\/ox\/flows\/?$/, handler: appRoute(flowsRoute) },
+  { method: 'POST', pattern: /^\/ox\/flows\/hook\/([a-z0-9-]{1,40})\/?$/, handler: flowHook },
   { method: 'GET', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async () => (await appApi()).scheduledView()) },
   { method: 'POST', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async (b) => { const a = await appApi(); return b.action === 'add' ? a.scheduleAdd({ prompt: b.prompt, when: b.when, enabled: true }) : a.setScheduleEnabled(String(b.id ?? ''), b.enabled); }) },
   { method: 'GET', pattern: /^\/ox\/sessions\/?$/, handler: appRoute(async () => (await appApi()).sessionsView()) },
@@ -1548,6 +1588,11 @@ function announceServer(port, host, keyed) {
 export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
   // System 1 loads its model now (seconds), so the first turns can use it.
   warmSystem1();
+  // Scheduled flows run while the app is open, as they do under the daemon
+  // (each is marked as started first, so the two never run one twice).
+  if (!process.env.NODE_TEST_CONTEXT && process.env.OX_FLOWS !== '0') {
+    setInterval(() => { import('./flows.js').then((F) => F.tickFlows()).catch(() => {}); }, 60_000).unref();
+  }
   const exposure = authExposure({ host, key: config.apiKey ?? apiKey() });
   if (exposure.level === 'refuse') {
     return Promise.reject(new Error(exposure.lines.join('\n')));
