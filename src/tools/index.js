@@ -21,6 +21,7 @@ import { modeRefusal, grantRefusal } from '../modes.js';
 import { mail_accounts, mail_compose, MAIL_TOOL_SCHEMAS } from './mail.js';
 import { webFetchTool, webSearchTool, WEB_TOOL_SCHEMAS, WEB_TOOLS } from './web.js';
 import { youtubeTranscriptTool, YOUTUBE_TOOL_SCHEMAS, YOUTUBE_TOOLS, YOUTUBE_SIGNAL } from './youtube.js';
+import { currentPageTool, CURRENT_PAGE_SCHEMAS, CURRENT_PAGE_TOOLS, CURRENT_PAGE_SIGNAL } from './current-page.js';
 import { webTaskTool, WEB_TASK_TOOL_SCHEMAS, WEB_TASK_TOOLS } from './web-task.js';
 import { critiqueTool, CRITIQUE_TOOL_SCHEMAS, CRITIQUE_TOOLS } from './critique.js';
 import { showUiTool, CANVAS_TOOL_SCHEMAS, CANVAS_TOOLS, CANVAS_KEYWORDS } from './canvas.js';
@@ -51,6 +52,7 @@ export const TOOL_IMPLS = {
   web_fetch: webFetchTool,
   web_search: webSearchTool,
   youtube_transcript: (args) => youtubeTranscriptTool(args),
+  current_page: (args) => currentPageTool(args),
   critique: critiqueTool,
   web_task: webTaskTool,
   show_ui: showUiTool,
@@ -191,6 +193,7 @@ export const BUILTIN_SCHEMAS = [
   },
   // Last, so when it is withheld it falls into the "+N more" of the withheld line.
   ...YOUTUBE_TOOL_SCHEMAS,
+  ...CURRENT_PAGE_SCHEMAS,
 ];
 
 function normalizeMcpResult(result) {
@@ -638,6 +641,8 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
     if (operatorOn && OPERATOR_TOOLS.includes(n)) keep.add(n);
     if (webOn && WEB_TOOLS.includes(n)) keep.add(n);
     if (YOUTUBE_SIGNAL.test(String(message)) && YOUTUBE_TOOLS.includes(n)) keep.add(n);
+    // "this video / this page": the tab first, then its transcript or text.
+    if (CURRENT_PAGE_SIGNAL.test(String(message)) && (CURRENT_PAGE_TOOLS.includes(n) || YOUTUBE_TOOLS.includes(n) || n === 'web_fetch')) keep.add(n);
     if (webTaskOn && WEB_TASK_TOOLS.includes(n)) keep.add(n);
     if (critiqueOn && CRITIQUE_TOOLS.includes(n)) keep.add(n);
     if (agentOn && AGENT_MESSAGE_TOOLS.includes(n)) keep.add(n);

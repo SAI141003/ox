@@ -309,6 +309,12 @@ export function signInState(id, where, env = process.env) {
     const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
     return /logged in/i.test(out) && !/not logged in/i.test(out) ? true : /not logged in/i.test(out) ? false : null;
   }
+  if (id === 'cursor') {
+    // cursor-agent status: "Not logged in", or the account it is signed in as.
+    const r = spawnSync(where, ['status'], { encoding: 'utf8', timeout: 15000, env, windowsHide: true });
+    const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+    return /not logged in|login required|authentication required/i.test(out) ? false : /logged in|signed in|@/i.test(out) ? true : null;
+  }
   return null;
 }
 export function signInHow(id, where, cli) {
@@ -361,6 +367,12 @@ export function checkCli(id, config = {}, env = process.env) {
   const works = r.status === 0;
   const version = (r.stdout || '').trim().split('\n')[0] || null;
   const why = r.error?.code ?? (r.stderr || '').trim().split('\n').find(Boolean) ?? `exit ${r.status}`;
+  // A copy on PATH is asked whether it is signed in too (it was only asked
+  // --version, so a signed-out Cursor counted as connected and runs failed).
+  if (works) {
+    const signedIn = signInState(id, where, env);
+    if (signedIn === false) return { id, label: cli.label, bin: cli.bin, path: where, installed: true, works: false, signedIn, version, problem: 'installed and working, but not signed in', fix: signInHow(id, where, cli) };
+  }
   return {
     id, label: cli.label, bin: cli.bin, path: where, installed: true, works, version,
     ...(works ? { login: cli.login } : { problem: String(why).slice(0, 160), fix: `reinstall: ${cli.install}` }),

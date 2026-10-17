@@ -32,7 +32,7 @@ import { BOTS, KEY_ENV, resolveBot, defaultBotSpec } from './bots.js';
 import { readFile } from 'fs/promises';
 import { join, resolve, extname, dirname } from 'path';
 import { homedir } from 'os';
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
+import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync } from 'fs';
 import { spawn } from 'node:child_process';
 import { createReadStream } from 'fs';
 import { stat, unlink } from 'fs/promises';
@@ -1242,6 +1242,22 @@ function appRoute(fn) {
 }
 const appApi = () => import('./app-api.js');
 
+// The AI tools on this Mac, for the island (Coucou's agent pills): plans and
+// agent CLIs with their real state, local models, Hermes. From the cached
+// checks, so this answers at once; the cache refreshes in the background.
+async function connectedRoute() {
+  if (Date.now() - planCache.at > 10 * 60_000 && process.env.OX_NO_PLAN_CHECK !== '1' && process.env.OX_NO_KEYSTORE !== '1') refreshPlans();
+  if (Date.now() - ollamaCache.at > 5 * 60_000 && process.env.OX_NO_KEYSTORE !== '1') refreshOllama();
+  const tools = planCache.list.filter((p) => p.installed).map((p) => ({
+    id: p.id, name: p.label.replace(/\s*\(.*?\)/g, '').replace(/ via .*/, ''), via: (p.label.match(/via (.+)$/) ?? [])[1] ?? p.bin,
+    state: p.works ? 'ready' : 'sign-in', fix: p.works ? null : p.fix ?? p.problem ?? null,
+  }));
+  const local = localOllama();
+  if (local.length) tools.push({ id: 'ollama', name: 'Ollama', via: `${local.length} model${local.length === 1 ? '' : 's'} on this Mac`, state: 'ready', fix: null });
+  if (existsSync(join(homedir(), '.hermes'))) tools.push({ id: 'hermes', name: 'Hermes', via: 'installed', state: 'ready', fix: null });
+  return { tools, checkedAt: planCache.at || null };
+}
+
 // ox Flows (src/flows.js): list with recent runs, save / remove / run / draft.
 async function flowsRoute(b) {
   const F = await import('./flows.js');
@@ -1377,6 +1393,7 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/messaging\/?$/, handler: appRoute(async () => (await appApi()).messagingView()) },
   { method: 'GET', pattern: /^\/ox\/flows\/?$/, handler: appRoute(async () => { const F = await import('./flows.js'); return { flows: F.listFlows(), runs: F.flowRuns({ limit: 40 }), steps: F.FLOW_STEP_TYPES, triggers: F.FLOW_TRIGGERS }; }) },
   { method: 'POST', pattern: /^\/ox\/flows\/?$/, handler: appRoute(flowsRoute) },
+  { method: 'GET', pattern: /^\/ox\/connected\/?$/, handler: appRoute(connectedRoute) },
   { method: 'POST', pattern: /^\/ox\/flows\/hook\/([a-z0-9-]{1,40})\/?$/, handler: flowHook },
   { method: 'GET', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async () => (await appApi()).scheduledView()) },
   { method: 'POST', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async (b) => { const a = await appApi(); return b.action === 'add' ? a.scheduleAdd({ prompt: b.prompt, when: b.when, enabled: true }) : a.setScheduleEnabled(String(b.id ?? ''), b.enabled); }) },

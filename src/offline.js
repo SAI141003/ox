@@ -73,9 +73,25 @@ export function parseIntent(text) {
   if ((m = /^remind me (?:in )?(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)\s+(?:to\s+)?(.+)$/i.exec(low))) {
     return { intent: 'timer', secs: seconds(m[1], m[2]), label: m[3] };
   }
-  if ((m = /^(?:make|take|add|write|new)(?: a)? note(?: that| saying| to)?[:\s]+(.+)$/i.exec(t)) || (m = /^note[:\s]+(.+)$/i.exec(t))) {
+  if ((m = /^(?:make|take|add|write|new)(?: a)? note(?: that| saying| to)?[:\s]+(.+)$/i.exec(t)) || (m = /^note[:\s]+(.+)$/i.exec(t)) || (m = /^(?:write|jot|note) (?:this )?down[:\s]+(.+)$/i.exec(t)) || (m = /^(?:write|jot) down (.+)$/i.exec(t))) {
     return { intent: 'note', text: m[1].trim() };
   }
+  // Email, never sent from here: a draft opens in your mail app for you to send.
+  if ((m = /^(?:send |write |draft )?(?:an? )?(?:e-?mail|mail)(?: to)?\s+([^\s@]+@[^\s@]+\.[a-z]{2,})(?:\s+(?:about|subject|re|regarding)[:\s]+(.+?))?(?:\s+(?:saying|that says|telling (?:him|her|them)|body|:)\s+(.+))?$/i.exec(t))) {
+    return { intent: 'email', to: m[1], subject: (m[2] ?? '').trim(), body: (m[3] ?? '').trim() };
+  }
+  if (/^(?:check|read)?\s*(?:my )?(?:e-?mails?|mail|inbox)(?: for me)?$|^(?:do i have |any )?(?:new |unread )(?:e-?mails?|mail)\??$|^how many (?:unread |new )?(?:e-?mails?|mails?)(?: do i have)?\??$/i.test(low)) {
+    return { intent: 'unread' };
+  }
+  // A to-do, into Apple Reminders (or ~/ox-tasks.md).
+  if ((m = /^(?:add (?:a )?)?(?:task|to-?do|todo)[:\s]+(.+)$/i.exec(t)) || (m = /^add (.+?) to (?:my )?(?:to-?do(?: list)?|todos|tasks|task list|reminders|list)$/i.exec(t)) || (m = /^remind me to (.+)$/i.exec(t))) {
+    return { intent: 'task', text: m[1].trim() };
+  }
+  // Music in Spotify or Apple Music, when one is open.
+  if (/^(?:pause|stop)(?: the)?(?: music| song| spotify| playback)?$/i.test(low) && low !== 'stop') return { intent: 'music', command: 'pause' };
+  if (/^(?:play|resume)(?: the)? (?:music|song|spotify)$|^resume$/i.test(low)) return { intent: 'music', command: 'play' };
+  if (/^(?:next|skip)(?: the)?(?: song| track)?$/i.test(low)) return { intent: 'music', command: 'next track' };
+  if (/^(?:previous|last|go back)(?: the)?(?: song| track)$/i.test(low)) return { intent: 'music', command: 'previous track' };
   if (/^(?:take (?:a )?)?screenshot$|^capture (?:the )?screen$/i.test(low)) return { intent: 'screenshot' };
   if (/^(?:what(?:'s| is) the )?time(?: is it)?(?: now)?$|^what time is it$/i.test(low)) return { intent: 'time' };
   if (/^(?:what(?:'s| is) )?(?:the |today'?s )?date(?: today)?$|^what day is it$/i.test(low)) return { intent: 'date' };
@@ -118,6 +134,37 @@ function addNote(text) {
   return { ok: true, where: file };
 }
 
+function addTask(text) {
+  if (process.platform === 'darwin') {
+    const r = run(['osascript', '-e', 'on run argv', '-e', 'tell application "Reminders" to make new reminder with properties {name:(item 1 of argv)}', '-e', 'end run', text]);
+    if (r.ok) return { ok: true, where: 'Reminders' };
+  }
+  const file = path.join(os.homedir(), 'ox-tasks.md');
+  fs.appendFileSync(file, `- [ ] ${text}\n`);
+  return { ok: true, where: file };
+}
+
+export function mailtoUrl({ to, subject = '', body = '' }) {
+  const q = [subject && `subject=${encodeURIComponent(subject)}`, body && `body=${encodeURIComponent(body)}`].filter(Boolean).join('&');
+  return `mailto:${encodeURIComponent(to).replace(/%40/g, '@')}${q ? `?${q}` : ''}`;
+}
+
+function openWith(url) {
+  return run(process.platform === 'darwin' ? ['open', url] : process.platform === 'win32' ? ['cmd', '/c', 'start', '', url] : ['xdg-open', url]);
+}
+
+function music(command) {
+  if (process.platform !== 'darwin') return { ok: false, err: 'music control is macOS only for now' };
+  for (const app of ['Spotify', 'Music']) {
+    const running = spawnSync('osascript', ['-e', `application "${app}" is running`], { encoding: 'utf8', timeout: 5000 });
+    if (String(running.stdout).trim() === 'true') {
+      const r = run(['osascript', '-e', `tell application "${app}" to ${command}`]);
+      return r.ok ? { ok: true, app } : r;
+    }
+  }
+  return { ok: false, err: 'open Spotify or Music first' };
+}
+
 function setVolume({ level, delta }) {
   if (process.platform === 'darwin') {
     if (level != null) return run(['osascript', '-e', `set volume output volume ${Number(level)}`]);
@@ -143,6 +190,21 @@ export function perform(it) {
       return { ok: true, message: `timer set: ${mins} — "${it.label}"` };
     }
     case 'note': { const r = addNote(it.text); return { ok: r.ok, message: `noted in ${r.where}` }; }
+    case 'task': { const r = addTask(it.text); return { ok: r.ok, message: `added to ${r.where}: ${it.text}` }; }
+    case 'email': {
+      const r = openWith(mailtoUrl(it));
+      return r.ok ? { ok: true, message: `draft to ${it.to} is open in your mail app: check it and press Send (ox never sends it)` } : { ok: false, message: r.err };
+    }
+    case 'unread': {
+      if (process.platform !== 'darwin') return { ok: false, message: 'reading Mail is macOS only for now' };
+      const r = spawnSync('osascript', ['-e', 'tell application "Mail" to get unread count of inbox'], { encoding: 'utf8', timeout: 15000 });
+      const n = Number(String(r.stdout).trim());
+      return r.status === 0 && Number.isFinite(n) ? { ok: true, message: n === 0 ? 'no unread email' : `${n} unread email${n === 1 ? '' : 's'} in Mail` } : { ok: false, message: (r.stderr || 'Mail did not answer').trim() };
+    }
+    case 'music': {
+      const r = music(it.command);
+      return r.ok ? { ok: true, message: `${it.command === 'pause' ? 'paused' : it.command === 'play' ? 'playing' : it.command === 'next track' ? 'next track' : 'previous track'} in ${r.app}` } : { ok: false, message: r.err };
+    }
     case 'screenshot': {
       const out = path.join(os.homedir(), 'Desktop', `ox-screenshot-${Date.now()}.png`);
       const r = run(osCmd('screenshot', out));

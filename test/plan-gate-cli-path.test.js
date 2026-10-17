@@ -74,6 +74,9 @@ function childEnv(home) {
     LANG: process.env.LANG ?? 'en_US.UTF-8',
     HOME: home,
     NO_COLOR: '1',
+    // These tests pin the no-model path: ox must not fall back to a model that
+    // happens to run on this machine (a local Ollama, a signed-in plan).
+    OX_NO_FALLBACK: '1',
   };
 }
 

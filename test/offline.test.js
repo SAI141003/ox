@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { parseIntent, calc, doOffline } from '../src/offline.js';
+import { parseIntent, calc, doOffline, mailtoUrl } from '../src/offline.js';
 
 const OX = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
 
@@ -56,4 +56,18 @@ test('ox do works with no key, no network, and a non-zero exit for "not mine"', 
   const no = spawnSync(process.execPath, [OX, 'do', '--json', 'design a database'], { env, encoding: 'utf8' });
   assert.equal(no.status, 2);
   assert.equal(JSON.parse(no.stdout).handled, false);
+});
+
+test('everyday tasks without AI: email drafts, unread mail, to-dos, notes, music', () => {
+  assert.deepEqual(parseIntent('email anna@example.com about lunch saying see you at 1pm'), { intent: 'email', to: 'anna@example.com', subject: 'lunch', body: 'see you at 1pm' });
+  assert.equal(mailtoUrl({ to: 'anna@example.com', subject: 'lunch', body: 'see you at 1pm' }), 'mailto:anna@example.com?subject=lunch&body=see%20you%20at%201pm');
+  for (const t of ['check my email', 'any unread emails?', 'how many emails do I have']) assert.equal(parseIntent(t)?.intent, 'unread', t);
+  assert.deepEqual(parseIntent('add call mum to my to-do list'), { intent: 'task', text: 'call mum' });
+  assert.deepEqual(parseIntent('remind me to pay rent'), { intent: 'task', text: 'pay rent' });
+  assert.equal(parseIntent('remind me in 10 minutes to stretch').intent, 'timer');
+  assert.deepEqual(parseIntent('write down the wifi password is on the fridge'), { intent: 'note', text: 'the wifi password is on the fridge' });
+  assert.deepEqual(parseIntent('next song'), { intent: 'music', command: 'next track' });
+  assert.equal(parseIntent('stop'), null);
+  assert.equal(parseIntent('stop using tabs in the code'), null);
+  assert.equal(doOffline('email anna@example.com', { dryRun: true }).message, 'would email');
 });

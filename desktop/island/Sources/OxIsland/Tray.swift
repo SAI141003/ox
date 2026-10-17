@@ -557,6 +557,7 @@ final class IslandChat: ObservableObject {
         guard !text.isEmpty, !busy else { return }
         self.onReply = onReply
         lines.append(Line(mine: true, text: text))
+        if let said = bridge.islandCommand(text) { reply(said, who: nil); return }
         if let name = agent {
             run(text, extra: ["--agent", name], key: name, who: name)
             return

@@ -5561,7 +5561,8 @@ async function repl(config, opts, flags) {
 async function replWithBudget(config, opts, flags, budget) {
   let target;
   try {
-    target = resolveBot(opts.bot || opts.model || defaultBotSpec(config), config);
+    const { workingModelSpec } = await import('./working-model.js');
+    target = resolveBot(await workingModelSpec(config, { explicit: opts.bot || opts.model || null }), config);
   } catch (err) {
     process.stderr.write(`${c.red(`✗ ${err?.message ?? err}`)}\n`);
     process.stderr.write(

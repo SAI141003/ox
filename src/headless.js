@@ -273,7 +273,8 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
   holdAwake({ config });
   let target;
   try {
-    target = resolveBot(opts.bot || opts.model || defaultBotSpec(config), config);
+    const { workingModelSpec } = await import('./working-model.js');
+    target = resolveBot(await workingModelSpec(config, { explicit: opts.bot || opts.model || null }), config);
   } catch (err) {
     const e = new Error(String(err?.message ?? err));
     e.exitCode = 3;

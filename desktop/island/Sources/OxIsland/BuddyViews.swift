@@ -101,12 +101,24 @@ struct MicButton: View {
 struct IslandMenu: View {
     @ObservedObject var buddy: Buddy
     @AppStorage("buddy.naturalVoice") private var naturalVoice = true
+    @AppStorage("island.size") private var islandSize = "standard"
+    @AppStorage("island.autoClose") private var autoClose = 6.0
     var body: some View {
         Button(buddy.phase == .listening ? "Stop listening" : "Talk to ox (⌃⌥Space)") { buddy.toggle() }
         Picker("Buddy character", selection: $buddy.character) {
             ForEach(AvatarKind.allCases) { Text($0.title).tag($0) }
         }
         Toggle("Natural voice (Kokoro)", isOn: $naturalVoice)
+        Picker("Island size", selection: $islandSize) {
+            Text("Standard").tag("standard")
+            Text("Compact").tag("compact")
+        }
+        Picker("Close by itself", selection: $autoClose) {
+            Text("After 3 seconds").tag(3.0)
+            Text("After 6 seconds").tag(6.0)
+            Text("After 15 seconds").tag(15.0)
+            Text("Never").tag(0.0)
+        }
         Divider()
         Button("Turn off OX Island") { IslandSwitch.turnOff() }
     }

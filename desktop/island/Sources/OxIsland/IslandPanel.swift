@@ -27,9 +27,13 @@ enum IslandLayout {
     static let panel = CGSize(width: 720, height: 400)
     static let wing: CGFloat = 46
     static let ear: CGFloat = 12
-    /// The floor the (full-size) ox walks on, under the card.
-    static let floorHeight: CGFloat = 92
-    static let expanded = CGSize(width: 640, height: 168 + floorHeight)
+    /// Standard, or Compact ("make the island smaller"): no walking-ox floor and a narrower card.
+    static var compact: Bool { UserDefaults.standard.string(forKey: "island.size") == "compact" }
+    /// The floor the (full-size) ox walks on, under the card (none when compact).
+    static var floorHeight: CGFloat { compact ? 0 : 92 }
+    static var expanded: CGSize { CGSize(width: compact ? 520 : 640, height: 168 + floorHeight) }
+    /// Seconds the island stays open after the pointer leaves (0 = until you close it).
+    static var autoClose: TimeInterval { UserDefaults.standard.object(forKey: "island.autoClose") as? Double ?? 6 }
     /// With nothing running the card is one line, so the island is shorter.
     static let idleCardTrim: CGFloat = 70
     /// Extra height under the card: the agent office, or the run's OX Canvas.
@@ -65,6 +69,7 @@ final class IslandPanel: NSPanel {
     private var poll: Timer?
     private var pollInterval: TimeInterval = 0
     private var leaveWork: DispatchWorkItem?
+    private var awaySince: Date?
     private var cancellables = Set<AnyCancellable>()
     private var clickMonitor: Any?
 
@@ -138,6 +143,20 @@ final class IslandPanel: NSPanel {
         let inside = island.insetBy(dx: -6, dy: -4).contains(local)
 
         if ignoresMouseEvents == inside { ignoresMouseEvents = !inside }
+
+        // Opened by a click (or a tool), it closes on its own once the pointer
+        // has been away a few seconds, unless an answer is coming or ox waits on you.
+        if inside { awaySince = nil }
+        else if bridge.pinnedOpen || bridge.tray != nil {
+            if awaySince == nil { awaySince = Date() }
+            let wait = IslandLayout.autoClose
+            if wait > 0, let since = awaySince, Date().timeIntervalSince(since) > wait,
+               !bridge.chat.busy, bridge.pendingSession == nil, !bridge.buddyActive {
+                bridge.pinnedOpen = false
+                bridge.tray = nil
+                awaySince = nil
+            }
+        }
 
         if inside {
             leaveWork?.cancel()

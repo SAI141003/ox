@@ -88,6 +88,7 @@ final class OxBridge: ObservableObject {
     let shelf = Shelf()
     let focus = FocusTimer()
     let clips = ClipHistory()
+    let player = NowPlaying()
     private var traySinks = Set<AnyCancellable>()
 
     var pendingSession: AgentSession? { sessions.first { $0.pending != nil } }
@@ -115,9 +116,12 @@ final class OxBridge: ObservableObject {
         focus.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &traySinks)
         $tray.sink { [weak self] t in self?.trayChanged?(t) }.store(in: &traySinks)
         clips.start()
+        player.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &traySinks)
+        player.start()
         MainActor.assumeIsolated {
             buddy.send = { [weak self] text, shots, audio in
                 guard let self else { return false }
+                if let said = self.islandCommand(text) { MainActor.assumeIsolated { self.buddy.speak(said) }; return true }
                 if self.ask(text, imagePaths: shots, audioPath: audio) { return true }
                 // No live run: the chat takes it. Small tasks are done offline; the
                 // rest runs ox with a model, whose approvals come to this island.
@@ -195,6 +199,29 @@ final class OxBridge: ObservableObject {
         }.resume()
     }
 
+    /// The AI tools on this Mac (Coucou's agent pills): plans and agent CLIs with
+    /// their real state, local models, Hermes. From the app server's cache.
+    struct ConnectedTool: Identifiable, Equatable { let id: String; let name: String; let via: String; let ready: Bool; let fix: String? }
+    @Published private(set) var connected: [ConnectedTool] = []
+    private var connectedPolledAt = Date.distantPast
+
+    private func pollConnected(port: Int) {
+        guard Date().timeIntervalSince(connectedPolledAt) > 60, let url = URL(string: "http://127.0.0.1:\(port)/ox/connected") else { return }
+        connectedPolledAt = Date()
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 3
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let doc = data.flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }),
+                  let rows = doc["tools"] as? [[String: Any]] else { return }
+            let tools = rows.compactMap { r -> ConnectedTool? in
+                guard let id = r["id"] as? String, let name = r["name"] as? String else { return nil }
+                return ConnectedTool(id: id, name: name, via: r["via"] as? String ?? "", ready: (r["state"] as? String) == "ready", fix: r["fix"] as? String)
+            }
+            DispatchQueue.main.async { self?.connected = tools }
+        }.resume()
+    }
+
     private func pollApp() {
         guard !appPolling else { return }
         let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/serve.json")
@@ -203,6 +230,7 @@ final class OxBridge: ObservableObject {
               let port = doc["port"] as? Int,
               let url = URL(string: "http://127.0.0.1:\(port)/ox/live") else { dropAppSessions(keep: []); return }
         pollUsage(port: port)
+        pollConnected(port: port)
         appPolling = true
         var req = URLRequest(url: url)
         req.timeoutInterval = 1.2
@@ -510,6 +538,27 @@ final class OxBridge: ObservableObject {
 
     /// The office (a team at work) or a canvas extends the expanded island.
     var hasExtraPanel: Bool { tray != nil || officeSession != nil || canvasSession != nil }
+
+    /// Commands about the island itself, typed or said ("make the island
+    /// smaller", "bigger", "stay open", "close"): done here, no model, no AI.
+    func islandCommand(_ raw: String) -> String? {
+        let t = raw.lowercased()
+        guard t.range(of: #"\b(island|notch|yourself|you)\b"#, options: .regularExpression) != nil || t.count < 40 else { return nil }
+        let set = { (k: String, v: Any?) in UserDefaults.standard.set(v, forKey: k); self.objectWillChange.send() }
+        if t.range(of: #"\b(smaller|shrink|reduce|compact|less space|tiny|small)\b"#, options: .regularExpression) != nil, t.contains("island") || t.contains("size") || t.contains("yourself") {
+            set("island.size", "compact"); return "Island is compact now. Say \"make the island bigger\" to undo."
+        }
+        if t.range(of: #"\b(bigger|larger|full size|normal size|standard size|grow)\b"#, options: .regularExpression) != nil, t.contains("island") || t.contains("size") || t.contains("yourself") {
+            set("island.size", "standard"); return "Island is back to its standard size."
+        }
+        if t.range(of: #"\b(stay open|keep (it )?open|don.t close)\b"#, options: .regularExpression) != nil {
+            set("island.autoClose", 0.0); pinnedOpen = true; return "I'll stay open until you close me."
+        }
+        if t.range(of: #"\b(close (it|yourself|the island)?|auto.?close|hide)\b"#, options: .regularExpression) != nil, t.count < 40 {
+            set("island.autoClose", 6.0); pinnedOpen = false; tray = nil; return "Closing. I close by myself a few seconds after you leave."
+        }
+        return nil
+    }
 
     /// Nothing to show but the ox: the island keeps its card to one line.
     var idleIsland: Bool { sessions.isEmpty && tray == nil && !buddyActive }

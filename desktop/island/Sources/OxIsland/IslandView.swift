@@ -247,7 +247,7 @@ struct ExpandedContent: View {
             .overlay(alignment: .bottom) {
                 if let p = bridge.pendingSession?.pending { Countdown(deadline: p.deadline).padding(.horizontal, 40) }
             }
-            if !bridge.buddyActive {
+            if !bridge.buddyActive && IslandLayout.floorHeight > 0 {
                 // The island's floor: the ox walks its whole width under your
                 // cursor, and trots over to "press" whatever you click.
                 let floorPad = IslandLayout.ear + 10
@@ -326,6 +326,8 @@ struct ExpandedContent: View {
                     Text("· type or talk to ox, or start it in a terminal").font(.system(size: 12)).foregroundStyle(Ink.muted).lineLimit(1)
                 }
                 if let t = bridge.today { TodayMeter(today: t) }
+                ConnectedRow(tools: bridge.connected)
+                NowPlayingPill(player: bridge.player)
             }
         } else {
             VStack(alignment: .leading, spacing: 7) {
