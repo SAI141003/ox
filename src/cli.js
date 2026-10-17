@@ -210,7 +210,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4706,6 +4706,62 @@ async function runSubcommand(cmd, args) {
       const t = B.traceSpec(cwd, spec, { tests });
       console.log(`\n${B.formatTrace(spec, t)}`);
       if (t.passed < t.rows.length) process.exitCode = 1;
+      return;
+    }
+    case 'port': {
+      // Move a project to another language, module by module, leaves first,
+      // keeping every external factor (src/port.js).
+      const P = await import('./port.js');
+      const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
+      const src = args.find((a, i) => !a.startsWith('-') && !['--to', '--out', '--bot', '--model', '--only'].includes(args[i - 1]));
+      if (!src || args.includes('--help')) {
+        console.log(`${c.bold('ox port')} <project> --to <py|js|ts|go|rs|java|rb> [--out <dir>]: move a project to another language`);
+        console.log(c.dim('  --inventory     what it is made of: modules in dependency order, libraries, external factors (no model)'));
+        console.log(c.dim('  --plan-only     write .agent/port/plan.json and stop     --only <n>   port the next n modules'));
+        console.log(c.dim('  --check         the external factors the port no longer mentions'));
+        console.log(c.dim('  Each module: ported with its tests, which must pass before the next; resumable (the plan remembers)'));
+        return;
+      }
+      const inv = P.inventory(src);
+      if (!inv.lang) { process.stderr.write(`ox port: no source code found in ${src}\n`); process.exitCode = 2; return; }
+      if (args.includes('--inventory')) { console.log(P.formatInventory(inv)); return; }
+      const to = val('--to');
+      if (!to || !P.LANGS[to]) { process.stderr.write(`ox port: --to one of ${Object.keys(P.LANGS).join(', ')}\n`); process.exitCode = 2; return; }
+      const out = path.resolve(val('--out') ?? `${path.resolve(src)}-${to}`);
+      let plan = P.loadPlan(src);
+      if (!plan || plan.to !== to || plan.out !== out) { plan = P.makePlan(inv, { to, out }); P.savePlan(plan); }
+      if (args.includes('--check')) {
+        const missing = P.factorsMissing(inv, out);
+        console.log(missing.length ? `${missing.length} external factor${missing.length === 1 ? '' : 's'} the port does not mention:\n${missing.map((f) => `  ${f.kind} ${f.name} (used in ${f.where.join(', ')})`).join('\n')}` : 'Every environment variable, file, endpoint, port and command of the original appears in the port.');
+        if (missing.length) process.exitCode = 1;
+        return;
+      }
+      console.log(P.formatInventory(inv));
+      console.log(c.dim(`\nplan: .agent/port/plan.json · ${plan.steps.filter((s) => s.status === 'done').length}/${plan.steps.length} done · into ${out}`));
+      if (args.includes('--plan-only')) return;
+      fs.mkdirSync(out, { recursive: true });
+      const testCmd = { py: 'python3 -m pytest -q', js: 'node --test', ts: 'npx tsx --test', go: 'go test ./...', rs: 'cargo test', java: 'mvn -q test', rb: 'bundle exec rspec' }[to];
+      const limit = Number(val('--only') ?? Infinity);
+      const yolo = args.includes('-y') || args.includes('--yes');
+      const bot = val('--bot') ?? val('--model');
+      const here = process.cwd();
+      let n = 0;
+      for (const step of plan.steps) {
+        if (step.status === 'done' || n >= limit) continue;
+        n++;
+        console.log(c.bold(`\n— ${n}. ${step.file}`));
+        process.chdir(out);
+        const config = loadConfig({ cwd: out });
+        process.exitCode = 0;
+        await runPrint(P.moduleBrief(inv, plan, step, { testCmd }), config, { yolo, verify: true, bot, goalContract: { outcome: `${step.file} ported with its behaviour`, verification: `gate: ${testCmd}` } });
+        process.chdir(here);
+        step.status = process.exitCode ? 'failed' : 'done';
+        step.at = new Date().toISOString();
+        P.savePlan(plan);
+        if (step.status === 'failed') { console.log(c.red(`stopped at ${step.file}: fix it, then run the same command to go on`)); break; }
+      }
+      const missing = P.factorsMissing(inv, out);
+      console.log(`\n${plan.steps.filter((s) => s.status === 'done').length}/${plan.steps.length} modules ported.${missing.length ? ` ${missing.length} external factor(s) not yet in the port: ${missing.map((f) => `${f.kind} ${f.name}`).join(', ')}` : ' Every external factor of the original appears in the port.'}`);
       return;
     }
     case 'secure': {
