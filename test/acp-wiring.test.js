@@ -91,6 +91,16 @@ test('close() releases the MCP hub', async () => {
   assert.equal(s.mcpTools.length, 0);
 });
 
+test('a start() still running when close() is called cannot bring the hub back', async () => {
+  const s = new AcpSession({ id: 'ses_2', cwd: '/tmp', config: {}, target: null, onNotify: () => {} });
+  const starting = s.ensureMcp([{ name: 'bridge', command: 'echo' }]);
+  await s.close();
+  await starting;
+  assert.equal(s.hub, null);
+  assert.equal(s.mcpTools.length, 0);
+  assert.equal(s.mcpCall, null);
+});
+
 // ---------------------------------------------------------------------------
 // Stdio helpers: the parent is the client, a real child process is the server,
 // and both directions travel over pipes exactly like Zed/JetBrains.

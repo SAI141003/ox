@@ -18,13 +18,13 @@ jobs:
       matrix:
         include:
           - os: macos-14        # Apple Silicon
-          - os: macos-13        # Intel
+          - os: macos-15-intel  # Intel (macos-13 was retired: jobs queued forever)
           - os: windows-latest
           - os: ubuntu-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - name: Unit tests
@@ -46,7 +46,7 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" dist/ox-*.zip dist/ox-*.tar.gz --clobber 2>/dev/null || gh release upload "$GITHUB_REF_NAME" dist/ox-* --clobber
       - name: Keep the build (manual runs)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ox-${{ matrix.os }}
           path: |

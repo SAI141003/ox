@@ -880,6 +880,13 @@ function failureKey(name, args) {
   return `${name}:${shortHash(basis)}`;
 }
 
+// A tool call's parsed arguments ({} when absent or malformed), the same shape
+// runOne keys its failures on.
+function callArgs(call) {
+  const parsed = safeJsonParse(call?.function?.arguments || '{}');
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+}
+
 // Wave5a E: stable stringify (sorted keys, recursive) for doom-loop keys.
 export function stableStringify(value) {
   const v = value;
@@ -2580,8 +2587,8 @@ ${hookOutput}`.trim();
         r.event.bytes = content.length;
         yield r.event;
         history.push({ role: 'tool', tool_call_id: r.event.id, content });
+        const key = failureKey(r.event.name, callArgs(batchCalls[i]));
         if (r.event.isError) {
-          const key = failureKey(r.event.name, batchCalls[i]?.function ?? {});
           const count = (failures.get(key) ?? 0) + 1;
           failures.set(key, count);
           if (count >= 3) {
@@ -2590,7 +2597,7 @@ ${hookOutput}`.trim();
             break;
           }
         } else {
-          failures.delete(failureKey(r.event.name, batchCalls[i]?.function ?? {}));
+          failures.delete(key);
         }
       }
       recordOutcome({ ref: dref, ok: !shouldBreak, error: shouldBreak ? 'self-heal budget exhausted' : '' });
@@ -2645,11 +2652,13 @@ ${hookOutput}`.trim();
           }
           // Execute all read-only tools in parallel
           const results = await Promise.all(group.calls.map(call => executeReadOnlyTool(call)));
-          for (const result of results) {
+          for (const [ri, result] of results.entries()) {
             yield result.event;
             history.push({ role: 'tool', tool_call_id: result.event.id, content: result.content });
             if (result.event.isError) {
-              const key = failureKey(result.event.name, {});
+              // Keyed on the call's own arguments, like runOne: three different
+              // files that fail are three targets, not one failing three times.
+              const key = failureKey(result.event.name, callArgs(group.calls[ri]));
               const count = (failures.get(key) ?? 0) + 1;
               failures.set(key, count);
               if (count >= 3) {

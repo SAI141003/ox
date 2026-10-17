@@ -484,6 +484,24 @@ test('stableStringify is key-order independent', () => {
   assert.equal(stableStringify({ b: 1, a: { d: 2, c: [3, { z: 1, y: 2 }] } }), stableStringify({ a: { c: [3, { y: 2, z: 1 }], d: 2 }, b: 1 }));
 });
 
+test('parallel reads of three different missing files do not exhaust self-heal (each target counts on its own)', async (t) => {
+  const cwd = tmpDir(t, 'ox-w5a-par-');
+  const calls = ['a.txt', 'b.txt', 'c.txt'].map((p, i) => ({ index: i, id: `r${i}`, type: 'function', function: { name: 'read_file', arguments: JSON.stringify({ path: p }) } }));
+  const { port } = await startServer(t, (_m, n) => (n === 1
+    ? [sse({ choices: [{ index: 0, delta: { tool_calls: calls }, finish_reason: null }] }), sse({ choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }), 'data: [DONE]\n\n'].join('')
+    : textTurn('none of those files exist')));
+  const events = await collectEvents({
+    target: { provider: 'custom', baseUrl: `http://127.0.0.1:${port}/v1`, model: 'mock-model' },
+    messages: [{ role: 'user', content: 'read a.txt, b.txt and c.txt' }],
+    ctx: { cwd, yolo: true },
+    auxTarget: null,
+    verify: false,
+  });
+  assert.equal(events.filter((e) => e.type === 'tool-end' && e.isError).length, 3, 'all three reads ran and failed');
+  assert.equal(events.some((e) => e.type === 'error' && /self-heal/.test(String(e.error))), false);
+  assert.ok(events.some((e) => e.type === 'final'), 'the run reached its answer');
+});
+
 test('doom-loop: 3rd identical call never executes, event emitted, guidance injected, self-heal untouched', async (t) => {
   const cwd = tmpDir(t, 'ox-w5a-doom-');
   const logFile = path.join(cwd, 'doom.log');

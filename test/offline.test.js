@@ -105,6 +105,17 @@ test('the Pixie requests: a song by name, lower the music, today\'s to-dos', asy
   assert.equal(speakTodos([]), 'nothing on your to-do list');
 });
 
+test('off macOS, with no app list, only a single app name is trusted', async () => {
+  const { resolveApp } = await import('../src/offline.js');
+  const none = new Map();
+  assert.equal(resolveApp('chrome', none, 'linux'), 'chrome');
+  assert.equal(resolveApp('visual studio code', none, 'win32'), 'visual studio code');
+  assert.equal(resolveApp('chrome and open youtube', none, 'linux'), null);
+  assert.equal(resolveApp('gmail then pause the music', none, 'linux'), null);
+  assert.equal(resolveApp('whatsapp, slack', none, 'win32'), null);
+  assert.equal(resolveApp('whatsapp and all my friends', none, 'linux'), null);
+});
+
 test('chains and sites: "open chrome and open youtube" is done without a model', async () => {
   const { parseChain } = await import('../src/offline.js');
   assert.deepEqual(parseIntent('open youtube in chrome'), { intent: 'url', url: 'https://www.youtube.com', browser: 'Google Chrome' });

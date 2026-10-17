@@ -308,6 +308,16 @@ export class McpHub {
     }
     state.proc = proc;
 
+    // A server that exits at once (a wrong command, `echo`) closes its stdin
+    // while ox is still writing the handshake. The failed write arrives later
+    // as an 'error' event on the pipe, which _send's try/catch cannot see, and
+    // with no listener it was thrown as an uncaught EPIPE (Linux CI). It means
+    // the server is gone: what was waiting on it fails, ox goes on.
+    proc.stdin?.on('error', (e) => {
+      if (state.generation !== gen) return;
+      this._rejectPending(state, new Error(`MCP server '${name}' closed its input: ${String((e && e.message) || e)}`));
+    });
+
     proc.on('error', (e) => {
       if (state.generation !== gen) return;
       if (!state.stopping && state.status !== 'crashed' && state.status !== 'timeout' && state.status !== 'stopped') {

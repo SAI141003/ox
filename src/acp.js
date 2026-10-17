@@ -243,12 +243,22 @@ export class AcpSession {
       };
     }
     if (!Object.keys(merged).length) return;
-    this.hub = new McpHub(merged, { callTimeoutMs: 30000, sandbox: this.sandbox });
+    const hub = new McpHub(merged, { callTimeoutMs: 30000, sandbox: this.sandbox });
+    this.hub = hub;
     try {
-      await this.hub.start();
-      this.mcpTools = this.hub.schemas();
-      this.mcpCall = (q, a) => this.hub.call(q, a);
+      await hub.start();
+      // close() can run while start() is still going (a client that hangs up
+      // at once). The session is then no longer this hub's: the late start
+      // must not hand tools back to a closed session, and the servers it
+      // spawned after close()'s stop() must not be left running.
+      if (this.hub !== hub) {
+        try { await hub.stop?.(); } catch { /* best effort */ }
+        return;
+      }
+      this.mcpTools = hub.schemas();
+      this.mcpCall = (q, a) => hub.call(q, a);
     } catch (err) {
+      if (this.hub !== hub) return;
       process.stderr.write(`ox-acp: MCP startup failed — continuing without MCP tools (${String(err?.message ?? err)})\n`);
       this.hub = null;
     }
@@ -445,11 +455,14 @@ export class AcpSession {
   }
 
   async close() {
-    if (this.hub) {
-      try { await this.hub.stop?.(); } catch { /* best effort */ }
-      this.hub = null;
-      this.mcpTools = [];
-      this.mcpCall = null;
+    // Released first, then stopped: a start() still in flight sees the session
+    // is closed and stops what it started (see ensureMcp).
+    const hub = this.hub;
+    this.hub = null;
+    this.mcpTools = [];
+    this.mcpCall = null;
+    if (hub) {
+      try { await hub.stop?.(); } catch { /* best effort */ }
     }
   }
 }

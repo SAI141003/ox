@@ -77,10 +77,17 @@ export function installedApps(dirs = ['/Applications', '/Applications/Utilities'
 }
 const APP_ALIASES = { 'vs code': 'Visual Studio Code', vscode: 'Visual Studio Code', code: 'Visual Studio Code', chrome: 'Google Chrome', 'google chrome': 'Google Chrome', mail: 'Mail', email: 'Mail', settings: 'System Settings', 'system preferences': 'System Settings', whatsapp: 'WhatsApp', terminal: 'Terminal' };
 
-export function resolveApp(name, apps = installedApps()) {
+// Off macOS there is no app list to check against, so a name is trusted only
+// when it reads as one app's name: a few words, no "and" / "then" / comma, and
+// none of the everyday words a request has and an app name does not ("all my
+// friends"). Trusting anything took "chrome and open youtube" as one app on
+// Linux, so the chain was never split (seen on CI's clean Ubuntu runner).
+const ONE_APP_NAME = /^(?!.*(?:,|\b(?:and|then|my|all|every\w*|your|our|their|his|her|some|to|for|with|about|me|us|them)\b))\S+(?:\s+\S+){0,2}$/i;
+
+export function resolveApp(name, apps = installedApps(), platform = process.platform) {
   const n = String(name ?? '').trim().replace(/^the\s+/i, '').replace(/\s+app$/i, '').toLowerCase();
   if (!n) return null;
-  if (process.platform !== 'darwin' && apps.size === 0) return name; // elsewhere: trust the name (xdg-open / start)
+  if (platform !== 'darwin' && apps.size === 0) return ONE_APP_NAME.test(n) ? name : null; // elsewhere: trust the name (xdg-open / start)
   if (apps.has(n)) return apps.get(n);
   const alias = APP_ALIASES[n];
   if (alias && apps.has(alias.toLowerCase())) return apps.get(alias.toLowerCase());
