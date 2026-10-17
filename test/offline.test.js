@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { parseIntent, calc, doOffline, mailtoUrl } from '../src/offline.js';
+import { parseIntent, calc, doOffline, mailtoUrl, resolveApp } from '../src/offline.js';
 
 const OX = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
 
@@ -25,7 +25,9 @@ test('arithmetic without eval', () => {
 
 test('requests become one intent, or none', () => {
   const p = (t) => parseIntent(t);
-  assert.deepEqual(p('open notes'), { intent: 'app', name: 'notes' });
+  // The app's real name on a Mac ("Notes"); elsewhere the words as said.
+  assert.equal(p('open notes').intent, 'app');
+  assert.equal(p('open notes').name.toLowerCase(), 'notes');
   assert.deepEqual(p('Hey ox, open Safari.'), { intent: 'app', name: 'Safari' });
   assert.deepEqual(p('open github.com'), { intent: 'url', url: 'https://github.com' });
   assert.deepEqual(p('search best ramen near me'), { intent: 'search', query: 'best ramen near me' });
@@ -70,4 +72,13 @@ test('everyday tasks without AI: email drafts, unread mail, to-dos, notes, music
   assert.equal(parseIntent('stop'), null);
   assert.equal(parseIntent('stop using tabs in the code'), null);
   assert.equal(doOffline('email anna@example.com', { dryRun: true }).message, 'would email');
+});
+
+test('only an installed app, named on its own, is opened without a model', () => {
+  const apps = new Map([['whatsapp', 'WhatsApp'], ['notes', 'Notes'], ['visual studio code', 'Visual Studio Code']]);
+  assert.equal(resolveApp('whatsapp', apps), 'WhatsApp');
+  assert.equal(resolveApp('the WhatsApp app', apps), 'WhatsApp');
+  assert.equal(resolveApp('vs code', apps), 'Visual Studio Code');
+  assert.equal(resolveApp('whatsapp and all my friends', apps), null);
+  assert.equal(resolveApp('', apps), null);
 });

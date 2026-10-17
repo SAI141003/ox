@@ -31,6 +31,9 @@ export const SUBSCRIPTION_CLIS = Object.freeze({
     args: ({ prompt, model, approval }) => [
       '-p', prompt, '--output-format', 'stream-json', '--verbose',
       '--permission-mode', approval === 'yolo' ? 'bypassPermissions' : approval === 'edits' ? 'acceptEdits' : approval === 'read' ? 'plan' : 'default',
+      // ox's Mac actions (src/mac-mcp.js), pre-allowed: they are the safe ones
+      // (open an app or a page, notes, to-dos, drafts never sent, music).
+      ...claudeMacMcpArgs(),
       ...(model ? ['--model', model] : []),
     ],
   },
@@ -42,8 +45,13 @@ export const SUBSCRIPTION_CLIS = Object.freeze({
     format: 'codex-jsonl',
     args: ({ prompt, model, approval }) => [
       'exec', '--json', '--skip-git-repo-check',
+      // ox's Mac actions (open an app or a page, notes, to-dos, music…) as an MCP
+      // server, so a run on the ChatGPT plan can act on this Mac too.
+      ...macMcpArgs(),
       '--sandbox', approval === 'read' ? 'read-only' : 'workspace-write',
-      ...(approval === 'yolo' ? ['--full-auto'] : []),
+      // Write inside the workspace without stopping to ask (what --full-auto meant;
+      // newer Codex renamed that flag, the config key works on every version).
+      ...(approval === 'yolo' ? ['-c', 'approval_policy="never"'] : []),
       ...(model ? ['--model', model] : []),
       prompt,
     ],
@@ -270,7 +278,11 @@ export function execPlan(where, platform = process.platform) {
 // PATH was a 500-byte stub from an install that never finished and the npm
 // `codex` had lost its native part, while VS Code's Claude and ChatGPT
 // extensions and the Claude app each carried a working copy. Newest first.
-export function knownCopies(bin, home = os.homedir()) {
+// The account's own home folder (from the user database, not $HOME): editor
+// and app copies of a CLI live there even when HOME points at a sandbox.
+const accountHome = () => { try { return os.userInfo().homedir || os.homedir(); } catch { return os.homedir(); } };
+
+export function knownCopies(bin, home = accountHome()) {
   const pick = (dir, re, tail) => {
     let names = [];
     try { names = fs.readdirSync(dir).filter((n) => re.test(n)); } catch { return []; }
@@ -299,6 +311,22 @@ const versionOf = (file, env) => {
 // Signed in? Answering --version is not enough: a CLI that is not signed in
 // fails every prompt ("Not logged in"). Only CLIs that report it cheaply are
 // asked; for the rest the answer is null (unknown), never a guess.
+// Codex config overrides that attach `ox mcp-mac` (off with OX_MAC_MCP=0).
+export function macMcpArgs(env = process.env) {
+  if (env.OX_MAC_MCP === '0') return [];
+  const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+  return ['-c', `mcp_servers.ox.command=${JSON.stringify(process.execPath)}`, '-c', `mcp_servers.ox.args=${JSON.stringify([cli, 'mcp-mac'])}`,
+    // Approved ahead: under approval "never" Codex refuses MCP calls that would ask.
+    '-c', 'mcp_servers.ox.default_tools_approval_mode="approve"'];
+}
+
+export function claudeMacMcpArgs(env = process.env) {
+  if (env.OX_MAC_MCP === '0') return [];
+  const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+  const tools = ['open_app', 'open_url', 'current_page', 'youtube_transcript', 'ox_do', 'notify'].map((t) => `mcp__ox__${t}`);
+  return ['--mcp-config', JSON.stringify({ mcpServers: { ox: { command: process.execPath, args: [cli, 'mcp-mac'] } } }), '--allowedTools', tools.join(',')];
+}
+
 export function signInState(id, where, env = process.env) {
   if (id === 'claude') {
     const r = spawnSync(where, ['auth', 'status'], { encoding: 'utf8', timeout: 15000, env, windowsHide: true });
@@ -617,7 +645,12 @@ async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = 
   if (st.usage) yield { type: 'usage', ...st.usage, costUsd: null, model: st.model ?? target.model ?? target.bot, ...(st.estimateUsd != null ? { estimateUsd: st.estimateUsd } : {}), plan: target.subscription };
   const failed = spawnError || st.error || (exitCode !== 0 && !signal?.aborted);
   if (failed) {
-    const why = spawnError?.message ?? st.error ?? (stderr.trim().split('\n').slice(-3).join(' ') || `exit ${exitCode}`);
+    // The line that says what went wrong, not the tail of a dumped object.
+    const lines = stderr.trim().split('\n').map((l) => l.trim()).filter(Boolean);
+    const said = lines.find((l) => /^(error|fatal)\b|^Error:|not logged in|log ?in|unauthori[sz]ed|ENOENT|permission denied|rate limit|quota/i.test(l));
+    let why = spawnError?.message ?? st.error ?? (said ?? (lines.slice(-3).join(' ') || `exit ${exitCode}`));
+    // A CLI whose own program file is missing (an npm install that never finished).
+    if (/ENOENT/.test(why) && /vendor|node_modules/.test(why)) why = `this copy of ${cli.bin} is broken (its program file is missing): reinstall it with ${cli.install}. ${why.slice(0, 160)}`;
     yield { type: 'error', error: `${target.bot} (${cli.bin}): ${why}` };
   }
   const message = { role: 'assistant', content: st.text.trim() };

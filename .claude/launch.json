@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ox-app",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["bin/ox.js", "serve", "--port", "47232"],
+      "port": 47232
+    }
+  ]
+}

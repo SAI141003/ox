@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createSandbox, destroySandbox, parseNdjsonEvents } from '../harness.mjs';
 
@@ -59,10 +59,12 @@ export async function tb2ToScenario(taskDir) {
     difficulty,
     tokensPerTurn: { in: 800, out: 120 },
 
+    hasScript: !!scriptFn,
+
     async setup(sb) {
       const entries = fs.readdirSync(task.dir, { withFileTypes: true });
       for (const entry of entries) {
-        if (entry.name === 'tests') continue;
+        if (entry.name === 'tests' || entry.name === 'setup.sh' || entry.name === 'task.json' || entry.name === 'prompt' || entry.name === 'script.mjs') continue;
         const src = path.join(task.dir, entry.name);
         const dst = path.join(sb.ws, entry.name);
         if (entry.isDirectory()) {
@@ -71,6 +73,12 @@ export async function tb2ToScenario(taskDir) {
           fs.mkdirSync(path.dirname(dst), { recursive: true });
           fs.copyFileSync(src, dst);
         }
+      }
+      // Terminal-Bench's setup step: run in the workspace (it was copied, never run).
+      const setupSh = path.join(task.dir, 'setup.sh');
+      if (fs.existsSync(setupSh)) {
+        const r = spawnSync('bash', [setupSh], { cwd: sb.ws, encoding: 'utf8', timeout: 60_000 });
+        if (r.status !== 0) throw new Error(`setup.sh failed: ${(r.stderr || r.stdout || `exit ${r.status}`).trim().slice(0, 200)}`);
       }
     },
 
@@ -134,7 +142,8 @@ export async function runTests({ taskDir, workspace, agentOutput, exitCode, even
     const result = await runShellScript(
       path.join(task.dir, 'tests', 'test_output.sh'),
       workspace,
-      { TB2_AGENT_OUTPUT: outputFile, TB2_WORKSPACE: workspace, TB2_EXIT_CODE: String(exitCode) }
+      { TRANSCRIPT: outputFile, TB2_AGENT_OUTPUT: outputFile, TB2_WORKSPACE: workspace, TB2_EXIT_CODE: String(exitCode) },
+      [outputFile],
     );
     if (!result.pass) details.push(`test_output.sh: ${result.detail}`);
   }
@@ -146,10 +155,10 @@ export async function runTests({ taskDir, workspace, agentOutput, exitCode, even
   };
 }
 
-function runShellScript(scriptPath, cwd, extraEnv) {
+function runShellScript(scriptPath, cwd, extraEnv, args = []) {
   return new Promise((resolve) => {
     const env = { ...process.env, ...extraEnv };
-    const child = spawn('bash', [scriptPath], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('bash', [scriptPath, ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (d) => { stdout += d.toString(); });

@@ -59,6 +59,33 @@ function seconds(n, unit) {
   return Math.round(Number(n) * k);
 }
 
+// The apps on this Mac, by name (macOS: the .app folders in the usual places).
+// "open whatsapp" opens WhatsApp; "open whatsapp and message my friends" is
+// more than opening an app, so it goes to a model, which can open it and go on.
+let appNames = null;
+export function installedApps(dirs = ['/Applications', '/Applications/Utilities', '/System/Applications', '/System/Applications/Utilities', path.join(os.homedir(), 'Applications')]) {
+  if (appNames && arguments.length === 0) return appNames;
+  const names = new Map();
+  for (const d of dirs) {
+    let list = [];
+    try { list = fs.readdirSync(d); } catch { continue; }
+    for (const n of list) if (n.endsWith('.app')) names.set(n.slice(0, -4).toLowerCase(), n.slice(0, -4));
+  }
+  if (arguments.length === 0) appNames = names;
+  return names;
+}
+const APP_ALIASES = { 'vs code': 'Visual Studio Code', vscode: 'Visual Studio Code', code: 'Visual Studio Code', chrome: 'Google Chrome', 'google chrome': 'Google Chrome', mail: 'Mail', email: 'Mail', settings: 'System Settings', 'system preferences': 'System Settings', whatsapp: 'WhatsApp', terminal: 'Terminal' };
+
+export function resolveApp(name, apps = installedApps()) {
+  const n = String(name ?? '').trim().replace(/^the\s+/i, '').replace(/\s+app$/i, '').toLowerCase();
+  if (!n) return null;
+  if (process.platform !== 'darwin' && apps.size === 0) return name; // elsewhere: trust the name (xdg-open / start)
+  if (apps.has(n)) return apps.get(n);
+  const alias = APP_ALIASES[n];
+  if (alias && apps.has(alias.toLowerCase())) return apps.get(alias.toLowerCase());
+  return null;
+}
+
 const SITE = /^(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:\/\S*)?$/i;
 
 // text -> { intent, ...args } | null. Order matters: the first rule wins.
@@ -103,7 +130,12 @@ export function parseIntent(text) {
   if ((m = /^(?:open|go to|visit)\s+(\S+)$/i.exec(t)) && SITE.test(m[1])) {
     return { intent: 'url', url: /^https?:\/\//i.test(m[1]) ? m[1] : `https://${m[1]}` };
   }
-  if ((m = /^(?:open|launch|start)\s+(?:the\s+)?(?:app\s+)?(.+?)(?:\s+app)?$/i.exec(t))) return { intent: 'app', name: m[1].trim() };
+  // Opening an app: only an app that is on this Mac, named on its own. Anything
+  // more ("…and message my friends") is a task for a model.
+  if ((m = /^(?:open|launch|start)\s+(?:the\s+)?(?:app\s+)?(.+?)(?:\s+app)?$/i.exec(t))) {
+    const app = resolveApp(m[1]);
+    if (app) return { intent: 'app', name: app };
+  }
   if ((m = /^(?:what is|what's|calculate|calc|compute)\s+(.+)$/i.exec(low)) && calc(m[1]) !== null) return { intent: 'calc', expr: m[1], value: calc(m[1]) };
   if (calc(low) !== null && /[+\-*/^%]/.test(low)) return { intent: 'calc', expr: low, value: calc(low) };
   return null;

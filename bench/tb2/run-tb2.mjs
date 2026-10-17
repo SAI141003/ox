@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 // bench/tb2/run-tb2.mjs — Terminal-Bench 2.1 compatibility runner for ox bench.
-//   node bench/tb2/run-tb2.mjs [--filter <regex>] [--list]
-// Zero deps. Uses the deterministic harness (mock server on loopback).
+//   node bench/tb2/run-tb2.mjs [--filter <regex>] [--list] [--model <spec>]
+// Zero deps. Without --model: the deterministic harness (a scripted model on
+// loopback); a task with no script.mjs is SKIPPED there, since a script-less
+// stand-in only echoes the prompt. With --model: a real model decides, in a
+// sandbox (HOME isolated), and the task's own tests grade the workspace.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -10,6 +13,7 @@ import {
   deterministicEnv, finalTextOf, usageTotals, parseNdjsonEvents,
 } from '../harness.mjs';
 import { tb2ToScenario } from './adapter.mjs';
+import { agentEnv } from '../real/lib.mjs';
 
 const TB2_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 const TASKS_DIR = path.join(TB2_DIR, 'tasks');
@@ -17,11 +21,12 @@ const RESULTS_MD = path.join(TB2_DIR, 'RESULTS.md');
 const DEFAULT_MODEL = 'grok-4.6';
 
 function parseArgs(argv) {
-  const opts = { filter: null, list: false };
+  const opts = { filter: null, list: false, model: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--filter') opts.filter = new RegExp(String(argv[++i] ?? ''), 'i');
     else if (a === '--list') opts.list = true;
+    else if (a === '--model') opts.model = String(argv[++i] ?? '');
     else {
       process.stderr.write(`tb2: unknown arg '${a}'\nusage: node bench/tb2/run-tb2.mjs [--filter <regex>] [--list]\n`);
       process.exit(3);
@@ -52,7 +57,30 @@ async function loadScenarios(filter) {
   return out;
 }
 
+// A real model, in a sandbox: no mock, the model chooses every step.
+async function runLive(scn, model) {
+  const sb = createSandbox(scn.name.replace(/[^a-z0-9]+/gi, '-'));
+  const started = Date.now();
+  try {
+    if (typeof scn.setup === 'function') await scn.setup(sb);
+    const env = agentEnv({ home: sb.home, extra: { OX_ISLAND: '0', OX_LEARN: '0' } });
+    const args = ['-p', String(scn.prompt ?? ''), '--json', '--bot', model, '-y', ...(scn.extraArgs ?? [])];
+    const run = await spawnOx({ args, env, cwd: sb.ws, timeoutMs: 300_000 });
+    const events = parseNdjsonEvents(run.stdout);
+    const transcript = [finalTextOf(events), run.stdout].filter(Boolean).join('\n');
+    const result = { events, exitCode: run.exitCode, stdout: transcript, stderr: run.stderr, ws: sb.ws, home: sb.home, ms: Date.now() - started, model, timedOut: run.timedOut };
+    if (run.timedOut) return { ...result, status: 'FAIL', detail: 'timed out after 300s' };
+    const verdict = await scn.check(result);
+    return { ...result, status: verdict?.pass ? 'PASS' : 'FAIL', detail: String(verdict?.detail ?? '') };
+  } catch (err) {
+    return { status: 'FAIL', detail: `harness error: ${err?.message ?? err}`, events: [], exitCode: null, ms: Date.now() - started, model };
+  } finally {
+    destroySandbox(sb);
+  }
+}
+
 async function runDeterministic(scn) {
+  if (!scn.hasScript) return { status: 'SKIP', detail: 'no script.mjs: run it with --model <spec> (a real model)', events: [], ms: 0 };
   const sb = createSandbox(scn.name.replace(/[^a-z0-9]+/gi, '-'));
   let server = null;
   const started = Date.now();
@@ -120,7 +148,7 @@ async function main() {
   const rows = [];
   const suiteStart = Date.now();
   for (const scn of scenarios) {
-    const row = await runDeterministic(scn);
+    const row = opts.model ? await runLive(scn, opts.model) : await runDeterministic(scn);
     const usage = usageTotals(row.events ?? []);
     const costUsd = 0; // synthetic, no pricing needed for tb2
     row.tokensIn = usage.inputTokens;

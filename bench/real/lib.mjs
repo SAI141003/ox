@@ -65,6 +65,13 @@ export function agentEnv({ home, extra = {} } = {}) {
   delete env.OX_API_KEY;
   delete env.OX_YOLO;
   delete env.OX_MAX_COST;
+  // A plan you pay for (chatgpt-plan, claude-plan…) runs the vendor's own CLI,
+  // whose sign-in lives in the real home: point just that CLI at it, so the
+  // sandbox stays sandboxed and the plan can still answer. Nothing of ox's own
+  // (~/.ox) is exposed. Read before HOME is replaced.
+  const realHome = process.env.HOME || os.homedir();
+  if (!env.CODEX_HOME) env.CODEX_HOME = path.join(realHome, '.codex');
+  if (!env.CLAUDE_CONFIG_DIR) env.CLAUDE_CONFIG_DIR = path.join(realHome, '.claude');
   env.HOME = home;
   for (const [name, dir] of [
     ['XDG_CONFIG_HOME', '.config'],
