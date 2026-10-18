@@ -1639,6 +1639,19 @@ const ROUTES = [
     return D.fixPr(dir, {});
   }) },
   { method: 'GET', pattern: /^\/ox\/day\/?$/, handler: appRoute(dayView) },
+  // Your reading library (src/library.js): the shelf, one item, add, highlight, ask.
+  { method: 'GET', pattern: /^\/ox\/library\/?$/, handler: appRoute(async () => ({ items: (await import('./library.js')).list() })) },
+  { method: 'GET', pattern: /^\/ox\/library\/([a-f0-9]{6,20})\/?$/, handler: appRoute(async (_, m) => (await import('./library.js')).load(m[1])) },
+  { method: 'POST', pattern: /^\/ox\/library\/(add|ask|highlight|remove)\/?$/, handler: appRoute(async (body, m) => {
+    const L = await import('./library.js');
+    if (m[1] === 'add') return { item: await L.add(String(body?.ref ?? '')) };
+    if (m[1] === 'highlight') return { highlights: L.highlight(String(body?.id ?? ''), body?.quote, body?.note ?? '') };
+    if (m[1] === 'remove') return { removed: L.remove(String(body?.id ?? '')) };
+    return L.askAbout(String(body?.id ?? ''), String(body?.question ?? ''), { quote: body?.quote ?? null, ask: async ({ system, user }) => {
+      const { quickText } = await import('./quick-text.js');
+      return (await quickText(resolveBot(pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 700 })).text;
+    } });
+  }) },
   // Dictation styles and translation, per app (src/dictation-style.js).
   { method: 'POST', pattern: /^\/ox\/dictation\/style\/?$/, handler: appRoute(async (body) => {
     const D = await import('./dictation-style.js');

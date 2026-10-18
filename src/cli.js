@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -529,6 +529,7 @@ function usageAll() {
     '  ox org timeline                   who did what, every tool call, and the count of irreversible actions',
     '  ox skill from <book.pdf|folder>   a book or docs → a skill: an index plus chapters read only when needed',
     '',
+    'library: ox library [add <url|pdf> | read | ask <id> "q" | search]   saved articles and PDFs; highlight and ask in the app',
     'video: ox video transcribe|captions|cut|speed|vertical|highlights|gif|polish|understand <file> …   on this machine',
     'traces: ox trace [--signals] | ox trace <id> [--steps]   each run: turns, tokens, cost, tool calls, and "stuck" signals',
     '',
@@ -4611,6 +4612,32 @@ async function runSubcommand(cmd, args) {
     case 'pr':
       await cmdPr(args);
       return;
+    case 'library': {
+      // ox library [add <url|file> | read <id> | ask <id> "q" | search <words> | rm <id>]
+      const L = await import('./library.js');
+      const sub = args[0] ?? 'list';
+      const askModel = async ({ system, user }) => {
+        const { workingModelSpec } = await import('./working-model.js');
+        const { quickText } = await import('./quick-text.js');
+        const cfg = loadConfig();
+        return (await quickText(resolveBot(await workingModelSpec(cfg, { say: () => {} }), cfg), { system, user, maxTokens: 700 })).text;
+      };
+      try {
+        if (sub === 'list') {
+          const items = L.list();
+          if (!items.length) { console.log(c.dim('your library is empty: ox library add <link or file>')); return; }
+          for (const it of items) console.log(`${c.dim(it.id)}  ${c.bold(it.title.slice(0, 70))}  ${c.dim(`${it.kind} · ${it.words.toLocaleString('en-US')} words${it.highlights.length ? ` · ${it.highlights.length} highlights` : ''}`)}`);
+          return;
+        }
+        if (sub === 'add') { const it = await L.add(args[1]); console.log(`${c.green('✓ on the shelf')} ${c.bold(it.title)} ${c.dim(`(${it.kind}, ${it.words.toLocaleString('en-US')} words, ${it.id})`)}`); return; }
+        if (sub === 'read') { const it = L.load(args[1]); if (!it) throw new Error(`no item ${args[1]}`); console.log(`${c.bold(it.title)}\n${c.dim(it.source)}\n\n${it.text}`); return; }
+        if (sub === 'ask') { const r = await L.askAbout(args[1], args.slice(2).join(' '), { ask: askModel }); console.log(`${c.dim(r.title)}\n${r.answer}`); return; }
+        if (sub === 'search') { for (const x of L.search(args.slice(1).join(' '))) console.log(`${c.dim(x.id)}  ${c.bold(x.title)}\n  ${c.dim(x.passage.replace(/\s+/g, ' ').slice(0, 200))}`); return; }
+        if (sub === 'rm') { console.log(L.remove(args[1]) ? 'removed' : 'no such item'); return; }
+        console.error('usage: ox library [add <url|file> | read <id> | ask <id> "<question>" | search <words> | rm <id>]'); process.exitCode = 3;
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+      return;
+    }
     case 'research': {
       // ox research "<topic>" [--on reddit,hn,youtube,x,linkedin]: what people say.
       const S = await import('./social-research.js');

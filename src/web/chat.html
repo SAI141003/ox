@@ -436,6 +436,14 @@
   .gal-state.live { background: rgba(52,211,153,.18); color: #34D399; }
   .gal-acts { display: flex; gap: 6px; margin-top: auto; }
   .gal-acts .on { border-color: #F5A524; color: #F5A524; }
+  /* Library (after Gloss): a shelf of saved reading, a reader, select a line to ask. */
+  .lib-shelf { display: flex; align-items: flex-end; gap: 6px; flex-wrap: wrap; padding: 18px 14px 0; border-bottom: 10px solid var(--line); border-radius: 4px; min-height: 150px; }
+  .lib-book { width: 34px; border-radius: 3px 3px 1px 1px; cursor: pointer; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; box-shadow: inset -3px 0 0 rgba(0,0,0,.18); transition: transform .15s; }
+  .lib-book:hover { transform: translateY(-6px); }
+  .lib-book span { writing-mode: vertical-rl; transform: rotate(180deg); color: #fff; font-size: 11px; font-weight: 600; max-height: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lib-reader { font-size: 15px; line-height: 1.7; white-space: pre-wrap; max-width: 720px; }
+  .lib-pop { position: fixed; z-index: 50; display: none; gap: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 4px; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+  .lib-hl { background: rgba(250,204,21,.28); border-radius: 3px; }
   /* Mission map: the goal tree of tasks and who owns each. */
   .mm-tree, .mm-tree ul { list-style: none; margin: 0; padding-left: 22px; position: relative; }
   .mm-tree { padding-left: 0; }
@@ -597,6 +605,7 @@
         <button data-view="office"><span data-i="office"></span><span class="grow">Office</span><span class="office-count" id="office-count" hidden></span></button>
         <button data-view="gallery"><span data-i="office"></span><span class="grow">Agents</span></button>
         <button data-view="mission"><span data-i="list"></span><span class="grow">Mission map</span></button>
+        <button data-view="library"><span data-i="list"></span><span class="grow">Library</span></button>
       </div>
       <label class="search"><span data-i="search"></span><input id="q" placeholder="Search sessions…" aria-label="Search sessions"><span class="kbd">⌘K</span></label>
     </div>
@@ -722,6 +731,8 @@
     <section class="view" id="v-tasks"><div class="page"><div class="page-inner wide" id="tasks"></div></div></section>
     <section class="view" id="v-gallery"><div class="page"><div class="page-inner wide" id="gallery"></div></div></section>
     <section class="view" id="v-mission"><div class="page"><div class="page-inner wide" id="mission"></div></div></section>
+    <section class="view" id="v-library"><div class="page"><div class="page-inner wide" id="library"></div></div></section>
+    <div class="lib-pop" id="lib-pop"><button class="btn primary small" id="lib-pop-ask">Ask</button><button class="btn ghost small" id="lib-pop-hl">Highlight</button></div>
     <section class="view" id="v-sched"><div class="page"><div class="page-inner" id="sched"></div></div></section>
   </main>
   <div class="sizer" id="sizer-pane" role="separator" aria-orientation="vertical" aria-label="Resize the side panel" tabindex="0" title="Drag to resize · double-click to reset" hidden></div>
@@ -924,7 +935,7 @@
     view = v;
     document.querySelectorAll('.view').forEach((el) => el.classList.toggle('on', el.id === `v-${v}`));
     document.querySelectorAll('.nav [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
-    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : v === 'flows' ? 'Automations' : v === 'tasks' ? 'Task board' : v === 'gallery' ? 'Agents' : v === 'mission' ? 'Mission map' : (readonly ? readonly.title : convo()?.title || 'New session');
+    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : v === 'flows' ? 'Automations' : v === 'tasks' ? 'Task board' : v === 'gallery' ? 'Agents' : v === 'mission' ? 'Mission map' : v === 'library' ? 'Library' : (readonly ? readonly.title : convo()?.title || 'New session');
     document.body.classList.remove('nav');
     if (v === 'caps') loadCaps();
     if (v === 'msg') loadMessaging();
@@ -937,6 +948,7 @@
     if (v === 'tasks') loadTasks();
     if (v === 'gallery') loadGallery();
     if (v === 'mission') loadMission();
+    if (v === 'library') loadLibrary();
     if (v === 'map') loadMap();
     renderLists();
   }
@@ -2575,6 +2587,51 @@ files: [src/billing/**]
         $('gal-draft').innerHTML = `<div class="box"><b>${esc(draft.name)}</b> · ${esc(draft.title)}<div class="dim small">${esc(draft.runtime || 'ox')}${draft.heartbeatMin ? ` · every ${draft.heartbeatMin} min` : ''}${draft.budgetUsd != null ? ` · $${draft.budgetUsd}/month` : ''} · may ${esc(draft.approval || 'edit')}</div><div class="small" style="white-space:pre-wrap;margin:6px 0">${esc(draft.instructions)}</div><button class="btn primary small" id="gal-hire-ok">Hire</button></div>`;
         $('gal-hire-ok').onclick = async () => { await postJson('/ox/org/hire', { sentence, draft, confirm: true }); toast(`${draft.name} hired`); loadGallery(); };
       } catch (e) { $('gal-draft').innerHTML = `<div class="dim small">${esc(e.message)}</div>`; }
+    };
+  }
+
+  // ---------- Library: saved articles and PDFs; highlight any line and ask
+  let libOpen = null;
+  async function loadLibrary(openId = libOpen) {
+    const el = $('library');
+    const { items } = await getJson('/ox/library').catch(() => ({ items: [] }));
+    const hue = (s) => [...String(s)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 360, 11);
+    let reader = '';
+    if (openId) {
+      const it = await getJson(`/ox/library/${openId}`).catch(() => null);
+      if (it) {
+        let body = esc(it.text);
+        for (const h of it.highlights || []) { const q = esc(h.quote); if (q && body.includes(q)) body = body.replace(q, `<mark class="lib-hl">${q}</mark>`); }
+        reader = `<div class="box" style="margin-top:18px"><div style="display:flex;gap:8px;align-items:center"><b style="font-size:17px">${esc(it.title)}</b><span class="grow"></span><a class="dim small" href="${esc(/^https?:/.test(it.source) ? it.source : '#')}" target="_blank">${esc(it.kind)} · ${it.words.toLocaleString()} words</a><button class="btn ghost small" id="lib-close">Close</button></div>
+          <div class="tk-new" style="margin:10px 0"><input class="field" id="lib-q" placeholder="Ask about this ${esc(it.kind)}…" style="flex:1"><button class="btn primary small" id="lib-q-go">Ask</button></div>
+          <div id="lib-a" class="small" style="white-space:pre-wrap;margin-bottom:12px"></div>
+          <div class="lib-reader" id="lib-text">${body}</div></div>`;
+      }
+    }
+    el.innerHTML = `<div class="shead">${icon('list')}Library</div>
+      <p class="sdesc">Your saved reading on one shelf: articles and PDFs. ox can add to it too ("save this article"). Open one, select any line, and ask about it.</p>
+      <div class="box tk-new"><input class="field" id="lib-add" placeholder="Paste a link or a PDF path to save" style="flex:1"><button class="btn primary" id="lib-add-go">Save</button></div>
+      <div class="box"><div class="lib-shelf">${items.map((it) => `<div class="lib-book" data-lib="${esc(it.id)}" title="${esc(it.title)}" style="height:${90 + Math.min(60, Math.round(Math.log2(it.words + 1) * 4))}px;background:hsl(${hue(it.title)} 42% 38%)"><span>${esc(it.title)}</span></div>`).join('') || '<div class="dim small" style="padding-bottom:20px">Empty shelf. Save a link above.</div>'}</div></div>
+      ${reader}`;
+    libOpen = openId;
+    el.querySelectorAll('[data-lib]').forEach((b) => (b.onclick = () => loadLibrary(b.dataset.lib)));
+    $('lib-add-go').onclick = async () => { const ref = $('lib-add').value.trim(); if (!ref) return; toast('Saving…'); try { const { item } = await postJson('/ox/library/add', { ref }); toast(`${item.title} is on the shelf`); loadLibrary(item.id); } catch (e) { toast(e.message); } };
+    if (!libOpen || !$('lib-text')) return;
+    $('lib-close').onclick = () => loadLibrary(null);
+    const askIt = async (question, quote = null) => {
+      $('lib-a').textContent = 'Reading…';
+      try { const r = await postJson('/ox/library/ask', { id: libOpen, question, quote }); $('lib-a').textContent = r.answer; } catch (e) { $('lib-a').textContent = e.message; }
+    };
+    $('lib-q-go').onclick = () => { const q = $('lib-q').value.trim(); if (q) askIt(q); };
+    // Select a line: Ask or Highlight appears beside it.
+    const pop = $('lib-pop');
+    $('lib-text').onmouseup = () => {
+      const sel = String(window.getSelection() || '').trim();
+      if (sel.length < 3) { pop.style.display = 'none'; return; }
+      const r = window.getSelection().getRangeAt(0).getBoundingClientRect();
+      Object.assign(pop.style, { display: 'flex', left: `${r.left}px`, top: `${r.bottom + 6}px` });
+      $('lib-pop-ask').onclick = () => { pop.style.display = 'none'; const q = prompt('Ask about this line', 'What does this mean?'); if (q) askIt(q, sel); };
+      $('lib-pop-hl').onclick = async () => { pop.style.display = 'none'; try { await postJson('/ox/library/highlight', { id: libOpen, quote: sel }); loadLibrary(libOpen); } catch (e) { toast(e.message); } };
     };
   }
 
