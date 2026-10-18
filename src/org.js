@@ -35,15 +35,16 @@ const fileOf = (o) => o?.file ?? ORG_FILE();
 export function readOrg(opts = {}) {
   try {
     const d = JSON.parse(fs.readFileSync(fileOf(opts), 'utf8'));
-    return { agents: d.agents ?? {}, log: d.log ?? [] };
-  } catch { return { agents: {}, log: [] }; }
+    return { agents: d.agents ?? {}, log: d.log ?? [], runs: d.runs ?? {} };
+  } catch { return { agents: {}, log: [], runs: {} }; }
 }
 
 function writeOrg(org, opts = {}) {
   const f = fileOf(opts);
   fs.mkdirSync(path.dirname(f), { recursive: true });
   const tmp = `${f}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({ agents: org.agents, log: org.log.slice(-500) }, null, 2), { mode: 0o600 });
+  const runs = Object.fromEntries(Object.entries(org.runs ?? {}).map(([k, v]) => [k, v.slice(-50)]));
+  fs.writeFileSync(tmp, JSON.stringify({ agents: org.agents, log: org.log.slice(-500), runs }, null, 2), { mode: 0o600 });
   fs.renameSync(tmp, f);
   return org;
 }
@@ -219,6 +220,65 @@ export function runThroughOx(agent, task, prompt, { timeoutMs = 30 * 60_000 } = 
   });
 }
 
+// ---------------------------------------------------------------- hire from a sentence
+
+const NUM = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, ten: 10, fifteen: 15, twenty: 20, thirty: 30 };
+const num = (w) => (NUM[String(w).toLowerCase()] ?? Number(w));
+
+/**
+ * What a plain sentence says about an agent (after HKUDS/AutoAgent): the
+ * schedule, budget, runtime, approval level, folder and manager are read from
+ * the words; a model, when one answers, adds the name, title and instructions.
+ * Nothing is hired here: the caller shows the draft, and hiring stays a step.
+ */
+export function parseHire(sentence) {
+  const s = String(sentence ?? '').trim();
+  const low = s.toLowerCase();
+  const out = { instructions: s };
+  const name = /(?:called|named)\s+["“']?([A-Z][\w-]{1,30}(?:\s[A-Z][\w-]{1,30})?)["”']?/.exec(s) ?? /["“]([^"”]{2,30})["”]/.exec(s);
+  if (name) out.name = name[1].trim();
+  let m;
+  if ((m = /every\s+(\d+|\w+)\s*(minutes?|mins?|hours?|hrs?|days?)/i.exec(low))) out.heartbeatMin = num(m[1]) * (/^h/.test(m[2]) ? 60 : /^d/.test(m[2]) ? 1440 : 1);
+  else if (/\bhourly\b|every hour/.test(low)) out.heartbeatMin = 60;
+  else if (/\bdaily\b|every (day|morning|evening|night)|each (day|morning)/.test(low)) out.heartbeatMin = 1440;
+  else if (/\bweekly\b|every week/.test(low)) out.heartbeatMin = 10080;
+  if ((m = /\$\s?(\d+(?:\.\d+)?)\s*(?:a|per|\/)?\s*(?:month|mo)?/.exec(s)) || (m = /budget (?:of )?(\d+(?:\.\d+)?)/i.exec(s))) out.budgetUsd = Number(m[1]);
+  if (/\b(claude code|on claude|with claude|using claude)\b/.test(low)) out.runtime = 'claude-plan';
+  else if (/\b(codex|chatgpt)\b/.test(low)) out.runtime = 'chatgpt-plan';
+  else if (/\b(local model|locally|offline|ollama)\b/.test(low)) out.runtime = 'ox-ollama';
+  if (/\b(read[- ]only|only (read|look|watch)|never (change|edit)|just (report|watch|look))\b/.test(low)) out.approval = 'read';
+  else if (/\b(run commands|full access|anything it needs|no approvals)\b/.test(low)) out.approval = 'all';
+  if ((m = /(?:in|on|for)\s+(~\/[\w./-]+|\/[\w./-]{2,})/.exec(s))) out.cwd = m[1].replace(/^~(?=\/)/, os.homedir()).replace(/[.,]$/, '');
+  if ((m = /reports? to\s+([\w-]+)/i.exec(s))) out.reportsTo = m[1];
+  // A title from the job's main verb when no model names it ("reviews PRs" → Reviewer).
+  const roles = [[/\breview/, 'Reviewer'], [/\btest|\bqa\b/, 'QA engineer'], [/\bwrite|docs|blog|copy/, 'Writer'], [/\bresearch|scout|find/, 'Researcher'], [/\bfix|bug|debug/, 'Engineer'], [/\bdeploy|release|ci\b/, 'Release engineer'], [/\bsecurity|audit|vulnerab/, 'Security reviewer'], [/\bdesign|ui\b/, 'Designer'], [/\bsupport|reply|inbox|email/, 'Support'], [/\bmarket|social|post/, 'Marketer'], [/\bdata|report|metric|analy/, 'Analyst']];
+  out.title = roles.find(([re]) => re.test(low))?.[1] ?? 'Agent';
+  return out;
+}
+
+/** The draft: parsed facts, plus name / title / role / instructions from a model when one answers. */
+export async function draftHire(sentence, { ask = null } = {}) {
+  const base = parseHire(sentence);
+  let extra = {};
+  if (ask) {
+    try {
+      const text = await ask({
+        system: 'You turn one sentence into an AI agent job description. Answer with JSON only: {"name": a short first name (one word), "title": a job title (2-4 words), "role": one line, "instructions": 3-6 short imperative lines joined by newlines, specific to the job}. Do not invent tools, schedules or budgets.',
+        user: sentence,
+      });
+      const raw = String(text).slice(String(text).indexOf('{'), String(text).lastIndexOf('}') + 1);
+      // Models often break lines inside a JSON string: read it either way.
+      let j; try { j = JSON.parse(raw); } catch { j = JSON.parse(raw.replace(/\r?\n/g, '\\n')); }
+      for (const k of ['name', 'title', 'role', 'instructions']) if (typeof j[k] === 'string' && j[k].trim()) extra[k] = j[k].trim().slice(0, k === 'instructions' ? 2000 : 60);
+    } catch {}
+  }
+  const draft = { ...base, ...extra, ...(base.name ? { name: base.name } : {}) };
+  if (!draft.name) draft.name = draft.title.split(' ')[0];
+  draft.instructions = `${draft.instructions}${extra.instructions && !extra.instructions.includes(sentence) ? `\n\n(Asked as: ${sentence})` : ''}`;
+  draft.fromModel = Object.keys(extra).length > 0;
+  return draft;
+}
+
 /** What one agent's runs cost since `since`, from the usage log (null when unpriced). */
 export function costSince(agentId, since, file) {
   const rows = readUsage({ since, ...(file ? { file } : {}) }).filter((r) => r.agent === agentId && typeof r.cost === 'number');
@@ -250,8 +310,64 @@ export async function beat(id, opts = {}) {
   if (cost != null) addSpend(task.id, cost, tasksOpts);
   completeTask(task.id, { ...tasksOpts, owner: a.id, failed: !r.ok, result: String(r.output ?? '').slice(-2000), note: r.ok ? null : String(r.error ?? 'failed').slice(0, 300) });
   const charged = cost != null ? chargeAgent(a.id, cost, opts) : { warned: false, stopped: false };
+  // The agent's thread (GitBot): every run, what it was asked and what it said, to reopen later.
+  { const o = readOrg(opts); (o.runs[a.id] ??= []).push({ at: new Date().toISOString(), task: task.id, title: task.title, asked: task.description ?? '', ok: r.ok, said: String(r.output ?? '').trim().slice(-1500), why: r.ok ? null : String(r.error ?? '').slice(0, 300), costUsd: cost }); note(o, a.id, r.ok ? 'finished' : 'failed', a.id, { task: task.id, why: task.title }); writeOrg(o, opts); }
   stamp();
   return { agent: a.id, state: 'ran', task: task.id, ok: r.ok, costUsd: cost, ...charged, ...(r.ok ? {} : { why: r.error }) };
+}
+
+/** One agent's thread: its runs, newest last. */
+export function thread(id, opts = {}) {
+  const org = readOrg(opts);
+  const a = org.agents[slug(id)];
+  if (!a) throw new Error(`no agent ${id}`);
+  return { agent: a, runs: org.runs[a.id] ?? [] };
+}
+
+/** Say something to an agent: a task assigned to it, picked up on its next beat (or now). */
+export async function tell(id, text, opts = {}) {
+  const org = readOrg(opts);
+  const a = org.agents[slug(id)];
+  if (!a) throw new Error(`no agent ${id}`);
+  const msg = String(text ?? '').trim();
+  if (!msg) throw new Error('say something');
+  const { addTask } = await import('./tasks.js');
+  const t = addTask({ title: msg.split('\n')[0].slice(0, 120), description: msg, assignee: a.id }, { ...(opts.tasks ?? {}), actor: opts.by ?? 'you' });
+  note(org, opts.by ?? 'you', 'asked', a.id, { task: t.id, why: msg.slice(0, 120) });
+  writeOrg(org, opts);
+  return { task: t, agent: a };
+}
+
+// What cannot be taken back: sending, publishing, pushing, deleting, paying, deploying.
+const IRREVERSIBLE = [
+  /\bgit\s+push\b/, /\bgh\s+(pr\s+merge|release\s+create|repo\s+delete)\b/, /\b(npm|pnpm|yarn)\s+publish\b/, /\brm\s+-[a-z]*r/, /\bdrop\s+(table|database)\b/i,
+  /\b(kubectl|terraform)\s+(delete|destroy|apply)\b/, /\b(vercel|netlify|fly|railway)\b.*\b(deploy|--prod)\b/, /\bcurl\b.*-X\s*(POST|DELETE|PUT)\b/i,
+];
+const IRREVERSIBLE_TOOLS = /^(mail_send|send_mail|send_message|post_|publish|purchase|pay|transfer|delete_)/;
+export const isIrreversible = (tool, detail = '') => IRREVERSIBLE_TOOLS.test(String(tool)) || IRREVERSIBLE.some((re) => re.test(String(detail)));
+
+/**
+ * Who did what (after the Grok Bot night-shift board): hires, approvals,
+ * runs and every tool call an org agent made, newest first, with the number of
+ * irreversible actions that went through.
+ */
+export function timeline({ limit = 100, since = 0, auditFile = null, ...opts } = {}) {
+  const org = readOrg(opts);
+  const items = org.log.filter((e) => Date.parse(e.at) >= since).map((e) => ({ at: e.at, agent: e.agent, by: e.by, kind: 'org', text: `${e.by === 'you' ? 'you' : e.by} ${e.action} ${e.agent}${e.why ? `: ${e.why}` : ''}`, irreversible: false }));
+  let rows = [];
+  try {
+    const f = auditFile ?? path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'audit.jsonl');
+    const lines = fs.readFileSync(f, 'utf8').trim().split('\n').slice(-5000);
+    const outcome = new Map();
+    const decisions = [];
+    for (const l of lines) { try { const r = JSON.parse(l); if (r.t === 'outcome') outcome.set(r.ref, r.ok); else if (r.agent) decisions.push(r); } catch {} }
+    rows = decisions.filter((r) => Date.parse(r.ts) >= since).map((r) => {
+      const done = r.decision === 'allow' && outcome.get(r.ref) !== false;
+      return { at: r.ts, agent: r.agent, kind: 'tool', text: `${r.agent} ${r.decision === 'deny' ? 'was stopped from' : 'ran'} ${r.tool}${r.detail ? `: ${r.detail}` : ''}`, irreversible: done && isIrreversible(r.tool, r.detail), denied: r.decision === 'deny' };
+    });
+  } catch {}
+  const all = [...items, ...rows].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  return { items: all.slice(0, limit), irreversible: all.filter((x) => x.irreversible).length, denied: all.filter((x) => x.denied).length };
 }
 
 /** Agents whose heartbeat interval has passed (active, with an interval). */

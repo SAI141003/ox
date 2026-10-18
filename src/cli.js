@@ -518,11 +518,15 @@ function usageAll() {
     '  ox org hire <name> [--title T] [--reports-to <id>] [--runtime ox|claude-plan|chatgpt-plan|<bot>]',
     '      [--budget <usd/month>] [--every <minutes>] [--instructions <text>] [--cwd <dir>]',
     '      [--approval read|edits|all]   unattended, edits (default) changes files in --cwd; commands are declined',
+    '  ox org hire "<a sentence>" [--draft]   the job in your words: name, title, schedule, budget, runtime filled in',
     '  ox org approve|reject <id>        decide a hire an agent proposed',
     '  ox org pause|resume|fire <id>     stop or restart waking an agent',
     '  ox org set <id> [--budget n|none] [--every n|none] [--title T] [--reports-to id] [--runtime r]',
     '  ox org beat <id> | --due          wake an agent now (or every agent that is due): it runs its next task',
     '  ox org log                        hires, approvals, pauses, budget warnings and stops',
+    '  ox org tell <id> "<message>" [--now]   give an agent work in words; --now wakes it',
+    '  ox org thread <id>                its runs: what it was asked and what it said',
+    '  ox org timeline                   who did what, every tool call, and the count of irreversible actions',
     '  ox skill from <book.pdf|folder>   a book or docs → a skill: an index plus chapters read only when needed',
     '',
     'pull requests (until they can merge; merging stays yours):',
@@ -3469,6 +3473,24 @@ async function cmdOrg(args = []) {
     }
     if (sub === 'hire') {
       const name = args.slice(1).filter((a, i, l) => !a.startsWith('--') && !(l[i - 1] ?? '').startsWith('--')).join(' ');
+      // A sentence ("someone who reviews my PRs every morning on claude, $20 a month"): drafted, shown, hired.
+      if (!flag('--title') && name.split(/\s+/).length >= 5) {
+        const ask = async ({ system, user }) => {
+          const { workingModelSpec } = await import('./working-model.js');
+          const { quickText } = await import('./quick-text.js');
+          const cfg = loadConfig();
+          const spec = await workingModelSpec(cfg, { say: () => {} });
+          return (await quickText(resolveBot(spec, cfg), { system, user, maxTokens: 400 })).text;
+        };
+        const d = await O.draftHire(name, { ask: args.includes('--no-model') ? null : ask });
+        console.log(c.dim(`from your sentence${d.fromModel ? ' (with a model)' : ' (no model answered: read from the words)'}:`));
+        for (const [k, v] of [['name', d.name], ['title', d.title], ['runtime', d.runtime ?? 'ox'], ['every', d.heartbeatMin ? `${d.heartbeatMin} min` : null], ['budget', d.budgetUsd != null ? `$${d.budgetUsd}/month` : null], ['may', d.approval ?? 'edits'], ['folder', d.cwd ?? null], ['reports to', d.reportsTo ?? null]]) if (v) console.log(`  ${k.padEnd(11)} ${v}`);
+        console.log(c.dim(`  instructions: ${d.instructions.split('\n')[0].slice(0, 120)}`));
+        if (args.includes('--draft')) return;
+        const a = O.hire(d, { by: process.env.OX_ORG_AGENT || 'you' });
+        console.log(a.status === 'proposed' ? `${c.yellow('proposed')} ${a.id}: waits for the owner (ox org approve ${a.id})` : `${c.green('✓ hired')} ${a.name} (${a.id})`);
+        return;
+      }
       const a = O.hire({ name, title: flag('--title'), role: flag('--role'), reportsTo: flag('--reports-to'), runtime: flag('--runtime'), budgetUsd: num(flag('--budget')), heartbeatMin: num(flag('--every')), instructions: flag('--instructions'), cwd: flag('--cwd'), approval: flag('--approval') }, { by: process.env.OX_ORG_AGENT || 'you' });
       console.log(a.status === 'proposed' ? `${c.yellow('proposed')} ${a.id}: waits for the owner (ox org approve ${a.id})` : `${c.green('✓ hired')} ${a.name} (${a.id}) — ${a.title}, runs on ${a.runtime}${a.heartbeatMin ? `, wakes every ${a.heartbeatMin} min` : ''}`);
       return;
@@ -3491,8 +3513,36 @@ async function cmdOrg(args = []) {
       for (const r of runs) console.log(`${r.agent}: ${r.state}${r.task ? ` ${r.task}` : ''}${r.ok === false ? c.red(` failed: ${r.why}`) : r.why ? ` (${r.why})` : ''}${r.costUsd != null ? ` · $${r.costUsd.toFixed(4)}` : ''}${r.warned ? c.yellow(' · budget warning') : ''}${r.stopped ? c.red(' · budget reached, paused') : ''}`);
       return;
     }
+    if (sub === 'timeline') {
+      const t = O.timeline({ limit: Number(flag('--limit') ?? 40) });
+      console.log(`${c.bold('irreversible actions:')} ${t.irreversible ? c.yellow(t.irreversible) : c.green('0')}   ${c.dim(`stopped by approvals: ${t.denied}`)}`);
+      for (const x of t.items) console.log(`${x.at.slice(5, 16).replace('T', ' ')}  ${x.irreversible ? c.yellow('!') : x.denied ? c.red('×') : ' '} ${x.text.slice(0, 150)}`);
+      return;
+    }
+    if (sub === 'thread') {
+      const th = O.thread(id);
+      console.log(`${c.bold(th.agent.name)} ${c.dim(`${th.agent.title} · ${th.runs.length} runs`)}`);
+      for (const r of th.runs.slice(-Number(flag('--last') ?? 10))) {
+        console.log(`\n${c.dim(r.at.slice(0, 16).replace('T', ' '))} ${r.ok ? c.green('✓') : c.red('✗')} ${c.bold(r.title)}${r.costUsd != null ? c.dim(` · $${r.costUsd.toFixed(4)}`) : ''}`);
+        console.log(r.ok ? r.said.split('\n').slice(-6).join('\n') : c.red(r.why ?? 'failed'));
+      }
+      if (!th.runs.length) console.log(c.dim(`no runs yet: ox org tell ${th.agent.id} "…" --now`));
+      return;
+    }
+    if (sub === 'tell') {
+      const text = args.slice(2).filter((a) => a !== '--now').join(' ');
+      const r = await O.tell(id, text, { by });
+      console.log(`${c.green('✓')} ${r.agent.name} has it (${r.task.id})${args.includes('--now') ? '' : c.dim(' — picked up on its next beat; --now to wake it')}`);
+      if (args.includes('--now')) {
+        const b = await O.beat(id);
+        console.log(`${b.agent}: ${b.state}${b.ok === false ? c.red(` failed: ${b.why}`) : ''}`);
+        const last = O.thread(id).runs.at(-1);
+        if (last) console.log(last.said.split('\n').slice(-8).join('\n'));
+      }
+      return;
+    }
     if (sub === 'log') { for (const e of O.readOrg().log.slice(-40)) console.log(`${e.at.slice(0, 19)}  ${e.by.padEnd(10)} ${e.action} ${e.agent}${e.why ? c.dim(` — ${e.why}`) : ''}`); return; }
-    console.error('usage: ox org [hire|approve|reject|pause|resume|fire|set|beat|log] — ox help for details');
+    console.error('usage: ox org [hire|approve|reject|pause|resume|fire|set|beat|tell|thread|timeline|log] — ox help for details');
     process.exitCode = 1;
   } catch (e) {
     console.error(c.red(e.message));

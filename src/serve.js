@@ -1636,6 +1636,20 @@ const ROUTES = [
     }));
     return { agents, proposed: agents.filter((a) => a.status === 'proposed') };
   }) },
+  { method: 'GET', pattern: /^\/ox\/org\/timeline\/?$/, handler: appRoute(async () => (await import('./org.js')).timeline({ limit: 150 })) },
+  { method: 'GET', pattern: /^\/ox\/org\/thread\/([a-z0-9-]{1,40})\/?$/, handler: appRoute(async (_, m) => (await import('./org.js')).thread(m[1])) },
+  { method: 'POST', pattern: /^\/ox\/org\/(tell|hire)\/?$/, handler: appRoute(async (body, m) => {
+    const O = await import('./org.js');
+    if (m[1] === 'tell') { const r = await O.tell(String(body?.id ?? ''), String(body?.text ?? '')); if (body?.now) O.beat(r.agent.id).catch(() => {}); return { task: r.task }; }
+    // Hire in words: drafted with the working model, shown back; hired only with confirm.
+    const sentence = String(body?.sentence ?? '').trim();
+    if (!sentence) throw new Error('describe the job in a sentence');
+    const draft = body?.draft && typeof body.draft === 'object' ? body.draft : await O.draftHire(sentence, { ask: async ({ system, user }) => {
+      const { quickText } = await import('./quick-text.js');
+      return (await quickText(resolveBot(pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 400 })).text;
+    } });
+    return body?.confirm ? { agent: O.hire(draft) } : { draft };
+  }) },
   { method: 'POST', pattern: /^\/ox\/org\/(approve|reject|beat|pause|resume)\/?$/, handler: appRoute(async (body, m) => {
     const O = await import('./org.js');
     const id = String(body?.id ?? '');

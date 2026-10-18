@@ -115,3 +115,53 @@ test('approval level: edits by default, read or all only when set, anything else
   assert.equal(O.update('bo', { approval: 'all' }, o).approval, 'all');
   assert.match(O.chart(o).join('\n'), /Bo — Agent \[ox\] · no approvals/);
 });
+
+test('hire from a sentence: schedule, budget, runtime, approval, folder read from the words', async () => {
+  const p = O.parseHire('someone called Rex who reviews my pull requests every morning on claude code, read only, $15 a month, in ~/ox');
+  assert.equal(p.name, 'Rex');
+  assert.equal(p.heartbeatMin, 1440);
+  assert.equal(p.budgetUsd, 15);
+  assert.equal(p.runtime, 'claude-plan');
+  assert.equal(p.approval, 'read');
+  assert.match(p.cwd, /\/ox$/);
+  assert.equal(p.title, 'Reviewer');
+  assert.equal(O.parseHire('watch the build every 2 hours').heartbeatMin, 120);
+  // A model fills name, title and instructions; the words' facts stay.
+  const d = await O.draftHire('fix failing tests every 30 minutes, $5 a month', { ask: async () => '{"name":"Tess","title":"Test Fixer","instructions":"Run the tests.\nFix what fails."}' });
+  assert.equal(d.name, 'Tess');
+  assert.equal(d.title, 'Test Fixer');
+  assert.equal(d.heartbeatMin, 30);
+  assert.equal(d.budgetUsd, 5);
+  assert.equal(d.fromModel, true);
+  const bad = await O.draftHire('fix failing tests every 30 minutes and more', { ask: async () => 'not json' });
+  assert.equal(bad.fromModel, false);
+  assert.equal(bad.name, 'QA', 'no model: named from the title the words suggest');
+});
+
+test('tell, thread and timeline: work in words, every run kept, irreversible actions counted', async () => {
+  const o = fresh();
+  O.hire({ name: 'Ada', title: 'Engineer' }, o);
+  const { task } = await O.tell('ada', 'Rename the helper', o);
+  assert.equal(task.assignee, 'ada');
+  const r = await O.beat('ada', { ...o, run: async () => ({ ok: true, output: 'renamed it', costUsd: 0.01 }) });
+  assert.equal(r.state, 'ran');
+  const th = O.thread('ada', o);
+  assert.equal(th.runs.length, 1);
+  assert.equal(th.runs[0].said, 'renamed it');
+  const audit = path.join(path.dirname(o.file), 'audit.jsonl');
+  const now = new Date().toISOString();
+  fs.writeFileSync(audit, [
+    { ts: now, ref: 'a', tool: 'exec', detail: 'git push origin main', decision: 'allow', agent: 'ada' },
+    { ts: now, ref: 'a', t: 'outcome', ok: true },
+    { ts: now, ref: 'b', tool: 'exec', detail: 'rm -rf build', decision: 'deny', agent: 'ada' },
+    { ts: now, ref: 'c', tool: 'read_file', detail: 'a.js', decision: 'allow', agent: 'ada' },
+    { ts: now, ref: 'd', tool: 'exec', detail: 'git push', decision: 'allow' },
+  ].map((x) => JSON.stringify(x)).join('\n'));
+  const t = O.timeline({ ...o, auditFile: audit });
+  assert.equal(t.irreversible, 1, 'the push went through; the denied rm did not; a call by no agent is not counted');
+  assert.equal(t.denied, 1);
+  assert.ok(t.items.some((x) => /you asked ada: Rename the helper/.test(x.text)));
+  assert.ok(t.items.some((x) => /ada finished ada/.test(x.text)));
+  assert.equal(O.isIrreversible('mail_send'), true);
+  assert.equal(O.isIrreversible('exec', 'git status'), false);
+});

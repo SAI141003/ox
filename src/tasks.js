@@ -23,7 +23,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 
-const TASKS_DIR = path.join(os.homedir(), '.ox', 'tasks');
+const TASKS_DIR = path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'tasks');
 
 export const STATUSES = ['pending', 'running', 'in_review', 'blocked', 'done', 'failed', 'cancelled'];
 const OPEN = new Set(['pending', 'running', 'in_review', 'blocked']);
