@@ -19,7 +19,7 @@ import {
 } from './operator.js';
 import { modeRefusal, grantRefusal } from '../modes.js';
 import { mail_accounts, mail_compose, MAIL_TOOL_SCHEMAS } from './mail.js';
-import { webFetchTool, webSearchTool, WEB_TOOL_SCHEMAS, WEB_TOOLS } from './web.js';
+import { webFetchTool, webSearchTool, WEB_TOOL_SCHEMAS, WEB_TOOLS, READING_TOOL_SCHEMAS } from './web.js';
 import { youtubeTranscriptTool, YOUTUBE_TOOL_SCHEMAS, YOUTUBE_TOOLS, YOUTUBE_SIGNAL } from './youtube.js';
 import { currentPageTool, CURRENT_PAGE_SCHEMAS, CURRENT_PAGE_TOOLS, CURRENT_PAGE_SIGNAL } from './current-page.js';
 import { webTaskTool, WEB_TASK_TOOL_SCHEMAS, WEB_TASK_TOOLS } from './web-task.js';
@@ -82,6 +82,7 @@ export const BUILTIN_SCHEMAS = [
   ...OPERATOR_TOOL_SCHEMAS,
   ...MAIL_TOOL_SCHEMAS,
   ...WEB_TOOL_SCHEMAS,
+  ...READING_TOOL_SCHEMAS,
   ...WEB_TASK_TOOL_SCHEMAS,
   ...CRITIQUE_TOOL_SCHEMAS,
   ...MEDIA_TOOL_SCHEMAS,
@@ -468,6 +469,10 @@ export const OPERATOR_KEYWORDS = Object.freeze([
 //     vocabulary ("relevance score", "tool definitions"), so they would fire on
 //     coding prompts rather than on web prompts;
 //   what is / how to -- match nearly every prompt there is.
+// What people say (social_research) and your saved reading (library): their own words.
+export const SOCIAL_KEYWORDS = Object.freeze(['reddit', 'subreddit', 'twitter', 'tweets', 'linkedin', 'hackernews', 'sentiment', 'opinions', 'saying']);
+export const LIBRARY_KEYWORDS = Object.freeze(['library', 'shelf', 'bookmark', 'bookmarks', 'saved', 'reading']);
+
 export const WEB_KEYWORDS = Object.freeze([
   'web', 'search', 'google', 'lookup', 'searching', 'url', 'link', 'links',
   'page', 'website', 'online', 'internet', 'docs', 'documentation', 'browse',
@@ -476,8 +481,6 @@ export const WEB_KEYWORDS = Object.freeze([
   'advisory', 'issue', 'issues', 'github', 'stackoverflow', 'overflow',
   'news', 'article', 'articles', 'blog', 'quote', 'citation', 'cite', 'source',
   'upstream', 'published', 'announcement', 'postmortem',
-  'reddit', 'subreddit', 'twitter', 'tweets', 'linkedin', 'hackernews', 'sentiment', 'opinions', 'reviews',
-  'library', 'shelf', 'bookmark', 'bookmarks', 'saved', 'reading',
   // Everyday asks that only the network can answer. All >= STEM_MIN, so the
   // inflected forms land too ("forecasts", "recipes", "translated").
   'weather', 'forecast', 'temperature', 'recipe', 'translate', 'wikipedia',
@@ -671,6 +674,8 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
     if (mediaOn && MEDIA_TOOLS.includes(n)) keep.add(n);
     if (skillOn && INSTALL_SKILL_TOOLS.includes(n)) keep.add(n);
     if (graphOn && CODE_GRAPH_TOOLS.includes(n)) keep.add(n);
+    if (n === 'social_research' && keywordSignal(message, SOCIAL_KEYWORDS) !== null) keep.add(n);
+    if (n === 'library' && keywordSignal(message, LIBRARY_KEYWORDS) !== null) keep.add(n);
   }
   const filtered = schemas.filter((s) => typeof s?.name === 'string' && keep.has(s.name));
   if (filtered.length < NARROW_FLOOR) return schemas;
