@@ -178,6 +178,54 @@ export async function fetchGithubSkillMd(shorthand, { rawBase = RAW_GITHUB_BASE,
   throw new Error(`cannot fetch SKILL.md for '${String(shorthand).trim()}' (tried ${BRANCHES.join(', ')}): ${lastError?.message ?? lastError}`);
 }
 
+// The repo's file tree (one unauthenticated GitHub API call; 60 an hour per address).
+async function githubTree(owner, repo, timeoutMs) {
+  const meta = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers: { accept: 'application/vnd.github+json', 'user-agent': 'ox' }, signal: AbortSignal.timeout(timeoutMs) });
+  if (!meta.ok) throw new Error(`GitHub ${meta.status}`);
+  const branch = (await meta.json()).default_branch ?? 'main';
+  const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`, { headers: { accept: 'application/vnd.github+json', 'user-agent': 'ox' }, signal: AbortSignal.timeout(timeoutMs) });
+  if (!r.ok) throw new Error(`GitHub ${r.status}`);
+  return { branch, tree: (await r.json()).tree ?? [] };
+}
+
+/** Folders holding a SKILL.md inside owner/repo[/path] (up to three levels down). */
+export async function githubSkillFolders(shorthand, { timeoutMs = SKILL_ADD_TIMEOUT_MS } = {}) {
+  const m = String(shorthand).match(SHORTHAND_RE);
+  if (!m) return null;
+  const [, owner, repo, sub = ''] = m;
+  const prefix = sub.replace(/\/+$/, '');
+  const { tree } = await githubTree(owner, repo, timeoutMs);
+  const folders = tree.filter((t) => t.type === 'blob' && /(^|\/)SKILL\.md$/.test(t.path))
+    .map((t) => t.path.replace(/\/?SKILL\.md$/, ''))
+    .filter((p) => p && (!prefix || p.startsWith(`${prefix}/`)) && p.split('/').length - (prefix ? prefix.split('/').length : 0) <= 3)
+    .map((p) => ({ path: p, name: p.split('/').pop() }));
+  return { owner, repo, folders };
+}
+
+// Every other text file in the skill's folder (≤ 60 files, 1 MB in all).
+async function githubFolderFiles(shorthand, { timeoutMs = SKILL_ADD_TIMEOUT_MS } = {}) {
+  const m = String(shorthand).match(SHORTHAND_RE);
+  if (!m) return [];
+  const [, owner, repo, sub = ''] = m;
+  const folder = sub.replace(/\/+$/, '');
+  const { branch, tree } = await githubTree(owner, repo, timeoutMs);
+  const files = tree.filter((t) => t.type === 'blob' && (!folder || t.path.startsWith(`${folder}/`)) && !/(^|\/)SKILL\.md$/.test(folder ? t.path.slice(folder.length + 1) : t.path))
+    .filter((t) => folder || t.path.split('/').length <= 3)
+    .filter((t) => (t.size ?? 0) < 300_000 && !/\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|woff2?|ttf|mp4|mov)$/i.test(t.path))
+    .slice(0, 60);
+  const out = [];
+  let total = 0;
+  for (const t of files) {
+    const r = await fetch(`${RAW_GITHUB_BASE}/${owner}/${repo}/${branch}/${t.path}`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!r.ok) continue;
+    const text = await r.text();
+    total += text.length;
+    if (total > 1_000_000) break;
+    out.push({ rel: folder ? t.path.slice(folder.length + 1) : t.path, text });
+  }
+  return out;
+}
+
 function sha256Of(buf) {
   return createHash('sha256').update(buf).digest('hex');
 }
@@ -219,17 +267,21 @@ export async function installSkill(source, opts = {}) {
     timeoutMs = SKILL_ADD_TIMEOUT_MS,
   } = opts;
 
-  const src = String(source ?? '').trim();
+  let src = String(source ?? '').trim();
   if (!src) return invalid('skill add: a source is required (local skill directory or owner/repo[/path]).');
-
-  if (/^https?:\/\//i.test(src)) {
-    return invalid(`skill add: URL sources are not supported ('${src}') — use a local directory or the owner/repo[/path] shorthand.`);
-  }
+  // A GitHub link in its usual shapes (github.com/o/r, /tree/<branch>/<path>, …/SKILL.md) or o/r#name.
+  let pick = null;
+  const hash = /^(.+?)#([\w.-]+)$/.exec(src);
+  if (hash) { src = hash[1]; pick = hash[2]; }
+  const gh = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:\/(?:tree|blob)\/[\w.-]+(?:\/(.+?))?)?(?:\/SKILL\.md)?\/?$/i.exec(src);
+  if (gh) src = [gh[1], gh[2], gh[3]].filter(Boolean).join('/');
+  else if (/^https?:\/\//i.test(src)) return invalid(`skill add: only GitHub links are supported ('${src}') — or a local directory, or owner/repo[/path].`);
 
   let mode = null;
   let sourceDir = null;
   let rawText = null;
   let displaySource = src;
+  let extraFiles = [];
 
   const resolved = path.resolve(cwd, src);
   if (fs.existsSync(resolved)) {
@@ -257,8 +309,20 @@ export async function installSkill(source, opts = {}) {
       rawText = fetched.text;
       displaySource = fetched.shorthand;
     } catch (e) {
-      return invalid(`skill add: ${String(e?.message ?? e)}`);
+      // No SKILL.md at that path: look for the skills inside the repo (skills/<name>/SKILL.md…).
+      const found = await githubSkillFolders(src, { timeoutMs }).catch(() => null);
+      if (!found?.folders.length) return invalid(`skill add: ${String(e?.message ?? e)}`);
+      const want = (pick ?? '').toLowerCase();
+      const hit = found.folders.length === 1 ? found.folders[0]
+        : found.folders.find((f) => f.name.toLowerCase() === want) ?? (want ? found.folders.find((f) => f.name.toLowerCase().includes(want)) : null);
+      if (!hit) {
+        return { ok: false, kind: 'choose', name: null, choices: found.folders.map((f) => `${found.owner}/${found.repo}/${f.path}`),
+          message: `'${src}' holds ${found.folders.length} skills: ${found.folders.map((f) => f.name).join(', ')} — name one (ox skill add ${found.owner}/${found.repo}#<name>)` };
+      }
+      return installSkill(`${found.owner}/${found.repo}/${hit.path}`, { ...opts });
     }
+    // The skill's other files (scripts, references), each scanned before anything is written.
+    extraFiles = await githubFolderFiles(src, { timeoutMs }).catch(() => []);
   }
 
   const virtualPath =
@@ -294,7 +358,8 @@ export async function installSkill(source, opts = {}) {
   } else {
     const bodyParsed = parseSkillMd(rawText, virtualPath);
     findings = scanText('SKILL.md', bodyParsed.ok ? bodyParsed.skill.body : rawText);
-    scannedCount = 1;
+    for (const f of extraFiles) findings.push(...scanText(f.rel, f.text));
+    scannedCount = 1 + extraFiles.length;
   }
   const patternsHit = [...new Set(findings.map((f) => f.pattern))];
 
@@ -317,6 +382,12 @@ export async function installSkill(source, opts = {}) {
   } else {
     fs.mkdirSync(dest, { recursive: true });
     fs.writeFileSync(path.join(dest, 'SKILL.md'), rawText);
+    for (const f of extraFiles) {
+      const out = path.join(dest, f.rel);
+      if (!out.startsWith(dest + path.sep)) continue;
+      fs.mkdirSync(path.dirname(out), { recursive: true });
+      fs.writeFileSync(out, f.text);
+    }
   }
 
   const sha256 = sha256Of(Buffer.from(rawText, 'utf8'));

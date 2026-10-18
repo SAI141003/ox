@@ -523,6 +523,7 @@ function usageAll() {
     '  ox org set <id> [--budget n|none] [--every n|none] [--title T] [--reports-to id] [--runtime r]',
     '  ox org beat <id> | --due          wake an agent now (or every agent that is due): it runs its next task',
     '  ox org log                        hires, approvals, pauses, budget warnings and stops',
+    '  ox skill from <book.pdf|folder>   a book or docs → a skill: an index plus chapters read only when needed',
     '',
     'pull requests (until they can merge; merging stays yours):',
     '  ox env [show|detect|check]        how this repo installs, lints, builds, tests (.ox/environment.yml, saved once)',
@@ -2666,6 +2667,23 @@ async function cmdSkill(args) {
   }
   if (sub === 'add') {
     await cmdSkillAdd(args.slice(1));
+    return;
+  }
+  if (sub === 'from') {
+    // A book, PDF or folder of docs → a skill with an index and chapters read on demand.
+    const rest = args.slice(1);
+    const flag = (n) => { const i = rest.indexOf(n); return i >= 0 ? rest[i + 1] : undefined; };
+    const src = rest.find((a, i) => !a.startsWith('--') && !['--name', '--description'].includes(rest[i - 1]));
+    if (!src) { process.stderr.write('usage: ox skill from <book.pdf | file.md | folder> [--name N] [--description D] [--force]\n'); process.exitCode = 3; return; }
+    try {
+      const B = await import('./book-skill.js');
+      const r = B.bookToSkill(src, { name: flag('--name') ?? null, description: flag('--description') ?? null, force: rest.includes('--force') });
+      console.log(`${c.green('✓ skill')} ${c.bold(r.name)}  ${c.dim(r.dir)}`);
+      if (r.short) console.log(`  ${r.chapters.length} chapter${r.chapters.length > 1 ? 's' : ''} · ≈ ${r.bookTokens.toLocaleString('en-US')} tokens: short enough that reading it whole is as cheap; the skill still makes it findable`);
+      else console.log(`  ${r.chapters.length} chapters${r.parts ? ` in ${r.parts} parts` : ''} · the whole text ≈ ${r.bookTokens.toLocaleString('en-US')} tokens · per question ≈ ${(r.indexTokens + r.avgChapterTokens).toLocaleString('en-US')} (index + one chapter) → ${r.ratio}× fewer`);
+      for (const ch of r.chapters.slice(0, 12)) console.log(c.dim(`  ${String(ch.n).padStart(2)}. ${ch.title.slice(0, 70)}  (${ch.terms.slice(0, 4).join(', ')})`));
+      if (r.chapters.length > 12) console.log(c.dim(`  … ${r.chapters.length - 12} more`));
+    } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
     return;
   }
   if (sub === 'curate') {
