@@ -10,8 +10,13 @@ struct NotchMetrics: Equatable {
     let width: CGFloat
     let screenFrame: CGRect
 
+    /// Which display: the notched one (default), or the one your pointer is on
+    /// with several displays:  defaults write dev.ox.island island.screen active
+    static var followsPointer: Bool { UserDefaults.standard.string(forKey: "island.screen") == "active" && NSScreen.screens.count > 1 }
+    static func pointerScreen() -> NSScreen? { let p = NSEvent.mouseLocation; return NSScreen.screens.first { $0.frame.contains(p) } }
+
     static func current() -> NotchMetrics {
-        let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? NSScreen.screens[0]
+        let screen = (followsPointer ? pointerScreen() : nil) ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? NSScreen.screens[0]
         let top = screen.safeAreaInsets.top
         if top > 0, let l = screen.auxiliaryTopLeftArea, let r = screen.auxiliaryTopRightArea {
             return NotchMetrics(hasNotch: true, height: top, width: screen.frame.width - l.width - r.width, screenFrame: screen.frame)
@@ -151,6 +156,8 @@ final class IslandPanel: NSPanel {
     }
 
     private func tick() {
+        // Several displays, following the pointer: move when it crosses to another screen.
+        if NotchMetrics.followsPointer, let sc = NotchMetrics.pointerScreen(), sc.frame != metrics.screenFrame, !bridge.expanded { reposition(animated: false) }
         let mouse = NSEvent.mouseLocation
         let f = frame
         let local = CGPoint(x: mouse.x - f.minX, y: f.maxY - mouse.y) // top-down

@@ -64,7 +64,7 @@ struct HomeHeader: View {
             Spacer(minLength: notchWidth + 8)
             HStack(spacing: 8) {
                 VoiceStatusChip(bridge: bridge)
-                if let g = bridge.gauges.max(by: { $0.percent < $1.percent }) { PlanPill(gauge: g) }
+                if let g = bridge.gauges.max(by: { $0.percent < $1.percent }) { PlanPill(gauge: g, all: bridge.gauges) }
                 HStack(spacing: 14) {
                     HeaderIcon(name: "mic.fill", active: bridge.buddyActive, help: "Talk to \(OxName.current) (hold ⌃⌥Space)") { MainActor.assumeIsolated { bridge.buddy.toggle() } }
                     HeaderIcon(name: bridge.pinnedOpen ? "pin.fill" : "pin", active: bridge.pinnedOpen, help: bridge.pinnedOpen ? "Unpin" : "Keep open") { bridge.pinnedOpen.toggle() }
@@ -117,13 +117,30 @@ struct HeaderIcon: View {
 }
 
 /// "Claude 22%": the most-used plan, coloured by how close it is to its limit.
+/// A usage ring (Claudex): how much of a plan window is used, coloured by how close the limit is.
+struct UsageRing: View {
+    let percent: Double
+    var size: CGFloat = 10
+    var line: CGFloat = 2
+    static func tint(_ p: Double) -> Color { p >= 80 ? Color(hex: "#F4505E") : p >= 50 ? Color(hex: "#F5A524") : Color(hex: "#34D399") }
+    var body: some View {
+        ZStack {
+            Circle().stroke(Color.white.opacity(0.12), lineWidth: line)
+            Circle().trim(from: 0, to: max(0.02, min(1, percent / 100))).stroke(Self.tint(percent), style: StrokeStyle(lineWidth: line, lineCap: .round)).rotationEffect(.degrees(-90))
+        }
+        .frame(width: size, height: size)
+    }
+}
+
 struct PlanPill: View {
     let gauge: OxBridge.PlanGauge
+    var all: [OxBridge.PlanGauge] = []
     @State private var hover = false
+    @State private var showAll = false
     var body: some View {
-        let c = gauge.percent >= 80 ? Color(hex: "#F4505E") : gauge.percent >= 50 ? Color(hex: "#F5A524") : Color(hex: "#34D399")
+        let c = UsageRing.tint(gauge.percent)
         HStack(spacing: 4) {
-            Circle().fill(c).frame(width: 6, height: 6)
+            UsageRing(percent: gauge.percent)
             Text("\(gauge.label) \(Int(gauge.percent.rounded()))%").font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(hover ? c : HomeInk.dim).lineLimit(1).fixedSize()
         }
@@ -131,7 +148,28 @@ struct PlanPill: View {
         .background(Capsule().fill(hover ? c.opacity(0.18) : HomeInk.pill))
         .overlay(Capsule().stroke(c.opacity(hover ? 0.55 : 0.14), lineWidth: 1))
         .onHover { h in withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) { hover = h } }
-        .help("\(gauge.label): \(Int(gauge.percent.rounded()))% of the \(gauge.window) limit\(gauge.resetsAt.map { ", resets " + $0.formatted(date: .omitted, time: .shortened) } ?? "")")
+        .onTapGesture { showAll.toggle() }
+        .help("\(gauge.label): \(Int(gauge.percent.rounded()))% of the \(gauge.window) limit\(gauge.resetsAt.map { ", resets " + $0.formatted(date: .omitted, time: .shortened) } ?? ""). Click for every plan.")
+        .popover(isPresented: $showAll, arrowEdge: .bottom) {
+            // Every plan window: a ring, the share used and the time to its reset.
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(all) { g in
+                    HStack(spacing: 8) {
+                        UsageRing(percent: g.percent, size: 22, line: 3.5)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("\(g.label) · \(g.window)").font(.system(size: 11.5, weight: .semibold))
+                            Text("\(Int(g.percent.rounded()))% used\(g.resetsAt.map { " · resets in " + Self.left($0) } ?? "")").font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if all.isEmpty { Text("No plan usage yet").font(.system(size: 11)) }
+            }
+            .padding(12).frame(minWidth: 210)
+        }
+    }
+    static func left(_ d: Date) -> String {
+        let s = max(0, Int(d.timeIntervalSinceNow))
+        return s >= 86400 ? "\(s / 86400)d \((s % 86400) / 3600)h" : s >= 3600 ? "\(s / 3600)h \((s % 3600) / 60)m" : "\(s / 60)m"
     }
 }
 
