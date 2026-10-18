@@ -324,8 +324,9 @@ struct RightCard: View {
                 LazyVGrid(columns: cols, spacing: 4) {
                     ForEach(bridge.org.prefix(4)) { a in OrgPill(agent: a) { bridge.orgCard = bridge.orgCard == a.id ? nil : a.id } }
                 }
-            } else if bridge.player.track != nil || bridge.day.weather != nil || bridge.day.event != nil || bridge.day.prs != nil {
+            } else if bridge.player.track != nil || bridge.day.weather != nil || bridge.day.event != nil || bridge.day.prs != nil || !bridge.meshMachines.isEmpty {
                 if let t = bridge.player.track { NowPlayingPill(player: bridge.player).help("\(t.title) · \(t.artist)") }
+                if !bridge.meshMachines.isEmpty { MachineStrip(machines: bridge.meshMachines) }
                 DayStrip(day: bridge.day)
             } else if !bridge.connected.isEmpty {
                 LazyVGrid(columns: cols, spacing: 4) {
@@ -369,6 +370,26 @@ struct DayStrip: View {
         }
         .padding(.horizontal, 9).frame(height: 26)
         .background(Capsule().fill(HomeInk.pill))
+    }
+}
+
+/// Your other machines (ox mesh): up or not, and how busy.
+struct MachineStrip: View {
+    let machines: [OxBridge.MeshMachine]
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(machines.prefix(3)) { m in
+                HStack(spacing: 5) {
+                    Image(systemName: "laptopcomputer").font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(m.up ? Color(hex: "#34D399") : HomeInk.faint)
+                    Text(m.name).font(.system(size: 10.5, weight: .medium)).foregroundStyle(HomeInk.text).lineLimit(1)
+                    if let l = m.load { UsageRing(percent: min(100, l * 100), size: 9, line: 1.8) }
+                }
+                .padding(.horizontal, 9).frame(height: 26)
+                .background(Capsule().fill(HomeInk.pill))
+                .help(m.up ? "\(m.name): CPU \(Int((m.load ?? 0) * 100))%, memory \(Int((m.mem ?? 0) * 100))%" : "\(m.name) is not answering")
+            }
+        }
     }
 }
 

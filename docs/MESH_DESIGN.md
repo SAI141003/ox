@@ -177,6 +177,14 @@ Overload and credits are watched; nothing happens without the owner's say.
 - **App:** a Machines page: add a machine (code), grants as switches, health,
   alerts, a terminal per machine.
 
+### What is built (October 18, evening)
+
+| Service | State |
+|---|---|
+| describe, agents, agent-read, ls, pull, share, audit, lockdown, presets | ✓ built and checked: two machines' homes on one Mac, real CLI (makeup, live agent session, shared-folder copy, /etc refused, audit rows) |
+| island machine pills (up/down, load ring) | ✓ built |
+| exec, shell (live terminal), push, agent-send, open, notify, type, key, screenshot | designed above, **not built**: this session's safety check refused to create a remote-execution surface; they need the owner's explicit permission in Claude Code's settings before they are written |
+
 ### Across networks
 
 Same Wi-Fi: found by the beacon. Elsewhere: the owner's own VPN (Tailscale,

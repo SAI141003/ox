@@ -84,8 +84,10 @@ export function setName(name, o = {}) {
 
 // ---------------------------------------------------------------- paired machines
 
-const DEFAULT_GRANTS = { status: true, infer: false, tasks: false, files: false };
+const DEFAULT_GRANTS = { status: true, infer: false, tasks: false, files: false, agents: false };
 export const GRANTS = Object.keys(DEFAULT_GRANTS);
+// Presets for `ox mesh allow <machine> <preset>`.
+export const PRESETS = Object.freeze({ viewer: ['status'], helper: ['status', 'infer', 'tasks'], full: ['status', 'infer', 'tasks', 'files', 'agents'] });
 
 export function readPeers(o = {}) {
   try { return JSON.parse(fs.readFileSync(path.join(dir(o), 'peers.json'), 'utf8')).peers ?? {}; } catch { return {}; }
@@ -115,13 +117,35 @@ export function findPeer(ref, o = {}) {
 
 /** What this machine lets a paired machine do (set on this machine). */
 export function setGrant(ref, grant, on, o = {}) {
-  if (!GRANTS.includes(grant)) throw new Error(`a grant is one of ${GRANTS.join(', ')}`);
+  const preset = PRESETS[grant];
+  if (!GRANTS.includes(grant) && !preset) throw new Error(`a grant is one of ${GRANTS.join(', ')}, or a preset: ${Object.keys(PRESETS).join(', ')}`);
   const p = findPeer(ref, o);
   if (!p) throw new Error(`no paired machine ${ref}`);
   const peers = readPeers(o);
-  peers[p.id].grants = { ...DEFAULT_GRANTS, ...peers[p.id].grants, [grant]: !!on };
+  const g = { ...DEFAULT_GRANTS, ...peers[p.id].grants };
+  if (preset) { for (const k of GRANTS) g[k] = on ? preset.includes(k) : (k === 'status' ? g.status : false); }
+  else g[grant] = !!on;
+  peers[p.id].grants = g;
   writePeers(peers, o);
   return peers[p.id];
+}
+
+/** The folders a paired machine may browse and copy from (default: this machine's home). */
+export function setRoots(ref, roots, o = {}) {
+  const p = findPeer(ref, o);
+  if (!p) throw new Error(`no paired machine ${ref}`);
+  const peers = readPeers(o);
+  peers[p.id].roots = roots.map((r) => path.resolve(String(r).replace(/^~(?=$|\/)/, os.homedir())));
+  writePeers(peers, o);
+  return peers[p.id];
+}
+
+/** Every paired machine back to status only, at once. */
+export function lockdown(o = {}) {
+  const peers = readPeers(o);
+  for (const id of Object.keys(peers)) peers[id].grants = { ...DEFAULT_GRANTS };
+  writePeers(peers, o);
+  return Object.keys(peers).length;
 }
 
 export function forget(ref, o = {}) {
@@ -401,6 +425,10 @@ export async function startNode(o = {}) {
       if (!grants.tasks) return refuse(`${me.name} does not allow tasks from ${peer.name}: on ${me.name}, run  ox mesh allow "${peer.name}" tasks`);
       return runTask(ch, msg, refuse);
     }
+    // The machine's makeup, its agent sessions, its shared folders (src/mesh-services.js).
+    const S = await import('./mesh-services.js');
+    const roots = readPeers(o)[peer.id]?.roots ?? [os.homedir()];
+    if (await S.serveOp({ ch, peer, msg, grants, roots, home: home(o), ollamaUrl, meName: me.name })) return;
     refuse(`unknown request ${msg.op}`);
   }
 
@@ -451,8 +479,11 @@ export async function startNode(o = {}) {
 
   // ---- the listener
   const failures = { count: 0 };
+  const incoming = new Set();
   const server = net.createServer((sock) => {
     sock.setNoDelay(true);
+    incoming.add(sock);
+    sock.on('close', () => incoming.delete(sock));
     let stage = 'hello', theirs = null, ch = null, mine = null, mode = 'auth';
     const eph = crypto.generateKeyPairSync('x25519');
     const ephRaw = eph.publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
@@ -672,6 +703,8 @@ export async function startNode(o = {}) {
     async close() {
       clearInterval(hb); clearInterval(state.beaconTimer);
       for (const c of conns.values()) c.ch.sock.destroy();
+      // Machines connected to this one: ended too, or server.close() waits for them forever.
+      for (const sk of incoming) sk.destroy();
       await Promise.all([new Promise((r) => server.close(() => r())), new Promise((r) => (proxy.listening ? proxy.close(() => r()) : r()))]);
       try { beacon?.close(); } catch {}
     },

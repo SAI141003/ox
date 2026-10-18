@@ -191,3 +191,51 @@ test('control endpoint: status and invite for local tools only; choices snooze o
     assert.equal(A.choose('z', { action: 'pause' }).done, null, 'moving or pausing work is never done by itself');
   } finally { await A.close(); }
 });
+
+test('v2: describe, agents, shared folders (no escaping them), audit, presets and lockdown', async () => {
+  const ha = home(), hb = home();
+  const shared = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-share-'));
+  fs.writeFileSync(path.join(shared, 'report.txt'), 'hello from B');
+  fs.mkdirSync(path.join(shared, 'sub'));
+  const secret = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-secret-'));
+  fs.writeFileSync(path.join(secret, 'keys.txt'), 'nope');
+  fs.symlinkSync(secret, path.join(shared, 'escape'));
+  const A = await node(ha);
+  const B = await node(hb);
+  try {
+    const { code } = A.invite();
+    await M.join({ code, at: `127.0.0.1:${A.port}`, name: 'Laptop B', o: { home: hb }, myPort: B.port });
+    const d = await A.ask('Laptop B', 'describe', {}, { timeoutMs: 20_000 });
+    assert.ok(d.cores >= 1 && d.memGb >= 1 && typeof d.os === 'string' && Array.isArray(d.tools));
+    await assert.rejects(A.ask('Laptop B', 'agents'), /does not allow agents/);
+    await assert.rejects(A.ask('Laptop B', 'ls', { path: shared }), /does not allow files/);
+
+    // Presets, set on B for A.
+    M.setGrant(M.identity({ home: ha }).name, 'full', true, { home: hb });
+    const g = Object.values(M.readPeers({ home: hb }))[0].grants;
+    assert.deepEqual(g, { status: true, infer: true, tasks: true, files: true, agents: true });
+    assert.ok(Array.isArray((await A.ask('Laptop B', 'agents', {}, { timeoutMs: 20_000 })).sessions));
+
+    // Files only inside what B shares; a symlink out of it does not count.
+    M.setRoots(M.identity({ home: ha }).name, [shared], { home: hb });
+    const ls = await A.ask('Laptop B', 'ls', { path: shared });
+    assert.deepEqual(ls.entries.map((e) => e.name).sort(), ['escape', 'report.txt', 'sub']);
+    const chunks = [];
+    const got = await A.ask('Laptop B', 'pull', { path: path.join(shared, 'report.txt') }, { onChunk: (b) => chunks.push(b) });
+    assert.equal(Buffer.concat(chunks).toString(), 'hello from B');
+    assert.equal(got.size, 12);
+    await assert.rejects(A.ask('Laptop B', 'pull', { path: path.join(shared, 'escape', 'keys.txt') }), /outside the folders/);
+    await assert.rejects(A.ask('Laptop B', 'ls', { path: os.homedir() }), /outside the folders/);
+    await assert.rejects(A.ask('Laptop B', 'pull', { path: `${shared}/../${path.basename(secret)}/keys.txt` }), /outside the folders/);
+
+    // Every request is in B's audit log.
+    const { readAudit } = await import('../src/mesh-services.js');
+    const ops = readAudit(path.join(hb)).map((r) => r.op);
+    for (const op of ['describe', 'agents', 'ls', 'pull']) assert.ok(ops.includes(op), op);
+
+    // Lockdown: back to status only, at once.
+    assert.equal(M.lockdown({ home: hb }), 1);
+    await assert.rejects(A.ask('Laptop B', 'agents'), /does not allow agents/);
+    assert.ok((await A.ask('Laptop B', 'describe', {}, { timeoutMs: 20_000 })).cores >= 1, 'status stays');
+  } finally { await B.close(); await A.close(); }
+});

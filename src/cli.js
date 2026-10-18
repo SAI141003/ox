@@ -544,7 +544,12 @@ function usageAll() {
     '  ox mesh name <name>               name this machine ("Studio Mac")',
     '  ox mesh invite                    show a one-time code (10 min) for another machine to join',
     '  ox mesh join <code> [--name N] [--at host:port]   pair this machine (--at: across networks, e.g. Tailscale)',
-    '  ox mesh allow|deny <machine> status|infer|tasks   what that machine may ask of THIS one (infer and tasks start off)',
+    '  ox mesh allow|deny <machine> <grant|preset>   what that machine may ask of THIS one: status, infer, tasks, files, agents; presets viewer, helper, full',
+    '  ox mesh describe <machine>        its makeup: chip, cores, memory, GPU, disks, OS, agent tools, models, keys (names)',
+    '  ox mesh agents <machine> [read <id>]   the agent sessions running there, and what one said',
+    '  ox mesh ls <machine>[:<folder>] · ox mesh pull <machine>:<file> [<here>]   its shared folders',
+    '  ox mesh share <machine> <folder>…  which folders of THIS machine that one may browse (default: home)',
+    '  ox mesh audit · ox mesh lockdown  what other machines asked here · every machine back to status only',
     '  ox mesh forget <machine>          unpair',
     '  ox mesh up [--port n]             run this machine\'s node in the foreground (the OX app runs it too)',
     '  ox mesh models                    every model your machines offer, as mesh:<machine>/<model>',
@@ -3629,7 +3634,8 @@ async function cmdMesh(args = []) {
       const grant = args[args.length - 1];
       const who = args.slice(1, -1).join(' ');
       const p = M.setGrant(who, grant, sub === 'allow');
-      console.log(`${c.green('✓')} ${p.name} ${sub === 'allow' ? 'may now' : 'may no longer'} ask this machine for ${grant}`);
+      const what = M.PRESETS?.[grant] ? `${grant === 'full' ? 'everything' : grant} (${M.PRESETS[grant].join(', ')})` : grant;
+      console.log(`${c.green('✓')} ${p.name} ${sub === 'allow' ? 'may now' : 'may no longer'} ask this machine for ${what}`);
       return;
     }
     if (sub === 'forget') { const p = M.forget(words(1).join(' ')); console.log(`${p.name} unpaired`); return; }
@@ -3657,6 +3663,86 @@ async function cmdMesh(args = []) {
       } finally { await node.close(); }
       return;
     }
+    // Another machine's makeup, its agent sessions, its shared folders (read-only).
+    const target = (ref) => { const i = String(ref ?? '').indexOf(':'); return i > 0 ? [ref.slice(0, i), ref.slice(i + 1)] : [ref, null]; };
+    if (sub === 'describe' || sub === 'machine') {
+      if (!args[1]) throw new Error('usage: ox mesh describe <machine>');
+      const node = await oneShot();
+      try {
+        const d = await node.ask(args.slice(1).join(' '), 'describe', {}, { timeoutMs: 20_000 });
+        console.log(`${c.bold(d.name)}  ${c.dim(`${d.model ?? ''} · ${d.os} · ${d.arch}`)}`);
+        console.log(`  ${d.cpu ?? '?'} · ${d.cores} cores · ${d.memGb} GB memory${d.gpu ? ` · ${d.gpu}` : ''} · up ${d.uptimeH} h`);
+        for (const k of d.disks) console.log(`  disk ${k.path}: ${k.freeGb} of ${k.totalGb} GB free`);
+        console.log(`  agent tools: ${d.tools.join(', ') || 'none'}`);
+        console.log(`  local models: ${d.models.join(', ') || 'none'}   keys for: ${d.providers.join(', ') || 'none'}`);
+        console.log(`  ox ${d.ox ?? '?'} · ${d.sessions} agent session(s) live`);
+      } finally { await node.close(); }
+      return;
+    }
+    if (sub === 'agents') {
+      if (!args[1]) throw new Error('usage: ox mesh agents <machine> [read <session id>]');
+      const node = await oneShot();
+      try {
+        if (args[2] === 'read' && args[3]) {
+          const r = await node.ask(args[1], 'agent-read', { id: args[3] }, { timeoutMs: 20_000 });
+          for (const m of (r.messages ?? []).slice(-12)) console.log(`${c.bold(m.role)}: ${String(m.text).slice(0, 400)}`);
+        } else {
+          const r = await node.ask(args[1], 'agents', {}, { timeoutMs: 20_000 });
+          if (!r.sessions.length) console.log(c.dim('no agent sessions there'));
+          for (const x of r.sessions) console.log(`${x.state === 'idle' ? c.dim('○') : c.green('●')} ${c.bold(x.project)} ${c.dim(x.tool)}  ${x.doing || (x.state === 'idle' ? `idle ${Math.round(x.idleSec / 60)} min` : x.state)}  ${c.dim(x.id)}`);
+        }
+      } finally { await node.close(); }
+      return;
+    }
+    if (sub === 'ls') {
+      const [who, p] = target(args[1]);
+      if (!who) throw new Error('usage: ox mesh ls <machine>[:<folder>]');
+      const node = await oneShot();
+      try {
+        const r = await node.ask(who, 'ls', { path: p ?? '~', all: args.includes('-a') }, { timeoutMs: 20_000 });
+        console.log(c.dim(r.path));
+        for (const e of r.entries) console.log(`${e.dir ? c.cyan(`${e.name}/`) : e.name}${!e.dir && e.size != null ? c.dim(`  ${e.size >= 1e6 ? `${(e.size / 1e6).toFixed(1)} MB` : `${Math.ceil(e.size / 1024)} KB`}`) : ''}`);
+      } finally { await node.close(); }
+      return;
+    }
+    if (sub === 'pull') {
+      const [who, p] = target(args[1]);
+      if (!who || !p) throw new Error('usage: ox mesh pull <machine>:<file> [<where here>]');
+      const node = await oneShot();
+      try {
+        let dest = path.resolve(args[2] ?? '.');
+        if (fs.existsSync(dest) && fs.statSync(dest).isDirectory()) dest = path.join(dest, path.basename(p));
+        if (fs.existsSync(dest) && !args.includes('--overwrite')) throw new Error(`${dest} exists (--overwrite to replace it)`);
+        const tmp = `${dest}.ox-part`;
+        const fd = fs.openSync(tmp, 'w');
+        let got = 0;
+        const r = await node.ask(who, 'pull', { path: p }, { timeoutMs: 60_000, onChunk: (b) => { fs.writeSync(fd, b); got += b.length; } });
+        fs.closeSync(fd);
+        if (got !== r.size) { fs.rmSync(tmp, { force: true }); throw new Error(`incomplete copy (${got} of ${r.size} bytes)`); }
+        fs.renameSync(tmp, dest);
+        console.log(`${c.green('✓')} ${dest} ${c.dim(`(${got} bytes from ${who})`)}`);
+      } finally { await node.close(); }
+      return;
+    }
+    if (sub === 'share') {
+      const who = args[1], folders = args.slice(2);
+      if (!who || !folders.length) throw new Error('usage: ox mesh share <machine> <folder> [<folder>…]   (what that machine may browse and copy from here)');
+      const pr = M.setRoots(who, folders);
+      console.log(`${c.green('✓')} ${pr.name} may browse and copy from: ${pr.roots.join(', ')} ${c.dim(pr.grants.files ? '' : `(also: ox mesh allow "${pr.name}" files)`)}`);
+      return;
+    }
+    if (sub === 'audit') {
+      const S = await import('./mesh-services.js');
+      const rows = S.readAudit(path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox')), { limit: Number(args[1]) || 40 });
+      if (!rows.length) console.log(c.dim('no other machine has asked anything of this one'));
+      for (const r of rows) console.log(`${r.at.slice(0, 16).replace('T', ' ')}  ${c.bold(r.from)} ${r.op}${r.detail ? c.dim(` ${r.detail}`) : ''}`);
+      return;
+    }
+    if (sub === 'lockdown') {
+      const n = M.lockdown();
+      console.log(`${c.green('✓')} ${n} paired machine(s) back to status only. Allow again with ox mesh allow <machine> <grant>`);
+      return;
+    }
     if (sub === 'run') {
       const who = args[1];
       const prompt = words(2).join(' ');
@@ -3668,7 +3754,7 @@ async function cmdMesh(args = []) {
       } finally { await node.close(); }
       return;
     }
-    console.error('usage: ox mesh [status|name|invite|join|allow|deny|forget|up|models|run] — ox help for details');
+    console.error('usage: ox mesh [status|name|invite|join|allow|deny|forget|up|models|run|describe|agents|ls|pull|share|audit|lockdown] — ox help for details');
     process.exitCode = 1;
   } catch (e) {
     console.error(c.red(e.message));
