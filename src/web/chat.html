@@ -444,6 +444,13 @@
   .lib-reader { font-size: 15px; line-height: 1.7; white-space: pre-wrap; max-width: 720px; }
   .lib-pop { position: fixed; z-index: 50; display: none; gap: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 4px; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
   .lib-hl { background: rgba(250,204,21,.28); border-radius: 3px; }
+  /* Sessions canvas (luciomakes): every agent session as a tile you place anywhere. */
+  .sc-board { position: relative; min-height: 640px; border: 1px dashed var(--line); border-radius: 14px; overflow: hidden; background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 22px 22px; }
+  .sc-tile { position: absolute; width: 320px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 6px 22px rgba(0,0,0,.18); display: flex; flex-direction: column; }
+  .sc-head { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: grab; user-select: none; }
+  .sc-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .sc-body { padding: 8px 10px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 190px; overflow: auto; white-space: pre-wrap; }
+  .sc-send { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line); }
   /* Mission map: the goal tree of tasks and who owns each. */
   .mm-tree, .mm-tree ul { list-style: none; margin: 0; padding-left: 22px; position: relative; }
   .mm-tree { padding-left: 0; }
@@ -606,6 +613,7 @@
         <button data-view="gallery"><span data-i="office"></span><span class="grow">Agents</span></button>
         <button data-view="mission"><span data-i="list"></span><span class="grow">Mission map</span></button>
         <button data-view="library"><span data-i="list"></span><span class="grow">Library</span></button>
+        <button data-view="canvas"><span data-i="office"></span><span class="grow">Sessions canvas</span></button>
       </div>
       <label class="search"><span data-i="search"></span><input id="q" placeholder="Search sessions…" aria-label="Search sessions"><span class="kbd">⌘K</span></label>
     </div>
@@ -732,6 +740,7 @@
     <section class="view" id="v-gallery"><div class="page"><div class="page-inner wide" id="gallery"></div></div></section>
     <section class="view" id="v-mission"><div class="page"><div class="page-inner wide" id="mission"></div></div></section>
     <section class="view" id="v-library"><div class="page"><div class="page-inner wide" id="library"></div></div></section>
+    <section class="view" id="v-canvas"><div class="page"><div class="page-inner wide" id="scanvas"></div></div></section>
     <div class="lib-pop" id="lib-pop"><button class="btn primary small" id="lib-pop-ask">Ask</button><button class="btn ghost small" id="lib-pop-hl">Highlight</button></div>
     <section class="view" id="v-sched"><div class="page"><div class="page-inner" id="sched"></div></div></section>
   </main>
@@ -935,7 +944,7 @@
     view = v;
     document.querySelectorAll('.view').forEach((el) => el.classList.toggle('on', el.id === `v-${v}`));
     document.querySelectorAll('.nav [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
-    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : v === 'flows' ? 'Automations' : v === 'tasks' ? 'Task board' : v === 'gallery' ? 'Agents' : v === 'mission' ? 'Mission map' : v === 'library' ? 'Library' : (readonly ? readonly.title : convo()?.title || 'New session');
+    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : v === 'flows' ? 'Automations' : v === 'tasks' ? 'Task board' : v === 'gallery' ? 'Agents' : v === 'mission' ? 'Mission map' : v === 'library' ? 'Library' : v === 'canvas' ? 'Sessions canvas' : (readonly ? readonly.title : convo()?.title || 'New session');
     document.body.classList.remove('nav');
     if (v === 'caps') loadCaps();
     if (v === 'msg') loadMessaging();
@@ -949,6 +958,7 @@
     if (v === 'gallery') loadGallery();
     if (v === 'mission') loadMission();
     if (v === 'library') loadLibrary();
+    if (v === 'canvas') loadSessionsCanvas(); else clearInterval(scTimer);
     if (v === 'map') loadMap();
     renderLists();
   }
@@ -2588,6 +2598,61 @@ files: [src/billing/**]
         $('gal-hire-ok').onclick = async () => { await postJson('/ox/org/hire', { sentence, draft, confirm: true }); toast(`${draft.name} hired`); loadGallery(); };
       } catch (e) { $('gal-draft').innerHTML = `<div class="dim small">${esc(e.message)}</div>`; }
     };
+  }
+
+  // ---------- Sessions canvas: every agent session as a tile, placed anywhere, live
+  let scTimer = null;
+  async function loadSessionsCanvas() {
+    const el = $('scanvas');
+    if (!el.querySelector('.sc-board')) {
+      el.innerHTML = `<div class="shead">${icon('office')}Sessions canvas</div>
+        <p class="sdesc">Every agent session on this Mac (Claude Code, Codex, Copilot, Hermes, OpenCode, ox…) as a tile: what it is doing now, its last messages, and a box to message it. Drag tiles where you like; they stay there.</p>
+        <div class="sc-board" id="sc-board"></div>`;
+    }
+    const pos = store.get('ox.sc.pos', {});
+    const board = $('sc-board');
+    const { sessions = [] } = await getJson('/ox/agents').catch(() => ({ sessions: [] }));
+    const color = { tool: '#3B9EFF', thinking: '#A78BFA', idle: '#9CA3AF' };
+    const keep = new Set(sessions.map((x) => x.id));
+    board.querySelectorAll('.sc-tile').forEach((t) => { if (!keep.has(t.dataset.id)) t.remove(); });
+    sessions.forEach((x, i) => {
+      let t = board.querySelector(`.sc-tile[data-id="${CSS.escape(x.id)}"]`);
+      if (!t) {
+        t = document.createElement('div');
+        t.className = 'sc-tile'; t.dataset.id = x.id;
+        const p = pos[x.id] ?? { x: 16 + (i % 3) * 340, y: 16 + Math.floor(i / 3) * 300 };
+        Object.assign(t.style, { left: `${p.x}px`, top: `${p.y}px` });
+        t.innerHTML = `<div class="sc-head"><span class="sc-dot"></span><b class="sc-name"></b><span class="dim small sc-tool"></span><span class="grow"></span><span class="dim small sc-state"></span></div>
+          <div class="sc-body">…</div>
+          <div class="sc-send"><input class="field sc-in" placeholder="Message this session" style="flex:1"><button class="btn primary small sc-go">Send</button></div>`;
+        board.appendChild(t);
+        // Drag by the header; the place is remembered.
+        const head = t.querySelector('.sc-head');
+        head.onpointerdown = (e) => {
+          const sx = e.clientX - t.offsetLeft, sy = e.clientY - t.offsetTop;
+          head.setPointerCapture(e.pointerId);
+          head.onpointermove = (m) => { t.style.left = `${Math.max(0, m.clientX - sx)}px`; t.style.top = `${Math.max(0, m.clientY - sy)}px`; };
+          head.onpointerup = () => { head.onpointermove = null; const all = store.get('ox.sc.pos', {}); all[x.id] = { x: t.offsetLeft, y: t.offsetTop }; store.set('ox.sc.pos', all); };
+        };
+        t.querySelector('.sc-go').onclick = async () => {
+          const inp = t.querySelector('.sc-in'); const text = inp.value.trim(); if (!text) return;
+          inp.value = ''; toast('Sent');
+          try { await postJson('/ox/agents/send', { id: x.id, text }); } catch (e) { toast(e.message); }
+        };
+      }
+      t.querySelector('.sc-dot').style.background = color[x.state] ?? '#9CA3AF';
+      t.querySelector('.sc-name').textContent = x.project;
+      t.querySelector('.sc-tool').textContent = x.tool;
+      t.querySelector('.sc-state').textContent = x.state === 'idle' ? `idle ${Math.round((x.idleSec || 0) / 60)} min` : x.state;
+      postJson('/ox/agents/session', { id: x.id }).then((r) => {
+        const body = t.querySelector('.sc-body');
+        const lines = (r.messages || []).slice(-4).map((m) => `${m.role === 'user' ? '› ' : ''}${String(m.text || '').slice(0, 280)}`);
+        body.textContent = [x.doing ? `▶ ${x.doing}` : '', ...lines].filter(Boolean).join('\n\n') || '(nothing yet)';
+      }).catch(() => {});
+    });
+    if (!sessions.length) board.innerHTML = '<div class="dim small" style="padding:18px">No agent sessions right now. Start Claude Code, Codex or ox anywhere: they appear here.</div>';
+    clearInterval(scTimer);
+    scTimer = setInterval(() => { if (view === 'canvas') loadSessionsCanvas(); else clearInterval(scTimer); }, 4000);
   }
 
   // ---------- Library: saved articles and PDFs; highlight any line and ask
