@@ -165,3 +165,10 @@ test('tell, thread and timeline: work in words, every run kept, irreversible act
   assert.equal(O.isIrreversible('mail_send'), true);
   assert.equal(O.isIrreversible('exec', 'git status'), false);
 });
+
+test('hire from a sentence: weekdays are weekly, and "every Friday" is not "every N days"', () => {
+  assert.equal(O.parseHire('writes release notes every Friday').heartbeatMin, 10080);
+  assert.equal(O.parseHire('checks dependencies on Mondays').heartbeatMin, 10080);
+  assert.equal(O.parseHire('every fifteen minutes check the queue').heartbeatMin, 15);
+  assert.equal(O.parseHire('every day at 9 summarize').heartbeatMin, 1440);
+});

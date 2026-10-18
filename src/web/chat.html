@@ -426,6 +426,24 @@
   .tk-col { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px; min-height: 120px; display: flex; flex-direction: column; gap: 8px; }
   .tk-head { display: flex; justify-content: space-between; font-weight: 600; font-size: 13px; padding: 2px 4px 6px; }
   .tk-card { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  /* Agent gallery (Little Agent Club): every agent as a character card. */
+  .gal-tabs { display: flex; gap: 6px; margin: 4px 0 14px; }
+  .gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .gal-card { background: var(--bg); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .gal-face { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 18px; color: #fff; }
+  .gal-top { display: flex; gap: 10px; align-items: center; }
+  .gal-state { font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--line); }
+  .gal-state.live { background: rgba(52,211,153,.18); color: #34D399; }
+  .gal-acts { display: flex; gap: 6px; margin-top: auto; }
+  .gal-acts .on { border-color: #F5A524; color: #F5A524; }
+  /* Mission map: the goal tree of tasks and who owns each. */
+  .mm-tree, .mm-tree ul { list-style: none; margin: 0; padding-left: 22px; position: relative; }
+  .mm-tree { padding-left: 0; }
+  .mm-tree ul::before { content: ''; position: absolute; left: 8px; top: 0; bottom: 12px; border-left: 1px solid var(--line); }
+  .mm-tree li { position: relative; margin: 6px 0; }
+  .mm-tree ul > li::before { content: ''; position: absolute; left: -14px; top: 15px; width: 12px; border-top: 1px solid var(--line); }
+  .mm-node { display: inline-flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+  .mm-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   .tk-card b { font-weight: 600; font-size: 13.5px; line-height: 1.35; }
   .tk-desc { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
   .tk-meta { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -577,6 +595,8 @@
         <button data-view="flows"><span data-i="flow"></span><span class="grow">Automations</span></button>
         <button data-view="tasks"><span data-i="list"></span><span class="grow">Task board</span></button>
         <button data-view="office"><span data-i="office"></span><span class="grow">Office</span><span class="office-count" id="office-count" hidden></span></button>
+        <button data-view="gallery"><span data-i="office"></span><span class="grow">Agents</span></button>
+        <button data-view="mission"><span data-i="list"></span><span class="grow">Mission map</span></button>
       </div>
       <label class="search"><span data-i="search"></span><input id="q" placeholder="Search sessions…" aria-label="Search sessions"><span class="kbd">⌘K</span></label>
     </div>
@@ -700,6 +720,8 @@
     <section class="view" id="v-bots"><div class="page"><div class="page-inner" style="max-width:1100px" id="bots"></div></div></section>
     <section class="view" id="v-flows"><div class="page"><div class="page-inner" id="flows"></div></div></section>
     <section class="view" id="v-tasks"><div class="page"><div class="page-inner wide" id="tasks"></div></div></section>
+    <section class="view" id="v-gallery"><div class="page"><div class="page-inner wide" id="gallery"></div></div></section>
+    <section class="view" id="v-mission"><div class="page"><div class="page-inner wide" id="mission"></div></div></section>
     <section class="view" id="v-sched"><div class="page"><div class="page-inner" id="sched"></div></div></section>
   </main>
   <div class="sizer" id="sizer-pane" role="separator" aria-orientation="vertical" aria-label="Resize the side panel" tabindex="0" title="Drag to resize · double-click to reset" hidden></div>
@@ -902,7 +924,7 @@
     view = v;
     document.querySelectorAll('.view').forEach((el) => el.classList.toggle('on', el.id === `v-${v}`));
     document.querySelectorAll('.nav [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
-    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : v === 'flows' ? 'Automations' : v === 'tasks' ? 'Task board' : (readonly ? readonly.title : convo()?.title || 'New session');
+    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : v === 'flows' ? 'Automations' : v === 'tasks' ? 'Task board' : v === 'gallery' ? 'Agents' : v === 'mission' ? 'Mission map' : (readonly ? readonly.title : convo()?.title || 'New session');
     document.body.classList.remove('nav');
     if (v === 'caps') loadCaps();
     if (v === 'msg') loadMessaging();
@@ -913,6 +935,8 @@
     if (v === 'office') pollOffice();
     if (v === 'flows') loadFlows();
     if (v === 'tasks') loadTasks();
+    if (v === 'gallery') loadGallery();
+    if (v === 'mission') loadMission();
     if (v === 'map') loadMap();
     renderLists();
   }
@@ -2515,6 +2539,70 @@ files: [src/billing/**]
     ['Done', (t) => t.status === 'done' || t.status === 'cancelled'],
   ];
   let tasksTimer = null;
+  // ---------- Agents: a gallery of character cards (Little Agent Club)
+  let galTab = 'all';
+  async function loadGallery() {
+    const el = $('gallery');
+    const [org, live, tools] = await Promise.all([getJson('/ox/org').catch(() => ({ agents: [] })), getJson('/ox/agents').catch(() => ({ sessions: [] })), getJson('/ox/connected').catch(() => ({ tools: [] }))]);
+    const fav = new Set(store.get('ox.gal.fav', [])), use = new Set(store.get('ox.gal.use', []));
+    const hue = (s) => [...String(s)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 360, 7);
+    const cards = [
+      ...(org.agents || []).map((a) => ({ id: `org:${a.id}`, name: a.name, what: `${a.title}${a.role && a.role !== a.title ? ` · ${a.role}` : ''}`, price: a.budget != null ? `$${Number(a.spent || 0).toFixed(2)} of $${a.budget}/mo` : 'no budget set', runs: a.runtime, state: a.status, live: a.status === 'active', kind: 'Your company' })),
+      ...(live.sessions || []).map((x) => ({ id: `live:${x.id}`, name: x.project, what: x.doing || `${x.tool} session`, price: x.model || x.tool, runs: x.tool, state: x.state === 'idle' ? 'idle' : 'working', live: x.state !== 'idle', kind: 'Running now' })),
+      ...(tools.tools || []).map((t) => ({ id: `tool:${t.id}`, name: t.name, what: t.via ? `via ${t.via}` : 'agent tool', price: t.plan || (t.state === 'ready' ? 'ready' : t.state), runs: t.id, state: t.state, live: t.state === 'ready', kind: 'On this Mac' })),
+    ];
+    const shown = cards.filter((c) => galTab === 'all' || (galTab === 'fav' ? fav.has(c.id) : use.has(c.id)));
+    el.innerHTML = `<div class="shead">${icon('office')}Agents</div>
+      <p class="sdesc">Every agent you have, as a card: your company's agents, the sessions running now in any tool, and the agent tools on this Mac. Star the ones you like; mark the ones you use.</p>
+      <div class="box tk-new"><input class="field" id="gal-hire" placeholder="Hire in a sentence: someone who reviews my pull requests every morning, $15 a month" style="flex:1"><button class="btn primary" id="gal-hire-go">Draft</button></div>
+      <div id="gal-draft"></div>
+      <div class="gal-tabs">${[['all', `All ${cards.length}`], ['fav', `Favorites ${cards.filter((c) => fav.has(c.id)).length}`], ['use', `I use this ${cards.filter((c) => use.has(c.id)).length}`]].map(([k, l]) => `<button class="btn ${galTab === k ? 'primary' : 'ghost'} small" data-galtab="${k}">${l}</button>`).join('')}</div>
+      <div class="gal-grid">${shown.map((c) => `<div class="gal-card"><div class="gal-top"><div class="gal-face" style="background:hsl(${hue(c.name)} 55% 45%)">${esc(c.name.slice(0, 1).toUpperCase())}</div>
+        <div style="min-width:0"><b>${esc(c.name)}</b><div class="dim small">${esc(c.kind)}</div></div></div>
+        <div class="small">${esc(c.what)}</div>
+        <div class="dim small">${esc(c.price || '')}${c.runs ? ` · ${esc(c.runs)}` : ''} <span class="gal-state ${c.live ? 'live' : ''}">${esc(c.state || '')}</span></div>
+        <div class="gal-acts"><button class="btn ghost small ${fav.has(c.id) ? 'on' : ''}" data-galfav="${esc(c.id)}">★ Favorite</button><button class="btn ghost small ${use.has(c.id) ? 'on' : ''}" data-galuse="${esc(c.id)}">I use this</button></div></div>`).join('') || '<div class="dim small">Nothing here yet.</div>'}</div>`;
+    el.querySelectorAll('[data-galtab]').forEach((b) => (b.onclick = () => { galTab = b.dataset.galtab; loadGallery(); }));
+    const flip = (key, set, id) => { set.has(id) ? set.delete(id) : set.add(id); store.set(key, [...set]); loadGallery(); };
+    el.querySelectorAll('[data-galfav]').forEach((b) => (b.onclick = () => flip('ox.gal.fav', fav, b.dataset.galfav)));
+    el.querySelectorAll('[data-galuse]').forEach((b) => (b.onclick = () => flip('ox.gal.use', use, b.dataset.galuse)));
+    $('gal-hire-go').onclick = async () => {
+      const sentence = $('gal-hire').value.trim();
+      if (!sentence) return;
+      $('gal-draft').innerHTML = '<div class="dim small">Drafting…</div>';
+      try {
+        const { draft } = await postJson('/ox/org/hire', { sentence });
+        $('gal-draft').innerHTML = `<div class="box"><b>${esc(draft.name)}</b> · ${esc(draft.title)}<div class="dim small">${esc(draft.runtime || 'ox')}${draft.heartbeatMin ? ` · every ${draft.heartbeatMin} min` : ''}${draft.budgetUsd != null ? ` · $${draft.budgetUsd}/month` : ''} · may ${esc(draft.approval || 'edit')}</div><div class="small" style="white-space:pre-wrap;margin:6px 0">${esc(draft.instructions)}</div><button class="btn primary small" id="gal-hire-ok">Hire</button></div>`;
+        $('gal-hire-ok').onclick = async () => { await postJson('/ox/org/hire', { sentence, draft, confirm: true }); toast(`${draft.name} hired`); loadGallery(); };
+      } catch (e) { $('gal-draft').innerHTML = `<div class="dim small">${esc(e.message)}</div>`; }
+    };
+  }
+
+  // ---------- Mission map: the goal tree of tasks and agents
+  async function loadMission() {
+    const el = $('mission');
+    let T;
+    try { T = await getJson('/ox/tasks'); } catch (e) { el.innerHTML = `<div class="empty-note">${esc(e.message)}</div>`; return; }
+    const byId = Object.fromEntries(T.tasks.map((t) => [t.id, t]));
+    const kids = {};
+    for (const t of T.tasks) { const p = t.parentId && byId[t.parentId] ? t.parentId : '_root'; (kids[p] ||= []).push(t); }
+    const color = { done: '#34D399', running: '#3B9EFF', in_review: '#A78BFA', blocked: '#F5A524', failed: '#F4505E', pending: '#9CA3AF', cancelled: '#6B7280' };
+    const node = (t) => {
+      const waits = (t.blockedBy || []).filter((b) => byId[b]?.status !== 'done').map((b) => byId[b]?.title || b);
+      const ch = kids[t.id] || [];
+      const done = ch.filter((c) => c.status === 'done').length;
+      return `<li><span class="mm-node"><span class="mm-dot" style="background:${color[t.status] || '#9CA3AF'}"></span><b>${esc(t.title)}</b>
+        ${t.owner || t.assignee ? `<span class="tk-tag live">${esc(t.owner || t.assignee)}</span>` : ''}
+        ${ch.length ? `<span class="dim small">${done}/${ch.length}</span>` : ''}${waits.length ? `<span class="tk-tag warn">waits for ${waits.map(esc).join(', ')}</span>` : ''}
+        ${t.pr ? `<a class="tk-tag" href="${esc(t.pr)}" target="_blank">PR</a>` : ''}</span>${ch.length ? `<ul>${ch.map(node).join('')}</ul>` : ''}</li>`;
+    };
+    const roots = kids._root || [];
+    el.innerHTML = `<div class="shead">${icon('list')}Mission map</div>
+      <p class="sdesc">Your goals as a tree: each task under the goal it serves, who owns it, how many of its parts are done, what it waits for, and its pull request. Add parts on the Task board (a task with a parent).</p>
+      <div class="box">${roots.length ? `<ul class="mm-tree">${roots.map(node).join('')}</ul>` : '<div class="dim small">No tasks yet. Add one on the Task board.</div>'}</div>
+      <div class="dim small" style="margin-top:10px">${Object.entries(color).map(([k, c]) => `<span style="margin-right:12px"><span class="mm-dot" style="display:inline-block;background:${c}"></span> ${k.replace('_', ' ')}</span>`).join('')}</div>`;
+  }
+
   async function loadTasks() {
     const el = $('tasks');
     let T;

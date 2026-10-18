@@ -238,10 +238,10 @@ export function parseHire(sentence) {
   const name = /(?:called|named)\s+["“']?([A-Z][\w-]{1,30}(?:\s[A-Z][\w-]{1,30})?)["”']?/.exec(s) ?? /["“]([^"”]{2,30})["”]/.exec(s);
   if (name) out.name = name[1].trim();
   let m;
-  if ((m = /every\s+(\d+|\w+)\s*(minutes?|mins?|hours?|hrs?|days?)/i.exec(low))) out.heartbeatMin = num(m[1]) * (/^h/.test(m[2]) ? 60 : /^d/.test(m[2]) ? 1440 : 1);
+  if ((m = /every\s+(\d+|one|two|three|four|five|six|ten|fifteen|twenty|thirty)\s*(minutes?|mins?|hours?|hrs?|days?)\b/i.exec(low))) out.heartbeatMin = num(m[1]) * (/^h/.test(m[2]) ? 60 : /^d/.test(m[2]) ? 1440 : 1);
   else if (/\bhourly\b|every hour/.test(low)) out.heartbeatMin = 60;
   else if (/\bdaily\b|every (day|morning|evening|night)|each (day|morning)/.test(low)) out.heartbeatMin = 1440;
-  else if (/\bweekly\b|every week/.test(low)) out.heartbeatMin = 10080;
+  else if (/\bweekly\b|every week|(every|each|on) (monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?\b|\b(mondays|tuesdays|wednesdays|thursdays|fridays|saturdays|sundays)\b/.test(low)) out.heartbeatMin = 10080;
   if ((m = /\$\s?(\d+(?:\.\d+)?)\s*(?:a|per|\/)?\s*(?:month|mo)?/.exec(s)) || (m = /budget (?:of )?(\d+(?:\.\d+)?)/i.exec(s))) out.budgetUsd = Number(m[1]);
   if (/\b(claude code|on claude|with claude|using claude)\b/.test(low)) out.runtime = 'claude-plan';
   else if (/\b(codex|chatgpt)\b/.test(low)) out.runtime = 'chatgpt-plan';
