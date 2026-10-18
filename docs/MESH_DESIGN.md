@@ -130,6 +130,58 @@ Same network: found automatically. Elsewhere: the owner's VPN (Tailscale,
 WireGuard) gives each machine an address; `--at` uses it. A relay is not part
 of this version (nothing of the owner's passes through anyone else).
 
+## Version 2: one person, every machine under their hand (October 18)
+
+The owner's goal, in their words: install ox on every laptop, pair them, name
+them, and from any one of them control all of them, including terminals and
+everything else, while each machine keeps its own files, keys and models.
+Overload and credits are watched; nothing happens without the owner's say.
+
+### The layers
+
+| Layer | What it does | State |
+|---|---|---|
+| 1. Trust | Ed25519 identity per machine, one-time code pairing, keys pinned | ✓ built (v1) |
+| 2. Channel | One sealed connection per pair (X25519 + AES-GCM), many requests and live streams over it at once (each has an id); a stream carries input, output, resize and close | v2: streams added |
+| 3. Grants | Set on the machine that gives, per paired machine: `status` (on), `infer`, `tasks`, `terminal`, `files` (+ folders), `agents`, `control`, `screen`. Presets: `viewer` = status · `helper` = status + infer + tasks · `full` = everything | v2: four grants and presets added |
+| 4. Services | What each node answers (below) | v2 |
+| 5. Controller | The same verbs everywhere: `ox mesh <verb> <machine> …`, the chat tool `mesh` (ox itself works across machines), the island (machines and alerts), the app's Machines page | v2 |
+| 6. Watch | Heartbeats, φ liveness, overload and credit alerts with choices; picking another machine's model switches to it | ✓ built (v1) |
+| 7. Safety | Every remote action is written to the giving machine's `~/.ox/mesh/audit.jsonl`; terminal, control and screen sessions notify its owner when they start; `ox mesh lockdown` drops every grant at once; a machine you forget can no longer connect | v2 |
+
+### The services (on every node, each behind its grant)
+
+| Grant | Service | What the controller gets |
+|---|---|---|
+| status | `describe` | the machine's makeup: model, chip, cores, memory, GPU, disks, OS, which agent tools are installed (Claude Code, Codex, Gemini, Cursor, Copilot, Hermes, OpenCode, Ollama), local models, which providers it has keys for (names only), ox version, uptime |
+| status | `stats` | live health (load, memory, heat, battery, disk, models, plans) |
+| infer | `infer` | model calls on its models or keys (`mesh:<machine>/<model>`) |
+| tasks | `run` | an ox task in a folder there, under that machine's approvals |
+| terminal | `exec` | one command, its output streamed, its exit code |
+| terminal | `shell` | a live interactive terminal (a real pseudo-terminal there), typed into from here |
+| files | `ls`, `pull`, `push` | browse, copy from, copy to: only inside the folders that machine allows (default: its home) |
+| agents | `agents`, `agent-read`, `agent-send` | the agent sessions running there (any tool), read one, message one |
+| control | `open`, `notify`, `type`, `key` | open an app / URL / file, show a notification, type text, press a key |
+| screen | `screenshot` | what its screen shows now |
+
+### How it looks
+
+- **Terminal:** `ox mesh machines` lists them with health; `ox mesh shell
+  "Gaming laptop"` is a terminal on that laptop; `ox mesh exec studio -- npm
+  test` runs one command there; `ox mesh pull studio:~/report.pdf .`.
+- **Chat:** "run the tests on the gaming laptop", "what is the studio Mac
+  doing?", "copy the build from studio": ox calls its `mesh` tool (each call
+  approval-gated like a local command).
+- **Island:** a machine pill per laptop with its health; an alert card with the
+  choices; a note when another machine opens a terminal on this one.
+- **App:** a Machines page: add a machine (code), grants as switches, health,
+  alerts, a terminal per machine.
+
+### Across networks
+
+Same Wi-Fi: found by the beacon. Elsewhere: the owner's own VPN (Tailscale,
+WireGuard) and `--at <address>`; no relay of ours. A relay is a later step.
+
 ## Build order and what is checked (October 18)
 
 | # | Piece | State | Checked how |
