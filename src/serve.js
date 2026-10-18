@@ -542,6 +542,37 @@ export function finalText(event, alreadyHave) {
   return '';
 }
 
+/**
+ * An interactive answer that does not load cleanly gets one more try: the
+ * engine's own errors go back to the model, which answers with the corrected
+ * block. Returns the mended answer (prose kept, block swapped) or null when the
+ * first one was fine or the retry was no better. A small local model draws far
+ * more often with one round of its own errors than without.
+ */
+export async function repairLiveUi({ text, target, messages, ctx, config, run = runAgent, usage = null }) {
+  const first = UI_LANG.checkUi(text);
+  if (first.ok) return null;
+  const errs = first.errors.slice(0, 6).map((e) => `line ${e.line}: ${e.msg}`).join('\n');
+  const ask = first.blocks
+    ? `That \`\`\`openui block did not load:\n${errs || first.why}\nReply with only the corrected \`\`\`openui block: every line \`name = Expression\`, positional arguments, ending with \`root = …\`.`
+    : 'Draw that as an ```openui block, as described in your instructions. Reply with only the block.';
+  let fixed = '';
+  try {
+    for await (const ev of run({ target, messages: [...messages, { role: 'assistant', content: text }, { role: 'user', content: ask }], ctx: { ...ctx, noTools: true, onlyTools: undefined, allowedTools: undefined }, config, maxIterations: 1 })) {
+      fixed += textDelta(ev) || finalText(ev, fixed);
+      if (ev.type === 'usage' && usage) tallyUsage(usage, ev);
+    }
+  } catch { return null; }
+  const second = UI_LANG.checkUi(fixed);
+  const better = second.ok || (second.root && (!first.root || second.errors.length < first.errors.length));
+  if (!better) return null;
+  const block = `\`\`\`openui\n${UI_LANG.uiBlocks(fixed).join('\n').trim()}\n\`\`\``;
+  const re = /(?<=^|\n)[ \t]*```[ \t]*(openui|open-ui|openui-lang|ox-?canvas)[^\n]*\n[\s\S]*?(?:```|$)/gi;
+  if (!first.blocks) return `${text.trim()}\n\n${block}`;
+  let placed = false;
+  return text.replace(re, () => (placed ? '' : ((placed = true), block))).replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function agentErrorShape(message) {
   // A missing provider key is an authentication failure, not a bug; a 500 would
   // send the caller looking in the wrong place.
@@ -565,19 +596,38 @@ const WANTS_UI = /\b(calculat\w*|convert\w*|compar\w*|table|chart|graph|plot|sli
 // OpenUI Lang (thesysdev/openui), the way OpenUI does it: the prompt is built
 // from the component library itself, so what the model is told and what the
 // page can draw never drift apart.
+// The interactive-answer guide. Small models copy what they see, so it shows
+// complete, correct programs (each checked by the parser in a test) and plain
+// rules, never the grammar's placeholders: `name = Expression` written as
+// grammar came back as code ("$name = Expression"), and 0 of 10 answers drew
+// on qwen2.5:3b (bench/openui).
 export const LIVE_UI_GUIDE = [
   'This chat draws interface with OpenUI Lang. When a calculator, form, table, comparison, dashboard, step list, chart or set of next choices answers better than prose, write it in a block fenced with ```openui on its own line. Keep prose short, outside the block.',
-  UI_LANG.languageSpec().replace(/^Write OX Canvas:/, 'OpenUI Lang:').split('\n').filter((l) => !l.startsWith('Edit an existing canvas')).join('\n'),
+  'Rules: one statement per line, `something = value`. The last line is `root = ...`. State the user can change is `$name = default` (always give the default). Arguments are positional: write Input("Amount", $amount, "number"), never type="number". Strings in double quotes. A negative number is 0 - x. Use only the components and @functions listed; no other words.',
   `Components: ${Object.keys(UI_LANG.LIBRARY).map(UI_LANG.signature).join(' ')}`,
-  'Example:',
+  'Functions: @Pow(b, e) @Sqrt(x) @Abs(x) @Round(n, digits) @Format(n, "currency") @Format(n, "percent") @Sum(list) @Avg(list) @Min(list) @Max(list) @Count(list) @Clamp(n, lo, hi) @Range(0, n) @Each(rows, "r", Text(r.name)). Buttons: Button("Label", @Set($v, 1)).',
+  'Example, a calculator:',
   '```openui',
-  '$P = 300000',
+  '$amount = 300000',
   '$rate = 6',
-  '$n = 360',
+  '$years = 30',
   'r = $rate / 1200',
-  'pay = $P * r / (1 - @Pow(1 + r, 0 - $n))',
-  'root = Card("Loan payments", [Row([Input("Loan amount", $P, "number"), Slider("Interest % a year", $rate, 0, 20, 0.1), Input("Months", $n, "number")]), Row([Stat("Monthly payment", @Round(pay, 2), null, "USD"), Stat("Total interest", @Round(pay * $n - $P, 0), null, "USD")]), Buttons([Button("Compare two loans", @ToAssistant("Compare two loans side by side"))])])',
+  'n = $years * 12',
+  'pay = $amount * r / (1 - @Pow(1 + r, 0 - n))',
+  'root = Card("Loan payment", [Input("Loan amount", $amount, "number"), Slider("Interest % a year", $rate, 0, 20, 0.1), Slider("Years", $years, 1, 40, 1), Stat("Monthly payment", @Format(pay, "currency"))])',
   '```',
+  'Example, a chart:',
+  '```openui',
+  'labels = ["India", "China", "USA"]',
+  'values = [1441, 1425, 340]',
+  'root = Card("Population, millions", [Chart("bar", labels, values, "Population")])',
+  '```',
+  'Example, a table and a checkbox:',
+  '```openui',
+  '$bought = false',
+  'root = Card("Phones", [Table([Col("Phone", ["iPhone", "Pixel"]), Col("Price", [999, 799])]), Checkbox("Bought one", $bought)])',
+  '```',
+  'Write one block like these, filled with what the user asked for, then at most one short sentence.',
   'Every $var a line reads must be declared. Use 0 - x for a negative number. For anything the components cannot show, a block fenced with ```html-live holds one self-contained HTML snippet (inline style and script, no network).',
 ].join('\n');
 
@@ -667,8 +717,13 @@ async function handleChatCompletions(req, res) {
   const wantsUi = WANTS_UI.test(said) || s1?.kind === 'interactive';
   const needsWeb = NEEDS_WEB.test(said) || s1?.kind === 'current';
   const by = s1 ? ` (System 1, ${s1.ms} ms)` : '';
-  if (turnMode.routed && turnMode.mode !== 'ask' && body.ox_ui === 'live'
-    && wantsUi && !TOUCHES_CODE.test(said)) {
+  // Choosing "Interactive answer" (ox_canvas) means exactly that: an answer to
+  // use here, drawn, with no tools to wander off with (a 3B model offered tools
+  // made to-do lists instead of drawing).
+  // (An "ask" guess counts too: "Compare iPhone, Pixel and Galaxy in a table"
+  // was guessed ask, kept every tool, and the model stopped at an approval.)
+  if ((turnMode.routed || tool.canvas) && !turnMode.answerOnly && body.ox_ui === 'live'
+    && (wantsUi || tool.canvas) && !TOUCHES_CODE.test(said)) {
     turnMode = { mode: 'ask', routed: true, reason: 'an answer to use here, not a change to your files', answerOnly: true };
   }
   // A model under 1B parameters cannot write an interactive answer (SmolLM2-135M
@@ -737,7 +792,9 @@ async function handleChatCompletions(req, res) {
     ...(agentDef || liveUi || howTo ? { personaBlock: [agentDef ? agentPersonaBlock(agentDef) : '', liveUi, howTo].filter(Boolean).join('\n\n') } : {}),
     ...(agentDef ? { agentName: agentDef.name } : {}),
     ...(Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools }
-      : turnMode.answerOnly ? (tool.web || tool.research || needsWeb || /youtube\.com|youtu\.be/i.test(lastText) ? { onlyTools: ['web_search', 'web_fetch', 'youtube_transcript'] } : { noTools: true })
+      // A drawn answer searches only when web search is switched on: "price" in
+      // "compare phones in a table" sent a 3B model off to the YouTube tool.
+      : turnMode.answerOnly ? (tool.web || tool.research || (needsWeb && !liveUi) || /youtube\.com|youtu\.be/i.test(lastText) ? { onlyTools: /youtube\.com|youtu\.be/i.test(lastText) ? ['web_search', 'web_fetch', 'youtube_transcript'] : ['web_search', 'web_fetch'] } : { noTools: true })
       // A question about the project in ask mode: only the four readers.
       : turnMode.mode === 'ask' && TOUCHES_CODE.test(lastText) && !NEEDS_TOOLS.test(lastText) ? { onlyTools: ['read_file', 'list_dir', 'glob', 'grep'] }
       : {}),
@@ -811,6 +868,10 @@ async function handleChatCompletions(req, res) {
           sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: oxToolEvent(event) });
         }
       }
+      if (route === 'ui' && fullContent) {
+        const mended = await repairLiveUi({ text: fullContent, target, messages, ctx, config, usage: totalUsage });
+        if (mended) { fullContent = mended; sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'replace', content: mended, why: 'the first drawing did not load, so it was redrawn' } }); }
+      }
       sendSSE(res, createChatCompletionChunk(targetModel, '', true, totalUsage));
       sendSSEDone(res);
       res.end();
@@ -826,16 +887,23 @@ async function handleChatCompletions(req, res) {
     const totalUsage = usageTally();
 
     try {
+      let runError = null;
       for await (const event of runAgent({ target, messages, ctx, config, maxIterations: 40 })) {
         const last = textDelta(event) || finalText(event, fullContent);
         if (last) {
           fullContent += last;
         } else if (event.type === 'usage') {
           tallyUsage(totalUsage, event);
+        } else if (event.type === 'error') {
+          runError = String(event.error);
         }
       }
+      if (liveUi && turnMode.answerOnly && fullContent) fullContent = (await repairLiveUi({ text: fullContent, target, messages, ctx, config, usage: totalUsage })) ?? fullContent;
       board.endRun(runId);
-      sendJson(res, 200, createChatCompletionResponse(targetModel, fullContent, totalUsage));
+      // The lenient contract stays (200, empty content, see the surface test),
+      // but a run that stopped (rate limit, missing key) says why in an extra
+      // field OpenAI clients ignore.
+      sendJson(res, 200, { ...createChatCompletionResponse(targetModel, fullContent, totalUsage), ...(!fullContent && runError ? { ox_error: runError } : {}) });
     } catch (error) {
       board.endRun(runId, { failed: true });
       const shape = agentErrorShape(error.message);

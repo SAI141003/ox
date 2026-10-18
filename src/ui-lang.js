@@ -92,8 +92,14 @@ const BUILTINS = {
   Format: (n, kind = 'number', digits = null, currency = 'USD') => {
     const v = Number(n);
     if (!Number.isFinite(v)) return '';
-    const d = digits == null ? undefined : Number(digits);
-    if (kind === 'currency') return v.toLocaleString('en-US', { style: 'currency', currency: String(currency || 'USD'), maximumFractionDigits: d ?? 2, minimumFractionDigits: d ?? (Math.abs(v) >= 1000 ? 0 : 2) });
+    // Digits clamped to what Intl accepts; an unknown currency code falls back
+    // to USD instead of throwing (models write "$" or "dollars").
+    const d = digits == null || !Number.isFinite(Number(digits)) ? undefined : Math.max(0, Math.min(20, Math.round(Number(digits))));
+    const cur = /^[A-Za-z]{3}$/.test(String(currency)) ? String(currency).toUpperCase() : 'USD';
+    if (kind === 'currency') {
+      try { return v.toLocaleString('en-US', { style: 'currency', currency: cur, maximumFractionDigits: d ?? 2, minimumFractionDigits: d ?? (Math.abs(v) >= 1000 ? 0 : 2) }); }
+      catch { return v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: d ?? 2, minimumFractionDigits: d ?? (Math.abs(v) >= 1000 ? 0 : 2) }); }
+    }
     if (kind === 'percent') return `${v.toLocaleString('en-US', { maximumFractionDigits: d ?? 1 })}%`;
     if (kind === 'compact') return v.toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: d ?? 1 });
     return v.toLocaleString('en-US', { maximumFractionDigits: d ?? 2 });
@@ -111,6 +117,13 @@ const BUILTINS = {
   Upper: (t) => String(t ?? '').toUpperCase(),
   Today: () => new Date().toISOString().slice(0, 10),
   Sqrt: (n) => Math.sqrt(Number(n)),
+  // Names models reach for; the operators do the same.
+  Divide: (a, b) => Number(a) / Number(b),
+  Multiply: (a, b) => Number(a) * Number(b),
+  Add: (a, b) => Number(a) + Number(b),
+  Subtract: (a, b) => Number(a) - Number(b),
+  IndexOf: (a, v) => (Array.isArray(a) ? a.indexOf(v) : String(a ?? '').indexOf(String(v))),
+  Concat: (...xs) => xs.map((x) => String(x ?? '')).join(''),
   Floor: (n) => Math.floor(Number(n)),
   Ceil: (n) => Math.ceil(Number(n)),
   Join: (a, sep = ', ') => (Array.isArray(a) ? a.join(sep) : String(a ?? '')),
@@ -178,8 +191,8 @@ function tokenize(src) {
       const w = m[0];
       if (w[0] === '$') out.push({ t: 'state', v: w.slice(1) });
       else if (w[0] === '@') out.push({ t: 'builtin', v: w.slice(1) });
-      else if (w === 'true' || w === 'false') out.push({ t: 'bool', v: w === 'true' });
-      else if (w === 'null') out.push({ t: 'null', v: null });
+      else if (/^(true|false)$/i.test(w)) out.push({ t: 'bool', v: w.toLowerCase() === 'true' });
+      else if (w === 'null' || w === 'None') out.push({ t: 'null', v: null });
       else out.push({ t: 'id', v: w });
       i += w.length;
       continue;
@@ -196,7 +209,35 @@ function tokenize(src) {
 
 const BIN_PREC = { '||': 1, '&&': 2, '==': 3, '!=': 3, '>': 4, '<': 4, '>=': 4, '<=': 4, '+': 5, '-': 5, '*': 6, '/': 6, '%': 6 };
 
+const CLOSE = { '(': ')', '[': ']', '{': '}' };
+
+/**
+ * Mend brackets the way a reader would: a closer for something opened further
+ * out closes the inner ones first, a closer nothing opened is dropped, and
+ * whatever is still open at the end is closed.
+ */
+export function mendBrackets(tokens) {
+  const out = [];
+  const open = [];
+  for (const tk of tokens) {
+    if (tk.t === 'p' && CLOSE[tk.v]) { open.push(tk.v); out.push(tk); continue; }
+    if (tk.t === 'p' && Object.values(CLOSE).includes(tk.v)) {
+      const at = open.map((o) => CLOSE[o]).lastIndexOf(tk.v);
+      if (at < 0) continue;
+      // Card("T", [a, b)) → the ) closes the list first; the spare ) is then dropped.
+      while (open.length - 1 > at) out.push({ t: 'p', v: CLOSE[open.pop()] });
+      open.pop();
+      out.push(tk);
+      continue;
+    }
+    out.push(tk);
+  }
+  while (open.length) out.push({ t: 'p', v: CLOSE[open.pop()] });
+  return out;
+}
+
 function parseExpr(tokens) {
+  tokens = mendBrackets(tokens);
   let i = 0;
   const peek = () => tokens[i];
   const isP = (v) => peek()?.t === 'p' && peek().v === v;
@@ -204,11 +245,20 @@ function parseExpr(tokens) {
     if (!isP(v)) throw new SyntaxError(`expected '${v}'${peek() ? ` near '${peek().v}'` : ' before end of line'}`);
     i++;
   };
-  function list(close) {
+  function list(close, named = false) {
     const items = [];
     while (!isP(close)) {
-      items.push(expr(0));
+      // Slider(label="Rate", min=0) / Card(title: "T"): named arguments, as
+      // models often write them; placed into position by placeNamed().
+      const nx = tokens[i + 1];
+      if (named && peek()?.t === 'id' && nx?.t === 'p' && (nx.v === '=' || nx.v === ':')) {
+        const name = peek().v;
+        i += 2;
+        items.push({ k: 'named', name, x: expr(0) });
+      } else items.push(expr(0));
       if (isP(',')) i++;
+      // [Text("a") Text("b")]: a missing comma between two items.
+      else if (peek() && peek().t !== 'p' || isP('[') || isP('{')) continue;
       else break;
     }
     expect(close);
@@ -219,9 +269,9 @@ function parseExpr(tokens) {
     if (!tk) throw new SyntaxError('unexpected end of expression');
     if (tk.t === 'str' || tk.t === 'num' || tk.t === 'bool' || tk.t === 'null') return { k: 'lit', v: tk.v };
     if (tk.t === 'state') return { k: 'state', name: tk.v };
-    if (tk.t === 'builtin') { expect('('); return { k: 'builtin', name: tk.v, args: list(')') }; }
+    if (tk.t === 'builtin') { expect('('); return { k: 'builtin', name: tk.v, args: list(')', true).map((a) => (a.k === 'named' ? a.x : a)) }; }
     if (tk.t === 'id') {
-      if (isP('(')) { i++; return { k: 'call', name: tk.v, args: list(')') }; }
+      if (isP('(')) { i++; return { k: 'call', name: tk.v, args: placeNamed(tk.v, list(')', true)) }; }
       return { k: 'ref', name: tk.v };
     }
     if (tk.t === 'p' && tk.v === '[') return { k: 'arr', items: list(']') };
@@ -280,6 +330,29 @@ function parseExpr(tokens) {
   const node = expr(0);
   if (i < tokens.length) throw new SyntaxError(`unexpected '${tokens[i].v}'`);
   return node;
+}
+
+// Other names models use for a parameter.
+const PARAM_ALIAS = { text: ['label', 'title', 'content', 'value'], label: ['text', 'title', 'name'], title: ['text', 'label', 'heading'], children: ['items', 'content', 'children', 'nodes', 'columns'], values: ['data', 'value'], labels: ['categories', 'keys'], columns: ['cols', 'children'], options: ['items', 'choices'], value: ['default', 'initial', 'bind', 'state'], step: ['increment'] };
+
+/** Put named arguments where the component's signature expects them. */
+function placeNamed(name, args) {
+  if (!args.some((a) => a.k === 'named')) return args;
+  const params = (LIBRARY[name === 'Col' && args[0]?.k === 'arr' ? 'Column' : name]?.params ?? []).map(([p]) => p);
+  const out = [];
+  const loose = [];
+  args.forEach((a, i) => {
+    if (a.k !== 'named') { out[i] = a; return; }
+    let at = params.indexOf(a.name);
+    if (at < 0) at = params.findIndex((p) => (PARAM_ALIAS[p] ?? []).includes(a.name) && out[params.indexOf(p)] === undefined);
+    if (at >= 0 && out[at] === undefined) out[at] = a.x;
+    else loose.push(a.x);
+  });
+  // A name the component does not have (Row(…, gap="medium")) is left out,
+  // unless the component has no signature to check it against.
+  if (!params.length) for (const x of loose) { let k = 0; while (out[k] !== undefined) k++; out[k] = x; }
+  for (let k = 0; k < out.length; k++) if (out[k] === undefined) out[k] = { k: 'lit', v: null };
+  return out;
 }
 
 /** Strip ``` fences and split source into statements, joining lines while brackets are open. */
@@ -519,7 +592,11 @@ export function evaluate(program, env = {}) {
           err(id, 'builtin', `unknown @${n.name}${near ? ` (use @${near})` : ''}`);
           return null;
         }
-        return fn(...n.args.map((a) => value(a, id)));
+        // A built-in that throws on odd arguments drops this value, with the
+        // reason, instead of taking the whole answer down (OpenUI: bad lines
+        // are dropped, the rest renders).
+        try { return fn(...n.args.map((a) => value(a, id))); }
+        catch (e) { err(id, 'builtin', `@${n.name}: ${String(e?.message ?? e).slice(0, 120)}`); return null; }
       }
       case 'call': return call(n, id);
       default: return null;
@@ -584,7 +661,8 @@ export function evaluate(program, env = {}) {
       if (strays.length) n = { ...n, args: kept };
     }
     if (n.args.length > spec.params.length) {
-      err(id, 'arity', `${n.name} takes ${spec.params.length} argument(s): ${signature(n.name)}`);
+      // The extra ones are left out; the component still draws.
+      err(id, 'ignored', `${n.name} takes ${spec.params.length} argument(s): ${signature(n.name)} (the extra ones were left out)`);
     }
     const props = {};
     for (let p = 0; p < spec.params.length; p++) {
@@ -1053,4 +1131,29 @@ export function digest(root) {
   };
   walk(root);
   return Object.entries(counts).map(([k, v]) => (v > 1 ? `${k}×${v}` : k)).join(', ');
+}
+
+/** The ```openui blocks in an answer, as the app takes them out. */
+export function uiBlocks(text) {
+  const out = [];
+  const re = /(?:^|\n)[ \t]*```[ \t]*(openui|open-ui|openui-lang|ox-?canvas)?[^\n]*\n([\s\S]*?)(?:```|$)/gi;
+  let m;
+  while ((m = re.exec(String(text ?? '')))) {
+    const named = !m[1] && /^\s*openui\s*\n/i.exec(m[2]);
+    if (m[1] || named) out.push(named ? m[2].replace(/^\s*openui\s*\n/i, '') : m[2]);
+  }
+  return out;
+}
+
+/**
+ * Does an answer draw? ok: a block, a root, and no line lost ('ignored' notes,
+ * where the component still drew, do not count).
+ */
+export function checkUi(text) {
+  const blocks = uiBlocks(text);
+  if (!blocks.length) return { ok: false, blocks: 0, root: false, errors: [], why: 'no openui block' };
+  const ev = new Canvas().load(blocks.join('\n'));
+  const errors = [...(ev.parseErrors ?? []), ...(ev.errors ?? [])].filter((e) => e.code !== 'ignored');
+  const why = !ev.root ? `nothing to draw (${errors[0]?.msg ?? 'no root'})` : errors.length ? `${errors.length} line(s) dropped: ${errors[0].msg}` : '';
+  return { ok: !!ev.root && !errors.length, blocks: blocks.length, root: !!ev.root, errors, why, tree: ev.root ?? null };
 }

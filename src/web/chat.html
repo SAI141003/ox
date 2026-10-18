@@ -1522,6 +1522,8 @@
           if (ox?.type === 'tool-start' && Array.isArray(ox.plan)) reply.plan = ox.plan;
           else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '' });
           if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; if (ox.canvas) { reply.canvases = (reply.canvases || []).filter((x) => x.id !== ox.id); reply.canvases.push({ id: ox.id, tree: ox.canvas }); } }
+          // The server redrew an interactive answer that did not load.
+          if (ox?.type === 'replace' && typeof ox.content === 'string') reply.content = ox.content;
           const delta = ev.choices?.[0]?.delta?.content;
           if (delta) reply.content += delta;
           if (ev.usage) { reply.tokens = (ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0); $('usage').textContent = `${reply.tokens.toLocaleString()} tokens`; }
