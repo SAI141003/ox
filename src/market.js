@@ -36,6 +36,13 @@ export const FEATURED = Object.freeze([
     description: `Google Agent Development Kit (google/adk-python): ${n.replace(/^adk-/, '').replace(/-/g, ' ')} skill, from the ADK team's own repo`,
   })),
   { kind: 'mcp', name: 'rea', source: 'rea', license: 'MIT', description: 'REA, Reverse Engineer Anything (morluto/rea): understand apps, bundles and binaries with Ghidra/Hopper/Rizin when installed. Lawful use only: your own or authorized software, research, interoperability' },
+  // Google's agents-cli (Apache-2.0, checked Oct 18): its skills for building agents on Google Cloud.
+  ...['scaffold', 'adk-code', 'eval', 'deploy', 'observability', 'publish', 'workflow'].map((n) => ({
+    kind: 'skill', name: `google-agents-cli-${n}`, source: `google/agents-cli#google-agents-cli-${n}`, license: 'Apache-2.0',
+    description: `Google agents-cli: ${n.replace('-', ' ')} skill for agents on Gemini Enterprise Agent Platform (works with ox, Claude Code, Codex)`,
+  })),
+  { kind: 'tool', name: 'strix', source: 'strix-agent', license: 'Apache-2.0', install: 'pipx install strix-agent', run: 'strix --target ./your-app',
+    description: 'Strix (usestrix/strix): AI agents that penetration-test YOUR OWN app and propose fixes. Only on code and sites you own or are authorized to test' },
 ]);
 const RAW = () => process.env.OX_MARKET_RAW_BASE || 'https://raw.githubusercontent.com';
 const API = () => process.env.OX_MARKET_API_BASE || 'https://api.github.com';
@@ -140,6 +147,7 @@ export async function install({ name, catalog, repo, force = false } = {}) {
     return { ok: !!r.ok, message: r.ok ? `installed ${r.name} (${feat.license}) to ${r.dest}` : r.message, findings: (r.findings ?? []).length };
   }
   if (feat?.kind === 'mcp') return { ok: true, message: `REA runs as an MCP server: ox mcp add ${feat.source}  (then ox mcp test ${feat.source})` };
+  if (feat?.kind === 'tool') return { ok: true, message: `${feat.name} is a command-line tool: install it with  ${feat.install}  then run  ${feat.run}  (${feat.description.split(': ').slice(1).join(': ')})` };
   if (catalog) {
     if (!REPO_RE.test(catalog) || !/^[\w.-]+$/.test(String(name))) throw new Error('bad plugin name or catalogue');
     const r = await addPlugin(`${name}@${catalog}`, { force });
