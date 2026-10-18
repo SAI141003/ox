@@ -331,7 +331,7 @@ final class FocusTimer: ObservableObject {
         guard let e = endsAt, e <= Date() else { return }
         reset()
         finishedAt = Date()
-        NSSound(named: "Glass")?.play()
+        IslandSound.play("glass")
     }
 
     static func clock(_ t: TimeInterval) -> String {
@@ -806,6 +806,9 @@ struct ChatView: View {
                                  ? "Type to your ox run, or hold ⌃⌥Space to talk."
                                  : "Ask anything. Small things (open an app, a timer, math) work offline; bigger ones run ox in \(chat.folderName).")
                                 .font(.system(size: 11.5)).foregroundStyle(Ink.muted)
+                            // Everyday errands (Wajo): a tap writes the start of the request; you finish it and send.
+                            // ox finds and drafts; it never pays, books or sends on its own.
+                            FlowChips(items: ["Track my package ", "Cancel my subscription to ", "Find a table for 2 tonight near ", "Remind me at 5pm to ", "Cheapest flight to ", "Summarize my unread mail"]) { draft = $0 }
                         }
                         ForEach(chat.lines) { l in
                             Text(l.who.map { "\($0): \(l.text)" } ?? l.text)
@@ -854,5 +857,28 @@ struct ChatView: View {
         }
         .buttonStyle(.plain)
         .help(help)
+    }
+}
+
+
+/// Small tappable suggestions in rows that wrap.
+struct FlowChips: View {
+    let items: [String]
+    let pick: (String) -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(Array(stride(from: 0, to: items.count, by: 3)), id: \.self) { i in
+                HStack(spacing: 5) {
+                    ForEach(items[i..<min(i + 3, items.count)], id: \.self) { t in
+                        Button { pick(t) } label: {
+                            Text(t.trimmingCharacters(in: .whitespaces)).font(.system(size: 10.5)).foregroundStyle(Ink.text.opacity(0.85))
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                .background(Capsule().fill(Color.white.opacity(0.07)))
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(.top, 4)
     }
 }

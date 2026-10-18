@@ -300,6 +300,83 @@ function waitAndSend(key, home, run) {
 
 export const queuedFor = (id) => (queue.get(String(id).replace(/^ext:/, '')) ?? []).length;
 
+// The agent CLIs whose processes can be found by folder.
+const AGENT_BINS = /(^|\/)(claude|codex|copilot|opencode|hermes|gemini|cursor-agent|aider|ox)$/;
+
+/** Terminal devices (ttys) of agent processes running in `cwd`, newest first. */
+export function ttysFor(cwd) {
+  if (!cwd || process.platform === 'win32') return [];
+  const ps = spawnSync('ps', ['-axo', 'pid=,tty=,comm='], { encoding: 'utf8', timeout: 5000 });
+  const rows = String(ps.stdout ?? '').split('\n').map((l) => l.trim().match(/^(\d+)\s+(\S+)\s+(.+)$/)).filter(Boolean)
+    .filter(([, , tty, comm]) => tty !== '??' && AGENT_BINS.test(comm.trim()));
+  const out = [];
+  for (const [, pid, tty] of rows.reverse()) {
+    const l = spawnSync('lsof', ['-a', '-p', pid, '-d', 'cwd', '-Fn'], { encoding: 'utf8', timeout: 3000 });
+    const dir = /^n(.+)$/m.exec(l.stdout ?? '')?.[1];
+    if (dir && path.resolve(dir) === path.resolve(cwd) && !out.includes(`/dev/${tty}`)) out.push(`/dev/${tty}`);
+  }
+  return out;
+}
+
+/**
+ * Bring the exact terminal tab a session runs in to the front (Terminal or
+ * iTerm2), found by the agent process's folder and tty. → { focused, app?, tty? }
+ */
+export async function focusTerminal(id, { home = os.homedir() } = {}) {
+  const key = String(id).replace(/^ext:/, '');
+  const live = liveAgents({ home }).find((s) => s.id === key);
+  if (!live?.cwd) return { focused: false, why: 'this session has no folder to find its terminal by' };
+  if (process.platform !== 'darwin') return { focused: false, why: 'jumping to a terminal tab works on macOS' };
+  return focusByFolder(live.cwd);
+}
+
+/** The terminal tab of an agent running in `cwd`, brought to the front. */
+export function focusByFolder(cwd) {
+  for (const tty of ttysFor(cwd)) {
+    const term = `tell application "System Events" to set running to (exists process "Terminal")
+if running then
+tell application "Terminal"
+repeat with w in windows
+repeat with t in tabs of w
+if tty of t is "${tty}" then
+set selected of t to true
+set index of w to 1
+activate
+return "Terminal"
+end if
+end repeat
+end repeat
+end tell
+end if
+return ""`;
+    const iterm = `tell application "System Events" to set running to (exists process "iTerm2")
+if running then
+tell application "iTerm2"
+repeat with w in windows
+repeat with t in tabs of w
+repeat with s in sessions of t
+if tty of s is "${tty}" then
+select w
+select t
+select s
+activate
+return "iTerm2"
+end if
+end repeat
+end repeat
+end repeat
+end tell
+end if
+return ""`;
+    for (const script of [term, iterm]) {
+      const r = spawnSync('osascript', ['-e', script], { encoding: 'utf8', timeout: 8000 });
+      const app = String(r.stdout ?? '').trim();
+      if (app) return { focused: true, app, tty };
+    }
+  }
+  return { focused: false, why: 'its terminal tab was not found (it may run inside an editor); open it in a new Terminal instead' };
+}
+
 /** Open the session in Terminal, continued by its own tool (you take over there). */
 export async function openInTerminal(id, { home = os.homedir(), dryRun = false } = {}) {
   const key = String(id).replace(/^ext:/, '');

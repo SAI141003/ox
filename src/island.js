@@ -92,6 +92,23 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
   const bin = path.join(pkg, '.build', 'release', 'OxIsland');
   const live = () => islandRunning({ env: {} });
 
+  // Your own sounds: ox island sound <event> <file> | ox island sound <event> reset | ox island sounds.
+  if (action === 'sound' || action === 'sounds') {
+    const EVENTS = ['pop', 'glass', 'capture', 'done', 'needs-you', 'error'];
+    const dir = path.join(os.homedir(), '.ox', 'island', 'sounds');
+    const [ev, file] = [args[1], args[2]];
+    const mine = (e) => { try { return fs.readdirSync(dir).find((f) => f.replace(/\.[^.]+$/, '') === e) ?? null; } catch { return null; } };
+    if (action === 'sounds' || !ev) { for (const e of EVENTS) log(`${e.padEnd(10)} ${mine(e) ? `your ${mine(e)}` : 'system sound'}`); return; }
+    if (!EVENTS.includes(ev)) { err(`a sound is one of ${EVENTS.join(', ')}\n`); process.exitCode = 3; return; }
+    for (const f of (() => { try { return fs.readdirSync(dir); } catch { return []; } })()) if (f.replace(/\.[^.]+$/, '') === ev) fs.rmSync(path.join(dir, f));
+    if (file === 'reset' || !file) { log(`${ev}: back to the system sound`); return; }
+    const ext = path.extname(file).toLowerCase();
+    if (!['.aiff', '.aif', '.wav', '.mp3', '.m4a', '.caf'].includes(ext)) { err('a sound file is .aiff, .wav, .mp3, .m4a or .caf\n'); process.exitCode = 3; return; }
+    fs.mkdirSync(dir, { recursive: true });
+    fs.copyFileSync(file, path.join(dir, `${ev}${ext === '.aif' ? '.aiff' : ext}`));
+    log(`${ev}: now plays ${path.basename(file)}`);
+    return;
+  }
   // The island checks itself (src/island-evals.js) and learns from real use.
   if (action === 'evals' || action === 'learn' || action === 'evolve') {
     const E = await import('./island-evals.js');

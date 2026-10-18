@@ -1566,6 +1566,43 @@ async function handleImage(req, res) {
   createReadStream(r.file).pipe(res);
 }
 
+// The island's day strip (theaiskool's widgets, Coucou's GitHub pills): the next
+// calendar event (only when Calendar is open: never launches it), the weather
+// (wttr.in, no key), and your open pull requests with their CI. Cached.
+const dayCache = { at: 0, v: null, pending: null };
+async function dayView() {
+  if (dayCache.v && Date.now() - dayCache.at < 10 * 60_000) return dayCache.v;
+  if (dayCache.pending) return dayCache.pending;
+  dayCache.pending = (async () => {
+    const { spawnSync } = await import('node:child_process');
+    const out = { event: null, weather: null, prs: null };
+    if (process.platform === 'darwin') {
+      const running = spawnSync('pgrep', ['-x', 'Calendar']).status === 0;
+      if (running) {
+        const script = 'set out to ""\ntell application "Calendar"\nset nowD to current date\nset best to missing value\nset bestT to nowD + 2 * days\nrepeat with c in calendars\ntry\nset evs to (every event of c whose start date > nowD and start date < bestT)\nrepeat with e in evs\nif start date of e < bestT then\nset bestT to start date of e\nset best to e\nend if\nend repeat\nend try\nend repeat\nif best is not missing value then set out to (summary of best) & "\t" & ((start date of best) as «class isot» as string)\nend tell\nreturn out';
+        const r = spawnSync('osascript', ['-e', script], { encoding: 'utf8', timeout: 8000 });
+        const [title, at] = String(r.stdout ?? '').trim().split('\t');
+        if (title && at) out.event = { title: title.slice(0, 80), at };
+      }
+    }
+    try {
+      const r = await fetch('https://wttr.in/?format=j1', { headers: { 'User-Agent': 'curl/8' }, signal: AbortSignal.timeout(6000) });
+      if (r.ok) { const j = await r.json(); const c = j.current_condition?.[0]; if (c) out.weather = { tempC: Number(c.temp_C), feelsC: Number(c.FeelsLikeC), text: c.weatherDesc?.[0]?.value ?? '', place: j.nearest_area?.[0]?.areaName?.[0]?.value ?? null }; }
+    } catch {}
+    const gh = spawnSync('gh', ['api', 'graphql', '-f', 'query=query{viewer{pullRequests(states:OPEN,first:20,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{title number url repository{nameWithOwner} commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}}'], { encoding: 'utf8', timeout: 15000 });
+    if (gh.status === 0) {
+      try {
+        const nodes = JSON.parse(gh.stdout).data.viewer.pullRequests.nodes;
+        const list = nodes.map((n) => ({ title: n.title, number: n.number, url: n.url, repo: n.repository.nameWithOwner, ci: n.commits.nodes[0]?.commit?.statusCheckRollup?.state ?? null }));
+        out.prs = { open: list.length, failing: list.filter((x) => ['FAILURE', 'ERROR'].includes(x.ci)).length, list: list.slice(0, 6) };
+      } catch {}
+    }
+    dayCache.v = out; dayCache.at = Date.now(); dayCache.pending = null;
+    return out;
+  })().catch((e) => { dayCache.pending = null; throw e; });
+  return dayCache.pending;
+}
+
 // ox mesh (src/mesh.js): this machine's node, started with the server once
 // the machine has a mesh identity (made by the first `ox mesh` pairing).
 let meshNode = null;
@@ -1601,6 +1638,7 @@ const ROUTES = [
     if (m[1] === 'open') return D.openPr(dir, { title: body?.title || null, body: body?.body ?? '', draft: body?.draft === true });
     return D.fixPr(dir, {});
   }) },
+  { method: 'GET', pattern: /^\/ox\/day\/?$/, handler: appRoute(dayView) },
   // Your machines (ox mesh): status, an invite code, names, grants, and your
   // choice on an alert. Grants are set here, for what this machine gives.
   { method: 'GET', pattern: /^\/ox\/mesh\/?$/, handler: appRoute(meshView) },
@@ -1666,6 +1704,8 @@ const ROUTES = [
   { method: 'POST', pattern: /^\/ox\/agents\/session\/?$/, handler: appRoute(async (body) => { const A = await import('./agents-live.js'); const r = await A.sessionMessages(body?.id); return { ...r, queued: A.queuedFor(body?.id) }; }) },
   { method: 'POST', pattern: /^\/ox\/agents\/send\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).sendToSession(body?.id, body?.text)) },
   { method: 'POST', pattern: /^\/ox\/agents\/open\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).openInTerminal(body?.id)) },
+  // Jump to the exact terminal tab the session runs in (Coucou); the island falls back to opening one.
+  { method: 'POST', pattern: /^\/ox\/agents\/focus\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).focusTerminal(body?.id)) },
   { method: 'GET', pattern: /^\/ox\/live\/?$/, handler: async (req, res) => { if (!authorized(req)) return unauthorized(res); sendJson(res, 200, (await import('./live-board.js')).liveBoard()); } },
   { method: 'GET', pattern: /^\/ox\/image\/?$/, handler: handleImage },
   { method: 'POST', pattern: /^\/ox\/followups\/?$/, handler: appRoute(followupsRoute) },

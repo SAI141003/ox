@@ -21,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             release: { buddy.stopListening(); DispatchQueue.main.asyncAfter(deadline: .now() + 6) { MainActor.assumeIsolated { wake.start() } } })
         FnKey.install(press: { MainActor.assumeIsolated { wake.stop() }; buddy.startListening() },
                       release: { buddy.stopListening(); DispatchQueue.main.asyncAfter(deadline: .now() + 6) { MainActor.assumeIsolated { wake.start() } } })
-        MainActor.assumeIsolated { bridge.dictation.install() }
+        MainActor.assumeIsolated { bridge.dictation.install(); Capture.install(bridge) }
         let panel = IslandPanel(bridge: bridge)
         panel.orderFrontRegardless()
         self.panel = panel

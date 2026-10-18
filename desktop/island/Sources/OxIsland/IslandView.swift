@@ -245,7 +245,10 @@ struct ExpandedContent: View {
                     HomeCard(wash: Color(hex: "#6366F1").opacity(0.22)) {
                         HStack(spacing: 14) {
                             BuddyLane(buddy: bridge.buddy, mood: oxMood).frame(width: 110, height: 92)
-                            BuddyBody(buddy: bridge.buddy).frame(maxWidth: .infinity, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 4) {
+                                BuddyBody(buddy: bridge.buddy)
+                                VoiceLevel(buddy: bridge.buddy)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .padding(.horizontal, 12)
                     }
@@ -304,7 +307,7 @@ struct ExpandedContent: View {
 
     /// Past 80 % of a plan's limit the ox worries (Claudex's panicking mascot).
     private var shownMood: Mood {
-        let stressed = bridge.gauges.contains { $0.percent >= 80 } && [Mood.idle, .sleeping, .done].contains(oxMood)
+        let stressed = (bridge.gauges.contains { $0.percent >= 80 } || MacLoad.stressed) && [Mood.idle, .sleeping, .done].contains(oxMood)
         return stressed ? .needsYou : oxMood
     }
 
@@ -702,6 +705,49 @@ struct MiniGrid: View {
                     .opacity({ if case .idle = s.mood { return 0.55 }; return 1 }())
                     .help("\(s.project) · \(s.activity)")
             }
+        }
+    }
+}
+
+
+/// The Mac itself under strain (Coucou's character reacting to load): running
+/// hot, or the 1-minute load well above the cores. Read at most every 10 s.
+enum MacLoad {
+    private static var at = Date.distantPast
+    private static var last = false
+    static var stressed: Bool {
+        if Date().timeIntervalSince(at) < 10 { return last }
+        at = Date()
+        var loads = [Double](repeating: 0, count: 3)
+        let n = getloadavg(&loads, 3)
+        let busy = n > 0 && loads[0] / Double(max(1, ProcessInfo.processInfo.activeProcessorCount)) > 1.5
+        let hot = ProcessInfo.processInfo.thermalState == .serious || ProcessInfo.processInfo.thermalState == .critical
+        last = busy || hot
+        return last
+    }
+    static var reason: String? {
+        guard stressed else { return nil }
+        return ProcessInfo.processInfo.thermalState.rawValue >= 2 ? "your Mac is running hot" : "your Mac is very busy"
+    }
+}
+
+/// Dots that move with your voice while ox listens (Glance / Murmure's "light that dances with your voice").
+struct VoiceLevel: View {
+    @ObservedObject var buddy: Buddy
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30)) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 3) {
+                ForEach(0..<7, id: \.self) { i in
+                    let wave = 0.5 + 0.5 * sin(t * 9 + Double(i) * 0.9)
+                    Capsule().fill(Color(hex: "#7DD3FC"))
+                        .frame(width: 3, height: 4 + 18 * CGFloat(buddy.phase == .listening ? buddy.level * (0.55 + 0.45 * wave) : 0.05))
+                        .shadow(color: Color(hex: "#38BDF8").opacity(buddy.level), radius: 4)
+                }
+            }
+            .frame(height: 24)
+            .opacity(buddy.phase == .listening ? 1 : 0)
+            .animation(.easeOut(duration: 0.2), value: buddy.phase == .listening)
         }
     }
 }

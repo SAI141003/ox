@@ -347,7 +347,7 @@ final class OxBridge: ObservableObject {
                 let had = self?.proposedHire?.id
                 self?.org = list
                 // A hire waiting for you is a decision: the island opens for it.
-                if let p = self?.proposedHire, p.id != had { self?.peek(for: 8); NSSound(named: "Pop")?.play() }
+                if let p = self?.proposedHire, p.id != had { self?.peek(for: 8); IslandSound.play("pop") }
             }
         }.resume()
     }
@@ -362,6 +362,39 @@ final class OxBridge: ObservableObject {
     }
 
     @Published var orgCard: String?
+
+    // MARK: the day strip: next event, weather, your pull requests (GET /ox/day)
+
+    struct DayInfo: Equatable {
+        var event: (title: String, at: Date)?
+        var weather: (tempC: Int, text: String, place: String?)?
+        var prs: (open: Int, failing: Int, url: String?)?
+        static func == (a: DayInfo, b: DayInfo) -> Bool { a.event?.title == b.event?.title && a.weather?.tempC == b.weather?.tempC && a.prs?.open == b.prs?.open && a.prs?.failing == b.prs?.failing }
+    }
+    @Published private(set) var day = DayInfo()
+    private var dayPolledAt = Date.distantPast
+
+    private func pollDay(port: Int) {
+        guard Date().timeIntervalSince(dayPolledAt) > 300, let url = URL(string: "http://127.0.0.1:\(port)/ox/day") else { return }
+        dayPolledAt = Date()
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 30
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let doc = data.flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }) else { return }
+            var d = DayInfo()
+            if let e = doc["event"] as? [String: Any], let t = e["title"] as? String, let at = e["at"] as? String {
+                let f = ISO8601DateFormatter(); f.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime, .withDashSeparatorInDate]
+                if let date = f.date(from: at) ?? ISO8601DateFormatter().date(from: at) { d.event = (t, date) }
+            }
+            if let w = doc["weather"] as? [String: Any], let c = w["tempC"] as? Int { d.weather = (c, w["text"] as? String ?? "", w["place"] as? String) }
+            if let p = doc["prs"] as? [String: Any], let o = p["open"] as? Int {
+                let first = (p["list"] as? [[String: Any]])?.first?["url"] as? String
+                d.prs = (o, p["failing"] as? Int ?? 0, first)
+            }
+            DispatchQueue.main.async { self?.day = d }
+        }.resume()
+    }
 
     // MARK: your machines (ox mesh): alerts with choices, never actions
 
@@ -400,7 +433,7 @@ final class OxBridge: ObservableObject {
                 self?.meshAlerts = alerts
                 self?.meshMachines = machines
                 // A new alert is a decision for you: the island opens for it.
-                if alerts.contains(where: { !had.contains($0.id) }) { self?.peek(for: 8); NSSound(named: "Pop")?.play() }
+                if alerts.contains(where: { !had.contains($0.id) }) { self?.peek(for: 8); IslandSound.play("pop") }
             }
         }.resume()
     }
@@ -455,6 +488,7 @@ final class OxBridge: ObservableObject {
         pollGauges(port: port)
         pollOrg(port: port)
         pollMesh(port: port)
+        pollDay(port: port)
         appPolling = true
         var req = URLRequest(url: url)
         req.timeoutInterval = 1.2
@@ -751,7 +785,7 @@ final class OxBridge: ObservableObject {
                 s.mood = .needsYou
                 s.activity = "wants to run \(tool)"
             }
-            NSSound(named: "Pop")?.play()
+            IslandSound.play("pop")
         case "approval-resolved":
             let id = frame["id"] as? String
             update(path) { s in
@@ -899,7 +933,7 @@ final class OxBridge: ObservableObject {
         objectWillChange.send()
     }
 
-    private func peek(for seconds: TimeInterval = 4) {
+    func peek(for seconds: TimeInterval = 4) {
         peekUntil = Date().addingTimeInterval(seconds)
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.05) { [weak self] in
             self?.objectWillChange.send()

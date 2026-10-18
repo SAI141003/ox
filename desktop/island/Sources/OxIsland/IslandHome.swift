@@ -267,8 +267,9 @@ struct RightCard: View {
                 LazyVGrid(columns: cols, spacing: 4) {
                     ForEach(bridge.org.prefix(4)) { a in OrgPill(agent: a) { bridge.orgCard = bridge.orgCard == a.id ? nil : a.id } }
                 }
-            } else if let t = bridge.player.track {
-                NowPlayingPill(player: bridge.player).help("\(t.title) · \(t.artist)")
+            } else if bridge.player.track != nil || bridge.day.weather != nil || bridge.day.event != nil || bridge.day.prs != nil {
+                if let t = bridge.player.track { NowPlayingPill(player: bridge.player).help("\(t.title) · \(t.artist)") }
+                DayStrip(day: bridge.day)
             } else if !bridge.connected.isEmpty {
                 LazyVGrid(columns: cols, spacing: 4) {
                     ForEach(bridge.connected.prefix(4)) { t in ToolPill(tool: t) }
@@ -279,6 +280,38 @@ struct RightCard: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 8)
+    }
+}
+
+/// Your day at a glance (the Dock-widget idea, Coucou's GitHub pills): weather, next event, pull requests.
+struct DayStrip: View {
+    let day: OxBridge.DayInfo
+    var body: some View {
+        HStack(spacing: 4) {
+            if let w = day.weather {
+                pill(icon: icon(w.text), text: "\(w.tempC)°  \(w.text)", tint: Color(hex: "#FBBF24")).help(w.place.map { "Weather in \($0)" } ?? "Weather")
+            }
+            if let e = day.event {
+                pill(icon: "calendar", text: "\(e.title) · \(e.at.formatted(date: .omitted, time: .shortened))", tint: Color(hex: "#F87171")).help("Next in Calendar")
+            }
+            if let p = day.prs, p.open > 0 {
+                Button { if let u = URL(string: "https://github.com/pulls") { NSWorkspace.shared.open(u) } } label: {
+                    pill(icon: "arrow.triangle.pull", text: "\(p.open) PR\(p.open == 1 ? "" : "s")\(p.failing > 0 ? " · \(p.failing) failing" : "")", tint: p.failing > 0 ? Color(hex: "#F4505E") : Color(hex: "#34D399"))
+                }.buttonStyle(.plain).help("Your open pull requests and their CI (opens GitHub)")
+            }
+        }
+    }
+    private func icon(_ t: String) -> String {
+        let l = t.lowercased()
+        return l.contains("rain") || l.contains("drizzle") ? "cloud.rain.fill" : l.contains("snow") ? "cloud.snow.fill" : l.contains("thunder") ? "cloud.bolt.fill" : l.contains("cloud") || l.contains("overcast") ? "cloud.fill" : l.contains("fog") || l.contains("mist") ? "cloud.fog.fill" : "sun.max.fill"
+    }
+    private func pill(icon: String, text: String, tint: Color) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon).font(.system(size: 10, weight: .semibold)).foregroundStyle(tint)
+            Text(text).font(.system(size: 10.5, weight: .medium)).foregroundStyle(HomeInk.text).lineLimit(1).truncationMode(.tail)
+        }
+        .padding(.horizontal, 9).frame(height: 26)
+        .background(Capsule().fill(HomeInk.pill))
     }
 }
 
@@ -293,13 +326,15 @@ struct AgentPill: View {
                 ZStack {
                     Capsule().fill(hover ? c.opacity(0.18) : HomeInk.pill)
                     Capsule().stroke(c.opacity(hover ? 0.55 : 0.14), lineWidth: 1)
-                    HStack(spacing: 0) {
-                        SessionCharacter(session: session, height: 20).padding(.leading, 8)
-                        Spacer()
+                    HStack(spacing: 6) {
+                        SessionCharacter(session: session, height: 24).frame(width: 32, height: 24).padding(.leading, 6)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(label).font(.system(size: 10.5, weight: .semibold))
+                                .foregroundStyle(hover ? c : HomeInk.text).lineLimit(1).truncationMode(.tail)
+                            Text(session.tool).font(.system(size: 8.5)).foregroundStyle(HomeInk.faint).lineLimit(1)
+                        }
+                        Spacer(minLength: 4)
                     }
-                    Text(session.project).font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(hover ? c : HomeInk.dim).lineLimit(1).truncationMode(.tail)
-                        .padding(.leading, 38).padding(.trailing, 8)
                 }
                 .frame(height: 28)
                 .shadow(color: c.opacity(hover ? 0.35 : 0), radius: 10, y: 2)
@@ -310,6 +345,11 @@ struct AgentPill: View {
         .scaleEffect(hover ? 1.04 : 1)
         .onHover { h in withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) { hover = h } }
         .help("\(session.project) · \(session.tool) · \(session.activity)")
+    }
+    /// The project, unless it is a temp folder's meaningless name ("T", "tmp").
+    private var label: String {
+        let p = session.project
+        return ["t", "tmp", "private", "var", "folders", ""].contains(p.lowercased()) ? "scratch" : p
     }
     private var badge: Color? {
         switch session.mood {

@@ -214,6 +214,10 @@ final class Pasture {
             run([Beat(cycle: .kick, seconds: 1.0, bubble: ("MOO!!", .angry)),
                  Beat(cycle: .alert, seconds: 1.0, bubble: nil),
                  Beat(cycle: .idle, seconds: 1.6, bubble: ("zzz… rude", .sleepy))], t, then: .wander)
+        } else if OxFrames.has(.doze), pokes.count < 3 {
+            // A blink first (page-mascot): eyes shut for a moment, then the reaction.
+            run([Beat(cycle: .doze, seconds: 0.18, bubble: nil),
+                 Beat(cycle: .kick, seconds: 1.0, bubble: ("Moo?", .plain))], t, then: .look)
         } else if pokes.count >= 3 {
             pokes = []
             run([Beat(cycle: .alert, seconds: 1.0, bubble: ("MOO! 💢", .angry)),
