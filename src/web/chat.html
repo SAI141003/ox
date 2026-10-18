@@ -1950,6 +1950,8 @@
   }
   const DOING = { thinking: 'thinking', writing: 'writing the answer', done: 'done', failed: 'stopped' };
   function doingText(r) {
+    // Claude Code / Codex on this Mac (src/agents-live.js): their own words for what they do.
+    if (r.ext) return r.state === 'idle' ? (r.idleSec < 60 ? 'idle, your turn' : `idle for ${Math.floor(r.idleSec / 60)} m`) : r.detail || 'thinking';
     if (r.state === 'tool') return `${r.tool}${r.detail ? `  ${r.detail}` : ''}`;
     if (r.state === 'failed' && r.detail) return `stopped: ${r.detail}`;
     return DOING[r.state] ?? r.state;
@@ -1966,13 +1968,13 @@
         <div class="nm"><span class="dot" style="background:${workerColor(r.who)}"></span><span>${esc(r.who)}</span></div>
         <div class="doing" title="${esc(doingText(r))}">${esc(doingText(r))}</div>
         <div class="task" title="${esc(r.title)}">${esc(r.title)}</div>
-        <div class="meta">${r.parent ? `helping ${esc(lead?.who ?? 'a run')} · ` : ''}${ago2(r.seconds)}${r.steps ? ` · ${r.steps} step${r.steps === 1 ? '' : 's'}` : ''}</div></div>`;
+        <div class="meta">${r.ext ? `${esc(r.model ?? '')} · on this Mac` : `${r.parent ? `helping ${esc(lead?.who ?? 'a run')} · ` : ''}${ago2(r.seconds)}${r.steps ? ` · ${r.steps} step${r.steps === 1 ? '' : 's'}` : ''}`}</div></div>`;
     }).join('') : '<div class="empty">Nobody is working right now. Start a chat, a bot or a group chat and it takes a desk here.</div>';
-    const busyNames = new Set(runs.filter((r) => !r.ended).map((r) => r.who));
+    const busyNames = new Set(runs.filter((r) => !r.ended && !r.ext).map((r) => r.who));
     const free = [...new Set([...Object.keys(botShapes), ...Object.keys(botColors)])].filter((n) => !busyNames.has(n));
     $('lounge').innerHTML = free.map((n) => `<div class="desk" data-free="${esc(n)}"><canvas width="24" height="24"></canvas><div class="nm"><span class="dot" style="background:${workerColor(n)}"></span><span>${esc(n)}</span></div><div class="meta">free</div></div>`).join('');
     $('lounge-h').hidden = $('lounge').hidden = !free.length;
-    const working = runs.filter((r) => !r.ended).length;
+    const working = runs.filter((r) => !r.ended && r.state !== 'idle').length;
     $('office-sum').textContent = working ? `${working} working` : 'quiet';
     paintOffice();
   }
@@ -1986,7 +1988,7 @@
       if (!Object.keys(botShapes).length) { try { const B = await getJson('/ox/bots'); for (const b of B.mine ?? []) { botShapes[b.name] = b.shape ?? null; botColors[b.name] = b.color ?? null; } } catch {} }
       const live = await getJson('/ox/live');
       officeRuns = live.runs ?? [];
-      const n = officeRuns.filter((r) => !r.ended).length;
+      const n = officeRuns.filter((r) => !r.ended && r.state !== 'idle').length;
       $('office-count').hidden = !n; $('office-count').textContent = n;
       if (officeShown()) renderOffice();
     } catch {}

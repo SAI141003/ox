@@ -297,10 +297,16 @@ final class OxBridge: ObservableObject {
 
     private func pollApp() {
         guard !appPolling else { return }
-        let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/serve.json")
-        guard let data = try? Data(contentsOf: file),
-              let doc = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let port = doc["port"] as? Int,
+        // The app's server says where it is in serve.json (`ox serve`) or app.json
+        // (OX.app); a file whose process is gone is skipped.
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let docs = ["serve.json", "app.json"].compactMap { name -> [String: Any]? in
+            guard let data = try? Data(contentsOf: home.appendingPathComponent(".ox/\(name)")),
+                  let doc = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            if let pid = doc["pid"] as? Int, kill(pid_t(pid), 0) != 0 { return nil }
+            return doc
+        }
+        guard let port = docs.compactMap({ $0["port"] as? Int }).first,
               let url = URL(string: "http://127.0.0.1:\(port)/ox/live") else { dropAppSessions(keep: []); return }
         pollUsage(port: port)
         pollConnected(port: port)
@@ -319,6 +325,9 @@ final class OxBridge: ObservableObject {
         }.resume()
     }
 
+    /// Dev aid only (--render-runs): feed board rows as if polled.
+    func previewBoard(_ runs: [[String: Any]]) { mergeApp(runs) }
+
     private func dropAppSessions(keep: Set<String>) {
         sessions.removeAll { $0.id.hasPrefix("app:") && !keep.contains($0.id) }
     }
@@ -336,12 +345,28 @@ final class OxBridge: ObservableObject {
             let ended = (r["ended"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
             // Gone from the island 6 s after it ends, like a terminal run.
             if let ended, Date().timeIntervalSince(ended) > 6 { keep.remove(id); continue }
+            // Claude Code / Codex sessions on this Mac (src/agents-live.js): shown, never driven.
+            let ext = (r["ext"] as? Bool) == true
             update(id) { s in
-                s.bot = r["who"] as? String ?? "ox"
+                s.bot = ext ? r["project"] as? String ?? "agent" : r["who"] as? String ?? "ox"
                 s.model = r["model"] as? String ?? ""
                 s.cwd = ""
                 s.lastText = r["title"] as? String ?? ""
                 s.toolCount = r["steps"] as? Int ?? s.toolCount
+                if ext {
+                    let idle = r["idleSec"] as? Int ?? 0
+                    // "Claude · idle for 3 m", "Codex · $ npm test": who, then what.
+                    let who = (r["who"] as? String ?? "agent").replacingOccurrences(of: " Code", with: "")
+                    if state == "idle" {
+                        s.mood = .idle
+                        s.activity = "\(who) · " + (idle < 60 ? "idle, your turn" : "idle for \(idle / 60) m")
+                    } else {
+                        s.mood = state == "tool" ? .working(detail) : .thinking
+                        s.activity = "\(who) · " + (detail.isEmpty ? "thinking" : detail)
+                    }
+                    s.closedAt = nil
+                    return
+                }
                 switch state {
                 case "tool":
                     let what = OxBridge.describe(tool: tool, preview: detail)

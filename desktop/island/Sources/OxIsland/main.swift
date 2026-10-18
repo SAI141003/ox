@@ -247,6 +247,28 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-office"), i + 1 < Comm
     exit(0)
 }
 
+// Dev aid: `OxIsland --render-runs <board.json> <file.png>` draws the open
+// island's run list from an /ox/live answer (other agents' sessions included).
+if let i = CommandLine.arguments.firstIndex(of: "--render-runs"), i + 2 < CommandLine.arguments.count {
+    MainActor.assumeIsolated {
+        let b = OxBridge()
+        if let d = FileManager.default.contents(atPath: CommandLine.arguments[i + 1]),
+           let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any], let runs = j["runs"] as? [[String: Any]] {
+            b.previewBoard(runs)
+        }
+        let view = Card(wash: Color.white.opacity(0.18)) {
+            VStack(alignment: .leading, spacing: 7) { ForEach(b.sessions.prefix(4)) { s in RunRow(bridge: b, session: s) } }
+        }.frame(width: 600, height: 120).padding(10).background(Color.black)
+        let r = ImageRenderer(content: view)
+        r.scale = 2
+        if let img = r.nsImage, let tiff = img.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 2]))
+        }
+        print("\(b.sessions.count) runs")
+    }
+    exit(0)
+}
+
 // Dev aid: `OxIsland --render-meter <dir>` draws the idle card with today's usage meter.
 if let i = CommandLine.arguments.firstIndex(of: "--render-meter"), i + 1 < CommandLine.arguments.count {
     let dir = URL(fileURLWithPath: CommandLine.arguments[i + 1])

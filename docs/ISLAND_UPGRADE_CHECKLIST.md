@@ -52,7 +52,7 @@ States: ✓ the island has it · ~ partly · ✗ missing · → next to build
 | # | Feature | Island now | |
 |---|---|---|---|
 | C1 | Rings per tool: session %, week %, model-week %, each with a reset countdown | ~ | → |
-| C2 | "4 sessions working", listed per project with model; "Codex idle for 3 m" | ~ ox runs only | → from Claude Code's and Codex's own session files (read-only, as `ox transfer` reads them) |
+| C2 | "4 sessions working", listed per project with model; "Codex idle for 3 m" | ✓ **new**: Claude Code (CLI, desktop Code tab, worktrees) and Codex sessions read from their own session files (read-only), in the notch (count of those working), the open island (project · what it does now / idle for N m) and the app's Office | checked: this session and two worktree sessions shown live |
 | C3 | Alert before the limit, not after | ✓ **new**: a notification at 80 % and 95 % of each window, once per reset period | |
 | C4 | Water estimate per tool (litres, days of drinking water) | ✗ | → with a stated method |
 
@@ -195,3 +195,6 @@ the island was rebuilt. "Checked" says how the fix was proven.
 | F4.12 | Notch geometry recomputed 60 times a second | Cached, refreshed when displays change | code path |
 | F4.13 | A dictation that failed to start left « OK ox » off | The microphone is handed back | code path |
 | F4.14 | Two calls in the same minute overwrote each other's notes | Seconds in the file name | code path |
+| F4.15 | OX.app kept a dead page after its server stopped (an update, `ox app stop`); reopening did not bring it back | The window reconnects: a failed load or reopening asks ox for the server again | live: app restarted, board answered |
+| F4.16 | The island found the app only through serve.json, which OX.app's server does not always write | Reads serve.json or app.json, skipping a file whose process is gone | live: island showed the app's board |
+| F4.17 | Other agents' sessions (this Claude Code session, worktree sessions) were invisible to ox and the island | src/agents-live.js, merged into /ox/live | test/agents-live.test.js + notch screenshot ("3"), rendered run list |

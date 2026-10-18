@@ -185,7 +185,8 @@ struct StatusGlyph: View {
         case .done:
             Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Ink.green)
         case .working, .thinking:
-            ActivityDots(count: bridge.sessions.count)
+            // How many are at work now; idle sessions (yours to answer) are not counted.
+            ActivityDots(count: bridge.sessions.filter { s in if case .working = s.mood { return true }; return s.mood == .thinking }.count)
         case .idle, .sleeping:
             Circle().fill(Ink.muted.opacity(0.6)).frame(width: 6, height: 6)
         }
