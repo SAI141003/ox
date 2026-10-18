@@ -166,3 +166,31 @@ test('a CLI claim (no process) holds for its lease, then lapses', () => {
   assert.equal(taskOwner(t.id, o), null);
   assert.equal(claimTask(t.id, { ...o, owner: 'mira', pid: null }).ok, true);
 });
+
+// Windows refuses a rename onto a file another process holds open (EPERM,
+// EBUSY). The write waits for the holder to let go instead of failing.
+test('a task write retries a rename refused because the file is held', (t) => {
+  const o = fresh();
+  const task = addTask({ title: 'held' }, o);
+  const real = fs.renameSync;
+  let refusals = 0;
+  t.after(() => { fs.renameSync = real; });
+  fs.renameSync = (from, to) => {
+    if (refusals < 2) { refusals++; throw Object.assign(new Error('held'), { code: refusals === 1 ? 'EPERM' : 'EBUSY' }); }
+    return real(from, to);
+  };
+  assert.equal(claimTask(task.id, { ...o, owner: 'mira' }).ok, true);
+  assert.equal(refusals, 2);
+  assert.equal(getTask(task.id, o).assignee, 'mira');
+});
+
+test('a task write that cannot rename throws and leaves no temp file behind', (t) => {
+  const o = fresh();
+  const task = addTask({ title: 'stuck' }, o);
+  const real = fs.renameSync;
+  t.after(() => { fs.renameSync = real; });
+  fs.renameSync = () => { throw Object.assign(new Error('nope'), { code: 'ENOSPC' }); };
+  assert.throws(() => claimTask(task.id, { ...o, owner: 'mira' }), /nope/);
+  fs.renameSync = real;
+  assert.deepEqual(fs.readdirSync(o.dir).filter((f) => f.endsWith('.tmp')), []);
+});
