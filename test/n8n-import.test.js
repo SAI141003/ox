@@ -31,4 +31,7 @@ test('featured: ADK skills and REA are in the Marketplace with their licences', 
   assert.ok(FEATURED.some((f) => f.name === 'adk-agent-builder' && f.license === 'Apache-2.0'));
   const { MCP_TEMPLATES } = await import('../src/mcp-templates.js');
   assert.deepEqual(MCP_TEMPLATES.rea.entry(), { command: 'npx', args: ['-y', 'rea-agents@6.7.0', '--mcp'] });
+  assert.deepEqual(MCP_TEMPLATES.pinchtab.entry(), { command: 'pinchtab', args: ['mcp'] });
+  assert.ok(FEATURED.some((f) => f.name === 'pinchtab' && f.license === 'MIT'));
+  assert.ok(FEATURED.some((f) => f.name === 'strix' && f.install === 'pipx install strix-agent'));
 });

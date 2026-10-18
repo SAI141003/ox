@@ -41,6 +41,7 @@ export const FEATURED = Object.freeze([
     kind: 'skill', name: `google-agents-cli-${n}`, source: `google/agents-cli#google-agents-cli-${n}`, license: 'Apache-2.0',
     description: `Google agents-cli: ${n.replace('-', ' ')} skill for agents on Gemini Enterprise Agent Platform (works with ox, Claude Code, Codex)`,
   })),
+  { kind: 'mcp', name: 'pinchtab', source: 'pinchtab', license: 'MIT', description: 'PinchTab (pinchtab/pinchtab): browser control for agents from one small Go daemon, compact snapshots, 10–20 % fewer tokens; also a web_task backend (backend: pinchtab). Install: brew install pinchtab/tap/pinchtab' },
   { kind: 'tool', name: 'strix', source: 'strix-agent', license: 'Apache-2.0', install: 'pipx install strix-agent', run: 'strix --target ./your-app',
     description: 'Strix (usestrix/strix): AI agents that penetration-test YOUR OWN app and propose fixes. Only on code and sites you own or are authorized to test' },
 ]);
@@ -146,7 +147,7 @@ export async function install({ name, catalog, repo, force = false } = {}) {
     const r = await installSkill(feat.source, { force });
     return { ok: !!r.ok, message: r.ok ? `installed ${r.name} (${feat.license}) to ${r.dest}` : r.message, findings: (r.findings ?? []).length };
   }
-  if (feat?.kind === 'mcp') return { ok: true, message: `REA runs as an MCP server: ox mcp add ${feat.source}  (then ox mcp test ${feat.source})` };
+  if (feat?.kind === 'mcp') return { ok: true, message: `${feat.name} runs as an MCP server: ox mcp add ${feat.source}  (then ox mcp test ${feat.source})${feat.name === 'pinchtab' ? '. First: brew install pinchtab/tap/pinchtab' : ''}` };
   if (feat?.kind === 'tool') return { ok: true, message: `${feat.name} is a command-line tool: install it with  ${feat.install}  then run  ${feat.run}  (${feat.description.split(': ').slice(1).join(': ')})` };
   if (catalog) {
     if (!REPO_RE.test(catalog) || !/^[\w.-]+$/.test(String(name))) throw new Error('bad plugin name or catalogue');

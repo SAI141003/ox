@@ -12,6 +12,18 @@
 const npx = (pkg, ...args) => ({ command: 'npx', args: ['-y', pkg, ...args] });
 
 export const MCP_TEMPLATES = {
+  pinchtab: {
+    name: 'pinchtab',
+    title: 'PinchTab browser control',
+    risk: 'write',
+    desc: 'pinchtab/pinchtab (MIT): a small Go daemon that gives agents Chrome control over HTTP/MCP, reused across runs, compact page snapshots (fewer tokens than screenshots).',
+    requires: [],
+    entry: () => ({ command: 'pinchtab', args: ['mcp'] }),
+    setup: [
+      'Install the binary first: brew install pinchtab/tap/pinchtab',
+      'It drives its own Chrome profile, not your everyday one; keep it on localhost (its own security guide).',
+    ].join('\n'),
+  },
   rea: {
     name: 'rea',
     title: 'REA: Reverse Engineer Anything',

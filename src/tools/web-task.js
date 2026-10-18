@@ -33,6 +33,10 @@ const BACKEND_PACKAGES = {
   // already use). Playwright MCP's extension mode attaches to your tabs through
   // its "Playwright MCP Bridge" Chrome extension, which you install and allow.
   'my-browser': '@playwright/mcp',
+  // PinchTab (MIT): one small Go daemon that stays up and is reused across runs,
+  // with compact accessibility snapshots instead of screenshots (fewer tokens).
+  // Its own binary, not an npm package: brew install pinchtab/tap/pinchtab.
+  'pinchtab': 'pinchtab',
 };
 
 const BACKEND_TOOL_HINTS = {
@@ -40,6 +44,7 @@ const BACKEND_TOOL_HINTS = {
   'stagehand': ['goto', 'click', 'type', 'screenshot', 'wait', 'act', 'extract'],
   'camoufox': ['navigate', 'click', 'type', 'screenshot', 'wait', 'evaluate'],
   'my-browser': ['navigate', 'click', 'type', 'screenshot', 'wait', 'evaluate'],
+  'pinchtab': ['navigate', 'snapshot', 'click', 'type', 'wait'],
 };
 
 function err(msg, meta = {}) {
@@ -75,6 +80,7 @@ async function gate(ctx, name, args, detail) {
 function buildMcpConfig(backend, headless, url) {
   const pkg = BACKEND_PACKAGES[backend];
   if (!pkg) throw new Error(`Unknown backend: ${backend}`);
+  if (backend === 'pinchtab') return { command: 'pinchtab', args: ['mcp'], env: {} };
 
   const args = ['-y', pkg];
   // Your own browser is never headless: you watch it work in your tabs.
@@ -535,7 +541,7 @@ export const WEB_TASK_TOOL_SCHEMAS = [
       properties: {
         task: { type: 'string', description: 'Natural language description of the web task to complete' },
         url: { type: 'string', description: 'Optional starting URL (http/https only)' },
-        backend: { type: 'string', enum: ['browser-harness', 'stagehand', 'camoufox', 'my-browser'], description: 'Browser automation backend to use; my-browser works in the user\'s own signed-in Chrome' },
+        backend: { type: 'string', enum: ['browser-harness', 'stagehand', 'camoufox', 'my-browser', 'pinchtab'], description: 'Browser automation backend to use; my-browser works in the user\'s own signed-in Chrome; pinchtab is a small reused daemon with token-light snapshots (when installed)' },
         headless: { type: 'boolean', description: 'Run browser in headless mode (default: true)' },
         timeoutMs: { type: 'number', description: 'Total timeout in milliseconds (default: 120000, max: 300000)' },
         maxSteps: { type: 'number', description: 'Maximum automation steps (default: 50, max: 200)' },
