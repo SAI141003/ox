@@ -62,3 +62,12 @@ test('the Settings pages exist and are searchable', () => {
   assert.match(html, /Check for updates/);
   assert.match(html, /let renderSeq = 0/, 'stale pages cannot overwrite the current one');
 });
+
+test('backup model: saved from Settings, and app chats get it as a fallback target', () => {
+  const serve = fs.readFileSync(new URL('../src/serve.js', import.meta.url), 'utf8');
+  assert.match(serve, /typeof body\.fallbackBot === 'string'/);
+  assert.match(serve, /ctx\.fallbackTargets = /);
+  assert.match(serve, /fallback: \(doc\.fallback_bots \?\? doc\.fallbackBots \?\? \[\]\)\[0\]/);
+  const html = fs.readFileSync(new URL('../src/web/chat.html', import.meta.url), 'utf8');
+  assert.match(html, /row\('Backup model'/);
+});

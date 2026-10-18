@@ -747,6 +747,17 @@ async function handleChatCompletions(req, res) {
     try { (await import('./memory-graph.js')).learnFromMessages([{ role: 'user', content: lastText }], { source: 'app' }); } catch {}
   }
   const config = { maxTokens: max_tokens };
+  // The backup model (Settings > General): app chats fall back the way
+  // terminal runs do (src/headless.js), to models that can run here and are
+  // not the chat's own. A plan's turn runs inside its CLI and is not bounced.
+  try {
+    const fdoc = readConfigDoc() ?? {};
+    const specs = fdoc.fallback_bots ?? fdoc.fallbackBots ?? [];
+    ctx.fallbackTargets = (Array.isArray(specs) ? specs : [])
+      .filter((sp) => runnable(sp))
+      .map((sp) => { try { return resolveBot(sp, { bots: fdoc.bots ?? {} }); } catch { return null; } })
+      .filter((t) => t && t.provider !== 'subscription' && !(t.provider === target?.provider && t.model === target?.model));
+  } catch {}
   // Delegation in the app, as in the terminal (src/headless.js): the subagent
   // tool was offered here with nothing behind it ("not configured"), and agents
   // could not see or message each other. Now a helper really runs, shows up in
@@ -1179,15 +1190,17 @@ async function settingsView() {
     return { id, provider: d.provider, desc: d.desc, ready: !keyEnv || !!process.env[keyEnv], key: keyEnv };
   });
   // Your own endpoints (Settings › Custom endpoints) are choices here too.
-  for (const [id] of Object.entries(doc.bots ?? {}).filter(([, d]) => d?.provider === 'custom' && d.baseUrl && d.model)) {
-    try { const t = resolveBot(id, { bots: doc.bots }); bots.unshift({ id, provider: 'custom', desc: t.desc, ready: !t.keyEnv || !!process.env[t.keyEnv], key: t.keyEnv }); } catch {}
+  // And models picked in Settings › API keys ("Use").
+  for (const [id, d] of Object.entries(doc.bots ?? {}).filter(([, d]) => d?.provider && d.model && (d.provider !== 'custom' || d.baseUrl))) {
+    if (bots.some((b) => b.id === id)) continue;
+    try { const t = resolveBot(id, { bots: doc.bots }); bots.unshift({ id, provider: d.provider, desc: t.desc, ready: !t.keyEnv || !!process.env[t.keyEnv], key: t.keyEnv }); } catch {}
   }
   const { assistantName } = await import('./identity.js');
   return {
     name: assistantName(),
     island: { enabled: islandEnabled(), running: islandRunning({ env: {} }), platform: process.platform },
     // What a new chat actually uses: the configured default if it can run, else the best that can.
-    model: { defaultBot: pickWorkingDefault(), configured: config.defaultBot ?? null, source: runnable(config.defaultBot ?? '') ? (config.defaultBotSource ?? 'config') : 'auto: the configured model cannot run here', bots },
+    model: { defaultBot: pickWorkingDefault(), configured: config.defaultBot ?? null, source: runnable(config.defaultBot ?? '') ? (config.defaultBotSource ?? 'config') : 'auto: the configured model cannot run here', bots, fallback: (doc.fallback_bots ?? doc.fallbackBots ?? [])[0] ?? null },
     awake: { on: doc.awake !== false && process.env.OX_NO_AWAKE !== '1' },
   };
 }
@@ -1219,6 +1232,14 @@ async function handleSettingsPost(req, res) {
       return;
     }
     saveConfigDoc((doc) => { doc.defaultBot = body.defaultBot; });
+  }
+  // The backup model: what a chat moves to when its own model fails (a key
+  // revoked, a provider down, a rate limit). '' clears it.
+  if (typeof body.fallbackBot === 'string') {
+    if (body.fallbackBot) {
+      try { resolveBot(body.fallbackBot, { bots: readConfigDoc().bots ?? {} }); } catch (e) { sendError(res, 400, String(e?.message ?? e), 'invalid_request_error', 'invalid_bot', 'fallbackBot'); return; }
+    }
+    saveConfigDoc((doc) => { delete doc.fallbackBots; if (body.fallbackBot) doc.fallback_bots = [body.fallbackBot]; else delete doc.fallback_bots; });
   }
   if (typeof body.awake === 'boolean') saveConfigDoc((doc) => { doc.awake = body.awake; });
   if (typeof body.name === 'string') {

@@ -2707,7 +2707,8 @@ files: [src/billing/**]
             const list = st.model.bots.some((b) => b.id === chosen) || !chosen ? st.model.bots : [{ id: chosen, ready: !st.model.configured }, ...st.model.bots];
             if (!list.length) return '<span class="dim small">None yet</span>';
             return `<select id="s-model">${list.map((b) => `<option value="${esc(b.id)}"${b.id === chosen ? ' selected' : ''}>${esc(b.id)}${b.ready ? '' : ' (no key)'}</option>`).join('')}</select>`;
-          })())}</div>
+          })())}
+          ${row('Backup model', 'Used when the chosen model fails: a revoked key, a provider down, a rate limit. ox says when it switches, and to what.', st.model.bots.length ? `<select id="s-fallback"><option value="">None</option>${st.model.bots.map((b) => `<option value="${esc(b.id)}"${b.id === st.model.fallback ? ' selected' : ''}>${esc(b.id)}${b.ready ? '' : ' (no key)'}</option>`).join('')}</select>` : '<span class="dim small">None yet</span>')}</div>
           <div class="sblock"><div class="shead">${icon('chat')}Chat</div><p class="sdesc">How this app behaves. Kept in this browser.</p>
           ${row('Default mode', 'What new chats start in. Auto picks per message.', `<select id="s-mode">${['auto', 'code', 'ask', 'plan', 'debug', 'data', 'orchestrate'].map((m) => `<option value="${m}">${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}</select>`)}
           ${row('Send with', 'The other key adds a new line.', seg('sendKey', [['enter', 'Enter'], ['mod', `${MOD}+Enter`]], prefs.sendKey))}
@@ -2722,6 +2723,7 @@ files: [src/billing/**]
         }));
         $('s-model').value = st.model.defaultBot;
         if ($('s-model')) $('s-model').onchange = async () => { try { await postJson('/ox/settings', { defaultBot: $('s-model').value }); toast('Default model saved'); } catch (e) { toast(e.message); } };
+        if ($('s-fallback')) $('s-fallback').onchange = async () => { try { await postJson('/ox/settings', { fallbackBot: $('s-fallback').value }); toast($('s-fallback').value ? `Backup model: ${$('s-fallback').value}` : 'No backup model'); } catch (e) { toast(e.message); } };
         $('s-mode').value = store.get('ox.prefs', {}).defaultMode || 'auto';
         $('s-mode').onchange = () => { prefs.defaultMode = $('s-mode').value; savePrefs(); };
         $('s-follow').onchange = () => { prefs.followups = $('s-follow').checked; savePrefs(); };
