@@ -28,6 +28,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         bridge.start()
         // Check without touching the mouse: OX_ISLAND_DEMO=card opens the island
         // and the first session's card a few seconds after launch (screenshots).
+        // OX_ISLAND_DEMO=herd: the island open with nothing running, for pasture screenshots.
+        if ProcessInfo.processInfo.environment["OX_ISLAND_DEMO"] == "herd" {
+            HerdScene.demo = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [bridge] in bridge.pinnedOpen = true }
+        }
         if ProcessInfo.processInfo.environment["OX_ISLAND_DEMO"] == "open" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [bridge] in bridge.pinnedOpen = true }
         }

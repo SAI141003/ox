@@ -46,6 +46,9 @@ PROFILES = {
             "think": ("Idle_2", 40, "lookup", "think"),
             "worried": ("Idle_Headlow", 40, "open", "worried"),
             "dizzy": ("Idle_Headlow", 40, "x", "worried"),
+            # Family life on the pasture: drinking at the trough, head-butting a friend in play.
+            "drink": ("Idle_Headlow", 40, "content", "calm"),
+            "play": ("Attack_Headbutt", 28, "happy", "up"),
         },
         # The concept (docs/ISLAND_VS.md): cream coat with charcoal patches,
         # pink muzzle, amber horns, charcoal hooves; the model's own small eyes

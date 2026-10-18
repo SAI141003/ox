@@ -168,10 +168,15 @@ struct OverviewHome: View {
         HStack(spacing: 10) {
             ZStack(alignment: .topLeading) {
                 HomeCard(wash: wash) { EmptyView() }
-                HomeCharacter(bridge: bridge, mood: mood, size: 54)
-                    .position(x: 52, y: 49)
+                if bridge.focused == nil || HerdScene.demo {
+                    // Nothing running: the herd is out on the pasture.
+                    HerdScene(bridge: bridge).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                } else {
+                    HomeCharacter(bridge: bridge, mood: mood, size: 54)
+                        .position(x: 52, y: 49)
+                }
                 focusBody
-                    .padding(.leading, 104).padding(.trailing, 30).padding(.top, 10)
+                    .padding(.leading, bridge.focused == nil || HerdScene.demo ? 12 : 104).padding(.trailing, 30).padding(.top, bridge.focused == nil || HerdScene.demo ? 8 : 10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 if let f = bridge.focused, OxBridge.externalId(f.id) != nil || f.closedAt == nil {
                     Button { bridge.openCard(f) } label: {
@@ -197,7 +202,7 @@ struct OverviewHome: View {
     }
 
     @ViewBuilder private var focusBody: some View {
-        if let f = bridge.focused {
+        if let f = bridge.focused, !HerdScene.demo {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
                     Circle().fill(Color(hex: f.color)).frame(width: 7, height: 7)
@@ -208,12 +213,8 @@ struct OverviewHome: View {
                 StepTicker(session: f)
             }
         } else {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Nothing running").font(.system(size: 12, weight: .semibold)).foregroundStyle(HomeInk.text)
-                Text("Type or talk to \(OxName.current), or start an agent anywhere: it shows up here.")
-                    .font(.system(size: 11)).foregroundStyle(HomeInk.muted).lineLimit(2)
-                if let t = bridge.today { TodayMeter(today: t) }
-            }
+            Text("All quiet").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(HomeInk.muted)
+                .help("Nothing running. Type or talk to \(OxName.current), or start an agent anywhere: it shows up here.")
         }
     }
 }
