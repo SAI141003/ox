@@ -2606,6 +2606,7 @@ files: [src/billing/**]
   // ---------- settings
   const SECTIONS = [
     ['general', 'General', 'gear', 'name rename call it default model mode send enter agents'],
+    ['instructions', 'Instructions', 'wand', 'custom instructions personal preferences how to respond style tone about me rules system prompt'],
     ['appearance', 'Appearance', 'palette', 'theme dark light text size width motion'],
     ['desktop', 'OX Island & desktop', 'monitor', 'island notch awake sleep buddy restart'],
     ['voice', 'Voice', 'mic', 'speech language read aloud'],
@@ -2617,9 +2618,11 @@ files: [src/billing/**]
     ['keys', 'API keys', 'key', 'api key keys token secret provider add connect anthropic openai xai gemini openrouter search web tavily brave serper images video fal', true],
     ['endpoints', 'Custom endpoints', 'globe', 'openai compatible vllm llama.cpp gateway url server azure bedrock proxy base url self-hosted', true],
     ['local', 'Local models', 'cpu', 'ollama lm studio offline ram hugging face', true],
-    ['messaging', 'Messaging', 'chat', 'telegram discord phone'],
+    ['connectors', 'Connectors', 'blocks', 'mcp servers tools connectors plugins integrations github slack notion database'],
+    ['messaging', 'Messaging', 'chat', 'telegram discord slack phone'],
     ['shortcuts', 'Keyboard shortcuts', 'keyboard', 'keys hotkeys'],
     ['archived', 'Archived chats', 'archive', 'archive restore'],
+    ['data', 'Data & privacy', 'shield', 'export download delete all chats privacy telemetry data where stored'],
     ['gap'],
     ['about', 'About', 'info', 'version'],
   ];
@@ -2982,11 +2985,54 @@ files: [src/billing/**]
             : '<div style="text-align:center;margin-top:12vh"><b>Nothing archived</b><div class="dim small">Archive a chat to hide it here.</div></div>'}`;
         el.querySelectorAll('[data-restore]').forEach((b) => (b.onclick = () => { const c = convos.find((x) => x.id === b.dataset.restore); c.archived = false; saveConvos(); renderLists(); renderSection(); }));
         el.querySelectorAll('[data-purge]').forEach((b) => (b.onclick = async () => { if (!(await askSure('Delete this chat for good?'))) return; convos = convos.filter((x) => x.id !== b.dataset.purge); saveConvos(); renderSection(); }));
+      } else if (sec === 'instructions') {
+        const I = await getJson('/ox/instructions');
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('wand')}Instructions</div><p class="sdesc">How you want ox to work, in your words. Applied to every chat, the terminal and the plans you connect (Claude, ChatGPT…). A project's own AGENTS.md or .ox.md wins where they disagree. Kept in <span class="mono">${esc(I.file)}</span>.</p>
+          <textarea class="field" id="ins-text" rows="10" maxlength="${I.max}" placeholder="For example:\n- Answer briefly; give the command first.\n- I use pnpm, TypeScript and Vitest.\n- Never push to main; open a branch.">${esc(I.text)}</textarea>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn primary" id="ins-save">Save</button><span class="small muted" id="ins-count"></span></div>`;
+        const count = () => ($('ins-count').textContent = `${$('ins-text').value.length} / ${I.max}`);
+        $('ins-text').oninput = count; count();
+        $('ins-save').onclick = async () => { try { await postJson('/ox/instructions', { text: $('ins-text').value }); toast($('ins-text').value.trim() ? 'Instructions saved: used from the next message' : 'Instructions cleared'); } catch (e) { toast(e.message); } };
+      } else if (sec === 'connectors') {
+        const C = await getJson('/ox/connectors');
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('blocks')}Connectors</div><p class="sdesc">MCP servers give ox more tools: GitHub, a database, Notion, your own. Every run can use them; each call asks first unless you allow that server. Ready-made ones are in the Marketplace.</p>
+          <div class="cards">${C.map((c) => `<div class="card"><span class="dot ok"></span><span class="t"><div class="n">${esc(c.name)}</div><div class="d mono"><span>${esc(c.kind)}</span><span>${esc(c.target)}</span></div></span><button class="btn ghost danger" data-con-rm="${esc(c.name)}">Remove</button></div>`).join('') || '<div class="box muted small">None yet.</div>'}</div>
+          <div class="section-cap cap">Add one</div>
+          <div class="box" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <label class="small muted">Name<input class="field" id="con-name" placeholder="github"></label>
+            <label class="small muted">Command (a local server)<input class="field" id="con-cmd" placeholder="npx"></label>
+            <label class="small muted">Arguments<input class="field" id="con-args" placeholder="-y @modelcontextprotocol/server-github"></label>
+            <label class="small muted">or a URL (a remote server)<input class="field" id="con-url" placeholder="https://example.com/mcp"></label>
+            <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center"><button class="btn primary" id="con-add">Add</button><span class="small muted" id="con-state"></span></div>
+          </div>`;
+        $('con-add').onclick = async () => { try { await postJson('/ox/connectors', { name: $('con-name').value.trim(), command: $('con-cmd').value.trim(), args: $('con-args').value.trim(), url: $('con-url').value.trim() }); toast('Connector added: used from the next run'); renderSection(); } catch (e) { $('con-state').textContent = e.message; } };
+        el.querySelectorAll('[data-con-rm]').forEach((b) => (b.onclick = async () => { try { await postJson('/ox/connectors', { action: 'remove', name: b.dataset.conRm }); toast('Connector removed'); renderSection(); } catch (e) { toast(e.message); } }));
+      } else if (sec === 'data') {
+        const n = convos.length;
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('shield')}Data & privacy</div>
+          <p class="sdesc">ox has no account and sends no telemetry. Your chats in this app are kept in this browser; terminal sessions in ~/.ox/sessions; memory and keys in ~/.ox on this machine. A message goes only to the model you chose for it.</p>
+          ${row('Export all chats', `${n} chat${n === 1 ? '' : 's'} in this app, as one file you keep`, '<div style="display:flex;gap:6px"><button class="btn" id="exp-json">JSON</button><button class="btn" id="exp-md">Markdown</button></div>')}
+          ${row('Delete all chats', 'Every chat in this app, archived ones included. Memory and terminal sessions are kept.', '<button class="btn ghost danger" id="del-all">Delete all…</button>')}`;
+        const download = (name, text, type) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
+        const stamp = new Date().toISOString().slice(0, 10);
+        $('exp-json').onclick = () => download(`ox-chats-${stamp}.json`, JSON.stringify(convos, null, 2), 'application/json');
+        $('exp-md').onclick = () => download(`ox-chats-${stamp}.md`, convos.map((c) => `# ${c.title}\n\n${(c.messages || []).map((m) => `**${m.role}:** ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`).join('\n\n')}`).join('\n\n---\n\n'), 'text/markdown');
+        $('del-all').onclick = async () => {
+          if (!n) { toast('No chats to delete'); return; }
+          if (!(await askSure(`Delete all ${n} chats in this app? This cannot be undone. Export them first if you want a copy.`))) return;
+          convos = []; saveConvos(); newConvo(); renderLists(); toast('All chats deleted'); renderSection();
+        };
       } else if (sec === 'about') {
         about = about || await getJson('/ox/about');
         el.innerHTML = `${mobileBack}<div class="shead">${icon('info')}About ox</div><p class="sdesc">Your agent for code and everything around it. One ox in your terminal, this app, your notch and your phone.</p>
           <dl class="kv"><dt>version</dt><dd>${esc(about.version)}</dd><dt>licence</dt><dd>${esc(about.license)}</dd><dt>runtime</dt><dd>Node ${esc(about.node)} · ${esc(about.platform)} ${esc(about.arch)}</dd><dt>folder</dt><dd class="mono">${esc(about.cwd)}</dd><dt>settings</dt><dd class="mono">${esc(about.config)}</dd><dt>keys</dt><dd class="mono">${esc(about.keys)}</dd></dl>
-          <div class="cmd"><code>ox doctor</code><button data-copy-cmd="ox doctor">${icon('copy')}</button></div>`;
+          <div class="cmd"><code>ox doctor</code><button data-copy-cmd="ox doctor">${icon('copy')}</button></div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:10px"><button class="btn" id="upd-check">Check for updates</button><span class="small muted" id="upd-state"></span></div>`;
+        $('upd-check').onclick = async () => {
+          $('upd-state').textContent = 'checking…';
+          try { const u = await getJson('/ox/update'); $('upd-state').textContent = u.kind === 'git' ? (u.incoming.length ? `${u.incoming.length} new change${u.incoming.length === 1 ? '' : 's'} on ${u.upstream}: run ox update` : 'Up to date') : u.message; }
+          catch (e) { $('upd-state').textContent = e.message; }
+        };
       }
       paintIcons(el);
     } catch (e) {

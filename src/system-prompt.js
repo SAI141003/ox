@@ -347,6 +347,13 @@ export async function buildPromptLayers({
     open('workspace-tree', 'session');
     put('', '# WORKSPACE TREE', tree);
   }
+  // The user's own instructions (Settings > Instructions): every turn, quick
+  // answers included, below the project's own files in precedence.
+  const userInstructions = String(contextParts?.userInstructions ?? '').trim();
+  if (userInstructions) {
+    open('user-instructions', 'session');
+    put('', "# THE USER'S INSTRUCTIONS", "How the user wants you to work, in their words. Follow them; where this project's instructions disagree, the project's win.", userInstructions);
+  }
   if (instructions && !answerOnly) {
     open('project-instructions', 'session');
     put('', '# PROJECT INSTRUCTIONS', INSTRUCTION_PRECEDENCE_LINE, instructions);

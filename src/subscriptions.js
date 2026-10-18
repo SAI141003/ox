@@ -559,6 +559,9 @@ export function planBrief(ctx = {}, env = process.env) {
   const name = String(env.OX_NAME ?? '').trim() || (() => { try { return readName(); } catch { return ''; } })();
   if (name && name !== 'ox') parts.push(`You are ${name}; the user named you that and talks to you by that name.`);
   if (typeof ctx.personaBlock === 'string' && ctx.personaBlock.trim()) parts.push(ctx.personaBlock.trim());
+  // Your own instructions (Settings > Instructions) reach the plans too.
+  const mine = (() => { if (env.NODE_TEST_CONTEXT && !env.OX_INSTRUCTIONS_FILE) return ''; try { return fs.readFileSync(env.OX_INSTRUCTIONS_FILE || path.join(env.OX_HOME || path.join(os.homedir(), '.ox'), 'instructions.md'), 'utf8').trim().slice(0, 4000); } catch { return ''; } })();
+  if (mine) parts.push(`How the user wants you to work:\n${mine}`);
   if (typeof ctx.memoryBlock === 'string' && ctx.memoryBlock.trim()) parts.push(`What you know about the user and this project:\n${ctx.memoryBlock.trim().slice(0, 4000)}`);
   return parts.join('\n\n');
 }

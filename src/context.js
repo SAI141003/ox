@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { execSync } from 'node:child_process';
 import { screenReadLines, shortWithheldNotice } from './memory.js';
 import { gitToplevel } from './git-fast.js';
@@ -66,9 +67,23 @@ export function treeBudgetTokens(budgetTokens = 8000, instructionsBlock = '') {
   return Math.max(0, Math.floor(total * TREE_BUDGET_SHARE) - estimateTokens(instructionsBlock));
 }
 
+// Your own instructions for every chat (Settings > Instructions; ChatGPT's
+// custom instructions, Claude's personal preferences): ~/.ox/instructions.md,
+// applied everywhere at the LOWEST precedence, so a project's own AGENTS.md /
+// .ox.md wins a conflict. Under the test runner only an explicit
+// OX_INSTRUCTIONS_FILE is read, never the owner's real file.
+export const userInstructionsFile = (env = process.env) => env.OX_INSTRUCTIONS_FILE || path.join(env.OX_HOME || path.join(os.homedir(), '.ox'), 'instructions.md');
+export function readUserInstructions(env = process.env) {
+  if (env.NODE_TEST_CONTEXT && !env.OX_INSTRUCTIONS_FILE) return '';
+  try { return fs.readFileSync(userInstructionsFile(env), 'utf8').trim().slice(0, 4000); } catch { return ''; }
+}
+
 export function buildContext({ cwd, budgetTokens = 8000, scopedPaths = [] } = {}) {
   const root = path.resolve(cwd ?? process.cwd());
   const instructions = collectMemoryFiles(root, scopedPaths);
+  // Kept apart from the project's files: those are left out of quick answers
+  // to save tokens, while your own instructions apply to every answer.
+  const userInstructions = readUserInstructions();
   // Instructions are charged FIRST: they are the actual directives, the tree is
   // a map of where they apply. Whatever the directives leave is the tree's.
   const tree = buildTree(root, treeBudgetTokens(budgetTokens, instructions.block));
@@ -79,6 +94,7 @@ export function buildContext({ cwd, budgetTokens = 8000, scopedPaths = [] } = {}
     tokenCount: estimateTokens(instructions.block + '\n' + tree),
     instructionRoot: instructions.root,
     instructions: instructions.stats,
+    userInstructions,
   };
 }
 

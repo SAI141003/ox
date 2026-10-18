@@ -137,6 +137,58 @@ export async function useProviderModel(provider, model) {
   return { name, ...def };
 }
 
+// Settings > Instructions: your own instructions for every chat.
+export async function instructionsView(env = process.env) {
+  const { userInstructionsFile } = await import('./context.js');
+  const file = userInstructionsFile(env);
+  let text = '';
+  try { text = fs.readFileSync(file, 'utf8'); } catch {}
+  return { file, text, max: 4000 };
+}
+export async function saveInstructions(text, env = process.env) {
+  const { userInstructionsFile } = await import('./context.js');
+  const t = String(text ?? '');
+  if (t.length > 4000) throw new Error('keep it under 4,000 characters');
+  const file = userInstructionsFile(env);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  if (t.trim()) fs.writeFileSync(file, `${t.trim()}\n`, { mode: 0o600 });
+  else { try { fs.unlinkSync(file); } catch {} }
+  return instructionsView(env);
+}
+
+// Settings > Connectors: MCP servers every run can use (config mcpServers).
+const CONNECTOR_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,40}$/;
+export async function connectorsView() {
+  const { readConfigDoc } = await import('./config.js');
+  const servers = readConfigDoc().mcpServers ?? {};
+  return Object.entries(servers).map(([name, s]) => ({ name, kind: s?.url ? 'http' : 'stdio', target: s?.url ?? [s?.command, ...(s?.args ?? [])].filter(Boolean).join(' '), env: Object.keys(s?.env ?? {}) }));
+}
+export async function saveConnector(body = {}) {
+  const { saveConfigDoc } = await import('./config.js');
+  const name = String(body.name ?? '').trim();
+  if (!CONNECTOR_NAME.test(name)) throw new Error('name: letters, numbers, - and _ (up to 40)');
+  if (body.action === 'remove') { saveConfigDoc((doc) => { if (doc.mcpServers) delete doc.mcpServers[name]; }); return connectorsView(); }
+  let def;
+  const url = String(body.url ?? '').trim();
+  if (url) {
+    if (!/^https?:\/\//i.test(url)) throw new Error('the URL must start with http:// or https://');
+    def = { url };
+  } else {
+    const command = String(body.command ?? '').trim();
+    if (!command) throw new Error('give a command (like npx) or a URL');
+    const args = Array.isArray(body.args) ? body.args.map(String) : String(body.args ?? '').trim() ? String(body.args).trim().split(/\s+/) : [];
+    def = { command, args };
+  }
+  saveConfigDoc((doc) => { doc.mcpServers = { ...(doc.mcpServers ?? {}), [name]: def }; });
+  return connectorsView();
+}
+
+// Settings > About: is there a newer ox?
+export async function updateView() {
+  const { updateCheck } = await import('./evolve.js');
+  try { return updateCheck(); } catch (e) { return { kind: 'error', message: String(e?.message ?? e) }; }
+}
+
 // Subscriptions you already pay for (Claude, ChatGPT, …) through their CLIs.
 export async function accountsView(env = process.env) {
   const { checkAll } = await import('./subscriptions.js');
