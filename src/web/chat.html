@@ -607,7 +607,7 @@
           <div class="crow">
             <button class="round" id="attach" title="Add photos, files and tools" aria-label="Add photos, files and tools" aria-haspopup="menu" aria-expanded="false" data-i="plus"></button>
             <input type="file" id="file" multiple hidden>
-            <input type="file" id="photo" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
+            <input type="file" id="photo" accept="image/png,image/jpeg,image/gif,image/webp,video/*" multiple hidden>
             <input type="file" id="camera" accept="image/*" capture="environment" hidden>
             <button class="pill" id="mode-btn" aria-haspopup="listbox" aria-expanded="false" title="Mode, enforced (⌘. next mode)"><span data-i="mode"></span><span id="mode-name">Auto</span></button>
             <select id="mode" aria-label="Mode" hidden>
@@ -1648,12 +1648,36 @@
     $('attached').querySelectorAll('button[data-p]').forEach((b) => (b.onclick = () => { photos.splice(Number(b.dataset.p), 1); showAttachments(); }));
     if (!busy) $('send').disabled = !$('input').value.trim() && !attachments.length && !(typeof photos !== 'undefined' && photos.length);
   }
+  // Any file: a small text file goes straight into the message; anything else
+  // (a video, a PDF, audio, a spreadsheet, a zip) is uploaded to ox, which
+  // keeps it on this machine and describes it: a video's frames come back as
+  // photos the model can look at, a PDF's text as text, every file's path.
+  async function uploadFile(f) {
+    const res = await fetch('/ox/upload', { method: 'POST', headers: { 'x-ox-filename': encodeURIComponent(f.name), 'content-type': f.type || 'application/octet-stream', ...(key ? { Authorization: `Bearer ${key}` } : {}) }, body: f });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j?.error?.message || `HTTP ${res.status}`);
+    return j;
+  }
   async function addFiles(list) {
     for (const f of list) {
-      if (f.size > 200_000) { toast(`${f.name} is over 200 KB. Point ox at it by path instead`); continue; }
-      const text = await f.text();
-      if (/\u0000/.test(text)) { toast(`${f.name} is not a text file`); continue; }
-      attachments.push({ name: f.name, text });
+      if (/^image\//.test(f.type)) { await addPhotos([f]); continue; }
+      if (f.size <= 200_000) {
+        const text = await f.text();
+        if (!/\u0000/.test(text)) { attachments.push({ name: f.name, text }); continue; }
+      }
+      const chip = { name: `${f.name} (uploading…)`, text: '' };
+      attachments.push(chip); showAttachments();
+      try {
+        const u = await uploadFile(f);
+        chip.name = f.name;
+        chip.text = u.text ? `${u.note}\n${u.text}` : u.note;
+        for (const fr of u.frames ?? []) photos.push({ name: `${f.name} @ ${fr.t} s`, mediaType: 'image/jpeg', data: fr.data, thumb: fr.thumb || `data:image/jpeg;base64,${fr.data}` });
+        toast(u.kind === 'video' ? `${f.name}: ${u.frames?.length ?? 0} frames${u.duration ? ` from ${Math.round(u.duration)} s` : ''}, ready` : `${f.name} ready`);
+      } catch (e) {
+        attachments.splice(attachments.indexOf(chip), 1);
+        toast(`${f.name}: ${e.message}`);
+      }
+      showAttachments();
     }
     showAttachments();
   }
@@ -1865,7 +1889,7 @@
     showAttachments();
   }
   function takePhotos() { const p = photos; photos = []; showAttachments(); return p; }
-  $('photo').onchange = async () => { await addPhotos($('photo').files); $('photo').value = ''; };
+  $('photo').onchange = async () => { const fl = [...$('photo').files]; await addPhotos(fl.filter((f) => /^image\//.test(f.type))); const rest = fl.filter((f) => !/^image\//.test(f.type)); if (rest.length) await addFiles(rest); $('photo').value = ''; };
   $('camera').onchange = async () => { await addPhotos($('camera').files); $('camera').value = ''; };
 
   // The wand: a rough message becomes a clear prompt, in the box, before sending.

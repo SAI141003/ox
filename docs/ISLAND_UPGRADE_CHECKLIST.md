@@ -86,3 +86,15 @@ States: ✓ the island has it · ~ partly · ✗ missing · → next to build
 | Approving Claude Code / Codex from the notch | built, not installed (A1) |
 | Claude plan usage | relay now built (A5), not installed |
 | Live voice (Fn / ⌃⌥Space, mic), dictation pasting, call notes | need you at the Mac: speech and Accessibility cannot be driven from here |
+
+## E. The owner's standing requests (October 18), cross-checked each round
+
+| # | Request | State |
+|---|---|---|
+| E1 | Test the app like a person: every function, by clicking, not by API | → in progress |
+| E2 | Uploads: videos are not accepted | ✓ any file now: a video becomes frames the model sees (checked in the app: a dropped video was described correctly), PDFs give their text, everything else its path |
+| E3 | Interactive answers (OpenUI) must work every time, not once in a while: measure the rate, fix the failures | → |
+| E4 | Better than Devin, and why (side by side, honest) | → |
+| E5 | Use the repos from the screenshots (agent-skills, ECC, n8n templates, ADK, trim-1) | ~ D1 ✓, D4 ✓ (idea) |
+| E6 | Use Paperclip fully (org chart, heartbeats, budgets, governance, adapters, sessions) | ~ task board only |
+| E7 | Keep this checklist current; go back and forth to cross-check | ✓ this file |

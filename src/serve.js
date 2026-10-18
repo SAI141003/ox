@@ -655,11 +655,15 @@ async function handleChatCompletions(req, res) {
   // agent's own mode applies unless a specific mode was picked.
   const lastUser = [...messages].reverse().find((m) => m?.role === 'user');
   const pickedMode = body.ox_mode && body.ox_mode !== 'auto' ? body.ox_mode : (agentDef?.mode ?? body.ox_mode ?? 'code');
-  let turnMode = resolveTurnMode(pickedMode, typeof lastUser?.content === 'string' ? lastUser.content : '');
+  // Routing reads what you typed: the app appends attached files after it
+  // ("\n\n`name`:\n```…```"), and a question with a video attached is still a
+  // question (it was routed to Code because it no longer ended with "?").
+  const typedText = (typeof lastUser?.content === 'string' ? lastUser.content : '').replace(/\n\n`[^`\n]+`:\n```[\s\S]*?```/g, '').trim();
+  let turnMode = resolveTurnMode(pickedMode, typedText);
   // In ox's own app, "make a loan calculator" asks for something to look at and
   // use here, not a change to the project: auto keeps it an answer (ask), unless
   // the message points at code or files.
-  const said = typeof lastUser?.content === 'string' ? lastUser.content : '';
+  const said = typedText;
   const wantsUi = WANTS_UI.test(said) || s1?.kind === 'interactive';
   const needsWeb = NEEDS_WEB.test(said) || s1?.kind === 'current';
   const by = s1 ? ` (System 1, ${s1.ms} ms)` : '';
@@ -1503,6 +1507,18 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/voice\/?$/, handler: appRoute(async () => { const k = await import('./kokoro.js'); const st = k.kokoroStatus(); return { kokoro: st.ready, install: 'ox voice install', voices: st.ready ? (await k.kokoroVoices()).map((id) => ({ id, label: k.VOICE_LABELS[id] ?? id })) : [], default: k.DEFAULT_VOICE }; }) },
   { method: 'GET', pattern: /^\/ox\/providers\/?$/, handler: appRoute(async () => (await appApi()).providersView()) },
   { method: 'POST', pattern: /^\/ox\/providers\/?$/, handler: appRoute(async (b) => { const a = await appApi(); if (b.action === 'test') return a.testProviderKey(String(b.provider ?? ''), typeof b.key === 'string' ? b.key : null); if (b.action === 'use') return a.useProviderModel(String(b.provider ?? ''), String(b.model ?? '')); return a.saveProviderKey(String(b.provider ?? ''), b.key ?? null); }) },
+  // Any file from the app (videos, PDFs, audio, anything over 200 KB): saved,
+  // then described for the model (src/uploads.js).
+  { method: 'POST', pattern: /^\/ox\/upload\/?$/, handler: async (req, res) => {
+    if (!authorized(req)) { unauthorized(res); return; }
+    const U = await import('./uploads.js');
+    let name = 'file';
+    try { name = decodeURIComponent(String(req.headers['x-ox-filename'] ?? 'file')); } catch {}
+    try {
+      const { file, size } = await U.saveUpload(req, name);
+      sendJson(res, 200, U.describeUpload(file, name, String(req.headers['content-type'] ?? ''), size));
+    } catch (e) { sendError(res, 413, `upload refused: ${e?.message ?? e}`, 'invalid_request_error', 'upload_failed', null); }
+  } },
   { method: 'GET', pattern: /^\/ox\/instructions\/?$/, handler: appRoute(async () => (await appApi()).instructionsView()) },
   { method: 'POST', pattern: /^\/ox\/instructions\/?$/, handler: appRoute(async (b) => (await appApi()).saveInstructions(b.text ?? '')) },
   { method: 'GET', pattern: /^\/ox\/connectors\/?$/, handler: appRoute(async () => (await appApi()).connectorsView()) },
