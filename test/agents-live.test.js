@@ -103,3 +103,10 @@ test('Copilot sessions: folder, model, the command it runs', () => {
   const [s] = copilotSessions({ home });
   assert.deepEqual([s.tool, s.project, s.model, s.state, s.doing], ['Copilot', 'site', 'gpt-5.6', 'tool', '$ npm run build']);
 });
+
+test('codex resume uses a model the account may use; errors read as words', async () => {
+  const { sendCommand, plainError } = await import('../src/agents-live.js');
+  assert.deepEqual(sendCommand('codex', 's1', 'hi', (t, f) => f, { modelArgs: () => ['-m', 'gpt-6-luna'] }), ['codex', ['exec', 'resume', '-m', 'gpt-6-luna', 's1', 'hi']]);
+  assert.equal(plainError('ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-5.5\' model is not supported when using Codex with a ChatGPT account."}}'), "The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account.");
+  assert.equal(plainError('line one\nERROR: not signed in'), 'not signed in');
+});

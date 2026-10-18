@@ -33,12 +33,14 @@ enum IslandLayout {
     /// Sessions are listed: the island stays slim like Coucou's and Claudex's
     /// (small characters in the rows, no walking-ox floor under them).
     static var busy = false
-    static var floorHeight: CGFloat { compact || busy ? 0 : 92 }
+    /// The ox lives in the card now (at its left, like Mochi in Coucou's), so
+    /// there is no separate floor under it: the island stays slim in every state.
+    static var floorHeight: CGFloat { 0 }
     static var expanded: CGSize { CGSize(width: compact ? 520 : 640, height: 168 + floorHeight) }
     /// Seconds the island stays open after the pointer leaves (0 = until you close it).
     static var autoClose: TimeInterval { UserDefaults.standard.object(forKey: "island.autoClose") as? Double ?? 6 }
     /// With nothing running the card is one line, so the island is shorter.
-    static let idleCardTrim: CGFloat = 70
+    static let idleCardTrim: CGFloat = 26
     /// Extra height under the card: the agent office, or the run's OX Canvas.
     static let officeHeight: CGFloat = 132
 

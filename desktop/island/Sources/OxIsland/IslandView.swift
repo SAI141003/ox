@@ -146,7 +146,8 @@ struct CompactBar: View {
             // The lane runs from the wing into the notch, whose camera housing
             // hides the far end: the bull patrols in and out, and sleeps in there.
             let wing = max(0, (w - metrics.width) / 2 - lead)
-            OxWalker(mood: bridge.headlineMood, height: oxSize * 0.95, roam: true, onPoke: { bridge.showReaction() })
+            OxWalker(mood: bridge.gauges.contains { $0.percent >= 80 } && [Mood.idle, .sleeping, .done].contains(bridge.headlineMood) ? .needsYou : bridge.headlineMood,
+                     height: oxSize * 0.95, roam: true, onPoke: { bridge.showReaction() })
                 .frame(width: wing + oxSize * 0.95 * 4 / 3 + 4)
             Spacer(minLength: 0)
             if let team = bridge.officeSession, team.agents.contains(where: { $0.endedAt == nil }) {
@@ -238,6 +239,13 @@ struct ExpandedContent: View {
                         BuddyBody(buddy: bridge.buddy)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
+                        // The ox, always in the card: its face is the most urgent
+                        // state (working, needs you, done, error); poke it and it reacts.
+                        // Past 80 % of a plan's limit the ox is on alert (Claudex's panicking mascot).
+                        let stressed = bridge.gauges.contains { $0.percent >= 80 } && [Mood.idle, .sleeping, .done].contains(oxMood)
+                        OxWalker(mood: stressed ? .needsYou : oxMood, height: min(78, cardH - 16), roam: false, onPoke: { bridge.showReaction() })
+                            .help(stressed ? "A plan is past 80 % of its limit: \(bridge.gauges.filter { $0.percent >= 80 }.map { "\($0.label) \(Int($0.percent))%" }.joined(separator: ", "))" : "")
+                            .frame(width: min(78, cardH - 16) * 4 / 3 + 6, height: min(78, cardH - 16))
                         body(for: focus)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -247,16 +255,6 @@ struct ExpandedContent: View {
             .padding(.horizontal, IslandLayout.ear + 10)
             .overlay(alignment: .bottom) {
                 if let p = bridge.pendingSession?.pending { Countdown(deadline: p.deadline).padding(.horizontal, 40) }
-            }
-            if !bridge.buddyActive && IslandLayout.floorHeight > 0 {
-                // The island's floor: the ox walks its whole width under your
-                // cursor, and trots over to "press" whatever you click.
-                let floorPad = IslandLayout.ear + 10
-                OxWalker(mood: oxMood, height: Self.oxSize, roam: true, barn: true,
-                         follow: true, origin: (IslandLayout.panel.width - w) / 2 + floorPad)
-                    .frame(height: Self.oxSize)
-                    .padding(.horizontal, floorPad)
-                    .padding(.top, 4)
             }
             if let c = bridge.card, let session = bridge.sessions.first(where: { $0.id == c.id }) {
                 // A session you clicked: its conversation, a message box, Open in Terminal.

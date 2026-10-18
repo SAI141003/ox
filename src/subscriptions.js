@@ -531,7 +531,15 @@ export function imagesOf(messages = [], dir = os.tmpdir()) {
   const last = [...messages].reverse().find((m) => m?.role === 'user');
   if (!last) return [];
   const out = [];
-  for (const p of Array.isArray(last.images) ? last.images : []) if (typeof p === 'string' && fs.existsSync(p)) out.push(p);
+  for (const p of Array.isArray(last.images) ? last.images : []) {
+    if (typeof p === 'string' && fs.existsSync(p)) out.push(p);
+    // `ox -p … --image f` attaches { mediaType, data } (providers/images.js): the plan CLIs need a file.
+    else if (p && typeof p.data === 'string' && /^image\/(png|jpe?g|gif|webp)$/i.test(p.mediaType ?? p.media_type ?? '')) {
+      const ext = String(p.mediaType ?? p.media_type).split('/')[1].toLowerCase().replace('jpeg', 'jpg');
+      const f = path.join(dir, `ox-plan-image-${Date.now()}-${out.length}.${ext}`);
+      try { fs.writeFileSync(f, Buffer.from(p.data, 'base64')); out.push(f); } catch {}
+    }
+  }
   for (const part of Array.isArray(last.content) ? last.content : []) {
     const url = part?.image_url?.url ?? part?.image_url ?? (part?.type === 'image' ? part?.source?.data && `data:${part.source.media_type};base64,${part.source.data}` : null);
     if (typeof url !== 'string') continue;

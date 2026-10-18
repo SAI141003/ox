@@ -88,31 +88,42 @@ final class Dictation: ObservableObject {
     /// Put the words where the person types: ⌘V into the front app, then the
     /// clipboard gets back what it held.
     private func paste(_ text: String) {
-        let pb = NSPasteboard.general
-        let previous = pb.string(forType: .string)
-        pb.clearContents()
-        pb.setString(text, forType: .string)
-        let trusted = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
-        guard trusted else {
-            say("Copied: “\(text.prefix(60))”. Allow Accessibility for OX Island to paste it for you.")
-            return
-        }
-        let src = CGEventSource(stateID: .combinedSessionState)
-        let v = CGKeyCode(kVK_ANSI_V)
-        let down = CGEvent(keyboardEventSource: src, virtualKey: v, keyDown: true); down?.flags = .maskCommand
-        let up = CGEvent(keyboardEventSource: src, virtualKey: v, keyDown: false); up?.flags = .maskCommand
-        down?.post(tap: .cghidEventTap); up?.post(tap: .cghidEventTap)
-        phase = .idle
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            if let previous { pb.clearContents(); pb.setString(previous, forType: .string) }
-        }
+        if Paster.paste(text) { phase = .idle; lastPasted = text }
+        else { lastPasted = text; say("Copied: “\(text.prefix(60))”. Allow Accessibility for OX Island to paste it for you.") }
     }
+
+    /// The last dictation, to paste again.
+    private(set) var lastPasted: String?
 
     private func say(_ m: String) {
         // A start that failed still gives the microphone back (« OK ox » listens again).
         if phase != .listening, request == nil { didFinish() }
         phase = .message(m)
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in if case .message = self?.phase { self?.phase = .idle } }
+    }
+}
+
+/// Text into whatever app you are typing in: ⌘V, then the clipboard gets back
+/// what it held. Never presses Return: sending is always yours.
+enum Paster {
+    /// False without the Accessibility permission (the text is then left on the clipboard).
+    @discardableResult
+    static func paste(_ text: String) -> Bool {
+        let pb = NSPasteboard.general
+        let previous = pb.string(forType: .string)
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        let trusted = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+        guard trusted else { return false }
+        let src = CGEventSource(stateID: .combinedSessionState)
+        let v = CGKeyCode(kVK_ANSI_V)
+        let down = CGEvent(keyboardEventSource: src, virtualKey: v, keyDown: true); down?.flags = .maskCommand
+        let up = CGEvent(keyboardEventSource: src, virtualKey: v, keyDown: false); up?.flags = .maskCommand
+        down?.post(tap: .cghidEventTap); up?.post(tap: .cghidEventTap)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            if let previous { pb.clearContents(); pb.setString(previous, forType: .string) }
+        }
+        return true
     }
 }
 

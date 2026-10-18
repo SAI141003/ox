@@ -114,6 +114,14 @@ if CommandLine.arguments.contains("--check-commands") {
             let p = b.islandPart(phrase)
             if p == nil || p?.rest != rest { fails += 1; print("FAIL split: \(phrase) → \(String(describing: p))") } else { print("ok   split  \(phrase) → rest: \(rest ?? "(none)")") }
         }
+        for (phrase, want) in [("write a reply saying I'll be there at 6", OxBridge.WriteKind.text), ("draft an email to Sam about Friday", .text),
+                               ("type a good follow-up prompt in the terminal", .prompt), ("can you write a better prompt", .prompt),
+                               ("write the one-liner for my pitch deck", .text)] {
+            if OxBridge.writeIntent(phrase) != want { fails += 1; print("FAIL write: \(phrase)") } else { print("ok   write  \(phrase)") }
+        }
+        for phrase in ["write an email to Camille, tell her it's done", "play Billie Jean", "what did I write yesterday", "open my messages"] {
+            if OxBridge.writeIntent(phrase) != nil { fails += 1; print("FAIL write took: \(phrase)") } else { print("ok   write  leaves: \(phrase)") }
+        }
         if b.islandPart("open chrome and youtube") != nil { fails += 1; print("FAIL split took a non-island request") } else { print("ok   split  open chrome and youtube → all to ox") }
         for (id, want) in [("codex", "ChatGPT"), ("claude", "Claude"), ("gemini", "Gemini"), ("cursor", "Cursor")] {
             if OxBridge.planLabel(id) != want { fails += 1; print("FAIL plan label \(id)") } else { print("ok   plan   \(id) → \(want)") }

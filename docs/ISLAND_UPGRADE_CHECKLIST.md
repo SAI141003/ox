@@ -32,7 +32,7 @@ States: ✓ the island has it · ~ partly · ✗ missing · → next to build
 | A19 | Open on hover; invisible when idle; any Mac and several displays | ~ | |
 | A20 | Weekly recap (time, sessions, files, lines, top agent), shareable image | ✗ | → |
 | A21 | Your own sounds (drop a file to replace one) | ✗ | |
-| A22 | Character reacts to the Mac's load (stressed when hot or busy) | ✗ | → |
+| A22 | Character reacts to the Mac's load (stressed when hot or busy) | ~ on alert past 80 % of a plan limit (Claudex); Mac load not yet | |
 | A23 | Capture shortcut (⌘⇧S) with a tick | ✗ | |
 | A24 | 10 languages | ✗ | |
 | A25 | iPhone / Android: approvals from the phone, widgets, Live Activity | ✗ | needs a phone app |
@@ -43,8 +43,8 @@ States: ✓ the island has it · ~ partly · ✗ missing · → next to build
 **Clicky (farza): a screen buddy that writes for you**
 | # | Feature | Island now | |
 |---|---|---|---|
-| B1 | Say what you want; it writes the reply into the focused text box (Gmail, Slides…) in your style | ~ dictation pastes your words, not a written reply | → "write it for me" mode |
-| B2 | Types a good follow-up prompt into Claude Code's terminal | ~ ox can, deliberately not offered to plans | |
+| B1 | Say what you want; it writes the reply into the focused text box (Gmail, Slides…) in your style | ✓ **new**: "write a reply saying…", "draft a post…": ox reads the screen and writes it in your voice, pasted where you type; never sent | checked: command matching; image to model real |
+| B2 | Types a good follow-up prompt into Claude Code's terminal | ✓ **new**: "type a good follow-up prompt": pasted, Return never pressed, and the island says what it does | |
 | B3 | Skills library (e.g. a Y Combinator advice skill) | ✓ in ox (Marketplace) | |
 | B4 | "Hey <name>" wake phrase | ✓ ("OK ox", your chosen name) | |
 
@@ -201,4 +201,7 @@ the island was rebuilt. "Checked" says how the fix was proven.
 | F4.18 | A click on the island (a session, Allow / Deny, a tray tool) could be used up just bringing the panel forward | The island takes the first click (acceptsFirstMouse) | real island: card opened |
 | F4.19 | The island closed 6 s after the pointer left, even while you typed in it | It stays while it has the keyboard | real island screenshot |
 | F4.20 | The open island put the session list above the walking-ox floor, so it grew tall (unlike Coucou / Claudex) | With sessions listed the floor goes; small characters in the rows; up to 4 rows, working ones first | real island screenshot |
+| F4.22 | Messaging a Codex session from the island failed: Codex's config named gpt-5.5, which the ChatGPT account may not use; the raw error JSON was shown | Resume with a model the account allows; errors shown as words | real: "pong" came back from a Codex session |
+| F4.23 | `ox -p … --image f` printed the help (the flag was documented, not parsed); with a plan, the image was dropped | Parsed; plan runs get the image as a file | real: "A screenshot of a dark chat app." |
+| F4.24 | The ox had been taken out of the open island | Back, in the card's left like Mochi; its face is the most urgent state; on alert past 80 % of a plan limit (Claudex) | real island screenshot |
 | F4.21 | No way to open a session from the island, read it, message it or take it over | Click a session's character: its last messages, a message box (one turn through the tool's own resume; waits while the session is busy in its own window), Open in Terminal | test/agents-live.test.js; real island shows the conversation |

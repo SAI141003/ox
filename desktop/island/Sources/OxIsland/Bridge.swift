@@ -153,6 +153,11 @@ final class OxBridge: ObservableObject {
                     IslandLog.write("island did: \(part.said) · passing on: \(rest)")
                     text = rest
                 }
+                // Hey Clicky's "write it for me": text into the box you are typing in.
+                if let w = Self.writeIntent(text) {
+                    self.writeForMe(w, request: text, shot: shots.first)
+                    return true
+                }
                 // With a coding run open, an errand ("play Billie Jean", "volume
                 // down") is still done offline first: it never lands in that run.
                 if self.hasLiveRun {
@@ -365,6 +370,46 @@ final class OxBridge: ObservableObject {
             let j = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
             DispatchQueue.main.async { done(j) }
         }.resume()
+    }
+
+    // MARK: write it for me (Hey Clicky)
+
+    enum WriteKind: Equatable { case text, prompt }
+
+    /// "write a reply saying I'll be there at 6", "draft an email to Sam about
+    /// Friday", "type a good follow-up prompt": text to paste where you type.
+    static func writeIntent(_ raw: String) -> WriteKind? {
+        let t = raw.lowercased()
+        // "write an email to Camille, tell her…": a Mail draft (the offline router), not a paste.
+        if t.range(of: #"\b(?:e-?mail|mail)\s+to\s+\S"#, options: .regularExpression) != nil { return nil }
+        if t.range(of: #"^(?:please\s+)?(?:can you\s+)?(?:write|type|draft|give me)\s+(?:me\s+)?(?:a\s+|the\s+)?(?:good\s+|better\s+)?(?:follow[- ]?up\s+)?prompt\b"#, options: .regularExpression) != nil { return .prompt }
+        if t.range(of: #"^(?:please\s+)?(?:can you\s+)?(?:write|draft|compose|type)\s+(?:me\s+)?(?:a|an|the|my)?\s*(?:quick\s+|short\s+|polite\s+)?(?:reply|response|answer|email|message|comment|tweet|post|text|one[- ]liner|caption|bio)\b"#, options: .regularExpression) != nil { return .text }
+        return nil
+    }
+
+    /// ox writes it from your screen (and what it knows about you), then it is
+    /// pasted where your cursor is. Return is never pressed: you send it.
+    func writeForMe(_ kind: WriteKind, request: String, shot: String?) {
+        IslandLog.write("write for me (\(kind == .prompt ? "prompt" : "text")): \(request)")
+        MainActor.assumeIsolated { buddy.phase = .thinking }
+        let ask = kind == .prompt
+            ? "The screenshot shows the user's screen with a coding agent (Claude Code, Codex or similar) in a terminal or app. Write the best next prompt to give that agent, from what it just said and what the user wants: \(request)\nReply with the prompt only, then a line with ---EXPLAIN--- and one or two plain sentences telling the user what the prompt does and why, for someone non-technical."
+            : "The screenshot shows the user's screen; they are about to type in the focused box (an email, a chat, a document). Write exactly the text they asked for, in their own voice and style (use what you know about them), grounded in what is on screen: \(request)\nReply with only the text to paste: no quotes, no preamble, no sign-off they did not ask for."
+        var args = ["--mode", "ask", "-p", ask]
+        if let shot { args += ["--image", shot] }
+        OxRunner.run(args, cwd: FileManager.default.homeDirectoryForCurrentUser, timeout: 120) { [weak self] code, out in
+            guard let self else { return }
+            let all = Shelf.clean(out)
+            guard code == 0, !all.isEmpty else { MainActor.assumeIsolated { self.buddy.speak("I couldn't write that: \(all.isEmpty ? "ox stopped" : String(all.prefix(80)))") }; return }
+            let parts = all.components(separatedBy: "---EXPLAIN---")
+            let text = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"“”"))
+            let explain = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+            let pasted = Paster.paste(text)
+            IslandLog.write("wrote \(text.count) chars, \(pasted ? "pasted" : "on the clipboard")")
+            let said = pasted ? (kind == .prompt ? "I've pasted a follow-up prompt. \(explain) Press Return when you're happy with it." : "I've written it where you were typing. Read it, then send it yourself.")
+                : "It's on your clipboard: press Command V where it goes. Allow Accessibility for OX Island and I'll paste it for you."
+            MainActor.assumeIsolated { self.buddy.speak(said) }
+        }
     }
 
     /// Click a character: its session opens under the island.

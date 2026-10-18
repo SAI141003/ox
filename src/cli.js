@@ -8317,6 +8317,15 @@ export async function main(argv = []) {
         i++;
         break;
       }
+      // Documented for `ox -p` (and used by the island's "write it for me"), but
+      // this loop never took it: `ox -p "…" --image shot.png` printed the help.
+      case '--image': {
+        const v = needValue(a, i);
+        if (v === null) return;
+        (flags.images ??= []).push(v);
+        i++;
+        break;
+      }
       case '--model': {
         const v = needValue(a, i);
         if (v === null) return;

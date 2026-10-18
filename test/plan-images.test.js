@@ -27,3 +27,11 @@ test('Codex gets --image after the prompt; Claude Code is told where the file is
   assert.match(claude[1], /describe it[\s\S]*read this file to see it: \/tmp\/a\.png/);
   assert.equal(CLIS.chatgpt.args({ prompt: 'x', approval: 'read' }).includes('--image'), false);
 });
+
+test('an image attached by `ox -p --image` (data, not a path) reaches the plan CLI as a file', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-planimg2-'));
+  const files = imagesOf([{ role: 'user', content: 'what is this', images: [{ mediaType: 'image/png', data: Buffer.from('fakepng').toString('base64') }] }], dir);
+  assert.equal(files.length, 1);
+  assert.match(files[0], /\.png$/);
+  assert.equal(fs.readFileSync(files[0], 'utf8'), 'fakepng');
+});

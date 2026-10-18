@@ -88,6 +88,12 @@ export function claudeSessions({ home = os.homedir(), now = Date.now() } = {}) {
 export function codexSessions({ home = os.homedir(), now = Date.now() } = {}) {
   return recentFiles(path.join(home, '.codex', 'sessions'), 3, now).map(({ file, mtime }) => {
     const lines = tailLines(file);
+    // The id Codex knows the session by (resume takes it), from the first line.
+    let sid = path.basename(file, '.jsonl');
+    try {
+      const fd = fs.openSync(file, 'r'); const buf = Buffer.alloc(4096); fs.readSync(fd, buf, 0, 4096, 0); fs.closeSync(fd);
+      sid = /"(?:id|session_id)":"([0-9a-f-]{36})"/.exec(buf.toString('utf8'))?.[1] ?? sid;
+    } catch {}
     let cwd = '', model = '', doing = '', done = false;
     for (const l of lines) {
       const p = l.payload ?? {};
@@ -103,7 +109,7 @@ export function codexSessions({ home = os.homedir(), now = Date.now() } = {}) {
     }
     const age = now - mtime;
     const working = !done && age < WORKING_MS * 4;
-    return { id: `codex:${path.basename(file, '.jsonl')}`, tool: 'Codex', project: projectName(cwd) || 'codex', cwd, model, state: working ? (doing ? 'tool' : 'thinking') : 'idle', doing: working ? doing : '', idleSec: working ? 0 : Math.round(age / 1000), updated: mtime };
+    return { id: `codex:${sid}`, tool: 'Codex', project: projectName(cwd) || 'codex', cwd, model, state: working ? (doing ? 'tool' : 'thinking') : 'idle', doing: working ? doing : '', idleSec: working ? 0 : Math.round(age / 1000), updated: mtime };
   });
 }
 
@@ -211,9 +217,11 @@ export async function sessionMessages(id, { home = os.homedir(), limit = 12 } = 
 }
 
 /** How each tool continues a session with one message (its own resume, headless). */
-export function sendCommand(tool, sid, text, bin = (t, f) => f) {
+export function sendCommand(tool, sid, text, bin = (t, f) => f, { modelArgs = () => [] } = {}) {
   if (tool === 'claude') return [bin('claude', 'claude'), ['-p', text, '--resume', sid]];
-  if (tool === 'codex') return [bin('codex', 'codex'), ['exec', 'resume', sid, text]];
+  // Codex's own config can name a model the ChatGPT account may not use (gpt-5.5
+  // was refused here): the account's own list decides, as for ox's plan runs.
+  if (tool === 'codex') { const b = bin('codex', 'codex'); return [b, ['exec', 'resume', ...modelArgs(b), sid, text]]; }
   if (tool === 'hermes') return ['hermes', ['chat', '-q', text, '--resume', sid, '-Q']];
   return null;
 }
@@ -247,7 +255,7 @@ export async function sendToSession(id, text, { home = os.homedir(), run = null 
 function runTurn(key, tool, sid, msg, cwd, home, run) {
   return new Promise((resolve) => {
     import('./session-transfer.js').then((T) => {
-      const [cmd, args] = sendCommand(tool, sid, msg, T.binaryFor);
+      const [cmd, args] = sendCommand(tool, sid, msg, T.binaryFor, { modelArgs: (b) => T.codexModelArgs(b, { home }) });
       sending.add(key);
       const go = run ?? ((c, a, o) => spawn(c, a, o));
       const p = go(cmd, args, { cwd: cwd && fs.existsSync(cwd) ? cwd : home, env: { ...process.env, OX_ISLAND: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -255,10 +263,18 @@ function runTurn(key, tool, sid, msg, cwd, home, run) {
       p.stdout?.on('data', (d) => { out += d; if (out.length > 100_000) out = out.slice(-50_000); });
       p.stderr?.on('data', (d) => { err += d; if (err.length > 20_000) err = err.slice(-10_000); });
       const timer = setTimeout(() => p.kill?.('SIGTERM'), 20 * 60_000);
-      p.on('close', (code) => { clearTimeout(timer); sending.delete(key); resolve({ ok: code === 0, reply: out.trim().slice(-4000), error: code === 0 ? null : (err.trim().split('\n').pop() || `exit ${code}`) }); });
+      p.on('close', (code) => { clearTimeout(timer); sending.delete(key); resolve({ ok: code === 0, reply: out.trim().slice(-4000), error: code === 0 ? null : plainError(err || out, code) }); });
       p.on('error', (e) => { clearTimeout(timer); sending.delete(key); resolve({ ok: false, error: e.message }); });
     });
   });
+}
+
+/** The words of a tool's error, not its JSON: "ERROR: {…"message":"X"}" → "X". */
+export function plainError(text, code = 1) {
+  const t = String(text ?? '').trim();
+  const m = /"message"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(t);
+  if (m) return m[1].replace(/\\"/g, '"');
+  return t.split('\n').filter(Boolean).pop()?.replace(/^ERROR:\s*/i, '').slice(0, 300) || `exit ${code}`;
 }
 
 const waiting = new Set();
