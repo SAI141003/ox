@@ -1398,6 +1398,9 @@ export async function voiceTurn(body) {
   const { doOffline } = await import('./offline.js');
   const done = doOffline(text, { dryRun: body?.dryRun === true });
   if (done.handled) return { route: 'offline', handled: true, ok: done.ok !== false, say: done.message, ms: Date.now() - started };
+  // The island asks this first while a coding run is open: an errand ("play
+  // Billie Jean", "volume down") is done here and never sent into that run.
+  if (body?.offlineOnly === true) return { route: 'live', handled: false, why: 'not a small task', ms: Date.now() - started };
   const { assistantName } = await import('./identity.js');
   // Small talk and questions: one short answer. Anything that acts: an agent.
   await warmLocal();

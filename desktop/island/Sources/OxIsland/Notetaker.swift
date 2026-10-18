@@ -85,7 +85,7 @@ final class Notetaker: ObservableObject {
         guard !transcript.isEmpty else { message = "Nothing was heard, so no notes were written."; return }
         let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("ox-notes/calls")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let stamp = DateFormatter(); stamp.dateFormat = "yyyy-MM-dd HH.mm"
+        let stamp = DateFormatter(); stamp.dateFormat = "yyyy-MM-dd HH.mm.ss"
         let file = dir.appendingPathComponent("Call \(stamp.string(from: started)).md")
         let mins = max(1, Int(Date().timeIntervalSince(started) / 60))
         let doc = "# Call, \(stamp.string(from: started)) (\(mins) min)\n\n## Transcript (your microphone)\n\n\(transcript)\n"

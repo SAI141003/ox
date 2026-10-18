@@ -72,6 +72,8 @@ final class IslandPanel: NSPanel {
     private var awaySince: Date?
     private var cancellables = Set<AnyCancellable>()
     private var clickMonitor: Any?
+    /// The notch geometry, refreshed when displays change (not 60 times a second).
+    private var metrics = NotchMetrics.current()
 
     init(bridge: OxBridge) {
         self.bridge = bridge
@@ -113,7 +115,8 @@ final class IslandPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     func reposition(animated: Bool) {
-        let m = NotchMetrics.current()
+        metrics = NotchMetrics.current()
+        let m = metrics
         let f = NSRect(x: m.screenFrame.midX - IslandLayout.panel.width / 2,
                        y: m.screenFrame.maxY - IslandLayout.panel.height,
                        width: IslandLayout.panel.width, height: IslandLayout.panel.height)
@@ -137,7 +140,7 @@ final class IslandPanel: NSPanel {
         let mouse = NSEvent.mouseLocation
         let f = frame
         let local = CGPoint(x: mouse.x - f.minX, y: f.maxY - mouse.y) // top-down
-        let m = NotchMetrics.current()
+        let m = metrics
         let s = IslandLayout.shape(IslandLayout.phase(bridge), m, office: bridge.hasExtraPanel, idle: bridge.idleIsland)
         let island = CGRect(x: (f.width - s.w) / 2, y: 0, width: s.w, height: s.h)
         let inside = island.insetBy(dx: -6, dy: -4).contains(local)

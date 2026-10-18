@@ -92,6 +92,37 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
   const bin = path.join(pkg, '.build', 'release', 'OxIsland');
   const live = () => islandRunning({ env: {} });
 
+  // The island checks itself (src/island-evals.js) and learns from real use.
+  if (action === 'evals' || action === 'learn' || action === 'evolve') {
+    const E = await import('./island-evals.js');
+    if (action === 'evals') {
+      const r = E.runEvals();
+      const fmt = (x) => `${x.pass}/${x.total}`;
+      log(`offline errands   ${fmt(r.offline)}${r.offline.failing.length ? '' : '  ✓'}`);
+      for (const f of r.offline.failing) log(`  ✗ "${f.text}": wanted ${f.want ?? 'an agent'}, got ${f.got ?? 'nothing'}`);
+      log(r.commands.skipped ? `island commands   skipped: ${r.commands.skipped}` : `island commands   ${fmt(r.commands)}${r.commands.failing.length ? '' : '  ✓'}`);
+      for (const f of r.commands.failing ?? []) log(`  ✗ ${f}`);
+      const h = E.history();
+      if (h.length > 1) { const p = h[h.length - 2]; log(`last time: offline ${p.offline.pass}/${p.offline.total}${p.commands ? `, commands ${p.commands.pass}/${p.commands.total}` : ''}`); }
+      return r.offline.failing.length || (r.commands.failing ?? []).length ? 1 : 0;
+    }
+    if (action === 'learn') {
+      const r = E.learn();
+      if (r.note) { log(r.note); return 0; }
+      if (!r.candidates.length) { log('nothing new to learn from the island log'); return 0; }
+      log(`${r.candidates.length} request(s) that did not go well (saved to ${E.CANDIDATES()}):`);
+      for (const c of r.candidates) log(`  "${c.text}" — ${c.saw}. ${c.ask}`);
+      log('add the right answer for each to evals/island/offline.jsonl, then: ox island evolve');
+      return 0;
+    }
+    const goal = E.evolveGoal();
+    if (!goal) { log('every island eval passes: nothing to evolve'); return 0; }
+    const { evolve } = await import('./evolve.js');
+    const r = await evolve({ goal, log: (l) => err(`${l}\n`) });
+    log(r.accepted ? `attempt ${r.id} measured better: ${r.why}\n  keep: ox evolve accept ${r.id}` : `attempt ${r.id ?? ''} not kept: ${r.why}`);
+    return 0;
+  }
+
   if (action === 'status') {
     if (!islandEnabled()) {
       log('OX Island is turned off (turn it on: ox island on)');

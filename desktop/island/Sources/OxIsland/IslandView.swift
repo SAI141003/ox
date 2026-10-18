@@ -309,7 +309,8 @@ struct ExpandedContent: View {
             VStack(alignment: .leading, spacing: 5) {
                 Who(color: bridge.color(of: s), name: s.project, label: "stopped with an error")
                 Text(msg).font(.system(size: 12)).foregroundStyle(Ink.text.opacity(0.9)).lineLimit(2)
-                Text("The run is still open in your terminal.").font(.system(size: 11)).foregroundStyle(Ink.muted)
+                Text(s.id.hasPrefix("app:") ? "Open it in the OX app to see what happened." : s.id.contains("ox-ipc-island-") ? "Ask again from the chat, or open the OX app." : "The run is still open in your terminal.")
+                    .font(.system(size: 11)).foregroundStyle(Ink.muted)
             }
         } else if let s, s.mood == .done {
             VStack(alignment: .leading, spacing: 5) {
@@ -543,7 +544,9 @@ struct ApprovalBody: View {
             Text(pending.preview.isEmpty ? pending.tool : pending.preview)
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(Color(hex: "#E8E9EC"))
-                .lineLimit(1).truncationMode(.middle)
+                // You read what you approve: up to three lines, the full text on hover.
+                .lineLimit(3).truncationMode(.middle)
+                .help(pending.preview)
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.07)))

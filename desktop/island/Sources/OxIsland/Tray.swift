@@ -68,12 +68,14 @@ enum VoiceServer {
         return nil
     }
 
-    static func ask(_ text: String, done: @escaping (Result?) -> Void) {
+    /// offlineOnly: only ox's no-AI router answers (an errand done in ~0.1 s);
+    /// anything else comes back unhandled, for the live run to take.
+    static func ask(_ text: String, offlineOnly: Bool = false, done: @escaping (Result?) -> Void) {
         guard let u = url() else { done(nil); return }
-        var req = URLRequest(url: u, timeoutInterval: 75)
+        var req = URLRequest(url: u, timeoutInterval: offlineOnly ? 5 : 75)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "content-type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text])
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text, "offlineOnly": offlineOnly])
         URLSession.shared.dataTask(with: req) { data, resp, _ in
             let ok = (resp as? HTTPURLResponse)?.statusCode == 200
             let r = ok ? data.flatMap { try? JSONDecoder().decode(Result.self, from: $0) } : nil
@@ -119,7 +121,8 @@ enum OxRunner {
         return nil
     }
 
-    static func run(_ args: [String], cwd: URL, env extra: [String: String] = [:], completion: @escaping (Int32, String) -> Void) {
+    /// timeout: a run that hangs is stopped, so the chat never stays "busy" for good.
+    static func run(_ args: [String], cwd: URL, env extra: [String: String] = [:], timeout: TimeInterval = 20 * 60, completion: @escaping (Int32, String) -> Void) {
         let env = ProcessInfo.processInfo.environment
         guard let (node, cli) = paths() else {
             completion(127, "ox is not installed where the island can find it. Open OX once, or run  ox island start .")
@@ -153,7 +156,12 @@ enum OxRunner {
             let text = String(decoding: all, as: UTF8.self)
             DispatchQueue.main.async { completion(proc.terminationStatus, text) }
         }
-        do { try p.run() } catch { completion(127, error.localizedDescription) }
+        do { try p.run() } catch { completion(127, error.localizedDescription); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak p] in
+            guard let p, p.isRunning else { return }
+            IslandLog.write("stopped a run after \(Int(timeout / 60)) min: ox \(args.prefix(3).joined(separator: " "))")
+            p.terminate()
+        }
     }
 }
 
@@ -653,13 +661,29 @@ final class IslandChat: ObservableObject {
         self.onReply = onReply
         if echo { lines.append(Line(mine: true, text: text)) }
         IslandLog.write("heard: \(text)")
-        if let said = bridge.islandCommand(text) { IslandLog.write("island command: \(said)"); reply(said, who: nil); return }
+        var text = text
+        if let part = bridge.islandPart(text) {
+            IslandLog.write("island command: \(part.said)")
+            guard let rest = part.rest else { reply(part.said, who: nil); return }
+            lines.append(Line(mine: false, text: part.said))
+            text = rest
+        }
         if let name = agent {
             run(text, extra: ["--agent", name], key: name, who: name)
             return
         }
-        if bridge.ask(text, imagePaths: [], audioPath: nil, voice: false) {
-            lines.append(Line(mine: false, text: "Sent to your ox run. Its answer shows in the island."))
+        // A coding run is open: errands are still done offline first, the rest goes to that run.
+        if bridge.hasLiveRun {
+            busy = true
+            VoiceServer.ask(text, offlineOnly: true) { [weak self] r in
+                guard let self else { return }
+                self.busy = false
+                if let r, r.handled { IslandLog.write("offline (live run open): \(r.say ?? "")"); self.reply(r.say ?? "Done.", who: nil); return }
+                if bridge.ask(text, imagePaths: [], audioPath: nil, voice: false) {
+                    self.lines.append(Line(mine: false, text: "Sent to your ox run. Its answer shows in the island."))
+                    self.onReply = nil
+                } else { self.start(text, bridge: bridge, onReply: self.onReply, echo: false) }
+            }
             return
         }
         busy = true

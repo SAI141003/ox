@@ -1,0 +1,11 @@
+{
+  "note": "Phrases the island must handle itself (island) and ones it must leave for ox (ox). Checked by OxIsland --check-commands evals/island/commands.json.",
+  "island": ["make the island smaller", "make yourself smaller", "Make the island a bit smaller.", "smaller", "make the island bigger", "close", "hide", "close the island", "stay open", "keep the island open"],
+  "ox": ["make the text smaller", "can you close the tab", "hide the dock", "close all my chrome windows", "make the font bigger", "open chrome", "play Billie Jean", "what is the time", "keep the door open"],
+  "split": [
+    {"text": "make yourself smaller and turn down the volume just a little bit", "rest": "turn down the volume just a little bit"},
+    {"text": "make the island smaller, then open spotify", "rest": "open spotify"},
+    {"text": "close", "rest": null},
+    {"text": "open chrome and youtube", "rest": "(all to ox)"}
+  ]
+}

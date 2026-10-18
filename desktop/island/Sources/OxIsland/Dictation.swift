@@ -109,6 +109,8 @@ final class Dictation: ObservableObject {
     }
 
     private func say(_ m: String) {
+        // A start that failed still gives the microphone back (« OK ox » listens again).
+        if phase != .listening, request == nil { didFinish() }
         phase = .message(m)
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in if case .message = self?.phase { self?.phase = .idle } }
     }

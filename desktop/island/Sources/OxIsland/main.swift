@@ -65,6 +65,73 @@ for sig in [SIGINT, SIGTERM] {
     }
 }
 
+// Check: `OxIsland --check-commands` runs the island's own command matching on
+// real phrases (the ones in the owner's videos included) and exits 1 on any miss.
+if CommandLine.arguments.contains("--check-commands") {
+    let keys = ["island.size", "island.autoClose", "ox.name"]
+    let saved = keys.map { UserDefaults.standard.object(forKey: $0) }
+    var fails = 0
+    MainActor.assumeIsolated {
+        let b = OxBridge()
+        // `--check-commands <file>`: the shared evals (evals/island/commands.json), learned cases included.
+        var fromFile: [String: Any]?
+        if let i = CommandLine.arguments.firstIndex(of: "--check-commands"), i + 1 < CommandLine.arguments.count,
+           let d = FileManager.default.contents(atPath: CommandLine.arguments[i + 1]) {
+            fromFile = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
+        }
+        var island: [(String, Bool)] = [
+            ("make the island smaller", true), ("make yourself smaller", true), ("Make the island a bit smaller.", true),
+            ("smaller", true), ("make the island bigger", true), ("close", true), ("hide", true), ("close the island", true),
+            ("stay open", true), ("keep the island open", true),
+            ("make the text smaller", false), ("can you close the tab", false), ("hide the dock", false),
+            ("close all my chrome windows", false), ("make the font bigger", false), ("open chrome", false),
+            ("play Billie Jean", false), ("what is the time", false), ("keep the door open", false),
+        ]
+        for (phrase, want) in island {
+            let got = b.islandCommand(phrase) != nil
+            if got != want { fails += 1; print("FAIL island \(want ? "should" : "should not") take: \(phrase)") } else { print("ok   \(want ? "island " : "ox     ") \(phrase)") }
+        }
+        if let f = fromFile {
+            island = ((f["island"] as? [String]) ?? []).map { ($0, true) } + ((f["ox"] as? [String]) ?? []).map { ($0, false) }
+        }
+        var split: [(String, String?)] = [
+            ("make yourself smaller and turn down the volume just a little bit", "turn down the volume just a little bit"),
+            ("make the island smaller, then open spotify", "open spotify"),
+            ("close", nil),
+        ]
+        if let f = fromFile, let rows = f["split"] as? [[String: Any]] {
+            split = rows.compactMap { r in (r["text"] as? String).map { ($0, r["rest"] as? String) } }.filter { $0.1 != "(all to ox)" }
+        }
+        for (phrase, rest) in split {
+            let p = b.islandPart(phrase)
+            if p == nil || p?.rest != rest { fails += 1; print("FAIL split: \(phrase) → \(String(describing: p))") } else { print("ok   split  \(phrase) → rest: \(rest ?? "(none)")") }
+        }
+        if b.islandPart("open chrome and youtube") != nil { fails += 1; print("FAIL split took a non-island request") } else { print("ok   split  open chrome and youtube → all to ox") }
+        for (id, want) in [("codex", "ChatGPT"), ("claude", "Claude"), ("gemini", "Gemini"), ("cursor", "Cursor")] {
+            if OxBridge.planLabel(id) != want { fails += 1; print("FAIL plan label \(id)") } else { print("ok   plan   \(id) → \(want)") }
+        }
+    }
+    for (k, v) in zip(keys, saved) { UserDefaults.standard.set(v, forKey: k) }
+    print(fails == 0 ? "all island commands right" : "\(fails) wrong")
+    exit(fails == 0 ? 0 : 1)
+}
+
+// Dev aid: `OxIsland --render-marks <file.png>` draws sample screen marks (the
+// Pixie physics example) over a dark frame, to review how they look.
+if let i = CommandLine.arguments.firstIndex(of: "--render-marks"), i + 1 < CommandLine.arguments.count {
+    MainActor.assumeIsolated {
+        let (say, marks) = Buddy.parseMarks("A pushes B [CIRCLE:300,320,70:A] [CIRCLE:760,330,55:B] [ARROW:380,300,690,310:push] [ARROW:690,370,380,370:reaction] [BOX:180,120,700,90:F_A = -F_B]")
+        let view = ZStack { Color(hex: "#1B1D22"); MarksView(marks: marks, scale: 1).onAppear {} }.frame(width: 1000, height: 560)
+        let r = ImageRenderer(content: view.environment(\.self, EnvironmentValues()))
+        r.scale = 1
+        if let img = r.nsImage, let tiff = img.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
+        }
+        print("said: \(say) · \(marks.count) marks")
+    }
+    exit(0)
+}
+
 // Dev aid: `OxIsland --render-mascot <dir>` writes one PNG per mood and exits,
 // so the character can be reviewed (and diffed) without running the island.
 if let i = CommandLine.arguments.firstIndex(of: "--render-mascot"), i + 1 < CommandLine.arguments.count {

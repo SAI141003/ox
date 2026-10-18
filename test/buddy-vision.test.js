@@ -111,3 +111,12 @@ test('island off/on persists and a disabled island is never bound', async () => 
   assert.equal(await cmdIsland(['nope'], { log: (s) => out.push(s), err: (s) => out.push(s) }), 3);
   assert.match(out.join(''), /start, stop, restart, on, off, status, build/);
 });
+
+test('marks over the screen: circles, arrows, boxes with labels; bad ones dropped; text kept clean', async () => {
+  const { parseMarks, buddyGuidance } = await import('../src/buddy.js');
+  const r = parseMarks('Person A pushes object B [CIRCLE:420,380,60:A] [CIRCLE:700,390,45:B] [ARROW:470,380,650,390:push] and B pushes back [ARROW:650,410,470,410:reaction] [BOX:1,2,3:bad] [POINT:5,5:x]');
+  assert.deepEqual(r.marks.map((m) => [m.kind, m.label]), [['circle', 'A'], ['circle', 'B'], ['arrow', 'push'], ['arrow', 'reaction']]);
+  assert.deepEqual(r.marks[2].n, [470, 380, 650, 390]);
+  assert.equal(r.say, 'Person A pushes object B and B pushes back');
+  assert.match(buddyGuidance({ voice: true }), /\[CIRCLE:x,y,r:label\]/);
+});

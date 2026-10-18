@@ -85,7 +85,10 @@ final class Buddy: NSObject, ObservableObject {
 
     func startListening() {
         guard phase != .listening else { return }
+        // Its own voice must not be recorded: the natural voice stops too, not only the system one.
+        if phase == .speaking { stopSpeaking() }
         synth.stopSpeaking(at: .immediate)
+        Self.sweepTemp()
         heard = ""
         saying = ""
         shot = Self.captureScreen()
@@ -169,7 +172,7 @@ final class Buddy: NSObject, ObservableObject {
             // Nothing heard live, but there is audio: whisper may still hear it.
             guard !text.isEmpty || audioPath != nil else { self.show("I didn't catch that. Hold ⌃⌥Space and talk."); return }
             guard self.send?(text, self.shot.map { [$0] } ?? [], audioPath) == true else {
-                self.show("Start ox in a terminal, then ask me again.")
+                self.show("I can't find ox on this Mac. Open the OX app once, then ask me again.")
                 return
             }
             self.phase = .thinking
@@ -188,8 +191,10 @@ final class Buddy: NSObject, ObservableObject {
     /// The voice is ox's natural one (Kokoro, through `ox speak`); the system
     /// voice is only the fallback when ox cannot make the recording.
     func speak(_ reply: String) {
-        let (say, point) = Self.parsePoint(reply)
+        let (marked, marks) = Self.parseMarks(reply)
+        let (say, point) = Self.parsePoint(marked)
         let text = say.isEmpty ? "Done." : say
+        if !marks.isEmpty { showMarks(marks) }
         saying = text
         pendingPoint = point
         wordCount = 0
@@ -317,6 +322,47 @@ final class Buddy: NSObject, ObservableObject {
         }
     }
 
+    // MARK: marks drawn over the screen (circles, arrows, boxes)
+
+    private var marksOverlay: MarksOverlay?
+
+    private func showMarks(_ marks: [ScreenMark]) {
+        guard let screen = NSScreen.main else { return }
+        marksOverlay?.close()
+        let o = MarksOverlay(screen: screen, marks: marks)
+        o.orderFrontRegardless()
+        marksOverlay = o
+        // Up while the answer is spoken, then a few seconds to look at them.
+        let words = Double(saying.split(separator: " ").count)
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(8, words * 0.45 + 5)) { [weak self, weak o] in
+            o?.close()
+            if self?.marksOverlay === o { self?.marksOverlay = nil }
+        }
+    }
+
+    struct ScreenMark: Equatable { let kind: String; let n: [Double]; let label: String }
+
+    /// [CIRCLE:x,y,r:label] [ARROW:x1,y1,x2,y2:label] [BOX:x,y,w,h:label], in
+    /// screenshot pixels (the same rules as src/buddy.js parseMarks).
+    static func parseMarks(_ reply: String) -> (String, [ScreenMark]) {
+        let pattern = #"\[(CIRCLE|ARROW|BOX):\s*([\d.\s,]+?)\s*(?::\s*([^\]]*))?\]"#
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return (reply, []) }
+        let ns = reply as NSString
+        let want = ["circle": 3, "arrow": 4, "box": 4]
+        var marks: [ScreenMark] = []
+        for m in re.matches(in: reply, range: NSRange(location: 0, length: ns.length)) {
+            let kind = ns.substring(with: m.range(at: 1)).lowercased()
+            let n = ns.substring(with: m.range(at: 2)).split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard n.count == want[kind], n.allSatisfy({ $0 >= 0 }) else { continue }
+            let label = m.range(at: 3).location != NSNotFound ? String(ns.substring(with: m.range(at: 3)).trimmingCharacters(in: .whitespaces).prefix(24)) : ""
+            marks.append(ScreenMark(kind: kind, n: n, label: label))
+            if marks.count >= 6 { break }
+        }
+        let say = re.stringByReplacingMatches(in: reply, range: NSRange(location: 0, length: ns.length), withTemplate: "")
+            .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (say, marks)
+    }
+
     // MARK: helpers
 
     struct ScreenPoint: Equatable { let x: Double; let y: Double; let label: String }
@@ -347,6 +393,19 @@ final class Buddy: NSObject, ObservableObject {
         let en = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
         return en.max { $0.quality.rawValue < $1.quality.rawValue } ?? AVSpeechSynthesisVoice(language: "en-US")
     }()
+
+    /// Screenshots of your screen and voice recordings are working files, not
+    /// keepsakes: anything of ours older than ten minutes is deleted.
+    static func sweepTemp(olderThan age: TimeInterval = 600) {
+        let dir = NSTemporaryDirectory()
+        let fm = FileManager.default
+        for name in (try? fm.contentsOfDirectory(atPath: dir)) ?? [] where name.hasPrefix("ox-buddy-") || name.hasPrefix("ox-voice-") {
+            let path = (dir as NSString).appendingPathComponent(name)
+            if let m = (try? fm.attributesOfItem(atPath: path))?[.modificationDate] as? Date, Date().timeIntervalSince(m) > age {
+                try? fm.removeItem(atPath: path)
+            }
+        }
+    }
 
     /// Silent full-screen capture of the main display, for ox to look at.
     /// Only when screen recording is already allowed: asking macOS on every
@@ -526,5 +585,83 @@ struct PointerView: View {
             withAnimation(.spring(response: 0.75, dampingFraction: 0.72)) { arrived = true }
             withAnimation(.easeOut(duration: 1.1).repeatForever(autoreverses: false).delay(0.6)) { pulse = true }
         }
+    }
+}
+
+
+// MARK: - marks over the screen (Pixie-style: explain by drawing on it)
+
+final class MarksOverlay: NSPanel {
+    init(screen: NSScreen, marks: [Buddy.ScreenMark]) {
+        super.init(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        level = .screenSaver
+        backgroundColor = .clear
+        isOpaque = false
+        hasShadow = false
+        ignoresMouseEvents = true
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        contentView = NSHostingView(rootView: MarksView(marks: marks, scale: screen.backingScaleFactor))
+    }
+}
+
+struct MarksView: View {
+    let marks: [Buddy.ScreenMark]
+    /// Screenshot pixels per screen point.
+    let scale: CGFloat
+    @State private var drawn: CGFloat = 0
+    static let tints: [Color] = [Color(hex: "#FFD60A"), Color(hex: "#30D158"), Color(hex: "#64D2FF"), Color(hex: "#FF9F0A"), Color(hex: "#BF5AF2"), Color(hex: "#FF453A")]
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Color.clear
+            ForEach(Array(marks.enumerated()), id: \.offset) { i, m in
+                let tint = Self.tints[i % Self.tints.count]
+                let p = m.n.map { CGFloat($0) / scale }
+                // Each mark draws on after the one before it, like a pen.
+                let t = min(1, max(0, drawn * CGFloat(marks.count) - CGFloat(i)))
+                switch m.kind {
+                case "circle":
+                    Circle().trim(from: 0, to: t).stroke(tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .frame(width: p[2] * 2, height: p[2] * 2).position(x: p[0], y: p[1])
+                    label(m.label, tint).position(x: p[0], y: p[1] - p[2] - 16).opacity(t)
+                case "box":
+                    RoundedRectangle(cornerRadius: 6).trim(from: 0, to: t).stroke(tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .frame(width: p[2], height: p[3]).position(x: p[0] + p[2] / 2, y: p[1] + p[3] / 2)
+                    label(m.label, tint).position(x: p[0] + p[2] / 2, y: p[1] - 16).opacity(t)
+                default:
+                    Arrow(from: CGPoint(x: p[0], y: p[1]), to: CGPoint(x: p[2], y: p[3])).trim(from: 0, to: t)
+                        .stroke(tint, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                    label(m.label, tint).position(x: (p[0] + p[2]) / 2, y: (p[1] + p[3]) / 2 - 18).opacity(t)
+                }
+            }
+        }
+        .shadow(color: .black.opacity(0.45), radius: 3)
+        .ignoresSafeArea()
+        .onAppear { withAnimation(.easeInOut(duration: 0.5 * Double(max(1, marks.count)))) { drawn = 1 } }
+    }
+
+    @ViewBuilder private func label(_ text: String, _ tint: Color) -> some View {
+        if !text.isEmpty {
+            Text(text).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.black)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(Capsule().fill(tint)).fixedSize()
+        }
+    }
+}
+
+/// A line with an arrowhead at its end.
+struct Arrow: Shape {
+    let from: CGPoint
+    let to: CGPoint
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: from)
+        p.addLine(to: to)
+        let a = atan2(to.y - from.y, to.x - from.x), head: CGFloat = 16
+        for d in [CGFloat.pi * 0.82, -CGFloat.pi * 0.82] {
+            p.move(to: to)
+            p.addLine(to: CGPoint(x: to.x + head * cos(a + d), y: to.y + head * sin(a + d)))
+        }
+        return p
     }
 }

@@ -144,9 +144,22 @@ final class OxBridge: ObservableObject {
             buddy.send = { [weak self] raw, shots, audio in
                 guard let self else { return false }
                 // "Pixie, play Billie Jean": the name is how you called it, not the request.
-                let text = Self.withoutName(raw)
-                if let said = self.islandCommand(text) { MainActor.assumeIsolated { self.buddy.speak(said) }; return true }
-                if self.ask(text, imagePaths: shots, audioPath: audio) { return true }
+                var text = Self.withoutName(raw)
+                if let part = self.islandPart(text) {
+                    guard let rest = part.rest else { MainActor.assumeIsolated { self.buddy.speak(part.said) }; return true }
+                    IslandLog.write("island did: \(part.said) · passing on: \(rest)")
+                    text = rest
+                }
+                // With a coding run open, an errand ("play Billie Jean", "volume
+                // down") is still done offline first: it never lands in that run.
+                if self.hasLiveRun {
+                    VoiceServer.ask(text, offlineOnly: true) { [weak self] r in
+                        guard let self else { return }
+                        if let r, r.handled { IslandLog.write("offline (live run open): \(r.say ?? "")"); MainActor.assumeIsolated { self.buddy.speak(r.say ?? "Done.") }; return }
+                        if !self.ask(text, imagePaths: shots, audioPath: audio) { self.chat.send(text, bridge: self) { reply in MainActor.assumeIsolated { self.buddy.speak(reply) } } }
+                    }
+                    return true
+                }
                 // No live run: the chat takes it. Small tasks are done offline; the
                 // rest runs ox with a model, whose approvals come to this island.
                 guard OxRunner.available, !text.isEmpty else { return false }
@@ -247,10 +260,22 @@ final class OxBridge: ObservableObject {
                 guard let id = p["id"] as? String, let windows = p["windows"] as? [[String: Any]], !windows.isEmpty else { return nil }
                 let top = windows.max { (($0["usedPercent"] as? Double) ?? 0) < (($1["usedPercent"] as? Double) ?? 0) } ?? windows[0]
                 let reset = (top["resetsAt"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
-                return PlanGauge(id: id, label: id == "codex" ? "ChatGPT" : "Claude", window: top["name"] as? String ?? "", percent: (top["usedPercent"] as? Double) ?? 0, resetsAt: reset)
+                return PlanGauge(id: id, label: Self.planLabel(id), window: top["name"] as? String ?? "", percent: (top["usedPercent"] as? Double) ?? 0, resetsAt: reset)
             }
             DispatchQueue.main.async { self?.gauges = gs }
         }.resume()
+    }
+
+    /// The plan a gauge belongs to, by its id ("codex" is the ChatGPT plan).
+    static func planLabel(_ id: String) -> String {
+        switch id.lowercased() {
+        case "codex", "chatgpt", "openai": return "ChatGPT"
+        case "claude", "anthropic": return "Claude"
+        case "gemini", "google": return "Gemini"
+        case "cursor": return "Cursor"
+        case "copilot", "github": return "Copilot"
+        default: return id.prefix(1).uppercased() + id.dropFirst()
+        }
     }
 
     private func pollConnected(port: Int) {
@@ -554,6 +579,9 @@ final class OxBridge: ObservableObject {
 
     /// Send a spoken question (and the screenshot) to the newest live run.
     /// False when no ox run is connected.
+    /// An ox run with a socket that can take a message now.
+    var hasLiveRun: Bool { sessions.contains { $0.closedAt == nil && $0.pending == nil && connections[$0.id] != nil } }
+
     func ask(_ text: String, imagePaths: [String], audioPath: String? = nil, voice: Bool = true) -> Bool {
         // Only a run with a socket can take a question (the app's runs are shown, not driven).
         guard let s = sessions.last(where: { $0.closedAt == nil && $0.pending == nil && connections[$0.id] != nil }), let conn = connections[s.id] else { return false }
@@ -561,7 +589,8 @@ final class OxBridge: ObservableObject {
         if let audioPath { msg["audioPath"] = audioPath }
         conn.send(msg)
         update(s.id) { s in
-            s.buddyAsk = true
+            // Only a spoken question is answered aloud; a typed one shows in the island.
+            s.buddyAsk = voice
             s.buddyReply = ""
             s.activity = "you asked: \(Self.shortLabel(text))"
         }
@@ -598,29 +627,48 @@ final class OxBridge: ObservableObject {
         return out.isEmpty ? raw : out
     }
 
+    /// One clause about the island itself, matched strictly: "make the text
+    /// smaller", "close the tab" and "hide the dock" are not about the island
+    /// and are left for ox (they used to be swallowed here).
     func islandCommand(_ raw: String) -> String? {
-        let t = raw.lowercased()
+        let t = raw.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: " .!?,"))
+        let full = { (p: String) in t.range(of: p, options: .regularExpression) != nil }
         // "call yourself Pixie", "your name is Pixie", "rename yourself to Pixie".
         if let m = try? NSRegularExpression(pattern: #"^(?:please\s+)?(?:call yourself|your name is|rename yourself(?: to)?|i(?:'ll| will) call you|be called)\s+([A-Za-z0-9][A-Za-z0-9 .'-]{0,23}?)[.!]*$"#, options: [.caseInsensitive])
             .firstMatch(in: raw, range: NSRange(location: 0, length: (raw as NSString).length)) {
             let name = (raw as NSString).substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespaces)
             return OxName.set(name) ? "I'm \(OxName.current) now. Say \"\(OxName.current), …\" to talk to me." : "A name is up to 24 letters or digits."
         }
-        guard t.range(of: #"\b(island|notch|yourself|you)\b"#, options: .regularExpression) != nil || t.count < 40 else { return nil }
         let set = { (k: String, v: Any?) in UserDefaults.standard.set(v, forKey: k); self.objectWillChange.send() }
-        if t.range(of: #"\b(smaller|shrink|reduce|compact|less space|tiny|small)\b"#, options: .regularExpression) != nil, t.contains("island") || t.contains("size") || t.contains("yourself") || t.count < 24 {
+        let me = #"(?:the\s+)?(?:island|notch|yourself|you)"#
+        let lead = #"^(?:please\s+)?(?:can you\s+|could you\s+)?"#
+        if full(lead + #"(?:make|set|turn|get)\s+"# + me + #"\s+(?:a\s+(?:bit|little)\s+|much\s+)?(?:smaller|compact|tiny|small)$"#)
+            || full(lead + #"(?:shrink|minimi[sz]e)\s+"# + me + #"$"#) || full(#"^(?:smaller|compact|shrink)$"#) {
             set("island.size", "compact"); return "Island is compact now. Say \"make the island bigger\" to undo."
         }
-        if t.range(of: #"\b(bigger|larger|full size|normal size|standard size|grow)\b"#, options: .regularExpression) != nil, t.contains("island") || t.contains("size") || t.contains("yourself") || t.count < 24 {
+        if full(lead + #"(?:make|set|turn|get)\s+"# + me + #"\s+(?:a\s+(?:bit|little)\s+|much\s+)?(?:bigger|larger|full size|normal size|standard size)$"#)
+            || full(lead + #"(?:grow|enlarge)\s+"# + me + #"$"#) || full(#"^(?:bigger|larger|full size)$"#) {
             set("island.size", "standard"); return "Island is back to its standard size."
         }
-        if t.range(of: #"\b(stay open|keep (it )?open|don.t close)\b"#, options: .regularExpression) != nil {
+        if full(lead + #"(?:stay open|keep\s+"# + me + #"\s+open|keep (?:it\s+)?open|don.t close(?:\s+"# + me + #")?)$"#) {
             set("island.autoClose", 0.0); pinnedOpen = true; return "I'll stay open until you close me."
         }
-        if t.range(of: #"\b(close (it|yourself|the island)?|auto.?close|hide)\b"#, options: .regularExpression) != nil, t.count < 40 {
+        if full(lead + #"(?:close|hide|go away|dismiss)(?:\s+"# + me + #")?$"#) {
             set("island.autoClose", 6.0); pinnedOpen = false; tray = nil; return "Closing. I close by myself a few seconds after you leave."
         }
         return nil
+    }
+
+    /// "Make yourself smaller and turn down the volume": the island does its
+    /// part here and the rest goes on to ox. Nil when no clause is about the island.
+    func islandPart(_ raw: String) -> (said: String, rest: String?)? {
+        let parts = raw.components(separatedBy: CharacterSet(charactersIn: ";"))
+            .flatMap { $0.replacingOccurrences(of: #"(?i)\s*,?\s+(?:and then|and|then)\s+"#, with: "\u{1F}", options: .regularExpression).components(separatedBy: "\u{1F}") }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        var said: [String] = [], rest: [String] = []
+        for p in parts { if let s = islandCommand(p) { said.append(s) } else { rest.append(p) } }
+        guard !said.isEmpty else { return nil }
+        return (said.joined(separator: " "), rest.isEmpty ? nil : rest.joined(separator: " and "))
     }
 
     /// Nothing to show but the ox: the island keeps its card to one line.

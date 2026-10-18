@@ -142,6 +142,12 @@ export function parseIntent(text) {
   if ((m = /^(?:send |write |draft )?(?:an? )?(?:e-?mail|mail)(?: to)?\s+([^\s@]+@[^\s@]+\.[a-z]{2,})(?:\s+(?:about|subject|re|regarding)[:\s]+(.+?))?(?:\s+(?:saying|that says|telling (?:him|her|them)|body|:)\s+(.+))?$/i.exec(t))) {
     return { intent: 'email', to: m[1], subject: (m[2] ?? '').trim(), body: (m[3] ?? '').trim() };
   }
+  // "Write an email to Camille, tell her it's done" (no address): a draft with
+  // the greeting and the message; you add who it goes to and press Send.
+  if ((m = /^(?:send |write |draft )?(?:an? )?(?:e-?mail|mail)\s+to\s+([A-Za-z][\w.'-]*(?:\s(?!and\b|then\b|tell\b|let\b|say\b)[A-Za-z][\w.'-]*)?)\s*[,:]?\s+(?:and\s+)?(?:tell|telling|say|saying|let)\s+(?:him|her|them\s+)?\s*(?:know\s+)?(?:that\s+)?(.+)$/i.exec(t)) && !/@/.test(m[1])) {
+    const msg = m[2].trim().replace(/^./, (c) => c.toUpperCase()).replace(/[^.!?]$/, '$&.');
+    return { intent: 'email', to: '', name: m[1], subject: '', body: `Hi ${m[1]},\n\n${msg}\n` };
+  }
   if (/^(?:check|read)?\s*(?:my )?(?:e-?mails?|mail|inbox)(?: for me)?$|^(?:do i have |any )?(?:new |unread )(?:e-?mails?|mail)\??$|^how many (?:unread |new )?(?:e-?mails?|mails?)(?: do i have)?\??$/i.test(low)) {
     return { intent: 'unread' };
   }
@@ -154,8 +160,8 @@ export function parseIntent(text) {
   if (/^(?:play|resume)(?: the)? (?:music|song|spotify)$|^resume$/i.test(low)) return { intent: 'music', command: 'play' };
   if (/^(?:next|skip)(?: the)?(?: song| track)?$/i.test(low)) return { intent: 'music', command: 'next track' };
   // "lower the music", "turn the music down", "make it quieter": the Mac's volume.
-  if (/^(?:lower|reduce|turn down|quieten)(?: the)? (?:music|volume|sound|song)(?: a bit| a little)?$|^turn(?: the)? (?:music|volume|sound) down$|^(?:make it |a bit )?quieter$/i.test(low)) return { intent: 'volume', delta: -15 };
-  if (/^(?:raise|turn up|increase)(?: the)? (?:music|volume|sound|song)(?: a bit| a little)?$|^turn(?: the)? (?:music|volume|sound) up$|^(?:make it |a bit )?louder$/i.test(low)) return { intent: 'volume', delta: 15 };
+  if (/^(?:lower|reduce|turn down|quieten)(?: the)? (?:music|volume|sound|song)(?: (?:just )?(?:a (?:little )?bit|a little|slightly|a touch))?$|^turn(?: the)? (?:music|volume|sound) down$|^(?:make it |a bit )?quieter$/i.test(low)) return { intent: 'volume', delta: -15 };
+  if (/^(?:raise|turn up|increase)(?: the)? (?:music|volume|sound|song)(?: (?:just )?(?:a (?:little )?bit|a little|slightly|a touch))?$|^turn(?: the)? (?:music|volume|sound) up$|^(?:make it |a bit )?louder$/i.test(low)) return { intent: 'volume', delta: 15 };
   // "play Billie Jean by Michael Jackson": a song, by name.
   if ((m = /^(?:can you |please )?play (?:me )?(?:the song |some )?(.+?)(?:\s+by\s+(.+?))?(?:\s+on\s+(spotify|apple music|music))?$/i.exec(t))
     && !/^(?:the )?(?:music|song|spotify|it)$/i.test(m[1])) {
@@ -384,7 +390,7 @@ export function perform(it) {
     case 'task': { const r = addTask(it.text); return { ok: r.ok, message: `added to ${r.where}: ${it.text}` }; }
     case 'email': {
       const r = openWith(mailtoUrl(it));
-      return r.ok ? { ok: true, message: `draft to ${it.to} is open in your mail app: check it and press Send (ox never sends it)` } : { ok: false, message: r.err };
+      return r.ok ? { ok: true, message: it.to ? `draft to ${it.to} is open in your mail app: check it and press Send (ox never sends it)` : `draft to ${it.name} is open in your mail app: add their address and press Send (ox never sends it)` } : { ok: false, message: r.err };
     }
     case 'unread': {
       if (process.platform !== 'darwin') return { ok: false, message: 'reading Mail is macOS only for now' };
