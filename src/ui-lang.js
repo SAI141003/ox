@@ -59,6 +59,9 @@ export const LIBRARY = {
   Pressable: { params: [['children', 'nodes'], ['action', 'action', true], ['selected', 'bool', true]], desc: 'clickable area' },
   Checkbox: { params: [['label', 'str'], ['value', 'bool']], desc: 'tick bound to a $var' },
   Segmented: { params: [['value', 'any'], ['options', 'list']], desc: 'one-of choice bound to a $var' },
+  // Built from the pieces above, so every renderer draws them (the /anatomy and /hairline ideas).
+  Explainer: { params: [['title', 'str'], ['steps', 'list'], ['diagram', 'bool', true]], desc: 'how something works, step by step: steps are "Label: what happens" strings or {label, text}; the reader clicks through, the current step lights up in a diagram' },
+  Flow: { params: [['nodes', 'list'], ['direction', 'row|column', true], ['current', 'any', true]], desc: 'boxes joined by arrows (a pipeline, a funnel, a process); nodes are strings or {label, color}' },
   Chart: { params: [['type', 'bar|line|area|pie|donut'], ['labels', 'list'], ['values', 'list'], ['title', 'str', true], ['format', 'number|currency|percent|compact', true]], desc: 'chart in colour' },
   Svg: { params: [['children', 'nodes'], ['viewBox', 'str', true]], desc: 'drawing (about 240 wide)' },
   Rect: { params: [['x', 'num'], ['y', 'num'], ['w', 'num'], ['h', 'num'], ['fill', 'str', true], ['stroke', 'str', true], ['width', 'num', true]], desc: 'drawing rectangle', inner: true },
@@ -741,7 +744,49 @@ export function evaluate(program, env = {}) {
     if (n.name === 'Select' && n.args[1]?.k === 'state') props.bind = n.args[1].name;
     if ((n.name === 'Input' || n.name === 'Slider' || n.name === 'Checkbox') && n.args[1]?.k === 'state') props.bind = n.args[1].name;
     if (n.name === 'Segmented' && n.args[0]?.k === 'state') props.bind = n.args[0].name;
+    if (n.name === 'Flow') return flowNode(props);
+    if (n.name === 'Explainer') return explainerNode(props, id);
     return { type: n.name, props };
+  }
+
+  // ---- Explainer and Flow, expanded into primitives every renderer has.
+  const stepOf = (x, i) => {
+    if (x && typeof x === 'object') return { label: String(x.label ?? x.title ?? `Step ${i + 1}`), text: String(x.text ?? x.body ?? x.detail ?? '') };
+    const m = /^([^:]{1,40}):\s*([\s\S]*)$/.exec(String(x ?? ''));
+    return m ? { label: m[1].trim(), text: m[2].trim() } : { label: `Step ${i + 1}`, text: String(x ?? '') };
+  };
+  function flowNode({ nodes = [], direction = 'row', current = null }) {
+    const items = nodes.map((x, i) => (x && typeof x === 'object' ? { label: String(x.label ?? x.title ?? ''), color: x.color ?? null } : { label: String(x ?? ''), color: null })).filter((x) => x.label).slice(0, 8);
+    if (!items.length) return null;
+    const row = direction !== 'column';
+    const W = 240, gap = 10;
+    const bw = row ? Math.max(28, (W - gap * (items.length - 1)) / items.length) : 150, bh = row ? 34 : 24;
+    const cur = typeof current === 'number' ? current : items.findIndex((x) => x.label === current);
+    const kids = [];
+    items.forEach((it, i) => {
+      const x = row ? i * (bw + gap) : (W - bw) / 2, y = row ? 10 : 6 + i * (bh + gap);
+      const on = i === cur;
+      kids.push({ type: 'Rect', props: { x, y, w: bw, h: bh, fill: on ? (it.color ?? 'info') : 'surface', stroke: on ? (it.color ?? 'info') : 'muted', width: 1 } });
+      kids.push({ type: 'SvgText', props: { text: it.label.length > Math.floor(bw / 6) ? `${it.label.slice(0, Math.max(3, Math.floor(bw / 6) - 1))}…` : it.label, x: x + bw / 2, y: y + bh / 2 + 4, size: 9, fill: on ? 'ink' : 'muted', anchor: 'middle' } });
+      if (i < items.length - 1) kids.push(row
+        ? { type: 'Line', props: { x1: x + bw + 1, y1: y + bh / 2, x2: x + bw + gap - 1, y2: y + bh / 2, stroke: 'muted', width: 1.5 } }
+        : { type: 'Line', props: { x1: W / 2, y1: y + bh + 1, x2: W / 2, y2: y + bh + gap - 1, stroke: 'muted', width: 1.5 } });
+    });
+    const H = row ? bh + 20 : 12 + items.length * (bh + gap);
+    return { type: 'Svg', props: { children: kids, viewBox: `0 0 ${W} ${H}` } };
+  }
+  function explainerNode({ title, steps = [], diagram = true }, id) {
+    const list = steps.map(stepOf).filter((x) => x.text || x.label).slice(0, 10);
+    if (!list.length) { err(id, 'missing', 'Explainer needs steps, e.g. ["Intake: air comes in", "Compress: …"]'); return null; }
+    const bind = `ex_${String(id ?? 'x').replace(/\W/g, '_')}`;
+    const labels = list.map((x) => x.label);
+    const chosen = labels.includes(state[bind]) ? state[bind] : labels[0];
+    const i = labels.indexOf(chosen);
+    const kids = [{ type: 'Title', props: { text: title, size: 'md' } }];
+    if (diagram !== false) { const f = flowNode({ nodes: labels, direction: list.length > 5 ? 'column' : 'row', current: i }); if (f) kids.push(f); }
+    kids.push({ type: 'Segmented', props: { value: chosen, options: labels, bind } });
+    kids.push({ type: 'Card', props: { title: `${i + 1}. ${chosen}`, children: [{ type: 'Text', props: { text: list[i].text } }] } });
+    return { type: 'Stack', props: { children: kids } };
   }
 
   let root = null;

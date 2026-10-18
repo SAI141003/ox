@@ -128,3 +128,24 @@ test('maths reads formatted money; no-result sums show "—"; Stat takes a forma
   assert.equal(c.ok, true, c.why);
   assert.deepEqual(c.tree.props.children.map((x) => x.props.value), ['$20.00', '—']);
 });
+
+test('Explainer and Flow: built from primitives every renderer draws; clicking a step changes the card', async () => {
+  const U = await import('../src/ui-lang.js');
+  const src = 'root = Explainer("How a jet engine works", ["Intake: the fan pulls air in", "Compress: blades squeeze it", {label: "Burn", text: "fuel ignites"}, "Exhaust: hot gas pushes the plane"])';
+  const r = U.evaluate(U.parseProgram(src));
+  assert.deepEqual(r.errors, []);
+  const kids = r.root.props.children;
+  assert.deepEqual(kids.map((k) => k.type), ['Title', 'Svg', 'Segmented', 'Card']);
+  const seg = kids[2];
+  assert.deepEqual(seg.props.options, ['Intake', 'Compress', 'Burn', 'Exhaust']);
+  assert.equal(kids[3].props.title, '1. Intake');
+  const r2 = U.evaluate(U.parseProgram(src), { state: { [seg.props.bind]: 'Burn' } });
+  assert.equal(r2.root.props.children[3].props.title, '3. Burn');
+  assert.equal(r2.root.props.children[3].props.children[0].props.text, 'fuel ignites');
+  const lit = r2.root.props.children[1].props.children.filter((c) => c.type === 'Rect' && c.props.fill === 'info');
+  assert.equal(lit.length, 1, 'the current step lights up in the diagram');
+  const f = U.evaluate(U.parseProgram('root = Flow(["Visit", "Sign up", "Pay"], "column")'));
+  assert.equal(f.root.type, 'Svg');
+  assert.equal(f.root.props.children.filter((c) => c.type === 'Line').length, 2);
+  assert.match(U.evaluate(U.parseProgram('root = Explainer("x", [])')).errors[0].msg, /Explainer needs steps/);
+});
