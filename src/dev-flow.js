@@ -316,3 +316,45 @@ export function prForBranch(cwd, branch) {
     return { url: j.url, state: j.state, ci, review: j.reviewDecision || null };
   } catch { return null; }
 }
+
+// ---------------------------------------------------------------- races (after Orca)
+
+/**
+ * One task, several agents side by side, each in its own worktree and branch
+ * (ox, claude-plan, chatgpt-plan, any model). Every run is checked with the
+ * repo's recipe; you compare and keep one. → [{ agent, branch, dir, ok, ms,
+ * files, plus, minus, checks }]
+ */
+export async function race(cwd, prompt, agents, { approval = ['--yes-edits'], onStep, runOx = runOxTask, timeoutMs = 30 * 60_000 } = {}) {
+  const root = repoRoot(cwd);
+  if (!agents?.length) fail('name the agents to race, e.g. ox,claude-plan,chatgpt-plan');
+  const id = `race-${Date.now().toString(36)}`;
+  const lanes = agents.map((agent) => ({ agent, ...taskWorktree(root, `${id}-${slug(agent)}`) }));
+  onStep?.('start', `${lanes.length} agents, each in its own worktree`);
+  const results = await Promise.all(lanes.map(async (l) => {
+    const t = Date.now();
+    const model = l.agent === 'ox' ? [] : ['--model', l.agent];
+    const r = await runOx(l.dir, prompt, [...approval, ...model], { timeoutMs });
+    git(l.dir, 'add', '-A');
+    const changed = git(l.dir, 'status', '--porcelain').out;
+    if (changed) git(l.dir, 'commit', '-qm', `${l.agent}: ${prompt.slice(0, 60)}`);
+    const stat = git(l.dir, 'diff', '--shortstat', 'HEAD~1', 'HEAD');
+    const m = /(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?/.exec(changed ? stat.out : '');
+    const checks = changed ? runChecks(l.dir, ['lint', 'build', 'test']) : { ok: false, results: [] };
+    onStep?.('done', `${l.agent}: ${r.ok ? 'finished' : `stopped (${r.error})`}${m ? `, ${m[1]} files` : ', no changes'}${checks.results.length ? `, checks ${checks.ok ? 'pass' : 'fail'}` : ''}`);
+    return { agent: l.agent, branch: l.branch, dir: l.dir, ok: r.ok, error: r.error, ms: Date.now() - t, files: Number(m?.[1] ?? 0), plus: Number(m?.[2] ?? 0), minus: Number(m?.[3] ?? 0), checks: checks.results.map((c) => ({ step: c.step, ok: c.ok })), checksOk: checks.ok, said: String(r.output ?? '').trim().split('\n').slice(-6).join('\n') };
+  }));
+  return { id, prompt, results };
+}
+
+/** Keep one lane: merge its branch into the current one; the other worktrees are removed. */
+export function keep(cwd, raceId, agent) {
+  const root = repoRoot(cwd);
+  const lanes = git(root, 'worktree', 'list', '--porcelain').out.split('\n\n').map((b) => ({ dir: /^worktree (.+)$/m.exec(b)?.[1], branch: /^branch refs\/heads\/(.+)$/m.exec(b)?.[1] })).filter((l) => l.branch?.startsWith(`ox/task-${raceId}-`));
+  const win = lanes.find((l) => l.branch === `ox/task-${raceId}-${slug(agent)}`);
+  if (!win) fail(`no lane for ${agent} in ${raceId}`);
+  const m = git(root, 'merge', '--no-ff', '-m', `Keep ${agent}'s take (${raceId})`, win.branch);
+  if (!m.ok) fail(`merge failed: ${m.err || m.out}`);
+  for (const l of lanes) git(root, 'worktree', 'remove', '--force', l.dir);
+  return { merged: win.branch, removed: lanes.length };
+}

@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -539,6 +539,7 @@ function usageAll() {
     '  ox pr status | comments           CI checks, review state and comments',
     '  ox pr fix [--rounds n]            review comments and failing CI become one ox task; committed and pushed',
     '  ox task run <id> --worktree [--pr]   a task in its own worktree and branch, then a PR from it',
+    '  ox race "<task>" --agents ox,claude-plan,<model>   several agents on one task, side by side; ox race keep <id> <agent>',
     '',
     'mesh (your own machines as one ox; every file, key and model stays on its machine):',
     '  ox mesh                           this machine, your paired machines, their health and alerts',
@@ -3801,6 +3802,22 @@ async function cmdPr(args = []) {
   } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
 }
 
+async function cmdRace(args = []) {
+  // ox race "<task>" --agents ox,claude-plan,chatgpt-plan  |  ox race keep <race-id> <agent>
+  const D = await import('./dev-flow.js');
+  try {
+    if (args[0] === 'keep') { const r = D.keep(process.cwd(), args[1], args[2]); console.log(`${c.green('✓ kept')} ${r.merged}; ${r.removed} worktree(s) cleaned up`); return; }
+    const ai = args.indexOf('--agents');
+    const agents = ai >= 0 ? String(args[ai + 1]).split(',').map((x) => x.trim()).filter(Boolean) : ['ox', 'claude-plan', 'chatgpt-plan'];
+    const prompt = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--agents').join(' ');
+    if (!prompt) throw new Error('usage: ox race "<task>" [--agents ox,claude-plan,chatgpt-plan,<model>]');
+    const r = await D.race(process.cwd(), prompt, agents, { onStep: (k, d) => console.log(c.dim(`  ${d}`)) });
+    console.log(`\n${c.bold(r.id)}  ${c.dim(prompt)}`);
+    for (const x of r.results) console.log(`  ${x.ok && x.files ? (x.checksOk || !x.checks.length ? c.green('●') : c.yellow('●')) : c.red('●')} ${x.agent.padEnd(16)} ${x.files} files ${c.green(`+${x.plus}`)} ${c.red(`−${x.minus}`)}  ${Math.round(x.ms / 1000)} s  ${x.checks.map((k) => `${k.step} ${k.ok ? '✓' : '✗'}`).join(' ')}  ${c.dim(x.branch)}`);
+    console.log(c.dim(`\ncompare: git diff ${r.results[0]?.branch} ${r.results[1]?.branch ?? ''}\nkeep one: ox race keep ${r.id} <agent>`));
+  } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+}
+
 async function cmdEnv(args = []) {
   const D = await import('./dev-flow.js');
   const sub = String(args[0] ?? 'show').toLowerCase();
@@ -4688,6 +4705,9 @@ async function runSubcommand(cmd, args) {
     }
     case 'env':
       await cmdEnv(args);
+      return;
+    case 'race':
+      await cmdRace(args);
       return;
     case 'serve':
       await cmdServe(args);

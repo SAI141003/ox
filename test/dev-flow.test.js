@@ -100,3 +100,20 @@ test('task worktree: its own checkout and branch, kept out of git status', () =>
   assert.equal(run(work, 'git', 'status', '--porcelain').stdout.trim(), '', 'the worktree folder does not show as a change');
   assert.equal(D.removeWorktree(work, 'T-12 fix login'), true);
 });
+
+test('race: each agent in its own worktree, checked, compared; keep one merges it and cleans up', async () => {
+  const { work } = repo();
+  const r = await D.race(work, 'add a greeting', ['ox', 'other-model'], {
+    runOx: async (dir, prompt, args) => { const who = args.includes('other-model') ? 'b' : 'a'; fs.writeFileSync(path.join(dir, `${who}.txt`), who === 'a' ? 'hi\n' : 'hello\nthere\n'); return { ok: true, output: 'done' }; },
+  });
+  assert.equal(r.results.length, 2);
+  const [a, b] = r.results;
+  assert.notEqual(a.dir, b.dir);
+  assert.equal(a.files, 1);
+  assert.equal(b.plus, 2);
+  assert.equal(a.checksOk, true);
+  const k = D.keep(work, r.id, 'other-model');
+  assert.equal(k.removed, 2);
+  assert.ok(fs.existsSync(path.join(work, 'b.txt')), 'the kept take is merged');
+  assert.ok(!fs.existsSync(path.join(work, 'a.txt')));
+});
