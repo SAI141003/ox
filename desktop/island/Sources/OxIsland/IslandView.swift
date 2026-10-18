@@ -147,7 +147,7 @@ struct CompactBar: View {
             // hides the far end: the bull patrols in and out, and sleeps in there.
             let wing = max(0, (w - metrics.width) / 2 - lead)
             OxWalker(mood: bridge.gauges.contains { $0.percent >= 80 } && [Mood.idle, .sleeping, .done].contains(bridge.headlineMood) ? .needsYou : bridge.headlineMood,
-                     height: oxSize * 0.95, roam: true, onPoke: { bridge.showReaction() })
+                     height: oxSize * 0.95, roam: true, stressed: bridge.gauges.contains { $0.percent >= 80 }, onPoke: { bridge.showReaction() })
                 .frame(width: wing + oxSize * 0.95 * 4 / 3 + 4)
             Spacer(minLength: 0)
             if let team = bridge.officeSession, team.agents.contains(where: { $0.endedAt == nil }) {
@@ -166,7 +166,7 @@ struct CompactBar: View {
             } else if !bridge.sessions.isEmpty {
                 // Coucou's compact mini grid: one small character per session, two by two.
                 MiniGrid(sessions: Array(bridge.sessions.prefix(4)))
-                    .frame(width: 30, height: 28)
+                    .frame(width: 40, height: 28)
             } else {
                 StatusGlyph(bridge: bridge)
                     .frame(width: 26)
@@ -275,10 +275,10 @@ struct ExpandedContent: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
         } else if bridge.tray != nil {
             VStack(spacing: 6) {
-                if [.shelf, .focus, .clips].contains(bridge.tray) {
+                if [.shelf, .focus, .clips, .mail, .recap].contains(bridge.tray) {
                     // The + tab: files dropped on the notch, the focus timer, what you copied.
                     HStack(spacing: 5) {
-                        ForEach([TrayTab.shelf, .focus, .clips]) { t in
+                        ForEach([TrayTab.shelf, .focus, .clips, .mail, .recap]) { t in
                             TabCapsule(icon: t.icon, on: bridge.tray == t) { bridge.tray = t }.help(t.title)
                         }
                         Spacer()
@@ -300,7 +300,7 @@ struct ExpandedContent: View {
         }
     }
 
-    /// Past 80 % of a plan's limit the ox is on alert (Claudex's panicking mascot).
+    /// Past 80 % of a plan's limit the ox worries (Claudex's panicking mascot).
     private var shownMood: Mood {
         let stressed = bridge.gauges.contains { $0.percent >= 80 } && [Mood.idle, .sleeping, .done].contains(oxMood)
         return stressed ? .needsYou : oxMood
@@ -584,26 +584,47 @@ struct PillButton: View {
 }
 
 
-/// A session's own character (the pixel cast), posed by what it is doing.
+/// A session's own character: one of the ox's friends (Puff the lamb, Pip the
+/// goat kid, Dot the calf; art/ox_cute_render.py), the same one every time,
+/// animated by its own agent's state. Falls back to the pixel cast when the
+/// friends' frames are not bundled.
 struct SessionCharacter: View {
     let session: AgentSession
     let height: CGFloat
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 6.0)) { ctx in
-            let t = ctx.date.timeIntervalSinceReferenceDate
-            let pose: PixelPose = {
-                switch session.mood {
-                case .working: return PixelPose(dir: .front, pose: Int(t * 2) % 2 == 0 ? "point" : "open", mouth: "small")
-                case .thinking: return PixelPose(dir: .front, pose: "think", mouth: "closed", blink: Int(t * 3) % 9 == 0)
-                case .needsYou: return PixelPose(dir: .front, pose: "wave", frame: Int(t * 4) % 2, mouth: "open")
-                case .done: return PixelPose(dir: .front, pose: "open", mouth: "smile")
-                case .error: return PixelPose(dir: .front, pose: "stand", mouth: "round")
-                default: return PixelPose(dir: .front, pose: "stand", mouth: "rest", blink: Int(t * 2) % 7 == 0)
-                }
-            }()
-            PixelPersonView(person: OxBridge.character(for: session.id), pose: pose, height: height)
+    static let friends = ["puff", "pip", "dot"]
+
+    static func friend(for id: String) -> String {
+        let sum = id.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFFFF }
+        return friends[sum % friends.count]
+    }
+
+    static func cycle(_ m: Mood, t: Double) -> String {
+        switch m {
+        case .working: return "gallop"
+        case .thinking: return "think"
+        case .needsYou: return "alert"
+        case .done: return "happy"
+        case .error: return "dizzy"
+        case .sleeping: return "doze"
+        case .idle: return Int(t / 6) % 3 == 2 ? "graze" : "idle"
         }
-        .frame(width: height * 18 / 26, height: height)
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 12.0)) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            let name = Self.friend(for: session.id)
+            let frames = Frames.load("friends/\(name)/\(Self.cycle(session.mood, t: t))")
+            let fallback = frames.isEmpty ? Frames.load("friends/\(name)/idle") : frames
+            if !fallback.isEmpty {
+                Image(nsImage: fallback[Int(t * 12) % fallback.count]).resizable().interpolation(.high)
+                    .aspectRatio(4 / 3, contentMode: .fit)
+                    .frame(height: height)
+            } else {
+                PixelPersonView(person: OxBridge.character(for: session.id), pose: PixelPose(dir: .front, pose: session.mood == .idle ? "stand" : "point"), height: height)
+            }
+        }
+        .frame(width: height * 4 / 3, height: height)
     }
 }
 
@@ -672,8 +693,8 @@ struct SessionCardView: View {
 struct MiniGrid: View {
     let sessions: [AgentSession]
     var body: some View {
-        let cols = [GridItem(.fixed(12), spacing: 4), GridItem(.fixed(12), spacing: 4)]
-        LazyVGrid(columns: cols, spacing: 2) {
+        let cols = [GridItem(.fixed(17), spacing: 3), GridItem(.fixed(17), spacing: 3)]
+        LazyVGrid(columns: cols, spacing: 1) {
             ForEach(sessions) { s in
                 SessionCharacter(session: s, height: 13)
                     .opacity({ if case .idle = s.mood { return 0.55 }; return 1 }())

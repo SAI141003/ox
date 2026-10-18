@@ -347,7 +347,8 @@ export function createIpcServer(opts = {}) {
     clearTimeout(p.timer);
     // Last line of defense for rules 2 and 5: whatever reached this point, a
     // decision outside the allowed set becomes the safe verdict.
-    const verdict = APPROVAL_DECISIONS.includes(decision) ? decision : DECLINE;
+    // An agent's multiple-choice question (AskUserQuestion) is answered, not allowed.
+    const verdict = APPROVAL_DECISIONS.includes(decision) || (String(decision).startsWith('answer:') && p.tool === 'AskUserQuestion') ? decision : DECLINE;
     try { p.resolve(verdict, reason); } catch { /* consumer threw: still cleared */ }
     emitter.emit('approval-resolved', { id: p.id, tool: p.tool, decision: verdict, reason });
     // Tell ready clients the request is gone, so a GUI never shows a stale
@@ -516,6 +517,10 @@ export function createIpcServer(opts = {}) {
       }
       case 'approval-answer': {
         const decision = String(msg.decision ?? '');
+        if (decision === 'answer' && pending && msg.id === pending.id && pending.tool === 'AskUserQuestion' && typeof msg.answer === 'string' && msg.answer.trim()) {
+          resolvePending(`answer:${msg.answer.trim().slice(0, 2000)}`, 'client-answer');
+          return;
+        }
         if (!APPROVAL_DECISIONS.includes(decision)) {
           // Rule 5: an invalid decision is IGNORED and logged, never coerced
           // into a vote. The approval simply stays pending.

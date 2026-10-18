@@ -22,6 +22,10 @@ struct PendingApproval: Equatable {
     let tool: String
     let preview: String
     let deadline: Date
+    /// An agent's multiple-choice question (Claude Code's AskUserQuestion), answered here.
+    var question: String? = nil
+    var options: [String] = []
+    var multiSelect = false
 }
 
 /// One delegated worker inside a run (ox's `subagent` tool), for the office view.
@@ -108,6 +112,8 @@ final class OxBridge: ObservableObject {
     let focus = FocusTimer()
     let clips = ClipHistory()
     let player = NowPlaying()
+    /// Unread mail from the Mail app (Coucou's mail in the notch).
+    let mail = MailCenter()
     /// Dictation anywhere (⌃⌥D), « OK ox », call notes.
     let dictation: Dictation = MainActor.assumeIsolated { Dictation() }
     let wake: WakeWord = MainActor.assumeIsolated { WakeWord() }
@@ -674,9 +680,17 @@ final class OxBridge: ObservableObject {
             let tool = frame["tool"] as? String ?? "tool"
             let preview = frame["argsPreview"] as? String ?? ""
             let deadlineMs = frame["deadlineAt"] as? Double ?? (Date().timeIntervalSince1970 * 1000 + 115_000)
+            // AskUserQuestion: the question and its options travel in args.
+            var question: String?, options: [String] = [], multi = false
+            if tool == "AskUserQuestion", let q = ((frame["args"] as? [String: Any])?["questions"] as? [[String: Any]])?.first {
+                question = q["question"] as? String
+                options = ((q["options"] as? [Any]) ?? []).compactMap { ($0 as? [String: Any])?["label"] as? String ?? $0 as? String }
+                multi = q["multiSelect"] as? Bool ?? false
+            }
             update(path) { s in
                 s.pending = PendingApproval(id: id, tool: tool, preview: preview,
-                                            deadline: Date(timeIntervalSince1970: deadlineMs / 1000))
+                                            deadline: Date(timeIntervalSince1970: deadlineMs / 1000),
+                                            question: question, options: options, multiSelect: multi)
                 s.mood = .needsYou
                 s.activity = "wants to run \(tool)"
             }
@@ -861,6 +875,14 @@ final class OxBridge: ObservableObject {
             s.activity = "you asked: \(Self.shortLabel(text))"
         }
         return true
+    }
+
+    /// The answer to an agent's question, chosen in the notch.
+    func answerQuestion(_ session: AgentSession, _ answer: String) {
+        guard let p = session.pending, let conn = connections[session.id] else { return }
+        conn.send(["type": "approval-answer", "id": p.id, "decision": "answer", "answer": answer])
+        IslandLog.write("answered \(session.project)'s question: \(answer)")
+        update(session.id) { s in s.pending = nil; s.mood = .thinking; s.activity = "you answered: \(Self.shortLabel(answer))" }
     }
 
     /// "Answer in terminal": decline to decide; ox keeps its terminal prompt.

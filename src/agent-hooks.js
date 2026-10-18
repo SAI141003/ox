@@ -47,7 +47,7 @@ const OX_BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 
 export const AGENTS = Object.freeze({
   claude: {
     label: 'Claude Code', settings: () => path.join(os.homedir(), '.claude', 'settings.json'), format: 'groups', matcher: true, decision: 'claude',
-    events: { PreToolUse: 5, PostToolUse: 5, PostToolUseFailure: 5, PermissionRequest: 120, UserPromptSubmit: 5, Stop: 5, SubagentStart: 5, SubagentStop: 5, SessionEnd: 5 },
+    events: { PreToolUse: 120, PostToolUse: 5, PostToolUseFailure: 5, PermissionRequest: 120, UserPromptSubmit: 5, Stop: 5, SubagentStart: 5, SubagentStop: 5, SessionEnd: 5 },
   },
   codex: {
     label: 'Codex', settings: () => path.join(os.homedir(), '.codex', 'hooks.json'), format: 'groups', matcher: false, decision: 'claude',
@@ -167,6 +167,18 @@ export function decisionOutput(decision, style = 'claude') {
   return '';
 }
 
+/** "Which search engine? (Postgres full-text / Meilisearch / Algolia)": one line for the notch. */
+export function questionPreview(input = {}) {
+  const q = (input.questions ?? [])[0] ?? {};
+  const opts = (q.options ?? []).map((o) => (typeof o === 'string' ? o : o?.label)).filter(Boolean);
+  return `${q.question ?? 'A question'}${opts.length ? ` (${opts.join(' / ')})` : ''}`.slice(0, 300);
+}
+
+/** What Claude Code reads back when the question was answered in the notch. */
+export function answerOutput(answer) {
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `The user already answered this in OX Island: ${answer}. Continue with that answer; do not ask again.` } });
+}
+
 // ---- the relay: one ox IPC server per agent session ----------------------------------
 
 export function runRelay({ agent = 'claude', sessionId, cwd = process.cwd(), socketDir, idleMs = IDLE_MS, waitForIslandMs = 2500 } = {}) {
@@ -189,6 +201,14 @@ export function runRelay({ agent = 'claude', sessionId, cwd = process.cwd(), soc
       if (msg?.type !== 'hook') return undefined;
       bump();
       const p = msg.payload ?? {};
+      // Claude Code's multiple-choice question: answered in the notch (Coucou's feature).
+      if (p.hook_event_name === 'PreToolUse' && p.tool_name === 'AskUserQuestion') {
+        for (const e of toEvents(p)) server.broadcast(e);
+        if (!(await waitIsland())) return { type: 'hook-decision', decision: 'ask' };
+        const decision = await server.requestApproval({ tool: 'AskUserQuestion', args: sanitizeForWire(p.tool_input ?? {}), cwd: p.cwd ?? cwd, preview: questionPreview(p.tool_input) });
+        if (String(decision).startsWith('answer:')) return { type: 'hook-decision', decision: 'answer', answer: String(decision).slice(7) };
+        return { type: 'hook-decision', decision: 'ask' };
+      }
       if (p.hook_event_name === 'PermissionRequest') {
         const tool = toolName(p.tool_name);
         if (always.has(tool)) return { type: 'hook-decision', decision: 'allow' };
@@ -259,6 +279,7 @@ export async function handleHook(agent, raw, { event = null, socketDir, spawnRel
   try { parsed = JSON.parse(String(raw || '{}')); } catch { return spec.decision === 'bare' && /permission/i.test(String(event)) ? decisionOutput('ask', 'bare') : ''; }
   const payload = normalize(parsed, event, env);
   if (!payload.hook_event_name) return '';
+  const isQuestion = payload.hook_event_name === 'PreToolUse' && payload.tool_name === 'AskUserQuestion' && spec.decision === 'claude';
   const isAsk = payload.hook_event_name === 'PermissionRequest';
   const answer = (d) => (isAsk ? decisionOutput(d, spec.decision) : '');
   if (isAsk && spec.decision === 'none') return '';
@@ -266,7 +287,8 @@ export async function handleHook(agent, raw, { event = null, socketDir, spawnRel
   if (payload.hook_event_name === 'SessionEnd' && !exists(socketPathFor(sessionKey(agent, payload.session_id), socketDir))) return '';
   const sp = await ensureRelay(agent, payload, { socketDir, spawnRelay });
   if (!sp) return answer('ask');
-  const reply = await talk(sp, { type: 'hook', payload }, { timeoutMs: isAsk ? approvalTimeoutMs : 800 });
+  const reply = await talk(sp, { type: 'hook', payload }, { timeoutMs: isAsk || isQuestion ? approvalTimeoutMs : 800 });
+  if (isQuestion) return reply?.decision === 'answer' && reply.answer ? answerOutput(reply.answer) : '';
   return answer(reply?.decision ?? 'ask');
 }
 

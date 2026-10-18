@@ -25,10 +25,66 @@ final class Dictation: ObservableObject {
     var willListen: () -> Void = {}
     var didFinish: () -> Void = {}
 
+    // Coucou's Flow controls: hold to talk; tap twice quickly to keep listening
+    // hands-free until the next tap; Esc cancels (nothing is pasted); ⌃⌥V
+    // pastes the last dictation again.
+    @Published private(set) var handsFree = false
+    private var pressedAt = Date.distantPast
+    private var lastTapEnd = Date.distantPast
+    private var escMonitor: Any?
+
     func install() {
         BuddyHotKey.register(id: 2, keyCode: kVK_ANSI_D, modifiers: controlKey | optionKey,
-                             press: { [weak self] in MainActor.assumeIsolated { self?.start() } },
-                             release: { [weak self] in MainActor.assumeIsolated { self?.stop() } })
+                             press: { [weak self] in MainActor.assumeIsolated { self?.keyDown() } },
+                             release: { [weak self] in MainActor.assumeIsolated { self?.keyUp() } })
+        BuddyHotKey.register(id: 3, keyCode: kVK_ANSI_V, modifiers: controlKey | optionKey,
+                             press: { [weak self] in MainActor.assumeIsolated { self?.pasteLast() } }, release: {})
+        escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] e in
+            guard e.keyCode == 53 else { return }
+            MainActor.assumeIsolated { self?.cancel() }
+        }
+    }
+
+    private func keyDown() {
+        if handsFree { handsFree = false; stop(); return }        // the tap that ends hands-free
+        let quickSecond = Date().timeIntervalSince(lastTapEnd) < 0.45
+        pressedAt = Date()
+        if phase == .listening, quickSecond { handsFree = true; say("Hands-free: tap ⌃⌥D to finish, Esc to cancel."); phase = .listening; return }
+        start()
+    }
+
+    private func keyUp() {
+        let held = Date().timeIntervalSince(pressedAt)
+        if handsFree { return }
+        if held < 0.3 {
+            // A quick tap: wait a moment for a second tap (hands-free) before finishing.
+            lastTapEnd = Date()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, !self.handsFree, self.phase == .listening, Date().timeIntervalSince(self.lastTapEnd) >= 0.45 else { return }
+                self.stop()
+            }
+            return
+        }
+        stop()
+    }
+
+    /// Esc while listening: drop it, paste nothing.
+    func cancel() {
+        guard phase == .listening else { return }
+        handsFree = false
+        audio.stop()
+        audio.inputNode.removeTap(onBus: 0)
+        request?.endAudio()
+        task?.cancel(); task = nil; request = nil
+        heard = ""
+        say("Cancelled.")
+        didFinish()
+    }
+
+    /// ⌃⌥V: the last dictation, pasted again.
+    func pasteLast() {
+        guard let t = lastPasted, !t.isEmpty else { say("Nothing dictated yet."); return }
+        if !Paster.paste(t) { say("Copied the last dictation: press ⌘V.") }
     }
 
     func start() {
@@ -89,7 +145,14 @@ final class Dictation: ObservableObject {
     /// Put the words where the person types: ⌘V into the front app, then the
     /// clipboard gets back what it held.
     private func paste(_ text: String) {
-        if Paster.paste(text) { phase = .idle; lastPasted = text }
+        let seconds = max(0.5, Date().timeIntervalSince(pressedAt))
+        let app = NSWorkspace.shared.frontmostApplication?.localizedName ?? ""
+        DictationStats.record(words: text.split(whereSeparator: { $0.isWhitespace }).count, seconds: seconds, app: app)
+        if Paster.paste(text) {
+            lastPasted = text
+            let today = DictationStats.today()
+            say("Pasted. Today: \(today.words) words, about \(today.savedMinutes) min saved.")
+        }
         else { lastPasted = text; say("Copied: “\(text.prefix(60))”. Allow Accessibility for OX Island to paste it for you.") }
     }
 
@@ -114,6 +177,36 @@ enum VoicePermission {
         return info["NSMicrophoneUsageDescription"] != nil && info["NSSpeechRecognitionUsageDescription"] != nil
     }
     static let howToFix = "Voice needs OX Island.app (run  ox island start ), not the bare binary."
+}
+
+/// Coucou's Flow statistics, kept on this Mac (~/.ox/dictation-stats.jsonl):
+/// words, how fast you spoke, and the time saved against typing at 40 wpm.
+enum DictationStats {
+    static var file: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/dictation-stats.jsonl") }
+    struct Summary { let words: Int; let sessions: Int; let wpm: Int; let savedMinutes: Int; let apps: [(String, Int)] }
+
+    static func record(words: Int, seconds: Double, app: String) {
+        guard words > 0 else { return }
+        let row: [String: Any] = ["at": Int(Date().timeIntervalSince1970), "words": words, "seconds": (seconds * 10).rounded() / 10, "app": app]
+        guard let d = try? JSONSerialization.data(withJSONObject: row), let line = String(data: d, encoding: .utf8).map({ $0 + "\n" }) else { return }
+        if let h = try? FileHandle(forWritingTo: file) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() }
+        else { try? Data(line.utf8).write(to: file) }
+    }
+
+    static func summary(since: Date) -> Summary {
+        let rows = ((try? String(contentsOf: file, encoding: .utf8)) ?? "").split(separator: "\n").compactMap { l -> [String: Any]? in
+            (try? JSONSerialization.jsonObject(with: Data(l.utf8))) as? [String: Any]
+        }.filter { (($0["at"] as? Double) ?? 0) >= since.timeIntervalSince1970 }
+        let words = rows.reduce(0) { $0 + (($1["words"] as? Int) ?? 0) }
+        let secs = rows.reduce(0.0) { $0 + (($1["seconds"] as? Double) ?? 0) }
+        var apps: [String: Int] = [:]
+        for r in rows { if let a = r["app"] as? String, !a.isEmpty { apps[a, default: 0] += (r["words"] as? Int) ?? 0 } }
+        let typing = Double(words) / 40.0 * 60.0           // seconds it would take at 40 wpm
+        return Summary(words: words, sessions: rows.count, wpm: secs > 0 ? Int(Double(words) / (secs / 60)) : 0,
+                       savedMinutes: max(0, Int((typing - secs) / 60)), apps: apps.sorted { $0.value > $1.value }.prefix(3).map { ($0.key, $0.value) })
+    }
+    static func today() -> Summary { summary(since: Calendar.current.startOfDay(for: Date())) }
+    static func week() -> Summary { summary(since: Date().addingTimeInterval(-7 * 86400)) }
 }
 
 /// Text into whatever app you are typing in: ⌘V, then the clipboard gets back

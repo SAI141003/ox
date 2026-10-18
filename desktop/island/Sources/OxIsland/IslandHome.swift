@@ -58,7 +58,7 @@ struct HomeHeader: View {
             HStack(spacing: 5) {
                 tab("house.fill", on: bridge.tray == nil && bridge.card == nil) { bridge.tray = nil; bridge.card = nil }
                 tab("bubble.left.fill", on: bridge.tray == .chat) { bridge.card = nil; bridge.tray = bridge.tray == .chat ? nil : .chat }
-                tab("plus", on: [.shelf, .focus, .clips].contains(bridge.tray)) { bridge.card = nil; bridge.tray = [.shelf, .focus, .clips].contains(bridge.tray) ? nil : .shelf }
+                tab("plus", on: [.shelf, .focus, .clips, .mail, .recap].contains(bridge.tray)) { bridge.card = nil; bridge.tray = [.shelf, .focus, .clips, .mail, .recap].contains(bridge.tray) ? nil : .shelf }
             }
             .padding(.leading, 14)
             Spacer(minLength: notchWidth + 8)
@@ -150,7 +150,8 @@ struct HomeCharacter: View {
                 .blur(radius: 6)
                 .opacity([Mood.idle, .sleeping].contains(mood) ? 0.15 : 0.65)
                 .animation(.easeInOut(duration: 0.4), value: mood)
-            OxWalker(mood: mood, height: size, roam: false, onPoke: { bridge.showReaction() })
+            OxWalker(mood: mood, height: size, roam: false,
+                     stressed: bridge.gauges.contains { $0.percent >= 80 }, onPoke: { bridge.showReaction() })
                 .frame(width: size * 4 / 3 + 4, height: size)
         }
         .frame(width: size * 1.5, height: size * 1.2)
@@ -297,7 +298,7 @@ struct AgentPill: View {
                     }
                     Text(session.project).font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(hover ? c : HomeInk.dim).lineLimit(1).truncationMode(.tail)
-                        .padding(.leading, 30).padding(.trailing, 8)
+                        .padding(.leading, 38).padding(.trailing, 8)
                 }
                 .frame(height: 28)
                 .shadow(color: c.opacity(hover ? 0.35 : 0), radius: 10, y: 2)
@@ -344,8 +345,28 @@ struct ApprovalHome: View {
     var body: some View {
         HStack(spacing: 10) {
             ZStack(alignment: .topLeading) {
-                HomeCard(wash: Color(hex: "#F5A524").opacity(0.42)) { EmptyView() }
+                HomeCard(wash: pending.question != nil ? Color(hex: "#22D3EE").opacity(0.38) : Color(hex: "#F5A524").opacity(0.42)) { EmptyView() }
                 HomeCharacter(bridge: bridge, mood: .needsYou, size: 52).position(x: 50, y: 49)
+                if let q = pending.question {
+                    // Coucou's question card: the agent asks, you pick, it carries on.
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            Circle().fill(Color(hex: session.color)).frame(width: 7, height: 7)
+                            Text(session.project).font(.system(size: 12, weight: .semibold)).foregroundStyle(HomeInk.text).lineLimit(1)
+                            Text("\(session.tool) is asking you").font(.system(size: 11)).foregroundStyle(HomeInk.muted).lineLimit(1)
+                        }
+                        Text(q).font(.system(size: 12, weight: .medium)).foregroundStyle(HomeInk.text).lineLimit(2)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(pending.options, id: \.self) { o in
+                                    HomeButton(title: o, style: .plain) { guard Date().timeIntervalSince(shownAt) > 0.6 else { return }; bridge.answerQuestion(session, o) }
+                                }
+                                Button("Answer in terminal") { bridge.deferToTerminal(session) }.buttonStyle(.plain).font(.system(size: 10.5)).foregroundStyle(HomeInk.dim)
+                            }
+                        }
+                    }
+                    .padding(.leading, 100).padding(.trailing, 12).padding(.top, 9)
+                } else {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         Circle().fill(Color(hex: session.color)).frame(width: 7, height: 7)
@@ -365,6 +386,7 @@ struct ApprovalHome: View {
                     }
                 }
                 .padding(.leading, 100).padding(.trailing, 12).padding(.top, 9)
+                }
             }
             .frame(maxWidth: .infinity)
         }

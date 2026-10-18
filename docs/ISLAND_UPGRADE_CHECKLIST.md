@@ -12,15 +12,15 @@ States: ✓ the island has it · ~ partly · ✗ missing · → next to build
 | # | Feature | Island now | |
 |---|---|---|---|
 | A1 | Approve other agents from the notch: Allow / Deny / Always for Claude Code, Codex, Gemini CLI, Cursor, Copilot… (through each agent's hooks; installer shows the diff and keeps a dated backup) | ~ **built, not installed on this Mac**: `ox hooks install claude` (codex, gemini, cursor, copilot) | your step: run it once |
-| A2 | Answer an agent's multiple-choice question (AskUserQuestion) in the notch | ✗ | → with A1 |
+| A2 | Answer an agent's multiple-choice question (AskUserQuestion) in the notch | ✓ built: the Claude PreToolUse hook sends the question to the island, which shows a cyan card with the options; the choice goes back as the answer (tests in test/agent-hooks.test.js) | needs A1's install |
 | A3 | Live diff ticker: each file an agent edits with +N −M; click opens the diff | ~ ox runs only | |
 | A4 | Jump to the exact terminal window of a session | ✗ | |
 | A5 | Plan usage: Claude 5-hour and weekly, Codex limits, reset times | ~ Codex real; Claude: **relay built** (`ox statusline`, installed with `ox hooks install claude`, keeps your own status line) | your step: same install |
 | A6 | Integrations as pills/cards: GitHub (PRs, CI, reviews), Vercel, Stripe, n8n, Resend, Notion, Cal.com | ✗ | |
 | A7 | Flow dictation: hold a key, speak, pasted anywhere | ✓ (⌃⌥D) | |
-| A8 | Hands-free: two quick taps keep listening; Esc cancels; paste the last dictation again | ✗ | → |
+| A8 | Hands-free: two quick taps keep listening; Esc cancels; paste the last dictation again | ✓ double tap ⌃⌥D = hands-free, Esc cancels, ⌃⌥V pastes the last one again | |
 | A9 | Styles: optional clean-up of a dictation by a model, per app (as said / natural / polished) | ✗ | → |
-| A10 | Dictation statistics: words, time saved, words per minute, apps | ✗ | → |
+| A10 | Dictation statistics: words, time saved, words per minute, apps | ~ words and time saved, today and this week (~/.ox/dictation-stats.jsonl); per-app not yet | |
 | A11 | Dictionary and snippets | ✓ | |
 | A12 | Translate a dictation into ~70 languages; prompt mode | ✗ | |
 | A13 | Parakeet offline speech (25 languages) | ✗ (Apple's on-device speech) | |
@@ -30,7 +30,7 @@ States: ✓ the island has it · ~ partly · ✗ missing · → next to build
 | A17 | Drag the character onto a window to give it as context | ✗ | |
 | A18 | Character on the desktop, follows the cursor | ~ | |
 | A19 | Open on hover; invisible when idle; any Mac and several displays | ~ | |
-| A20 | Weekly recap (time, sessions, files, lines, top agent), shareable image | ✗ | → |
+| A20 | Weekly recap (time, sessions, files, lines, top agent), shareable image | ~ Recap card: 7 days of tokens and cost per day, top model, words dictated, water estimate, Save as image; files/lines not yet | |
 | A21 | Your own sounds (drop a file to replace one) | ✗ | |
 | A22 | Character reacts to the Mac's load (stressed when hot or busy) | ~ on alert past 80 % of a plan limit (Claudex); Mac load not yet | |
 | A23 | Capture shortcut (⌘⇧S) with a tick | ✗ | |
@@ -54,7 +54,7 @@ States: ✓ the island has it · ~ partly · ✗ missing · → next to build
 | C1 | Rings per tool: session %, week %, model-week %, each with a reset countdown | ~ | → |
 | C2 | "4 sessions working", listed per project with model; "Codex idle for 3 m" | ✓ **new**: Claude Code (CLI, desktop Code tab, worktrees) and Codex sessions read from their own session files (read-only), in the notch (count of those working), the open island (project · what it does now / idle for N m) and the app's Office | checked: this session and two worktree sessions shown live |
 | C3 | Alert before the limit, not after | ✓ **new**: a notification at 80 % and 95 % of each window, once per reset period | |
-| C4 | Water estimate per tool (litres, days of drinking water) | ✗ | → with a stated method |
+| C4 | Water estimate per tool (litres, days of drinking water) | ~ total in the Recap card: cloud tokens × 18 mL per 1,000 (Li et al. 2023), local models not counted; method shown on hover | |
 
 ## C. From the screenshots
 
@@ -147,7 +147,7 @@ States: ✓ done and tested · ~ partly · → building now · ✗ not yet · �
 
 | # | Recording | What it shows (frames + speech) | What the island / ox gets | State |
 |---|---|---|---|---|
-| F2.1 | 10-13 21:07 (louis_rlee, Coucou) | Mail in the notch: unread list (Arnaud, Léa, Figma, GitHub, Stripe, Vercel), open one, **Reply**, **Mark as read**, **Open in Mail** | Island mail card with open / reply (draft, never sent) / mark read / open in Mail | ✗ |
+| F2.1 | 10-13 21:07 (louis_rlee, Coucou) | Mail in the notch: unread list (Arnaud, Léa, Figma, GitHub, Stripe, Vercel), open one, **Reply**, **Mark as read**, **Open in Mail** | Island mail card with open / reply (draft, never sent) / mark read / open in Mail | ✓ mail card (unread list when Mail is open, open, reply as a draft, mark read, open in Mail) |
 | F2.2 | 10-14 18:16 (Coucou) | Live feed of what Claude Code reads / edits / runs; **Allow / Deny / Always** in the notch; answering Claude's multiple-choice question in the notch; happy jump on "Done, 48 tests passed"; lock-screen approvals with Face ID; works with Claude, Codex, Cursor, Gemini; no account | A1 approvals (built, install step), A2 questions in the notch, done animation, phone later (A25) | ~ |
 | F2.3 | 10-15 14:33 (Coucou 0.5 for Windows) | Coucou app window: Flow stats (11,204 words, 196 sessions…), Notetaker, settings; hold a key to talk; "learns your words"; notes of every call (mic + computer audio); "OK Coucou" | Dictation stats (A10), call notes with system audio (A14), wake phrase ✓ | ~ |
 | F2.4 | 10-16 3 (agentmaxxing, "Pixie") | Voice: play a song, "make yourself smaller and turn down the volume", read today's to-dos, **explain the YouTube video on screen by drawing circles and arrows over it** | Songs ✓, smaller ✓, volume ✓, to-dos ✓; new: **screen annotation overlay** (draw circles/arrows/labels over the screen while explaining) | ~ |

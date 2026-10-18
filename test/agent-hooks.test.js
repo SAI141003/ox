@@ -187,3 +187,44 @@ test('Codex: hooks.json groups without a matcher, its own mark, and its tools re
   assert.equal(preview({ command: '*** Begin Patch\n*** Update File: src/app.ts\n@@\n-a\n+b\n*** End Patch' }), 'src/app.ts');
   assert.equal(preview({ command: ['git', 'status'] }), 'git status');
 });
+
+test('Claude Code\'s multiple-choice question is answered in the notch, and Claude reads the answer', async (t) => {
+  const { questionPreview, answerOutput } = await import('../src/agent-hooks.js');
+  const dir = sockDir();
+  const relays = [];
+  t.after(() => relays.forEach((r) => r.server.close()));
+  const opts = { socketDir: dir, spawnRelay: ({ agent, sessionId, cwd }) => relays.push(runRelay({ agent, sessionId, cwd, socketDir: dir })) };
+  await handleHook('claude', JSON.stringify({ session_id: 'q1', hook_event_name: 'UserPromptSubmit' }), opts);
+  // The island answers the question with an option's label.
+  const sock = net.createConnection(relays[0].socketPath);
+  let buf = '', seen = null;
+  sock.on('connect', () => sock.write(`${JSON.stringify({ type: 'ready', clientId: 'test-island' })}\n`));
+  sock.on('data', (d) => {
+    buf += d; let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1);
+      if (m.type === 'approval-request') { seen = m; sock.write(`${JSON.stringify({ type: 'approval-answer', id: m.id, decision: 'answer', answer: 'Meilisearch' })}\n`); }
+    }
+  });
+  t.after(() => sock.destroy());
+  await wait(150);
+  const input = { questions: [{ question: 'Which search engine for course search?', header: 'Search', options: [{ label: 'Postgres full-text' }, { label: 'Meilisearch' }, { label: 'Algolia' }], multiSelect: false }] };
+  const out = await handleHook('claude', JSON.stringify({ session_id: 'q1', hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: input }), opts);
+  assert.equal(seen.tool, 'AskUserQuestion');
+  assert.equal(seen.argsPreview, 'Which search engine for course search? (Postgres full-text / Meilisearch / Algolia)');
+  assert.equal(seen.args.questions[0].options[1].label, 'Meilisearch');
+  const j = JSON.parse(out);
+  assert.equal(j.hookSpecificOutput.permissionDecision, 'deny');
+  assert.match(j.hookSpecificOutput.permissionDecisionReason, /answered this in OX Island: Meilisearch/);
+  assert.equal(questionPreview({}), 'A question');
+  assert.match(answerOutput('Yes'), /OX Island: Yes/);
+});
+
+test('a question with no island goes to the terminal as usual (prints nothing)', async (t) => {
+  const dir = sockDir();
+  const relays = [];
+  t.after(() => relays.forEach((r) => r.server.close()));
+  const opts = { socketDir: dir, spawnRelay: ({ agent, sessionId, cwd }) => relays.push(runRelay({ agent, sessionId, cwd, socketDir: dir, waitForIslandMs: 200 })) };
+  const out = await handleHook('claude', JSON.stringify({ session_id: 'q2', hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: 'Go?', options: [{ label: 'Yes' }] }] } }), opts);
+  assert.equal(out, '');
+});

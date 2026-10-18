@@ -8,14 +8,19 @@ import SwiftUI
 // around, gets the zoomies, and now and then a farmer walks by and waves.
 
 enum OxCycle: String, CaseIterable {
-    case walk, graze, alert, idle, look, gallop, kick, doze
+    case walk, graze, alert, idle, look, gallop, kick, doze, happy, think, worried, dizzy
 
-    /// The cycle a work mood demands, or nil when the pasture decides.
+    /// The cycle a work mood demands, or nil when the pasture decides
+    /// (art/ox_cute_render.py renders each with its face: focused while it
+    /// works, eyes up while it thinks, a hop when it needs you, closed smiling
+    /// eyes when it is done, x-eyes when something failed).
     static func forMood(_ m: Mood) -> OxCycle? {
         switch m {
-        case .working, .thinking: return .walk
-        case .needsYou, .error: return .alert
-        case .done: return .graze
+        case .working: return OxFrames.has(.gallop) ? .gallop : .walk
+        case .thinking: return OxFrames.has(.think) ? .think : .walk
+        case .needsYou: return .alert
+        case .error: return OxFrames.has(.dizzy) ? .dizzy : .alert
+        case .done: return OxFrames.has(.happy) ? .happy : .graze
         case .idle, .sleeping: return nil
         }
     }
@@ -55,6 +60,8 @@ enum OxFrames {
         return f
     }
     static var available: Bool { !frames(.walk).isEmpty }
+    /// Whether this bundle has that cycle's own frames (older bundles fall back).
+    static func has(_ c: OxCycle) -> Bool { !Frames.load("ox/\(c.rawValue)").isEmpty }
 }
 
 /// The pasture routine: a small state machine advanced by the frame clock.
@@ -413,6 +420,8 @@ struct OxWalker: View {
     var height: CGFloat
     /// Use the whole width: walk the lane while working, live on the pasture otherwise.
     var roam = false
+    /// Past 80 % of a plan window: worried instead of on alert, when rendered.
+    var stressed = false
     /// Called when the bull is poked (the notch uses it to open the island).
     var onPoke: (() -> Void)? = nil
     /// Draw the barn at the right end (the expanded island). Without it, the
@@ -463,7 +472,7 @@ struct OxWalker: View {
         let barnW = barn ? height * 1.15 : 0
         let _ = trackPointer(now: now, width: width, size: size)
         // Following the cursor wins over a run's forced walk: you are right there.
-        let forced = follow ? nil : OxCycle.forMood(mood)
+        let forced = follow ? nil : (stressed && mood == .needsYou && OxFrames.has(.worried) ? .worried : OxCycle.forMood(mood))
         let (cycle, x, right): (OxCycle, CGFloat, Bool) = {
             if let forced {
                 // Work: walk the lane ping-pong; other moods stand where the pasture left it.
