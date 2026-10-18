@@ -92,7 +92,7 @@ struct NowPlayingPill: View {
                 Button { player.send("playpause") } label: { Image(systemName: t.playing ? "pause.fill" : "play.fill").font(.system(size: 10)) }
                     .buttonStyle(.plain).foregroundStyle(Ink.text).help(t.playing ? "Pause" : "Play").accessibilityLabel(t.playing ? "Pause" : "Play")
                 Button { player.send("next track") } label: { Image(systemName: "forward.fill").font(.system(size: 10)) }
-                    .buttonStyle(.plain).foregroundStyle(Ink.text).help("Next").accessibilityLabel("Next track")
+                    .buttonStyle(.plain).foregroundStyle(Ink.text).help(T("Next")).accessibilityLabel("Next track")
             }
             .padding(.horizontal, 10).padding(.vertical, 5)
             .background(Capsule().fill(Color.white.opacity(0.06)))

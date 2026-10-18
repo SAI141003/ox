@@ -27,7 +27,7 @@ enum TrayTab: String, CaseIterable, Identifiable {
         case .recap: return "chart.bar"
         }
     }
-    var title: String { rawValue.capitalized }
+    var title: String { T(rawValue.capitalized) }
 }
 
 // MARK: - Running ox
@@ -452,7 +452,7 @@ struct ShelfView: View {
     var body: some View {
         if shelf.items.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Drop files on the notch").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.text)
+                Text(T("Drop files on the notch")).font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.text)
                 Text("They wait here. Ask ox about one, or start an email with it attached, from the account you pick.")
                     .font(.system(size: 12)).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
             }
@@ -485,7 +485,7 @@ struct ShelfView: View {
                                 .modifier(FieldStyle())
                                 .onSubmit { shelf.ask(question) }
                             PillButton(title: shelf.busy ? "…" : "Ask", primary: true) { shelf.ask(question) }
-                            PillButton(title: "Email", primary: false) { mailing = true; shelf.loadAccounts() }
+                            PillButton(title: T("Email"), primary: false) { mailing = true; shelf.loadAccounts() }
                         }
                         ScrollView {
                             Text(shelf.busy ? "\(OxName.current) is reading it…" : shelf.answer)
@@ -512,11 +512,11 @@ struct ShelfView: View {
         HStack(spacing: 8) {
             // From is never preselected: with several accounts signed in, the
             // sender is the one thing that must be chosen on purpose.
-            PillButton(title: "Draft in Mail", primary: true) {
+            PillButton(title: T("Draft in Mail"), primary: true) {
                 guard !from.isEmpty, !to.isEmpty else { shelf.mailNote = from.isEmpty ? "Pick which account it is from." : "Who is it to?"; return }
                 shelf.draft(from: from, to: to, subject: "")
             }
-            PillButton(title: "Back", primary: false) { mailing = false }
+            PillButton(title: T("Back"), primary: false) { mailing = false }
             Text(shelf.mailNote).font(.system(size: 11)).foregroundStyle(Ink.muted).lineLimit(2)
         }
     }
@@ -543,9 +543,9 @@ struct FocusView: View {
                     PillButton(title: timer.running ? "Pause" : (timer.active ? "Resume" : "Start"), primary: true) {
                         timer.running ? timer.pause() : timer.start()
                     }
-                    if timer.active { PillButton(title: "Reset", primary: false) { timer.reset() } }
+                    if timer.active { PillButton(title: T("Reset"), primary: false) { timer.reset() } }
                     if let f = timer.finishedAt, Date().timeIntervalSince(f) < 600 {
-                        Text("Done. Take a break.").font(.system(size: 11)).foregroundStyle(Ink.green)
+                        Text(T("Done. Take a break.")).font(.system(size: 11)).foregroundStyle(Ink.green)
                     }
                 }
             }
@@ -558,7 +558,7 @@ struct ClipsView: View {
     var body: some View {
         if history.clips.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Nothing copied yet").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.text)
+                Text(T("Nothing copied yet")).font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.text)
                 Text("Copy text anywhere and it shows up here. Kept in memory only; passwords are never kept.")
                     .font(.system(size: 12)).foregroundStyle(Ink.muted)
             }
@@ -582,7 +582,7 @@ struct ClipsView: View {
                 HStack {
                     Text("click to copy again").font(.system(size: 10.5)).foregroundStyle(Ink.dim)
                     Spacer()
-                    Button("Clear") { history.clear() }.buttonStyle(.plain).font(.system(size: 10.5)).foregroundStyle(Ink.dim)
+                    Button(T("Clear")) { history.clear() }.buttonStyle(.plain).font(.system(size: 10.5)).foregroundStyle(Ink.dim)
                 }
             }
         }
@@ -808,7 +808,7 @@ struct ChatView: View {
                                 .font(.system(size: 11.5)).foregroundStyle(Ink.muted)
                             // Everyday errands (Wajo): a tap writes the start of the request; you finish it and send.
                             // ox finds and drafts; it never pays, books or sends on its own.
-                            FlowChips(items: ["Track my package ", "Cancel my subscription to ", "Find a table for 2 tonight near ", "Remind me at 5pm to ", "Cheapest flight to ", "Summarize my unread mail"]) { draft = $0 }
+                            FlowChips(items: ["Track my package ", "Cancel my subscription to ", "Find a table for 2 tonight near ", "Remind me at 5pm to ", "Cheapest flight to ", "Summarize my unread mail"].map(T)) { draft = $0 }
                         }
                         ForEach(chat.lines) { l in
                             Text(l.who.map { "\($0): \(l.text)" } ?? l.text)
@@ -835,7 +835,7 @@ struct ChatView: View {
                 .buttonStyle(.plain)
                 .frame(maxWidth: 110, alignment: .leading)
                 .help("The folder ox works in when no run is open")
-                TextField("Message ox…", text: $draft)
+                TextField(T("Message ox…"), text: $draft)
                     .modifier(FieldStyle())
                     .focused($focused)
                     .onSubmit { chat.send(draft, bridge: bridge); draft = "" }

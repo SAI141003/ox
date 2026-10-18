@@ -263,7 +263,7 @@ struct PixelOffice: View {
         let working = session.agents.filter { $0.endedAt == nil }.count
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text("Office").font(.system(size: 12, weight: .semibold)).foregroundStyle(Ink.text)
+                Text(T("Office")).font(.system(size: 12, weight: .semibold)).foregroundStyle(Ink.text)
                 Text("\(working) working, \(session.agents.count - working) finished")
                     .font(.system(size: 11)).foregroundStyle(Ink.muted)
                 Spacer()

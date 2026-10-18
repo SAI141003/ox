@@ -114,6 +114,18 @@ if let i = CommandLine.arguments.firstIndex(of: "--check-speech"), i + 1 < Comma
 
 // Check: `OxIsland --check-commands` runs the island's own command matching on
 // real phrases (the ones in the owner's videos included) and exits 1 on any miss.
+// Check: `OxIsland --check-l10n` prints the island's words in every language and any gaps.
+if CommandLine.arguments.contains("--check-l10n") {
+    var gaps = 0
+    for (i, lang) in L10n.languages.enumerated() where i > 0 {
+        L10n.lang = lang
+        let missing = L10n.table.filter { $0.value.count < 9 || $0.value[i - 1].isEmpty }.count
+        gaps += missing
+        print("\(lang): \(T("All quiet")) · \(T("Allow")) / \(T("Deny")) · \(T("Type your answer")) · \(T("Go to Terminal"))\(missing > 0 ? "  (\(missing) missing)" : "")")
+    }
+    print("\(L10n.table.count) strings × \(L10n.languages.count) languages, \(gaps) missing")
+    exit(gaps == 0 ? 0 : 1)
+}
 if CommandLine.arguments.contains("--check-commands") {
     let keys = ["island.size", "island.autoClose", "ox.name"]
     let saved = keys.map { UserDefaults.standard.object(forKey: $0) }
@@ -356,7 +368,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-meter"), i + 1 < Comma
         let view = Card(wash: nil) {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
-                    Text("Nothing running").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Ink.text)
+                    Text(T("Nothing running")).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Ink.text)
                     Text("· type or talk to ox, or start it in a terminal").font(.system(size: 12)).foregroundStyle(Ink.muted).lineLimit(1)
                 }
                 TodayMeter(today: .init(tokens: 40368, runs: 16, cost: nil, topModel: "qwen2.5:1.5b"))

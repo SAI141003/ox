@@ -532,11 +532,11 @@ struct ApprovalBody: View {
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.07)))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.06)))
             HStack(spacing: 8) {
-                PillButton(title: "Deny", primary: false) { guarded(.deny) }
-                PillButton(title: "Allow", primary: true) { guarded(.allow) }
-                PillButton(title: "Always", primary: false) { guarded(.always) }
+                PillButton(title: T("Deny"), primary: false) { guarded(.deny) }
+                PillButton(title: T("Allow"), primary: true) { guarded(.allow) }
+                PillButton(title: T("Always"), primary: false) { guarded(.always) }
                 Spacer(minLength: 4)
-                Button("Answer in terminal") { bridge.deferToTerminal(session) }
+                Button(T("Answer in terminal")) { bridge.deferToTerminal(session) }
                     .buttonStyle(.plain)
                     .font(.system(size: 11))
                     .foregroundStyle(Ink.dim)
@@ -651,10 +651,10 @@ struct SessionCardView: View {
                 }
                 Spacer(minLength: 4)
                 if OxBridge.externalId(session.id) != nil {
-                    PillButton(title: "Go to Terminal", primary: false) { bridge.openCardInTerminal() }
+                    PillButton(title: T("Go to Terminal"), primary: false) { bridge.openCardInTerminal() }
                 }
                 Button { bridge.card = nil } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)) }
-                    .buttonStyle(.plain).foregroundStyle(Ink.dim).help("Close")
+                    .buttonStyle(.plain).foregroundStyle(Ink.dim).help(T("Close"))
             }
             ScrollViewReader { proxy in
                 ScrollView {

@@ -173,7 +173,7 @@ struct HerdScene: View {
                         member(m, w: w, h: h, t: t)
                     }
                     if !away.isEmpty {
-                        Text("\(herd.members.filter { away.contains($0.id) }.map(\.name).joined(separator: ", ")) at work")
+                        Text("\(herd.members.filter { away.contains($0.id) }.map(\.name).joined(separator: ", ")) \(T("at work"))")
                             .font(.system(size: 9, weight: .medium)).foregroundStyle(HomeInk.faint)
                             .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(Color.black.opacity(0.35)))
                             .position(x: w - 52, y: 10)

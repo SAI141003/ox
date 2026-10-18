@@ -54,7 +54,7 @@ struct BuddyBody: View {
             case .speaking:
                 Text(buddy.saying).font(.system(size: 12.5)).foregroundStyle(Ink.text.opacity(0.92))
                     .lineLimit(4).fixedSize(horizontal: false, vertical: true)
-                Button("Stop") { buddy.stopSpeaking() }
+                Button(T("Stop")) { buddy.stopSpeaking() }
                     .buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundStyle(Ink.muted)
             case .message(let m):
                 Text(m).font(.system(size: 12)).foregroundStyle(Ink.text.opacity(0.9)).fixedSize(horizontal: false, vertical: true)
@@ -141,7 +141,7 @@ struct IslandMenu: View {
             Text("Never").tag(0.0)
         }
         Divider()
-        Button("Turn off OX Island") { IslandSwitch.turnOff() }
+        Button(T("Turn off OX Island")) { IslandSwitch.turnOff() }
     }
 }
 

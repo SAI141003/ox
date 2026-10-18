@@ -162,7 +162,7 @@ struct PlanPill: View {
                         }
                     }
                 }
-                if all.isEmpty { Text("No plan usage yet").font(.system(size: 11)) }
+                if all.isEmpty { Text(T("No plan usage yet")).font(.system(size: 11)) }
             }
             .padding(12).frame(minWidth: 210)
         }
@@ -201,7 +201,7 @@ struct HomeCharacter: View {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { drag = .zero }
                         WindowContext.drop(at: p, bridge: bridge)
                     })
-                .help("Drag me onto a window to show it to me")
+                .help(T("Drag me onto a window to show it to me"))
         }
         .frame(width: size * 1.5, height: size * 1.2)
     }
@@ -262,7 +262,7 @@ struct OverviewHome: View {
                 StepTicker(session: f)
             }
         } else {
-            Text("All quiet").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(HomeInk.muted)
+            Text(T("All quiet")).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(HomeInk.muted)
                 .help("Nothing running. Type or talk to \(OxName.current), or start an agent anywhere: it shows up here.")
         }
     }
@@ -333,7 +333,7 @@ struct RightCard: View {
                     ForEach(bridge.connected.prefix(4)) { t in ToolPill(tool: t) }
                 }
             } else {
-                Text("No other sessions").font(.system(size: 10.5)).foregroundStyle(HomeInk.dim)
+                Text(T("No other sessions")).font(.system(size: 10.5)).foregroundStyle(HomeInk.dim)
             }
             Spacer(minLength: 0)
         }
@@ -473,7 +473,7 @@ struct ApprovalHome: View {
                         HStack(spacing: 6) {
                             Circle().fill(Color(hex: session.color)).frame(width: 7, height: 7)
                             Text(session.project).font(.system(size: 12, weight: .semibold)).foregroundStyle(HomeInk.text).lineLimit(1)
-                            Text("\(session.tool) is asking you").font(.system(size: 11)).foregroundStyle(HomeInk.muted).lineLimit(1)
+                            Text("\(session.tool) \(T("is asking you"))").font(.system(size: 11)).foregroundStyle(HomeInk.muted).lineLimit(1)
                         }
                         Text(q).font(.system(size: 12, weight: .medium)).foregroundStyle(HomeInk.text).lineLimit(2)
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -481,12 +481,12 @@ struct ApprovalHome: View {
                                 ForEach(pending.options, id: \.self) { o in
                                     HomeButton(title: o, style: .plain) { guard Date().timeIntervalSince(shownAt) > 0.6 else { return }; bridge.answerQuestion(session, o) }
                                 }
-                                Button("Answer in terminal") { bridge.deferToTerminal(session) }.buttonStyle(.plain).font(.system(size: 10.5)).foregroundStyle(HomeInk.dim)
+                                Button(T("Answer in terminal")) { bridge.deferToTerminal(session) }.buttonStyle(.plain).font(.system(size: 10.5)).foregroundStyle(HomeInk.dim)
                             }
                         }
                         // Or say it in your own words (Pushary's "type your answer").
                         HStack(spacing: 6) {
-                            TextField("Type your answer", text: $typed)
+                            TextField(T("Type your answer"), text: $typed)
                                 .textFieldStyle(.plain).font(.system(size: 11)).foregroundStyle(HomeInk.text)
                                 .padding(.horizontal, 8).padding(.vertical, 3)
                                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.07)))
@@ -517,9 +517,9 @@ struct ApprovalHome: View {
                         .foregroundStyle(pending.riskLevel == "danger" ? Color(hex: "#F4505E") : Color(hex: "#F5A524"))
                     }
                     HStack(spacing: 6) {
-                        HomeButton(title: "Deny", style: .plain) { decide(.deny) }
-                        HomeButton(title: "Always allow", style: .plain) { decide(.always) }
-                        HomeButton(title: "Allow", style: .primary) { decide(.allow) }
+                        HomeButton(title: T("Deny"), style: .plain) { decide(.deny) }
+                        HomeButton(title: T("Always allow"), style: .plain) { decide(.always) }
+                        HomeButton(title: T("Allow"), style: .primary) { decide(.allow) }
                     }
                 }
                 .padding(.leading, 100).padding(.trailing, 12).padding(.top, 9)
@@ -598,8 +598,8 @@ struct HireHome: View {
                 Text("\(hire.title) · runs on \(hire.runtime)\(hire.budget.map { String(format: " · budget $%.0f a month", $0) } ?? "")")
                     .font(.system(size: 11)).foregroundStyle(HomeInk.muted).lineLimit(1)
                 HStack(spacing: 6) {
-                    HomeButton(title: "Reject", style: .plain) { bridge.org("reject", hire.id) }
-                    HomeButton(title: "Approve hire", style: .primary) { bridge.org("approve", hire.id) }
+                    HomeButton(title: T("Reject"), style: .plain) { bridge.org("reject", hire.id) }
+                    HomeButton(title: T("Approve hire"), style: .primary) { bridge.org("approve", hire.id) }
                 }
             }
             .padding(.leading, 100).padding(.trailing, 12).padding(.top, 12)
@@ -649,12 +649,12 @@ struct OrgAgentCard: View {
                         .font(.system(size: 11)).foregroundStyle(HomeInk.text.opacity(0.85)).lineLimit(2)
                     HStack(spacing: 6) {
                         if agent.status == "active" {
-                            HomeButton(title: "Wake now", style: .primary) { bridge.org("beat", agent.id) }
-                            HomeButton(title: "Pause", style: .plain) { bridge.org("pause", agent.id) }
+                            HomeButton(title: T("Wake now"), style: .primary) { bridge.org("beat", agent.id) }
+                            HomeButton(title: T("Pause"), style: .plain) { bridge.org("pause", agent.id) }
                         } else if agent.status == "paused" {
-                            HomeButton(title: "Resume", style: .primary) { bridge.org("resume", agent.id) }
+                            HomeButton(title: T("Resume"), style: .primary) { bridge.org("resume", agent.id) }
                         }
-                        HomeButton(title: "Close", style: .plain) { bridge.orgCard = nil }
+                        HomeButton(title: T("Close"), style: .plain) { bridge.orgCard = nil }
                     }
                 }
                 Spacer(minLength: 0)

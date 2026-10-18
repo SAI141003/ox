@@ -89,7 +89,7 @@ struct MailView: View {
                 Text("Mail · Inbox").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Ink.text)
                 if !mail.messages.isEmpty { Text("\(mail.messages.count) unread").font(.system(size: 10.5)).foregroundStyle(Color(hex: "#60A5FA")) }
                 Spacer()
-                Button { mail.refresh() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 10)) }.buttonStyle(.plain).foregroundStyle(Ink.dim).help("Refresh")
+                Button { mail.refresh() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 10)) }.buttonStyle(.plain).foregroundStyle(Ink.dim).help(T("Refresh"))
             }
             if let id = mail.selected, let m = mail.messages.first(where: { $0.id == id }) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -101,9 +101,9 @@ struct MailView: View {
                     Text(m.subject).font(.system(size: 11.5)).foregroundStyle(Ink.text.opacity(0.9)).lineLimit(1)
                     Text(m.excerpt).font(.system(size: 11)).foregroundStyle(Ink.muted).lineLimit(3)
                     HStack(spacing: 8) {
-                        Button("Open in Mail") { mail.openInMail(m) }
-                        Button("Reply") { mail.reply(m) }
-                        Button("Mark as read") { mail.markRead(m); mail.selected = nil }
+                        Button(T("Open in Mail")) { mail.openInMail(m) }
+                        Button(T("Reply")) { mail.reply(m) }
+                        Button(T("Mark as read")) { mail.markRead(m); mail.selected = nil }
                     }
                     .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(Color(hex: "#60A5FA"))
                 }
@@ -152,13 +152,13 @@ struct RecapView: View {
                     .buttonStyle(.plain).font(.system(size: 10.5)).foregroundStyle(Color(hex: "#60A5FA"))
             }
             HStack(spacing: 18) {
-                stat("\(runs)", "runs")
+                stat("\(runs)", T("runs"))
                 stat(tokens >= 1_000_000 ? String(format: "%.1fM", Double(tokens) / 1e6) : tokens >= 1000 ? String(format: "%.0fk", Double(tokens) / 1000) : "\(tokens)", "tokens")
-                stat("\(dict.words)", "words dictated")
-                stat("\(dict.savedMinutes) min", "saved typing")
-                stat("\(dict.wpm)", "words/min").help(dict.apps.isEmpty ? "Speaking speed" : "Dictated most into: " + dict.apps.map { "\($0.0) (\($0.1) words)" }.joined(separator: ", "))
-                stat(top, "most used")
-                stat(waterText(), "water (est.)").help("Estimated data-centre cooling water for cloud models: ~18 mL per 1,000 tokens, from Li et al. 2023, \"Making AI Less Thirsty\" (about 0.5 L per 20–50 responses). Local models are not counted.")
+                stat("\(dict.words)", T("words dictated"))
+                stat("\(dict.savedMinutes) min", T("saved typing"))
+                stat("\(dict.wpm)", T("words/min")).help(dict.apps.isEmpty ? "Speaking speed" : "Dictated most into: " + dict.apps.map { "\($0.0) (\($0.1) words)" }.joined(separator: ", "))
+                stat(top, T("most used"))
+                stat(waterText(), T("water (est.)")).help("Estimated data-centre cooling water for cloud models: ~18 mL per 1,000 tokens, from Li et al. 2023, \"Making AI Less Thirsty\" (about 0.5 L per 20–50 responses). Local models are not counted.")
             }
             // Runs per day, the last 7 days.
             HStack(alignment: .bottom, spacing: 6) {

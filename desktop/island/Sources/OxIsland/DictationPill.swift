@@ -73,9 +73,9 @@ struct DictationPillView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if hover {
                     Button { dictation.stop() } label: { Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)) }
-                        .buttonStyle(.plain).foregroundStyle(Color(hex: "#34D399")).help("Done: paste it")
+                        .buttonStyle(.plain).foregroundStyle(Color(hex: "#34D399")).help(T("Done: paste it"))
                     Button { dictation.cancel() } label: { Image(systemName: "xmark").font(.system(size: 11, weight: .bold)) }
-                        .buttonStyle(.plain).foregroundStyle(.white.opacity(0.7)).help("Cancel (Esc)")
+                        .buttonStyle(.plain).foregroundStyle(.white.opacity(0.7)).help(T("Cancel (Esc)"))
                 }
             }
             .padding(.horizontal, 14)
