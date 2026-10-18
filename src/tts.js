@@ -115,6 +115,9 @@ export function sentences(text) {
   // Very short pieces ride with the next one (no gaps between "Done." and the rest).
   const merged = [];
   for (const x of out) { const last = merged[merged.length - 1]; if (last && last.text.length < 18 && last.mood === x.mood) last.text += ` ${x.text}`; else merged.push({ ...x }); }
+  // A short last piece ("Done.") joins the one before it.
+  const end = merged[merged.length - 1], before = merged[merged.length - 2];
+  if (end && before && end.text.length < 18 && end.mood === before.mood) { before.text += ` ${end.text}`; merged.pop(); }
   return merged;
 }
 
