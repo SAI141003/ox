@@ -5,7 +5,13 @@
 //
 // Socket Mode: ox opens the connection out to Slack, so nothing needs a public
 // URL, and it uses the WebSocket built into Node 22+; nothing is installed.
-// Direct messages only (channel_type "im"); pairing happens there.
+// Work runs from direct messages only (channel_type "im"); pairing happens there.
+// Team memory (src/channel-memory.js): in a channel, the owner mentions the app
+// with "remember this channel"; from then on what is said there is kept, and
+// anyone in it can ask "@ox what did we decide about X?". In channels ox only
+// answers from that memory: it never runs work for people other than you.
+// (Extra scopes for this: channels:history, groups:history, app_mentions:read;
+// events message.channels, message.groups.)
 //
 // Slack app setup (api.slack.com/apps): turn on Socket Mode (that gives the
 // xapp- token, scope connections:write); Bot scopes chat:write and im:history;
@@ -14,6 +20,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRemoteCore } from './remote-core.js';
+import * as memory from './channel-memory.js';
 
 export const STATE_FILE = () => path.join(os.homedir(), '.ox', 'gateway', 'slack.json');
 
@@ -95,6 +102,40 @@ export async function runSlackGateway({
   let announced = false;
   signal?.addEventListener?.('abort', () => { stopped = true; core.stop(); });
 
+  // ---- team memory in channels
+  let botUser = null;
+  try { botUser = (await bot('auth.test')).user_id; } catch {}
+  const seen = new Set();
+  async function onChannel(ev) {
+    if (seen.has(ev.ts)) return; // message and app_mention both arrive for a mention
+    seen.add(ev.ts); if (seen.size > 2000) seen.clear();
+    const on = (state.channels ?? []).includes(ev.channel);
+    const mentioned = botUser && ev.text.includes(`<@${botUser}>`);
+    const said = ev.text.replace(/<@[A-Z0-9]+>/g, '').trim();
+    if (mentioned && ev.user && ev.user === state.ownerUser && /\bremember this channel\b/i.test(said)) {
+      state.channels = [...new Set([...(state.channels ?? []), ev.channel])]; persist();
+      return bot('chat.postMessage', { channel: ev.channel, thread_ts: ev.ts, text: 'I will remember this channel from now on. Ask me "what did we decide about …" any time.' });
+    }
+    if (mentioned && ev.user && ev.user === state.ownerUser && /\bforget this channel\b/i.test(said)) {
+      state.channels = (state.channels ?? []).filter((c) => c !== ev.channel); persist();
+      return bot('chat.postMessage', { channel: ev.channel, thread_ts: ev.ts, text: 'I stopped remembering this channel.' });
+    }
+    if (!on) return;
+    if (!mentioned) { memory.remember(ev.channel, { user: ev.user, text: said, ts: ev.ts }); return; }
+    const lines = memory.search(ev.channel, said);
+    const { system, user } = memory.prompt(said, lines);
+    let answer = 'I could not reach a model to answer.';
+    try {
+      const { quickText } = await import('./quick-text.js');
+      const { resolveBot, defaultBotSpec } = await import('./bots.js');
+      const { workingModelSpec } = await import('./working-model.js');
+      const { loadConfig } = await import('./config.js');
+      const cfg = loadConfig();
+      answer = (await quickText(resolveBot(await workingModelSpec(cfg, { say: () => {} }) ?? defaultBotSpec(cfg), cfg), { system, user, maxTokens: 500 })).text || answer;
+    } catch (e) { answer = `I could not answer: ${e.message}`; }
+    await bot('chat.postMessage', { channel: ev.channel, thread_ts: ev.ts, text: answer });
+  }
+
   const connectOnce = async () => {
     const { url } = await app('apps.connections.open');
     await new Promise((resolve) => {
@@ -120,6 +161,10 @@ export async function runSlackGateway({
             const ev = p.payload?.event;
             if (ev?.type === 'message' && ev.channel_type === 'im' && !ev.bot_id && !ev.subtype && typeof ev.text === 'string') {
               await core.onMessage(ev.channel, slashless(ev.text));
+              // The owner's Slack user, known from the paired DM (for channel commands).
+              if (state.owner && String(state.owner) === String(ev.channel) && ev.user && state.ownerUser !== ev.user) { state.ownerUser = ev.user; persist(); }
+            } else if (ev && (ev.type === 'message' || ev.type === 'app_mention') && (ev.channel_type === 'channel' || ev.channel_type === 'group' || ev.type === 'app_mention') && !ev.bot_id && !ev.subtype && typeof ev.text === 'string') {
+              await onChannel(ev);
             }
           } else if (p.type === 'interactive' && p.payload?.type === 'block_actions') {
             const pl = p.payload;
