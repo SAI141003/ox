@@ -358,3 +358,42 @@ export function keep(cwd, raceId, agent) {
   for (const l of lanes) git(root, 'worktree', 'remove', '--force', l.dir);
   return { merged: win.branch, removed: lanes.length };
 }
+
+// ---------------------------------------------------------------- one mirror per repo (scaled git)
+
+const mirrorsDir = () => path.join(process.env.OX_HOME || path.join(process.env.HOME || '', '.ox'), 'git-mirrors');
+/** Where a remote's local mirror lives: ~/.ox/git-mirrors/<host>/<owner>/<repo>.git */
+export function mirrorPath(url) {
+  const m = /^(?:https?:\/\/|git@|ssh:\/\/git@)([^/:]+)[/:](.+?)(?:\.git)?\/?$/.exec(String(url).trim());
+  if (!m) { if (fs.existsSync(url)) return path.join(mirrorsDir(), 'local', slug(path.resolve(url))) + '.git'; fail(`not a git remote: ${url}`); }
+  if (m[2].split('/').some((p) => p === '..' || p.startsWith('.'))) fail(`not a git remote: ${url}`);
+  return path.join(mirrorsDir(), m[1], `${m[2]}.git`);
+}
+
+/** The mirror, made or brought up to date: one fetch of new objects, however many clones use it. */
+export function mirror(url) {
+  const mp = mirrorPath(url);
+  if (fs.existsSync(path.join(mp, 'HEAD'))) {
+    const f = sh('git', ['--git-dir', mp, 'remote', 'update', '--prune'], mp, { timeout: 15 * 60_000 });
+    if (!f.ok) fail(`updating the mirror failed: ${f.err}`);
+    return { path: mp, created: false };
+  }
+  fs.mkdirSync(path.dirname(mp), { recursive: true });
+  const c = sh('git', ['clone', '--mirror', url, mp], path.dirname(mp), { timeout: 60 * 60_000 });
+  if (!c.ok) fail(`mirroring failed: ${c.err}`);
+  return { path: mp, created: true };
+}
+
+/**
+ * A working clone that borrows its history from the local mirror: no second
+ * download for parallel sandboxes, CI-style runs and agent worktrees.
+ * dissociate: copy the borrowed objects in, so the clone stands alone.
+ */
+export function mirrorClone(url, dest, { dissociate = true, branch = null } = {}) {
+  const m = mirror(url);
+  if (fs.existsSync(dest) && fs.readdirSync(dest).length) fail(`${dest} is not empty`);
+  const args = ['clone', '--reference', m.path, ...(dissociate ? ['--dissociate'] : []), ...(branch ? ['--branch', branch] : []), url, dest];
+  const c = sh('git', args, path.dirname(path.resolve(dest)), { timeout: 30 * 60_000 });
+  if (!c.ok) fail(`clone failed: ${c.err}`);
+  return { dest: path.resolve(dest), mirror: m.path, mirrorCreated: m.created };
+}

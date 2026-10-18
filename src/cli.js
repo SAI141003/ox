@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -540,6 +540,7 @@ function usageAll() {
     '  ox pr fix [--rounds n]            review comments and failing CI become one ox task; committed and pushed',
     '  ox task run <id> --worktree [--pr]   a task in its own worktree and branch, then a PR from it',
     '  ox race "<task>" --agents ox,claude-plan,<model>   several agents on one task, side by side; ox race keep <id> <agent>',
+    '  ox git clone <url> [dir]          clones that borrow history from one local mirror (no second download)',
     '',
     'mesh (your own machines as one ox; every file, key and model stays on its machine):',
     '  ox mesh                           this machine, your paired machines, their health and alerts',
@@ -4709,6 +4710,29 @@ async function runSubcommand(cmd, args) {
     case 'race':
       await cmdRace(args);
       return;
+    case 'git': {
+      // ox git clone <url> [dir] | ox git mirror <url> | ox git mirrors: one local mirror per repo.
+      const D = await import('./dev-flow.js');
+      try {
+        if (args[0] === 'clone' && args[1]) {
+          const dest = args[2] ?? path.basename(String(args[1]).replace(/\.git$/, '').replace(/\/$/, ''));
+          const t = Date.now();
+          const r = D.mirrorClone(args[1], dest, { dissociate: !args.includes('--shared') });
+          console.log(`${c.green('✓')} ${r.dest} ${c.dim(`(${((Date.now() - t) / 1000).toFixed(1)} s; history from the local mirror${r.mirrorCreated ? ', made just now' : ''}: ${r.mirror})`)}`);
+          return;
+        }
+        if (args[0] === 'mirror' && args[1]) { const m = D.mirror(args[1]); console.log(`${c.green('✓')} ${m.path} ${c.dim(m.created ? 'made' : 'up to date')}`); return; }
+        if (args[0] === 'mirrors') {
+          const root = path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'git-mirrors');
+          const walk = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.name.endsWith('.git') ? [path.join(d, e.name)] : e.isDirectory() ? walk(path.join(d, e.name)) : [])); } catch { return []; } };
+          const list = walk(root);
+          console.log(list.length ? list.map((x) => path.relative(root, x)).join('\n') : c.dim('no mirrors yet: ox git clone <url> makes one'));
+          return;
+        }
+        console.error('usage: ox git clone <url> [dir] [--shared] | ox git mirror <url> | ox git mirrors'); process.exitCode = 3;
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+      return;
+    }
     case 'serve':
       await cmdServe(args);
       return;

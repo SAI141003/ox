@@ -117,3 +117,17 @@ test('race: each agent in its own worktree, checked, compared; keep one merges i
   assert.ok(fs.existsSync(path.join(work, 'b.txt')), 'the kept take is merged');
   assert.ok(!fs.existsSync(path.join(work, 'a.txt')));
 });
+
+test('git mirror: the second clone downloads nothing new and stands alone', () => {
+  const { d } = repo();
+  process.env.OX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-mirror-'));
+  const remote = path.join(d, 'remote.git');
+  const a = D.mirrorClone(remote, path.join(d, 'c1'));
+  assert.equal(a.mirrorCreated, true);
+  const b = D.mirrorClone(remote, path.join(d, 'c2'));
+  assert.equal(b.mirrorCreated, false);
+  assert.ok(fs.existsSync(path.join(d, 'c2', 'package.json')));
+  assert.ok(!fs.existsSync(path.join(d, 'c2', '.git', 'objects', 'info', 'alternates')), 'dissociated: no link back to the mirror');
+  assert.match(D.mirrorPath('https://github.com/me/x.git'), /git-mirrors\/github\.com\/me\/x\.git$/);
+  assert.throws(() => D.mirrorPath('https://github.com/../../etc'), /not a git remote/);
+});

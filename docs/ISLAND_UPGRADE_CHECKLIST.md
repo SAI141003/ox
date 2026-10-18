@@ -206,7 +206,7 @@ the island was rebuilt. "Checked" says how the fix was proven.
 | F4.24 | The ox had been taken out of the open island | Back, in the card's left like Mochi; its face is the most urgent state; on alert past 80 % of a plan limit (Claudex) | real island screenshot |
 | F4.21 | No way to open a session from the island, read it, message it or take it over | Click a session's character: its last messages, a message box (one turn through the tool's own resume; waits while the session is busy in its own window), Open in Terminal | test/agents-live.test.js; real island shows the conversation |
 | F4.25 | The ox stood and walked only; no eating, sleeping or reacting | New renders from the Blender rig: graze, doze, gallop (working), think, alert (needs you), happy (done), dizzy (error), worried (past 80 % of a plan) | real island screenshot |
-| F4.26 | Every other agent shared one pixel character | Friends Puff, Pip and Dot (white, white with black; never black), same rig, 12 cycles each; each session gets one by its id | real island screenshot |
+| F4.26 | Every other agent shared one pixel character | Friends Puff, Pebble (first named Pip) and Dot (white, white with black; never black), same rig, 12 cycles each; each session gets one by its id | real island screenshot |
 | F4.27 | "Save as image" and dictation stats had nowhere to live | Recap card (7 days of tokens and cost, top model, words dictated, water estimate) and mail card under the plus tab | build + screenshot |
 
 ## G. The owner's October 18 evening batch (screenshots and two recordings)
