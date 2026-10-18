@@ -363,6 +363,62 @@ final class OxBridge: ObservableObject {
 
     @Published var orgCard: String?
 
+    // MARK: your machines (ox mesh): alerts with choices, never actions
+
+    struct MeshOption: Equatable { let label: String; let action: String; let model: String?; let to: String? }
+    struct MeshAlert: Identifiable, Equatable { let id: String; let machine: String; let kind: String; let text: String; let options: [MeshOption] }
+    struct MeshMachine: Identifiable, Equatable { let id: String; let name: String; let up: Bool; let load: Double?; let mem: Double? }
+    @Published private(set) var meshAlerts: [MeshAlert] = []
+    @Published private(set) var meshMachines: [MeshMachine] = []
+    @Published var meshNote: String?
+    private var meshPolledAt = Date.distantPast
+
+    private func pollMesh(port: Int) {
+        guard Date().timeIntervalSince(meshPolledAt) > 10, let url = URL(string: "http://127.0.0.1:\(port)/ox/mesh") else { return }
+        meshPolledAt = Date()
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 3
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let doc = data.flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }) else { return }
+            let alerts = ((doc["alerts"] as? [[String: Any]]) ?? []).compactMap { a -> MeshAlert? in
+                guard let id = a["id"] as? String, let text = a["text"] as? String else { return nil }
+                let opts = ((a["options"] as? [[String: Any]]) ?? []).map {
+                    MeshOption(label: $0["label"] as? String ?? "", action: $0["action"] as? String ?? "", model: $0["model"] as? String, to: $0["to"] as? String)
+                }
+                return MeshAlert(id: id, machine: a["machine"] as? String ?? "", kind: a["kind"] as? String ?? "", text: text, options: opts)
+            }
+            let machines = ((doc["peers"] as? [[String: Any]]) ?? []).compactMap { p -> MeshMachine? in
+                guard let id = p["id"] as? String else { return nil }
+                let live = p["live"] as? [String: Any]
+                let stats = live?["stats"] as? [String: Any]
+                return MeshMachine(id: id, name: p["name"] as? String ?? id, up: stats != nil && (live?["error"] as? String) == nil,
+                                   load: stats?["load"] as? Double, mem: stats?["mem"] as? Double)
+            }
+            DispatchQueue.main.async {
+                let had = Set(self?.meshAlerts.map(\.id) ?? [])
+                self?.meshAlerts = alerts
+                self?.meshMachines = machines
+                // A new alert is a decision for you: the island opens for it.
+                if alerts.contains(where: { !had.contains($0.id) }) { self?.peek(for: 8); NSSound(named: "Pop")?.play() }
+            }
+        }.resume()
+    }
+
+    /// Your choice on an alert: only this runs anything, and only what it names.
+    func meshChoose(_ alert: MeshAlert, _ option: MeshOption) {
+        var o: [String: Any] = ["label": option.label, "action": option.action]
+        if let m = option.model { o["model"] = m }
+        if let t = option.to { o["to"] = t }
+        meshAlerts.removeAll { $0.id == alert.id }
+        post("/ox/mesh/choose", ["alert": alert.id, "option": o]) { [weak self] out in
+            let said = (out?["done"] as? String) ?? (out?["note"] as? String) ?? (out?["error"] as? [String: Any])?["message"] as? String
+            IslandLog.write("mesh choice on \(alert.id): \(option.label) → \(said ?? "?")")
+            DispatchQueue.main.async { self?.meshNote = said; self?.meshPolledAt = .distantPast }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { self?.meshNote = nil }
+        }
+    }
+
     private func pollConnected(port: Int) {
         guard Date().timeIntervalSince(connectedPolledAt) > 60, let url = URL(string: "http://127.0.0.1:\(port)/ox/connected") else { return }
         connectedPolledAt = Date()
@@ -398,6 +454,7 @@ final class OxBridge: ObservableObject {
         pollConnected(port: port)
         pollGauges(port: port)
         pollOrg(port: port)
+        pollMesh(port: port)
         appPolling = true
         var req = URLRequest(url: url)
         req.timeoutInterval = 1.2

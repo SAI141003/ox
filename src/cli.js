@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -523,6 +523,18 @@ function usageAll() {
     '  ox org set <id> [--budget n|none] [--every n|none] [--title T] [--reports-to id] [--runtime r]',
     '  ox org beat <id> | --due          wake an agent now (or every agent that is due): it runs its next task',
     '  ox org log                        hires, approvals, pauses, budget warnings and stops',
+    '',
+    'mesh (your own machines as one ox; every file, key and model stays on its machine):',
+    '  ox mesh                           this machine, your paired machines, their health and alerts',
+    '  ox mesh name <name>               name this machine ("Studio Mac")',
+    '  ox mesh invite                    show a one-time code (10 min) for another machine to join',
+    '  ox mesh join <code> [--name N] [--at host:port]   pair this machine (--at: across networks, e.g. Tailscale)',
+    '  ox mesh allow|deny <machine> status|infer|tasks   what that machine may ask of THIS one (infer and tasks start off)',
+    '  ox mesh forget <machine>          unpair',
+    '  ox mesh up [--port n]             run this machine\'s node in the foreground (the OX app runs it too)',
+    '  ox mesh models                    every model your machines offer, as mesh:<machine>/<model>',
+    '  ox mesh run <machine> "<task>" [--in <folder>]   an ox task on that machine, under its own approvals',
+    '      use another machine\'s model anywhere a model goes:  ox --model "mesh:Gaming laptop/qwen2.5:7b" -p "…"',
     '',
     'serve:',
     '  ox serve [--port <port>] [--host <host>] [--api-key]   start HTTP server (OpenAI-compatible API)',
@@ -3463,6 +3475,129 @@ async function cmdOrg(args = []) {
   }
 }
 
+async function cmdMesh(args = []) {
+  const M = await import('./mesh.js');
+  const sub = String(args[0] ?? 'status').toLowerCase();
+  const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+  const words = (from) => args.slice(from).filter((a, i, l) => !a.startsWith('--') && !(l[from + i - 1] ?? '').startsWith('--'));
+  const pct = (v) => (v == null ? '—' : `${Math.round(v * 100)} %`);
+  const showAlerts = (alerts) => {
+    for (const a of alerts ?? []) {
+      console.log(c.yellow(`! ${a.text}`));
+      a.options.forEach((o, i) => console.log(`    ${i + 1}. ${o.label}${o.model ? c.dim(`  (ox --model "${o.model}")`) : ''}`));
+    }
+  };
+  // A throwaway node for one request when the machine's node is busy elsewhere:
+  // peers know this machine by its key, not its port.
+  const oneShot = () => M.startNode({ port: 0, proxyPort: 0, beacon: false, heartbeat: false });
+  try {
+    if (sub === 'status' || sub === 'list') {
+      if (!M.hasIdentity()) { console.log(`This machine is not on a mesh yet.\n  ${c.bold('ox mesh invite')}       on the machine you use most, then\n  ${c.bold('ox mesh join <code>')}  on each other machine`); return; }
+      let st = null;
+      try { st = await M.control('heartbeat', { method: 'POST', timeoutMs: 8000 }); } catch {}
+      const me = M.identity();
+      console.log(`${c.bold(me.name)} ${c.dim(`(this machine, ${me.id})`)}${st ? '' : c.dim(' — node not running: ox mesh up, or open the OX app')}`);
+      if (st?.self) console.log(c.dim(`  CPU ${pct(st.self.load)} · memory ${pct(st.self.mem)} · ${st.self.models.length} local models · keys: ${st.self.providers.join(', ') || 'none'}`));
+      const peers = st?.peers ?? Object.values(M.readPeers()).map((p) => ({ ...p, live: null }));
+      if (!peers.length) console.log(c.dim('  no paired machines yet: ox mesh invite here, then ox mesh join <code> on the other one'));
+      for (const p of peers) {
+        const s = p.live?.stats;
+        const state = !st ? c.dim('?') : p.live?.error ? c.red(`unreachable (${p.live.error})`) : s ? c.green('up') : c.dim('…');
+        const gives = Object.entries(p.grants ?? {}).filter(([, v]) => v).map(([k]) => k).join(', ');
+        console.log(`${c.bold(p.name)} ${c.dim(p.id)}  ${state}${s ? `  CPU ${pct(s.load)} · memory ${pct(s.mem)}${s.battery != null ? ` · battery ${pct(s.battery)}${s.charging ? ' charging' : ''}` : ''} · ${s.models.length} models` : ''}`);
+        console.log(c.dim(`    this machine lets it: ${gives || 'nothing'}${p.addr ? ` · at ${p.addr}` : ''}`));
+      }
+      showAlerts(st?.alerts);
+      return;
+    }
+    if (sub === 'name') {
+      const n = words(1).join(' ');
+      if (!n) { console.log(M.identity().name); return; }
+      console.log(`${c.green('✓')} this machine is now ${c.bold(M.setName(n))}`);
+      return;
+    }
+    if (sub === 'invite') {
+      let inv = null;
+      try { inv = await M.control('invite', { method: 'POST' }); } catch {}
+      if (inv) {
+        console.log(`On the other machine:  ${c.bold(`ox mesh join ${inv.code}`)}\n${c.dim(`one use, until ${new Date(inv.expires).toLocaleTimeString()}; this machine's node is listening`)}`);
+        return;
+      }
+      // No node running: run one here until someone joins (or the code expires).
+      const node = await M.startNode({ plans: M.planHeadroom });
+      const { code, expires } = node.invite();
+      console.log(`${c.bold(M.identity().name)} is waiting. On the other machine:\n\n    ${c.bold(`ox mesh join ${code}`)}\n`);
+      console.log(c.dim(`one use, 10 minutes. Same network: found automatically. Elsewhere: add --at <this machine's address>:${node.port}`));
+      await new Promise((resolve) => {
+        const t = setInterval(() => {
+          if (!node.state.invite) { clearInterval(t); resolve(); }
+          else if (Date.now() > expires) { clearInterval(t); console.log(c.yellow('the code expired')); resolve(); }
+        }, 500);
+      });
+      const paired = Object.values(M.readPeers()).sort((a, b) => String(b.pairedAt).localeCompare(String(a.pairedAt)))[0];
+      if (paired && Date.now() - Date.parse(paired.pairedAt) < 60_000) console.log(`${c.green('✓ paired with')} ${c.bold(paired.name)}. It may see this machine's status; model calls and tasks stay off until you allow them: ox mesh allow "${paired.name}" infer`);
+      await node.close();
+      return;
+    }
+    if (sub === 'join') {
+      const code = args[1];
+      if (!code) throw new Error('usage: ox mesh join <code> [--name <this machine>] [--at host:port]');
+      console.log(c.dim(flag('--at') ? `pairing with ${flag('--at')}…` : 'looking for the inviting machine on this network…'));
+      const peer = await M.join({ code, at: flag('--at') ?? null, name: flag('--name') ?? null, myPort: flag('--port') ? Number(flag('--port')) : undefined });
+      console.log(`${c.green('✓ paired with')} ${c.bold(peer.name)} as ${c.bold(M.identity().name)}. Start this machine's node (ox mesh up, or the OX app) so it can be reached.`);
+      return;
+    }
+    if (sub === 'allow' || sub === 'deny') {
+      const grant = args[args.length - 1];
+      const who = args.slice(1, -1).join(' ');
+      const p = M.setGrant(who, grant, sub === 'allow');
+      console.log(`${c.green('✓')} ${p.name} ${sub === 'allow' ? 'may now' : 'may no longer'} ask this machine for ${grant}`);
+      return;
+    }
+    if (sub === 'forget') { const p = M.forget(words(1).join(' ')); console.log(`${p.name} unpaired`); return; }
+    if (sub === 'up') {
+      const node = await M.startNode({ port: flag('--port') ? Number(flag('--port')) : undefined, plans: M.planHeadroom, onLog: (l) => console.log(c.dim(`[mesh] ${l}`)), onPaired: (p) => console.log(`${c.green('✓ paired with')} ${p.name}`) });
+      console.log(`${c.bold(node.me.name)} is on the mesh ${c.dim(`(port ${node.port}, local endpoint ${node.proxyPort ?? 'held by another ox'}). Ctrl-C to stop.`)}`);
+      let last = '';
+      setInterval(() => {
+        const now = JSON.stringify(node.state.alerts.map((a) => a.id));
+        if (now !== last) { last = now; showAlerts(node.state.alerts); }
+      }, 2000);
+      await new Promise(() => {});
+    }
+    if (sub === 'models') {
+      const node = await oneShot();
+      try {
+        await node.heartbeat();
+        let any = false;
+        for (const m of node.machines()) {
+          if (m.error) { console.log(c.dim(`${m.name}: ${m.error}`)); continue; }
+          for (const x of m.stats?.models ?? []) { any = true; console.log(`mesh:${m.name}/${x.name}`); }
+          for (const pr of m.stats?.providers ?? []) { any = true; console.log(`mesh:${m.name}/${pr}  ${c.dim('(its key; needs a model, e.g. mesh:' + m.name + '/' + pr + ':<model>)')}`); }
+        }
+        if (!any) console.log(c.dim('no models offered yet (each machine shares what its local models and keys can run; model calls need: ox mesh allow <this machine> infer, on that machine)'));
+      } finally { await node.close(); }
+      return;
+    }
+    if (sub === 'run') {
+      const who = args[1];
+      const prompt = words(2).join(' ');
+      if (!who || !prompt) throw new Error('usage: ox mesh run <machine> "<task>" [--in <folder on that machine>]');
+      const node = await oneShot();
+      try {
+        const r = await node.ask(who, 'run', { prompt, cwd: flag('--in') ?? null }, { timeoutMs: 0, onChunk: (b) => process.stdout.write(b) });
+        if (r?.code) process.exitCode = r.code;
+      } finally { await node.close(); }
+      return;
+    }
+    console.error('usage: ox mesh [status|name|invite|join|allow|deny|forget|up|models|run] — ox help for details');
+    process.exitCode = 1;
+  } catch (e) {
+    console.error(c.red(e.message));
+    process.exitCode = 1;
+  }
+}
+
 async function cmdTask(args = []) {
   const sub = String(args[0] ?? '').trim().toLowerCase();
   const rest = args.slice(1);
@@ -4226,6 +4361,9 @@ async function runSubcommand(cmd, args) {
       return;
     case 'org':
       await cmdOrg(args);
+      return;
+    case 'mesh':
+      await cmdMesh(args);
       return;
     case 'serve':
       await cmdServe(args);

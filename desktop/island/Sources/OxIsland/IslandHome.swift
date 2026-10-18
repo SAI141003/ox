@@ -407,7 +407,7 @@ struct HomeButton: View {
     @State private var hover = false
     var body: some View {
         Button(action: action) {
-            Text(title).font(.system(size: 11.5, weight: .semibold))
+            Text(title).font(.system(size: 11.5, weight: .semibold)).lineLimit(1).truncationMode(.middle)
                 .padding(.horizontal, 12).padding(.vertical, 5)
                 .foregroundStyle(style == .primary ? Color.black : HomeInk.text)
                 .background(Capsule().fill(style == .primary ? HomeInk.text : Color.white.opacity(hover ? 0.14 : 0.08)))
@@ -463,6 +463,32 @@ struct HireHome: View {
                 HStack(spacing: 6) {
                     HomeButton(title: "Reject", style: .plain) { bridge.org("reject", hire.id) }
                     HomeButton(title: "Approve hire", style: .primary) { bridge.org("approve", hire.id) }
+                }
+            }
+            .padding(.leading, 100).padding(.trailing, 12).padding(.top, 12)
+        }
+    }
+}
+
+/// One of your machines needs a decision (ox mesh): what is wrong, and your options.
+struct MeshAlertHome: View {
+    @ObservedObject var bridge: OxBridge
+    let alert: OxBridge.MeshAlert
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            HomeCard(wash: Color(hex: alert.kind == "credits" ? "#F5A524" : "#F4505E").opacity(0.32)) { EmptyView() }
+            HomeCharacter(bridge: bridge, mood: .needsYou, size: 52).position(x: 50, y: 49)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: alert.kind == "credits" ? "gauge.with.dots.needle.67percent" : "desktopcomputer.trianglebadge.exclamationmark")
+                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(Color(hex: "#F5A524"))
+                    Text(alert.text).font(.system(size: 12, weight: .semibold)).foregroundStyle(HomeInk.text).lineLimit(2)
+                }
+                HStack(spacing: 6) {
+                    ForEach(Array(alert.options.prefix(3).enumerated()), id: \.offset) { i, o in
+                        HomeButton(title: o.label, style: i == 0 ? .primary : .plain) { bridge.meshChoose(alert, o) }
+                            .help(o.model.map { "Next turns use \($0)" } ?? o.label)
+                    }
                 }
             }
             .padding(.leading, 100).padding(.trailing, 12).padding(.top, 12)

@@ -130,16 +130,24 @@ Same network: found automatically. Elsewhere: the owner's VPN (Tailscale,
 WireGuard) gives each machine an address; `--at` uses it. A relay is not part
 of this version (nothing of the owner's passes through anyone else).
 
-## Build order (this version)
+## Build order and what is checked (October 18)
 
-1. Identity, invite/join pairing, the encrypted channel, names — **built**
-2. Heartbeats with system stats, φ liveness, `ox mesh status` — **built**
-3. Watchdog alerts with choices (notch, app, CLI) — **built**
-4. Permissions per machine — **built**
-5. `mesh:<machine>/<model>`: model calls on another machine's local models and keys — **built**
-6. Credits-low hand-over suggestion — **built**
-7. Remote task run with that machine's approvals — **built**
-8. A PAKE (CPace) for shorter codes; checkpointing long tasks across machines; a relay — next
+| # | Piece | State | Checked how |
+|---|---|---|---|
+| 1 | Identity, invite / join, the sealed channel, names | ✓ | `ox mesh invite` + `ox mesh join` between two ox homes on this Mac, both with `--at` and found on the network by the beacon; wrong codes, a used code, a changed key refused (test/mesh.test.js) |
+| 2 | Heartbeats with system stats, φ liveness, `ox mesh` status | ✓ | live: the other node's CPU, memory, battery and models shown |
+| 3 | Watchdog alerts with choices | ✓ CLI and island card (opens on a new alert, buttons are the choices); app page not yet | unit tests on sustained load, credits, down |
+| 4 | Permissions, set on the machine that gives | ✓ | live: a model call refused (403, no retries) until `ox mesh allow … infer`, refused again after `deny` |
+| 5 | `mesh:<machine>/<model>` | ✓ | live: `ox --model "mesh:Gaming laptop/qwen2.5:3b" -p …` answered "pong" from the other node's Ollama |
+| 6 | Credits-low hand-over | ✓ suggestion at 85 % of a plan window; choosing "Finish with <machine>'s <model>" makes it the default model for the next turns | unit test; the switch is the owner's click |
+| 7 | `ox mesh run <machine> "…" --in <folder>` | built; refused without the `tasks` grant (tested); a full remote task not yet run | — |
+| — | "Move its work", "pause", "smaller model" choices | shown, not automatic: ox says so and leaves them to you | test |
+| 8 | Two physical laptops; a PAKE (CPace) for shorter codes; checkpointing long tasks across machines; a relay | next | — |
+
+The node starts with the OX app (or `ox mesh up`) only once this machine has
+joined a mesh: looking at `ox mesh` never creates a key or opens a port. Its
+local endpoint answers loopback tools only (Host checked, JSON and a custom
+header required, so a web page cannot use it).
 
 ## Sources
 

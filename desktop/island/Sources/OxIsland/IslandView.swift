@@ -236,6 +236,8 @@ struct ExpandedContent: View {
                 if let s = bridge.pendingSession, let p = s.pending {
                     ApprovalHome(bridge: bridge, session: s, pending: p)
                         .overlay(alignment: .bottom) { Countdown(deadline: p.deadline).padding(.horizontal, 40) }
+                } else if let alert = bridge.meshAlerts.first {
+                    MeshAlertHome(bridge: bridge, alert: alert)
                 } else if let hire = bridge.proposedHire {
                     HireHome(bridge: bridge, hire: hire)
                 } else if bridge.buddyActive {

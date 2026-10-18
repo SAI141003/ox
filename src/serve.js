@@ -1560,7 +1560,52 @@ async function handleImage(req, res) {
   createReadStream(r.file).pipe(res);
 }
 
+// ox mesh (src/mesh.js): this machine's node, started with the server once
+// the machine has a mesh identity (made by the first `ox mesh` pairing).
+let meshNode = null;
+let meshStarting = null;
+async function meshUp() {
+  if (meshNode) return meshNode;
+  meshStarting ??= (async () => {
+    const M = await import('./mesh.js');
+    meshNode = await M.startNode({ plans: M.planHeadroom, onLog: (l) => console.log(`[mesh] ${l}`) });
+    return meshNode;
+  })().catch((e) => { meshStarting = null; throw e; });
+  return meshStarting;
+}
+async function meshView() {
+  if (meshNode) return { running: true, ...meshNode.status() };
+  const M = await import('./mesh.js');
+  // Another process (ox mesh up) may run this machine's node.
+  try { return { running: true, ...(await M.control('status', { timeoutMs: 800 })) }; } catch {}
+  const has = existsSync(join(process.env.OX_HOME || join(homedir(), '.ox'), 'mesh', 'identity.json'));
+  return { running: false, me: has ? { id: M.identity().id, name: M.identity().name } : null, peers: Object.values(M.readPeers()).map((p) => ({ id: p.id, name: p.name, grants: p.grants, pairedAt: p.pairedAt })), alerts: [] };
+}
+
 const ROUTES = [
+  // Your machines (ox mesh): status, an invite code, names, grants, and your
+  // choice on an alert. Grants are set here, for what this machine gives.
+  { method: 'GET', pattern: /^\/ox\/mesh\/?$/, handler: appRoute(meshView) },
+  { method: 'POST', pattern: /^\/ox\/mesh\/(invite|name|allow|deny|forget|choose)\/?$/, handler: appRoute(async (body, m) => {
+    const M = await import('./mesh.js');
+    switch (m[1]) {
+      case 'invite': {
+        const node = await meshUp().catch(() => null);
+        if (node) return node.invite();
+        return M.control('invite', { method: 'POST' });
+      }
+      case 'name': return { name: M.setName(String(body?.name ?? '')) };
+      case 'allow': case 'deny': return { peer: M.setGrant(String(body?.machine ?? ''), String(body?.grant ?? ''), m[1] === 'allow') };
+      case 'forget': return { forgot: M.forget(String(body?.machine ?? '')).name };
+      default: {
+        if (!meshNode) throw new Error('the mesh is not running in this app');
+        const out = meshNode.choose(String(body?.alert ?? ''), body?.option ?? {});
+        // Your choice of another machine's model: the next turns use it (switch back in Settings).
+        if (out.model) { resolveBot(out.model, { bots: readConfigDoc().bots ?? {} }); (await import('./config.js')).saveConfigDoc((doc) => { doc.defaultBot = out.model; }); }
+        return out;
+      }
+    }
+  }) },
   // The company of agents (src/org.js, after Paperclip) for the island: who works
   // here, hires waiting for you, and wake / approve / reject from the notch.
   { method: 'GET', pattern: /^\/ox\/org\/?$/, handler: appRoute(async () => {
@@ -1865,6 +1910,10 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
     // The island's local voice model stays loaded (renewed before its 30 min run out).
     warmVoiceModel();
     setInterval(() => { warmVoiceModel(); }, 20 * 60_000).unref();
+  }
+  if (!process.env.NODE_TEST_CONTEXT && process.env.OX_MESH !== '0'
+    && existsSync(join(process.env.OX_HOME || join(homedir(), '.ox'), 'mesh', 'identity.json'))) {
+    meshUp().catch((e) => console.log(`[mesh] not started: ${e.code === 'EADDRINUSE' ? 'another ox already runs this machine\'s node' : e.message}`));
   }
   const exposure = authExposure({ host, key: config.apiKey ?? apiKey() });
   if (exposure.level === 'refuse') {
