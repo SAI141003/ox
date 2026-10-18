@@ -62,7 +62,7 @@ States: ✓ the island has it · ~ partly · ✗ missing · → next to build
 |---|---|---|---|
 | D1 | addyosmani/agent-skills (51k, MIT) | already in the Marketplace and installs | ✓ |
 | D2 | affaan-m/ECC "Everything Claude Code" (311 skills, 71 sub-agents, MCP configs) | add as a Marketplace catalogue after its licence is checked | → |
-| D3 | Paperclip (101k, MIT): run a company of agents | task board ✓; next: org chart, heartbeats, budgets per agent | |
+| D3 | Paperclip (101k, MIT): run a company of agents | task board ✓, **`ox org`** ✓: org chart, hiring with approval, pause/resume, monthly budgets per agent, heartbeats that run assigned tasks through ox / Claude Code / Codex | ✓ |
 | D4 | caveman-ai/trim-1: a 1.2 MB model that keeps only the log lines a question needs | token saving: query-aware trimming of long tool output (own implementation first, then the model if its licence allows) | → |
 | D5 | Elorian Glimpse: a model that reasons over video | ox already reads YouTube transcripts; next: local video files (frames + speech) | |
 | D6 | awesome-n8n-templates (280+) | import n8n templates into ox Automations | |
@@ -93,8 +93,8 @@ States: ✓ the island has it · ~ partly · ✗ missing · → next to build
 |---|---|---|
 | E1 | Test the app like a person: every function, by clicking, not by API | → in progress |
 | E2 | Uploads: videos are not accepted | ✓ any file now: a video becomes frames the model sees (checked in the app: a dropped video was described correctly), PDFs give their text, everything else its path |
-| E3 | Interactive answers (OpenUI) must work every time, not once in a while: measure the rate, fix the failures | → |
-| E4 | Better than Devin, and why (side by side, honest) | → |
+| E3 | Interactive answers (OpenUI) must work every time, not once in a while: measure the rate, fix the failures | ~ **measured** (`bench/openui/run.mjs`, 10 prompts). 3B local model (qwen2.5:3b): 0/10 → 10/20 clean, and 20/20 draw something. Free OpenRouter model (laguna-s-2.1): 9/9 of the prompts it answered (the 10th hit the free tier's daily limit). Fixes: named args, bracket mending, implicit commas, extra args left out, True/False, @Divide-style builtins, interactive turns never wander into tools, and one repair round with the engine's errors. Not 100 % on a 3B model; a capable model is the way to "every time" |
+| E4 | Better than Devin, and why (side by side, honest) | ✓ docs/VS_DEVIN.md; Devin's leads (cloud VMs, ticket→PR) listed as next |
 | E5 | Use the repos from the screenshots (agent-skills, ECC, n8n templates, ADK, trim-1) | ~ D1 ✓, D4 ✓ (idea) |
-| E6 | Use Paperclip fully (org chart, heartbeats, budgets, governance, adapters, sessions) | ~ task board only |
+| E6 | Use Paperclip fully (org chart, heartbeats, budgets, governance, adapters, sessions) | ✓ `ox org` (checked for real: a local-model agent woke, took its assigned task, wrote the file, task done). Still missing: a web page for the chart, comments and documents on tasks in the app |
 | E7 | Keep this checklist current; go back and forth to cross-check | ✓ this file |

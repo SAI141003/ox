@@ -625,10 +625,27 @@ function tickFlowsOnce() {
     .finally(() => { flowsTicking = false; });
 }
 
+// Org heartbeats (src/org.js): agents whose interval has passed take their
+// next assigned task. They spend money, so only after `ox schedule opt-in`,
+// and one wake-up round at a time.
+let orgTickAt = 0;
+let orgTicking = false;
+function tickOrgOnce(policy) {
+  if (!policy.optedIn || orgTicking || Date.now() - orgTickAt < 60_000) return;
+  orgTickAt = Date.now();
+  orgTicking = true;
+  import('./org.js')
+    .then((O) => O.beatDue())
+    .then((runs) => { for (const r of runs ?? []) if (r.state !== 'idle') appendLog(`org ${r.agent}: ${r.state}${r.task ? ` ${r.task}` : ''}${r.ok === false || r.why ? ` — ${r.why}` : ''}`); })
+    .catch((e) => appendLog(`org tick failed: ${e?.message ?? e}`))
+    .finally(() => { orgTicking = false; });
+}
+
 function tickSchedules() {
   if (shuttingDown) return { skipped: true };
   tickFlowsOnce();
   const policy = readPolicy();
+  tickOrgOnce(policy);
   const now = Date.now();
   const due = dueSchedules({ now, policy });
   const outcome = { due: due.length, started: [], deferred: [], missed: [], refused: [] };

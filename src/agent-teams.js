@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 // The mailbox is a PERSISTENCE SURFACE, exactly like .agent/MEMORY.md: a message
 // written here is replayed verbatim into another agent's context on its next
 // agent_observe. So it gets the SAME screen, imported from src/memory.js -- the
@@ -222,8 +222,18 @@ function renderMessage(msg) {
   return isSteer(msg) ? `${head} STEERING: ${body}` : `${head}: ${body}`;
 }
 
+/**
+ * Where a folder's team mailboxes live: under ~/.ox/teams, one file per folder,
+ * never in the project itself (a teams.json kept turning up in people's repos).
+ */
+export function teamsFile(cwd) {
+  const home = process.env.OX_HOME || path.join(os.homedir(), '.ox');
+  const abs = path.resolve(String(cwd ?? process.cwd()));
+  return path.join(home, 'teams', `${path.basename(abs).replace(/[^\w.-]+/g, '_').slice(0, 40)}-${createHash('sha1').update(abs).digest('hex').slice(0, 12)}.json`);
+}
+
 export function createAgentTeams(cwd) {
-  const dataFile = path.join(cwd, 'teams.json');
+  const dataFile = teamsFile(cwd);
   function load() { return readJSON(dataFile); }
 
   return {

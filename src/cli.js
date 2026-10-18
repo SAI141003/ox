@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -511,6 +511,18 @@ function usageAll() {
     '  ox task spend <id> <usd>          record spend; past the budget the task is blocked',
     '  ox task log [<id>] [--limit n]    activity: who did what, when',
     '  ox task get|run|update|delete <id>',
+    '  ox task assign <id> <agent|none>  give a task to an org agent (its heartbeat picks it up)',
+    '',
+    'org (a company of agents, after Paperclip):',
+    '  ox org                            the org chart: who reports to whom, runtime, budget, state',
+    '  ox org hire <name> [--title T] [--reports-to <id>] [--runtime ox|claude-plan|chatgpt-plan|<bot>]',
+    '      [--budget <usd/month>] [--every <minutes>] [--instructions <text>] [--cwd <dir>]',
+    '      [--approval read|edits|all]   unattended, edits (default) changes files in --cwd; commands are declined',
+    '  ox org approve|reject <id>        decide a hire an agent proposed',
+    '  ox org pause|resume|fire <id>     stop or restart waking an agent',
+    '  ox org set <id> [--budget n|none] [--every n|none] [--title T] [--reports-to id] [--runtime r]',
+    '  ox org beat <id> | --due          wake an agent now (or every agent that is due): it runs its next task',
+    '  ox org log                        hires, approvals, pauses, budget warnings and stops',
     '',
     'serve:',
     '  ox serve [--port <port>] [--host <host>] [--api-key]   start HTTP server (OpenAI-compatible API)',
@@ -3405,9 +3417,64 @@ async function cmdVoiceDictation(action, rest) {
   return true;
 }
 
+async function cmdOrg(args = []) {
+  const O = await import('./org.js');
+  const sub = String(args[0] ?? '').toLowerCase();
+  const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+  const num = (v) => (v === undefined ? undefined : v === 'none' ? null : Number(v));
+  try {
+    if (!sub || sub === 'chart' || sub === 'list') {
+      const lines = O.chart({ all: args.includes('--all') });
+      console.log(lines.length > 1 ? lines.join('\n') : `${lines[0]}\n${c.dim('  no agents yet: ox org hire <name> --title <title>')}`);
+      const waiting = Object.values(O.readOrg().agents).filter((a) => a.status === 'proposed');
+      if (waiting.length) console.log(c.yellow(`\n${waiting.length} hire(s) waiting for you: ${waiting.map((a) => `${a.id} (proposed by ${a.hiredBy})`).join(', ')} — ox org approve <id>`));
+      return;
+    }
+    if (sub === 'hire') {
+      const name = args.slice(1).filter((a, i, l) => !a.startsWith('--') && !(l[i - 1] ?? '').startsWith('--')).join(' ');
+      const a = O.hire({ name, title: flag('--title'), role: flag('--role'), reportsTo: flag('--reports-to'), runtime: flag('--runtime'), budgetUsd: num(flag('--budget')), heartbeatMin: num(flag('--every')), instructions: flag('--instructions'), cwd: flag('--cwd'), approval: flag('--approval') }, { by: process.env.OX_ORG_AGENT || 'you' });
+      console.log(a.status === 'proposed' ? `${c.yellow('proposed')} ${a.id}: waits for the owner (ox org approve ${a.id})` : `${c.green('✓ hired')} ${a.name} (${a.id}) — ${a.title}, runs on ${a.runtime}${a.heartbeatMin ? `, wakes every ${a.heartbeatMin} min` : ''}`);
+      return;
+    }
+    const id = args[1];
+    const by = process.env.OX_ORG_AGENT || 'you';
+    if (sub === 'approve') { O.approveHire(id, { by }); console.log(`${c.green('✓')} ${id} hired`); return; }
+    if (sub === 'reject') { O.rejectHire(id, { by }); console.log(`${id} not hired`); return; }
+    if (sub === 'pause') { O.pause(id, { by }); console.log(`${id} paused`); return; }
+    if (sub === 'resume') { O.resume(id, { by }); console.log(`${c.green('✓')} ${id} active`); return; }
+    if (sub === 'fire' || sub === 'terminate') { O.terminate(id, { by }); console.log(`${id} terminated`); return; }
+    if (sub === 'set') {
+      const a = O.update(id, { budgetUsd: num(flag('--budget')), heartbeatMin: num(flag('--every')), warnAt: flag('--warn-at'), title: flag('--title'), role: flag('--role'), reportsTo: flag('--reports-to'), runtime: flag('--runtime'), instructions: flag('--instructions'), approval: flag('--approval') }, { by });
+      console.log(`${c.green('✓')} ${a.id} updated`);
+      return;
+    }
+    if (sub === 'beat') {
+      const runs = args.includes('--due') ? await O.beatDue() : [await O.beat(id)];
+      if (!runs.length) console.log(c.dim('nobody is due'));
+      for (const r of runs) console.log(`${r.agent}: ${r.state}${r.task ? ` ${r.task}` : ''}${r.ok === false ? c.red(` failed: ${r.why}`) : r.why ? ` (${r.why})` : ''}${r.costUsd != null ? ` · $${r.costUsd.toFixed(4)}` : ''}${r.warned ? c.yellow(' · budget warning') : ''}${r.stopped ? c.red(' · budget reached, paused') : ''}`);
+      return;
+    }
+    if (sub === 'log') { for (const e of O.readOrg().log.slice(-40)) console.log(`${e.at.slice(0, 19)}  ${e.by.padEnd(10)} ${e.action} ${e.agent}${e.why ? c.dim(` — ${e.why}`) : ''}`); return; }
+    console.error('usage: ox org [hire|approve|reject|pause|resume|fire|set|beat|log] — ox help for details');
+    process.exitCode = 1;
+  } catch (e) {
+    console.error(c.red(e.message));
+    process.exitCode = 1;
+  }
+}
+
 async function cmdTask(args = []) {
   const sub = String(args[0] ?? '').trim().toLowerCase();
   const rest = args.slice(1);
+  if (sub === 'assign') {
+    const [id, who] = rest;
+    if (!id || !who) { console.error('usage: ox task assign <id> <agent|none>'); process.exitCode = 1; return; }
+    const t = getTask(id);
+    if (!t) { console.error(`no task ${id}`); process.exitCode = 1; return; }
+    updateTask(id, { assignee: who === 'none' ? null : who });
+    console.log(`${c.green('✓')} ${id} ${who === 'none' ? 'unassigned' : `assigned to ${who}`}`);
+    return;
+  }
   if (sub === 'list' || sub === '') {
     let statusFilter = null;
     for (let i = 0; i < rest.length; i++) {
@@ -4156,6 +4223,9 @@ async function runSubcommand(cmd, args) {
       return;
     case 'task':
       await cmdTask(args);
+      return;
+    case 'org':
+      await cmdOrg(args);
       return;
     case 'serve':
       await cmdServe(args);

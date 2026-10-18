@@ -334,7 +334,9 @@ function readyTasks(opts = {}) {
 
 /** Claim the oldest ready task for `owner`; null when nothing is ready. */
 function nextTask(opts = {}) {
-  for (const t of readyTasks(opts)) {
+  const owner = opts.owner ?? actor(opts);
+  // A task assigned to someone else (an org agent's work) is theirs to take.
+  for (const t of readyTasks(opts).filter((x) => !x.assignee || x.assignee === owner)) {
     const r = claimTask(t.id, opts);
     if (r.ok) return r.task;
   }

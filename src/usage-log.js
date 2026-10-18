@@ -78,7 +78,7 @@ export async function* withUsageLog(opts, source) {
     }
   } finally {
     try {
-      recordRun({ surface: ctx.surface ?? process.env.OX_SURFACE ?? 'terminal', agent: ctx.agentName ?? null, mode: ctx.mode ?? null, cwd: ctx.cwd ?? process.cwd(), rows: ledger.rows() });
+      recordRun({ surface: ctx.surface ?? process.env.OX_SURFACE ?? 'terminal', agent: ctx.agentName ?? process.env.OX_ORG_AGENT ?? null, mode: ctx.mode ?? null, cwd: ctx.cwd ?? process.cwd(), rows: ledger.rows() });
     } catch {}
   }
 }
