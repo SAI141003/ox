@@ -25,6 +25,19 @@ export const KEY_ENV = Object.freeze({
   lmstudio: null,
   llamacpp: null,
   vllm: null,
+  // OpenAI-compatible services: a key and a model name are all they need.
+  perplexity: 'PERPLEXITY_API_KEY',
+  cohere: 'COHERE_API_KEY',
+  huggingface: 'HF_TOKEN',
+  nvidia: 'NVIDIA_API_KEY',
+  dashscope: 'DASHSCOPE_API_KEY',
+  deepinfra: 'DEEPINFRA_API_KEY',
+  sambanova: 'SAMBANOVA_API_KEY',
+  nebius: 'NEBIUS_API_KEY',
+  novita: 'NOVITA_API_KEY',
+  github: 'GITHUB_TOKEN',
+  venice: 'VENICE_API_KEY',
+  chutes: 'CHUTES_API_KEY',
 });
 
 export const PROVIDERS = Object.freeze(Object.keys(KEY_ENV));

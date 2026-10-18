@@ -39,6 +39,19 @@ export const PROVIDERS = {
   llamacpp: { kind: 'openai-compat', baseUrl: 'http://localhost:8080/v1', keyEnv: null },
   vllm: { kind: 'openai-compat', baseUrl: 'http://localhost:8000/v1', keyEnv: null },
   custom: { kind: 'openai-compat', baseUrl: null, keyEnv: 'OX_API_KEY' },
+  // OpenAI-compatible services (each address checked to answer as an API).
+  perplexity: { kind: 'openai-compat', baseUrl: 'https://api.perplexity.ai', keyEnv: 'PERPLEXITY_API_KEY' },
+  cohere: { kind: 'openai-compat', baseUrl: 'https://api.cohere.ai/compatibility/v1', keyEnv: 'COHERE_API_KEY' },
+  huggingface: { kind: 'openai-compat', baseUrl: 'https://router.huggingface.co/v1', keyEnv: 'HF_TOKEN' },
+  nvidia: { kind: 'openai-compat', baseUrl: 'https://integrate.api.nvidia.com/v1', keyEnv: 'NVIDIA_API_KEY' },
+  dashscope: { kind: 'openai-compat', baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1', keyEnv: 'DASHSCOPE_API_KEY' },
+  deepinfra: { kind: 'openai-compat', baseUrl: 'https://api.deepinfra.com/v1/openai', keyEnv: 'DEEPINFRA_API_KEY' },
+  sambanova: { kind: 'openai-compat', baseUrl: 'https://api.sambanova.ai/v1', keyEnv: 'SAMBANOVA_API_KEY' },
+  nebius: { kind: 'openai-compat', baseUrl: 'https://api.studio.nebius.com/v1', keyEnv: 'NEBIUS_API_KEY' },
+  novita: { kind: 'openai-compat', baseUrl: 'https://api.novita.ai/v3/openai', keyEnv: 'NOVITA_API_KEY' },
+  github: { kind: 'openai-compat', baseUrl: 'https://models.github.ai/inference', keyEnv: 'GITHUB_TOKEN' },
+  venice: { kind: 'openai-compat', baseUrl: 'https://api.venice.ai/api/v1', keyEnv: 'VENICE_API_KEY' },
+  chutes: { kind: 'openai-compat', baseUrl: 'https://llm.chutes.ai/v1', keyEnv: 'CHUTES_API_KEY' },
 };
 
 const ADAPTERS = new Map();

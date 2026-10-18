@@ -8,32 +8,78 @@ import path from 'node:path';
 import { KEY_ENV, BOTS } from './bots.js';
 import { keyStatus, setKey } from './keystore.js';
 
-// Human names for the providers ox talks to with an API key.
-export const PROVIDER_LABELS = Object.freeze({
-  anthropic: 'Anthropic', openai: 'OpenAI', xai: 'xAI', gemini: 'Google Gemini', openrouter: 'OpenRouter',
-  deepseek: 'DeepSeek', mistral: 'Mistral', groq: 'Groq', together: 'Together AI', fireworks: 'Fireworks AI',
-  cerebras: 'Cerebras', zhipu: 'Zhipu GLM', moonshot: 'Moonshot Kimi', baichuan: 'Baichuan', minimax: 'MiniMax',
-  yi: '01.AI Yi', stepfun: 'StepFun', backboard: 'Backboard', custom: 'Custom endpoint',
+// Every key the app can hold, grouped as the page shows them: what it is, where
+// to get one (the provider's own key page), and what it unlocks. `free` is set
+// only where the provider has a free tier.
+export const PROVIDER_CATALOG = Object.freeze({
+  // AI models
+  anthropic: { label: 'Anthropic', group: 'models', url: 'https://console.anthropic.com/settings/keys', blurb: 'Claude Opus, Sonnet, Haiku' },
+  openai: { label: 'OpenAI', group: 'models', url: 'https://platform.openai.com/api-keys', blurb: 'GPT models; images with gpt-image' },
+  gemini: { label: 'Google Gemini', group: 'models', url: 'https://aistudio.google.com/apikey', blurb: 'Gemini Pro and Flash', free: true },
+  openrouter: { label: 'OpenRouter', group: 'models', url: 'https://openrouter.ai/settings/keys', blurb: 'One key for 300+ models from every lab, free ones included', free: true, aliases: 'router' },
+  xai: { label: 'xAI', group: 'models', url: 'https://console.x.ai', blurb: 'Grok', aliases: 'grok' },
+  deepseek: { label: 'DeepSeek', group: 'models', url: 'https://platform.deepseek.com/api_keys', blurb: 'DeepSeek V-series and R-series' },
+  mistral: { label: 'Mistral', group: 'models', url: 'https://console.mistral.ai/api-keys', blurb: 'Mistral Large, Codestral' },
+  groq: { label: 'Groq', group: 'models', url: 'https://console.groq.com/keys', blurb: 'Open models at very high speed', free: true },
+  cerebras: { label: 'Cerebras', group: 'models', url: 'https://cloud.cerebras.ai', blurb: 'Open models at very high speed', free: true },
+  together: { label: 'Together AI', group: 'models', url: 'https://api.together.ai/settings/api-keys', blurb: 'Open models: Llama, Qwen, DeepSeek' },
+  fireworks: { label: 'Fireworks AI', group: 'models', url: 'https://fireworks.ai/account/api-keys', blurb: 'Open models, fast' },
+  perplexity: { label: 'Perplexity', group: 'models', url: 'https://www.perplexity.ai/settings/api', blurb: 'Sonar: answers with live web sources' },
+  cohere: { label: 'Cohere', group: 'models', url: 'https://dashboard.cohere.com/api-keys', blurb: 'Command models' },
+  huggingface: { label: 'Hugging Face', group: 'models', url: 'https://huggingface.co/settings/tokens', blurb: 'Thousands of open models through one router', free: true, aliases: 'hf inference' },
+  nvidia: { label: 'NVIDIA NIM', group: 'models', url: 'https://build.nvidia.com', blurb: 'Open models hosted by NVIDIA', free: true },
+  github: { label: 'GitHub Models', group: 'models', url: 'https://github.com/settings/tokens', blurb: 'Models with your GitHub account (a token with the models scope)', free: true },
+  dashscope: { label: 'Alibaba Qwen (Model Studio)', group: 'models', url: 'https://modelstudio.console.alibabacloud.com', blurb: 'Qwen models from Alibaba Cloud', aliases: 'qwen dashscope alibaba' },
+  deepinfra: { label: 'DeepInfra', group: 'models', url: 'https://deepinfra.com/dash/api_keys', blurb: 'Open models, low prices' },
+  sambanova: { label: 'SambaNova', group: 'models', url: 'https://cloud.sambanova.ai/apis', blurb: 'Open models at high speed' },
+  nebius: { label: 'Nebius AI Studio', group: 'models', url: 'https://studio.nebius.com', blurb: 'Open models' },
+  novita: { label: 'Novita AI', group: 'models', url: 'https://novita.ai/settings/key-management', blurb: 'Open models' },
+  venice: { label: 'Venice', group: 'models', url: 'https://venice.ai/settings/api', blurb: 'Private, uncensored open models' },
+  chutes: { label: 'Chutes', group: 'models', url: 'https://chutes.ai', blurb: 'Open models on a decentralised network' },
+  moonshot: { label: 'Moonshot Kimi', group: 'models', url: 'https://platform.moonshot.ai/console/api-keys', blurb: 'Kimi K2', aliases: 'kimi' },
+  zhipu: { label: 'Zhipu GLM', group: 'models', url: 'https://open.bigmodel.cn/usercenter/apikeys', blurb: 'GLM models', aliases: 'glm z.ai' },
+  minimax: { label: 'MiniMax', group: 'models', url: 'https://www.minimax.io/platform', blurb: 'MiniMax models' },
+  baichuan: { label: 'Baichuan', group: 'models', url: 'https://platform.baichuan-ai.com', blurb: 'Baichuan models' },
+  yi: { label: '01.AI Yi', group: 'models', url: 'https://platform.lingyiwanwu.com', blurb: 'Yi models' },
+  stepfun: { label: 'StepFun', group: 'models', url: 'https://platform.stepfun.com', blurb: 'Step models' },
+  backboard: { label: 'Backboard', group: 'models', url: 'https://backboard.io', blurb: 'Model routing with memory' },
+  custom: { label: 'Custom endpoint (default key)', group: 'models', url: null, blurb: 'The key for OX_BASE_URL. For named endpoints use Custom endpoints' },
+  // Web search: the agent's web_search tool uses the first one set (else a keyless search).
+  tavily: { label: 'Tavily', group: 'search', env: 'TAVILY_API_KEY', url: 'https://app.tavily.com', blurb: 'Search built for AI agents', free: true },
+  brave: { label: 'Brave Search', group: 'search', env: 'BRAVE_SEARCH_API_KEY', url: 'https://api-dashboard.search.brave.com', blurb: 'Independent web index' },
+  serper: { label: 'Serper (Google results)', group: 'search', env: 'SERPER_API_KEY', url: 'https://serper.dev', blurb: 'Google results as data', free: true, aliases: 'google' },
+  marginalia: { label: 'Marginalia', group: 'search', env: 'MARGINALIA_API_KEY', url: 'https://about.marginalia-search.com/article/api/', blurb: 'The small, independent web' },
+  // Images & video (OX Studio)
+  fal: { label: 'fal.ai', group: 'media', env: 'FAL_KEY', url: 'https://fal.ai/dashboard/keys', blurb: 'Images and video: Flux, Veo, Kling and more' },
+  higgsfield: { label: 'Higgsfield', group: 'media', env: 'HIGGSFIELD_API_KEY', url: 'https://higgsfield.ai', blurb: 'Video' },
 });
-const ORDER = ['anthropic', 'openai', 'xai', 'gemini', 'openrouter', 'deepseek', 'mistral', 'groq', 'together', 'fireworks', 'cerebras'];
-
-// Keys for image and video generation (OX Studio), next to the model keys.
-export const MEDIA_KEYS = Object.freeze({ higgsfield: { label: 'Higgsfield (images & video)', env: 'HIGGSFIELD_API_KEY' }, fal: { label: 'fal.ai (images & video)', env: 'FAL_KEY' } });
-const keyEnvOf = (id) => KEY_ENV[id] ?? MEDIA_KEYS[id]?.env ?? null;
+export const PROVIDER_LABELS = Object.freeze(Object.fromEntries(Object.entries(PROVIDER_CATALOG).map(([id, p]) => [id, p.label])));
+export const MEDIA_KEYS = Object.freeze(Object.fromEntries(Object.entries(PROVIDER_CATALOG).filter(([, p]) => p.group === 'media').map(([id, p]) => [id, { label: p.label, env: p.env }])));
+const GROUP_ORDER = ['models', 'search', 'media'];
+const keyEnvOf = (id) => KEY_ENV[id] ?? PROVIDER_CATALOG[id]?.env ?? null;
 
 export function providersView(env = process.env) {
-  const ids = Object.keys(KEY_ENV).filter((p) => KEY_ENV[p]);
-  ids.sort((a, b) => ((ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99)) || a.localeCompare(b));
-  return [
-    ...ids.map((id) => ({
+  const ids = [...new Set([...Object.keys(PROVIDER_CATALOG), ...Object.keys(KEY_ENV).filter((p) => KEY_ENV[p])])].filter((id) => keyEnvOf(id));
+  const catalogOrder = Object.keys(PROVIDER_CATALOG);
+  ids.sort((a, b) => (GROUP_ORDER.indexOf(PROVIDER_CATALOG[a]?.group ?? 'models') - GROUP_ORDER.indexOf(PROVIDER_CATALOG[b]?.group ?? 'models')) || ((catalogOrder.indexOf(a) + 1 || 999) - (catalogOrder.indexOf(b) + 1 || 999)));
+  return ids.map((id) => {
+    const meta = PROVIDER_CATALOG[id] ?? {};
+    const group = meta.group ?? 'models';
+    return {
       id,
-      label: PROVIDER_LABELS[id] ?? id,
-      env: KEY_ENV[id],
+      label: meta.label ?? id,
+      env: keyEnvOf(id),
+      group,
+      url: meta.url ?? null,
+      blurb: meta.blurb ?? '',
+      free: !!meta.free,
+      aliases: meta.aliases ?? '',
+      testable: group === 'models' && id !== 'custom',
+      media: group === 'media',
       bots: Object.entries(BOTS).filter(([, d]) => d.provider === id && d.model).map(([b]) => b),
-      ...keyStatus(KEY_ENV[id], env),
-    })),
-    ...Object.entries(MEDIA_KEYS).map(([id, m]) => ({ id, label: m.label, env: m.env, bots: [], media: true, ...keyStatus(m.env, env) })),
-  ];
+      ...keyStatus(keyEnvOf(id), env),
+    };
+  });
 }
 
 export function saveProviderKey(provider, key, env = process.env) {
@@ -41,6 +87,54 @@ export function saveProviderKey(provider, key, env = process.env) {
   if (!name) throw new Error(`unknown provider: ${provider}`);
   setKey(name, key, { env });
   return providersView(env);
+}
+
+/**
+ * Does this key work, and what does it unlock? Asks the provider for its model
+ * list with the key (the saved one, or one being tried before saving): no
+ * tokens are spent. Returns { ok, ms, count, models, error }.
+ */
+export async function testProviderKey(provider, key = null, env = process.env, { fetchImpl = fetch } = {}) {
+  const { PROVIDERS } = await import('./providers/index.js');
+  const cfg = PROVIDERS[provider];
+  const keyEnv = keyEnvOf(provider);
+  if (!cfg?.baseUrl || !keyEnv) return { ok: false, error: `${PROVIDER_CATALOG[provider]?.label ?? provider} cannot be tested here` };
+  const k = (typeof key === 'string' && key.trim()) || env[keyEnv];
+  if (!k) return { ok: false, error: 'no key: paste one first' };
+  const base = cfg.baseUrl.replace(/\/+$/, '');
+  const started = Date.now();
+  let url = `${base}/models`;
+  const headers = { authorization: `Bearer ${k}` };
+  if (cfg.kind === 'anthropic') { delete headers.authorization; headers['x-api-key'] = k; headers['anthropic-version'] = '2023-06-01'; }
+  if (cfg.kind === 'gemini') { delete headers.authorization; url = `${base}/models?key=${encodeURIComponent(k)}`; }
+  try {
+    const r = await fetchImpl(url, { headers, signal: AbortSignal.timeout(15000) });
+    const ms = Date.now() - started;
+    if (r.status === 401 || r.status === 403) return { ok: false, ms, error: `the provider refused this key (HTTP ${r.status})` };
+    if (!r.ok) return { ok: false, ms, error: `the provider answered HTTP ${r.status}` };
+    const j = await r.json().catch(() => ({}));
+    const list = (Array.isArray(j) ? j : j.data ?? j.models ?? []).map((m) => String(m?.id ?? m?.name ?? m).replace(/^models\//, '')).filter(Boolean);
+    return { ok: true, ms, count: list.length, models: list.slice(0, 3000) };
+  } catch (e) {
+    return { ok: false, ms: Date.now() - started, error: `could not reach ${base}: ${e?.cause?.code ?? e?.message ?? e}` };
+  }
+}
+
+/**
+ * Use one of a provider's models: it is saved as a named model the picker
+ * lists (e.g. "openrouter-laguna-s-2.1") and becomes the default.
+ */
+export async function useProviderModel(provider, model) {
+  const { readConfigDoc, saveConfigDoc } = await import('./config.js');
+  const { resolveBot } = await import('./bots.js');
+  const m = String(model ?? '').trim();
+  if (!keyEnvOf(provider) || !PROVIDER_CATALOG[provider] || PROVIDER_CATALOG[provider].group !== 'models') throw new Error(`not a model provider: ${provider}`);
+  if (!m || m.length > 200 || /\s/.test(m)) throw new Error('choose a model');
+  const name = `${provider}-${m.split('/').pop().replace(/:free$/, '-free').replace(/[^a-z0-9.-]+/gi, '-').toLowerCase()}`.slice(0, 60);
+  const def = { provider, model: m, desc: `${PROVIDER_CATALOG[provider].label} · ${m}` };
+  resolveBot(name, { bots: { ...(readConfigDoc().bots ?? {}), [name]: def } });
+  saveConfigDoc((doc) => { doc.bots = { ...(doc.bots ?? {}), [name]: def }; doc.defaultBot = name; });
+  return { name, ...def };
 }
 
 // Subscriptions you already pay for (Claude, ChatGPT, …) through their CLIs.

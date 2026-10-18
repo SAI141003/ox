@@ -494,6 +494,16 @@
   .close { position: absolute; top: 12px; right: 12px; z-index: 2; }
   .keyrow { display: grid; grid-template-columns: 14px 1fr minmax(220px, 300px) auto; align-items: center; gap: 12px; padding: 12px 4px; border-top: 1px solid var(--line); }
   .keyrow:first-child { border-top: 0; }
+  .keyrow[hidden], .kgroup[hidden] { display: none; }
+  .keyrow .b { color: var(--dim); font-size: 12.5px; }
+  .keyrow .acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .keyrow .kstate { grid-column: 2 / -1; font-size: 12px; color: var(--dim); }
+  .keyrow .kstate.ok { color: var(--ok, #3fb950); } .keyrow .kstate.err { color: var(--err, #f85149); }
+  .keyrow .kuse { grid-column: 2 / -1; display: flex; gap: 8px; align-items: center; }
+  .keysteps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 4px 0 14px; }
+  .keysteps div { background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: var(--dim); }
+  .keysteps b { display: block; color: var(--text, inherit); font-weight: 600; margin-bottom: 2px; }
+  .badge.free { background: rgba(63,185,80,.14); color: #3fb950; }
   .keyrow .n { font-weight: 500; } .keyrow .e { font: 11.5px var(--mono); color: var(--dim); }
   .keyrow input { font: 12.5px var(--mono); }
   .chipline { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
@@ -2604,8 +2614,8 @@ files: [src/billing/**]
     ['gap'],
     ['providers', 'Providers', 'bolt', 'models'],
     ['accounts', 'Accounts', 'user', 'subscription claude chatgpt plan', true],
-    ['keys', 'API keys', 'key', 'anthropic openai xai gemini openrouter', true],
-    ['endpoints', 'Custom endpoints', 'globe', 'openai compatible vllm llama.cpp gateway url server', true],
+    ['keys', 'API keys', 'key', 'api key keys token secret provider add connect anthropic openai xai gemini openrouter search web tavily brave serper images video fal', true],
+    ['endpoints', 'Custom endpoints', 'globe', 'openai compatible vllm llama.cpp gateway url server azure bedrock proxy base url self-hosted', true],
     ['local', 'Local models', 'cpu', 'ollama lm studio offline ram hugging face', true],
     ['messaging', 'Messaging', 'chat', 'telegram discord phone'],
     ['shortcuts', 'Keyboard shortcuts', 'keyboard', 'keys hotkeys'],
@@ -2615,6 +2625,9 @@ files: [src/billing/**]
   ];
   let sec = 'general';
   let pendingHf = null;
+  // Settings search hands a provider name to the API keys page.
+  let pendingKeyQuery = '';
+  let providerIndex = null;
   function openSettings(which) {
     if (which) sec = which;
     $('ovl').classList.add('on');
@@ -2626,13 +2639,23 @@ files: [src/billing/**]
   $('sclose').onclick = closeSettings;
   $('ovl').onclick = (e) => { if (e.target === $('ovl')) closeSettings(); };
   function renderSnav(filter = '') {
-    const f = filter.toLowerCase();
-    $('snav').innerHTML = `<label class="search"><span data-i="search"></span><input id="sq" placeholder="Search settings" aria-label="Search settings" value="${esc(filter)}"></label>` + SECTIONS.map(([id, label, ic, kw, sub]) => {
+    const f = filter.toLowerCase().trim();
+    const words = f.split(/\s+/).filter(Boolean);
+    const hit = (text) => words.every((w) => text.toLowerCase().includes(w));
+    // Providers are searchable by name too ("perplexity" -> API keys, filtered to it).
+    if (f && !providerIndex) getJson('/ox/providers').then((k) => { providerIndex = k; if ($('sq')?.value.toLowerCase().trim() === f) renderSnav(filter); }).catch(() => {});
+    const provHits = f && providerIndex ? providerIndex.filter((k) => hit(`${k.label} ${k.id} ${k.aliases ?? ''} ${k.env}`)).slice(0, 6) : [];
+    const secHtml = SECTIONS.map(([id, label, ic, kw, sub]) => {
       if (id === 'gap') return f ? '' : '<div class="gap"></div>';
-      if (f && !`${label} ${kw}`.toLowerCase().includes(f)) return '';
+      if (f && !hit(`${label} ${kw}`)) return '';
       return `<button data-sec="${id}" class="${sec === id ? 'on' : ''}${sub ? ' sub' : ''}">${icon(ic)}${esc(label)}</button>`;
     }).join('');
+    const provHtml = provHits.map((k) => `<button data-prov="${esc(k.label)}" class="sub">${icon('key')}API keys \u203a ${esc(k.label)}${k.set ? ' \u00b7 set' : ''}</button>`).join('');
+    const none = f && !secHtml && !provHtml ? `<div class="small muted" style="padding:8px 10px">Nothing in Settings matches \u201c${esc(filter)}\u201d. A provider that is not listed can be added under <a href="#" data-sec-link="endpoints" style="color:var(--gold)">Custom endpoints</a>.</div>` : '';
+    $('snav').innerHTML = `<label class="search"><span data-i="search"></span><input id="sq" placeholder="Search settings and providers" aria-label="Search settings" value="${esc(filter)}"></label>` + secHtml + provHtml + none;
     paintIcons($('snav'));
+    $('snav').querySelectorAll('[data-prov]').forEach((b) => (b.onclick = () => { sec = 'keys'; pendingKeyQuery = b.dataset.prov; $('sheet').classList.remove('nav-open'); renderSnav(filter); renderSection(); }));
+    $('snav').querySelectorAll('[data-sec-link]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); sec = a.dataset.secLink; renderSnav(); renderSection(); }));
     const sq = $('sq');
     sq.oninput = () => { renderSnav(sq.value); const s2 = $('sq'); s2.focus(); s2.setSelectionRange(s2.value.length, s2.value.length); };
     $('snav').querySelectorAll('[data-sec]').forEach((b) => (b.onclick = () => { sec = b.dataset.sec; $('sheet').classList.remove('nav-open'); renderSnav(sq.value); renderSection(); }));
@@ -2653,8 +2676,17 @@ files: [src/billing/**]
     }));
   }
 
+  // Pages load asynchronously; a slow one (Local models scans the machine)
+  // finishing after you moved on must not replace the page you are on. Each
+  // render has a number, and only the newest may write to the pane.
+  let renderSeq = 0;
   async function renderSection() {
-    const el = $('sbody');
+    const mine = ++renderSeq;
+    const pane = $('sbody');
+    const el = new Proxy(pane, {
+      set(t, k, v) { if (k === 'innerHTML' && mine !== renderSeq) return true; t[k] = v; return true; },
+      get(t, k) { const v = t[k]; return typeof v === 'function' ? v.bind(t) : v; },
+    });
     el.innerHTML = '<div class="skeleton" style="width:40%"></div><div class="skeleton"></div><div class="skeleton"></div>';
     try {
       if (sec === 'general') {
@@ -2780,24 +2812,72 @@ files: [src/billing/**]
         $('to-keys').onclick = (e) => { e.preventDefault(); sec = 'keys'; renderSnav(); renderSection(); };
       } else if (sec === 'keys') {
         const keys = await getJson('/ox/providers');
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('key')}API keys</div><p class="sdesc">Pasted keys are saved in ~/.ox/keys.json, readable only by your account, and work in the terminal too. A key already set in your shell always wins. ox only ever shows the last four characters.</p>
-          <label class="search" style="margin:0 0 8px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line)"><span data-i="search"></span><input id="kq" placeholder="Search providers…"></label>
-          <div id="krows">${keys.map((k) => `<div class="keyrow" data-k="${esc(k.id)}" data-name="${esc(k.label.toLowerCase())}"><span class="dot ${k.set ? 'ok' : ''}"></span><div><div class="n">${esc(k.label)}</div><div class="e">${esc(k.env)}${k.set ? ` · ${esc(k.hint)} · from ${esc(k.source)}` : ''}</div></div>
-            <input class="field" type="password" autocomplete="off" placeholder="${k.set ? 'Paste a new key to replace it' : `Paste ${esc(k.label)} key`}" ${k.set && k.source === 'environment' ? 'disabled title="Set in your shell. Change it there"' : ''}>
-            ${k.set && k.source === 'app' ? `<button class="btn ghost danger" data-rm>Remove</button>` : `<button class="btn" data-save>Save</button>`}</div>`).join('')}</div>`;
+        providerIndex = keys;
+        const GROUPS = [['models', 'AI models', 'Chat, code and agents. Set one and pick its models anywhere: the model menu, or the terminal (ox --bot &lt;provider&gt;:&lt;model&gt;).'], ['search', 'Web search', 'The agent’s web_search tool uses the first key set here; with none, it uses a keyless search.'], ['media', 'Images & video', 'OX Studio and the create_media tool. OpenAI and Gemini keys above make images too.']];
+        const rowHtml = (k) => `<div class="keyrow" data-k="${esc(k.id)}" data-name="${esc(`${k.label} ${k.env} ${k.blurb} ${k.aliases} ${k.id} ${({ models: 'model ai llm chat', search: 'web search', media: 'image images video media studio' })[k.group] ?? ''}${k.free ? ' free' : ''}`.toLowerCase())}"><span class="dot ${k.set ? 'ok' : ''}"></span>
+            <div><div class="n">${esc(k.label)} ${k.free ? '<span class="badge free">free tier</span>' : ''} ${k.set ? '<span class="badge ok">set</span>' : ''}</div><div class="b">${esc(k.blurb)}</div><div class="e">${esc(k.env)}${k.set ? ` · ${esc(k.hint)} · from ${k.source === 'app' ? 'this app' : 'your shell'}` : ''}${k.url ? ` · <a href="${esc(k.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--gold)">Get a key ↗</a>` : ''}</div></div>
+            <input class="field" type="password" autocomplete="off" aria-label="${esc(k.label)} key" placeholder="${k.set ? 'Paste a new key to replace it' : `Paste your ${esc(k.label)} key`}" ${k.set && k.source === 'environment' ? 'disabled title="Set in your shell. Change it there"' : ''}>
+            <div class="acts">${k.testable && k.set ? '<button class="btn ghost" data-test>Test</button>' : ''}${k.set && k.source === 'app' ? '<button class="btn ghost danger" data-rm>Remove</button>' : ''}<button class="btn primary" data-save ${k.set && k.source === 'environment' ? 'disabled' : ''}>Save</button></div>
+            <div class="kstate" hidden></div><div class="kuse" hidden></div></div>`;
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('key')}API keys</div>
+          <div class="keysteps"><div><b>1. Get a key</b>Pick a provider and open its key page (Get a key ↗). Several have a free tier.</div><div><b>2. Paste and Save</b>Kept in ~/.ox/keys.json, readable only by you. Test checks it right away.</div><div><b>3. Pick a model</b>After Test, choose one of its models and press Use, or pick it in the model menu.</div></div>
+          <label class="search" style="margin:0 0 8px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line)"><span data-i="search"></span><input id="kq" placeholder="Search ${keys.length} providers: OpenRouter, Perplexity, Tavily, Hugging Face…" value="${esc(pendingKeyQuery || '')}"></label>
+          <div id="knone" class="box muted small" hidden>Not listed? Any OpenAI-compatible service works: add it under <a href="#" id="to-endpoints" style="color:var(--gold)">Custom endpoints</a> with its URL and key.</div>
+          ${GROUPS.map(([g, title, desc]) => { const rows = keys.filter((k) => k.group === g); return rows.length ? `<div class="kgroup" data-g="${g}"><div class="section-cap cap">${title} <span class="muted">(${rows.filter((k) => k.set).length} of ${rows.length} set)</span></div><p class="sdesc" style="margin-top:0">${desc}</p><div>${rows.map(rowHtml).join('')}</div></div>` : ''; }).join('')}
+          <p class="sdesc">A key already set in your shell always wins. ox only ever shows the last four characters, and never sends a key anywhere but its own provider.</p>`;
         paintIcons(el);
-        $('kq').oninput = () => { const q = $('kq').value.toLowerCase(); el.querySelectorAll('.keyrow').forEach((r) => (r.hidden = !r.dataset.name.includes(q))); };
+        pendingKeyQuery = '';
+        const filter = () => {
+          const words = $('kq').value.toLowerCase().split(/\s+/).filter(Boolean);
+          let shown = 0;
+          el.querySelectorAll('.keyrow').forEach((r) => { const hit = words.every((w) => r.dataset.name.includes(w)); r.hidden = !hit; if (hit) shown++; });
+          el.querySelectorAll('.kgroup').forEach((g) => (g.hidden = ![...g.querySelectorAll('.keyrow')].some((r) => !r.hidden)));
+          $('knone').hidden = shown > 0;
+        };
+        $('kq').oninput = filter;
+        if ($('kq').value) { filter(); $('kq').focus(); }
+        $('to-endpoints').onclick = (e) => { e.preventDefault(); sec = 'endpoints'; renderSnav(); renderSection(); };
         el.querySelectorAll('.keyrow').forEach((r) => {
           const inp = r.querySelector('input');
+          const state = r.querySelector('.kstate');
+          const use = r.querySelector('.kuse');
+          const say = (t, cls = '') => { state.hidden = false; state.className = `kstate ${cls}`; state.textContent = t; };
+          const k = keys.find((x) => x.id === r.dataset.k);
+          const showModels = (models) => {
+            if (!models?.length) return;
+            use.hidden = false;
+            // Type to search: a provider can serve hundreds of models (OpenRouter: 470+).
+            const listId = `km-${r.dataset.k}`;
+            use.innerHTML = `<input class="field" list="${listId}" placeholder="type to find one of ${models.length} models" style="max-width:340px"><datalist id="${listId}">${models.map((m) => `<option value="${esc(m)}">`).join('')}</datalist><button class="btn primary" data-use>Use this model</button>`;
+            use.querySelector('[data-use]').onclick = async () => {
+              const model = use.querySelector('input').value.trim();
+              if (!models.includes(model)) { say(model ? `${model} is not one of this key's models` : 'Type or pick a model first.', 'err'); return; }
+              try { const r2 = await postJson('/ox/providers', { action: 'use', provider: r.dataset.k, model }); toast(`Default model: ${r2.name}`); loadModels(); say(`In use: ${r2.name} (also in the model menu; terminal: ox --bot ${r2.name})`, 'ok'); } catch (e) { say(e.message, 'err'); }
+            };
+          };
+          const test = async (key = null) => {
+            say('testing…');
+            try {
+              const t = await postJson('/ox/providers', { action: 'test', provider: r.dataset.k, ...(key ? { key } : {}) });
+              if (t.ok) { say(`Works: ${t.count} model${t.count === 1 ? '' : 's'} available (${t.ms} ms).`, 'ok'); showModels(t.models); }
+              else say(t.error, 'err');
+              return t;
+            } catch (e) { say(e.message, 'err'); return null; }
+          };
           const save = async () => {
-            if (!inp.value.trim()) return;
-            try { await postJson('/ox/providers', { provider: r.dataset.k, key: inp.value.trim() }); toast('Key saved'); renderSection(); loadModels(); } catch (e) { toast(e.message); }
+            const v = inp.value.trim();
+            if (!v) { say('Paste a key first.', 'err'); inp.focus(); return; }
+            if (/\s/.test(v)) { say('That has spaces in it: paste just the key.', 'err'); return; }
+            // A model key is tried before it is kept, so a typo is caught here.
+            if (k?.testable) { const t = await test(v); if (t && !t.ok && /refused/.test(t.error)) return; }
+            try { await postJson('/ox/providers', { provider: r.dataset.k, key: v }); toast(`${k?.label ?? 'Key'} saved`); loadModels(); const keep = $('kq').value; pendingKeyQuery = keep; await renderSection(); const again = $('sbody').querySelector(`.keyrow[data-k="${r.dataset.k}"]`); if (again && k?.testable) again.querySelector('[data-test]')?.click(); }
+            catch (e) { say(e.message, 'err'); }
           };
           r.querySelector('[data-save]')?.addEventListener('click', save);
+          r.querySelector('[data-test]')?.addEventListener('click', () => test());
           inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
           r.querySelector('[data-rm]')?.addEventListener('click', async () => {
-            if (inp.value.trim()) return save();
-            try { await postJson('/ox/providers', { provider: r.dataset.k, key: null }); toast('Key removed'); renderSection(); } catch (e) { toast(e.message); }
+            try { await postJson('/ox/providers', { provider: r.dataset.k, key: null }); toast('Key removed'); loadModels(); renderSection(); } catch (e) { say(e.message, 'err'); }
           });
         });
       } else if (sec === 'endpoints') {

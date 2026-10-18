@@ -385,6 +385,13 @@ export function serveModelCatalog(env = process.env) {
   let configBots = {};
   try { configBots = readConfigDoc().bots ?? {}; } catch {}
   for (const [id, def] of Object.entries(configBots)) {
+    // A model picked from a provider in Settings › API keys ("Use"): listed
+    // while its provider's key is set.
+    if (def && def.provider && def.provider !== 'custom' && def.model && !BOTS[id] && KEY_ENV[def.provider] !== undefined) {
+      const keyEnv = KEY_ENV[def.provider];
+      data.push({ id, object: 'model', created: MODELS_CREATED, owned_by: def.provider, ox: { provider: def.provider, model: def.model, available: !keyEnv || !!env[keyEnv], availability: 'credentials-only', requires_key: keyEnv, desc: def.desc ?? '' } });
+      continue;
+    }
     if (!def || def.provider !== 'custom' || !def.baseUrl || BOTS[id]) continue;
     data.push({ id, object: 'model', created: MODELS_CREATED, owned_by: 'you', ox: { provider: 'custom', model: def.model ?? null, available: !!def.model, endpoint: true, baseUrl: def.baseUrl, desc: def.desc ?? '' } });
   }
@@ -1474,7 +1481,7 @@ const ROUTES = [
   { method: 'POST', pattern: /^\/ox\/speak\/?$/, handler: handleSpeak },
   { method: 'GET', pattern: /^\/ox\/voice\/?$/, handler: appRoute(async () => { const k = await import('./kokoro.js'); const st = k.kokoroStatus(); return { kokoro: st.ready, install: 'ox voice install', voices: st.ready ? (await k.kokoroVoices()).map((id) => ({ id, label: k.VOICE_LABELS[id] ?? id })) : [], default: k.DEFAULT_VOICE }; }) },
   { method: 'GET', pattern: /^\/ox\/providers\/?$/, handler: appRoute(async () => (await appApi()).providersView()) },
-  { method: 'POST', pattern: /^\/ox\/providers\/?$/, handler: appRoute(async (b) => (await appApi()).saveProviderKey(String(b.provider ?? ''), b.key ?? null)) },
+  { method: 'POST', pattern: /^\/ox\/providers\/?$/, handler: appRoute(async (b) => { const a = await appApi(); if (b.action === 'test') return a.testProviderKey(String(b.provider ?? ''), typeof b.key === 'string' ? b.key : null); if (b.action === 'use') return a.useProviderModel(String(b.provider ?? ''), String(b.model ?? '')); return a.saveProviderKey(String(b.provider ?? ''), b.key ?? null); }) },
   { method: 'GET', pattern: /^\/ox\/accounts\/?$/, handler: appRoute(async () => (await appApi()).accountsView()) },
   { method: 'GET', pattern: /^\/ox\/local\/?$/, handler: appRoute(async () => (await appApi()).localView()) },
   { method: 'GET', pattern: /^\/ox\/capabilities\/?$/, handler: appRoute(async () => (await appApi()).capabilitiesView()) },
