@@ -65,3 +65,41 @@ test('what a call does, in a few words; worktree names', () => {
   assert.equal(projectName('/Users/me/ox/.claude/worktrees/practical-vaughan-09501b'), 'ox · practical-vaughan');
   assert.equal(projectName('/Users/me/ox'), 'ox');
 });
+
+import { sendCommand, sendToSession, copilotSessions } from '../src/agents-live.js';
+import { EventEmitter } from 'node:events';
+
+test('each tool continues a session with its own resume, headless', () => {
+  assert.deepEqual(sendCommand('claude', 'abc', 'hi'), ['claude', ['-p', 'hi', '--resume', 'abc']]);
+  assert.deepEqual(sendCommand('codex', 'abc', 'hi'), ['codex', ['exec', 'resume', 'abc', 'hi']]);
+  assert.deepEqual(sendCommand('hermes', 'abc', 'hi')[1], ['chat', '-q', 'hi', '--resume', 'abc', '-Q']);
+  assert.equal(sendCommand('copilot', 'abc', 'hi'), null);
+});
+
+test('a session at work is never written to at the same time: the message waits', async () => {
+  const home = fakeHome(); // its Claude session "aaa" is mid tool call
+  let ran = 0;
+  const run = () => { ran++; const p = new EventEmitter(); p.stdout = new EventEmitter(); p.stderr = new EventEmitter(); setImmediate(() => p.emit('close', 0)); return p; };
+  const r = await sendToSession('ext:claude:aaa', 'also add a test', { home, run });
+  assert.equal(r.queued, true);
+  assert.match(r.why, /as soon as it is idle/);
+  assert.equal(ran, 0);
+  // the idle worktree session takes the message now
+  const ok = await sendToSession('ext:claude:bbb', 'thanks, now update the README', { home, run });
+  assert.equal(ok.ok, true);
+  assert.equal(ran, 1);
+  await assert.rejects(sendToSession('ext:copilot:x', 'hi', { home, run }), /cannot send/);
+});
+
+test('Copilot sessions: folder, model, the command it runs', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-cop-'));
+  const d = path.join(home, '.copilot', 'session-state', 'c1');
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, 'events.jsonl'), [
+    JSON.stringify({ type: 'session.start', data: { context: { cwd: '/Users/me/site' } } }),
+    JSON.stringify({ type: 'assistant.turn_start', data: {} }),
+    JSON.stringify({ type: 'tool.execution_start', data: { toolName: 'bash', arguments: { command: 'npm run build' }, model: 'gpt-5.6' } }),
+  ].join('\n'));
+  const [s] = copilotSessions({ home });
+  assert.deepEqual([s.tool, s.project, s.model, s.state, s.doing], ['Copilot', 'site', 'gpt-5.6', 'tool', '$ npm run build']);
+});

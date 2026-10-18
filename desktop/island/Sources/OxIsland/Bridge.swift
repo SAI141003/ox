@@ -67,7 +67,7 @@ struct AgentSession: Identifiable, Equatable {
 }
 
 final class OxBridge: ObservableObject {
-    @Published private(set) var sessions: [AgentSession] = []
+    @Published private(set) var sessions: [AgentSession] = [] { didSet { IslandLayout.busy = !sessions.isEmpty } }
     @Published var hovering = false
     /// True for the one launch animation at app start (LaunchScene).
     @Published var launching = true
@@ -84,6 +84,7 @@ final class OxBridge: ObservableObject {
     @Published var tray: TrayTab?
     /// Set by the panel: typing needs the panel to take keyboard focus.
     var trayChanged: ((TrayTab?) -> Void)?
+    var cardChanged: ((Bool) -> Void)?
     let chat = IslandChat()
     let shelf = Shelf()
     let focus = FocusTimer()
@@ -119,6 +120,8 @@ final class OxBridge: ObservableObject {
         // The focus countdown shows in the wing, so its changes redraw the island too.
         focus.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &traySinks)
         $tray.sink { [weak self] t in self?.trayChanged?(t) }.store(in: &traySinks)
+        // A session card has a message box: the island takes the keyboard while it is open.
+        $card.map { $0?.id }.removeDuplicates().sink { [weak self] id in self?.cardChanged?(id != nil) }.store(in: &traySinks)
         clips.start()
         player.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &traySinks)
         player.start()
@@ -307,7 +310,8 @@ final class OxBridge: ObservableObject {
             return doc
         }
         guard let port = docs.compactMap({ $0["port"] as? Int }).first,
-              let url = URL(string: "http://127.0.0.1:\(port)/ox/live") else { dropAppSessions(keep: []); return }
+              let url = URL(string: "http://127.0.0.1:\(port)/ox/live") else { appPort = nil; dropAppSessions(keep: []); return }
+        appPort = port
         pollUsage(port: port)
         pollConnected(port: port)
         pollGauges(port: port)
@@ -323,6 +327,112 @@ final class OxBridge: ObservableObject {
                 self.mergeApp(runs)
             }
         }.resume()
+    }
+
+    /// The app server's port, once found (sessions of other agents are read through it).
+    private(set) var appPort: Int?
+
+    // MARK: a session's card: its conversation, a message box, Open in Terminal
+
+    struct CardLine: Identifiable, Equatable { let id = UUID(); let mine: Bool; let text: String }
+    struct SessionCard: Equatable {
+        let id: String            // the island's session id
+        var lines: [CardLine] = []
+        var canSend = true
+        var note = ""
+        var busy = false
+    }
+    @Published var card: SessionCard? { didSet { IslandLayout.cardOpen = card != nil } }
+
+    /// Each session's own character, the same every time (the pixel cast).
+    static func character(for id: String) -> String {
+        let sum = id.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFFFF }
+        return PixelCast.helpers[sum % PixelCast.helpers.count]
+    }
+
+    /// "ext:claude:<id>" for another agent's session, nil for ox's own runs.
+    static func externalId(_ sessionId: String) -> String? {
+        sessionId.hasPrefix("app:ext:") ? String(sessionId.dropFirst(4)) : nil
+    }
+
+    private func post(_ path: String, _ body: [String: Any], done: @escaping ([String: Any]?) -> Void) {
+        guard let port = appPort, let url = URL(string: "http://127.0.0.1:\(port)\(path)") else { done(nil); return }
+        var req = URLRequest(url: url, timeoutInterval: 25 * 60)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "content-type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            let j = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            DispatchQueue.main.async { done(j) }
+        }.resume()
+    }
+
+    /// Click a character: its session opens under the island.
+    func openCard(_ session: AgentSession) {
+        IslandLog.write("session card: \(session.project) (\(session.id))")
+        if card?.id == session.id { card = nil; return }
+        tray = nil
+        pinnedOpen = true
+        var c = SessionCard(id: session.id)
+        guard let ext = Self.externalId(session.id) else {
+            // ox's own run: what it said last; messages go to that run.
+            c.lines = session.lastText.isEmpty ? [] : [CardLine(mine: false, text: session.lastText)]
+            c.canSend = connections[session.id] != nil
+            c.note = c.canSend ? "" : "This run is shown, not driven: open it in the OX app."
+            card = c
+            return
+        }
+        c.note = "Reading the session…"
+        card = c
+        post("/ox/agents/session", ["id": ext]) { [weak self] j in
+            guard let self, self.card?.id == session.id else { return }
+            guard let j, j["error"] == nil else { self.card?.note = "Could not read it: \(((j?["error"] as? [String: Any])?["message"] as? String) ?? "the OX app is not running")"; return }
+            let msgs = (j["messages"] as? [[String: Any]]) ?? []
+            self.card?.lines = msgs.map { CardLine(mine: ($0["role"] as? String) == "user", text: ($0["text"] as? String) ?? "") }.filter { !$0.text.isEmpty }
+            self.card?.canSend = (j["canSend"] as? Bool) ?? false
+            let queued = j["queued"] as? Int ?? 0
+            self.card?.note = !(self.card?.canSend ?? false) ? (j["why"] as? String ?? "") : queued > 0 ? "\(queued) message(s) waiting for it to be idle" : ""
+        }
+    }
+
+    /// A message from the island to the open session.
+    func sendToCard(_ raw: String) {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var c = card, !text.isEmpty, c.canSend, !c.busy else { return }
+        c.lines.append(CardLine(mine: true, text: text))
+        guard let ext = Self.externalId(c.id) else {
+            // ox's own run: straight into it over its socket.
+            if let conn = connections[c.id] {
+                conn.send(["type": "user-message", "text": text, "imagePaths": [String](), "voice": false])
+                c.note = "Sent. Its answer shows here and in its run."
+            }
+            card = c
+            return
+        }
+        c.busy = true
+        c.note = "Sending…"
+        card = c
+        post("/ox/agents/send", ["id": ext, "text": text]) { [weak self] j in
+            guard let self, self.card?.id == c.id else { return }
+            self.card?.busy = false
+            if let err = (j?["error"] as? [String: Any])?["message"] as? String { self.card?.note = err; return }
+            if (j?["queued"] as? Bool) == true { self.card?.note = j?["why"] as? String ?? "Waiting for it to be idle."; return }
+            let reply = (j?["reply"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if (j?["ok"] as? Bool) == true {
+                self.card?.lines.append(CardLine(mine: false, text: reply.isEmpty ? "Done." : reply))
+                self.card?.note = ""
+            } else {
+                self.card?.note = "It stopped: \(j?["error"] as? String ?? "no answer")"
+            }
+        }
+    }
+
+    /// Take over in Terminal: the session continued by its own tool.
+    func openCardInTerminal() {
+        guard let c = card, let ext = Self.externalId(c.id) else { return }
+        post("/ox/agents/open", ["id": ext]) { [weak self] j in
+            self?.card?.note = (j?["opened"] as? Bool) == true ? "Opened in Terminal." : ((j?["error"] as? [String: Any])?["message"] as? String ?? "Could not open it.")
+        }
     }
 
     /// Dev aid only (--render-runs): feed board rows as if polled.
@@ -640,7 +750,7 @@ final class OxBridge: ObservableObject {
     }
 
     /// The office (a team at work) or a canvas extends the expanded island.
-    var hasExtraPanel: Bool { tray != nil || officeSession != nil || canvasSession != nil }
+    var hasExtraPanel: Bool { card != nil || tray != nil || officeSession != nil || canvasSession != nil }
 
     /// Commands about the island itself, typed or said ("make the island
     /// smaller", "bigger", "stay open", "close"): done here, no model, no AI.

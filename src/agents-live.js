@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawn, spawnSync } from 'node:child_process';
 
 const WORKING_MS = 30_000;       // written to in the last 30 s: at work
 const SHOW_MS = 30 * 60_000;     // idle up to 30 min: still listed
@@ -106,11 +107,74 @@ export function codexSessions({ home = os.homedir(), now = Date.now() } = {}) {
   });
 }
 
+/** GitHub Copilot's agent: ~/.copilot/session-state/<id>/events.jsonl. */
+export function copilotSessions({ home = os.homedir(), now = Date.now() } = {}) {
+  const dir = path.join(home, '.copilot', 'session-state');
+  let ids = [];
+  try { ids = fs.readdirSync(dir); } catch { return []; }
+  return ids.map((id) => {
+    const file = path.join(dir, id, 'events.jsonl');
+    let mtime = 0;
+    try { mtime = fs.statSync(file).mtimeMs; } catch { return null; }
+    if (now - mtime > SHOW_MS) return null;
+    let cwd = '';
+    try { const head = fs.readFileSync(file, { encoding: 'utf8', flag: 'r' }).slice(0, 4000).split('\n')[0]; cwd = JSON.parse(head).data?.context?.cwd ?? ''; } catch {}
+    let model = '', doing = '', busy = false;
+    for (const l of tailLines(file)) {
+      const d = l.data ?? {};
+      if (d.model) model = d.model;
+      if (l.type === 'tool.execution_start') doing = describeCall(d.toolName, d.arguments ?? {});
+      if (l.type === 'assistant.turn_start') busy = true;
+      if (l.type === 'assistant.turn_end') { busy = false; doing = ''; }
+    }
+    const age = now - mtime;
+    const working = busy && age < 5 * 60_000 || age < WORKING_MS;
+    const chat = /\.copilot[\\/]chats[\\/]/.test(cwd);
+    return { id: `copilot:${id}`, tool: 'Copilot', project: chat ? 'Copilot chat' : projectName(cwd) || 'copilot', cwd: chat ? '' : cwd, model, state: working ? (doing ? 'tool' : 'thinking') : 'idle', doing: working ? doing : '', idleSec: working ? 0 : Math.round(age / 1000), updated: mtime };
+  }).filter(Boolean);
+}
+
+function sqliteRows(db, sql) {
+  if (!fs.existsSync(db)) return [];
+  const r = spawnSync('sqlite3', ['-readonly', '-json', db, sql], { encoding: 'utf8', timeout: 4000 });
+  try { return JSON.parse(r.stdout || '[]'); } catch { return []; }
+}
+
+/** Hermes and OpenCode keep sessions in SQLite: read-only queries. */
+export function dbSessions({ home = os.homedir(), now = Date.now() } = {}) {
+  const out = [];
+  const since = (now - SHOW_MS);
+  for (const r of sqliteRows(path.join(home, '.hermes', 'state.db'), `select id, title, cwd, model, coalesce(last_activity_at, started_at) as updated from sessions where coalesce(last_activity_at, started_at) > ${since / 1000} order by updated desc limit 6`)) {
+    const t = Number(r.updated) * 1000, age = now - t;
+    out.push({ id: `hermes:${r.id}`, tool: 'Hermes', project: projectName(r.cwd) || r.title || 'hermes', cwd: r.cwd ?? '', model: r.model ?? '', state: age < WORKING_MS ? 'thinking' : 'idle', doing: '', idleSec: age < WORKING_MS ? 0 : Math.round(age / 1000), updated: t });
+  }
+  for (const r of sqliteRows(path.join(home, '.local', 'share', 'opencode', 'opencode.db'), `select id, title, directory, time_updated from session where time_updated > ${since} order by time_updated desc limit 6`)) {
+    const t = Number(r.time_updated), age = now - t;
+    out.push({ id: `opencode:${r.id}`, tool: 'OpenCode', project: projectName(r.directory) || 'opencode', cwd: r.directory ?? '', model: '', state: age < WORKING_MS ? 'thinking' : 'idle', doing: '', idleSec: age < WORKING_MS ? 0 : Math.round(age / 1000), updated: t });
+  }
+  return out;
+}
+
+/** Google Antigravity (Gemini's IDE): one file per conversation; only whether it is active. */
+export function antigravitySessions({ home = os.homedir(), now = Date.now() } = {}) {
+  const dir = path.join(home, '.gemini', 'antigravity-ide', 'conversations');
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.pb')); } catch { return []; }
+  return names.map((n) => {
+    let m = 0;
+    try { m = fs.statSync(path.join(dir, n)).mtimeMs; } catch { return null; }
+    const age = now - m;
+    if (age > SHOW_MS) return null;
+    return { id: `antigravity:${n.replace(/\.pb$/, '')}`, tool: 'Antigravity', project: 'Antigravity', cwd: '', model: 'gemini', state: age < WORKING_MS ? 'thinking' : 'idle', doing: '', idleSec: age < WORKING_MS ? 0 : Math.round(age / 1000), updated: m };
+  }).filter(Boolean);
+}
+
 let cache = { at: 0, rows: [] };
 /** Every live session of other agents, newest first (cached 2 s: the island polls often). */
 export function liveAgents({ home = os.homedir(), now = Date.now(), fresh = false } = {}) {
   if (!fresh && now - cache.at < 2000 && home === os.homedir()) return cache.rows;
-  const rows = [...claudeSessions({ home, now }), ...codexSessions({ home, now })].sort((a, b) => b.updated - a.updated).slice(0, 12);
+  const safe = (f) => { try { return f({ home, now }); } catch { return []; } };
+  const rows = [claudeSessions, codexSessions, copilotSessions, dbSessions, antigravitySessions].flatMap(safe).sort((a, b) => b.updated - a.updated).slice(0, 16);
   if (home === os.homedir()) cache = { at: now, rows };
   return rows;
 }
@@ -122,4 +186,115 @@ export function asBoardRows(rows, now = Date.now()) {
     title: s.project, state: s.state, tool: s.state === 'tool' ? s.doing.split(' ')[0] : null, detail: s.doing,
     idleSec: s.idleSec, started: s.updated, updated: s.updated, parent: null, steps: 0, seconds: Math.round((now - s.updated) / 1000),
   }));
+}
+
+// ---------------------------------------------------------------- one session
+
+/** The last messages of a session, for the island's session card. */
+export async function sessionMessages(id, { home = os.homedir(), limit = 12 } = {}) {
+  const [tool, ...rest] = String(id).replace(/^ext:/, '').split(':');
+  const sid = rest.join(':');
+  if (tool === 'copilot') {
+    const msgs = [];
+    for (const l of tailLines(path.join(home, '.copilot', 'session-state', sid, 'events.jsonl'), 512 * 1024)) {
+      if (l.type === 'user.message' && typeof l.data?.content === 'string') msgs.push({ role: 'user', text: l.data.content });
+      if (l.type === 'assistant.message' && typeof l.data?.content === 'string' && l.data.content.trim()) msgs.push({ role: 'assistant', text: l.data.content });
+    }
+    return { tool, id: sid, messages: msgs.slice(-limit).map((m) => ({ ...m, text: m.text.slice(0, 1200) })), canSend: false, why: "Copilot's agent has no command to continue a session from outside" };
+  }
+  const T = await import('./session-transfer.js');
+  if (!['claude', 'codex', 'hermes'].includes(tool)) return { tool, id: sid, messages: [], canSend: false, why: `${tool} keeps its conversation where ox cannot read it; open it in ${tool}` };
+  const entry = T.listSessions({ home, tools: [tool], limit: 200 }).find((x) => String(x.id) === sid);
+  if (!entry) throw new Error(`no ${tool} session ${sid}`);
+  const s = T.readSession(entry, { home });
+  return { tool, id: sid, cwd: s.cwd, model: s.model, title: s.title, messages: s.messages.slice(-limit).map((m) => ({ role: m.role, text: String(m.text ?? '').slice(0, 1200), tools: (m.tools ?? []).slice(-3).map((t) => describeCall(t.name, { command: t.input, file_path: t.input })) })), canSend: true };
+}
+
+/** How each tool continues a session with one message (its own resume, headless). */
+export function sendCommand(tool, sid, text, bin = (t, f) => f) {
+  if (tool === 'claude') return [bin('claude', 'claude'), ['-p', text, '--resume', sid]];
+  if (tool === 'codex') return [bin('codex', 'codex'), ['exec', 'resume', sid, text]];
+  if (tool === 'hermes') return ['hermes', ['chat', '-q', text, '--resume', sid, '-Q']];
+  return null;
+}
+
+const queue = new Map(); // id -> [{ text, at }]
+const sending = new Set();
+
+/**
+ * Send a message to a session from the island. It runs one turn of that
+ * session through the tool's own resume. A session at work in its own window is
+ * never written to at the same time: the message waits until it is idle.
+ */
+export async function sendToSession(id, text, { home = os.homedir(), run = null } = {}) {
+  const key = String(id).replace(/^ext:/, '');
+  const [tool, ...rest] = key.split(':');
+  const sid = rest.join(':');
+  const msg = String(text ?? '').trim();
+  if (!msg) throw new Error('nothing to send');
+  const T = await import('./session-transfer.js');
+  const cmd = sendCommand(tool, sid, msg, T.binaryFor);
+  if (!cmd) throw new Error(`ox cannot send to a ${tool} session; open it in ${tool}`);
+  const live = liveAgents({ home, fresh: true }).find((s) => s.id === key);
+  if ((live && live.state !== 'idle') || sending.has(key)) {
+    queue.set(key, [...(queue.get(key) ?? []), { text: msg, at: Date.now() }]);
+    waitAndSend(key, home, run);
+    return { queued: true, why: `${live?.tool ?? tool} is working on this session now; your message goes in as soon as it is idle` };
+  }
+  return runTurn(key, tool, sid, msg, live?.cwd || null, home, run);
+}
+
+function runTurn(key, tool, sid, msg, cwd, home, run) {
+  return new Promise((resolve) => {
+    import('./session-transfer.js').then((T) => {
+      const [cmd, args] = sendCommand(tool, sid, msg, T.binaryFor);
+      sending.add(key);
+      const go = run ?? ((c, a, o) => spawn(c, a, o));
+      const p = go(cmd, args, { cwd: cwd && fs.existsSync(cwd) ? cwd : home, env: { ...process.env, OX_ISLAND: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
+      let out = '', err = '';
+      p.stdout?.on('data', (d) => { out += d; if (out.length > 100_000) out = out.slice(-50_000); });
+      p.stderr?.on('data', (d) => { err += d; if (err.length > 20_000) err = err.slice(-10_000); });
+      const timer = setTimeout(() => p.kill?.('SIGTERM'), 20 * 60_000);
+      p.on('close', (code) => { clearTimeout(timer); sending.delete(key); resolve({ ok: code === 0, reply: out.trim().slice(-4000), error: code === 0 ? null : (err.trim().split('\n').pop() || `exit ${code}`) }); });
+      p.on('error', (e) => { clearTimeout(timer); sending.delete(key); resolve({ ok: false, error: e.message }); });
+    });
+  });
+}
+
+const waiting = new Set();
+function waitAndSend(key, home, run) {
+  if (waiting.has(key)) return;
+  waiting.add(key);
+  const started = Date.now();
+  const tick = async () => {
+    const q = queue.get(key) ?? [];
+    if (!q.length || Date.now() - started > 30 * 60_000) { waiting.delete(key); return; }
+    const live = liveAgents({ home, fresh: true }).find((s) => s.id === key);
+    if ((live && live.state !== 'idle') || sending.has(key)) { setTimeout(tick, 5000).unref?.(); return; }
+    const next = q.shift();
+    queue.set(key, q);
+    const [tool, ...rest] = key.split(':');
+    await runTurn(key, tool, rest.join(':'), next.text, live?.cwd || null, home, run);
+    setTimeout(tick, 1000).unref?.();
+  };
+  setTimeout(tick, 5000).unref?.();
+}
+
+export const queuedFor = (id) => (queue.get(String(id).replace(/^ext:/, '')) ?? []).length;
+
+/** Open the session in Terminal, continued by its own tool (you take over there). */
+export async function openInTerminal(id, { home = os.homedir(), dryRun = false } = {}) {
+  const key = String(id).replace(/^ext:/, '');
+  const [tool, ...rest] = key.split(':');
+  const sid = rest.join(':');
+  const T = await import('./session-transfer.js');
+  const cmds = { claude: [T.binaryFor('claude', 'claude'), '--resume', sid], codex: [T.binaryFor('codex', 'codex'), 'resume', sid], hermes: ['hermes', '--resume', sid] };
+  const argv = cmds[tool];
+  if (!argv) throw new Error(`open ${tool} itself to continue this session`);
+  const live = liveAgents({ home }).find((s) => s.id === key);
+  const q = (a) => `'${String(a).replace(/'/g, `'\\''`)}'`;
+  const line = `${live?.cwd ? `cd ${q(live.cwd)} && ` : ''}${argv.map(q).join(' ')}`;
+  if (dryRun || process.platform !== 'darwin') return { line };
+  spawnSync('osascript', ['-e', `tell application "Terminal" to do script ${JSON.stringify(line)}`, '-e', 'tell application "Terminal" to activate'], { timeout: 10000 });
+  return { line, opened: true };
 }

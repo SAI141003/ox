@@ -25,6 +25,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.orderFrontRegardless()
         self.panel = panel
         bridge.start()
+        // Check without touching the mouse: OX_ISLAND_DEMO=card opens the island
+        // and the first session's card a few seconds after launch (screenshots).
+        if ProcessInfo.processInfo.environment["OX_ISLAND_DEMO"] == "card" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [bridge] in
+                bridge.pinnedOpen = true
+                if let s = bridge.sessions.first(where: { OxBridge.externalId($0.id) != nil && $0.mood == .idle }) ?? bridge.sessions.first { bridge.openCard(s) }
+            }
+        }
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -265,6 +273,30 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-runs"), i + 2 < Comman
             try? png.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 2]))
         }
         print("\(b.sessions.count) runs")
+    }
+    exit(0)
+}
+
+// Dev aid: `OxIsland --render-card <board.json> <file.png>`: the first session's card.
+if let i = CommandLine.arguments.firstIndex(of: "--render-card"), i + 2 < CommandLine.arguments.count {
+    MainActor.assumeIsolated {
+        let b = OxBridge()
+        if let d = FileManager.default.contents(atPath: CommandLine.arguments[i + 1]),
+           let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any], let runs = j["runs"] as? [[String: Any]] {
+            b.previewBoard(runs)
+        }
+        guard let s = b.sessions.last else { print("no sessions"); return }
+        var c = OxBridge.SessionCard(id: s.id)
+        c.lines = [.init(mine: true, text: "Restart the Windows hanging-test session where it stopped."),
+                   .init(mine: false, text: "PR SAI141003/ox#1 is open: the Windows unit suite no longer hangs. It finishes in 6.1 min (1705 pass / 172 fail)."),
+                   .init(mine: true, text: "now fix the 172 Windows failures")]
+        c.note = "Claude Code is working on this session now; your message goes in as soon as it is idle"
+        let view = SessionCardView(bridge: b, session: s, card: c).frame(width: 600, height: 172).padding(10).background(Color.black)
+        let r = ImageRenderer(content: view)
+        r.scale = 2
+        if let img = r.nsImage, let tiff = img.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 2]))
+        }
     }
     exit(0)
 }

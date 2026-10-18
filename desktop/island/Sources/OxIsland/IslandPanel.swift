@@ -24,13 +24,16 @@ struct NotchMetrics: Equatable {
 /// Every size the island can take, in one place, so the SwiftUI shape and the
 /// AppKit hit-test always agree on where the island is.
 enum IslandLayout {
-    static let panel = CGSize(width: 720, height: 400)
+    static let panel = CGSize(width: 720, height: 460)
     static let wing: CGFloat = 46
     static let ear: CGFloat = 12
     /// Standard, or Compact ("make the island smaller"): no walking-ox floor and a narrower card.
     static var compact: Bool { UserDefaults.standard.string(forKey: "island.size") == "compact" }
     /// The floor the (full-size) ox walks on, under the card (none when compact).
-    static var floorHeight: CGFloat { compact ? 0 : 92 }
+    /// Sessions are listed: the island stays slim like Coucou's and Claudex's
+    /// (small characters in the rows, no walking-ox floor under them).
+    static var busy = false
+    static var floorHeight: CGFloat { compact || busy ? 0 : 92 }
     static var expanded: CGSize { CGSize(width: compact ? 520 : 640, height: 168 + floorHeight) }
     /// Seconds the island stays open after the pointer leaves (0 = until you close it).
     static var autoClose: TimeInterval { UserDefaults.standard.object(forKey: "island.autoClose") as? Double ?? 6 }
@@ -51,12 +54,14 @@ enum IslandLayout {
     }
 
     /// width, height, bottom corner radius, top radius (<0 = concave ears)
+    /// A session card is a little taller than the office (it has a message box).
+    static var cardOpen = false
     static func shape(_ phase: Phase, _ m: NotchMetrics, office: Bool = false, idle: Bool = false) -> (w: CGFloat, h: CGFloat, corner: CGFloat, top: CGFloat) {
         switch phase {
         case .launch: return (launchSize.width, launchSize.height, 30, -ear)
         case .hidden: return (m.width, m.height, 10, 0)
         case .compact: return (m.width + 2 * wing + 2 * ear, m.height, 12, -ear)
-        case .expanded: return (expanded.width, expanded.height - (idle ? idleCardTrim : 0) + (office ? officeHeight : 0), 26, -ear)
+        case .expanded: return (expanded.width, expanded.height - (idle ? idleCardTrim : 0) + (office ? officeHeight : 0) + (cardOpen ? 40 : 0), 26, -ear)
         }
     }
 }
@@ -88,7 +93,7 @@ final class IslandPanel: NSPanel {
         ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
 
-        let host = NSHostingView(rootView: IslandRoot(bridge: bridge))
+        let host = FirstClickHostingView(rootView: IslandRoot(bridge: bridge))
         host.wantsLayer = true
         host.layer?.backgroundColor = .clear
         contentView = host
@@ -102,6 +107,9 @@ final class IslandPanel: NSPanel {
             }
             return ev
         }
+        bridge.cardChanged = { [weak self] open in
+            DispatchQueue.main.async { if open { self?.makeKeyAndOrderFront(nil) } else if self?.isKeyWindow == true, self?.bridge.tray != .chat { self?.resignKey() } }
+        }
         bridge.trayChanged = { [weak self] tab in
             DispatchQueue.main.async {
                 if tab == .chat { self?.makeKeyAndOrderFront(nil) } else if self?.isKeyWindow == true { self?.resignKey() }
@@ -111,7 +119,7 @@ final class IslandPanel: NSPanel {
 
     // Only while the chat is open: the island never takes keystrokes from the
     // app you are typing in unless you opened its text box.
-    override var canBecomeKey: Bool { bridge.tray == .chat }
+    override var canBecomeKey: Bool { bridge.tray == .chat || bridge.card != nil }
     override var canBecomeMain: Bool { false }
 
     func reposition(animated: Bool) {
@@ -150,13 +158,16 @@ final class IslandPanel: NSPanel {
         // Opened by a click (or a tool), it closes on its own once the pointer
         // has been away a few seconds, unless an answer is coming or ox waits on you.
         if inside { awaySince = nil }
-        else if bridge.pinnedOpen || bridge.tray != nil {
+        else if bridge.pinnedOpen || bridge.tray != nil || bridge.card != nil {
             if awaySince == nil { awaySince = Date() }
             let wait = IslandLayout.autoClose
             if wait > 0, let since = awaySince, Date().timeIntervalSince(since) > wait,
-               !bridge.chat.busy, bridge.pendingSession == nil, !bridge.buddyActive {
+               !bridge.chat.busy, bridge.pendingSession == nil, !bridge.buddyActive, !(bridge.card?.busy ?? false),
+               // Typing in the island (a message to a session, the chat): it stays until you close it.
+               !isKeyWindow {
                 bridge.pinnedOpen = false
                 bridge.tray = nil
+                bridge.card = nil
                 awaySince = nil
             }
         }
@@ -181,4 +192,11 @@ final class IslandPanel: NSPanel {
         let near = island.insetBy(dx: -260, dy: -200).contains(local)
         setPoll(near || bridge.expanded ? 1.0 / 60 : 1.0 / 10)
     }
+}
+
+
+/// The island never takes focus from the app you are in, so the first click on
+/// it must act (Allow, a session, a tray tool), not just bring the panel forward.
+final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

@@ -53,6 +53,7 @@ States: ✓ the island has it, checked · ~ partly · ✗ missing · → being b
 | No account, no telemetry | ✓ | ? | ? | ✓ |
 | Checks itself, gets better from real use | — | — | — | ✓ `ox island evals` (22/22 errands, 27/27 commands), `ox island learn`, `ox island evolve` |
 | Many agents at work, shown as an office | — | — | — | ✓ pixel office with a desk per helper |
+| Every agent tool's sessions in the notch, each with its own character | ✓ (live feed, per agent) | — | — | ✓ Claude Code, Codex, Copilot, Hermes, OpenCode, Antigravity, ox; click one: read it, message it, open it in Terminal |
 | Local and cloud models, any provider, plans | Claude Code etc. | ? | ? | ✓ 37 providers, local models, plans |
 
 ## Where the island is ahead

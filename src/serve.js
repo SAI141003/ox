@@ -1561,6 +1561,11 @@ async function handleImage(req, res) {
 }
 
 const ROUTES = [
+  // Other agents' sessions (src/agents-live.js): read one, message it, open it in Terminal.
+  { method: 'GET', pattern: /^\/ox\/agents\/?$/, handler: appRoute(async () => ({ sessions: (await import('./agents-live.js')).liveAgents() })) },
+  { method: 'POST', pattern: /^\/ox\/agents\/session\/?$/, handler: appRoute(async (body) => { const A = await import('./agents-live.js'); const r = await A.sessionMessages(body?.id); return { ...r, queued: A.queuedFor(body?.id) }; }) },
+  { method: 'POST', pattern: /^\/ox\/agents\/send\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).sendToSession(body?.id, body?.text)) },
+  { method: 'POST', pattern: /^\/ox\/agents\/open\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).openInTerminal(body?.id)) },
   { method: 'GET', pattern: /^\/ox\/live\/?$/, handler: async (req, res) => { if (!authorized(req)) return unauthorized(res); sendJson(res, 200, (await import('./live-board.js')).liveBoard()); } },
   { method: 'GET', pattern: /^\/ox\/image\/?$/, handler: handleImage },
   { method: 'POST', pattern: /^\/ox\/followups\/?$/, handler: appRoute(followupsRoute) },

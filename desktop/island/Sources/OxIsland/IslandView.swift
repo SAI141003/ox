@@ -258,7 +258,14 @@ struct ExpandedContent: View {
                     .padding(.horizontal, floorPad)
                     .padding(.top, 4)
             }
-            if bridge.tray != nil {
+            if let c = bridge.card, let session = bridge.sessions.first(where: { $0.id == c.id }) {
+                // A session you clicked: its conversation, a message box, Open in Terminal.
+                SessionCardView(bridge: bridge, session: session, card: c)
+                    .padding(.horizontal, IslandLayout.ear + 10)
+                    .padding(.top, 8)
+                    .frame(height: IslandLayout.officeHeight + 40, alignment: .top)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else if bridge.tray != nil {
                 // A tool the person opened wins over the ambient office/canvas.
                 TrayPanel(bridge: bridge)
                     .padding(.horizontal, IslandLayout.ear + 10)
@@ -281,6 +288,10 @@ struct ExpandedContent: View {
             }
             Spacer(minLength: 0)
         }
+    }
+
+    private func rank(_ s: AgentSession) -> Int {
+        switch s.mood { case .needsYou: return 0; case .error: return 1; case .working: return 2; case .thinking: return 3; case .done: return 4; default: return 5 }
     }
 
     private var oxMood: Mood {
@@ -332,10 +343,12 @@ struct ExpandedContent: View {
                 NowPlayingPill(player: bridge.player)
             }
         } else {
-            VStack(alignment: .leading, spacing: 7) {
-                ForEach(bridge.sessions.prefix(3)) { s in RunRow(bridge: bridge, session: s) }
-                if bridge.sessions.count > 3 {
-                    Text("and \(bridge.sessions.count - 3) more").font(.system(size: 11)).foregroundStyle(Ink.dim)
+            VStack(alignment: .leading, spacing: 4) {
+                // Working ones first; each row is a session you can click open.
+                let ordered = bridge.sessions.sorted { rank($0) < rank($1) }
+                ForEach(ordered.prefix(4)) { s in RunRow(bridge: bridge, session: s) }
+                if bridge.sessions.count > 4 {
+                    Text("and \(bridge.sessions.count - 4) more").font(.system(size: 11)).foregroundStyle(Ink.dim)
                 }
             }
         }
@@ -500,8 +513,8 @@ struct RunRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            AgentFace(color: Color(hex: bridge.color(of: session)), mood: session.mood, size: 16)
-            Text(session.project).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Ink.text).lineLimit(1)
+            SessionCharacter(session: session, height: 18)
+            Text(session.project).font(.system(size: 12, weight: .semibold)).foregroundStyle(Ink.text).lineLimit(1)
                 .frame(maxWidth: 140, alignment: .leading)
             Text(session.activity).font(.system(size: 12)).foregroundStyle(activityColor)
                 .lineLimit(1).truncationMode(.middle)
@@ -511,7 +524,11 @@ struct RunRow: View {
                 Text(total >= 1000 ? String(format: "%.1fk", Double(total) / 1000) : "\(total)")
                     .font(.system(size: 11).monospacedDigit()).foregroundStyle(Ink.dim)
             }
+            Image(systemName: bridge.card?.id == session.id ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Ink.dim)
         }
+        .contentShape(Rectangle())
+        .onTapGesture { bridge.openCard(session) }
+        .help("Open this session: read it, message it, open it in Terminal")
     }
 
     private var activityColor: Color {
@@ -606,5 +623,89 @@ struct PillButton: View {
         .buttonStyle(.plain)
         .onHover { hover = $0 }
         .animation(.easeOut(duration: 0.12), value: hover)
+    }
+}
+
+
+/// A session's own character (the pixel cast), posed by what it is doing.
+struct SessionCharacter: View {
+    let session: AgentSession
+    let height: CGFloat
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 6.0)) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            let pose: PixelPose = {
+                switch session.mood {
+                case .working: return PixelPose(dir: .front, pose: Int(t * 2) % 2 == 0 ? "point" : "open", mouth: "small")
+                case .thinking: return PixelPose(dir: .front, pose: "think", mouth: "closed", blink: Int(t * 3) % 9 == 0)
+                case .needsYou: return PixelPose(dir: .front, pose: "wave", frame: Int(t * 4) % 2, mouth: "open")
+                case .done: return PixelPose(dir: .front, pose: "open", mouth: "smile")
+                case .error: return PixelPose(dir: .front, pose: "stand", mouth: "round")
+                default: return PixelPose(dir: .front, pose: "stand", mouth: "rest", blink: Int(t * 2) % 7 == 0)
+                }
+            }()
+            PixelPersonView(person: OxBridge.character(for: session.id), pose: pose, height: height)
+        }
+        .frame(width: height * 18 / 26, height: height)
+    }
+}
+
+/// The session you clicked: what it said, a box to message it, Open in Terminal.
+struct SessionCardView: View {
+    @ObservedObject var bridge: OxBridge
+    let session: AgentSession
+    let card: OxBridge.SessionCard
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                SessionCharacter(session: session, height: 26)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(session.project).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Ink.text).lineLimit(1)
+                    Text([session.activity, session.model].filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 10.5)).foregroundStyle(Ink.muted).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                if OxBridge.externalId(session.id) != nil {
+                    PillButton(title: "Open in Terminal", primary: false) { bridge.openCardInTerminal() }
+                }
+                Button { bridge.card = nil } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)) }
+                    .buttonStyle(.plain).foregroundStyle(Ink.dim).help("Close")
+            }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(card.lines) { l in
+                            Text(l.text).font(.system(size: 11.5)).foregroundStyle(l.mine ? Color.black : Ink.text.opacity(0.9))
+                                .lineLimit(6).textSelection(.enabled)
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                .background(RoundedRectangle(cornerRadius: 9).fill(l.mine ? Ink.text : Color.white.opacity(0.07)))
+                                .frame(maxWidth: .infinity, alignment: l.mine ? .trailing : .leading)
+                                .id(l.id)
+                        }
+                        if card.busy { ActivityDots(count: 1).padding(.leading, 6) }
+                    }
+                }
+                .onChange(of: card.lines.count) { withAnimation { proxy.scrollTo(card.lines.last?.id, anchor: .bottom) } }
+                .onAppear { proxy.scrollTo(card.lines.last?.id, anchor: .bottom) }
+            }
+            if !card.note.isEmpty { Text(card.note).font(.system(size: 10.5)).foregroundStyle(Ink.muted).lineLimit(2) }
+            if card.canSend {
+                HStack(spacing: 6) {
+                    TextField("Message \(session.project)…", text: $draft)
+                        .textFieldStyle(.plain).font(.system(size: 12)).foregroundStyle(Ink.text)
+                        .padding(.horizontal, 9).padding(.vertical, 5)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.07)))
+                        .focused($focused)
+                        .onSubmit { bridge.sendToCard(draft); draft = "" }
+                    PillButton(title: card.busy ? "…" : "Send", primary: true) { bridge.sendToCard(draft); draft = "" }
+                }
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Ink.card))
+        .onAppear { focused = true }
     }
 }
