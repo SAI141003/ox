@@ -535,7 +535,7 @@ test('ipc: malformed JSON does not crash the server and the next valid frame sti
 });
 
 test('ipc: a client message larger than the frame cap is dropped, not buffered', async (t) => {
-  const { server, client } = await pair(t);
+  const { server, client, messages } = await pair(t);
   const warnings = [];
   server.on('protocol-warning', (w) => warnings.push(w));
   const before = warnings.length;
@@ -546,6 +546,9 @@ test('ipc: a client message larger than the frame cap is dropped, not buffered',
   // the connection survived and still answers
   assert.equal(server.clients.size, 1);
   client.ping();
+  assert.ok(await waitFor(() => messages.of('pong')[0], { what: 'pong after the oversize frame', timeoutMs: 10_000 }));
+  // the tail of the dropped frame is skipped, not parsed as a frame of its own
+  assert.deepEqual(warnings.filter((w) => w.reason === 'malformed-json'), []);
 });
 
 test('ipc: ping is answered with pong', async (t) => {
@@ -778,7 +781,9 @@ test('ipc: a live server socket is never stolen by a second server', async (t) =
   const client = connectIpcClient({ socketPath, clientId: 'still-here' });
   t.after(() => client.close());
   await once(client, 'open');
-  assert.equal(owner.clients.size, 1);
+  // A pipe client can see its connect complete before the server's accept
+  // callback has run, so wait for the owner to register it.
+  await waitFor(() => owner.clients.size === 1, { what: 'the owner to accept the client' });
   assert.equal(intruder.clients.size, 0);
 });
 

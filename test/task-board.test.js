@@ -40,8 +40,15 @@ async function race(o, t) {
   const procs = Array.from({ length: 8 }, () => {
     const p = spawn(process.execPath, ['-e', code]);
     let out = '';
+    let err = '';
     p.stdout.on('data', (d) => { out += d; if (out === 'WIN' || out === 'LOSE') answers.push(out); });
-    return new Promise((resolve) => p.on('close', resolve));
+    p.stderr.on('data', (d) => { err += d; });
+    // A child that dies without answering is an answer too, or the wait below
+    // would never end.
+    return new Promise((resolve) => p.on('close', (code) => {
+      if (out !== 'WIN' && out !== 'LOSE') answers.push(`EXIT ${code}: ${err.trim().split('\n').slice(-3).join(' | ')}`);
+      resolve();
+    }));
   });
   await new Promise((r) => setTimeout(r, 1500)); // let them all reach the start line
   fs.writeFileSync(go, '');
