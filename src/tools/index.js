@@ -795,8 +795,54 @@ export function offloadLarge(name, out, ctx = {}) {
     return out;
   }
   const lines = text.split('\n').length;
+  const picked = relevantLines(text, ctx?.taskText ?? '');
+  if (picked) {
+    const note = `[ox: this result is ${text.length.toLocaleString('en-US')} characters (${lines.toLocaleString('en-US')} lines). Shown: its start and end, and the ${picked.kept} lines that matter here (errors, failures, warnings, lines about the task), each with its line number. The whole of it is in ${file}: read_file it with offset/limit for more.]`;
+    return { ...out, content: `${note}\n${picked.text}`, meta: { ...(out.meta ?? {}), offloaded: { file, chars: text.length, lines, kept: picked.kept } } };
+  }
   const head = text.slice(0, OFFLOAD_HEAD);
   const tail = text.slice(-OFFLOAD_TAIL);
   const note = `\n\n[ox: this result is ${text.length.toLocaleString('en-US')} characters (${lines.toLocaleString('en-US')} lines); the start and the end are shown. The whole of it is in ${file} — read_file it with offset/limit for the part you need.]\n\n`;
   return { ...out, content: `${head}${note}…${tail}`, meta: { ...(out.meta ?? {}), offloaded: { file, chars: text.length, lines } } };
+}
+
+// trim-1's idea (caveman-ai/trim-1: "why read many line when few do trick"):
+// from a long output keep the lines the question needs, each exact, nothing
+// rewritten. ox's own version needs no model: lines that signal a problem, and
+// lines sharing a word with the task, with two lines of context around each,
+// plus the first and last lines; in the same budget as head + tail. Returns
+// null when nothing stands out, so plain head + tail is used.
+const SIGNAL = /\b(error|errors|fail(?:ed|ure|ing|s)?|exception|traceback|panic|fatal|assert(?:ion)?|warn(?:ing)?|denied|refused|not found|undefined|cannot|unable|timeout|timed out|segfault|exit code [1-9])\b|✗|✖|not ok\b|^\s*at .+:\d+:\d+\)?$/i;
+const STOP = new Set(['the', 'and', 'for', 'with', 'this', 'that', 'from', 'into', 'have', 'what', 'when', 'where', 'which', 'why', 'how', 'make', 'please', 'file', 'files', 'code', 'test', 'tests', 'run', 'fix', 'add', 'use', 'new', 'all', 'can', 'not', 'are', 'does', 'did', 'you', 'your', 'out', 'then', 'them', 'there']);
+export function relevantLines(text, task = '', { budget = OFFLOAD_HEAD + OFFLOAD_TAIL, context = 2, edge = 6 } = {}) {
+  const lines = String(text).split('\n');
+  if (lines.length < 40) return null;
+  const words = [...new Set(String(task).toLowerCase().split(/[^a-z0-9_.$-]+/).filter((w) => w.length > 3 && !STOP.has(w)))].slice(0, 12);
+  const score = lines.map((l) => (SIGNAL.test(l) ? 2 : 0) + (words.some((w) => l.toLowerCase().includes(w)) ? 1 : 0));
+  const hits = score.reduce((n, sc) => n + (sc > 0 ? 1 : 0), 0);
+  if (!hits) return null;
+  const keep = new Set();
+  for (let i = 0; i < Math.min(edge, lines.length); i++) keep.add(i);
+  for (let i = Math.max(0, lines.length - edge); i < lines.length; i++) keep.add(i);
+  // Strongest first, so a budget cut drops the weakest matches, not the errors.
+  const order = score.map((sc, i) => [sc, i]).filter(([sc]) => sc > 0).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  let used = [...keep].reduce((n, i) => n + lines[i].length + 8, 0);
+  for (const [, i] of order) {
+    const span = [];
+    for (let j = Math.max(0, i - context); j <= Math.min(lines.length - 1, i + context); j++) if (!keep.has(j)) span.push(j);
+    const cost = span.reduce((n, j) => n + Math.min(lines[j].length, 400) + 8, 0);
+    if (used + cost > budget) continue;
+    for (const j of span) keep.add(j);
+    used += cost;
+  }
+  const idx = [...keep].sort((a, b) => a - b);
+  const out = [];
+  let prev = -1;
+  for (const i of idx) {
+    if (i > prev + 1) out.push(`… (${i - prev - 1} lines left out)`);
+    out.push(`${String(i + 1).padStart(5)}| ${lines[i].length > 400 ? `${lines[i].slice(0, 400)}…` : lines[i]}`);
+    prev = i;
+  }
+  if (prev < lines.length - 1) out.push(`… (${lines.length - 1 - prev} lines left out)`);
+  return { text: out.join('\n'), kept: idx.length };
 }

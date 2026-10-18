@@ -306,10 +306,22 @@ function ourEntry(spec, agent, event, timeout) {
 
 // The settings document with ox's hooks added (or removed), without touching
 // anything else in it — other tools' hooks and your own stay exactly as they are.
-export function withHooks(doc = {}, { remove = false, agent = 'claude' } = {}) {
+// Claude Code shares your plan limits only with its status-line command, so
+// connecting Claude also routes the status line through `ox statusline`
+// (src/statusline.js), which records the limits and then runs the status line
+// you had before: what you see in Claude Code does not change.
+export const statuslineCommand = () => { const q = (s) => (/[\s"'$`\\]/.test(s) ? `'${s.replace(/'/g, "'\\''")}'` : s); return `${q(process.execPath)} ${q(OX_BIN)} statusline`; };
+const isOurStatusline = (sl) => typeof sl?.command === 'string' && / statusline$/.test(sl.command.trim()) && sl.command.includes('ox');
+
+export function withHooks(doc = {}, { remove = false, agent = 'claude', restoreStatusline = null } = {}) {
   const spec = AGENTS[agent];
   const M = mark(agent);
   const next = JSON.parse(JSON.stringify(doc ?? {}));
+  if (agent === 'claude') {
+    if (!remove) next.statusLine = { ...(next.statusLine && !isOurStatusline(next.statusLine) && typeof next.statusLine === 'object' ? { padding: next.statusLine.padding } : {}), type: 'command', command: statuslineCommand() };
+    else if (isOurStatusline(next.statusLine)) { if (restoreStatusline) next.statusLine = restoreStatusline; else delete next.statusLine; }
+    if (next.statusLine && next.statusLine.padding === undefined) delete next.statusLine.padding;
+  }
   next.hooks = next.hooks && typeof next.hooks === 'object' && !Array.isArray(next.hooks) ? next.hooks : {};
   const events = new Set([...Object.keys(spec.events), ...Object.keys(next.hooks)]);
   for (const event of events) {
@@ -338,9 +350,15 @@ export function planInstall(agent = 'claude', { remove = false, file = AGENTS[ag
   if (text.trim()) {
     try { doc = JSON.parse(text); } catch { throw new Error(`${file} is not valid JSON — fix it first; ox will not rewrite a file it cannot read`); }
   }
-  const after = withHooks(doc, { remove, agent });
+  // The status line you had, kept so `ox statusline` can still show it and an
+  // uninstall can put it back.
+  const prevFile = path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'statusline-previous.json');
+  let restoreStatusline = null;
+  if (agent === 'claude' && remove) { try { restoreStatusline = JSON.parse(fs.readFileSync(prevFile, 'utf8'))?.statusLine ?? null; } catch {} }
+  const previousStatusline = agent === 'claude' && !remove && doc.statusLine && !isOurStatusline(doc.statusLine) ? doc.statusLine : null;
+  const after = withHooks(doc, { remove, agent, restoreStatusline });
   const afterText = `${JSON.stringify(after, null, 2)}\n`;
-  return { file, beforeText: text, afterText, changed: afterText.trim() !== text.trim(), mtimeMs: text ? fs.statSync(file).mtimeMs : null };
+  return { file, beforeText: text, afterText, changed: afterText.trim() !== text.trim(), mtimeMs: text ? fs.statSync(file).mtimeMs : null, previousStatusline, prevFile: agent === 'claude' ? prevFile : null, remove };
 }
 
 export function applyInstall(plan) {
@@ -354,5 +372,11 @@ export function applyInstall(plan) {
   }
   fs.mkdirSync(path.dirname(plan.file), { recursive: true });
   fs.writeFileSync(plan.file, plan.afterText);
+  if (plan.prevFile) {
+    try {
+      if (plan.previousStatusline) { fs.mkdirSync(path.dirname(plan.prevFile), { recursive: true }); fs.writeFileSync(plan.prevFile, `${JSON.stringify({ statusLine: plan.previousStatusline, command: plan.previousStatusline.command ?? null }, null, 2)}\n`, { mode: 0o600 }); }
+      else if (plan.remove) fs.rmSync(plan.prevFile, { force: true });
+    } catch {}
+  }
   return backup;
 }

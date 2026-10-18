@@ -1087,6 +1087,8 @@ async function* runAgentLoop(opts = {}) {
   // Path-scoped rules (globs:) are resolved against the paths this turn is
   // about. Explicit ctx.scopedPaths wins; otherwise the @path refs in the
   // user's own words are the real signal ox has before the model speaks.
+  // What the run is about: long tool output keeps the lines that match it.
+  toolCtx.taskText = String(originalUserText).slice(0, 2000);
   const scopedPaths =
     Array.isArray(ctx.scopedPaths) && ctx.scopedPaths.length
       ? ctx.scopedPaths

@@ -1516,7 +1516,14 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/flows\/?$/, handler: appRoute(async () => { const F = await import('./flows.js'); return { flows: F.listFlows(), runs: F.flowRuns({ limit: 40 }), steps: F.FLOW_STEP_TYPES, triggers: F.FLOW_TRIGGERS }; }) },
   { method: 'POST', pattern: /^\/ox\/flows\/?$/, handler: appRoute(flowsRoute) },
   { method: 'GET', pattern: /^\/ox\/connected\/?$/, handler: appRoute(connectedRoute) },
-  { method: 'GET', pattern: /^\/ox\/plan-usage\/?$/, handler: appRoute(async () => ({ plans: (await import('./plan-usage.js')).planUsage() })) },
+  { method: 'GET', pattern: /^\/ox\/plan-usage\/?$/, handler: appRoute(async () => {
+    const P = await import('./plan-usage.js');
+    const plans = P.planUsage();
+    // A notification before a limit is reached (once per level and reset period).
+    const alerts = process.env.NODE_TEST_CONTEXT ? [] : P.limitAlerts(plans);
+    if (alerts.length) { try { const { osCmd } = await import('./tools/operator.js'); const { spawnSync: run } = await import('node:child_process'); for (const a of alerts) { const c = osCmd('notify', a.text); if (c) run(c[0], c.slice(1), { timeout: 5000 }); } } catch {} }
+    return { plans, alerts };
+  }) },
   { method: 'POST', pattern: /^\/ox\/flows\/hook\/([a-z0-9-]{1,40})\/?$/, handler: flowHook },
   { method: 'POST', pattern: /^\/ox\/voice\/?$/, handler: appRoute(voiceTurn) },
   { method: 'GET', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksView) },
