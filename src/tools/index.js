@@ -53,6 +53,7 @@ export const TOOL_IMPLS = {
   mail_compose,
   web_fetch: webFetchTool,
   web_search: webSearchTool,
+  social_research: async (args = {}) => { const S = await import('../social-research.js'); const q = String(args.query ?? '').trim(); if (!q) return { content: 'social_research: a query is required', isError: true }; const r = await S.research(q, { platforms: Array.isArray(args.platforms) && args.platforms.length ? args.platforms : S.PLATFORMS }); return { content: S.format(r, q), isError: false }; },
   youtube_transcript: (args) => youtubeTranscriptTool(args),
   current_page: (args) => currentPageTool(args),
   critique: critiqueTool,
@@ -466,6 +467,7 @@ export const WEB_KEYWORDS = Object.freeze([
   'advisory', 'issue', 'issues', 'github', 'stackoverflow', 'overflow',
   'news', 'article', 'articles', 'blog', 'quote', 'citation', 'cite', 'source',
   'upstream', 'published', 'announcement', 'postmortem',
+  'reddit', 'subreddit', 'twitter', 'tweets', 'linkedin', 'hackernews', 'sentiment', 'opinions', 'reviews',
   // Everyday asks that only the network can answer. All >= STEM_MIN, so the
   // inflected forms land too ("forecasts", "recipes", "translated").
   'weather', 'forecast', 'temperature', 'recipe', 'translate', 'wikipedia',

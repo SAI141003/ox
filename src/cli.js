@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4611,6 +4611,19 @@ async function runSubcommand(cmd, args) {
     case 'pr':
       await cmdPr(args);
       return;
+    case 'research': {
+      // ox research "<topic>" [--on reddit,hn,youtube,x,linkedin]: what people say.
+      const S = await import('./social-research.js');
+      const oi = args.indexOf('--on');
+      const q = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--on').join(' ');
+      if (!q) { console.error('usage: ox research "<topic>" [--on reddit,hn,youtube,x,linkedin]'); process.exitCode = 3; return; }
+      const r = await S.research(q, { platforms: oi >= 0 ? String(args[oi + 1]).split(',') : S.PLATFORMS });
+      for (const p of r) {
+        console.log(`\n${c.bold(p.platform === 'hn' ? 'Hacker News' : p.platform[0].toUpperCase() + p.platform.slice(1))}${p.error ? c.yellow(`  ${p.error}`) : p.rows.length ? '' : c.dim('  nothing found')}`);
+        for (const x of p.rows) console.log(`  ${x.title}${c.dim(`${x.where ? ` · ${x.where}` : ''}${x.author ? ` · ${x.author}` : ''}${x.score != null ? ` · ${x.score} pts` : ''}`)}\n  ${c.dim(x.url)}`);
+      }
+      return;
+    }
     case 'dictation': {
       // ox dictation style <as-said|natural|polished> [--app Mail] | translate <language|off> | show
       const D = await import('./dictation-style.js');
