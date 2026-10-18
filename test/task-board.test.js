@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   addTask, getTask, claimTask, releaseTask, completeTask, approveTask, rejectTask,
   nextTask, readyTasks, goalChain, taskBrief, addSpend, taskActivity, taskOwner, listTasks,
@@ -26,7 +26,8 @@ test('one owner per task: a second claimer is refused and told who holds it', ()
 });
 
 async function race(o, t) {
-  const mod = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'tasks.js');
+  // A URL, not a path: import() of a bare D:\... path fails on Windows.
+  const mod = pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'tasks.js')).href;
   // Every process waits at a start line (the "go" file), claims at once, and
   // stays alive until all have answered, so no lock is ever legitimately stale.
   const go = path.join(o.dir, 'go');
@@ -46,7 +47,7 @@ async function race(o, t) {
     // A child that dies without answering is an answer too, or the wait below
     // would never end.
     return new Promise((resolve) => p.on('close', (code) => {
-      if (out !== 'WIN' && out !== 'LOSE') answers.push(`EXIT ${code}: ${err.trim().split('\n').slice(-3).join(' | ')}`);
+      if (out !== 'WIN' && out !== 'LOSE') answers.push(`EXIT ${code}: ${err.split('\n').find((l) => /Error/.test(l)) ?? err.trim()}`);
       resolve();
     }));
   });
