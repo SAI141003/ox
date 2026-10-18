@@ -60,3 +60,13 @@ test('image edit requests: OpenAI /images/edits with the file, OpenRouter with t
   const { pick } = await import('../src/tools/media.js');
   assert.equal(pick({ kind: 'image', edit: true }, { HIGGSFIELD_API_KEY: 'x', OPENROUTER_API_KEY: 'k' }).provider, 'openrouter', 'an edit goes to a provider that edits');
 });
+
+test('explainer video: a slide per step, crossfades, long enough to read', { skip: (!hasFfmpeg || !fs.existsSync('/Applications/Google Chrome.app')) && 'needs ffmpeg and Chrome' }, async () => {
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-exp-')), 'e.mp4');
+  const r = await V.explainerVideo('Coffee', ['Grind: beans become powder', 'Brew: hot water pulls the flavour out', 'Pour: into the cup'], { out, secondsPerStep: 2 });
+  assert.equal(r.slides, 3);
+  const p = V.probe(out);
+  assert.equal(p.width, 1280);
+  assert.ok(p.duration > 5.5 && p.duration < 7.5, `duration ${p.duration}`);
+  await assert.rejects(V.explainerVideo('x', ['only one']), /at least two steps/);
+});

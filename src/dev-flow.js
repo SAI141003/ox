@@ -14,6 +14,7 @@
 // - Worktrees: `ox task run <id> --worktree` works in `.ox/worktrees/<id>` on
 //   its own branch, so tasks never step on each other or on your checkout.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 
@@ -426,8 +427,14 @@ export const chromePath = () => CHROME.find((p) => fs.existsSync(p)) ?? null;
 export function screenshot(url, file, { width = 1280, height = 800 } = {}) {
   const chrome = chromePath();
   if (!chrome) fail('a Chrome-type browser is needed for screenshots');
-  const r = spawnSync(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', `--window-size=${width},${height}`, `--screenshot=${file}`, '--virtual-time-budget=4000', url], { encoding: 'utf8', timeout: 60_000 });
-  if (!fs.existsSync(file)) fail(`no screenshot of ${url}: ${(r.stderr || '').split('\n').slice(-2).join(' ')}`);
+  // Its own throwaway profile each time: two Chromes at once never share one (and fail).
+  let r = null;
+  for (let attempt = 0; attempt < 2 && !fs.existsSync(file); attempt++) {
+    const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-chrome-'));
+    r = spawnSync(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check', `--user-data-dir=${profile}`, `--window-size=${width},${height}`, `--screenshot=${file}`, '--virtual-time-budget=4000', url], { encoding: 'utf8', timeout: 60_000 });
+    fs.rmSync(profile, { recursive: true, force: true });
+  }
+  if (!fs.existsSync(file)) fail(`no screenshot of ${url}: ${(r?.stderr || '').split('\n').filter((l) => !/cv_display_link/.test(l)).slice(-2).join(' ')}`);
   return file;
 }
 

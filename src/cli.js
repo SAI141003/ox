@@ -531,6 +531,7 @@ function usageAll() {
     '',
     'library: ox library [add <url|pdf> | read | ask <id> "q" | search]   saved articles and PDFs; highlight and ask in the app',
     'video: ox video transcribe|captions|cut|speed|vertical|highlights|gif|polish|understand <file> …   on this machine',
+    '       ox video explain "<title>" "Step: what happens" …   an explainer video, a slide per step with a lit diagram',
     'traces: ox trace [--signals] | ox trace <id> [--steps]   each run: turns, tokens, cost, tool calls, and "stuck" signals',
     '',
     'pull requests (until they can merge; merging stays yours):',
@@ -4966,6 +4967,17 @@ async function runSubcommand(cmd, args) {
     }
     case 'video': {
       // ox video <op> <file> …: edit a video here (src/video-edit.js).
+      // ox video explain "<title>" "Step: what happens" … : an explainer video from steps (ManimGX's idea).
+      if (args[0] === 'explain') {
+        const V = await import('./video-edit.js');
+        const oi = args.indexOf('--out');
+        const rest = args.slice(1).filter((a, i, l) => a !== '--out' && l[i - 1] !== '--out');
+        const [title, ...steps] = rest;
+        if (!title || steps.length < 2) { console.error('usage: ox video explain "<title>" "Step one: what happens" "Step two: …" [--out file.mp4]'); process.exitCode = 3; return; }
+        try { const r = await V.explainerVideo(title, steps, { out: oi >= 0 ? path.resolve(args[oi + 1]) : null }); console.log(`${c.green('✓')} ${r.file} ${c.dim(`(${r.slides} slides, ${r.seconds} s)`)}`); }
+        catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+        return;
+      }
       const ops = ['transcribe', 'captions', 'cut', 'speed', 'vertical', 'highlights', 'gif', 'polish', 'understand'];
       if (ops.includes(args[0])) {
         const { editVideoTool } = await import('./tools/video.js');

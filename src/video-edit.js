@@ -278,3 +278,56 @@ export function understand(file, { maxFrames = 8, width = 768 } = {}) {
   try { transcript = transcribe(file).segments; } catch {}
   return { duration: p.duration, size: `${p.width}x${p.height}`, frames, transcript, text: transcript.map((s) => `[${Math.floor(s.start / 60)}:${String(Math.floor(s.start % 60)).padStart(2, '0')}] ${s.text}`).join('\n') };
 }
+
+// ---------------------------------------------------------------- explainer videos (ManimGX's idea, ox's way)
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+/** One slide: the title, the step's words, and every step as a flow with this one lit. */
+function slideHtml(title, steps, i) {
+  const s = steps[i];
+  const boxes = steps.map((x, j) => `<div class="b ${j === i ? 'on' : j < i ? 'done' : ''}">${esc(x.label)}</div>`).join('<div class="ar">→</div>');
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+    html,body{margin:0;width:1280px;height:720px;background:radial-gradient(1200px 700px at 30% 10%,#1d2333,#0f1117);color:#f4f4f6;font-family:-apple-system,"SF Pro Display","Segoe UI",Helvetica,Arial,sans-serif}
+    .t{position:absolute;left:80px;top:60px;font-size:30px;color:#9aa4bf;letter-spacing:.02em}
+    .n{position:absolute;left:80px;top:140px;font-size:22px;color:#7dd3fc;font-weight:600}
+    .h{position:absolute;left:80px;top:175px;font-size:64px;font-weight:700;max-width:1100px;line-height:1.05}
+    .p{position:absolute;left:80px;top:300px;font-size:34px;line-height:1.4;max-width:1080px;color:#d7dbe6}
+    .f{position:absolute;left:80px;right:80px;bottom:70px;display:flex;align-items:center;gap:10px;flex-wrap:nowrap}
+    .b{flex:1;min-width:0;text-align:center;padding:16px 8px;border-radius:14px;border:2px solid #39415a;color:#9aa4bf;font-size:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .b.done{border-color:#2f6b55;color:#9fe3c4}
+    .b.on{background:#3b9eff;border-color:#3b9eff;color:#fff;font-weight:700;box-shadow:0 0 40px rgba(59,158,255,.45)}
+    .ar{color:#4b5470;font-size:24px}
+  </style></head><body><div class="t">${esc(title)}</div><div class="n">${i + 1} / ${steps.length}</div><div class="h">${esc(s.label)}</div><div class="p">${esc(s.text)}</div><div class="f">${boxes}</div></body></html>`;
+}
+
+/**
+ * Steps ("Label: what happens" or {label, text}) → an MP4 with a slide per
+ * step, crossfading, each held long enough to read. → { file, slides, seconds }
+ */
+export async function explainerVideo(title, steps, { out = null, secondsPerStep = null, chrome = null } = {}) {
+  const list = steps.map((x, i) => (x && typeof x === 'object' ? { label: String(x.label ?? `Step ${i + 1}`), text: String(x.text ?? '') } : (() => { const m = /^([^:]{1,40}):\s*(.+)$/.exec(String(x)); return m ? { label: m[1].trim(), text: m[2].trim() } : { label: `Step ${i + 1}`, text: String(x) }; })())).slice(0, 12);
+  if (list.length < 2) throw new Error('an explainer needs at least two steps');
+  const D = await import('./dev-flow.js');
+  if (!chrome && !D.chromePath()) throw new Error('making slides needs a Chrome-type browser');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-explain-'));
+  const shots = list.map((_, i) => {
+    const html = path.join(dir, `s${i}.html`);
+    fs.writeFileSync(html, slideHtml(title, list, i));
+    return D.screenshot(`file://${html}`, path.join(dir, `s${i}.png`), { width: 1280, height: 720 });
+  });
+  // Long enough to read: about 2.6 words a second, at least 3.5 s.
+  const hold = list.map((x) => secondsPerStep ?? Math.max(3.5, Math.min(9, (x.label.split(/\s+/).length + x.text.split(/\s+/).length) / 2.6)));
+  const fade = 0.6;
+  const inputs = shots.flatMap((f, i) => ['-loop', '1', '-t', String(hold[i] + fade), '-i', f]);
+  let chain = '[0:v]format=yuv420p[v0]';
+  let offset = 0;
+  for (let i = 1; i < shots.length; i++) {
+    offset += hold[i - 1];
+    chain += `;[${i}:v]format=yuv420p[s${i}];[v${i - 1}][s${i}]xfade=transition=fade:duration=${fade}:offset=${offset.toFixed(2)}[v${i}]`;
+  }
+  const file = out ?? path.join(process.cwd(), `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'explainer'}.mp4`);
+  ff([...inputs, '-filter_complex', chain, '-map', `[v${shots.length - 1}]`, '-r', '30', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', file]);
+  fs.rmSync(dir, { recursive: true, force: true });
+  return { file, slides: shots.length, seconds: Math.round(hold.reduce((a, b) => a + b, 0) + fade) };
+}
