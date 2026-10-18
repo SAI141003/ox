@@ -73,7 +73,7 @@ await new Promise((r) => model.listen(0, '127.0.0.1', r));
 await new Promise((r) => tg.listen(0, '127.0.0.1', r));
 after(() => { model.close(); tg.close(); });
 
-test('pair, ignore strangers, run from a message, approve with a button, get the answer', async () => {
+test('pair, ignore strangers, run from a message, approve with a button, get the answer', async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-tg-home-'));
   const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-tg-proj-')));
   const stateFile = path.join(home, '.ox', 'gateway', 'telegram.json');
@@ -81,6 +81,9 @@ test('pair, ignore strangers, run from a message, approve with a button, get the
   Object.assign(env, { HOME: home, OX_NO_PLUGINS: '1', OX_NO_BUILTIN_SKILLS: '1', OX_BASE_URL: `http://127.0.0.1:${model.address().port}/v1`, OX_API_KEY: 'x', OX_MODEL: 'm' });
   const logs = [];
   const ac = new AbortController();
+  // A failed assertion must still stop the gateway: its long poll otherwise
+  // keeps this process alive and the whole suite waits on it forever.
+  t.after(() => ac.abort());
   const api = telegramApi('TEST-TOKEN', { base: `http://127.0.0.1:${tg.address().port}` });
   // A private socket dir: a real OX Island on this machine watches the temp
   // dir and would otherwise take the approval this test means to answer.
@@ -89,7 +92,8 @@ test('pair, ignore strangers, run from a message, approve with a button, get the
 
   const code = (await until(() => logs.find((l) => /\/pair \d{6}/.test(l)), 'a pairing code')).match(/\/pair (\d{6})/)[1];
   assert.equal(JSON.parse(fs.readFileSync(stateFile, 'utf8')).token, 'TEST-TOKEN');
-  assert.equal(fs.statSync(stateFile).mode & 0o077, 0, 'the token file is private');
+  // POSIX mode bits: Windows reports 0o666 for any writable file, private or not.
+  if (process.platform !== 'win32') assert.equal(fs.statSync(stateFile).mode & 0o077, 0, 'the token file is private');
 
   msg(555, 'delete everything');
   await until(() => sent.find((s) => s.chat_id === 555 && /not paired/.test(s.text)), 'the not-paired reply');

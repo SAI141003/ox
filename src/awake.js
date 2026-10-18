@@ -47,7 +47,9 @@ export function holdAwake({ pid = process.pid, config = {}, env = process.env } 
   if (!cmd) return () => {};
   let child;
   try {
-    child = spawn(cmd[0], cmd[1], { stdio: 'ignore', windowsHide: true });
+    // cwd: the temp dir, not ox's. On Windows a process's working directory
+    // cannot be removed, so a hold started in a project pinned that folder.
+    child = spawn(cmd[0], cmd[1], { stdio: 'ignore', windowsHide: true, cwd: os.tmpdir() });
     child.on('error', () => {});
     child.unref();
   } catch {

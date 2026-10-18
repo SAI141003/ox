@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   addTask, getTask, claimTask, releaseTask, completeTask, approveTask, rejectTask,
   nextTask, readyTasks, goalChain, taskBrief, addSpend, taskActivity, taskOwner, listTasks,
@@ -26,7 +26,8 @@ test('one owner per task: a second claimer is refused and told who holds it', ()
 });
 
 async function race(o, t) {
-  const mod = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'tasks.js');
+  // A file URL, not a path: import('D:\\...') is refused on Windows.
+  const mod = pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'tasks.js')).href;
   // Every process waits at a start line (the "go" file), claims at once, and
   // stays alive until all have answered, so no lock is ever legitimately stale.
   const go = path.join(o.dir, 'go');
@@ -37,15 +38,23 @@ async function race(o, t) {
     process.stdout.write(r.ok?'WIN':'LOSE');
     while(!fs.existsSync(${JSON.stringify(done)}))await new Promise(r=>setTimeout(r,20));})`;
   const answers = [];
+  let died = null;
   const procs = Array.from({ length: 8 }, () => {
     const p = spawn(process.execPath, ['-e', code]);
     let out = '';
+    let err = '';
     p.stdout.on('data', (d) => { out += d; if (out === 'WIN' || out === 'LOSE') answers.push(out); });
-    return new Promise((resolve) => p.on('close', resolve));
+    p.stderr.on('data', (d) => (err += d));
+    return new Promise((resolve) => p.on('close', (c) => {
+      // A child that dies before answering would leave the wait below spinning forever.
+      if (out !== 'WIN' && out !== 'LOSE') died ??= `racer exited ${c} without answering: ${err.slice(0, 400)}`;
+      resolve();
+    }));
   });
   await new Promise((r) => setTimeout(r, 1500)); // let them all reach the start line
   fs.writeFileSync(go, '');
-  while (answers.length < 8) await new Promise((r) => setTimeout(r, 20));
+  while (answers.length < 8 && !died) await new Promise((r) => setTimeout(r, 20));
+  if (died) { fs.writeFileSync(done, ''); await Promise.all(procs); throw new Error(died); }
   fs.writeFileSync(done, '');
   await Promise.all(procs);
   return answers;
