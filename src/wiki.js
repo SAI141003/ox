@@ -36,6 +36,16 @@ export function fileSummary(root, rel) {
  */
 export function buildWiki(root = process.cwd(), { out = path.join(root, '.agent', 'wiki'), top = 30 } = {}) {
   const g = buildGraph(root);
+  // Small projects get no subsystems from the graph: group by folder instead.
+  if (!(g.communities ?? []).length || g.nodes.every((n) => n.community == null)) {
+    const dirs = new Map();
+    for (const n of g.nodes) { const d = path.dirname(n.file ?? '.') || '.'; if (!dirs.has(d)) dirs.set(d, dirs.size); n.community = dirs.get(d); }
+    g.communities = [...dirs.entries()].map(([d, id]) => {
+      const members = g.nodes.filter((n) => n.community === id);
+      const topN = [...members].sort((a, b) => (b.degree ?? 0) - (a.degree ?? 0))[0];
+      return { id, label: d === '.' ? 'top level' : d, size: members.length, top: topN?.id?.replace(/^file:/, '') ?? d };
+    });
+  }
   const byId = new Map(g.nodes.map((n) => [n.id, n]));
   // Files that belong to each subsystem (the graph's own count includes files its members touch).
   const fileCount = new Map();
