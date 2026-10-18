@@ -354,7 +354,7 @@ test('skill add: overwrite refusal unless --force; invalid sources rejected clea
   assert.equal((await installSkill('./definitely-not-here', { home, configDir: ox })).kind, 'invalid');
   const urlRes = await installSkill('https://example.com/SKILL.md', { home, configDir: ox });
   assert.equal(urlRes.kind, 'invalid');
-  assert.match(urlRes.message, /URL sources are not supported/);
+  assert.match(urlRes.message, /only GitHub links are supported/);
 });
 
 test('skill add: scanSkillSource reports findings across SKILL.md body, scripts/ and references/', () => {

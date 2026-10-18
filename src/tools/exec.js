@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { trimForQuery } from '../trim-output.js';
 import path from 'node:path';
 import { prepareSandbox, appendSandboxEvent } from '../sandbox.js';
 import { sanitizeEnv } from '../env-sanitize.js';
@@ -326,9 +327,19 @@ function killGroup(child, signal) {
   }
 }
 
-function capCombined(stdout, stderr) {
+function capCombined(stdout, stderr, query = null) {
   if (stdout.length + stderr.length <= MAX_OUTPUT_CHARS) {
     return { stdout, stderr, truncated: false };
+  }
+  // Keep what matters for the request: errors, matching lines, head and tail
+  // (src/trim-output.js). The old cut kept only the start and lost the end,
+  // where the error usually is.
+  if (query !== null) {
+    const total = MAX_OUTPUT_CHARS - TRUNCATION_MARK.length;
+    const eBudget = Math.min(stderr.length, Math.floor(total * (stderr.length > stdout.length ? 0.6 : 0.4)));
+    const o = trimForQuery(stdout, query, { budget: Math.max(1000, total - eBudget) });
+    const e = trimForQuery(stderr, query, { budget: Math.max(1000, eBudget) });
+    return { stdout: o.text, stderr: e.text, truncated: true };
   }
   let budget = MAX_OUTPUT_CHARS - TRUNCATION_MARK.length;
   if (budget < 1000) budget = 1000;
@@ -521,7 +532,7 @@ export async function bashTool(args = {}, ctx = {}) {
     });
   }
 
-  const capped = capCombined(stdout, stderr);
+  const capped = capCombined(stdout, stderr, `${ctx.query ?? ''} ${command}`);
   const exitLabel =
     exit.code === null
       ? `exit null (${exit.signal ?? (timedOut ? killedWith : 'unknown')})`

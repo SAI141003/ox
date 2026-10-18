@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { withTrace } from './trace.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { breakdownContext, buildContext, estimateTokens, instructionScopesFromText, pureCompact, staleToolOutputTrim } from './context.js';
@@ -970,6 +971,8 @@ async function* runAgentLoop(opts = {}) {
   let history;
   const cwd = resolveRunCwd(opts);
   const toolCtx = ctx && typeof ctx === 'object' ? { ...ctx, signal } : { signal };
+  // What was asked, for tools that trim long output to what matters (src/trim-output.js).
+  { const u = [...messages].reverse().find((m) => m?.role === 'user'); toolCtx.query = typeof u?.content === 'string' ? u.content.slice(0, 2000) : Array.isArray(u?.content) ? u.content.map((p) => p?.text ?? '').join(' ').slice(0, 2000) : ''; }
   // `toolCtx` is a SHALLOW copy, so a sessionState that does not exist yet would
   // be created on the copy by todo_write and the caller's checklist would stay
   // permanently empty -- the goal would then never see the model's progress.
@@ -2829,9 +2832,10 @@ export function runAgent(opts = {}) {
   resolveRunCwd(opts);
   // Every run's tokens are kept by model, agent and surface (src/usage-log.js).
   if (opts?.target?.provider === 'subscription') {
-    return withUsageLog(opts, withIpcBroadcast(opts, runSubscriptionTurn({ ...opts, ctx: { ...(opts.ctx ?? {}), cwd: resolveRunCwd(opts) } })));
+    return withUsageLog(opts, withTrace(opts, withIpcBroadcast(opts, runSubscriptionTurn({ ...opts, ctx: { ...(opts.ctx ?? {}), cwd: resolveRunCwd(opts) } }))));
   }
-  return withUsageLog(opts, withIpcBroadcast(opts, runAgentLoop(opts)));
+  // Each run is traced and watched for being stuck (src/trace.js).
+  return withUsageLog(opts, withTrace(opts, withIpcBroadcast(opts, runAgentLoop(opts))));
 }
 
 export async function runAgentCollect(opts) {

@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -528,6 +528,8 @@ function usageAll() {
     '  ox org thread <id>                its runs: what it was asked and what it said',
     '  ox org timeline                   who did what, every tool call, and the count of irreversible actions',
     '  ox skill from <book.pdf|folder>   a book or docs → a skill: an index plus chapters read only when needed',
+    '',
+    'traces: ox trace [--signals] | ox trace <id> [--steps]   each run: turns, tokens, cost, tool calls, and "stuck" signals',
     '',
     'pull requests (until they can merge; merging stays yours):',
     '  ox env [show|detect|check]        how this repo installs, lints, builds, tests (.ox/environment.yml, saved once)',
@@ -4522,6 +4524,27 @@ async function runSubcommand(cmd, args) {
     case 'pr':
       await cmdPr(args);
       return;
+    case 'trace':
+    case 'traces': {
+      const T = await import('./trace.js');
+      const id = args.find((a) => !a.startsWith('--'));
+      const fmt = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+      if (!id) {
+        const list = T.listTraces({ limit: Number(args[args.indexOf('--limit') + 1]) || 20, signals: args.includes('--signals') });
+        if (args.includes('--json')) { console.log(JSON.stringify(list, null, 2)); return; }
+        if (!list.length) { console.log(c.dim('no traces yet: every ox run from now on keeps one (~/.ox/traces)')); return; }
+        for (const t of list) console.log(`${c.dim(t.id)}  ${t.outcome === 'error' ? c.red('✗') : t.signals.length ? c.yellow('!') : c.green('✓')} ${String(t.surface ?? '').padEnd(6)} ${String(t.model ?? '?').slice(0, 22).padEnd(22)} ${String(t.turns).padStart(3)} turns ${fmt(t.inTokens + t.outTokens).padStart(6)} tok ${t.cost != null ? `$${t.cost.toFixed(4)}` : '     —'} ${String(t.tools).padStart(3)} tools${t.failed ? c.red(` ${t.failed} failed`) : ''}  ${c.dim(t.prompt.slice(0, 50))}${t.signals.length ? `\n${' '.repeat(18)}${c.yellow(t.signals.map((x) => x.text).join(' · '))}` : ''}`);
+        return;
+      }
+      const t = T.readTrace(id);
+      if (args.includes('--json')) { console.log(JSON.stringify(t, null, 2)); return; }
+      console.log(`${c.bold(t.id)}  ${t.outcome} · ${Math.round(t.ms / 1000)} s · ${t.model ?? '?'} · ${t.surface}${t.agent ? ` · agent ${t.agent}` : ''}\n${c.dim(t.prompt)}`);
+      console.log(`${t.turns} turns · ${fmt(t.inTokens)} in / ${fmt(t.outTokens)} out${t.cost != null ? ` · $${t.cost.toFixed(4)}` : ''} · ${t.tools} tool calls${t.failed ? `, ${t.failed} failed` : ''}`);
+      for (const [n, b] of Object.entries(t.byTool).sort((a, b) => b[1].calls - a[1].calls)) console.log(c.dim(`  ${n.padEnd(18)} ${b.calls}×${b.failed ? ` (${b.failed} failed)` : ''} ${Math.round(b.ms)} ms`));
+      for (const s of t.signals) console.log(c.yellow(`! ${(s.at / 1000).toFixed(1)} s: ${s.text}`));
+      if (args.includes('--steps')) for (const r of t.rows) if (r.t !== 'run') console.log(c.dim(`${(r.at / 1000).toFixed(1).padStart(7)} s  ${r.t === 'tool' ? `→ ${r.name} ${r.args}` : r.t === 'tool-end' ? `  ${r.ok ? 'ok' : 'FAILED'} ${r.ms ?? '?'} ms ${r.bytes ?? ''}b` : r.t === 'turn' ? `model ${r.in}+${r.out} tok` : `${r.t} ${r.text ?? r.error ?? r.outcome ?? ''}`}`));
+      return;
+    }
     case 'env':
       await cmdEnv(args);
       return;
