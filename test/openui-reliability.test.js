@@ -104,3 +104,27 @@ test('repair: an answer with no block gets one appended', async () => {
   assert.match(out, /^A table of phones\.\n\n```openui/);
   assert.equal(checkUi(out).ok, true);
 });
+
+test('a formula in quotes is worked out; text with $values fills them in; other text stays', () => {
+  const c = checkUi('```openui\n$bill = 80\n$pct = 10\n$name = "Sai"\nroot = Stack([Stat("Tip", "$bill * $pct / 100"), Text("Hello $name"), Text("Total: $5"), Text("Hi there")])\n```');
+  assert.equal(c.ok, true, c.why);
+  assert.deepEqual(c.tree.props.children.map((x) => x.props.value ?? x.props.text), [8, 'Hello Sai', 'Total: $5', 'Hi there']);
+});
+
+test('a formula still showing as text fails the check, as a reader would see it', () => {
+  const c = checkUi('```openui\nroot = Text("Missing $nope")\n```');
+  assert.equal(c.ok, false);
+  assert.match(c.why, /formula is shown as text/);
+});
+
+test('Select with plain choices gets Options; numeric ones are numbers', () => {
+  const c = checkUi('```openui\n$n = 2\nroot = Select("People", $n, ["1", "2", "3"])\n```');
+  assert.equal(c.ok, true, c.why);
+  assert.deepEqual(c.tree.props.options.map((o) => o.props.value), [1, 2, 3]);
+});
+
+test('maths reads formatted money; no-result sums show "—"; Stat takes a format hint', () => {
+  const c = checkUi('```openui\n$bill = 80\n$n = 4\nroot = Stack([Stat("Per", @Format($bill, "currency") / $n, "currency"), Stat("Bad", "abc" * 2)])\n```');
+  assert.equal(c.ok, true, c.why);
+  assert.deepEqual(c.tree.props.children.map((x) => x.props.value), ['$20.00', '—']);
+});

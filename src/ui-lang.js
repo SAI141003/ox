@@ -137,6 +137,15 @@ const BUILTINS = {
 };
 const ACTION_STEPS = new Set(['Run', 'Set', 'Reset', 'ToAssistant', 'OpenUrl']);
 
+// "$80.00", "1,200", "15%": numbers as a reader sees them, for arithmetic.
+function toNum(x) {
+  if (typeof x === 'string') {
+    const m = /^\s*([-+]?)\s*[$€£¥₹]?\s*([\d,]*\.?\d+)\s*%?\s*$/.exec(x);
+    if (m) return Number(`${m[1]}${m[2].replace(/,/g, '')}`);
+  }
+  return Number(x);
+}
+
 function nums(a) {
   return (Array.isArray(a) ? a : []).map(Number).filter((n) => Number.isFinite(n));
 }
@@ -209,6 +218,23 @@ function tokenize(src) {
 
 const BIN_PREC = { '||': 1, '&&': 2, '==': 3, '!=': 3, '>': 4, '<': 4, '>=': 4, '<=': 4, '+': 5, '-': 5, '*': 6, '/': 6, '%': 6 };
 
+/**
+ * Stat("Tip", "$bill * $pct / 100"): a formula in quotes, as small models write
+ * it, is meant to be worked out, not shown. A string that parses whole as an
+ * expression reading $values or @functions is that expression; text ("Total:
+ * $5", "Hello $name") does not parse whole and stays text.
+ */
+function quotedFormula(str) {
+  if (!/\$[A-Za-z_]|@[A-Z][A-Za-z]*\(/.test(str) || str.length > 300) return null;
+  try {
+    const ast = parseExpr(tokenize(str));
+    const reads = (n) => n && typeof n === 'object' && (n.k === 'state' || n.k === 'builtin' || Object.values(n).some((v) => (Array.isArray(v) ? v.some(reads) : reads(v))));
+    if (ast.k !== 'lit' && reads(ast)) return ast;
+  } catch {}
+  // "Hello $name", "Total: $total": text with values in it.
+  return /\$[A-Za-z_]/.test(str) ? { k: 'tmpl', src: str } : null;
+}
+
 const CLOSE = { '(': ')', '[': ']', '{': '}' };
 
 /**
@@ -267,7 +293,8 @@ function parseExpr(tokens) {
   function primary() {
     const tk = tokens[i++];
     if (!tk) throw new SyntaxError('unexpected end of expression');
-    if (tk.t === 'str' || tk.t === 'num' || tk.t === 'bool' || tk.t === 'null') return { k: 'lit', v: tk.v };
+    if (tk.t === 'str') return quotedFormula(tk.v) ?? { k: 'lit', v: tk.v };
+    if (tk.t === 'num' || tk.t === 'bool' || tk.t === 'null') return { k: 'lit', v: tk.v };
     if (tk.t === 'state') return { k: 'state', name: tk.v };
     if (tk.t === 'builtin') { expect('('); return { k: 'builtin', name: tk.v, args: list(')', true).map((a) => (a.k === 'named' ? a.x : a)) }; }
     if (tk.t === 'id') {
@@ -561,6 +588,10 @@ export function evaluate(program, env = {}) {
   function value(n, id) {
     switch (n.k) {
       case 'lit': return n.v;
+      case 'tmpl': return n.src.replace(/\$([A-Za-z_]\w*)/g, (m, name) => {
+        const v = name in state || program.stmts.has(`$${name}`) ? value({ k: 'state', name }, id) : undefined;
+        return v === undefined || v === null || typeof v === 'object' ? m : typeof v === 'number' ? String(Math.round(v * 100) / 100) : String(v);
+      });
       case 'state': return n.name in state || !program.stmts.has(`$${n.name}`) ? state[n.name] ?? null : resolve(`$${n.name}`, id);
       case 'ref': return resolve(n.name, id);
       case 'arr': return n.items.map((x) => value(x, id)).filter((x) => x !== undefined);
@@ -574,10 +605,10 @@ export function evaluate(program, env = {}) {
         const r = value(n.r, id);
         switch (n.op) {
           case '+': return typeof l === 'string' || typeof r === 'string' ? `${l ?? ''}${r ?? ''}` : Number(l) + Number(r);
-          case '-': return Number(l) - Number(r);
-          case '*': return Number(l) * Number(r);
-          case '/': return Number(r) === 0 ? 0 : Number(l) / Number(r);
-          case '%': return Number(l) % Number(r);
+          case '-': return toNum(l) - toNum(r);
+          case '*': return toNum(l) * toNum(r);
+          case '/': return toNum(r) === 0 ? 0 : toNum(l) / toNum(r);
+          case '%': return toNum(l) % toNum(r);
           case '&&': return l && r;
           case '||': return l || r;
           default: return compare(l, n.op, r);
@@ -668,6 +699,8 @@ export function evaluate(program, env = {}) {
     for (let p = 0; p < spec.params.length; p++) {
       const [name, type, optional] = spec.params[p];
       let v = p < n.args.length ? value(n.args[p], id) : undefined;
+      // A sum with no real result reads as "—", never NaN or a made-up 0.
+      if (typeof v === 'number' && !Number.isFinite(v)) v = type === 'any' || type === 'str' ? '—' : undefined;
       if (v === undefined || v === null) {
         if (!optional && p >= n.args.length) {
           err(id, 'missing', `${n.name} is missing \`${name}\`: ${signature(n.name)}`);
@@ -677,6 +710,8 @@ export function evaluate(program, env = {}) {
       }
       // OpenUI Lang: "a single action needs no wrapper", so @Set($n, 1) alone is Action([@Set($n, 1)]).
       if (type === 'action' && v && typeof v === 'object' && typeof v.step === 'string') v = { kind: 'action', steps: [v] };
+      // Select("People", $n, ["1", "2"]): plain choices become Options.
+      if (type === 'nodes' && n.name === 'Select' && Array.isArray(v)) v = v.flat().map((x) => (x !== null && typeof x !== 'object' ? { type: 'Option', props: { value: typeof x === 'string' && /^-?\d+(\.\d+)?$/.test(x) ? Number(x) : x, label: String(x) } } : x));
       if (type === 'nodes' && isNode(v)) v = [v];
       if (type === 'nodes' && Array.isArray(v)) v = v.flat().filter(isNode);
       // Title("Planets", 2): a heading level, as models write it.
@@ -696,6 +731,11 @@ export function evaluate(program, env = {}) {
     if (strays.length) {
       const name = spec.params[listAt][0];
       props[name] = [...(props[name] ?? []), ...strays.map((a) => value(a, id))].flat().filter(isNode);
+    }
+    // Stat("Tip", 3.6, "currency"): a format where the delta goes, as models write it.
+    if (n.name === 'Stat' && n.args[2]) {
+      const f = value(n.args[2], id);
+      if (typeof f === 'string' && /^(currency|percent|number|compact)$/i.test(f) && typeof props.value === 'number') props.value = BUILTINS.Format(props.value, f.toLowerCase());
     }
     // A Select's value arg binds a $var: keep the name so actions can set it.
     if (n.name === 'Select' && n.args[1]?.k === 'state') props.bind = n.args[1].name;
@@ -1154,6 +1194,15 @@ export function checkUi(text) {
   if (!blocks.length) return { ok: false, blocks: 0, root: false, errors: [], why: 'no openui block' };
   const ev = new Canvas().load(blocks.join('\n'));
   const errors = [...(ev.parseErrors ?? []), ...(ev.errors ?? [])].filter((e) => e.code !== 'ignored');
+  // A formula still showing as text ("$bill * 0.1" on screen) is broken to a reader.
+  const shown = [];
+  const walk = (x) => {
+    if (typeof x === 'string') { if (/\$[A-Za-z_]\w*|@[A-Z][A-Za-z]*\(/.test(x)) shown.push(x); return; }
+    if (Array.isArray(x)) { x.forEach(walk); return; }
+    if (x && typeof x === 'object') for (const [k, v] of Object.entries(x.props ?? x)) if (k !== 'bind') walk(v);
+  };
+  walk(ev.root);
+  for (const t of shown.slice(0, 3)) errors.push({ line: null, id: null, code: 'formula-text', msg: `a formula is shown as text: ${t.slice(0, 60)}` });
   const why = !ev.root ? `nothing to draw (${errors[0]?.msg ?? 'no root'})` : errors.length ? `${errors.length} line(s) dropped: ${errors[0].msg}` : '';
   return { ok: !!ev.root && !errors.length, blocks: blocks.length, root: !!ev.root, errors, why, tree: ev.root ?? null };
 }
