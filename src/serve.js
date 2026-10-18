@@ -1437,10 +1437,16 @@ export async function warmVoiceModel() {
 
 // The task board (src/tasks.js, Paperclip's model): every task with whether
 // it is ready, who holds it, and the activity log; add / move / run / review.
+const prCache = new Map();
 export async function tasksView() {
   const T = await import('./tasks.js');
   const ready = new Set(T.readyTasks().map((t) => t.id));
-  const tasks = T.listTasks().map((t) => ({ ...t, ready: ready.has(t.id), owner: T.taskOwner(t.id)?.owner ?? null }));
+  const tasks = T.listTasks().map((t) => ({ ...t, ready: ready.has(t.id), owner: T.taskOwner(t.id)?.owner ?? null, prState: t.branch ? prCache.get(t.branch)?.v ?? null : null }));
+  // PR and CI state on the board (agent-orchestrator), refreshed in the background, at most once a minute per branch.
+  for (const t of tasks) if (t.branch && !(Date.now() - (prCache.get(t.branch)?.at ?? 0) < 60_000)) {
+    prCache.set(t.branch, { at: Date.now(), v: prCache.get(t.branch)?.v ?? null });
+    import('./dev-flow.js').then((D) => prCache.set(t.branch, { at: Date.now(), v: D.prForBranch(process.cwd(), t.branch) })).catch(() => {});
+  }
   return { tasks, activity: T.taskActivity({ limit: 40 }).reverse(), statuses: T.STATUSES };
 }
 async function tasksRoute(b) {
@@ -1583,6 +1589,18 @@ async function meshView() {
 }
 
 const ROUTES = [
+  // Pull requests (src/dev-flow.js): Open a PR in one click, its CI and reviews, one fix round.
+  { method: 'GET', pattern: /^\/ox\/pr\/?$/, handler: appRoute(async (_, __, req) => {
+    const D = await import('./dev-flow.js');
+    const dir = new URL(req.url, 'http://x').searchParams.get('cwd') || process.cwd();
+    return { status: D.prStatus(dir), recipe: D.readRecipe(D.repoRoot(dir)) };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/pr\/(open|fix)\/?$/, handler: appRoute(async (body, m) => {
+    const D = await import('./dev-flow.js');
+    const dir = String(body?.cwd || process.cwd());
+    if (m[1] === 'open') return D.openPr(dir, { title: body?.title || null, body: body?.body ?? '', draft: body?.draft === true });
+    return D.fixPr(dir, {});
+  }) },
   // Your machines (ox mesh): status, an invite code, names, grants, and your
   // choice on an alert. Grants are set here, for what this machine gives.
   { method: 'GET', pattern: /^\/ox\/mesh\/?$/, handler: appRoute(meshView) },

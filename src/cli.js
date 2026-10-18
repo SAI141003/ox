@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -523,6 +523,13 @@ function usageAll() {
     '  ox org set <id> [--budget n|none] [--every n|none] [--title T] [--reports-to id] [--runtime r]',
     '  ox org beat <id> | --due          wake an agent now (or every agent that is due): it runs its next task',
     '  ox org log                        hires, approvals, pauses, budget warnings and stops',
+    '',
+    'pull requests (until they can merge; merging stays yours):',
+    '  ox env [show|detect|check]        how this repo installs, lints, builds, tests (.ox/environment.yml, saved once)',
+    '  ox pr open [--title T] [--draft]  branch, commit, run the checks, push, open the PR with what was checked',
+    '  ox pr status | comments           CI checks, review state and comments',
+    '  ox pr fix [--rounds n]            review comments and failing CI become one ox task; committed and pushed',
+    '  ox task run <id> --worktree [--pr]   a task in its own worktree and branch, then a PR from it',
     '',
     'mesh (your own machines as one ox; every file, key and model stays on its machine):',
     '  ox mesh                           this machine, your paired machines, their health and alerts',
@@ -3598,6 +3605,70 @@ async function cmdMesh(args = []) {
   }
 }
 
+async function cmdPr(args = []) {
+  const D = await import('./dev-flow.js');
+  const sub = String(args[0] ?? 'status').toLowerCase();
+  const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+  const step = (s, d) => console.log(c.dim(`  ${s}: ${String(d).split('\n')[0].slice(0, 140)}`));
+  try {
+    if (sub === 'open' || sub === 'create') {
+      const pr = D.openPr(process.cwd(), { title: flag('--title') ?? null, body: flag('--body') ?? '', base: flag('--base') ?? null, draft: args.includes('--draft'), checks: !args.includes('--no-checks'), onStep: step });
+      for (const r of pr.checks.results) console.log(`  ${r.ok ? c.green('✓') : c.red('✗')} ${r.command}`);
+      console.log(`${c.green(pr.created ? '✓ opened' : '✓ updated')} ${pr.url}`);
+      if (!pr.checks.ok) console.log(c.yellow('a check failed before opening: ox pr fix hands it to ox'));
+      return;
+    }
+    if (sub === 'status' || sub === 'comments') {
+      const st = D.prStatus(process.cwd(), flag('--pr') ?? args[1] ?? null);
+      console.log(`${c.bold(`#${st.number}`)} ${st.title}  ${c.dim(st.url)}`);
+      console.log(`  ${st.state.toLowerCase()} · review: ${st.review?.toLowerCase().replace('_', ' ') ?? 'none'} · ${st.mergeable === 'CONFLICTING' ? c.red('conflicts with base') : 'no conflicts'}`);
+      if (!st.checks.length) console.log(c.dim('  no CI checks on this PR'));
+      for (const ch of st.checks) console.log(`  ${['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(ch.state) ? c.green('✓') : st.failing.includes(ch) ? c.red('✗') : c.yellow('…')} ${ch.name}`);
+      if (sub === 'comments' || st.comments.length) for (const cm of st.comments) console.log(`  ${c.cyan(cm.author ?? '?')}${cm.path ? c.dim(` ${cm.path}:${cm.line ?? ''}`) : ''}: ${cm.body.trim().split('\n')[0].slice(0, 160)}`);
+      console.log(st.canMerge ? c.green('ready to merge (merging is yours)') : c.dim(`not ready yet${st.openThreads ? ` (${st.openThreads} unresolved review thread${st.openThreads > 1 ? 's' : ''})` : ''}: ox pr fix`));
+      return;
+    }
+    if (sub === 'fix') {
+      const rounds = Number(flag('--rounds') ?? 1);
+      for (let i = 0; i < rounds; i++) {
+        const r = await D.fixPr(process.cwd(), { ref: flag('--pr') ?? null, onStep: step });
+        console.log(`${r.done ? c.green('✓') : '•'} ${r.why}`);
+        if (r.done || !r.pushed) break;
+        if (i + 1 < rounds) { console.log(c.dim('  waiting for CI…')); await new Promise((res) => setTimeout(res, 90_000)); }
+      }
+      return;
+    }
+    console.error('usage: ox pr open [--title T] [--body B] [--base main] [--draft] [--no-checks] | status | comments | fix [--rounds n]');
+    process.exitCode = 1;
+  } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+}
+
+async function cmdEnv(args = []) {
+  const D = await import('./dev-flow.js');
+  const sub = String(args[0] ?? 'show').toLowerCase();
+  try {
+    const root = D.repoRoot(process.cwd());
+    if (sub === 'show' || sub === 'detect') {
+      if (sub === 'detect') D.writeRecipe(root, D.detectRecipe(root));
+      const r = D.recipe(root);
+      if (!Object.keys(r.recipe).length) { console.log(c.dim('nothing detected: write .ox/environment.yml (install:, lint:, build:, test:, start:)')); return; }
+      if (r.saved) console.log(c.dim(`saved to ${path.relative(root, r.file)}`));
+      for (const [k, v] of Object.entries(r.recipe)) console.log(`${k.padEnd(8)} ${v}`);
+      return;
+    }
+    if (sub === 'check' || sub === 'run') {
+      const steps = args.slice(1).filter((a) => !a.startsWith('--'));
+      const out = D.runChecks(root, steps.length ? steps : ['lint', 'build', 'test'], { onStep: (s, cmd) => console.log(c.dim(`${s}: ${cmd}`)) });
+      for (const r of out.results) console.log(`${r.ok ? c.green('✓') : c.red('✗')} ${r.step} ${c.dim(`${Math.round(r.ms / 1000)} s`)}${r.ok ? '' : `\n${r.tail}`}`);
+      if (!out.results.length) console.log(c.dim('no steps to run'));
+      if (!out.ok) process.exitCode = 1;
+      return;
+    }
+    console.error('usage: ox env [show|detect|check [steps…]]');
+    process.exitCode = 1;
+  } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+}
+
 async function cmdTask(args = []) {
   const sub = String(args[0] ?? '').trim().toLowerCase();
   const rest = args.slice(1);
@@ -3716,10 +3787,25 @@ async function cmdTask(args = []) {
     }
     const pi = rest.indexOf('--prompt');
     const prompt = pi >= 0 ? rest[pi + 1] : undefined;
+    // --worktree: its own checkout and branch (agent-orchestrator), --pr: then a pull request from it.
+    let wt = null;
+    if (rest.includes('--worktree') || rest.includes('--pr')) {
+      const D = await import('./dev-flow.js');
+      wt = D.taskWorktree(process.cwd(), id);
+      console.log(c.dim(`${wt.created ? 'new worktree' : 'worktree'} ${wt.dir} on ${wt.branch}`));
+    }
     console.log(c.dim(`running task ${id}: ${task.title}`));
-    const result = await runTask(id, { prompt });
+    const result = await runTask(id, { prompt, cwd: wt?.dir });
     if (result.success) {
       console.log(c.green('✓ task completed'));
+      if (wt && rest.includes('--pr')) {
+        const D = await import('./dev-flow.js');
+        try {
+          const pr = D.openPr(wt.dir, { title: task.title, body: `Task ${id}: ${task.title}\n\n${task.description ?? ''}`, onStep: (s, d) => console.log(c.dim(`  ${s}: ${d}`)) });
+          updateTask(id, { pr: pr.url, branch: wt.branch });
+          console.log(`${c.green('✓ pull request')} ${pr.url}`);
+        } catch (e) { console.log(c.yellow(`no PR: ${e.message}`)); }
+      }
     } else {
       console.log(c.red(`✗ task failed: ${result.error}`));
     }
@@ -4364,6 +4450,12 @@ async function runSubcommand(cmd, args) {
       return;
     case 'mesh':
       await cmdMesh(args);
+      return;
+    case 'pr':
+      await cmdPr(args);
+      return;
+    case 'env':
+      await cmdEnv(args);
       return;
     case 'serve':
       await cmdServe(args);
