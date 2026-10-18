@@ -4501,7 +4501,7 @@ const SUB_USAGE = {
   market: 'usage: ox market ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
   hook: 'usage: ox hook <claude|codex|gemini|cursor|copilot> [event]  — run by the agent itself with the event on stdin (set up with: ox hooks install <agent>)',
   'hook-relay': 'usage: ox hook-relay <agent> <session id>  — started by ox hook; one per agent session, not run by hand',
-  hooks: 'usage: ox hooks install <claude|codex|gemini|cursor|copilot> [--yes] | uninstall <agent> [--yes] | status',
+  hooks: 'usage: ox hooks install <claude|codex|gemini|cursor|copilot> [--yes] | uninstall <agent> [--yes] | status | safe on|off',
   memory: 'usage: ox memory [recall "<question>" | add "<fact>" [--project] | history <id> | forget <id> | all [--project]]',
   auto: 'usage: ox auto "<goal>" [--contract ["<goal>"]] [--max-cost <usd>] [--json] [--bot <name>] [--yes-edits] [-y] [--side-effects-ok]',
   attach: 'usage: ox attach <worker id>  — follow a detached run (ox agents lists them)',
@@ -5775,6 +5775,12 @@ async function runSubcommand(cmd, args) {
           try { on = ah.installed(JSON.parse(fs.readFileSync(a.settings(), 'utf8')), id); } catch {}
           console.log(`${on ? c.green('connected') : c.dim('not connected')}  ${a.label.padEnd(12)} ${c.dim(`ox hooks install ${id}  ·  ${a.settings()}`)}`);
         }
+        return;
+      }
+      if (sub === 'safe') {
+        // Read-only calls (ls, git status, reading files) allowed without asking; risky ones still wait.
+        if (args[1] === 'on' || args[1] === 'off') ah.setAutoSafe(args[1] === 'on');
+        console.log(`safe commands run on their own: ${ah.autoSafe() ? c.green('on') : c.yellow('off')}  ${c.dim('(only reading: ls, cat, git status/log/diff, rg… never chained or redirected)')}`);
         return;
       }
       if (sub !== 'install' && sub !== 'uninstall') { console.log(SUB_USAGE.hooks); process.exitCode = 2; return; }

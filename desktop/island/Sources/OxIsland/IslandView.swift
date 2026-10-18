@@ -589,14 +589,14 @@ struct PillButton: View {
 }
 
 
-/// A session's own character: one of the ox's friends (Puff the lamb, Pip the
+/// A session's own character: one of the ox's friends (Puff the lamb, Pebble the
 /// goat kid, Dot the calf; art/ox_cute_render.py), the same one every time,
 /// animated by its own agent's state. Falls back to the pixel cast when the
 /// friends' frames are not bundled.
 struct SessionCharacter: View {
     let session: AgentSession
     let height: CGFloat
-    static let friends = ["puff", "pip", "dot"]
+    static let friends = ["puff", "pebble", "dot"]
 
     static func friend(for id: String) -> String {
         let sum = id.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFFFF }

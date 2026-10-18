@@ -460,6 +460,7 @@ struct ApprovalHome: View {
     let session: AgentSession
     let pending: PendingApproval
     @State private var shownAt = Date()
+    @State private var typed = ""
 
     var body: some View {
         HStack(spacing: 10) {
@@ -483,6 +484,14 @@ struct ApprovalHome: View {
                                 Button("Answer in terminal") { bridge.deferToTerminal(session) }.buttonStyle(.plain).font(.system(size: 10.5)).foregroundStyle(HomeInk.dim)
                             }
                         }
+                        // Or say it in your own words (Pushary's "type your answer").
+                        HStack(spacing: 6) {
+                            TextField("Type your answer", text: $typed)
+                                .textFieldStyle(.plain).font(.system(size: 11)).foregroundStyle(HomeInk.text)
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.07)))
+                                .onSubmit { let t = typed.trimmingCharacters(in: .whitespaces); if !t.isEmpty { bridge.answerQuestion(session, t) } }
+                        }
                     }
                     .padding(.leading, 100).padding(.trailing, 12).padding(.top, 9)
                 } else {
@@ -498,6 +507,15 @@ struct ApprovalHome: View {
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.07)))
+                    if let why = pending.riskWhy {
+                        // What it would do, in plain words: "This touches production".
+                        HStack(spacing: 5) {
+                            Image(systemName: pending.riskLevel == "danger" ? "exclamationmark.triangle.fill" : "info.circle")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text(why).font(.system(size: 10.5, weight: .medium)).lineLimit(1)
+                        }
+                        .foregroundStyle(pending.riskLevel == "danger" ? Color(hex: "#F4505E") : Color(hex: "#F5A524"))
+                    }
                     HStack(spacing: 6) {
                         HomeButton(title: "Deny", style: .plain) { decide(.deny) }
                         HomeButton(title: "Always allow", style: .plain) { decide(.always) }

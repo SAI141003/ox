@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// The herd on the pasture when nothing is running: the elder (the first ox),
-/// the ox, and its friends Puff, Pip and Dot. Each one lives its own day:
+/// the ox, and its friends Puff, Pebble and Dot. Each one lives its own day:
 /// wanders, grazes, walks to the trough to drink, plays with another (head-butts,
 /// then a chase), naps, gets the zoomies. A friend standing in for a working
 /// agent session is away at work, so the pasture also says who is busy.
@@ -33,7 +33,7 @@ final class Herd {
         Member(id: "elder", name: "Elder", folder: "family/elder", size: 1.08, napper: 2.0, x: 0.18, lane: 0.15),
         Member(id: "ox", name: "Ox", folder: "ox", size: 1.0, napper: 1.0, x: 0.42, lane: 0.7),
         Member(id: "puff", name: "Puff", folder: "friends/puff", size: 0.82, napper: 1.0, x: 0.6, lane: 0.35),
-        Member(id: "pip", name: "Pip", folder: "friends/pip", size: 0.8, napper: 0.6, x: 0.3, lane: 0.9),
+        Member(id: "pebble", name: "Pebble", folder: "friends/pebble", size: 0.8, napper: 0.6, x: 0.3, lane: 0.9),
         Member(id: "dot", name: "Dot", folder: "friends/dot", size: 0.8, napper: 0.8, x: 0.75, lane: 0.6),
     ]
     /// Where the water is.

@@ -13,7 +13,7 @@ import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { connectIpcClient, socketPathFor } from './ipc.js';
+import { connectIpcClient, socketPathFor, listIpcSockets } from './ipc.js';
 import { createWatchState, applyMessage, currentTool } from './ipc-watch.js';
 import { MODE_NAMES, normalizeMode } from './modes.js';
 
@@ -157,8 +157,50 @@ export function createRemoteCore({ adapter, state, persist, cwd, agent = null, e
   }
 
   // A button press: `ref` is whatever the adapter needs to acknowledge it.
+  // Approvals from the phone for every other agent on this Mac (Claude Code,
+  // Codex… through their hooks, other ox runs): the same channels the island
+  // listens on. Whoever answers first wins; silence still declines.
+  const others = new Map(); // socket path -> { client, n }
+  let otherSeq = 0;
+  const watchOthers = () => {
+    if (!state.owner) return;
+    for (const sock of listIpcSockets(socketDir)) {
+      if (others.has(sock) || (run && run.sock === sock)) continue;
+      const entry = { client: null, n: ++otherSeq, asked: new Set() };
+      others.set(sock, entry);
+      const client = connectIpcClient({ socketPath: sock, clientId: `${channel}-${process.pid}`, connectTimeoutMs: 800 });
+      client.on('open', () => { entry.client = client; });
+      client.on('close', () => others.delete(sock));
+      client.on('message', (msg) => {
+        if (msg?.type !== 'approval-request' || entry.asked.has(msg.id)) return;
+        entry.asked.add(msg.id);
+        const q = Array.isArray(msg.args?.questions) ? msg.args.questions[0] : null;
+        const head = q ? `An agent asks: ${q.question}` : `An agent wants to run ${msg.tool}${msg.risk?.why ? `\n⚠️ ${msg.risk.why}` : ''}`;
+        const buttons = q
+          ? (q.options ?? []).slice(0, 4).map((o, i) => ({ label: String(o.label ?? o).slice(0, 40), data: `ex:${entry.n}:${msg.id}:answer:${i}` }))
+          : [{ label: 'Allow', data: `ex:${entry.n}:${msg.id}:allow` }, { label: 'Deny', data: `ex:${entry.n}:${msg.id}:deny`, danger: true }];
+        entry.questions ??= new Map();
+        if (q) entry.questions.set(msg.id, (q.options ?? []).map((o) => String(o.label ?? o)));
+        adapter.send(state.owner, `${head}\n\n${String(msg.argsPreview ?? '').slice(0, 600)}${msg.cwd ? `\n📁 ${path.basename(msg.cwd)}` : ''}`, buttons).catch(() => {});
+      });
+    }
+  };
+  const othersTimer = setInterval(watchOthers, 3000);
+  othersTimer.unref?.();
+
   async function onButton(chat, data, ref, original = null) {
     if (!state.owner || String(chat) !== String(state.owner)) return adapter.ack(ref, null).catch(() => {});
+    if (String(data ?? '').startsWith('ex:')) {
+      const [, n, approvalId, decision, idx] = String(data).split(':');
+      const entry = [...others.values()].find((e) => String(e.n) === n);
+      let ok = false, said = decision;
+      if (entry?.client) {
+        if (decision === 'answer') { said = entry.questions?.get(approvalId)?.[Number(idx)] ?? ''; ok = !!said && entry.client.send({ type: 'approval-answer', id: approvalId, decision: 'answer', answer: said }) !== false; }
+        else if (['allow', 'deny'].includes(decision)) ok = entry.client.answer(approvalId, decision);
+      }
+      await adapter.ack(ref, ok ? (decision === 'answer' ? `Answered: ${said}` : decision === 'allow' ? 'Allowed' : 'Denied') : 'That request has expired', original && ok ? `${original}\n\n→ ${decision === 'answer' ? said : decision === 'allow' ? 'allowed' : 'denied'}` : null).catch(() => {});
+      return ok;
+    }
     const [, runId, approvalId, decision] = String(data ?? '').split(':');
     const ok = run && run.id === runId && run.client && ['allow', 'deny'].includes(decision)
       ? run.client.answer(approvalId, decision)
@@ -167,5 +209,5 @@ export function createRemoteCore({ adapter, state, persist, cwd, agent = null, e
     return ok;
   }
 
-  return { onMessage, onButton, stop: () => { if (run) run.child.kill('SIGINT'); }, get running() { return !!run; } };
+  return { onMessage, onButton, watchOthers, stop: () => { clearInterval(othersTimer); for (const e of others.values()) e.client?.close?.(); if (run) run.child.kill('SIGINT'); }, get running() { return !!run; } };
 }

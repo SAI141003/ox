@@ -160,6 +160,51 @@ export function diffStat(toolName, input = {}) {
   return null;
 }
 
+// ---- risk in plain words (Pushary's approval cards) and safe commands allowed on their own
+
+const READ_ONLY_TOOLS = new Set(['read_file', 'grep', 'glob', 'list_dir', 'web_search', 'web_fetch', 'notebook_read', 'todo_write']);
+const DANGER = [
+  [/\brm\s+(-[a-z]*r[a-z]*f?|-[a-z]*f[a-z]*r)\b|\brm\s+-r\b/i, 'deletes files and folders recursively'],
+  [/\bgit\s+push\b[^|;&]*(--force|-f\b)/i, 'force-pushes, rewriting the remote history'],
+  [/\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f)/i, 'throws away uncommitted work'],
+  [/\b(drop|truncate)\s+(table|database|schema)\b/i, 'deletes database tables'],
+  [/\b(prod|production)\b/i, 'touches production'],
+  [/\b(kubectl\s+delete|terraform\s+(apply|destroy)|helm\s+uninstall)\b/i, 'changes live infrastructure'],
+  [/\b(curl|wget)\b[^|]*\|\s*(sh|bash|zsh)\b/i, 'runs a script straight from the internet'],
+  [/\bsudo\b/, 'runs as administrator'],
+  [/\b(npm|pnpm|yarn)\s+publish\b|\bgh\s+release\s+create\b/i, 'publishes a release'],
+  [/\bchmod\s+-R\b|\bchown\s+-R\b/i, 'changes permissions on a whole tree'],
+];
+const CAUTION = [
+  [/\bgit\s+push\b/i, 'pushes to the remote'],
+  [/\b(migrate|migration)\b/i, 'changes the database schema'],
+  [/\b(npm|pnpm|yarn|pip|brew|cargo)\s+(install|add|i)\b/i, 'installs packages'],
+  [/\bcurl\b.*-X\s*(POST|PUT|DELETE|PATCH)\b/i, 'sends a request that changes something online'],
+  [/\bmv\b|\bcp\s+-r\b/i, 'moves or copies files'],
+];
+const SAFE_CMD = /^\s*(ls|ll|pwd|cat|head|tail|wc|echo|which|whoami|date|tree|file|stat|du|df|env|printenv|rg|grep|ag|fd|find(?![^|;&]*(-delete|-exec))|git\s+(status|log|diff|show|branch|remote|rev-parse|blame|ls-files)|node\s+(-v|--version)|npm\s+(ls|view|-v)|python3?\s+(-V|--version))\b[^;&|<>`$]*$/;
+
+/** { level: 'safe' | 'caution' | 'danger', why } for a tool call, from its own input. */
+export function riskOf(tool, input = {}) {
+  const t = toolName(tool);
+  if (READ_ONLY_TOOLS.has(t)) return { level: 'safe', why: 'only reads' };
+  const cmd = String(Array.isArray(input?.command) ? input.command.join(' ') : input?.command ?? '');
+  if (cmd) {
+    for (const [re, why] of DANGER) if (re.test(cmd)) return { level: 'danger', why: `This ${why}` };
+    for (const [re, why] of CAUTION) if (re.test(cmd)) return { level: 'caution', why: `This ${why}` };
+    if (SAFE_CMD.test(cmd) && !/[>]/.test(cmd)) return { level: 'safe', why: 'only reads' };
+    return { level: 'caution', why: 'This runs a command' };
+  }
+  const file = input?.file_path ?? input?.path ?? input?.notebook_path;
+  if (file) return /(^|\/)\.(env|ssh|aws)|secrets?|credentials?/i.test(String(file)) ? { level: 'danger', why: `This changes ${String(file).split('/').pop()}, which may hold secrets` } : { level: 'caution', why: `This changes ${String(file).split('/').pop()}` };
+  return { level: 'caution', why: '' };
+}
+
+const approvalsFile = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'island-approvals.json');
+/** Read-only calls allowed without asking (on unless turned off: ox hooks safe off). */
+export function autoSafe() { try { return JSON.parse(fs.readFileSync(approvalsFile(), 'utf8')).autoSafe !== false; } catch { return true; } }
+export function setAutoSafe(on) { fs.mkdirSync(path.dirname(approvalsFile()), { recursive: true }); fs.writeFileSync(approvalsFile(), `${JSON.stringify({ autoSafe: !!on }, null, 2)}\n`); return !!on; }
+
 // One hook payload -> the ox events the island draws (none for some).
 export function toEvents(p = {}) {
   const ev = p.hook_event_name;
@@ -234,8 +279,11 @@ export function runRelay({ agent = 'claude', sessionId, cwd = process.cwd(), soc
       if (p.hook_event_name === 'PermissionRequest') {
         const tool = toolName(p.tool_name);
         if (always.has(tool)) return { type: 'hook-decision', decision: 'allow' };
+        const risk = riskOf(p.tool_name, p.tool_input);
+        // Safe commands run on their own (only reading); risky ones wait for you.
+        if (risk.level === 'safe' && autoSafe()) { server.broadcast({ type: 'text-delta', text: '' }); return { type: 'hook-decision', decision: 'allow' }; }
         if (!(await waitIsland())) return { type: 'hook-decision', decision: 'ask' };
-        const decision = await server.requestApproval({ tool, args: sanitizeForWire(p.tool_input ?? {}), cwd: p.cwd ?? cwd, preview: preview(p.tool_input) });
+        const decision = await server.requestApproval({ tool, args: sanitizeForWire(p.tool_input ?? {}), cwd: p.cwd ?? cwd, preview: preview(p.tool_input), risk });
         if (decision === 'always') always.add(tool);
         return { type: 'hook-decision', decision };
       }

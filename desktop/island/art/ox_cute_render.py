@@ -434,7 +434,7 @@ FRIEND = os.environ.get("OX_FRIEND", "")
 FRIENDS = {
     # coat, patch colour, patch threshold, scarf, horns (scale, 0 = none), wool, face/legs colour
     "dot":  {"coat": "#FAFAF7", "patch": "#2A2A2E", "cut": 0.5,  "scarf": "#7C5CFF", "horns": 0.0, "wool": False, "head": 1.45},
-    "pip":  {"coat": "#FAFAF7", "patch": "#2A2A2E", "cut": 0.66, "scarf": "#FF5A4E", "horns": 0.55, "wool": False, "head": 1.45},
+    "pebble": {"coat": "#FAFAF7", "patch": "#2A2A2E", "cut": 0.66, "scarf": "#FF5A4E", "horns": 0.55, "wool": False, "head": 1.45},
     "puff": {"coat": "#FBFAF6", "patch": "#FBFAF6", "cut": 2.0,  "scarf": "#2EC4A0", "horns": 0.0, "wool": True, "head": 1.4, "face": "#2A2A2E"},
 }
 if FRIEND in FRIENDS:

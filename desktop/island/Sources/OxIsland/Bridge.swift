@@ -26,6 +26,9 @@ struct PendingApproval: Equatable {
     var question: String? = nil
     var options: [String] = []
     var multiSelect = false
+    /// What the call would do, in plain words ("This touches production"), and how risky.
+    var riskWhy: String? = nil
+    var riskLevel: String? = nil
 }
 
 /// One delegated worker inside a run (ox's `subagent` tool), for the office view.
@@ -787,9 +790,11 @@ final class OxBridge: ObservableObject {
                 multi = q["multiSelect"] as? Bool ?? false
             }
             update(path) { s in
+                let risk = frame["risk"] as? [String: Any]
                 s.pending = PendingApproval(id: id, tool: tool, preview: preview,
                                             deadline: Date(timeIntervalSince1970: deadlineMs / 1000),
-                                            question: question, options: options, multiSelect: multi)
+                                            question: question, options: options, multiSelect: multi,
+                                            riskWhy: (risk?["why"] as? String).flatMap { $0.isEmpty ? nil : $0 }, riskLevel: risk?["level"] as? String)
                 s.mood = .needsYou
                 s.activity = "wants to run \(tool)"
             }

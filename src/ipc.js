@@ -365,7 +365,7 @@ export function createIpcServer(opts = {}) {
     resolvePending(DECLINE, reason);
   }
 
-  function requestApproval({ tool, args = {}, cwd = process.cwd(), preview } = {}) {
+  function requestApproval({ tool, args = {}, cwd = process.cwd(), preview, risk = null } = {}) {
     // Rule 4: a second approval supersedes the first. Resolve the old one as
     // 'ask' BEFORE installing the new one, so the stale request can never be
     // left blocking and the newest intent always wins.
@@ -394,6 +394,7 @@ export function createIpcServer(opts = {}) {
       tool: toolName,
       argsPreview: preview ?? previewOf(safeArgs),
       args: safeArgs,
+      ...(risk && risk.level ? { risk: { level: String(risk.level), why: String(risk.why ?? '').slice(0, 160) } } : {}),
       cwd: String(cwd ?? ''),
       at,
       deadlineAt,
