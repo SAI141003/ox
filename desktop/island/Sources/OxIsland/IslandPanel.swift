@@ -36,7 +36,10 @@ enum IslandLayout {
     /// The ox lives in the card now (at its left, like Mochi in Coucou's), so
     /// there is no separate floor under it: the island stays slim in every state.
     static var floorHeight: CGFloat { 0 }
-    static var expanded: CGSize { CGSize(width: compact ? 520 : 640, height: 168 + floorHeight) }
+    /// Coucou's proportions: 640 wide, 160 tall (8 top, 34 header, 98 cards, 10 bottom, 10 spare).
+    static var expanded: CGSize { CGSize(width: compact ? 560 : 640, height: 160) }
+    /// The session card, the chat or the + tools under the cards.
+    static let panelExtra: CGFloat = 176
     /// Seconds the island stays open after the pointer leaves (0 = until you close it).
     static var autoClose: TimeInterval { UserDefaults.standard.object(forKey: "island.autoClose") as? Double ?? 6 }
     /// With nothing running the card is one line, so the island is shorter.
@@ -58,12 +61,13 @@ enum IslandLayout {
     /// width, height, bottom corner radius, top radius (<0 = concave ears)
     /// A session card is a little taller than the office (it has a message box).
     static var cardOpen = false
+    static var trayOpen = false
     static func shape(_ phase: Phase, _ m: NotchMetrics, office: Bool = false, idle: Bool = false) -> (w: CGFloat, h: CGFloat, corner: CGFloat, top: CGFloat) {
         switch phase {
         case .launch: return (launchSize.width, launchSize.height, 30, -ear)
         case .hidden: return (m.width, m.height, 10, 0)
         case .compact: return (m.width + 2 * wing + 2 * ear, m.height, 12, -ear)
-        case .expanded: return (expanded.width, expanded.height - (idle ? idleCardTrim : 0) + (office ? officeHeight : 0) + (cardOpen ? 40 : 0), 26, -ear)
+        case .expanded: return (expanded.width, expanded.height + (office ? (cardOpen || trayOpen ? panelExtra : officeHeight) + 8 : 0), 22, -ear)
         }
     }
 }

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Speech
 
 // Accessory app: no Dock icon, no menu bar takeover. The notch panel is the UI.
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -27,6 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         bridge.start()
         // Check without touching the mouse: OX_ISLAND_DEMO=card opens the island
         // and the first session's card a few seconds after launch (screenshots).
+        if ProcessInfo.processInfo.environment["OX_ISLAND_DEMO"] == "open" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [bridge] in bridge.pinnedOpen = true }
+        }
         if ProcessInfo.processInfo.environment["OX_ISLAND_DEMO"] == "card" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [bridge] in
                 bridge.pinnedOpen = true
@@ -71,6 +75,35 @@ for sig in [SIGINT, SIGTERM] {
         unlink(Presence.file.path)
         exit(0)
     }
+}
+
+// Check: `open -n "OX Island.app" --args --check-speech <audio>` transcribes a
+// recording with the island's own recognizer settings (on-device, dictation,
+// punctuation) and writes ~/.ox/island/speech-check.txt: proof that speech to
+// text works, without anyone talking.
+if let i = CommandLine.arguments.firstIndex(of: "--check-speech"), i + 1 < CommandLine.arguments.count {
+    let out = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/island/speech-check.txt")
+    func finish(_ text: String) -> Never { try? text.write(to: out, atomically: true, encoding: .utf8); exit(0) }
+    guard VoicePermission.described else { finish("FAIL: \(VoicePermission.howToFix)") }
+    let url = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    SFSpeechRecognizer.requestAuthorization { status in
+        guard status == .authorized else { finish("FAIL: speech recognition not allowed (\(status.rawValue)). Allow OX Island in System Settings › Privacy & Security › Speech Recognition.") }
+        guard let rec = SFSpeechRecognizer(locale: Locale(identifier: "en-US")), rec.isAvailable else { finish("FAIL: recognizer not available") }
+        let req = SFSpeechURLRecognitionRequest(url: url)
+        req.addsPunctuation = true
+        req.taskHint = .dictation
+        let onDevice = rec.supportsOnDeviceRecognition
+        if onDevice { req.requiresOnDeviceRecognition = true }
+        let started = Date()
+        _ = rec.recognitionTask(with: req) { result, error in
+            if let error { finish("FAIL: \(error.localizedDescription)") }
+            if let result, result.isFinal {
+                finish("OK on-device=\(onDevice) \(Int(Date().timeIntervalSince(started) * 1000)) ms: \(result.bestTranscription.formattedString)")
+            }
+        }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 60) { finish("FAIL: timed out") }
+    RunLoop.main.run()
 }
 
 // Check: `OxIsland --check-commands` runs the island's own command matching on

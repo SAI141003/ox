@@ -89,6 +89,7 @@ final class Buddy: NSObject, ObservableObject {
         if phase == .speaking { stopSpeaking() }
         synth.stopSpeaking(at: .immediate)
         Self.sweepTemp()
+        guard VoicePermission.described else { show(VoicePermission.howToFix); return }
         heard = ""
         saying = ""
         shot = Self.captureScreen()
@@ -169,9 +170,11 @@ final class Buddy: NSObject, ObservableObject {
             self.task = nil
             self.request = nil
             let text = self.heard.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Nothing heard live, but there is audio: whisper may still hear it.
-            guard !text.isEmpty || audioPath != nil else { self.show("I didn't catch that. Hold ⌃⌥Space and talk."); return }
+            IslandLog.write("voice heard: \"\(text)\" (final: \(self.finalHeard), recording: \(audioPath != nil))")
+            // Nothing heard live: say so (an empty request used to end as "can't find ox").
+            guard !text.isEmpty else { self.show("I didn't catch that. Hold ⌃⌥Space, or click the mic, and talk."); return }
             guard self.send?(text, self.shot.map { [$0] } ?? [], audioPath) == true else {
+                IslandLog.write("voice: nobody took it (ox not found)")
                 self.show("I can't find ox on this Mac. Open the OX app once, then ask me again.")
                 return
             }

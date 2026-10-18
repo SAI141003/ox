@@ -38,7 +38,7 @@ final class WakeWord: ObservableObject {
     }
 
     func start() {
-        guard Self.enabled, !listening, !micBusy() else { return }
+        guard Self.enabled, !listening, !micBusy(), VoicePermission.described else { return }
         SFSpeechRecognizer.requestAuthorization { status in
             DispatchQueue.main.async { if status == .authorized { self.begin() } }
         }

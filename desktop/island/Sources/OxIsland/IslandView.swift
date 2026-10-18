@@ -163,6 +163,10 @@ struct CompactBar: View {
             } else if bridge.focus.active, bridge.sessions.isEmpty || bridge.headlineMood == .idle {
                 FocusWing(timer: bridge.focus)
                     .frame(width: 40)
+            } else if !bridge.sessions.isEmpty {
+                // Coucou's compact mini grid: one small character per session, two by two.
+                MiniGrid(sessions: Array(bridge.sessions.prefix(4)))
+                    .frame(width: 30, height: 28)
             } else {
                 StatusGlyph(bridge: bridge)
                     .frame(width: 26)
@@ -224,132 +228,87 @@ struct ExpandedContent: View {
     static let oxSize: CGFloat = 84
 
     var body: some View {
-        let w = IslandLayout.expanded.width
-        let headerH = metrics.height
-        let cardH = IslandLayout.expanded.height - headerH - 12 - (bridge.buddyActive ? 0 : IslandLayout.floorHeight) - (bridge.idleIsland ? IslandLayout.idleCardTrim : 0)
         VStack(spacing: 0) {
-            Header(bridge: bridge, metrics: metrics)
-                .frame(height: headerH)
-            Card(wash: wash) {
-                HStack(alignment: .center, spacing: 16) {
-                    if bridge.buddyActive {
-                        // OX Buddy: your avatar listens, thinks and talks here.
-                        BuddyLane(buddy: bridge.buddy, mood: oxMood)
-                            .frame(width: 120, height: Self.oxSize + 18)
-                        BuddyBody(buddy: bridge.buddy)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        // The ox, always in the card: its face is the most urgent
-                        // state (working, needs you, done, error); poke it and it reacts.
-                        // Past 80 % of a plan's limit the ox is on alert (Claudex's panicking mascot).
-                        let stressed = bridge.gauges.contains { $0.percent >= 80 } && [Mood.idle, .sleeping, .done].contains(oxMood)
-                        OxWalker(mood: stressed ? .needsYou : oxMood, height: min(78, cardH - 16), roam: false, onPoke: { bridge.showReaction() })
-                            .help(stressed ? "A plan is past 80 % of its limit: \(bridge.gauges.filter { $0.percent >= 80 }.map { "\($0.label) \(Int($0.percent))%" }.joined(separator: ", "))" : "")
-                            .frame(width: min(78, cardH - 16) * 4 / 3 + 6, height: min(78, cardH - 16))
-                        body(for: focus)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+            HomeHeader(bridge: bridge, notchWidth: metrics.width)
+                .frame(height: 34)
+                .padding(.top, 8)
+            Group {
+                if let s = bridge.pendingSession, let p = s.pending {
+                    ApprovalHome(bridge: bridge, session: s, pending: p)
+                        .overlay(alignment: .bottom) { Countdown(deadline: p.deadline).padding(.horizontal, 40) }
+                } else if let hire = bridge.proposedHire {
+                    HireHome(bridge: bridge, hire: hire)
+                } else if bridge.buddyActive {
+                    // Talking to ox (Pixie's listening card): the face, and what it heard or says.
+                    HomeCard(wash: Color(hex: "#6366F1").opacity(0.22)) {
+                        HStack(spacing: 14) {
+                            BuddyLane(buddy: bridge.buddy, mood: oxMood).frame(width: 110, height: 92)
+                            BuddyBody(buddy: bridge.buddy).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(.horizontal, 12)
                     }
+                } else {
+                    OverviewHome(bridge: bridge, mood: shownMood)
                 }
             }
-            .frame(height: cardH)
-            .padding(.horizontal, IslandLayout.ear + 10)
-            .overlay(alignment: .bottom) {
-                if let p = bridge.pendingSession?.pending { Countdown(deadline: p.deadline).padding(.horizontal, 40) }
-            }
-            if let c = bridge.card, let session = bridge.sessions.first(where: { $0.id == c.id }) {
-                // A session you clicked: its conversation, a message box, Open in Terminal.
-                SessionCardView(bridge: bridge, session: session, card: c)
-                    .padding(.horizontal, IslandLayout.ear + 10)
-                    .padding(.top, 8)
-                    .frame(height: IslandLayout.officeHeight + 40, alignment: .top)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            } else if bridge.tray != nil {
-                // A tool the person opened wins over the ambient office/canvas.
-                TrayPanel(bridge: bridge)
-                    .padding(.horizontal, IslandLayout.ear + 10)
-                    .padding(.top, 8)
-                    .frame(height: IslandLayout.officeHeight, alignment: .top)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            } else if let team = bridge.officeSession {
-                PixelOffice(bridge: bridge, session: team)
-                    .padding(.horizontal, IslandLayout.ear + 18)
-                    .padding(.top, 10)
-                    .frame(height: IslandLayout.officeHeight, alignment: .top)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            } else if let canvas = bridge.canvasSession?.canvas {
-                // What the agent chose to show: its OX Canvas, drawn natively.
-                CanvasView(root: canvas)
-                    .padding(.horizontal, IslandLayout.ear + 10)
-                    .padding(.top, 8)
-                    .frame(height: IslandLayout.officeHeight, alignment: .top)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+            .frame(height: 98)
+            .padding(.horizontal, 10)
+            .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: bridge.pendingSession?.pending?.id)
+            extraPanel
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
             Spacer(minLength: 0)
+        }
+        .padding(.bottom, 10)
+    }
+
+    @ViewBuilder private var extraPanel: some View {
+        if let id = bridge.orgCard, let a = bridge.org.first(where: { $0.id == id }) {
+            OrgAgentCard(bridge: bridge, agent: a)
+                .frame(height: 110)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        } else if let c = bridge.card, let session = bridge.sessions.first(where: { $0.id == c.id }) {
+            // A session you opened: its conversation, a message box, Open in Terminal.
+            SessionCardView(bridge: bridge, session: session, card: c)
+                .frame(height: IslandLayout.panelExtra)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        } else if bridge.tray != nil {
+            VStack(spacing: 6) {
+                if [.shelf, .focus, .clips].contains(bridge.tray) {
+                    // The + tab: files dropped on the notch, the focus timer, what you copied.
+                    HStack(spacing: 5) {
+                        ForEach([TrayTab.shelf, .focus, .clips]) { t in
+                            TabCapsule(icon: t.icon, on: bridge.tray == t) { bridge.tray = t }.help(t.title)
+                        }
+                        Spacer()
+                    }
+                }
+                TrayPanel(bridge: bridge)
+            }
+            .frame(height: IslandLayout.panelExtra)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        } else if let team = bridge.officeSession {
+            PixelOffice(bridge: bridge, session: team)
+                .frame(height: IslandLayout.officeHeight, alignment: .top)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        } else if let canvas = bridge.canvasSession?.canvas {
+            // What the agent chose to show: its OX Canvas, drawn natively.
+            CanvasView(root: canvas)
+                .frame(height: IslandLayout.officeHeight, alignment: .top)
+                .transition(.opacity.combined(with: .move(edge: .top)))
         }
     }
 
-    private func rank(_ s: AgentSession) -> Int {
-        switch s.mood { case .needsYou: return 0; case .error: return 1; case .working: return 2; case .thinking: return 3; case .done: return 4; default: return 5 }
+    /// Past 80 % of a plan's limit the ox is on alert (Claudex's panicking mascot).
+    private var shownMood: Mood {
+        let stressed = bridge.gauges.contains { $0.percent >= 80 } && [Mood.idle, .sleeping, .done].contains(oxMood)
+        return stressed ? .needsYou : oxMood
     }
 
     private var oxMood: Mood {
-        if let s = focus { return s.mood }
+        if let f = bridge.focused { return f.mood }
         return bridge.sessions.isEmpty ? .sleeping : bridge.headlineMood
-    }
-
-    private var focus: AgentSession? {
-        bridge.pendingSession
-            ?? bridge.sessions.first(where: { if case .error = $0.mood { return true }; return false })
-            ?? (bridge.sessions.count == 1 ? bridge.sessions.first : nil)
-    }
-
-    private var wash: Color? {
-        if bridge.pendingSession != nil { return Ink.amber }
-        switch focus?.mood {
-        case .error: return Ink.red
-        case .done: return Ink.green
-        default: return bridge.sessions.isEmpty ? nil : Color.white.opacity(0.18)
-        }
-    }
-
-    @ViewBuilder private func body(for s: AgentSession?) -> some View {
-        if let s, let p = s.pending {
-            ApprovalBody(bridge: bridge, session: s, pending: p)
-        } else if let s, case .error(let msg) = s.mood {
-            VStack(alignment: .leading, spacing: 5) {
-                Who(color: bridge.color(of: s), name: s.project, label: "stopped with an error")
-                Text(msg).font(.system(size: 12)).foregroundStyle(Ink.text.opacity(0.9)).lineLimit(2)
-                Text(s.id.hasPrefix("app:") ? "Open it in the OX app to see what happened." : s.id.contains("ox-ipc-island-") ? "Ask again from the chat, or open the OX app." : "The run is still open in your terminal.")
-                    .font(.system(size: 11)).foregroundStyle(Ink.muted)
-            }
-        } else if let s, s.mood == .done {
-            VStack(alignment: .leading, spacing: 5) {
-                Who(color: bridge.color(of: s), name: s.project, label: s.closedAt == nil ? "finished, your turn" : "session ended")
-                Text(s.lastText.isEmpty ? "Done." : s.lastText.trimmingCharacters(in: .whitespacesAndNewlines))
-                    .font(.system(size: 12)).foregroundStyle(Ink.text.opacity(0.85))
-                    .lineLimit(2).truncationMode(.head)
-                Usage(session: s)
-            }
-        } else if bridge.sessions.isEmpty {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 6) {
-                    Text("Nothing running").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Ink.text)
-                    Text("· type or talk to ox, or start it in a terminal").font(.system(size: 12)).foregroundStyle(Ink.muted).lineLimit(1)
-                }
-                if let t = bridge.today { TodayMeter(today: t) }
-                ConnectedRow(tools: bridge.connected)
-                NowPlayingPill(player: bridge.player)
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 4) {
-                // Working ones first; each row is a session you can click open.
-                let ordered = bridge.sessions.sorted { rank($0) < rank($1) }
-                ForEach(ordered.prefix(4)) { s in RunRow(bridge: bridge, session: s) }
-                if bridge.sessions.count > 4 {
-                    Text("and \(bridge.sessions.count - 4) more").font(.system(size: 11)).foregroundStyle(Ink.dim)
-                }
-            }
-        }
     }
 }
 
@@ -705,5 +664,21 @@ struct SessionCardView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Ink.card))
         .onAppear { focused = true }
+    }
+}
+
+
+/// Up to four sessions as tiny characters in the collapsed notch; a working one bobs.
+struct MiniGrid: View {
+    let sessions: [AgentSession]
+    var body: some View {
+        let cols = [GridItem(.fixed(12), spacing: 4), GridItem(.fixed(12), spacing: 4)]
+        LazyVGrid(columns: cols, spacing: 2) {
+            ForEach(sessions) { s in
+                SessionCharacter(session: s, height: 13)
+                    .opacity({ if case .idle = s.mood { return 0.55 }; return 1 }())
+                    .help("\(s.project) · \(s.activity)")
+            }
+        }
     }
 }

@@ -58,6 +58,24 @@ struct AgentSession: Identifiable, Equatable {
     /// A spoken question is in flight on this run: collect the reply to speak it.
     var buddyAsk = false
     var buddyReply = ""
+    /// The last few things it did (the home card's running list, newest last).
+    var steps: [String] = []
+    /// Which agent tool it is ("Claude Code", "Codex", "ox"…).
+    var tool = "ox"
+
+    mutating func note(_ step: String) {
+        let s = step.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty, steps.last != s else { return }
+        steps.append(s)
+        if steps.count > 6 { steps.removeFirst(steps.count - 6) }
+    }
+
+    /// A stable colour per session (Coucou's per-project colours).
+    var color: String {
+        let palette = ["#22C55E", "#EAB308", "#60A5FA", "#E879F9", "#FF5A4E", "#2EC4A0", "#F29B38", "#7C5CFF"]
+        let sum = id.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFFFF }
+        return palette[sum % palette.count]
+    }
 
     var project: String {
         // A run from the app has no folder of its own: it is named by its bot.
@@ -81,7 +99,7 @@ final class OxBridge: ObservableObject {
     private var buddySink: AnyCancellable?
 
     /// The tray under the island (Tray.swift): which tool is open, and the tools.
-    @Published var tray: TrayTab?
+    @Published var tray: TrayTab? { didSet { IslandLayout.trayOpen = tray != nil } }
     /// Set by the panel: typing needs the panel to take keyboard focus.
     var trayChanged: ((TrayTab?) -> Void)?
     var cardChanged: ((Bool) -> Void)?
@@ -99,7 +117,7 @@ final class OxBridge: ObservableObject {
     var pendingSession: AgentSession? { sessions.first { $0.pending != nil } }
     /// A team at work is the moment the office exists for, so it opens by itself.
     var teamWorking: Bool { sessions.contains { $0.closedAt == nil && $0.agents.contains { $0.endedAt == nil } } }
-    var expanded: Bool { hovering || pinnedOpen || pendingSession != nil || peeking || teamWorking || buddyActive }
+    var expanded: Bool { hovering || pinnedOpen || pendingSession != nil || proposedHire != nil || peeking || teamWorking || buddyActive }
     var buddyActive: Bool { MainActor.assumeIsolated { buddy.active } }
 
     /// The face the notch shows: the most urgent state across all runs.
@@ -148,6 +166,7 @@ final class OxBridge: ObservableObject {
                 guard let self else { return false }
                 // "Pixie, play Billie Jean": the name is how you called it, not the request.
                 var text = Self.withoutName(raw)
+                IslandLog.write("request: \"\(raw)\" → \"\(text)\" (live run: \(self.hasLiveRun))")
                 if let part = self.islandPart(text) {
                     guard let rest = part.rest else { MainActor.assumeIsolated { self.buddy.speak(part.said) }; return true }
                     IslandLog.write("island did: \(part.said) · passing on: \(rest)")
@@ -176,6 +195,13 @@ final class OxBridge: ObservableObject {
                 }
                 return true
             }
+        }
+        // Test hook: the same path as speaking ("say" a sentence to the island).
+        //   swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("dev.ox.island.say"), object: "open whatsapp", deliverImmediately: true)'
+        DistributedNotificationCenter.default().addObserver(forName: .init("dev.ox.island.say"), object: nil, queue: .main) { [weak self] n in
+            guard let self, let text = n.object as? String, !text.isEmpty else { return }
+            IslandLog.write("test say: \(text)")
+            MainActor.assumeIsolated { _ = self.buddy.send?(text, [], nil) }
         }
         scan()
         // Instant discovery: a new ox socket is a write to $TMPDIR. The slow
@@ -286,6 +312,51 @@ final class OxBridge: ObservableObject {
         }
     }
 
+    // MARK: the company of agents (ox org, after Paperclip)
+
+    struct OrgAgent: Identifiable, Equatable {
+        let id: String; let name: String; let title: String; let runtime: String; let status: String
+        let why: String?; let hiredBy: String; let spent: Double; let budget: Double?; let next: String?
+    }
+    @Published private(set) var org: [OrgAgent] = []
+    private var orgPolledAt = Date.distantPast
+    var proposedHire: OrgAgent? { org.first { $0.status == "proposed" } }
+
+    private func pollOrg(port: Int) {
+        guard Date().timeIntervalSince(orgPolledAt) > 10, let url = URL(string: "http://127.0.0.1:\(port)/ox/org") else { return }
+        orgPolledAt = Date()
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 3
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let doc = data.flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }),
+                  let rows = doc["agents"] as? [[String: Any]] else { return }
+            let list = rows.compactMap { r -> OrgAgent? in
+                guard let id = r["id"] as? String else { return nil }
+                return OrgAgent(id: id, name: r["name"] as? String ?? id, title: r["title"] as? String ?? "", runtime: r["runtime"] as? String ?? "ox",
+                                status: r["status"] as? String ?? "active", why: r["why"] as? String, hiredBy: r["hiredBy"] as? String ?? "you",
+                                spent: r["spent"] as? Double ?? 0, budget: r["budget"] as? Double, next: r["next"] as? String)
+            }
+            DispatchQueue.main.async {
+                let had = self?.proposedHire?.id
+                self?.org = list
+                // A hire waiting for you is a decision: the island opens for it.
+                if let p = self?.proposedHire, p.id != had { self?.peek(for: 8); NSSound(named: "Pop")?.play() }
+            }
+        }.resume()
+    }
+
+    /// approve / reject a proposed hire, wake / pause / resume an agent.
+    func org(_ action: String, _ id: String) {
+        post("/ox/org/\(action)", ["id": id]) { [weak self] _ in
+            IslandLog.write("org \(action): \(id)")
+            self?.orgPolledAt = .distantPast
+            if let port = self?.appPort { self?.pollOrg(port: port) }
+        }
+    }
+
+    @Published var orgCard: String?
+
     private func pollConnected(port: Int) {
         guard Date().timeIntervalSince(connectedPolledAt) > 60, let url = URL(string: "http://127.0.0.1:\(port)/ox/connected") else { return }
         connectedPolledAt = Date()
@@ -320,6 +391,7 @@ final class OxBridge: ObservableObject {
         pollUsage(port: port)
         pollConnected(port: port)
         pollGauges(port: port)
+        pollOrg(port: port)
         appPolling = true
         var req = URLRequest(url: url)
         req.timeoutInterval = 1.2
@@ -347,6 +419,17 @@ final class OxBridge: ObservableObject {
         var note = ""
         var busy = false
     }
+    /// The session the home card shows (tap a pill to change it; nil = the most urgent).
+    @Published var focusId: String?
+    var focused: AgentSession? {
+        if let p = pendingSession { return p }
+        if let id = focusId, let s = sessions.first(where: { $0.id == id }) { return s }
+        let rank: (AgentSession) -> Int = { s in
+            switch s.mood { case .needsYou: return 0; case .error: return 1; case .working: return 2; case .thinking: return 3; case .done: return 4; default: return 5 }
+        }
+        return sessions.min { (rank($0), -($0.steps.count)) < (rank($1), -($1.steps.count)) }
+    }
+
     @Published var card: SessionCard? { didSet { IslandLayout.cardOpen = card != nil } }
 
     /// Each session's own character, the same every time (the pixel cast).
@@ -512,6 +595,8 @@ final class OxBridge: ObservableObject {
                     let idle = r["idleSec"] as? Int ?? 0
                     // "Claude · idle for 3 m", "Codex · $ npm test": who, then what.
                     let who = (r["who"] as? String ?? "agent").replacingOccurrences(of: " Code", with: "")
+                    s.tool = r["who"] as? String ?? "agent"
+                    if !detail.isEmpty { s.note(detail) }
                     if state == "idle" {
                         s.mood = .idle
                         s.activity = "\(who) · " + (idle < 60 ? "idle, your turn" : "idle for \(idle / 60) m")
@@ -525,7 +610,7 @@ final class OxBridge: ObservableObject {
                 switch state {
                 case "tool":
                     let what = OxBridge.describe(tool: tool, preview: detail)
-                    s.mood = .working(what); s.activity = what
+                    s.mood = .working(what); s.activity = what; s.note(what)
                 case "writing": s.mood = .thinking; s.activity = "writing the answer"
                 case "done": s.mood = .done; s.activity = "done"
                 case "failed": s.mood = .error(detail.isEmpty ? "stopped" : detail); s.activity = "stopped"
@@ -622,6 +707,7 @@ final class OxBridge: ObservableObject {
                 s.toolCount += 1
                 s.mood = .working(name)
                 s.activity = Self.describe(tool: name, preview: ev["argsPreview"] as? String ?? "")
+                s.note(s.activity)
             case "tool-end":
                 if (ev["isError"] as? Bool) == true { s.activity = "\(ev["name"] as? String ?? "tool") failed — recovering" }
                 if ev["name"] as? String == "show_ui",
@@ -795,7 +881,7 @@ final class OxBridge: ObservableObject {
     }
 
     /// The office (a team at work) or a canvas extends the expanded island.
-    var hasExtraPanel: Bool { card != nil || tray != nil || officeSession != nil || canvasSession != nil }
+    var hasExtraPanel: Bool { orgCard != nil || card != nil || tray != nil || officeSession != nil || canvasSession != nil }
 
     /// Commands about the island itself, typed or said ("make the island
     /// smaller", "bigger", "stay open", "close"): done here, no model, no AI.

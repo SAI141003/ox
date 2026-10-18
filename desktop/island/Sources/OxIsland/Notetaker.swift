@@ -28,6 +28,7 @@ final class Notetaker: ObservableObject {
 
     func start() {
         guard !recording else { return }
+        guard VoicePermission.described else { message = VoicePermission.howToFix; return }
         SFSpeechRecognizer.requestAuthorization { status in
             DispatchQueue.main.async {
                 guard status == .authorized else { self.message = "Allow Speech Recognition for OX Island in System Settings › Privacy & Security."; return }

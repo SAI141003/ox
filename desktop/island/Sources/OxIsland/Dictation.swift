@@ -33,6 +33,7 @@ final class Dictation: ObservableObject {
 
     func start() {
         guard Self.enabled, phase != .listening else { return }
+        guard VoicePermission.described else { say(VoicePermission.howToFix); return }
         willListen()
         heard = ""
         finalHeard = false
@@ -101,6 +102,18 @@ final class Dictation: ObservableObject {
         phase = .message(m)
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in if case .message = self?.phase { self?.phase = .idle } }
     }
+}
+
+/// macOS kills an app that asks for the microphone or speech recognition
+/// without saying why in its Info.plist (a TCC "privacy violation"): that is
+/// what happened when the bare binary ran outside OX Island.app. Every
+/// listener checks this first and says what to do instead of crashing.
+enum VoicePermission {
+    static var described: Bool {
+        let info = Bundle.main.infoDictionary ?? [:]
+        return info["NSMicrophoneUsageDescription"] != nil && info["NSSpeechRecognitionUsageDescription"] != nil
+    }
+    static let howToFix = "Voice needs OX Island.app (run  ox island start ), not the bare binary."
 }
 
 /// Text into whatever app you are typing in: ⌘V, then the clipboard gets back

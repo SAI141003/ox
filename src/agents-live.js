@@ -29,7 +29,9 @@ function tailLines(file, bytes = TAIL) {
 
 const base = (p) => (p ? path.basename(String(p)) : '');
 /** "ox · practical-vaughan" for a worktree session, else the folder's name. */
-export function projectName(cwd) {
+export function projectName(cwd, home = os.homedir()) {
+  // A session started in the home folder is not "saiyaganti": it is "home".
+  if (cwd && path.resolve(String(cwd)) === path.resolve(home)) return 'home';
   const m = /^(.*?)[\\/]\.(?:claude|codex|ox)[\\/]worktrees[\\/]([^\\/]+)/.exec(String(cwd ?? ''));
   return m ? `${base(m[1])} · ${m[2].replace(/-[0-9a-f]{5,}$/i, '')}` : base(cwd);
 }

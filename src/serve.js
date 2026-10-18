@@ -1561,6 +1561,29 @@ async function handleImage(req, res) {
 }
 
 const ROUTES = [
+  // The company of agents (src/org.js, after Paperclip) for the island: who works
+  // here, hires waiting for you, and wake / approve / reject from the notch.
+  { method: 'GET', pattern: /^\/ox\/org\/?$/, handler: appRoute(async () => {
+    const O = await import('./org.js');
+    const { readyFor } = O;
+    const agents = Object.values(O.readOrg().agents).filter((a) => a.status !== 'terminated').map((a) => ({
+      id: a.id, name: a.name, title: a.title, runtime: a.runtime, status: a.status, why: a.pausedWhy ?? null, hiredBy: a.hiredBy,
+      spent: O.spentThisMonth(a), budget: a.budgetUsd, lastBeat: a.lastBeat, every: a.heartbeatMin,
+      next: (() => { try { return readyFor(a.id)[0]?.title ?? null; } catch { return null; } })(),
+    }));
+    return { agents, proposed: agents.filter((a) => a.status === 'proposed') };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/org\/(approve|reject|beat|pause|resume)\/?$/, handler: appRoute(async (body, m) => {
+    const O = await import('./org.js');
+    const id = String(body?.id ?? '');
+    switch (m[1]) {
+      case 'approve': return { agent: O.approveHire(id) };
+      case 'reject': return { agent: O.rejectHire(id) };
+      case 'pause': return { agent: O.pause(id) };
+      case 'resume': return { agent: O.resume(id) };
+      default: { O.beat(id).catch(() => {}); return { started: true }; }
+    }
+  }) },
   // Other agents' sessions (src/agents-live.js): read one, message it, open it in Terminal.
   { method: 'GET', pattern: /^\/ox\/agents\/?$/, handler: appRoute(async () => ({ sessions: (await import('./agents-live.js')).liveAgents() })) },
   { method: 'POST', pattern: /^\/ox\/agents\/session\/?$/, handler: appRoute(async (body) => { const A = await import('./agents-live.js'); const r = await A.sessionMessages(body?.id); return { ...r, queued: A.queuedFor(body?.id) }; }) },
