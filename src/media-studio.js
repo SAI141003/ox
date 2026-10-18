@@ -310,7 +310,20 @@ export const PROVIDERS = Object.freeze({
   fal: { label: 'fal.ai', key: 'FAL_KEY', kinds: ['image', 'video'], models: () => [{ id: 'fal-ai/flux/schnell', label: 'FLUX.1 schnell', surface: 'image' }], anyModel: true },
   openai: { label: 'OpenAI', key: 'OPENAI_API_KEY', kinds: ['image'], models: () => ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'].map((id) => ({ id, label: id, surface: 'image' })) },
   local: { label: 'This machine (Stable Diffusion)', key: null, kinds: ['image'], models: () => [{ id: 'local', label: 'the loaded model', surface: 'image' }] },
+  // Image models behind your OpenRouter key (they make and edit pictures from a prompt).
+  openrouter: { label: 'OpenRouter', key: 'OPENROUTER_API_KEY', kinds: ['image'], models: () => ['google/gemini-2.5-flash-image', 'openai/gpt-5-image-mini'].map((id) => ({ id, label: id, surface: 'image' })), anyModel: true },
 });
+
+// A source image for an edit: a local path (read here) or an https URL.
+async function sourceImage(ref, fetchImpl) {
+  const s = String(ref ?? '');
+  if (/^https?:\/\//.test(s)) { const r = await fetchImpl(s); if (!r.ok) throw new Error(`could not fetch the image (${r.status})`); return { buf: Buffer.from(await r.arrayBuffer()), type: r.headers.get('content-type') || 'image/png', name: 'image.png' }; }
+  const f = s.replace(/^~(?=\/)/, os.homedir());
+  if (!fs.existsSync(f)) throw new Error(`no image at ${s}`);
+  const ext = path.extname(f).slice(1).toLowerCase();
+  return { buf: fs.readFileSync(f), type: ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png', name: path.basename(f) };
+}
+const dataUri = (img) => `data:${img.type};base64,${img.buf.toString('base64')}`;
 
 const LOCAL_SD = () => (process.env.OX_SD_URL || 'http://127.0.0.1:7860').replace(/\/$/, '');
 
@@ -325,7 +338,8 @@ async function jsonFetch(fetchImpl, url, init = {}) {
 const writeB64 = (dir, i, b64, ext) => { const f = path.join(dir, `${i + 1}.${ext}`); fs.writeFileSync(f, Buffer.from(b64, 'base64')); return f; };
 
 // One run on any provider. Higgsfield goes through create(); the others here.
-export async function generate({ provider = 'higgsfield', model, prompt = '', settings = {}, media = {}, fetchImpl = globalThis.fetch, onStatus = () => {}, wait, env = process.env } = {}) {
+export async function generate({ provider = 'higgsfield', model, prompt = '', settings = {}, media: mediaIn = {}, fetchImpl = globalThis.fetch, onStatus = () => {}, wait, env = process.env } = {}) {
+  let media = { ...mediaIn };
   if (provider === 'higgsfield') return create({ model, prompt, settings, media, fetchImpl, onStatus, wait });
   const P = PROVIDERS[provider];
   if (!P) throw new Error(`unknown provider '${provider}' (${Object.keys(PROVIDERS).join(', ')})`);
@@ -338,7 +352,44 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
   note({ ...recipe, status: 'queued' });
   let files = []; let urls = []; let surface = 'image'; let status = 'completed'; let error = null;
   try {
-    if (provider === 'openai') {
+    const editOf = media.edit?.[0] ?? null;
+    if (editOf) recipe.surface = 'image';
+    if (provider === 'openai' && editOf) {
+      // One prompt edits the picture (Krea's idea): /images/edits with the source attached.
+      const img = await sourceImage(editOf, fetchImpl);
+      const form = new FormData();
+      form.append('model', model || 'gpt-image-2');
+      form.append('prompt', prompt);
+      form.append('image', new Blob([img.buf], { type: img.type }), img.name);
+      if (settings.size) form.append('size', settings.size);
+      const d = await jsonFetch(fetchImpl, `${(env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '')}/images/edits`, { method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: form });
+      fs.mkdirSync(dir, { recursive: true });
+      for (const [i, item] of (d.data ?? []).entries()) if (item.b64_json) files.push(writeB64(dir, i, item.b64_json, 'png'));
+    } else if (provider === 'openrouter') {
+      const content = [{ type: 'text', text: editOf ? `Edit this image: ${prompt}. Return the edited image.` : prompt }];
+      if (editOf) content.push({ type: 'image_url', image_url: { url: dataUri(await sourceImage(editOf, fetchImpl)) } });
+      const d = await jsonFetch(fetchImpl, `${(env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/$/, '')}/chat/completions`, {
+        method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: model || 'google/gemini-2.5-flash-image', modalities: ['image', 'text'], messages: [{ role: 'user', content }] }),
+      });
+      fs.mkdirSync(dir, { recursive: true });
+      const imgs = d.choices?.[0]?.message?.images ?? [];
+      for (const [i, im] of imgs.entries()) { const u = im?.image_url?.url ?? ''; const m = /^data:image\/(\w+);base64,(.+)$/.exec(u); if (m) files.push(writeB64(dir, i, m[2], m[1] === 'jpeg' ? 'jpg' : m[1])); else if (u) files.push(await download(u, path.join(dir, `${i + 1}.png`), fetchImpl)); }
+      if (!files.length) throw new Error(`${model || 'the model'} answered without an image${d.choices?.[0]?.message?.content ? `: ${String(d.choices[0].message.content).slice(0, 160)}` : ''}`);
+    } else if (provider === 'local' && editOf) {
+      const img = await sourceImage(editOf, fetchImpl);
+      const d = await jsonFetch(fetchImpl, `${LOCAL_SD()}/sdapi/v1/img2img`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, init_images: [img.buf.toString('base64')], denoising_strength: Number(settings.strength ?? 0.55), steps: Number(settings.steps ?? 25) }),
+      }).catch((e) => { throw new Error(`no Stable Diffusion server answered at ${LOCAL_SD()} (${e.message})`); });
+      fs.mkdirSync(dir, { recursive: true });
+      files = (d.images ?? []).map((b64, i) => writeB64(dir, i, String(b64).replace(/^data:image\/\w+;base64,/, ''), 'png'));
+    } else if (provider === 'fal' && editOf && !/^https?:/.test(editOf)) {
+      // fal takes the source as a data URI when it is a local file.
+      media = { ...media, start: [dataUri(await sourceImage(editOf, fetchImpl))] };
+      delete media.edit;
+      return generate({ provider, model: model || 'fal-ai/flux-pro/kontext', prompt, settings, media, fetchImpl, onStatus, wait, env });
+    } else if (provider === 'openai') {
       const d = await jsonFetch(fetchImpl, `${(env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '')}/images/generations`, {
         method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: model || 'gpt-image-2', prompt, ...(settings.size ? { size: settings.size } : {}), ...(settings.quality ? { quality: settings.quality } : {}), ...(settings.n ? { n: Number(settings.n) } : {}), ...(settings.outputFormat ? { output_format: settings.outputFormat } : {}) }),

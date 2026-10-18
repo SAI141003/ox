@@ -82,6 +82,17 @@ function pdfText(file, { maxChars = 60_000 } = {}) {
   return t ? t.slice(0, maxChars) : null;
 }
 
+// Speech in a video or recording up to 15 minutes, with whisper.cpp when a model is on this Mac.
+let videoEdit = null;
+try { videoEdit = await import('./video-edit.js'); } catch {}
+function speechOf(file, duration) {
+  if (!videoEdit || process.env.NODE_TEST_CONTEXT || !duration || duration > 900 || !videoEdit.whisperModel()) return null;
+  try {
+    const t = videoEdit.transcribe(file);
+    return t.segments.length ? t.segments.map((s) => `[${Math.floor(s.start / 60)}:${String(Math.floor(s.start % 60)).padStart(2, '0')}] ${s.text}`).join('\n').slice(0, 20_000) : null;
+  } catch { return null; }
+}
+
 /** What the app puts in the message for a saved upload. */
 export function describeUpload(file, name, type = '', size = 0) {
   const kind = kindOf(name, type);
@@ -90,11 +101,16 @@ export function describeUpload(file, name, type = '', size = 0) {
     const v = videoFrames(file);
     out.duration = v.duration ?? null;
     out.frames = v.frames;
-    out.note = `Video ${out.name}${v.duration ? `, ${Math.round(v.duration)} s` : ''}, saved at ${file}. ${v.frames.length ? `The ${v.frames.length} images attached are frames from it, at ${v.frames.map((f) => `${f.t} s`).join(', ')}.` : v.note ?? ''} Use the path to work on the file itself (more frames, the sound, a clip).`;
+    out.note = `Video ${out.name}${v.duration ? `, ${Math.round(v.duration)} s` : ''}, saved at ${file}. ${v.frames.length ? `The ${v.frames.length} images attached are frames from it, at ${v.frames.map((f) => `${f.t} s`).join(', ')}.` : v.note ?? ''} Use the path to work on the file itself (more frames, the sound, a clip; edit_video cuts, captions, speeds up, finds highlights).`;
+    // What is said in it too (Elorian Glimpse: a video is pictures and speech), when it is short enough.
+    const said = speechOf(file, v.duration);
+    if (said) { out.text = said; out.note += ' What is said in it, with times:'; }
   } else if (kind === 'audio') {
     const d = has('ffprobe') ? durationOf(file) : null;
     out.duration = d;
     out.note = `Audio ${out.name}${d ? `, ${Math.round(d)} s` : ''}, saved at ${file}.`;
+    const said = speechOf(file, d);
+    if (said) { out.text = said; out.note += ' What is said, with times:'; }
   } else if (kind === 'pdf') {
     out.text = pdfText(file);
     out.note = `PDF ${out.name}, saved at ${file}.${out.text ? ' Its text:' : ' (its text could not be extracted; read it with tools)'}`;

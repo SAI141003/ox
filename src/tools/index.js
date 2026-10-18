@@ -29,6 +29,7 @@ import { loadToolsTool } from './load-tools.js';
 import { agentMessagingToolSchemas, AGENT_MESSAGE_TOOLS } from '../agent-teams.js';
 import { taskBoardTool, TASK_BOARD_TOOL_SCHEMAS, TASK_BOARD_TOOLS, currentTaskId } from './task-board.js';
 import { createMediaTool, MEDIA_TOOL_SCHEMAS, MEDIA_TOOLS, MEDIA_KEYWORDS } from './media.js';
+import { editVideoTool, VIDEO_TOOL_SCHEMAS } from './video.js';
 import { installSkillTool, INSTALL_SKILL_SCHEMAS, INSTALL_SKILL_TOOLS, INSTALL_SKILL_KEYWORDS } from './install-skill.js';
 import { codeGraphTool, CODE_GRAPH_TOOL_SCHEMAS, CODE_GRAPH_TOOLS, CODE_GRAPH_KEYWORDS } from './code-graph.js';
 
@@ -59,6 +60,7 @@ export const TOOL_IMPLS = {
   show_ui: showUiTool,
   task_board: taskBoardTool,
   create_media: createMediaTool,
+  edit_video: editVideoTool,
   load_tools: loadToolsTool,
   install_skill: installSkillTool,
   code_graph: codeGraphTool,
@@ -73,6 +75,7 @@ export const BUILTIN_SCHEMAS = [
   ...WEB_TASK_TOOL_SCHEMAS,
   ...CRITIQUE_TOOL_SCHEMAS,
   ...MEDIA_TOOL_SCHEMAS,
+  ...VIDEO_TOOL_SCHEMAS,
   ...INSTALL_SKILL_SCHEMAS,
   ...CODE_GRAPH_TOOL_SCHEMAS,
   {

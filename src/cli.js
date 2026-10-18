@@ -529,6 +529,7 @@ function usageAll() {
     '  ox org timeline                   who did what, every tool call, and the count of irreversible actions',
     '  ox skill from <book.pdf|folder>   a book or docs → a skill: an index plus chapters read only when needed',
     '',
+    'video: ox video transcribe|captions|cut|speed|vertical|highlights|gif|polish|understand <file> …   on this machine',
     'traces: ox trace [--signals] | ox trace <id> [--steps]   each run: turns, tokens, cost, tool calls, and "stuck" signals',
     '',
     'pull requests (until they can merge; merging stays yours):',
@@ -4407,7 +4408,7 @@ const SUB_USAGE = {
   skill: 'usage: ox skill <name> | ox skill add <dir | owner/repo[/path]>',
   episode: 'usage: ox episode ls | ox episode promote <id>',
   'memory-loss': 'usage: ox memory-loss [--limit <n>]',
-  create: 'usage: ox create "<prompt>" [--provider higgsfield|fal|openai|local] [--model <id>] [--set key=value]... [--start <url>] [--end <url>] [--ref <url>]... [--video <url>] [--audio <url>] | --models [provider] | --history',
+  create: 'usage: ox create "<prompt>" [--edit <image>] [--provider higgsfield|fal|openai|openrouter|local] [--model <id>] [--set key=value]... [--start <url>] [--end <url>] [--ref <url>]... [--video <url>] [--audio <url>] | --models [provider] | --history',
   hf: 'usage: ox hf search "<words>" | ox hf files <owner/repo> | ox hf pull <owner/repo>[:QUANT]',
   name: 'usage: ox name [<new name> | --reset]  — what ox is called everywhere; it answers to that name when you say it',
   usage: 'usage: ox usage [--days <n>] [--json]  — tokens and cost by model, agent, surface, project and day',
@@ -4769,6 +4770,19 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'video': {
+      // ox video <op> <file> …: edit a video here (src/video-edit.js).
+      const ops = ['transcribe', 'captions', 'cut', 'speed', 'vertical', 'highlights', 'gif', 'polish', 'understand'];
+      if (ops.includes(args[0])) {
+        const { editVideoTool } = await import('./tools/video.js');
+        const [op, file, ...rest] = args;
+        const flag = (n) => { const i = rest.indexOf(n); return i >= 0 ? rest[i + 1] : undefined; };
+        const pos = rest.filter((a, i) => !a.startsWith('--') && !(rest[i - 1] ?? '').startsWith('--'));
+        if (!file) { console.error(`usage: ox video ${op} <file> ${op === 'cut' ? '<start> [end]' : op === 'speed' ? '<factor>' : op === 'highlights' ? '"<what is talked about>"' : op === 'vertical' ? '[9:16|1:1]' : ''}`); process.exitCode = 3; return; }
+        const r = await editVideoTool({ op, file: path.resolve(file), start: flag('--start') ?? (op === 'cut' ? pos[0] : undefined), end: flag('--end') ?? (op === 'cut' ? pos[1] : undefined), factor: op === 'speed' ? Number(pos[0] ?? 2) : undefined, aspect: op === 'vertical' ? pos[0] : undefined, query: op === 'highlights' ? pos.join(' ') : undefined });
+        console.log(r.isError ? c.red(r.content) : r.content.replace(/^edit_video: /, `${c.green('✓')} `));
+        if (r.isError) process.exitCode = 1;
+        return;
+      }
       const tmpl = getTemplate('video');
       if (tmpl) {
         console.log(`${c.bold(tmpl.title)}`);
@@ -5542,15 +5556,18 @@ async function runSubcommand(cmd, args) {
         for (const r of ms.history({ limit: 30 })) console.log(`${r.status === 'completed' ? c.green('✓') : c.yellow(r.status ?? '?')} ${c.dim(r.id)} ${r.label ?? r.model}  ${String(r.prompt ?? '').slice(0, 60)}  ${c.dim((r.files ?? [])[0] ?? '')}`);
         return;
       }
-      const VALUED = new Set(['--provider', '--model', '--set', '--start', '--end', '--ref', '--video', '--audio']);
+      const VALUED = new Set(['--provider', '--model', '--set', '--start', '--end', '--ref', '--video', '--audio', '--edit']);
       const prompt = args.filter((a, i) => !a.startsWith('--') && !VALUED.has(args[i - 1])).join(' ');
       if (!prompt) { console.log(SUB_USAGE.create); process.exitCode = 2; return; }
       const settings = {};
       for (const kv of all('--set')) { const [k, ...v] = kv.split('='); settings[k] = v.join('='); }
       const media = {};
       for (const [f, role] of [['--start', 'start'], ['--end', 'end'], ['--ref', 'reference'], ['--video', 'video'], ['--audio', 'audio']]) if (all(f).length) media[role] = all(f);
-      const provider = flag('--provider') ?? 'higgsfield';
-      const model = flag('--model') ?? (provider === 'higgsfield' ? 'soul-2' : provider === 'openai' ? 'gpt-image-2' : provider === 'fal' ? 'fal-ai/flux/schnell' : 'local');
+      // --edit <image>: one prompt edits that picture (Krea), on a provider that edits.
+      if (flag('--edit')) media.edit = [path.resolve(flag('--edit'))];
+      const edits = !!media.edit;
+      const provider = flag('--provider') ?? (edits ? ((await import('./tools/media.js')).pick({ kind: 'image', edit: true }).provider ?? 'openai') : 'higgsfield');
+      const model = flag('--model') ?? (provider === 'higgsfield' ? 'soul-2' : provider === 'openai' ? 'gpt-image-2' : provider === 'fal' ? (edits ? 'fal-ai/flux-pro/kontext' : 'fal-ai/flux/schnell') : provider === 'openrouter' ? 'google/gemini-2.5-flash-image' : 'local');
       // Settings from the command line are text; the catalogue turns numbers and switches back.
       if (provider === 'higgsfield') {
         const m = ms.getModel(model);
