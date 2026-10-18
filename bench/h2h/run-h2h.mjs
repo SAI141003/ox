@@ -14,6 +14,7 @@
 //   agent left behind. Transcripts are never graded.
 // - An agent that is not installed is reported as such, never scored.
 import http from 'node:http';
+import https from 'node:https';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -24,6 +25,12 @@ import { createSandbox, destroySandbox } from '../real/lib.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OLLAMA = process.env.H2H_OLLAMA ?? 'http://127.0.0.1:11434';
+// Any OpenAI/Anthropic-compatible upstream instead of Ollama, e.g.
+// H2H_UPSTREAM=https://openrouter.ai/api with H2H_UPSTREAM_KEY: the proxy adds
+// the key itself, so no agent ever sees it, and every agent is still counted
+// by the same proxy. Paths are kept: /v1/chat/completions, /v1/messages.
+const UPSTREAM = process.env.H2H_UPSTREAM ?? null;
+const UPSTREAM_KEY = process.env.H2H_UPSTREAM_KEY ?? null;
 
 function argOf(argv, name, dflt = null) { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : dflt; }
 
@@ -58,9 +65,14 @@ function startProxy() {
           try { const j = JSON.parse(body); if (j.stream) { j.stream_options = { ...(j.stream_options ?? {}), include_usage: true }; body = Buffer.from(JSON.stringify(j)); } } catch {}
         }
       }
-      const u = new URL(req.url, OLLAMA);
+      const u = UPSTREAM ? new URL(`${UPSTREAM.replace(/\/+$/, '')}${req.url}`) : new URL(req.url, OLLAMA);
       const headers = { ...req.headers, host: u.host, 'content-length': String(body.length) };
-      const up = http.request(u, { method: req.method, headers }, (ur) => {
+      if (UPSTREAM_KEY) {
+        delete headers['x-api-key'];
+        headers.authorization = `Bearer ${UPSTREAM_KEY}`;
+        if (/\/messages\b/.test(req.url)) headers['x-api-key'] = UPSTREAM_KEY;
+      }
+      const up = (u.protocol === 'https:' ? https : http).request(u, { method: req.method, headers }, (ur) => {
         res.writeHead(ur.statusCode, ur.headers);
         let text = '';
         ur.on('data', (c) => { res.write(c); if (isModelCall && text.length < 4e6) text += c; });

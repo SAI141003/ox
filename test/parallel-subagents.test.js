@@ -676,10 +676,11 @@ test('the batch gate is not weaker than the gate it replaced', async (t) => {
   ]);
   assert.equal(mixed.mode, 'reject');
   assert.equal(mixed.reason, 'approval-gated tools must run solo (batch rejected)');
-  //   * two `bash` calls are still refused: batching is a property of having a
-  //     bounded scheduler, not of the class.
-  assert.equal(batchPlan([{ function: { name: 'bash' } }, { function: { name: 'bash' } }]).mode, 'reject');
-  assert.equal(batchPlan([{ function: { name: 'bash' } }, { function: { name: 'mcp__x__y' } }]).mode, 'reject');
+  //   * two `bash` calls are not run CONCURRENTLY: concurrency is a property of
+  //     having a bounded scheduler, not of the class. They run one after
+  //     another, each through its own approval (test/wave5a.test.js).
+  assert.equal(batchPlan([{ function: { name: 'bash' } }, { function: { name: 'bash' } }]).mode, 'serial');
+  assert.equal(batchPlan([{ function: { name: 'bash' } }, { function: { name: 'mcp__x__y' } }]).mode, 'serial');
   //   * and the scheduler list is exactly one tool, deliberately.
   assert.deepEqual(
     [...['subagent', 'bash', 'write_file', 'mcp__srv__tool']].filter(isConcurrentlyBatchable),

@@ -82,11 +82,10 @@ test('batch mixing approval_gated with another class is rejected', () => {
   assert.equal(groups.length, 2);
   assert.equal(groups[0].class, 'pure_read');
   assert.equal(groups[1].class, 'approval_gated');
-  // Agent loop check: approval_gated with calls.length > 1 → reject
+  // The agent loop runs this batch in order: the read, then the gated call
+  // through its own approval (only a subagent batch keeps the no-mixing rule).
   const approvalGatedGroup = groups.find(g => g.class === 'approval_gated');
   assert.ok(approvalGatedGroup);
-  // When the agent processes this, calls.length is 2 > 1, so batch rejected
-  assert.equal(approvalGatedGroup.class === 'approval_gated' && calls.length > 1, true);
 });
 
 test('terminal call not last in batch is rejected', () => {

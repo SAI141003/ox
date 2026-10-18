@@ -173,7 +173,10 @@ test('gemini: parts with text + functionCall + cumulative usageMetadata emitted 
   assert.deepEqual(events.at(-1), { type: 'done', stopReason: 'tool_calls' });
 });
 
-test('buildAnthropicBody: system top-level, consecutive role:tool merged into one user msg', () => {
+test('buildAnthropicBody: system top-level, consecutive role:tool merged into one user msg', (t) => {
+  // The request's shape, with prompt caching off (test/prompt-cache.test.js checks the cache marks).
+  process.env.OX_PROMPT_CACHE = '0';
+  t.after(() => { delete process.env.OX_PROMPT_CACHE; });
   const body = buildAnthropicBody({
     model: 'claude-sonnet-5',
     maxTokens: 256,

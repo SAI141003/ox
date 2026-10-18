@@ -476,8 +476,10 @@ export function normalizeStreamEvent(raw) {
     const u = raw.usage ?? raw;
     const i = u.inputTokens ?? u.input_tokens ?? u.prompt_tokens ?? u.in ?? 0;
     const o = u.outputTokens ?? u.output_tokens ?? u.completion_tokens ?? u.out ?? 0;
+    const cr = Number(u.cacheReadTokens) || 0;
+    const cw = Number(u.cacheWriteTokens) || 0;
     if (Number(i) || Number(o)) {
-      return { kind: 'usage', usage: { inputTokens: Number(i) || 0, outputTokens: Number(o) || 0 } };
+      return { kind: 'usage', usage: { inputTokens: Number(i) || 0, outputTokens: Number(o) || 0, ...(cr ? { cacheReadTokens: cr } : {}), ...(cw ? { cacheWriteTokens: cw } : {}) } };
     }
     return null;
   }
@@ -1161,6 +1163,8 @@ async function* runAgentLoop(opts = {}) {
   const usage = {
     inputTokens: Number(initialUsage?.inputTokens) || 0,
     outputTokens: Number(initialUsage?.outputTokens) || 0,
+    cacheReadTokens: Number(initialUsage?.cacheReadTokens) || 0,
+    cacheWriteTokens: Number(initialUsage?.cacheWriteTokens) || 0,
   };
   const auxUsage = { inputTokens: 0, outputTokens: 0 };
   let auxSpend = false;
@@ -1180,6 +1184,8 @@ async function* runAgentLoop(opts = {}) {
     const b = usageByModel.get(key) ?? { inputTokens: 0, outputTokens: 0 };
     b.inputTokens += Number(u?.inputTokens) || 0;
     b.outputTokens += Number(u?.outputTokens) || 0;
+    b.cacheReadTokens = (b.cacheReadTokens ?? 0) + (Number(u?.cacheReadTokens) || 0);
+    b.cacheWriteTokens = (b.cacheWriteTokens ?? 0) + (Number(u?.cacheWriteTokens) || 0);
     usageByModel.set(key, b);
   };
   const failures = new Map();
@@ -1669,6 +1675,8 @@ async function* runAgentLoop(opts = {}) {
           } else if (ev.kind === 'usage') {
             usage.inputTokens += ev.usage.inputTokens;
             usage.outputTokens += ev.usage.outputTokens;
+            usage.cacheReadTokens += ev.usage.cacheReadTokens ?? 0;
+            usage.cacheWriteTokens += ev.usage.cacheWriteTokens ?? 0;
             attemptUsage.inputTokens += ev.usage.inputTokens;
             attemptUsage.outputTokens += ev.usage.outputTokens;
             addMainUsage(ev.usage, am);
@@ -2027,6 +2035,11 @@ async function* runAgentLoop(opts = {}) {
       if (signal?.aborted) {
         result = { content: '[aborted]', isError: true };
         neutral = true;
+      } else if (declinedThisTurn && needsApproval(name, toolCtx)) {
+        // A turn can carry several gated calls (they run one after another);
+        // once the user has said no to one, the rest of that turn does not run.
+        result = { content: '[skipped: the user declined an earlier action in this turn; ask before trying again]', isError: true };
+        neutral = true;
       } else if (modeNo) {
         recordDecision({ session: toolCtx.sessionId, tool: name, args, detail: approvalDetail(name, args), decision: 'deny', rule: `mode:${toolCtx.mode}`, actor: 'policy' });
         result = { content: modeNo, isError: true };
@@ -2084,6 +2097,7 @@ async function* runAgentLoop(opts = {}) {
             });
             result = { content: "User declined this action (rule: user-declined). It must not be retried.", isError: true };
             neutral = true;
+            declinedThisTurn = true;
           } else {
             gateRule = 'user-approved';
           }
@@ -2111,6 +2125,7 @@ async function* runAgentLoop(opts = {}) {
             });
             result = { content: "User declined this action (rule: user-declined). It must not be retried.", isError: true };
             neutral = true;
+            declinedThisTurn = true;
           } else {
             gateRule = 'user-approved';
           }
@@ -2614,6 +2629,7 @@ ${hookOutput}`.trim();
     }
     let ci = 0;
     let shouldBreak = false;
+    let declinedThisTurn = false;
     let skippedSiblings = [];
     let groupIdx = 0;
     for (const group of groups) {
@@ -2742,6 +2758,8 @@ ${hookOutput}`.trim();
     type: 'usage-total',
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
+    // How much of the input the provider served from its prompt cache.
+    ...(usage.cacheReadTokens || usage.cacheWriteTokens ? { cacheReadTokens: usage.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens } : {}),
     costUsd: costParts.length ? costParts.reduce((a, b) => a + b, 0) : null,
     auxInputTokens: auxUsage.inputTokens,
     auxOutputTokens: auxUsage.outputTokens,

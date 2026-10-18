@@ -89,6 +89,9 @@ export function createOpenAICompatParser({ name = 'openai-compat' } = {}) {
         type: 'usage',
         inputTokens: Number(obj.usage.prompt_tokens) || 0,
         outputTokens: Number(obj.usage.completion_tokens) || 0,
+        // Part of prompt_tokens served from the provider's cache (OpenAI,
+        // OpenRouter, xAI, Groq: prompt_tokens_details; DeepSeek: its own field).
+        ...((n) => (n > 0 ? { cacheReadTokens: n } : {}))(Number(obj.usage.prompt_tokens_details?.cached_tokens ?? obj.usage.prompt_cache_hit_tokens) || 0),
       });
     }
     const choices = Array.isArray(obj.choices) ? obj.choices : [];
@@ -193,10 +196,33 @@ export function toWireMessages(messages) {
 
 const trimBase = (b) => String(b).replace(/\/+$/, '');
 
+// OpenAI, DeepSeek and xAI cache a repeated prompt prefix on their own. Claude
+// and Gemini behind OpenRouter cache only what is marked: the system prompt
+// and the newest message get a cache_control mark (OpenRouter passes it on),
+// so each turn re-reads the conversation at the cached price. Off with
+// OX_PROMPT_CACHE=0.
+export function withCacheMarks(wire, { name, model, env = process.env } = {}) {
+  if (env.OX_PROMPT_CACHE === '0' || name !== 'openrouter' || !/anthropic\/|claude|google\/gemini/i.test(String(model ?? ''))) return wire;
+  const mark = (m) => {
+    if (!m) return m;
+    const parts = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : Array.isArray(m.content) ? [...m.content] : null;
+    if (!parts?.length || !parts.some((p) => p?.type === 'text' && p.text)) return m;
+    const i = parts.map((p) => p?.type).lastIndexOf('text');
+    parts[i] = { ...parts[i], cache_control: { type: 'ephemeral' } };
+    return { ...m, content: parts };
+  };
+  const out = [...wire];
+  const sys = out.findIndex((m) => m.role === 'system');
+  if (sys >= 0) out[sys] = mark(out[sys]);
+  const lastText = out.map((m) => m.role === 'user' || (m.role === 'tool' && typeof m.content === 'string')).lastIndexOf(true);
+  if (lastText > sys && out[lastText].role === 'user') out[lastText] = mark(out[lastText]);
+  return out;
+}
+
 export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
   return async function* streamChat({ model, messages, tools = [], apiKey, baseUrl, signal, maxTokens } = {}) {
     if (!baseUrl) throw new Error(`ox[${name}]: no baseUrl configured for OpenAI-compatible provider`);
-    const body = { model, messages: toWireMessages(messages), stream: true };
+    const body = { model, messages: withCacheMarks(toWireMessages(messages), { name, model }), stream: true };
     if (tools.length) {
       body.tools = tools.map((t) => ({
         type: 'function',

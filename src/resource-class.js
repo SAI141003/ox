@@ -151,6 +151,15 @@ export function batchPlan(calls) {
   if (!gated.length) return { mode: 'serial', tool: null, groups, reason: null };
   const firstName = String(gated[0].calls[0]?.function?.name ?? '');
   if (list.length <= 1) return { mode: 'serial', tool: firstName, groups, reason: null };
+  // Gated calls with no scheduler of their own (bash, MCP, acting on the
+  // computer) run ONE AFTER ANOTHER, in the order the model emitted them, each
+  // through its own approval in runOne, exactly as if they had come in
+  // separate turns. Refusing the whole turn instead cost a round trip every
+  // time a model batched (measured: ox 11 requests vs Claude Code's 4 on the
+  // same task, bench/h2h) and taught the model nothing. Only `subagent`, the
+  // one tool whose batch is gated as a batch, keeps the no-mixing rule.
+  const gatedNames = new Set(gated.flatMap((g) => g.calls.map((c) => String(c?.function?.name ?? ''))));
+  if (![...gatedNames].some(isConcurrentlyBatchable)) return { mode: 'serial', tool: firstName, groups, reason: null };
   if (gated.length > 1 || groups.length > 1) {
     return { mode: 'reject', tool: firstName, groups, reason: BATCH_REJECT_APPROVAL };
   }

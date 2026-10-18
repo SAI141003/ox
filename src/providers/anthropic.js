@@ -16,6 +16,9 @@ function parseArgsOrEmpty(raw) {
   }
 }
 
+// Prompt caching, on unless OX_PROMPT_CACHE=0.
+export const promptCacheOn = (env = process.env) => env.OX_PROMPT_CACHE !== '0';
+
 export function buildAnthropicBody({ model, messages, tools, maxTokens }) {
   let i = 0;
   const sysTexts = [];
@@ -64,7 +67,21 @@ export function buildAnthropicBody({ model, messages, tools, maxTokens }) {
     }
   }
   const body = { model, messages: conv, max_tokens: maxTokens || 4096, stream: true };
-  if (sysTexts.length) body.system = sysTexts.join('\n');
+  const cache = promptCacheOn();
+  if (sysTexts.length) {
+    // Cache breakpoint 1: tools + system (they come first in Anthropic's prefix
+    // order), identical on every turn of a run.
+    body.system = cache ? [{ type: 'text', text: sysTexts.join('\n'), cache_control: { type: 'ephemeral' } }] : sysTexts.join('\n');
+  }
+  // Cache breakpoint 2: the newest message, so the next turn reads the whole
+  // conversation so far from the cache (~10% of the input price) instead of
+  // paying for it again. Prefixes under the model's minimum (1-2k tokens)
+  // are simply not cached; nothing breaks.
+  const last = conv.at(-1);
+  if (cache && last && Array.isArray(last.content) && last.content.length) {
+    const blk = last.content.at(-1);
+    last.content[last.content.length - 1] = { ...blk, cache_control: { type: 'ephemeral' } };
+  }
   if (tools?.length) {
     body.tools = tools.map((t) => ({
       name: t.name,
@@ -79,6 +96,8 @@ export function createAnthropicParser() {
   let buf = '';
   const blocks = new Map();
   let inputTokens = 0;
+  let cacheRead = 0;
+  let cacheWrite = 0;
   let stopReason = null;
   let sawToolUse = false;
   let finalized = false;
@@ -116,8 +135,13 @@ export function createAnthropicParser() {
   const handleEvent = (obj, events) => {
     switch (obj.type) {
       case 'message_start': {
-        const n = Number(obj.message?.usage?.input_tokens);
-        if (Number.isFinite(n)) inputTokens = n;
+        // input_tokens counts only what was neither read from nor written to
+        // the cache; the whole prompt is the sum of the three.
+        const u = obj.message?.usage ?? {};
+        const n = Number(u.input_tokens);
+        cacheRead = Number(u.cache_read_input_tokens) || 0;
+        cacheWrite = Number(u.cache_creation_input_tokens) || 0;
+        if (Number.isFinite(n)) inputTokens = n + cacheRead + cacheWrite;
         break;
       }
       case 'content_block_start': {
@@ -145,7 +169,7 @@ export function createAnthropicParser() {
       case 'message_delta': {
         const out = Number(obj.usage?.output_tokens);
         if (Number.isFinite(out)) {
-          events.push({ type: 'usage', inputTokens, outputTokens: out });
+          events.push({ type: 'usage', inputTokens, outputTokens: out, ...(cacheRead || cacheWrite ? { cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite } : {}) });
         }
         if (obj.delta?.stop_reason) stopReason = obj.delta.stop_reason;
         break;

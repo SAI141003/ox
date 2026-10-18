@@ -746,3 +746,45 @@ test('hub start refuses metadata/disallowed http servers fail-closed', async (t)
   assert.equal(statuses.internal, 'http-error');
   await hub.stop();
 });
+
+function multiCallTurn(calls) {
+  const tool_calls = calls.map(([id, name, args], index) => ({ index, id, type: 'function', function: { name, arguments: JSON.stringify(args) } }));
+  return [sse({ choices: [{ index: 0, delta: { tool_calls }, finish_reason: null }] }), sse({ choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] }), 'data: [DONE]\n\n'].join('');
+}
+
+test('several gated calls in one turn run one after another, not a rejected turn (one round trip, not three)', async (t) => {
+  const cwd = tmpDir(t, 'ox-w5a-multi-');
+  const log = path.join(cwd, 'm.log');
+  const cmd = (n) => ({ command: `printf '${n}\\n' >> ${JSON.stringify(log)}` });
+  const { port, requests } = await startServer(t, (_m, n) => (n === 1 ? multiCallTurn([['a', 'bash', cmd(1)], ['b', 'bash', cmd(2)], ['c', 'read_file', { path: 'm.log' }]]) : textTurn('done')));
+  const events = await collectEvents({
+    target: { provider: 'custom', baseUrl: `http://127.0.0.1:${port}/v1`, model: 'mock-model' },
+    messages: [{ role: 'user', content: 'append twice' }],
+    ctx: { cwd, yolo: true },
+    auxTarget: null,
+    verify: false,
+  });
+  assert.equal(events.some((e) => e.type === 'error' && /must run solo/.test(String(e.error))), false);
+  assert.equal(fs.readFileSync(log, 'utf8'), '1\n2\n', 'both ran, in order');
+  assert.equal(requests.length, 2, 'one turn for the tools, one for the answer');
+});
+
+test('each gated call in a batch is approved on its own, and a denial stops the rest of that turn', async (t) => {
+  const cwd = tmpDir(t, 'ox-w5a-deny-');
+  const log = path.join(cwd, 'd.log');
+  const cmd = (n) => ({ command: `printf '${n}\\n' >> ${JSON.stringify(log)}` });
+  const { port } = await startServer(t, (_m, n) => (n === 1 ? multiCallTurn([['a', 'bash', cmd(1)], ['b', 'bash', cmd(2)], ['c', 'bash', cmd(3)]]) : textTurn('ok')));
+  const asked = [];
+  const events = await collectEvents({
+    target: { provider: 'custom', baseUrl: `http://127.0.0.1:${port}/v1`, model: 'mock-model' },
+    messages: [{ role: 'user', content: 'append three times' }],
+    ctx: { cwd, requestApproval: async (name, args) => { asked.push(args.command); return asked.length === 1; } },
+    auxTarget: null,
+    verify: false,
+  });
+  assert.equal(asked.length, 2, 'asked for the first and the second, never the third');
+  assert.equal(fs.readFileSync(log, 'utf8'), '1\n', 'only the approved one ran');
+  const results = (events.find((e) => e.type === 'history')?.messages ?? []).filter((m) => m.role === 'tool').map((m) => m.content);
+  assert.match(results[1], /User declined/);
+  assert.match(results[2], /skipped: the user declined an earlier action in this turn/);
+});

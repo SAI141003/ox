@@ -20,6 +20,6 @@ test('web search and show_ui run alone and side by side with reads', () => {
     assert.notEqual(plan.mode, 'reject', calls.join('+'));
     assert.ok(plan.groups.every((g) => g.class !== 'unknown'), calls.join('+'));
   }
-  // Acting on the computer still runs one at a time.
-  assert.equal(batchPlan([{ function: { name: 'type_text' } }, { function: { name: 'open_app' } }]).mode, 'reject');
+  // Acting on the computer runs one at a time: in order, each call approved on its own.
+  assert.equal(batchPlan([{ function: { name: 'type_text' } }, { function: { name: 'open_app' } }]).mode, 'serial');
 });

@@ -196,12 +196,27 @@ export function resolveModelWindow({ model, configWindow, overrides, env = proce
 // user-declared price row (config `model_overrides` / OX_MODEL_OVERRIDE) prices
 // the run exactly as a built-in row would. Omitting it keeps the previous
 // behaviour byte for byte: unpriced stays null, never 0.
+// What a cached input token costs, as a share of the input price: the price
+// row's own cacheRead / cacheWrite when it has them, else the provider
+// family's published rate (Anthropic reads 0.1x and writes 1.25x, DeepSeek
+// 0.1x, Gemini 0.25x), else 0.5x, the most conservative of the others.
+export function cacheRates(model, p = {}) {
+  const m = String(model ?? '').toLowerCase();
+  const fam = /claude|anthropic/.test(m) ? { read: 0.1, write: 1.25 } : /deepseek/.test(m) ? { read: 0.1, write: 1 } : /gemini/.test(m) ? { read: 0.25, write: 1 } : { read: 0.5, write: 1 };
+  return { read: Number.isFinite(p.cacheRead) ? p.cacheRead : fam.read, write: Number.isFinite(p.cacheWrite) ? p.cacheWrite : fam.write };
+}
+
 export function costOf(model, usage = {}, overrides = null) {
   const p = lookupModel(model, overrides);
   if (!p.priced) return null;
   const inputTokens = Number(usage.inputTokens) || 0;
   const outputTokens = Number(usage.outputTokens) || 0;
-  return (inputTokens * p.in + outputTokens * p.out) / 1_000_000;
+  // inputTokens is the whole prompt; the cached part of it is billed at the cached rate.
+  const read = Math.min(inputTokens, Number(usage.cacheReadTokens) || 0);
+  const write = Math.min(inputTokens - read, Number(usage.cacheWriteTokens) || 0);
+  const r = cacheRates(model, p);
+  const input = (inputTokens - read - write) * p.in + read * p.in * r.read + write * p.in * r.write;
+  return (input + outputTokens * p.out) / 1_000_000;
 }
 
 export function formatCost(usd) {

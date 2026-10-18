@@ -106,7 +106,7 @@ export function createGeminiParser() {
     if (finalized) return;
     finalized = true;
     if (usage) {
-      events.push({ type: 'usage', inputTokens: usage.inputTokens, outputTokens: usage.outputTokens });
+      events.push({ type: 'usage', inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, ...(usage.cacheReadTokens ? { cacheReadTokens: usage.cacheReadTokens } : {}) });
     }
     const truncated = finishReason === 'MAX_TOKENS' || finishReason === 'LENGTH';
     events.push({ type: 'done', stopReason: sawFunctionCall ? 'tool_calls' : truncated ? 'length' : 'stop' });
@@ -147,6 +147,7 @@ export function createGeminiParser() {
     if (um) {
       usage = {
         inputTokens: Number(um.promptTokenCount) || 0,
+        cacheReadTokens: Number(um.cachedContentTokenCount) || 0,
         outputTokens: Number(um.candidatesTokenCount) || 0,
       };
     }
