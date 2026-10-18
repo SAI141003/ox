@@ -23,6 +23,19 @@ export const DEFAULT_CATALOGS = Object.freeze([
   'addyosmani/agent-skills', 'obra/superpowers', 'wshobson/agents', 'alirezarezvani/claude-skills',
   'ruvnet/ruflo', 'jeremylongshore/claude-code-plugins-plus-skills', 'VoltAgent/awesome-claude-code-subagents',
   'huggingface/skills',
+  // Everything Claude Code (MIT, checked Oct 18): 71 agents, 311 skills, hooks and rules in one plugin.
+  'affaan-m/everything-claude-code',
+]);
+
+// Featured from the owner's screenshots, licences checked (Oct 18). Skills
+// that live inside a project repo (Google ADK keeps eight in .agents/skills),
+// and tools that run as an MCP server (REA).
+export const FEATURED = Object.freeze([
+  ...['adk-agent-builder', 'adk-setup', 'adk-architecture', 'adk-debug', 'adk-review', 'adk-sample-creator'].map((n) => ({
+    kind: 'skill', name: n, source: `google/adk-python#${n}`, license: 'Apache-2.0',
+    description: `Google Agent Development Kit (google/adk-python): ${n.replace(/^adk-/, '').replace(/-/g, ' ')} skill, from the ADK team's own repo`,
+  })),
+  { kind: 'mcp', name: 'rea', source: 'rea', license: 'MIT', description: 'REA, Reverse Engineer Anything (morluto/rea): understand apps, bundles and binaries with Ghidra/Hopper/Rizin when installed. Lawful use only: your own or authorized software, research, interoperability' },
 ]);
 const RAW = () => process.env.OX_MARKET_RAW_BASE || 'https://raw.githubusercontent.com';
 const API = () => process.env.OX_MARKET_API_BASE || 'https://api.github.com';
@@ -108,6 +121,7 @@ export async function search(query = '', { sources = ['catalogs', 'github'] } = 
       } catch (e) { out.errors.push(`${repo}: ${e.message}`); }
     }
   }
+  out.featured = FEATURED.filter((f) => !q || `${f.name} ${f.description}`.toLowerCase().includes(q)).map((f) => ({ ...f, installed: have.has(f.name) }));
   if (sources.includes('github')) {
     try { out.repos = (await searchGithub(q)).map((r) => ({ ...r, installed: have.has(r.repo.split('/')[1]) })); } catch (e) { out.errors.push(`GitHub: ${e.message}`); }
   }
@@ -118,6 +132,14 @@ export async function search(query = '', { sources = ['catalogs', 'github'] } = 
 // with SKILL.md at its root is one skill, anything else is tried as a plugin.
 export async function install({ name, catalog, repo, force = false } = {}) {
   const { addPlugin } = await import('./plugins.js');
+  // A featured entry by name: a skill from inside a repo, or an MCP server template.
+  const feat = !catalog && FEATURED.find((f) => f.name === (name ?? repo));
+  if (feat?.kind === 'skill') {
+    const { installSkill } = await import('./skill-add.js');
+    const r = await installSkill(feat.source, { force });
+    return { ok: !!r.ok, message: r.ok ? `installed ${r.name} (${feat.license}) to ${r.dest}` : r.message, findings: (r.findings ?? []).length };
+  }
+  if (feat?.kind === 'mcp') return { ok: true, message: `REA runs as an MCP server: ox mcp add ${feat.source}  (then ox mcp test ${feat.source})` };
   if (catalog) {
     if (!REPO_RE.test(catalog) || !/^[\w.-]+$/.test(String(name))) throw new Error('bad plugin name or catalogue');
     const r = await addPlugin(`${name}@${catalog}`, { force });

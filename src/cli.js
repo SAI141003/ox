@@ -5402,6 +5402,28 @@ async function runSubcommand(cmd, args) {
           console.log(c.dim(`try it: ox flow run ${saved.id} · change it: ox flow show ${saved.id} > f.json, edit, ox flow add f.json · remove: ox flow rm ${saved.id}`));
           return;
         }
+        if (verb === 'templates') {
+          // n8n templates (Zie619/n8n-workflows, MIT) to import as flows.
+          const N = await import('./n8n-import.js');
+          const list = await N.searchTemplates(args.slice(1).join(' '), { limit: 25 });
+          if (!list.length) { console.log(c.dim('no template matches those words')); return; }
+          for (const t of list) console.log(`${t.name.padEnd(60).slice(0, 60)} ${c.dim(`ox flow import ${t.path}`)}`);
+          return;
+        }
+        if (verb === 'import') {
+          if (!id) return fail('usage: ox flow import <n8n.json | workflows/…json template> [--name N]');
+          const N = await import('./n8n-import.js');
+          const wf = fs.existsSync(id) ? JSON.parse(fs.readFileSync(id, 'utf8')) : await N.fetchTemplate(id);
+          const ni = args.indexOf('--name');
+          const r = N.convert(wf, { name: ni >= 0 ? args[ni + 1] : null });
+          console.log(`${c.bold(r.flow.name)}: ${r.converted} step(s) converted${r.skipped.length ? `, ${r.skipped.length} not (ox has no step for them yet)` : ''}`);
+          for (const st of r.flow.steps) console.log(`  ${c.green('✓')} ${st.type.padEnd(7)} ${st.name}`);
+          for (const k of r.skipped) console.log(`  ${c.yellow('–')} ${k.type.padEnd(14)} ${k.node}`);
+          if (r.problems.length) { console.log(c.red(`not saved: ${r.problems.join('; ')}`)); process.exitCode = 1; return; }
+          const saved = F.saveFlow(r.flow);
+          console.log(`saved ${saved.id} (off: check it with ox flow show ${saved.id}, run it with ox flow run ${saved.id}, then ox flow on ${saved.id})`);
+          return;
+        }
         if (verb === 'add') {
           if (!id) return fail('usage: ox flow add <flow.json>');
           const saved = F.saveFlow(JSON.parse(fs.readFileSync(id, 'utf8')));
@@ -5600,6 +5622,11 @@ async function runSubcommand(cmd, args) {
         return;
       }
       const r = await mk.search(args.join(' '));
+      if (r.featured?.length) {
+        console.log(c.dim('  featured (licences checked)'));
+        for (const f of r.featured) console.log(`${f.installed ? c.green('✓') : ' '} ${c.bold(f.name)} ${c.dim(`[${f.kind}, ${f.license}]`)}  ${c.dim(f.description.slice(0, 90))}  ${c.dim(`ox market install ${f.name}`)}`);
+        console.log('');
+      }
       for (const p of r.plugins.slice(0, 25)) console.log(`${p.installed ? c.green('✓') : ' '} ${c.bold(p.name)}${p.category ? c.dim(` [${p.category}]`) : ''}  ${c.dim(p.description.slice(0, 90))}  ${c.dim(`ox market install ${p.name}@${p.catalog}`)}`);
       if (r.repos.length) console.log(c.dim('\n  from GitHub (topic: agent-skills)'));
       for (const x of r.repos.slice(0, 15)) console.log(`${x.installed ? c.green('✓') : ' '} ${c.bold(x.repo)} ${c.dim(`★${x.stars}`)}  ${c.dim(x.description.slice(0, 80))}`);

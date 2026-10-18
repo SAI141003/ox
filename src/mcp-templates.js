@@ -12,6 +12,21 @@
 const npx = (pkg, ...args) => ({ command: 'npx', args: ['-y', pkg, ...args] });
 
 export const MCP_TEMPLATES = {
+  rea: {
+    name: 'rea',
+    title: 'REA: Reverse Engineer Anything',
+    risk: 'write',
+    desc: 'morluto/rea (MIT): analyze apps, web bundles and native binaries from the agent; uses Ghidra, Hopper, Rizin or GDB when they are installed.',
+    requires: [],
+    entry: () => npx('rea-agents@6.7.0', '--mcp'),
+    setup: [
+      'Lawful use only (REA DISCLAIMER.md): software you own or may examine, security research,',
+      'malware analysis, interoperability, CTFs. It refuses DRM, licence-check and anti-cheat bypass.',
+      'Static JavaScript analysis needs nothing else; native analysis uses an installed Ghidra/Hopper/IDA.',
+      'Check readiness: npx rea-agents doctor',
+    ].join('\n'),
+  },
+
   browser: {
     name: 'browser',
     title: 'Playwright browser automation',
