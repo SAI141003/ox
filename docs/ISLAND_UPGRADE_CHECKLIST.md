@@ -208,3 +208,18 @@ the island was rebuilt. "Checked" says how the fix was proven.
 | F4.25 | The ox stood and walked only; no eating, sleeping or reacting | New renders from the Blender rig: graze, doze, gallop (working), think, alert (needs you), happy (done), dizzy (error), worried (past 80 % of a plan) | real island screenshot |
 | F4.26 | Every other agent shared one pixel character | Friends Puff, Pip and Dot (white, white with black; never black), same rig, 12 cycles each; each session gets one by its id | real island screenshot |
 | F4.27 | "Save as image" and dictation stats had nowhere to live | Recap card (7 days of tokens and cost, top model, words dictated, water estimate) and mail card under the plus tab | build + screenshot |
+
+## G. The owner's October 18 evening batch (screenshots and two recordings)
+
+Licences are checked before any code is taken. A product's name, mascot and art are its own.
+
+| # | Source | What it shows | What ox takes from it | Licence | State |
+|---|---|---|---|---|---|
+| G1 | pinchtab/pinchtab | A 12 MB Go server that gives agents direct Chrome control over HTTP, 10–20 % fewer tokens than agent-browser | ox's browser tools as a background daemon reused across runs, compact page snapshots (accessibility tree, not screenshots) to cut tokens | Apache-2.0 | → |
+| G2 | Microsoft MAI-Code-1.1-Flash, "Hybrid Intelligence" | A coding model that runs locally; Copilot uses local models on the PC | ox already runs local models; add it to the local model catalogue when its weights are public, and a hybrid router: local first, cloud when needed | — | → |
+| G3 | feder-cr/git-ai + "scaled git" (Anthropic's blog) | Git designed for AI agents; mirrors so CI jobs, dev environments and agent sandboxes do not each fetch everything | ox worktrees per task (built) share one object store; add a local mirror cache for agent sandboxes and parallel worktrees | MIT | → |
+| G4 | usestrix/strix | Open-source AI agents that pentest your own apps | Marketplace entry after its licence is checked; security review skill already in ox | check | → |
+| G5 | Google agents-cli | CLI and skills for building agents on Gemini Enterprise Agent Platform; works with Claude Code, Codex, Antigravity | Featured with the ADK skills in the Marketplace | Apache-2.0 | → |
+| G6 | stablyai/orca | Run Codex, Claude Code, OpenCode side by side, each in its own worktree, tracked in one place; a mobile companion | ox has worktree-per-task and every agent's sessions in the island; add parallel runs of several agents on one task, side by side, and phone follow-ups | Apache-2.0 | → |
+| G7 | Recording 08:25 (theaiskool, "Gloss") | Saved articles, PDFs and bookmarks as a bookshelf library; connect your agent; it shelves for you; highlight any line and ask | An ox Library: save links and PDFs, a shelf view in the app, highlight and ask, and the agent can add to it | — | → |
+| G8 | Recording 16:20 (Pushary, mascot Pip) | Live agents in the notch; approvals with a risk summary; questions with numbered options and "type your answer"; a happy hop when done; approvals on the phone with Face ID; safe commands run on their own, risky ones wait | Risk line on approval cards, a typed answer for questions, safe tools allowed automatically for connected agents, phone approvals through ox's own gateways. ox's friend formerly named Pip is renamed so ox never shares Pushary's mascot name | — | → |
