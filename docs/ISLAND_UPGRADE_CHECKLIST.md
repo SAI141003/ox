@@ -24,7 +24,7 @@ States: ✓ the island has it · ~ partly · ✗ missing · → next to build
 | A11 | Dictionary and snippets | ✓ | |
 | A12 | Translate a dictation into ~70 languages; prompt mode | ✗ | |
 | A13 | Parakeet offline speech (25 languages) | ✗ (Apple's on-device speech) | |
-| A14 | Notetaker: the other side of the call too (system audio), speakers named, summary and to-dos | ~ mic only | |
+| A14 | Notetaker: the other side of the call too (system audio), speakers named, summary and to-dos | ✓ built: the call's sound recorded with ScreenCaptureKit, transcribed with whisper.cpp, merged by time as You / Them, summary and to-dos (transcription path checked; live capture needs Screen Recording access) | your step: allow Screen Recording once |
 | A15 | The pill: see-through, bottom or side of the screen, toolbar on hover, voice level dots | ✗ | |
 | A16 | Drop a file on the notch, ask about it or email it | ✓ (Shelf) | |
 | A17 | Drag the character onto a window to give it as context | ✗ | |
@@ -34,7 +34,7 @@ States: ✓ the island has it · ~ partly · ✗ missing · → next to build
 | A21 | Your own sounds (drop a file to replace one) | ✗ | |
 | A22 | Character reacts to the Mac's load (stressed when hot or busy) | ~ worried ox past 80 % of a plan window (Claudex); Mac load not yet | |
 | A23 | Capture shortcut (⌘⇧S) with a tick | ✗ | |
-| A24 | 10 languages | ✗ | |
+| A24 | 10 languages | ✓ English, Español, Français, Deutsch, Português, Italiano, 日本語, 한국어, 简体中文, हिन्दी (OxIsland --check-l10n: 61 strings, 0 missing) | |
 | A25 | iPhone / Android: approvals from the phone, widgets, Live Activity | ✗ | needs a phone app |
 | A26 | Chat in the notch with any provider, switchable | ✓ (Tray chat through ox) | |
 
