@@ -1635,7 +1635,7 @@ const ROUTES = [
   { method: 'POST', pattern: /^\/ox\/pr\/(open|fix)\/?$/, handler: appRoute(async (body, m) => {
     const D = await import('./dev-flow.js');
     const dir = String(body?.cwd || process.cwd());
-    if (m[1] === 'open') return D.openPr(dir, { title: body?.title || null, body: body?.body ?? '', draft: body?.draft === true });
+    if (m[1] === 'open') return D.openPr(dir, { title: body?.title || null, body: body?.body ?? '', draft: body?.draft === true, capture: Array.isArray(body?.shots) ? { routes: body.shots } : null });
     return D.fixPr(dir, {});
   }) },
   { method: 'GET', pattern: /^\/ox\/day\/?$/, handler: appRoute(dayView) },

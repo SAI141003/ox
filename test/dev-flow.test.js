@@ -44,10 +44,10 @@ test('recipe: detected from package.json, saved once, edits respected', () => {
   assert.equal(D.recipe(work).saved, false);
 });
 
-test('pr open: branch off main, commit, checks, push, PR with what was checked', () => {
+test('pr open: branch off main, commit, checks, push, PR with what was checked', async () => {
   const { work, log } = repo();
   fs.writeFileSync(path.join(work, 'a.txt'), 'hello');
-  const pr = D.openPr(work, { title: 'Add a greeting' });
+  const pr = await D.openPr(work, { title: 'Add a greeting' });
   assert.equal(pr.url, 'https://github.com/me/x/pull/7');
   assert.match(pr.branch, /^ox\/add-a-greeting-/);
   assert.equal(pr.checks.ok, true);
@@ -57,13 +57,13 @@ test('pr open: branch off main, commit, checks, push, PR with what was checked',
   assert.match(l, /pr create --base main --head ox\/add-a-greeting/);
   assert.match(l, /Checked by ox before opening/);
   run(work, 'git', 'switch', '-q', 'main');
-  assert.throws(() => D.openPr(work), /nothing changed/);
+  await assert.rejects(D.openPr(work), /nothing changed/);
 });
 
-test('pr open still opens when a check fails, and says so in the body', () => {
+test('pr open still opens when a check fails, and says so in the body', async () => {
   const { work, log } = repo({ testCmd: 'node -e "process.exit(1)"' });
   fs.writeFileSync(path.join(work, 'b.txt'), 'x');
-  const pr = D.openPr(work, { title: 'Broken' });
+  const pr = await D.openPr(work, { title: 'Broken' });
   assert.equal(pr.checks.ok, false);
   assert.match(log(), /❌ `npm test`/);
 });
@@ -71,7 +71,7 @@ test('pr open still opens when a check fails, and says so in the body', () => {
 test('pr status and fix: failing CI and a review comment become one ox task, then a push', async () => {
   const { d, work } = repo();
   fs.writeFileSync(path.join(work, 'c.txt'), 'x');
-  const pr = D.openPr(work, { title: 'Feature', checks: false });
+  const pr = await D.openPr(work, { title: 'Feature', checks: false });
   fs.writeFileSync(path.join(d, 'view.json'), JSON.stringify({ number: 7, url: 'u', title: 'Feature', state: 'OPEN', mergeable: 'MERGEABLE', reviewDecision: 'CHANGES_REQUESTED', headRefName: pr.branch,
     statusCheckRollup: [{ name: 'test', conclusion: 'FAILURE', detailsUrl: 'https://github.com/me/x/actions/runs/1/job/2' }],
     reviews: [{ author: { login: 'ana' }, body: 'Please rename c.txt to greeting.txt', state: 'CHANGES_REQUESTED' }], comments: [] }));
@@ -130,4 +130,19 @@ test('git mirror: the second clone downloads nothing new and stands alone', () =
   assert.ok(!fs.existsSync(path.join(d, 'c2', '.git', 'objects', 'info', 'alternates')), 'dissociated: no link back to the mirror');
   assert.match(D.mirrorPath('https://github.com/me/x.git'), /git-mirrors\/github\.com\/me\/x\.git$/);
   assert.throws(() => D.mirrorPath('https://github.com/../../etc'), /not a git remote/);
+});
+
+test('the app seen working: started from the recipe, pages captured in headless Chrome, a GIF made, the app stopped', { skip: !D.chromePath() && 'needs Chrome' }, async () => {
+  const { work } = repo();
+  fs.writeFileSync(path.join(work, 'server.js'), `require('http').createServer((q, s) => { s.writeHead(200, {'content-type': 'text/html'}); s.end('<h1 style="font:48px sans-serif">Hello from ' + q.url + '</h1>'); }).listen(0, function () { console.log('ready on http://localhost:' + this.address().port); });`);
+  fs.mkdirSync(path.join(work, '.ox'), { recursive: true });
+  fs.writeFileSync(path.join(work, '.ox', 'environment.yml'), 'start: node server.js\n');
+  const r = await D.captureApp(work, { routes: ['/', '/pricing'] });
+  assert.equal(r.shots.length, 2);
+  for (const f of r.shots) assert.ok(fs.statSync(f).size > 1000, f);
+  assert.match(r.base, /^http:\/\/localhost:\d+$/);
+  if (r.gif) assert.ok(fs.statSync(r.gif).size > 1000);
+  let up = true;
+  try { await fetch(r.base, { signal: AbortSignal.timeout(1500) }); } catch { up = false; }
+  assert.equal(up, false, 'the app was stopped afterwards');
 });

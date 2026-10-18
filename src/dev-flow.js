@@ -136,7 +136,7 @@ const gh = (root, args, extra) => {
  * Commit what changed and open (or update) a pull request.
  * { title, body, base, draft, checks: true } → { url, branch, created, checks }
  */
-export function openPr(cwd = process.cwd(), { title = null, body = '', base = null, draft = false, checks = true, onStep } = {}) {
+export async function openPr(cwd = process.cwd(), { title = null, body = '', base = null, draft = false, checks = true, onStep, capture = null } = {}) {
   const root = repoRoot(cwd);
   const into = base ?? baseBranch(root);
   let branch = git(root, 'rev-parse', '--abbrev-ref', 'HEAD').out;
@@ -160,10 +160,25 @@ export function openPr(cwd = process.cwd(), { title = null, body = '', base = nu
     onStep?.('commit', t);
   }
   const checked = checks ? runChecks(root, ['lint', 'build', 'test'], { onStep: (s, cmd) => onStep?.('check', `${s}: ${cmd}`) }) : { ok: true, results: [] };
+  // The app seen working (Devin's test recording): shots of its pages and a GIF, committed with the PR.
+  let media = null;
+  if (capture) {
+    try {
+      media = await captureApp(root, capture);
+      git(root, 'add', '-f', path.relative(root, path.dirname(media.shots[0])));
+      if (git(root, 'status', '--porcelain').out) git(root, 'commit', '-qm', 'Screenshots of the app for this PR');
+      onStep?.('capture', `${media.shots.length} page(s) from ${media.base}`);
+    } catch (e) { onStep?.('capture', `skipped: ${e.message}`); }
+  }
   const p = git(root, 'push', '-u', 'origin', branch);
   if (!p.ok) fail(`push failed: ${p.err}`);
   onStep?.('push', branch);
   const lines = [body.trim(), '', '### Checked by ox before opening'];
+  if (media) {
+    const repo = gh(root, ['repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner']).out;
+    const raw = (f) => `https://github.com/${repo}/blob/${branch}/${path.relative(root, f)}?raw=true`;
+    lines.unshift(`### The app, running`, '', media.gif ? `![the app](${raw(media.gif)})` : '', ...media.shots.map((f, i) => `[page ${i + 1}](${raw(f)})`), '');
+  }
   if (!checked.results.length) lines.push('- no lint/build/test steps known for this repo (edit .ox/environment.yml)');
   for (const r of checked.results) lines.push(`- ${r.ok ? '✅' : '❌'} \`${r.command}\` (${Math.round(r.ms / 1000)} s)`);
   const fullBody = lines.join('\n').trim();
@@ -396,4 +411,68 @@ export function mirrorClone(url, dest, { dissociate = true, branch = null } = {}
   const c = sh('git', args, path.dirname(path.resolve(dest)), { timeout: 30 * 60_000 });
   if (!c.ok) fail(`clone failed: ${c.err}`);
   return { dest: path.resolve(dest), mirror: m.path, mirrorCreated: m.created };
+}
+
+// ---------------------------------------------------------------- the app, seen working (Devin's test recording)
+
+const CHROME = [
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser', '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
+];
+export const chromePath = () => CHROME.find((p) => fs.existsSync(p)) ?? null;
+
+/** One page as a PNG with headless Chrome (no extra install). */
+export function screenshot(url, file, { width = 1280, height = 800 } = {}) {
+  const chrome = chromePath();
+  if (!chrome) fail('a Chrome-type browser is needed for screenshots');
+  const r = spawnSync(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', `--window-size=${width},${height}`, `--screenshot=${file}`, '--virtual-time-budget=4000', url], { encoding: 'utf8', timeout: 60_000 });
+  if (!fs.existsSync(file)) fail(`no screenshot of ${url}: ${(r.stderr || '').split('\n').slice(-2).join(' ')}`);
+  return file;
+}
+
+async function waitForUrl(url, ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    try { const r = await fetch(url, { signal: AbortSignal.timeout(2000) }); if (r.status < 500) return true; } catch {}
+    await new Promise((res) => setTimeout(res, 700));
+  }
+  return false;
+}
+
+/**
+ * Start the app with the recipe's start step, capture each route, stop it, and
+ * join the shots into a GIF. → { gif, shots, base }
+ */
+export async function captureApp(cwd, { routes = ['/'], port = null, base = null, outDir = null, waitMs = 60_000 } = {}) {
+  const root = repoRoot(cwd);
+  const r = recipe(root).recipe;
+  const dir = outDir ?? path.join(root, '.ox', 'pr-media');
+  fs.mkdirSync(dir, { recursive: true });
+  let child = null, url = base;
+  if (!url) {
+    if (!r.start) fail('no start step in .ox/environment.yml: add one (start: npm run dev) or pass --url');
+    child = spawn('/bin/sh', ['-c', r.start], { cwd: root, env: { ...process.env, ...(port ? { PORT: String(port) } : {}), BROWSER: 'none' }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    let seen = '';
+    const found = await new Promise((resolve) => {
+      const t = setTimeout(() => resolve(port ? `http://localhost:${port}` : null), waitMs);
+      const look = (d) => { seen += d; const m = /(https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d+)/.exec(seen); if (m) { clearTimeout(t); resolve(m[1].replace('0.0.0.0', 'localhost')); } };
+      child.stdout.on('data', look); child.stderr.on('data', look);
+      child.on('exit', () => { clearTimeout(t); resolve(null); });
+    });
+    url = found;
+    if (!url) { try { process.kill(-child.pid); } catch {} fail(`the app did not say where it listens: ${seen.split('\n').slice(-3).join(' ').slice(0, 200)}`); }
+  }
+  try {
+    if (!(await waitForUrl(url, waitMs))) fail(`${url} did not answer`);
+    const shots = routes.map((rt, i) => screenshot(new URL(rt, url).href, path.join(dir, `shot-${String(i + 1).padStart(2, '0')}.png`)));
+    const gif = path.join(dir, 'app.gif');
+    const list = path.join(dir, 'frames.txt');
+    fs.writeFileSync(list, shots.map((f) => `file '${f}'\nduration 1.6`).join('\n') + `\nfile '${shots.at(-1)}'\n`);
+    const ff = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', list, '-vf', 'scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse', gif], { encoding: 'utf8', timeout: 120_000 });
+    fs.rmSync(list, { force: true });
+    return { gif: ff.status === 0 ? gif : null, shots, base: url };
+  } finally {
+    if (child) { try { process.kill(-child.pid, 'SIGTERM'); } catch { try { child.kill(); } catch {} } }
+  }
 }

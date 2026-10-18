@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -535,12 +535,13 @@ function usageAll() {
     '',
     'pull requests (until they can merge; merging stays yours):',
     '  ox env [show|detect|check]        how this repo installs, lints, builds, tests (.ox/environment.yml, saved once)',
-    '  ox pr open [--title T] [--draft]  branch, commit, run the checks, push, open the PR with what was checked',
+    '  ox pr open [--title T] [--draft] [--shots /,/pricing]  branch, commit, checks, push, PR; --shots adds the running app\'s pages and a GIF',
     '  ox pr status | comments           CI checks, review state and comments',
     '  ox pr fix [--rounds n]            review comments and failing CI become one ox task; committed and pushed',
     '  ox task run <id> --worktree [--pr]   a task in its own worktree and branch, then a PR from it',
     '  ox race "<task>" --agents ox,claude-plan,<model>   several agents on one task, side by side; ox race keep <id> <agent>',
     '  ox git clone <url> [dir]          clones that borrow history from one local mirror (no second download)',
+    '  ox wiki [--out dir]               the project\'s wiki from its code graph: subsystems, files, what uses what',
     '',
     'mesh (your own machines as one ox; every file, key and model stays on its machine):',
     '  ox mesh                           this machine, your paired machines, their health and alerts',
@@ -3772,7 +3773,8 @@ async function cmdPr(args = []) {
   const step = (s, d) => console.log(c.dim(`  ${s}: ${String(d).split('\n')[0].slice(0, 140)}`));
   try {
     if (sub === 'open' || sub === 'create') {
-      const pr = D.openPr(process.cwd(), { title: flag('--title') ?? null, body: flag('--body') ?? '', base: flag('--base') ?? null, draft: args.includes('--draft'), checks: !args.includes('--no-checks'), onStep: step });
+      const shots = flag('--shots');
+      const pr = await D.openPr(process.cwd(), { title: flag('--title') ?? null, body: flag('--body') ?? '', base: flag('--base') ?? null, draft: args.includes('--draft'), checks: !args.includes('--no-checks'), onStep: step, capture: shots || flag('--url') ? { routes: (shots ?? '/').split(',').map((x) => x.trim()).filter(Boolean), base: flag('--url') ?? null } : null });
       for (const r of pr.checks.results) console.log(`  ${r.ok ? c.green('✓') : c.red('✗')} ${r.command}`);
       console.log(`${c.green(pr.created ? '✓ opened' : '✓ updated')} ${pr.url}`);
       if (!pr.checks.ok) console.log(c.yellow('a check failed before opening: ox pr fix hands it to ox'));
@@ -3977,7 +3979,7 @@ async function cmdTask(args = []) {
       if (wt && rest.includes('--pr')) {
         const D = await import('./dev-flow.js');
         try {
-          const pr = D.openPr(wt.dir, { title: task.title, body: `Task ${id}: ${task.title}\n\n${task.description ?? ''}`, onStep: (s, d) => console.log(c.dim(`  ${s}: ${d}`)) });
+          const pr = await D.openPr(wt.dir, { title: task.title, body: `Task ${id}: ${task.title}\n\n${task.description ?? ''}`, onStep: (s, d) => console.log(c.dim(`  ${s}: ${d}`)) });
           updateTask(id, { pr: pr.url, branch: wt.branch });
           console.log(`${c.green('✓ pull request')} ${pr.url}`);
         } catch (e) { console.log(c.yellow(`no PR: ${e.message}`)); }
@@ -4710,6 +4712,15 @@ async function runSubcommand(cmd, args) {
     case 'race':
       await cmdRace(args);
       return;
+    case 'wiki': {
+      // ox wiki [--out <dir>] [--top N]: the project's wiki from its code graph (Devin's Wiki, no model).
+      const W = await import('./wiki.js');
+      const oi = args.indexOf('--out'), ti = args.indexOf('--top');
+      const t = Date.now();
+      const r = W.buildWiki(process.cwd(), { ...(oi >= 0 ? { out: path.resolve(args[oi + 1]) } : {}), ...(ti >= 0 ? { top: Number(args[ti + 1]) } : {}) });
+      console.log(`${c.green('✓')} ${r.pages} pages, ${r.subsystems} subsystems in ${((Date.now() - t) / 1000).toFixed(1)} s ${c.dim(`→ ${path.relative(process.cwd(), r.dir) || r.dir}/index.md`)}`);
+      return;
+    }
     case 'git': {
       // ox git clone <url> [dir] | ox git mirror <url> | ox git mirrors: one local mirror per repo.
       const D = await import('./dev-flow.js');
