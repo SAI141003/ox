@@ -141,6 +141,7 @@ struct HomeCharacter: View {
     @ObservedObject var bridge: OxBridge
     let mood: Mood
     let size: CGFloat
+    @State private var drag: CGSize = .zero
     var body: some View {
         ZStack {
             Circle()
@@ -153,6 +154,16 @@ struct HomeCharacter: View {
             OxWalker(mood: mood, height: size, roam: false,
                      stressed: bridge.gauges.contains { $0.percent >= 80 }, onPoke: { bridge.showReaction() })
                 .frame(width: size * 4 / 3 + 4, height: size)
+                .offset(drag)
+                // Drag the ox onto any window: that window becomes context in the shelf.
+                .gesture(DragGesture(minimumDistance: 12)
+                    .onChanged { v in drag = v.translation }
+                    .onEnded { _ in
+                        let p = NSEvent.mouseLocation
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { drag = .zero }
+                        WindowContext.drop(at: p, bridge: bridge)
+                    })
+                .help("Drag me onto a window to show it to me")
         }
         .frame(width: size * 1.5, height: size * 1.2)
     }

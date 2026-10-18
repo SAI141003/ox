@@ -13,6 +13,8 @@ final class Dictation: ObservableObject {
     enum Phase: Equatable { case idle, listening, message(String) }
     @Published var phase: Phase = .idle
     @Published var heard = ""
+    /// Loudness 0…1 while listening, for the pill's bars.
+    @Published var level: Double = 0
 
     private let recognizer = SFSpeechRecognizer()
     private let audio = AVAudioEngine()
@@ -111,7 +113,16 @@ final class Dictation: ObservableObject {
         request = req
         let input = audio.inputNode
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { buf, _ in req.append(buf) }
+        input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { [weak self] buf, _ in
+            req.append(buf)
+            // RMS of the first channel → the pill's voice bars.
+            if let ch = buf.floatChannelData?[0] {
+                let n = Int(buf.frameLength); var sum: Float = 0
+                for i in 0..<n { sum += ch[i] * ch[i] }
+                let rms = n > 0 ? sqrt(sum / Float(n)) : 0
+                DispatchQueue.main.async { self?.level = min(1, Double(rms) * 14) }
+            }
+        }
         task = recognizer.recognitionTask(with: req) { [weak self] result, _ in
             guard let result else { return }
             let text = result.bestTranscription.formattedString

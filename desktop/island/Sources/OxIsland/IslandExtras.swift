@@ -50,3 +50,47 @@ enum Capture {
         }
     }
 }
+
+
+/// Drop the ox on a window to give it as context (Coucou): the window under
+/// the drop point is captured into the shelf, named after its app.
+@MainActor
+enum WindowContext {
+    /// The topmost window of another app under a screen point (AppKit coordinates).
+    static func window(at p: NSPoint) -> (id: CGWindowID, app: String)? {
+        guard let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
+        let h = NSScreen.screens.first?.frame.height ?? 0
+        let q = CGPoint(x: p.x, y: h - p.y)   // CG windows count from the top
+        let mine = ProcessInfo.processInfo.processIdentifier
+        for w in info {
+            guard (w[kCGWindowLayer as String] as? Int) == 0,
+                  (w[kCGWindowOwnerPID as String] as? Int32) != mine,
+                  let b = w[kCGWindowBounds as String] as? [String: CGFloat],
+                  let id = w[kCGWindowNumber as String] as? CGWindowID else { continue }
+            let r = CGRect(x: b["X"] ?? 0, y: b["Y"] ?? 0, width: b["Width"] ?? 0, height: b["Height"] ?? 0)
+            if r.contains(q) { return (id, w[kCGWindowOwnerName as String] as? String ?? "window") }
+        }
+        return nil
+    }
+
+    static func drop(at p: NSPoint, bridge: OxBridge) {
+        guard let w = window(at: p) else { return }
+        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/island/captures", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("\(w.app.replacingOccurrences(of: "/", with: "-")) window \(Int(Date().timeIntervalSince1970)).png")
+        DispatchQueue.global(qos: .userInitiated).async {
+            let pr = Process()
+            pr.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            pr.arguments = ["-x", "-o", "-l", String(w.id), url.path]
+            try? pr.run(); pr.waitUntilExit()
+            DispatchQueue.main.async {
+                guard FileManager.default.fileExists(atPath: url.path) else { IslandLog.write("window capture failed (Screen Recording permission?)"); return }
+                bridge.shelf.add([url])
+                IslandSound.play("capture")
+                IslandLog.write("context from \(w.app)")
+                bridge.tray = .shelf
+                bridge.pinnedOpen = true
+            }
+        }
+    }
+}

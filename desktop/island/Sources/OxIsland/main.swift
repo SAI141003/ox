@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: IslandPanel?
     private let bridge = OxBridge()
 
+    @MainActor let pill = DictationPillController()
     func applicationDidFinishLaunching(_ notification: Notification) {
         // `ox island off` (or the island's own menu) keeps it off until `ox island on`.
         guard IslandSwitch.enabled || CommandLine.arguments.contains("--force") else {
@@ -21,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             release: { buddy.stopListening(); DispatchQueue.main.asyncAfter(deadline: .now() + 6) { MainActor.assumeIsolated { wake.start() } } })
         FnKey.install(press: { MainActor.assumeIsolated { wake.stop() }; buddy.startListening() },
                       release: { buddy.stopListening(); DispatchQueue.main.asyncAfter(deadline: .now() + 6) { MainActor.assumeIsolated { wake.start() } } })
-        MainActor.assumeIsolated { bridge.dictation.install(); Capture.install(bridge) }
+        MainActor.assumeIsolated { bridge.dictation.install(); Capture.install(bridge); pill.attach(bridge.dictation) }
         let panel = IslandPanel(bridge: bridge)
         panel.orderFrontRegardless()
         self.panel = panel
