@@ -138,6 +138,28 @@ export function preview(input = {}) {
 
 export const sessionKey = (agent, sessionId) => `${agent}-${String(sessionId ?? 'default').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40) || 'default'}`;
 
+const lineCount = (t) => (typeof t === 'string' && t.length ? t.replace(/\n$/, '').split('\n').length : 0);
+
+/** Lines added and removed by an edit, from the tool's own input (Coucou's live diff ticker). */
+export function diffStat(toolName, input = {}) {
+  const i = input ?? {};
+  const base = (f) => String(f ?? '').split('/').pop();
+  if (Array.isArray(i.edits)) {
+    let plus = 0, minus = 0;
+    for (const e of i.edits) { plus += lineCount(e.new_string); minus += lineCount(e.old_string); }
+    return { file: base(i.file_path), plus, minus };
+  }
+  if (typeof i.old_string === 'string' || typeof i.new_string === 'string') return { file: base(i.file_path), plus: lineCount(i.new_string), minus: lineCount(i.old_string) };
+  if (typeof i.content === 'string' && (i.file_path || i.path)) return { file: base(i.file_path ?? i.path), plus: lineCount(i.content), minus: 0 };
+  const cmd = Array.isArray(i.command) ? i.command.join('\n') : i.command;
+  if (typeof cmd === 'string' && cmd.includes('*** Begin Patch')) {
+    const f = /^\*\*\* (?:Update|Add|Delete) File: (.+)$/m.exec(cmd);
+    const lines = cmd.split('\n');
+    return { file: base(f?.[1]), plus: lines.filter((l) => l.startsWith('+') && !l.startsWith('+++')).length, minus: lines.filter((l) => l.startsWith('-') && !l.startsWith('---')).length };
+  }
+  return null;
+}
+
 // One hook payload -> the ox events the island draws (none for some).
 export function toEvents(p = {}) {
   const ev = p.hook_event_name;
@@ -145,7 +167,7 @@ export function toEvents(p = {}) {
   switch (ev) {
     case 'UserPromptSubmit': return [{ type: 'text-delta', text: '' }];
     case 'PreToolUse': return [{ type: 'tool-start', id, name: toolName(p.tool_name), argsPreview: preview(p.tool_input) }];
-    case 'PostToolUse': return [{ type: 'tool-end', id, name: toolName(p.tool_name), isError: false }];
+    case 'PostToolUse': { const d = diffStat(p.tool_name, p.tool_input); return [{ type: 'tool-end', id, name: toolName(p.tool_name), isError: false, ...(d && (d.plus || d.minus) ? { diff: d } : {}) }]; }
     case 'PostToolUseFailure': return [{ type: 'tool-end', id, name: toolName(p.tool_name), isError: true }];
     case 'SubagentStart': return [{ type: 'subagent-start', id: String(p.agent_id ?? id), task: String(p.agent_type ?? 'subagent') }];
     case 'SubagentStop': return [{ type: 'subagent-end', id: String(p.agent_id ?? id), status: 'done' }];

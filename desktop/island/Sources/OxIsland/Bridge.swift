@@ -483,6 +483,7 @@ final class OxBridge: ObservableObject {
         guard let port = docs.compactMap({ $0["port"] as? Int }).first,
               let url = URL(string: "http://127.0.0.1:\(port)/ox/live") else { appPort = nil; dropAppSessions(keep: []); return }
         appPort = port
+        Dictation.serverPort = port
         pollUsage(port: port)
         pollConnected(port: port)
         pollGauges(port: port)
@@ -655,8 +656,15 @@ final class OxBridge: ObservableObject {
     /// Take over in Terminal: the session continued by its own tool.
     func openCardInTerminal() {
         guard let c = card, let ext = Self.externalId(c.id) else { return }
-        post("/ox/agents/open", ["id": ext]) { [weak self] j in
-            self?.card?.note = (j?["opened"] as? Bool) == true ? "Opened in Terminal." : ((j?["error"] as? [String: Any])?["message"] as? String ?? "Could not open it.")
+        // Its own tab first (where it already runs); a new Terminal only when there is none.
+        post("/ox/agents/focus", ["id": ext]) { [weak self] f in
+            if (f?["focused"] as? Bool) == true {
+                self?.card?.note = "Brought its \(f?["app"] as? String ?? "Terminal") tab to the front."
+                return
+            }
+            self?.post("/ox/agents/open", ["id": ext]) { j in
+                self?.card?.note = (j?["opened"] as? Bool) == true ? "Opened in Terminal." : ((j?["error"] as? [String: Any])?["message"] as? String ?? "Could not open it.")
+            }
         }
     }
 
@@ -815,6 +823,10 @@ final class OxBridge: ObservableObject {
                 s.note(s.activity)
             case "tool-end":
                 if (ev["isError"] as? Bool) == true { s.activity = "\(ev["name"] as? String ?? "tool") failed — recovering" }
+                // The live diff ticker: "editing app.js +12 −3".
+                if let d = ev["diff"] as? [String: Any], let file = d["file"] as? String {
+                    s.note("editing \(file) +\(d["plus"] as? Int ?? 0) −\(d["minus"] as? Int ?? 0)")
+                }
                 if ev["name"] as? String == "show_ui",
                    let canvas = ((ev["meta"] as? [String: Any])?["canvas"] as? [String: Any]).flatMap({ CanvasNode($0["tree"]) }) {
                     s.canvas = canvas

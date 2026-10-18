@@ -1639,6 +1639,14 @@ const ROUTES = [
     return D.fixPr(dir, {});
   }) },
   { method: 'GET', pattern: /^\/ox\/day\/?$/, handler: appRoute(dayView) },
+  // Dictation styles and translation, per app (src/dictation-style.js).
+  { method: 'POST', pattern: /^\/ox\/dictation\/style\/?$/, handler: appRoute(async (body) => {
+    const D = await import('./dictation-style.js');
+    return D.restyle(String(body?.text ?? ''), String(body?.app ?? ''), async ({ system, user }) => {
+      const { quickText } = await import('./quick-text.js');
+      return (await quickText(resolveBot(pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 800 })).text;
+    });
+  }) },
   // Your machines (ox mesh): status, an invite code, names, grants, and your
   // choice on an alert. Grants are set here, for what this machine gives.
   { method: 'GET', pattern: /^\/ox\/mesh\/?$/, handler: appRoute(meshView) },

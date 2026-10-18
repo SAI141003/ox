@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4525,6 +4525,20 @@ async function runSubcommand(cmd, args) {
     case 'pr':
       await cmdPr(args);
       return;
+    case 'dictation': {
+      // ox dictation style <as-said|natural|polished> [--app Mail] | translate <language|off> | show
+      const D = await import('./dictation-style.js');
+      const sub = args[0] ?? 'show';
+      const ai = args.indexOf('--app');
+      try {
+        if (sub === 'style') D.setStyle(args[1], ai >= 0 ? args[ai + 1] : null);
+        else if (sub === 'translate') D.setTranslate(args.slice(1).join(' '));
+        else if (sub !== 'show') { console.error('usage: ox dictation style <as-said|natural|polished> [--app <App>] | translate <language|off> | show'); process.exitCode = 3; return; }
+        const st = D.readStyles();
+        console.log(`style: ${st.default}${Object.keys(st.apps).length ? `  ·  ${Object.entries(st.apps).map(([a, v]) => `${a}: ${v}`).join(', ')}` : ''}${st.translate ? `  ·  translated into ${st.translate}` : ''}`);
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+      return;
+    }
     case 'trace':
     case 'traces': {
       const T = await import('./trace.js');

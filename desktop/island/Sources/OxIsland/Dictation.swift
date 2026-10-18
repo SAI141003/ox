@@ -144,9 +144,27 @@ final class Dictation: ObservableObject {
 
     /// Put the words where the person types: ⌘V into the front app, then the
     /// clipboard gets back what it held.
+    /// The app's server, for styles and translation (set by the bridge when it finds it).
+    nonisolated(unsafe) static var serverPort: Int?
+
     private func paste(_ text: String) {
-        let seconds = max(0.5, Date().timeIntervalSince(pressedAt))
         let app = NSWorkspace.shared.frontmostApplication?.localizedName ?? ""
+        // A style or a language for this app (ox dictation style … / translate …): one small model call first.
+        guard let port = Self.serverPort, let url = URL(string: "http://127.0.0.1:\(port)/ox/dictation/style") else { pasteNow(text, app: app); return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 12
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text, "app": app])
+        URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
+            let doc = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            let out = (doc?["text"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? text
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.pasteNow(out, app: app) } }
+        }.resume()
+    }
+
+    private func pasteNow(_ text: String, app: String) {
+        let seconds = max(0.5, Date().timeIntervalSince(pressedAt))
         DictationStats.record(words: text.split(whereSeparator: { $0.isWhitespace }).count, seconds: seconds, app: app)
         if Paster.paste(text) {
             lastPasted = text

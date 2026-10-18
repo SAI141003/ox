@@ -229,8 +229,16 @@ struct StepTicker: View {
                 let last = i == steps.count - 1
                 HStack(spacing: 5) {
                     Image(systemName: icon(for: s)).font(.system(size: 9)).foregroundStyle(last ? Color(hex: session.color) : HomeInk.faint).frame(width: 11)
-                    Text(s).font(.system(size: 11, design: s.hasPrefix("$") ? .monospaced : .default))
-                        .foregroundStyle(last ? HomeInk.text.opacity(0.92) : HomeInk.dim).lineLimit(1).truncationMode(.middle)
+                    if let m = s.wholeMatch(of: #/(.+) \+(\d+) −(\d+)/#) {
+                        HStack(spacing: 4) {
+                            Text(String(m.1)).font(.system(size: 11)).foregroundStyle(last ? HomeInk.text.opacity(0.92) : HomeInk.dim).lineLimit(1).truncationMode(.middle)
+                            Text("+\(m.2)").font(.system(size: 10.5, weight: .semibold, design: .monospaced)).foregroundStyle(Color(hex: "#34D399"))
+                            Text("−\(m.3)").font(.system(size: 10.5, weight: .semibold, design: .monospaced)).foregroundStyle(Color(hex: "#F4505E"))
+                        }
+                    } else {
+                        Text(s).font(.system(size: 11, design: s.hasPrefix("$") ? .monospaced : .default))
+                            .foregroundStyle(last ? HomeInk.text.opacity(0.92) : HomeInk.dim).lineLimit(1).truncationMode(.middle)
+                    }
                 }
             }
         }

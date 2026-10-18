@@ -156,6 +156,7 @@ struct RecapView: View {
                 stat(tokens >= 1_000_000 ? String(format: "%.1fM", Double(tokens) / 1e6) : tokens >= 1000 ? String(format: "%.0fk", Double(tokens) / 1000) : "\(tokens)", "tokens")
                 stat("\(dict.words)", "words dictated")
                 stat("\(dict.savedMinutes) min", "saved typing")
+                stat("\(dict.wpm)", "words/min").help(dict.apps.isEmpty ? "Speaking speed" : "Dictated most into: " + dict.apps.map { "\($0.0) (\($0.1) words)" }.joined(separator: ", "))
                 stat(top, "most used")
                 stat(waterText(), "water (est.)").help("Estimated data-centre cooling water for cloud models: ~18 mL per 1,000 tokens, from Li et al. 2023, \"Making AI Less Thirsty\" (about 0.5 L per 20–50 responses). Local models are not counted.")
             }

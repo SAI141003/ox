@@ -228,3 +228,12 @@ test('a question with no island goes to the terminal as usual (prints nothing)',
   const out = await handleHook('claude', JSON.stringify({ session_id: 'q2', hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: 'Go?', options: [{ label: 'Yes' }] }] } }), opts);
   assert.equal(out, '');
 });
+
+test('live diff ticker: edits carry lines added and removed', async () => {
+  const H = await import('../src/agent-hooks.js');
+  const [e] = H.toEvents({ hook_event_name: 'PostToolUse', tool_name: 'Edit', tool_use_id: 't', tool_input: { file_path: '/r/src/app.js', old_string: 'a\nb', new_string: 'a\nb\nc' } });
+  assert.deepEqual(e.diff, { file: 'app.js', plus: 3, minus: 2 });
+  assert.deepEqual(H.diffStat('MultiEdit', { file_path: 'x.ts', edits: [{ old_string: 'a', new_string: 'b\nc' }, { old_string: 'd\ne', new_string: '' }] }), { file: 'x.ts', plus: 2, minus: 3 });
+  assert.deepEqual(H.diffStat('Write', { file_path: 'n.md', content: 'one\ntwo\n' }), { file: 'n.md', plus: 2, minus: 0 });
+  assert.equal(H.toEvents({ hook_event_name: 'PostToolUse', tool_name: 'Read', tool_use_id: 'r', tool_input: { file_path: 'a' } })[0].diff, undefined);
+});

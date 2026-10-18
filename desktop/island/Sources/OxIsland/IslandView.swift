@@ -651,7 +651,7 @@ struct SessionCardView: View {
                 }
                 Spacer(minLength: 4)
                 if OxBridge.externalId(session.id) != nil {
-                    PillButton(title: "Open in Terminal", primary: false) { bridge.openCardInTerminal() }
+                    PillButton(title: "Go to Terminal", primary: false) { bridge.openCardInTerminal() }
                 }
                 Button { bridge.card = nil } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)) }
                     .buttonStyle(.plain).foregroundStyle(Ink.dim).help("Close")
