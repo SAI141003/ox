@@ -94,7 +94,7 @@ test('runAgent emits a sanitized terminal history event for dangling incoming me
 function cwdFixture(t, marker) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-runcwd-'));
   if (marker) fs.writeFileSync(path.join(dir, 'AGENTS.md'), `${marker}\n`);
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   // If the suite ever ran from inside the fixture, the control in the
   // end-to-end test would pass vacuously. Make that impossible.
   assert.notEqual(fs.realpathSync(dir), fs.realpathSync(process.cwd()));
@@ -104,7 +104,7 @@ function cwdFixture(t, marker) {
 // A second, conflicting directory, cleaned up with its test.
 function otherDir(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-runcwd-other-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   return dir;
 }
 

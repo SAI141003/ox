@@ -539,7 +539,7 @@ test('ipc: ping is answered with pong', async (t) => {
 test('ipc: the socket file exists while listening and is removed on close', async (t) => {
   const dir = mkdtemp();
   const socketPath = path.join(dir, 'lifecycle.sock');
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   const server = createIpcServer({ socketPath, sessionId: 'lifecycle' });
   await once(server, 'listening');
   assert.ok(fs.existsSync(socketPath), 'socket file should exist once listening');
@@ -552,7 +552,7 @@ test('ipc: the socket file exists while listening and is removed on close', asyn
 test('ipc: a stale socket file from a crashed server is unlinked on start', async (t) => {
   const dir = mkdtemp();
   const socketPath = path.join(dir, 'stale.sock');
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
 
   // Simulate a crash for real: SIGKILL a process that owns the socket, so
   // nothing gets a chance to unlink it. (A clean close() would tidy up after
@@ -586,7 +586,7 @@ test('ipc: a stale socket file from a crashed server is unlinked on start', asyn
 test('ipc: a stale socket is unlinked even when it is not a socket at all', async (t) => {
   const dir = mkdtemp();
   const socketPath = path.join(dir, 'garbage.sock');
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   fs.writeFileSync(socketPath, 'not a socket');
 
   const server = createIpcServer({ socketPath, sessionId: 'garbage' });
@@ -741,7 +741,7 @@ test('ipc: server.close() is idempotent and broadcasts still work before it', as
 test('ipc: a live server socket is never stolen by a second server', async (t) => {
   const dir = mkdtemp();
   const socketPath = path.join(dir, 'owned.sock');
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
 
   const owner = createIpcServer({ socketPath, sessionId: 'owner' });
   t.after(() => owner.close());
