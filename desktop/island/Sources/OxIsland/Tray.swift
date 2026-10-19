@@ -707,7 +707,9 @@ final class IslandChat: ObservableObject {
             if let r, r.route == "screen" {
                 // A question about the screen: answered from a picture of it, read-only.
                 guard let shot = MainActor.assumeIsolated({ Buddy.captureScreen() }) else {
-                    IslandLog.write("screen question, but Screen Recording is off for OX Island")
+                    // You asked about the screen: ask macOS once, which adds this OX Island (its current signature) to the list.
+                    let asked = CGRequestScreenCaptureAccess()
+                    IslandLog.write("screen question, but Screen Recording is off for OX Island (asked macOS: \(asked))")
                     self.busy = false
                     self.reply("I need to see your screen for that: turn on Screen Recording for OX Island in System Settings, Privacy and Security.", who: nil)
                     return
