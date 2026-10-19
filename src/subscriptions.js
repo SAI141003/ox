@@ -39,7 +39,8 @@ export const SUBSCRIPTION_CLIS = Object.freeze({
     ],
   },
   chatgpt: {
-    label: 'ChatGPT (Plus / Pro / Team) via Codex',
+    // Any ChatGPT account works, Free included; which models it may use depends on the plan.
+    label: 'ChatGPT (Free, Plus, Pro, Team) via Codex',
     bin: 'codex',
     install: 'npm install -g @openai/codex',
     login: 'run `codex login` and choose "Sign in with ChatGPT"',
@@ -602,8 +603,30 @@ export function codexListedModel(where, env = process.env) {
   } catch { return null; }
 }
 
+// The model a plan's account accepted last time (a free ChatGPT account cannot use
+// every model Codex asks for): used straight away next time, no refused first try.
+const PLAN_MODELS = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'plan-models.json');
+export function planModel(id) { try { return JSON.parse(fs.readFileSync(PLAN_MODELS(), 'utf8'))[id]?.model ?? null; } catch { return null; } }
+export function rememberPlanModel(id, model) {
+  let j = {};
+  try { j = JSON.parse(fs.readFileSync(PLAN_MODELS(), 'utf8')); } catch {}
+  if (model) j[id] = { model, at: new Date().toISOString() }; else delete j[id];
+  try { fs.mkdirSync(path.dirname(PLAN_MODELS()), { recursive: true }); fs.writeFileSync(PLAN_MODELS(), JSON.stringify(j, null, 2)); } catch {}
+}
+
 export async function* runSubscriptionTurn(opts = {}) {
   const { target, config = {}, ctx = {} } = opts;
+  // A model this account accepted before: go straight to it.
+  const known = target?.subscription === 'chatgpt' && !target.model ? planModel('chatgpt') : null;
+  if (known) {
+    let refusedKnown = false;
+    for await (const ev of runSubscriptionOnce({ ...opts, target: { ...target, model: known } })) {
+      if (ev.type === 'error' && CHATGPT_MODEL_REFUSED.test(ev.error)) { refusedKnown = true; break; }
+      yield ev;
+    }
+    if (!refusedKnown) return;
+    rememberPlanModel('chatgpt', null);   // the plan changed: learn again below
+  }
   const held = [];
   let refused = null;
   for await (const ev of runSubscriptionOnce(opts)) {
@@ -617,7 +640,8 @@ export async function* runSubscriptionTurn(opts = {}) {
   const where = cli && resolveCli(cli, env)?.where;
   const model = where ? codexListedModel(where, env) : null;
   if (!model) { yield refused; for (const ev of held) yield ev; return; }
-  process.stderr.write(`ox: Codex's own setting asks for a model your ChatGPT account cannot use (${String(refused.error).match(/'([^']+)'/)?.[1] ?? 'its default'}); used ${model} instead. Set it in ~/.codex/config.toml or pick one: ox --bot chatgpt-plan:${model}\n`);
+  process.stderr.write(`ox: your ChatGPT account cannot use ${String(refused.error).match(/'([^']+)'/)?.[1] ?? 'Codex\'s default model'}; ox uses ${model} for it from now on (another: ox --bot chatgpt-plan:<model>)\n`);
+  rememberPlanModel('chatgpt', model);
   yield* runSubscriptionOnce({ ...opts, target: { ...target, model } });
 }
 
