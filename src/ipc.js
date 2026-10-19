@@ -243,8 +243,18 @@ export function sanitizeForWire(value, opts = {}) {
 function attachFraming(socket, onLine, onDrop = null) {
   const drop = (reason, detail) => { if (onDrop) onDrop(reason, detail); };
   let buf = '';
+  // After an oversize partial is discarded, the rest of that frame is still
+  // on its way: skip to its newline instead of parsing the tail as a frame.
+  // (Small pipe reads on Windows make this the common case, not the rare one.)
+  let skipping = false;
   socket.setEncoding('utf8');
   socket.on('data', (chunk) => {
+    if (skipping) {
+      const end = chunk.indexOf('\n');
+      if (end === -1) return;
+      skipping = false;
+      chunk = chunk.slice(end + 1);
+    }
     buf += chunk;
     let idx;
     while ((idx = buf.indexOf('\n')) !== -1) {
@@ -261,6 +271,7 @@ function attachFraming(socket, onLine, onDrop = null) {
     if (buf.length > MAX_FRAME_BYTES) {
       drop('oversize-partial', buf.length);
       buf = '';
+      skipping = true;
     }
   });
 }
@@ -451,7 +462,11 @@ export function createIpcServer(opts = {}) {
   }
 
   // net.Socket is a Duplex stream, so it emits 'drain' once its internal
-  // buffer empties after write() returned false.
+  // buffer empties after write() returned false. That alone is not enough: on
+  // a Windows named pipe every write completes asynchronously, so a small
+  // write returns true yet leaves writableLength > 0, and no 'drain' follows.
+  // Each write therefore re-runs the pump when it completes, or the queue
+  // would sit until the next send happened to come along.
   function makePump(client) {
     return () => {
       while (client.queue.length) {
@@ -459,7 +474,7 @@ export function createIpcServer(opts = {}) {
         if (client.socket.writableLength > 0) return; // still congested
         const line = client.queue.shift();
         client.queueBytes -= line.length;
-        client.socket.write(line);
+        client.socket.write(line, client.repump);
       }
       client.queueBytes = 0;
     };
@@ -477,7 +492,7 @@ export function createIpcServer(opts = {}) {
       if (client.queue.length === 0 && client.socket.writable && client.socket.writableLength === 0) {
         // write() returning false still means "accepted and buffered", so this
         // counts as delivered, not as backpressure.
-        client.socket.write(line);
+        client.socket.write(line, client.repump);
         return true;
       }
       enqueue(client, line);
@@ -598,6 +613,7 @@ export function createIpcServer(opts = {}) {
       dropped: 0,
     };
     client.pump = makePump(client);
+    client.repump = () => { if (client.queue.length) client.pump(); };
     client.send = makeSend(client);
     clients.add(client);
 

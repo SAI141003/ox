@@ -54,12 +54,33 @@ function normalize(t) {
   };
 }
 
+// On Windows a rename onto a file another process has open (a reader, or a
+// second writer mid-rename) fails with EPERM/EBUSY/EACCES instead of replacing
+// it. The holder lets go within milliseconds, so wait briefly and try again.
+const RENAME_RETRY = new Set(['EPERM', 'EBUSY', 'EACCES']);
+const RENAME_ATTEMPTS = 20;
+
+function renameWithRetry(from, to) {
+  for (let i = 1; ; i++) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (err) {
+      if (!RENAME_RETRY.has(err?.code) || i >= RENAME_ATTEMPTS) {
+        try { fs.unlinkSync(from); } catch {}
+        throw err;
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.min(5 * i, 50));
+    }
+  }
+}
+
 function writeTask(t, dir) {
   ensureTasksDir(dir);
   const file = taskPath(t.id, dir);
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(t, null, 2));
-  fs.renameSync(tmp, file); // atomic replace: a reader never sees half a task
+  renameWithRetry(tmp, file); // atomic replace: a reader never sees half a task
   return t;
 }
 
