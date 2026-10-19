@@ -573,16 +573,6 @@ export async function repairLiveUi({ text, target, messages, ctx, config, run = 
   return text.replace(re, () => (placed ? '' : ((placed = true), block))).replace(/\n{3,}/g, '\n\n').trim();
 }
 
-function agentErrorShape(message) {
-  // A missing provider key is an authentication failure, not a bug; a 500 would
-  // send the caller looking in the wrong place.
-  if (/Missing API key/i.test(message)) {
-    return { status: 401, type: 'authentication_error', code: 'invalid_api_key', param: null };
-  }
-  return { status: 500, type: 'server_error', code: null, param: null };
-}
-
-// What ox's own app can draw (src/web/chat.html renderUi): answers as interface,
 /**
  * Interactive answers every time: the answering model gets its repair round;
  * if the drawing still does not load, the strongest model connected (a plan, a
@@ -614,6 +604,16 @@ const BUILDS = /\b(build|create|make|write|generate|scaffold|implement|code|scri
 const SMALL_TALK = /^\s*(hi|hey|hello|yo|thanks|thank you|ok|okay|cool|nice|great|good (morning|night|evening)|how are you|who are you|what can you do)[\s!.?]*$/i;
 const TOUCHES_CODE = /\b(file|files|repo|repository|project|codebase|function|class|module|component|test|tests|bug|fix|refactor|commit|branch|src|readme)\b|[\w-]+\.(js|ts|tsx|jsx|py|go|rs|java|rb|css|html|json|md)\b/i;
 const WANTS_UI = /\b(calculat\w*|convert\w*|compar\w*|table|chart|graph|plot|slider|interactive|estimat\w*|budget|breakdown|checklist|options|pros and cons|form)\b/i;
+function agentErrorShape(message) {
+  // A missing provider key is an authentication failure, not a bug; a 500 would
+  // send the caller looking in the wrong place.
+  if (/Missing API key/i.test(message)) {
+    return { status: 401, type: 'authentication_error', code: 'invalid_api_key', param: null };
+  }
+  return { status: 500, type: 'server_error', code: null, param: null };
+}
+
+// What ox's own app can draw (src/web/chat.html renderUi): answers as interface,
 // OpenUI Lang (thesysdev/openui), the way OpenUI does it: the prompt is built
 // from the component library itself, so what the model is told and what the
 // page can draw never drift apart.
@@ -1424,10 +1424,39 @@ export async function voiceTurn(body) {
   // The island asks this first while a coding run is open: an errand ("play
   // Billie Jean", "volume down") is done here and never sent into that run.
   if (body?.offlineOnly === true) return { route: 'live', handled: false, why: 'not a small task', ms: Date.now() - started };
+let voiceCall = null;
+export async function callRoute(text, body = {}, { O = null, ask = null } = {}) {
+  O ??= await import('./org.js');
+  // The model a run would use (plans and local models checked first, as `ox -p` does).
+  ask ??= async ({ system, user }) => {
+    const { quickText } = await import('./quick-text.js');
+    const { workingModelSpec } = await import('./working-model.js');
+    const spec = await workingModelSpec(readConfigDoc(), { say: () => {} });
+    return (await quickText(resolveBot(spec || pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 200 })).text;
+  };
+  if (voiceCall && Date.now() - voiceCall.at > 10 * 60_000) voiceCall = null;
+  const m = /^(?:hey,?\s+)?(?:call|phone|ring|get me|put me through to|talk to)\s+(.{1,40}?)[.!?]*$/i.exec(text);
+  if (!voiceCall && m) {
+    const c = O.startCall(m[1]);
+    if (!c) return null;
+    voiceCall = c;
+    return { say: c.say, agent: c.agent };
+  }
+  if (!voiceCall || body?.dryRun) return null;
+  const r = await O.callTurn(voiceCall, text, { ask });
+  const agent = voiceCall.agent;
+  if (r.ended) voiceCall = null;
+  return { ...r, agent };
+}
+
   if (SCREEN.test(text) && !body?.image) return { route: 'screen', handled: false, why: 'it needs a look at your screen', ms: Date.now() - started };
   const { assistantName } = await import('./identity.js');
   // Small talk and questions: one short answer. Anything that acts: an agent.
   await warmLocal();
+  // A call with an ox org agent (OpenDots): "call Ada", then each turn goes to
+  // Ada until "hang up" or ten quiet minutes.
+  const call = await callRoute(text, body);
+  if (call) return { route: 'call', handled: true, ok: true, say: call.say, agent: call.agent, ended: call.ended ?? false, ...(call.task ? { task: call.task.id } : {}), ms: Date.now() - started };
   const pick = autoModel([{ role: 'user', content: text }]);
   const light = /^a quick answer/.test(pick.why) && !ACTS.test(text);
   if (!light) return { route: 'agent', handled: false, why: 'this needs ox to act', ms: Date.now() - started };

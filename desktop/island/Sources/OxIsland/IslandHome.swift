@@ -347,7 +347,7 @@ struct RightCard: View {
                 LazyVGrid(columns: cols, spacing: 4) {
                     ForEach(bridge.org.prefix(4)) { a in OrgPill(agent: a, levelledUp: bridge.levelUps[a.id].map { Date().timeIntervalSince($0) < 60 } ?? false) { bridge.orgCard = bridge.orgCard == a.id ? nil : a.id } }
                 }
-            } else if bridge.player.track != nil || bridge.day.weather != nil || bridge.day.event != nil || bridge.day.prs != nil || !bridge.meshMachines.isEmpty {
+            } else if bridge.player.track != nil || bridge.day.weather != nil || bridge.day.event != nil || bridge.day.prs != nil || bridge.day.vercel != nil || bridge.day.cal != nil || (bridge.day.n8n?.failed ?? 0) > 0 || !bridge.meshMachines.isEmpty {
                 if let t = bridge.player.track { NowPlayingPill(player: bridge.player).help("\(t.title) · \(t.artist)") }
                 if !bridge.meshMachines.isEmpty { MachineStrip(machines: bridge.meshMachines) }
                 DayStrip(day: bridge.day)
@@ -449,6 +449,16 @@ struct DayStrip: View {
                 Button { if let u = URL(string: "https://github.com/pulls") { NSWorkspace.shared.open(u) } } label: {
                     pill(icon: "arrow.triangle.pull", text: "\(p.open) PR\(p.open == 1 ? "" : "s")\(p.failing > 0 ? " · \(p.failing) failing" : "")", tint: p.failing > 0 ? Color(hex: "#F4505E") : Color(hex: "#34D399"))
                 }.buttonStyle(.plain).help("Your open pull requests and their CI (opens GitHub)")
+            }
+            if let c = day.cal {
+                Button { if let u = URL(string: "https://app.cal.com/bookings/upcoming") { NSWorkspace.shared.open(u) } } label: {
+                    pill(icon: "calendar.badge.clock", text: "\(c.with.map { "\(c.title) · \($0)" } ?? c.title) · \(c.at.formatted(date: .omitted, time: .shortened))", tint: Color(hex: "#A78BFA"))
+                }.buttonStyle(.plain).help("Your next Cal.com booking (opens Cal.com)")
+            }
+            if let n = day.n8n, n.failed > 0 {
+                Button { if let u = URL(string: "\(n.url)/home/executions") { NSWorkspace.shared.open(u) } } label: {
+                    pill(icon: "exclamationmark.arrow.triangle.2.circlepath", text: "n8n · \(n.failed) failed", tint: Color(hex: "#F4505E"))
+                }.buttonStyle(.plain).help("Failed today: \(n.workflows.joined(separator: ", ")) (opens n8n)")
             }
             if let v = day.vercel {
                 Button { if let u = URL(string: v.url ?? "https://vercel.com/dashboard") { NSWorkspace.shared.open(u) } } label: {

@@ -431,7 +431,9 @@ final class OxBridge: ObservableObject {
         var weather: (tempC: Int, text: String, place: String?)?
         var prs: (open: Int, failing: Int, url: String?)?
         var vercel: (state: String, name: String, url: String?)?
-        static func == (a: DayInfo, b: DayInfo) -> Bool { a.event?.title == b.event?.title && a.weather?.tempC == b.weather?.tempC && a.prs?.open == b.prs?.open && a.prs?.failing == b.prs?.failing && a.vercel?.state == b.vercel?.state }
+        var cal: (title: String, with: String?, at: Date)?
+        var n8n: (failed: Int, workflows: [String], url: String)?
+        static func == (a: DayInfo, b: DayInfo) -> Bool { a.event?.title == b.event?.title && a.weather?.tempC == b.weather?.tempC && a.prs?.open == b.prs?.open && a.prs?.failing == b.prs?.failing && a.vercel?.state == b.vercel?.state && a.cal?.title == b.cal?.title && a.n8n?.failed == b.n8n?.failed }
     }
     @Published private(set) var day = DayInfo()
     private var dayPolledAt = Date.distantPast
@@ -455,6 +457,9 @@ final class OxBridge: ObservableObject {
                 d.prs = (o, p["failing"] as? Int ?? 0, first)
             }
             if let v = doc["vercel"] as? [String: Any], let st = v["state"] as? String { d.vercel = (st, v["name"] as? String ?? "Vercel", v["url"] as? String) }
+            if let c = doc["cal"] as? [String: Any], let t = c["title"] as? String, let s = c["start"] as? String,
+               let at = ISO8601DateFormatter.withFractions.date(from: s) ?? ISO8601DateFormatter().date(from: s) { d.cal = (t, c["with"] as? String, at) }
+            if let n = doc["n8n"] as? [String: Any], let f = n["failed"] as? Int, let u = n["url"] as? String { d.n8n = (f, n["workflows"] as? [String] ?? [], u) }
             DispatchQueue.main.async { self?.day = d }
         }.resume()
     }
@@ -1278,4 +1283,10 @@ final class SocketConnection {
         shutdown(fd, SHUT_RDWR)
         Darwin.close(fd)
     }
+}
+
+
+extension ISO8601DateFormatter {
+    /// "2026-10-19T15:00:00.000Z" (Cal.com and most APIs send milliseconds).
+    static let withFractions: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f }()
 }

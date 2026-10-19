@@ -351,6 +351,59 @@ export async function groupSay(gid, text, { ask, by = 'you', ...opts } = {}) {
   return replies;
 }
 
+// ---- calls (OpenDots: coworkers you can call, not only text) ---------------
+// "Call Ada" on the island: a spoken conversation with one agent, in its role.
+// Asking it for work ("can you fix the login bug?") files a task on its board,
+// which it picks up on its next beat; "hang up" ends the call.
+const HANG_UP = /^(?:ok(?:ay)?[,.]?\s+)?(?:hang up|bye|goodbye|good bye|end (?:the )?call|that'?s all|talk (?:to you )?later|thanks?,? bye)\b/i;
+
+/** The agent a "call …" means, by name or id; null when there is none. */
+export function findAgent(name, opts = {}) {
+  const want = slug(String(name).replace(/^(?:my\s+|the\s+)/i, ''));
+  const all = Object.values(readOrg(opts).agents).filter((a) => a.status === 'active');
+  return all.find((a) => a.id === want || slug(a.name) === want) ?? all.find((a) => slug(a.title) === want) ?? null;
+}
+
+export function startCall(name, opts = {}) {
+  const a = findAgent(name, opts);
+  if (!a) return null;
+  const org = readOrg(opts);
+  note(org, 'you', 'called', a.id);
+  writeOrg(org, opts);
+  return { agent: a.id, history: [], at: Date.now(), say: `${a.name} here. What do you need?` };
+}
+
+/** One thing said on the call → { say, ended, task }. `ask({ system, user })` is the model. */
+export async function callTurn(call, text, { ask, ...opts } = {}) {
+  const a = readOrg(opts).agents[call.agent];
+  if (!a) return { say: 'The line went dead: that agent is gone.', ended: true };
+  if (HANG_UP.test(String(text).trim())) return { say: 'Talk soon.', ended: true };
+  call.history.push({ from: 'you', text: String(text).slice(0, 2000) });
+  // What is really on its board, so "how is it going?" is answered from facts.
+  let board = 'nothing';
+  try {
+    const mine = listTasks(opts.tasks ?? {}).filter((t) => t.assignee === a.id).slice(-8);
+    if (mine.length) board = mine.map((t) => `- ${t.title} (${t.status})`).join('\n');
+  } catch {}
+  let said = '';
+  try {
+    said = String(await ask({
+      system: `You are ${a.name}, ${a.title}, on a voice call with the owner. Your job:\n${a.instructions}\nYour task board right now:\n${board}\nAnswer in one or two short spoken sentences, in character, no lists or markdown. Only say what the board shows about your work; never invent progress. Only when the owner asks you to do something new, say you will and end your reply with [TASK: a short title for it]. A question about your work is not new work.`,
+      user: call.history.slice(-12).map((m) => `${m.from === 'you' ? 'Owner' : a.name}: ${m.text}`).join('\n'),
+    })).trim();
+  } catch (e) { return { say: `Sorry, I lost you: ${e.message}`, ended: false }; }
+  let task = null;
+  const m = /\[TASK:\s*([^\]]+)\]/i.exec(said);
+  if (m) {
+    const asked = call.history.at(-1).text;
+    task = (await tell(a.id, `${m[1].trim()}\n\nAsked on a call: "${asked}"`, opts)).task;
+    said = said.replace(m[0], '').trim();
+  }
+  call.history.push({ from: a.id, text: said });
+  call.at = Date.now();
+  return { say: said || 'On it.', ended: false, task };
+}
+
 /** What one agent's runs cost since `since`, from the usage log (null when unpriced). */
 export function costSince(agentId, since, file) {
   const rows = readUsage({ since, ...(file ? { file } : {}) }).filter((r) => r.agent === agentId && typeof r.cost === 'number');

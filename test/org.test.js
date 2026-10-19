@@ -229,3 +229,22 @@ test('battle: two agents race the same task; the winner is logged, kept and earn
   await assert.rejects(O.battle('Ada', 'Ada', 'x', { ...o, run }), /itself/);
   await assert.rejects(O.battle('Ada', 'Zed', 'x', { ...o, run }), /no agent called Zed/);
 });
+
+test('calls: "call Ada" puts you through; work asked on the call lands on her board; "hang up" ends it', async () => {
+  const o = fresh();
+  O.hire({ name: 'Ada', title: 'Engineer', runtime: 'claude', instructions: 'Fix bugs.' }, o);
+  assert.equal(O.startCall('Zed', o), null);
+  const call = O.startCall('ada', o);
+  assert.match(call.say, /^Ada here/);
+  let asked = null;
+  const ask = async ({ system, user }) => { asked = { system, user }; return /login/.test(user) ? "Sure, I'll look at the login bug today. [TASK: Fix the login bug]" : 'All good on my side.'; };
+  const r1 = await O.callTurn(call, 'How is it going?', { ...o, ask });
+  assert.deepEqual([r1.say, r1.ended, r1.task], ['All good on my side.', false, null]);
+  assert.match(asked.system, /voice call/);
+  const r2 = await O.callTurn(call, 'Can you fix the login bug?', { ...o, ask });
+  assert.equal(r2.say, "Sure, I'll look at the login bug today.", 'the marker is not read aloud');
+  assert.equal(r2.task.assignee, 'ada');
+  assert.equal(r2.task.title, 'Fix the login bug');
+  assert.match(asked.user, /Owner: How is it going\?\nAda: All good on my side\.\nOwner: Can you fix/);
+  assert.deepEqual(await O.callTurn(call, 'ok bye', { ...o, ask }), { say: 'Talk soon.', ended: true });
+});
