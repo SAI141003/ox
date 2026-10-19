@@ -388,7 +388,8 @@ export function checkCli(id, config = {}, env = process.env) {
     const version = versionOf(app.where, env);
     const signedIn = signInState(id, app.where, env);
     if (signedIn === false) return { id, label: cli.label, bin: cli.bin, path: app.where, installed: true, works: false, signedIn, version, via: 'app', problem: 'installed and working, but not signed in', fix: signInHow(id, app.where, cli) };
-    return { id, label: cli.label, bin: cli.bin, path: app.where, installed: true, works: true, signedIn, version, via: 'app', login: cli.login };
+    // The model this account accepted before (a free ChatGPT account, for one), so the page can say what it runs.
+    return { id, label: cli.label, bin: cli.bin, path: app.where, installed: true, works: true, signedIn, version, via: 'app', login: cli.login, model: planModel(id) };
   }
   const where = findOnPath(cli.bin, env);
   if (!where) {

@@ -191,7 +191,7 @@ export async function updateView() {
 
 // Subscriptions you already pay for (Claude, ChatGPT, …) through their CLIs.
 export async function accountsView(env = process.env) {
-  const { checkAll } = await import('./subscriptions.js');
+  const { checkAll, planModel } = await import('./subscriptions.js');
   const { loadConfig } = await import('./config.js');
   let config = {};
   try { config = loadConfig(); } catch {}
@@ -199,6 +199,8 @@ export async function accountsView(env = process.env) {
     id: c.id, label: c.label, bin: c.bin, installed: !!c.installed, works: !!c.works,
     version: c.version ?? null, problem: c.problem ?? null, fix: c.fix ?? null, login: c.login ?? null,
     bot: `${c.id}-plan`,
+    // The model this account accepted last time (e.g. a free ChatGPT account), shown on its card.
+    model: c.works ? (c.model ?? planModel(c.id)) : null,
   }));
 }
 
