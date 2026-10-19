@@ -279,7 +279,8 @@ final class Shelf: ObservableObject {
     static func clean(_ s: String) -> String {
         s.split(separator: "\n", omittingEmptySubsequences: false)
             .map(String.init)
-            .filter { l in !(l.hasPrefix("· ") || l.hasPrefix("● ") || l.hasPrefix("✓ ")) }
+            // Progress marks and ox's own warnings ("ox: MCP server … killing it") are never read aloud.
+            .filter { l in !(l.hasPrefix("· ") || l.hasPrefix("● ") || l.hasPrefix("✓ ") || l.hasPrefix("ox: ") || l.hasPrefix("Shell cwd was reset")) }
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -755,7 +756,7 @@ final class IslandChat: ObservableObject {
         // Allow / Deny instead of being declined for want of a terminal.
         let sock = (NSTemporaryDirectory() as NSString).appendingPathComponent("ox-ipc-island-\(UUID().uuidString.prefix(8)).sock")
         let args = extra + ["--ipc=\(sock)", "-p", text] + (startedFor.contains(key) ? ["-c"] : [])
-        OxRunner.run(args, cwd: URL(fileURLWithPath: folder), env: ["OX_IPC_WAIT_CLIENT_MS": "4000"]) { [weak self] code, out in
+        OxRunner.run(args, cwd: URL(fileURLWithPath: folder), env: ["OX_IPC_WAIT_CLIENT_MS": "4000", "OX_MCP": "0"]) { [weak self] code, out in
             guard let self else { return }
             self.busy = false
             self.startedFor.insert(key)

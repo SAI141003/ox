@@ -207,6 +207,10 @@ final class OxBridge: ObservableObject {
         }
         // Test hook: the same path as speaking ("say" a sentence to the island).
         //   swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("dev.ox.island.say"), object: "open whatsapp", deliverImmediately: true)'
+        // Press the island's mic button (checks of the real voice path, end to end).
+        DistributedNotificationCenter.default().addObserver(forName: .init("dev.ox.island.listen"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.buddy.toggle() }
+        }
         // Open the island for a few seconds (checks and screenshots): object = seconds, default 6.
         DistributedNotificationCenter.default().addObserver(forName: .init("dev.ox.island.peek"), object: nil, queue: .main) { [weak self] n in
             self?.peek(for: Double((n.object as? String) ?? "") ?? 6)

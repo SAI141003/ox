@@ -81,7 +81,38 @@ final class Buddy: NSObject, ObservableObject {
 
     // MARK: listening
 
-    func toggle() { phase == .listening ? stopListening() : startListening() }
+    func toggle() {
+        if phase == .listening { stopListening(); return }
+        // Clicked (not held): the island ends by itself when you stop talking, as Pixie does.
+        handsFree = true
+        startListening()
+    }
+
+    /// Started by a click, not a held key: listening ends on its own at the end of speech.
+    private var handsFree = false
+    private var lastHeardChange = Date()
+    private var listenStarted = Date()
+    private var endWatch: Timer?
+
+    private func watchForEndOfSpeech() {
+        endWatch?.invalidate()
+        guard handsFree else { return }
+        listenStarted = Date(); lastHeardChange = Date()
+        endWatch = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] t in
+            MainActor.assumeIsolated {
+                guard let self, self.phase == .listening else { t.invalidate(); return }
+                let quiet = Date().timeIntervalSince(self.lastHeardChange)
+                let total = Date().timeIntervalSince(self.listenStarted)
+                let said = !self.heard.trimmingCharacters(in: .whitespaces).isEmpty
+                // Words, then a pause; the recognizer's own end of sentence; nothing at all for 8 s; 45 s at most.
+                if (said && (quiet > 1.3 || self.finalHeard)) || (!said && total > 8) || total > 45 {
+                    t.invalidate()
+                    IslandLog.write("voice: end of speech (\(said ? "after a pause" : "nothing said"), \(String(format: "%.1f", total)) s)")
+                    self.stopListening()
+                }
+            }
+        }
+    }
 
     func startListening() {
         guard phase != .listening else { return }
@@ -141,6 +172,7 @@ final class Buddy: NSObject, ObservableObject {
             let text = result.bestTranscription.formattedString
             let final = result.isFinal
             DispatchQueue.main.async {
+                if self?.heard != text { self?.lastHeardChange = Date() }
                 self?.heard = text
                 if final { self?.finalHeard = true }
             }
@@ -150,12 +182,15 @@ final class Buddy: NSObject, ObservableObject {
             try audio.start()
             phase = .listening
             gesture = .rest
+            watchForEndOfSpeech()
         } catch {
             show("The microphone could not start: \(error.localizedDescription)")
         }
     }
 
     func stopListening() {
+        endWatch?.invalidate(); endWatch = nil
+        handsFree = false
         guard phase == .listening else { return }
         audio.stop()
         audio.inputNode.removeTap(onBus: 0)
