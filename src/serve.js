@@ -1642,6 +1642,7 @@ async function themeAsk() {
 }
 
 const codeCache = {};
+let studioOpen = null;
 const ROUTES = [
   // Pull requests (src/dev-flow.js): Open a PR in one click, its CI and reviews, one fix round.
   { method: 'GET', pattern: /^\/ox\/pr\/?$/, handler: appRoute(async (_, __, req) => {
@@ -1869,6 +1870,25 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/market\/?$/, handler: appRoute(async (_, __, req) => (await import('./market.js')).search(new URL(req.url, 'http://x').searchParams.get('q') ?? '')) },
   { method: 'POST', pattern: /^\/ox\/market\/install\/?$/, handler: appRoute(async (b) => (await import('./market.js')).install({ name: b.name, catalog: b.catalog, repo: b.repo })) },
   { method: 'POST', pattern: /^\/ox\/market\/catalogs\/?$/, handler: appRoute(async (b) => ({ catalogs: await (await import('./market.js')).addCatalog(String(b.repo ?? '')) })) },
+  // The open-model Studio (src/studio-catalog.js, src/studio-mcp.js): the catalog with what can run here, and one tool call.
+  { method: 'GET', pattern: /^\/ox\/studio\/catalog\/?$/, handler: appRoute(async () => {
+    const C = await import('./studio-catalog.js');
+    const S = await import('./studio-mcp.js');
+    const ready = (m) => { try { return S.hostFor(m); } catch { return null; } };
+    return { models: C.OPEN_MODELS.map((m) => ({ ...m, ready: ready(m) })), camera: C.CAMERA, workflows: C.WORKFLOWS, defaults: C.DEFAULTS };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/studio\/open\/?$/, handler: appRoute(async (body) => {
+    const S = await import('./studio-mcp.js');
+    const tools = new Set(['generate_image', 'generate_video', 'edit_image', 'upscale', 'remove_background', 'generate_audio', 'workflow_instructions']);
+    const tool = String(body?.tool ?? '');
+    if (!tools.has(tool)) throw new Error('tools: generate_image, generate_video, edit_image, upscale, remove_background, generate_audio');
+    studioOpen ??= S.createStudio();
+    // The page waits for the result: up to 10 minutes for a video.
+    const text = await studioOpen.call(tool, { ...(body?.args ?? {}), wait_seconds: tool === 'generate_video' ? 290 : 120 });
+    const job = /job (\w+) is/.exec(text)?.[1];
+    if (job) return { text: await studioOpen.call('jobs_wait', { ids: [job], timeout_seconds: 600 }) };
+    return { text };
+  }) },
   { method: 'GET', pattern: /^\/ox\/studio\/?$/, handler: appRoute(async () => (await appApi()).studioView()) },
   { method: 'POST', pattern: /^\/ox\/studio\/create\/?$/, handler: appRoute(async (b) => (await appApi()).studioCreate(b)) },
   { method: 'POST', pattern: /^\/ox\/studio\/?$/, handler: appRoute(async (b) => (await appApi()).studioAction(b)) },

@@ -358,6 +358,25 @@
   #optimize.busy { animation: pulse 1s infinite; }
   .attached .ph { padding: 0; overflow: hidden; } .attached .ph img { width: 44px; height: 44px; object-fit: cover; display: block; border-radius: 8px; }
   .u-photos { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; } .u-photos img { width: 120px; height: 90px; object-fit: cover; border-radius: 10px; display: block; }
+  .os-box { display: flex; flex-direction: column; gap: 12px; }
+  .os-modes { display: flex; gap: 6px; flex-wrap: wrap; }
+  .os-modes button, .os-row button { border: 1px solid var(--line2); border-radius: 99px; padding: 6px 12px; font-size: 13px; color: var(--muted); background: var(--bg); }
+  .os-modes button.on, .os-row button.on { color: var(--btn-ink); background: var(--btn); border-color: var(--btn); }
+  .os-prompt { resize: vertical; font-size: 15px; line-height: 1.5; }
+  .os-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .os-row .lbl { font-size: 12px; color: var(--dim); margin-right: 4px; }
+  .os-models { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+  .os-model { text-align: left; border: 1px solid var(--line2); border-radius: 12px; padding: 10px 12px; background: var(--bg); display: flex; flex-direction: column; gap: 3px; }
+  .os-model.on { border-color: var(--text); box-shadow: inset 0 0 0 1px var(--text); }
+  .os-model b { font-size: 13.5px; } .os-model .g { font-size: 12px; color: var(--muted); } .os-model .l { font-size: 11px; color: var(--dim); }
+  .os-model .ready { font-size: 11px; } .os-model .ready.no { color: var(--amber); }
+  .os-go { display: flex; align-items: center; gap: 10px; }
+  .os-h { font-weight: 600; margin: 20px 0 8px; }
+  .os-recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+  .os-recipe { text-align: left; border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--panel); font-size: 13.5px; }
+  .os-recipe .s { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .os-recipe ol.s { padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+  .os-more { margin-top: 18px; } .os-more summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-bottom: 10px; }
   .slash-menu { position: absolute; bottom: calc(100% - 6px); left: 50%; transform: translateX(-50%); width: min(var(--tw), calc(100% - 44px)); max-height: 320px; overflow-y: auto; background: var(--panel); border: 1px solid var(--line2); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.28); padding: 6px; z-index: 30; display: none; }
   .slash-menu.on { display: block; }
   .slash-menu .grp { font-size: 11px; color: var(--dim); padding: 6px 10px 2px; letter-spacing: .02em; }
@@ -718,8 +737,19 @@
     </div></div></section>
 
     <section class="view" id="v-studio"><div class="page"><div class="page-inner" style="max-width:1100px">
-      <div class="shead" style="font-size:18px">Studio</div>
-      <p class="sdesc">Images and video from one prompt. Pick where it runs: Higgsfield's 38 models, any fal.ai model, OpenAI's image models, or a Stable Diffusion server on this machine with no account at all. Every result is saved to ~/.ox/media with its full recipe.</p>
+      <div class="shead" style="font-size:20px">Studio</div>
+      <p class="sdesc">Make images, video and sound with open models. Every result is saved to ~/.ox/media with its recipe, and any agent can use the same Studio (ox studio connect).</p>
+      <div class="box os-box">
+        <div class="os-modes" id="os-modes" role="tablist" aria-label="What to make"></div>
+        <textarea class="field os-prompt" id="os-prompt" rows="3" placeholder="Describe it: subject, setting, light, style, mood. ⌘/Ctrl+Enter to make it"></textarea>
+        <input class="field" id="os-image" placeholder="Image to start from: a path on this Mac or a link" hidden>
+        <div class="os-row" id="os-chips"></div>
+        <div class="os-models" id="os-models"></div>
+        <div class="os-go"><button class="btn primary" id="os-go">Make it</button><span class="small muted" id="os-state"></span></div>
+      </div>
+      <div class="os-h">Recipes</div>
+      <div class="os-recipes" id="os-recipes"></div>
+      <details class="os-more"><summary>Other providers: Higgsfield, OpenAI, OpenRouter, a Stable Diffusion server on this Mac</summary>
       <div class="box" id="st-composer">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
           <select class="field" id="st-provider" style="width:auto" aria-label="Provider"></select>
@@ -731,6 +761,7 @@
         <div id="st-media" style="display:flex;flex-direction:column;gap:6px;margin-top:10px"></div>
         <div style="display:flex;align-items:center;gap:10px;margin-top:12px"><button class="btn primary" id="st-go">Generate</button><span class="small muted" id="st-state"></span></div>
       </div>
+      </details>
       <div class="subtabs" id="st-tabs" style="padding-left:0;margin-top:18px"></div>
       <div id="st-gallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px"></div>
     </div></div></section>
@@ -2394,9 +2425,69 @@ files: [src/billing/**]
     $('map-refresh').onclick = (e) => { e.preventDefault(); loadMap(); };
   }
 
+  // ---------- studio: open models (src/studio-catalog.js) through the same engine agents use
+  const OS_MODES = [
+    { k: 'image', label: 'Image', kind: 'image', tool: 'generate_image' },
+    { k: 'video', label: 'Video', kind: 'video', tool: 'generate_video' },
+    { k: 'edit', label: 'Edit an image', kind: 'edit', tool: 'edit_image', image: true },
+    { k: 'upscale', label: 'Upscale', kind: 'upscale', tool: 'upscale', image: true, noPrompt: true },
+    { k: 'cutout', label: 'Cut out', kind: 'cutout', tool: 'remove_background', image: true, noPrompt: true },
+    { k: 'audio', label: 'Sound', kind: 'audio', tool: 'generate_audio' },
+  ];
+  let osCat = null, osMode = store.get('ox.os.mode', 'image'), osPick = {}, osAspect = '1:1', osN = 1, osCam = '';
+  async function loadOpenStudio() {
+    try { osCat = await getJson('/ox/studio/catalog'); } catch (e) { $('os-models').innerHTML = `<div class="alert">${esc(e.message)}</div>`; return; }
+    renderOpenStudio();
+    // Recipes in plain words: the tool names agents use read as actions here.
+    const plain = (t) => t.replace(/\bgenerate_image\b/g, 'make an image').replace(/\bgenerate_video\b/g, 'make a clip').replace(/\bedit_image\b/g, 'edit the image').replace(/\bremove_background\b/g, 'cut out').replace(/\bupscale\b/g, 'upscale').replace(/\bvideo_edit\b/g, 'video tools').replace(/\bexplainer_video\b/g, 'the explainer maker').replace(/\bop (\w+)/g, '$1').replace(/\b(qwen-image-edit|qwen-image|flux-kontext-dev|wan-2\.2)\b/g, (m) => osCat.models.find((x) => x.id === m)?.name ?? m);
+    $('os-recipes').innerHTML = Object.entries(osCat.workflows).map(([k, w]) => `<button class="os-recipe" data-rec="${k}" aria-expanded="false"><b>${esc(w.title)}</b><div class="s">${esc(plain(w.steps[0]).slice(0, 90))}…</div><ol class="s" hidden>${w.steps.map((x) => `<li>${esc(plain(x))}</li>`).join('')}</ol></button>`).join('');
+    $('os-recipes').querySelectorAll('[data-rec]').forEach((b) => (b.onclick = () => { const ol = b.querySelector('ol'), open = ol.hidden; ol.hidden = !open; b.querySelector('div').hidden = open; b.setAttribute('aria-expanded', String(open)); }));
+  }
+  function renderOpenStudio() {
+    const mode = OS_MODES.find((m) => m.k === osMode) ?? OS_MODES[0];
+    $('os-modes').innerHTML = OS_MODES.map((m) => `<button role="tab" aria-selected="${m.k === mode.k}" class="${m.k === mode.k ? 'on' : ''}" data-mode="${m.k}">${m.label}</button>`).join('');
+    $('os-modes').querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => { osMode = b.dataset.mode; store.set('ox.os.mode', osMode); renderOpenStudio(); }));
+    $('os-prompt').hidden = !!mode.noPrompt;
+    $('os-image').hidden = !mode.image && mode.k !== 'video';
+    $('os-image').placeholder = mode.k === 'video' ? 'Optional first frame: a path on this Mac or a link' : 'The image: a path on this Mac or a link';
+    const chips = [];
+    if (mode.k === 'image' || mode.k === 'video') chips.push(`<span class="lbl">Shape</span>${['1:1', '16:9', '9:16', '4:3', '3:4'].map((a) => `<button class="${a === osAspect ? 'on' : ''}" data-aspect="${a}">${a}</button>`).join('')}`);
+    if (mode.k === 'image') chips.push(`<span class="lbl" style="margin-left:10px">How many</span>${[1, 2, 3, 4].map((n) => `<button class="${n === osN ? 'on' : ''}" data-n="${n}">${n}</button>`).join('')}`);
+    if (mode.k === 'video') chips.push(`<span class="lbl" style="margin-left:10px">Camera</span>${['', ...Object.keys(osCat.camera)].map((c) => `<button class="${c === osCam ? 'on' : ''}" data-cam="${c}">${c || 'none'}</button>`).join('')}`);
+    $('os-chips').innerHTML = chips.join('');
+    $('os-chips').querySelectorAll('[data-aspect]').forEach((b) => (b.onclick = () => { osAspect = b.dataset.aspect; renderOpenStudio(); }));
+    $('os-chips').querySelectorAll('[data-n]').forEach((b) => (b.onclick = () => { osN = Number(b.dataset.n); renderOpenStudio(); }));
+    $('os-chips').querySelectorAll('[data-cam]').forEach((b) => (b.onclick = () => { osCam = b.dataset.cam; renderOpenStudio(); }));
+    const models = osCat.models.filter((m) => m.kind === mode.kind);
+    if (!osPick[mode.k] || !models.some((m) => m.id === osPick[mode.k])) osPick[mode.k] = osCat.defaults[mode.kind] ?? models[0]?.id;
+    $('os-models').innerHTML = models.map((m) => `<button class="os-model ${m.id === osPick[mode.k] ? 'on' : ''}" data-model="${m.id}"><b>${esc(m.name)}</b><span class="g">${esc(m.good)}</span><span class="l">${esc(m.license)}</span><span class="ready ${m.ready ? '' : 'no'}">${m.ready ? `runs on ${m.ready === 'hf' ? 'Hugging Face' : m.ready}` : 'needs a fal key or Hugging Face token (Settings › API keys)'}</span></button>`).join('');
+    $('os-models').querySelectorAll('[data-model]').forEach((b) => (b.onclick = () => { osPick[mode.k] = b.dataset.model; renderOpenStudio(); }));
+  }
+  async function openStudioGo() {
+    const mode = OS_MODES.find((m) => m.k === osMode);
+    const prompt = $('os-prompt').value.trim(), image = $('os-image').value.trim();
+    if (!mode.noPrompt && !prompt) { toast('Describe what to make first'); return; }
+    if (mode.image && !image) { toast('Add the image: a path on this Mac or a link'); return; }
+    const args = { model: osPick[mode.k] };
+    if (!mode.noPrompt) args.prompt = prompt;
+    if (image) args.image = image;
+    if (mode.k === 'image' || mode.k === 'video') args.aspect = osAspect;
+    if (mode.k === 'image') args.n = osN;
+    if (mode.k === 'video' && osCam) args.camera = osCam;
+    $('os-go').disabled = true; $('os-state').textContent = mode.k === 'video' ? 'Making the clip: a few minutes…' : 'Making it…';
+    try {
+      const r = await postJson('/ox/studio/open', { tool: mode.tool, args });
+      toast(r.text);
+      loadStudio();
+    } catch (e) { toast(e.message); }
+    $('os-go').disabled = false; $('os-state').textContent = '';
+  }
+  $('os-go').onclick = openStudioGo;
+  $('os-prompt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); openStudioGo(); } });
   // ---------- studio
   let stData = null, stTab = 'all', stBusy = 0;
   async function loadStudio() {
+    if (!osCat) loadOpenStudio();
     try { stData = await getJson('/ox/studio'); } catch (e) { $('st-gallery').innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; return; }
     const prov = $('st-provider');
     const keep = prov.value || store.get('ox.studio.provider', 'higgsfield');
