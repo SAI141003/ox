@@ -201,14 +201,18 @@ export async function startChrome({ headless = true, chrome = null, env = proces
   fs.mkdirSync(profile, { recursive: true });
   const portFile = path.join(profile, 'DevToolsActivePort');
   fs.rmSync(portFile, { force: true });
-  const child = spawn(bin, [`--user-data-dir=${profile}`, '--remote-debugging-port=0', '--no-first-run', '--no-default-browser-check', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', `--window-size=${VIEW.width},${VIEW.height + 90}`, ...(headless ? ['--headless=new'] : []), 'about:blank'], { stdio: 'ignore', detached: false });
+  // --use-mock-keychain: a fresh profile otherwise asks macOS's keychain for
+  // "Chrome Safe Storage" and pops "A keychain cannot be found to store Chrome".
+  const child = spawn(bin, [`--user-data-dir=${profile}`, '--remote-debugging-port=0', '--no-first-run', '--no-default-browser-check', '--use-mock-keychain', '--password-store=basic', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', `--window-size=${VIEW.width},${VIEW.height + 90}`, ...(headless ? ['--headless=new'] : []), 'about:blank'], { stdio: 'ignore', detached: false });
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     if (fs.existsSync(portFile)) {
       const [port, wsPath] = fs.readFileSync(portFile, 'utf8').trim().split('\n');
       if (port && wsPath) {
-        const stop = () => { try { child.kill(); } catch {} if (!keep) setTimeout(() => fs.rmSync(profile, { recursive: true, force: true }), 300).unref(); };
-        process.once('exit', () => { try { child.kill(); } catch {} });
+        // The throwaway profile goes with Chrome, also when the process exits right after (a timer would never run).
+        const clean = () => { if (!keep) { try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 60 }); } catch {} } };
+        const stop = () => { try { child.kill(); } catch {} clean(); };
+        process.once('exit', () => { try { child.kill(); } catch {} clean(); });
         return { wsUrl: `ws://127.0.0.1:${port}${wsPath}`, stop };
       }
     }

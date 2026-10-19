@@ -7,6 +7,154 @@ reserved: its ideas and MIT code may be used, never its character.
 
 States: ✓ the island has it · ~ partly · ✗ missing · → next to build
 
+## Audit, October 19 (every row, against the code)
+
+The tables further down were last edited on October 18 at 20:56. Nineteen
+commits since then built rows they still mark ✗ or ~, so every row was
+checked again. Proof, strongest first:
+**live** = run on this Mac in this audit · **test** = a unit test in the
+named file, passing in the full run · **build** = the island compiles with it
+· **code** = found in the source but not run here · **owner** = needs the owner
+at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
+**key** = needs a paid or personal key.
+
+### A. Coucou
+
+| # | State | Proof |
+|---|---|---|
+| A1 Allow / Deny / Always from the notch | ✓ installed | live: `~/.claude/settings.json` has ox's hooks (`ox.js hook claude`); test: agent-hooks, approval-island-race |
+| A2 Questions answered in the notch | ✓ | test: agent-hooks; installed with A1 |
+| A3 Live diff ticker, other agents too | ✓ | test: agent-hooks (lines added/removed from the edit's own input) |
+| A4 Jump to a session's own terminal tab | ~ | code: `/ox/agents/focus` (src/agents-live.js, Bridge.swift); never checked live (the screen was locked when it was built) |
+| A5 Claude plan usage | ✓ installed | live: `statusLine` set in Claude Code's settings; test: statusline |
+| A6 Integrations as pills | ~ | code: day strip with open PRs and failing CI (gh, src/serve.js); Vercel, Stripe, n8n, Resend, Notion, Cal.com not built (key) |
+| A7 Hold-to-dictate | ✓ | build; owner (speech) |
+| A8 Hands-free, Esc, paste last | ✓ | build; owner |
+| A9 Styles per app | ✓ | test: dictation-style; commit's live check on qwen2.5:3b |
+| A10 Dictation stats | ✓ | code: words, sessions, wpm, time saved and **per app** (Dictation.swift `Summary.apps`) |
+| A11 Dictionary and snippets | ✓ | test: dictionary |
+| A12 Translate a dictation | ✓ | test: dictation-style (`ox dictation translate`) |
+| A13 Parakeet offline speech | ✗ | not in the code; Apple's on-device speech and whisper.cpp are used |
+| A14 Call notes, both sides | ✓ | code: SystemAudio.swift (ScreenCaptureKit); owner (Screen Recording) |
+| A15 Floating pill | ✓ | build: DictationPill.swift; **new:** one tap on it finishes |
+| A16 Drop a file on the notch | ✓ | build (Shelf) |
+| A17 Drop the ox on a window | ✓ | code: IslandExtras.swift `window(at:)`, `drop(at:)` |
+| A18 Character follows the cursor | ~ | code |
+| A19 Hover open, any display | ✓ | code: `island.screen active` (IslandPanel.swift) |
+| A20 Weekly recap | ✓ | code: files changed and lines from git (IslandCards.swift) |
+| A21 Your own sounds | ✓ | code: `ox island sound <event> <file>` (src/island.js) |
+| A22 Worried when the Mac is hot or busy | ✓ | code: thermalState and getloadavg (IslandView.swift) |
+| A23 Capture shortcut | ✓ | code: ⌃⌥S (IslandExtras.swift) |
+| A24 10 languages | ✓ | `OxIsland --check-l10n` (earlier round) |
+| A25 Phone app, lock screen, widgets | ✗ | no phone app; phone approvals go through the Telegram gateway (code) |
+| A26 Chat with any provider | ✓ | code (Tray chat) |
+
+### B, C. Clicky and Claudex
+
+| # | State | Proof |
+|---|---|---|
+| B1 Write the reply where you type | ✓ | code; owner (screen) |
+| B2 Type a follow-up prompt | ✓ | code |
+| B3 Skills | ✓ | test: market, skills |
+| B4 Wake phrase | ✓ | code: WakeWord.swift; owner |
+| C1 Rings with reset countdowns | ✓ | code: UsageRing, PlanPill (IslandHome.swift) |
+| C2 Sessions per project | ✓ | test: agents-live |
+| C3 Alerts at 80 / 95 % | ✓ | code |
+| C4 Water estimate | ~ | code: total in the recap; per tool not split |
+
+### D. Screenshots, Oct 16–17
+
+| # | State | Proof |
+|---|---|---|
+| D1 agent-skills | ✓ | test: market |
+| D2 Everything Claude Code | ✓ | code: default catalogue (src/market.js); MIT |
+| D3 Paperclip / ox org | ✓ | test: org |
+| D4 trim-1 idea | ✓ | test: trim-output (ox's own query-aware trim; the model itself not used) |
+| D5 Video reasoning | ✓ | test: video-image-edit (`understand`: scene frames + transcript) |
+| D6 n8n templates | ✓ | test: n8n-import |
+| D7 Google ADK | ✓ | code: ADK skills featured (src/market.js) |
+| D8 Fish Audio voice | ~ | test: tts-stream (its ideas: sound after the first sentence, emotion tags, on Kokoro); Fish's own voice needs its key |
+| D9 Tesser remote dev servers | ✗ | later |
+| D10 Diagram shapes | ✓ | test: openui-reliability (`Flow`, `Explainer` in src/ui-lang.js) |
+| D11 Polaris / Polsia | — | context |
+
+### F1. October 18 screenshots
+
+| # | State | Proof |
+|---|---|---|
+| F1.1 Krea image edit | ✓ | test: video-image-edit; a real edit needs a paid image key |
+| F1.2 Hire from one sentence | ✓ | test: org |
+| F1.3 Freebuff: Open a PR in one click | ✓ | code: Open a PR in the app (src/web/chat.html, src/serve.js); modes already listed |
+| F1.4 deepagents check | ~ | each piece has tests (subagent, offload, sandbox, memory); not run end to end from the island chat |
+| F1.5 Edit videos from chat | ✓ | test: video-image-edit |
+| F1.6 Errand chips | ✓ | code: chips in an empty chat (Tray.swift) |
+| F1.7 Interactive explainers | ✓ | test: openui-reliability |
+| F1.8 Cloud teammate | ✗ | later |
+| F1.9 Devin PR flow, wiki, app on the PR | ✓ | test: dev-flow, wiki |
+| F1.10 Skill from a GitHub link | ✓ | code: src/skill-add.js; commit's live install of AlphaInsider#strategy-creator |
+| F1.11 Voice glow | ✓ | code: VoiceLevel bars |
+| F1.12 3D office | ~ | pixel office only |
+| F1.13 Team memory in Slack | ✓ | test: channel-memory |
+| F1.14 Book to skill | ✓ | test: book-skill |
+| F1.15 Intelligent UI | ~ | see E3 |
+| F1.16 Hold Fn to talk | ✓ | code: FnKey (Buddy.swift); owner |
+| F1.17 Manim-style explainers | ✓ | test: video-image-edit (`ox video explain`) |
+| F1.18 Traces and stuck signals | ✓ | test: trace |
+| F1.19–F1.22, F1.27 | — | context; F1.21 blink-when-poked ✓ (code) |
+| F1.23 Per-agent threads | ✓ | test: org (`ox org thread`) |
+| F1.24 Timeline, irreversible count | ✓ | test: org (`ox org timeline`) |
+| F1.25 Worktree per task, PR on the board | ✓ | test: dev-flow |
+| F1.26 Live map for other agents | ✓ | test: agent-hooks (A3) |
+| F1.28 Computer use | ✓ | **new, live:** click and type (below) |
+| F1.29 REA | ✓ | code: MCP template (src/mcp-templates.js), MIT |
+| F1.30 Recordly idea | ✓ | test: video-image-edit (`polish`, ox's own code) |
+
+### F2, F3. Recordings
+
+| # | State | Proof |
+|---|---|---|
+| F2.1 Mail in the notch | ✓ | test: mail |
+| F2.2 Live feed, approvals, done hop | ✓ | installed (A1); lock screen ✗ (A25) |
+| F2.3 Coucou for Windows | ~ | web island (src/web/island.html, test: island-web) instead of a native Windows one |
+| F2.4 Pixie | ✓ | code; owner (voice) |
+| F2.5 Research on X / Reddit / LinkedIn | ✓ | test: social-research; X and LinkedIn need a search key |
+| F2.6 Clicky | ✓ | code |
+| F2.7 Vovy | ✓ | code; **new:** click and type for apps |
+| F2.8 Mission map, sessions canvas | ✓ | code: both pages in src/web/chat.html |
+| F2.9 Claudex | ✓ | C1–C4 |
+| F3.1 KODEMON | — | idea |
+| F3.3 Environment recipe | ✓ | test: dev-flow (`.ox/environment.yml`) |
+| F3.4 Calendar and weather | ✓ | code: day strip (src/serve.js) |
+| F3.5 Interactive breakdowns | ~ | E3 |
+| F3.6 Stripe pill | ✗ | needs your Stripe key; email draft ✓ |
+| F3.8 Machines in sync | ✓ | test: mesh; a real two-laptop test needs the second laptop |
+| F3.10 Agents gallery | ✓ | code: Favorite / I use this (src/web/chat.html) |
+
+### G, H, E
+
+| # | State | Proof |
+|---|---|---|
+| G1–G8 | ✓ as marked | tests: fast-browser, git-fast, market, arena, library; G2 still has no public weights |
+| H1 Team from one sentence | ✓ | test: org (`ox org team`, `ox org say`) |
+| H2 OpenDots | ~ | calls not built |
+| E1 Test by clicking | ~ | this audit clicked Calculator for real; the island's own buttons still need a person |
+| E3 Interactive answers every time | ~ | as measured |
+| E5, E6 | ✓ | D1, D2, D4, D6, D7 and ox org |
+
+### New in this round (October 19)
+
+| Item | Proof |
+|---|---|
+| **Click and type**: `ui_elements`, `click`, `type_text`, `press_key` for Claude Code, Codex (`ox mcp-mac`) and ox's own agent | live on this Mac: Calculator pressed by button name, 9 × 6 = 54 and 7 × 8 shown right; test: mac-control |
+| Fast: ox-hands (desktop/island/Sources/OxHands), ox's own helper on Apple's Accessibility and CoreGraphics, no AppleScript, nothing paid; it stays warm | live: a press 8–40 ms warm (80–400 ms through the MCP call with its checks), a window read ~150–250 ms; the first call ~3.5 s (start, app reopened) |
+| Never presses Return, Enter, Send, Pay, Buy, Delete…; text is pasted, so a chat box is filled, not sent | test: mac-control; live: Return refused |
+| No more "A keychain cannot be found to store Chrome": every Chrome ox starts (browser, PR shots, rendering, web island, app window) uses `--use-mock-keychain` | test: fast-browser, web-render, island-web (15/15) |
+| One tap stops listening: the listening card, the mic (now a stop icon), the dictation chip, the pill; a tap while the mic starts cancels it; held-key listening ends after 45 s at most | build; owner (needs a real tap) |
+
+**Still ✗ after this audit:** A13 Parakeet, A25 phone app and lock screen,
+A6 / F3.6 paid-service pills (Stripe, Vercel, Notion, Resend, Cal.com: each
+needs a key), D9 / F1.8 cloud machines, H2 calls.
+
 ## A. From Coucou (latest)
 
 | # | Feature | Island now | |

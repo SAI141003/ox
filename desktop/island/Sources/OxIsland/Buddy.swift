@@ -83,10 +83,20 @@ final class Buddy: NSObject, ObservableObject {
 
     func toggle() {
         if phase == .listening { stopListening(); return }
+        // A second tap while the mic is still starting (permissions, audio) cancels it.
+        if starting { starting = false; IslandLog.write("voice: start cancelled by a tap"); return }
         // Clicked (not held): the island ends by itself when you stop talking, as Pixie does.
         handsFree = true
         startListening()
     }
+
+    /// One tap on the listening card, the pill or the mic: stop now.
+    func stopIfListening() {
+        if phase == .listening { stopListening() } else if starting { starting = false }
+    }
+    var isListeningOrStarting: Bool { phase == .listening || starting }
+    /// Between the tap and the microphone being on (permission prompts, audio start).
+    @Published private(set) var starting = false
 
     /// Started by a click, not a held key: listening ends on its own at the end of speech.
     private var handsFree = false
@@ -96,16 +106,17 @@ final class Buddy: NSObject, ObservableObject {
 
     private func watchForEndOfSpeech() {
         endWatch?.invalidate()
-        guard handsFree else { return }
         listenStarted = Date(); lastHeardChange = Date()
+        let byClick = handsFree
         endWatch = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] t in
             MainActor.assumeIsolated {
                 guard let self, self.phase == .listening else { t.invalidate(); return }
                 let quiet = Date().timeIntervalSince(self.lastHeardChange)
                 let total = Date().timeIntervalSince(self.listenStarted)
                 let said = !self.heard.trimmingCharacters(in: .whitespaces).isEmpty
-                // Words, then a pause; the recognizer's own end of sentence; nothing at all for 8 s; 45 s at most.
-                if (said && (quiet > 1.3 || self.finalHeard)) || (!said && total > 8) || total > 45 {
+                // Clicked: words, then a pause; the recognizer's own end of sentence; nothing at all for 8 s.
+                // Held key: until it is let go. Either way 45 s at most, so a lost key-up never leaves the mic on.
+                if (byClick && ((said && (quiet > 1.3 || self.finalHeard)) || (!said && total > 8))) || total > 45 {
                     t.invalidate()
                     IslandLog.write("voice: end of speech (\(said ? "after a pause" : "nothing said"), \(String(format: "%.1f", total)) s)")
                     self.stopListening()
@@ -121,6 +132,7 @@ final class Buddy: NSObject, ObservableObject {
         synth.stopSpeaking(at: .immediate)
         Self.sweepTemp()
         guard VoicePermission.described else { show(VoicePermission.howToFix); return }
+        starting = true
         heard = ""
         saying = ""
         shot = Self.captureScreen()
@@ -140,6 +152,9 @@ final class Buddy: NSObject, ObservableObject {
     }
 
     private func beginAudio() {
+        // Tapped again while it was starting: do not turn the mic on.
+        guard starting else { return }
+        starting = false
         guard let recognizer, recognizer.isAvailable else { show("Speech recognition is not available right now."); return }
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
@@ -355,6 +370,7 @@ final class Buddy: NSObject, ObservableObject {
     }
 
     private func show(_ message: String) {
+        starting = false
         phase = .message(message)
         gesture = .rest
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in

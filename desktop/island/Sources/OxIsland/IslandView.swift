@@ -251,7 +251,10 @@ struct ExpandedContent: View {
                             }.frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .padding(.horizontal, 12)
+                        .contentShape(Rectangle())
+                        .onTapGesture { MainActor.assumeIsolated { bridge.buddy.stopIfListening() } }
                     }
+                    .help(bridge.buddy.phase == .listening ? "Tap to stop listening" : "")
                 } else {
                     OverviewHome(bridge: bridge, mood: shownMood)
                 }
@@ -410,7 +413,13 @@ struct VoiceStatusChip: View {
                 .help(notes.live.isEmpty ? "Recording call notes" : notes.live)
                 .onTapGesture { notes.stop() }
             } else if dict.phase == .listening {
-                Text(dict.heard.isEmpty ? "dictating…" : "“\(dict.heard.suffix(28))”").font(.system(size: 10.5)).foregroundStyle(Ink.text).lineLimit(1)
+                HStack(spacing: 4) {
+                    Image(systemName: "stop.circle.fill").font(.system(size: 10)).foregroundStyle(Color(hex: "#7DD3FC"))
+                    Text(dict.heard.isEmpty ? "dictating…" : "“\(dict.heard.suffix(28))”").font(.system(size: 10.5)).foregroundStyle(Ink.text).lineLimit(1)
+                }
+                .contentShape(Rectangle())
+                .help("Tap to finish (pasted)")
+                .onTapGesture { MainActor.assumeIsolated { dict.stop() } }
             } else if case .message(let m) = dict.phase {
                 Text(m).font(.system(size: 10.5)).foregroundStyle(Ink.muted).lineLimit(1).help(m)
             } else if let m = notes.message {

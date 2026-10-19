@@ -328,7 +328,7 @@ export function macMcpArgs(env = process.env) {
 export function claudeMacMcpArgs(env = process.env) {
   if (env.OX_MAC_MCP === '0') return [];
   const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
-  const tools = ['open_app', 'open_url', 'current_page', 'youtube_transcript', 'ox_do', 'notify'].map((t) => `mcp__ox__${t}`);
+  const tools = ['open_app', 'open_url', 'current_page', 'youtube_transcript', 'ox_do', 'notify', 'ui_elements', 'click', 'type_text', 'press_key'].map((t) => `mcp__ox__${t}`);
   return ['--mcp-config', JSON.stringify({ mcpServers: { ox: { command: process.execPath, args: [cli, 'mcp-mac'] } } }), '--allowedTools', tools.join(',')];
 }
 

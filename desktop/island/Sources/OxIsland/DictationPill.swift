@@ -3,7 +3,8 @@ import AppKit
 
 /// Coucou's pill: while you dictate, a small see-through pill at the bottom
 /// (or a side) of the screen shows bars that move with your voice and the
-/// words as they come; hover it for Done and Cancel. Position:
+/// words as they come; one tap on it finishes (pasted), hover it for Done and
+/// Cancel. Position:
 ///   defaults write dev.ox.island dictation.pill bottom|left|right|off
 @MainActor
 final class DictationPillController {
@@ -30,7 +31,7 @@ final class DictationPillController {
             p.isOpaque = false
             p.hasShadow = true
             p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-            p.contentView = NSHostingView(rootView: DictationPillView(dictation: d))
+            p.contentView = FirstClickHostingView(rootView: DictationPillView(dictation: d))
             panel = p
         }
         let f = screen.visibleFrame
@@ -83,6 +84,9 @@ struct DictationPillView: View {
             .background(.ultraThinMaterial, in: Capsule())
             .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
             .environment(\.colorScheme, .dark)
+            .contentShape(Capsule())
+            .onTapGesture { dictation.stop() }   // one tap: stop listening, paste what was heard
+            .help(T("Tap to finish"))
             .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hover = h } }
         }
     }

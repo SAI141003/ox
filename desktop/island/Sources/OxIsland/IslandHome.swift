@@ -66,7 +66,7 @@ struct HomeHeader: View {
                 VoiceStatusChip(bridge: bridge)
                 if let g = bridge.gauges.max(by: { $0.percent < $1.percent }) { PlanPill(gauge: g, all: bridge.gauges) }
                 HStack(spacing: 14) {
-                    HeaderIcon(name: "mic.fill", active: bridge.buddyActive, help: "Talk to \(OxName.current) (hold ⌃⌥Space)") { MainActor.assumeIsolated { bridge.buddy.toggle() } }
+                    HeaderIcon(name: bridge.buddy.isListeningOrStarting ? "stop.circle.fill" : "mic.fill", active: bridge.buddyActive, help: bridge.buddy.isListeningOrStarting ? "Stop listening" : "Talk to \(OxName.current) (hold ⌃⌥Space)") { MainActor.assumeIsolated { bridge.buddy.toggle() } }
                     HeaderIcon(name: bridge.pinnedOpen ? "pin.fill" : "pin", active: bridge.pinnedOpen, help: bridge.pinnedOpen ? "Unpin" : "Keep open") { bridge.pinnedOpen.toggle() }
                     if bridge.pendingSession == nil {
                         HeaderIcon(name: "xmark", active: false, help: "Close") { bridge.pinnedOpen = false; bridge.tray = nil; bridge.card = nil; bridge.hovering = false }

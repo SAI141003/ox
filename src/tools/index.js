@@ -15,6 +15,7 @@ import { estimateTokens } from '../context.js';
 import { subagentToolSchema, makeSubagentToolHandler } from '../subagent.js';
 import {
   open_app, open_url, open_path, open_window, type_text, screenshot, notify,
+  ui_elements, click, press_key,
   OPERATOR_TOOL_SCHEMAS,
 } from './operator.js';
 import { modeRefusal, grantRefusal } from '../modes.js';
@@ -49,6 +50,9 @@ export const TOOL_IMPLS = {
   type_text,
   screenshot,
   notify,
+  ui_elements,
+  click,
+  press_key,
   mail_accounts,
   mail_compose,
   web_fetch: webFetchTool,
@@ -443,6 +447,7 @@ export const MEMORY_KEYWORDS = Object.freeze([
 // Desktop/operator capability — a group the core coding tools cannot replace.
 export const OPERATOR_TOOLS = Object.freeze([
   'open_app', 'open_url', 'open_path', 'open_window', 'type_text', 'screenshot', 'notify',
+  'ui_elements', 'click', 'press_key',
   'mail_accounts', 'mail_compose',
 ]);
 

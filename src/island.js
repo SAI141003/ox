@@ -65,6 +65,10 @@ export function buildIslandApp({ bin, pkg, home = os.homedir() }) {
   fs.mkdirSync(path.join(contents, 'Resources'), { recursive: true });
   fs.copyFileSync(bin, path.join(contents, 'MacOS', 'OxIsland'));
   fs.chmodSync(path.join(contents, 'MacOS', 'OxIsland'), 0o755);
+  // ox-hands rides inside the island, so a click asked of the island is done
+  // under the island's own Accessibility permission (src/mac-control.js).
+  const hands = path.join(path.dirname(bin), 'OxHands');
+  if (fs.existsSync(hands)) { fs.copyFileSync(hands, path.join(contents, 'MacOS', 'OxHands')); fs.chmodSync(path.join(contents, 'MacOS', 'OxHands'), 0o755); }
   const res = path.join(path.dirname(bin), 'OxIsland_OxIsland.bundle');
   if (fs.existsSync(res)) fs.cpSync(res, path.join(contents, 'Resources', 'OxIsland_OxIsland.bundle'), { recursive: true });
   const icns = path.join(pkg, 'AppIcon.icns');

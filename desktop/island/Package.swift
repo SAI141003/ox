@@ -21,6 +21,11 @@ let package = Package(
                 .unsafeFlags(["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker", infoPlist]),
             ]
         ),
+        // ox-hands: click, type and read an app's controls in milliseconds (src/mac-control.js).
+        .executableTarget(
+            name: "OxHands",
+            path: "Sources/OxHands"
+        ),
         // OX.app: the desktop app window onto the same ox (`ox app`).
         .executableTarget(
             name: "OxApp",

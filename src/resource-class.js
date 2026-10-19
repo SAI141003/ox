@@ -48,10 +48,10 @@ const SESSION_STATE_TOOLS = new Set(['todo_write', 'task_board', 'load_tools']);
 //
 // Reads with no side effect: search and fetch the web, list mail accounts, draw
 // a canvas (its queries run under plan mode), get a second opinion.
-const NETWORK_READ_TOOLS = new Set(['library', 'social_research', 'web_search', 'web_fetch', 'youtube_transcript', 'current_page', 'mail_accounts', 'show_ui', 'critique', 'code_graph']);
+const NETWORK_READ_TOOLS = new Set(['library', 'social_research', 'web_search', 'web_fetch', 'youtube_transcript', 'current_page', 'mail_accounts', 'show_ui', 'critique', 'code_graph', 'ui_elements']);
 // Act on this computer or for the user (each also asks inside the tool): open
 // things, type, take a screenshot, notify, write mail, drive a browser task.
-const ACTING_TOOLS = new Set(['open_app', 'open_url', 'open_path', 'open_window', 'type_text', 'screenshot', 'notify', 'mail_compose', 'web_task']);
+const ACTING_TOOLS = new Set(['open_app', 'open_url', 'open_path', 'open_window', 'type_text', 'click', 'press_key', 'screenshot', 'notify', 'mail_compose', 'web_task']);
 
 export function classifyTool(name) {
   const toolName = String(name ?? '');

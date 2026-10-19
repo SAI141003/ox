@@ -431,7 +431,7 @@ export function screenshot(url, file, { width = 1280, height = 800 } = {}) {
   let r = null;
   for (let attempt = 0; attempt < 2 && !fs.existsSync(file); attempt++) {
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-chrome-'));
-    r = spawnSync(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check', `--user-data-dir=${profile}`, `--window-size=${width},${height}`, `--screenshot=${file}`, '--virtual-time-budget=4000', url], { encoding: 'utf8', timeout: 60_000 });
+    r = spawnSync(chrome, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check', '--use-mock-keychain', '--password-store=basic', `--user-data-dir=${profile}`, `--window-size=${width},${height}`, `--screenshot=${file}`, '--virtual-time-budget=4000', url], { encoding: 'utf8', timeout: 60_000 });
     fs.rmSync(profile, { recursive: true, force: true });
   }
   if (!fs.existsSync(file)) fail(`no screenshot of ${url}: ${(r?.stderr || '').split('\n').filter((l) => !/cv_display_link/.test(l)).slice(-2).join(' ')}`);

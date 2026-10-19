@@ -86,14 +86,14 @@ struct MicButton: View {
     @ObservedObject var buddy: Buddy
     var body: some View {
         Button(action: { buddy.toggle() }) {
-            Image(systemName: buddy.phase == .listening ? "waveform" : "mic.fill")
+            Image(systemName: buddy.phase == .listening ? "stop.fill" : "mic.fill")
                 .font(.system(size: 11, weight: .semibold))
                 .frame(width: 24, height: 24)
                 .background(Circle().fill(buddy.phase == .listening ? Ink.gold : Color.white.opacity(0.1)))
                 .foregroundStyle(buddy.phase == .listening ? Color.black : Ink.text)
         }
         .buttonStyle(.plain)
-        .help("Talk to ox (or hold ⌃⌥Space anywhere)")
+        .help(buddy.phase == .listening ? "Tap to stop listening" : "Talk to ox (or hold ⌃⌥Space anywhere)")
         .accessibilityLabel(buddy.phase == .listening ? "Stop listening" : "Talk to ox")
     }
 }

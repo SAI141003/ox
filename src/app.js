@@ -169,7 +169,7 @@ export async function openApp({ cwd = process.cwd(), log = console.log } = {}) {
   const browser = findAppBrowser();
   const profile = path.join(os.homedir(), '.ox', 'app', 'browser-profile');
   if (browser) {
-    const child = spawn(browser, [`--app=${st.url}`, '--window-size=1120,760', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check'], { detached: true, stdio: 'ignore' });
+    const child = spawn(browser, [`--app=${st.url}`, '--window-size=1120,760', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--use-mock-keychain', '--password-store=basic'], { detached: true, stdio: 'ignore' });
     child.on('error', () => {});
     child.unref();
     log(`ox is open in its own window — working in ${cwd}`);

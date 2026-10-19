@@ -79,12 +79,12 @@ test('operator: open_app rejects on unsupported platform gracefully', async () =
   assert.ok(typeof r.content === 'string');
 });
 
-test('operator: all 7 tools have schemas', async () => {
+test('operator: all 10 tools have schemas', async () => {
   const m = await import('../src/tools/operator.js');
-  assert.equal(m.OPERATOR_TOOLS.length, 7);
-  assert.equal(m.OPERATOR_TOOL_SCHEMAS.length, 7);
+  assert.equal(m.OPERATOR_TOOLS.length, 10);
+  assert.equal(m.OPERATOR_TOOL_SCHEMAS.length, 10);
   const names = m.OPERATOR_TOOLS.map((t) => t.name);
-  for (const expected of ['open_app', 'open_url', 'open_path', 'open_window', 'type_text', 'screenshot', 'notify']) {
+  for (const expected of ['open_app', 'open_url', 'open_path', 'open_window', 'type_text', 'screenshot', 'notify', 'ui_elements', 'click', 'press_key']) {
     assert.ok(names.includes(expected), `missing ${expected}`);
   }
 });

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import * as macControl from '../mac-control.js';
 
 function err(msg) { return { content: msg, isError: true }; }
 
@@ -129,9 +130,49 @@ export async function type_text(args = {}, ctx = {}) {
       return err('type_text requires approval');
     }
   }
+  // On a Mac the text is pasted (any language; a newline in it never presses
+  // Return, so a chat box is filled, not sent): src/mac-control.js.
+  if (isMac()) return macRun(() => macControl.typeText({ app: args.app, text, into: args.into }, { dryRun: isDry() }));
   const cmd = osCmd('type_text', text);
   if (!cmd) return err(`No type_text support on ${os.platform()}`);
   return runCmd(cmd, `type "${text.slice(0, 50)}..."`);
+}
+
+const isDry = () => !!(process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1');
+async function macRun(fn) {
+  if (!isMac()) return err(`click and type work on macOS only (this is ${os.platform()})`);
+  const r = await fn();
+  return { content: r.text, isError: !!r.isError };
+}
+
+// The controls of an app's window: read-only, so no approval.
+export async function ui_elements(args = {}) {
+  if (!isMac()) return err(`ui_elements works on macOS only (this is ${os.platform()})`);
+  if (isDry()) return { content: `done (dry run: would list the controls of ${args.app || 'the app in front'})` };
+  const l = await macControl.listElements(args.app);
+  return l.error ? err(l.error) : { content: macControl.describeElements(l) };
+}
+
+export async function click(args = {}, ctx = {}) {
+  if (args.element == null && (args.x == null || args.y == null)) return err('operator click: element, or x and y, is required');
+  if (!ctx?.yolo) {
+    if (!ctx?.requestApproval) return err('click requires approval');
+    const v = await ctx.requestApproval('click', { app: args.app, element: args.element, x: args.x, y: args.y }, `Click ${args.element ? `"${args.element}"` : `${args.x},${args.y}`}${args.app ? ` in ${args.app}` : ''}?`);
+    if (!v) return { content: 'User declined click' };
+  }
+  return macRun(() => macControl.click(args, { dryRun: isDry() }));
+}
+
+export async function press_key(args = {}, ctx = {}) {
+  if (!args.key) return err('operator press_key: key is required');
+  const k = macControl.parseKey(args.key);
+  if (k.error) return err(k.error);
+  if (!ctx?.yolo) {
+    if (!ctx?.requestApproval) return err('press_key requires approval');
+    const v = await ctx.requestApproval('press_key', { app: args.app, key: args.key }, `Press ${args.key}${args.app ? ` in ${args.app}` : ''}?`);
+    if (!v) return { content: 'User declined press_key' };
+  }
+  return macRun(() => macControl.pressKey(args, { dryRun: isDry() }));
 }
 
 export async function screenshot(args = {}, ctx = {}) {
@@ -189,9 +230,12 @@ export const OPERATOR_TOOLS = [
   { name: 'open_url', description: 'Open a URL in the default browser. Args: url (REQUIRED, http:// or https://). Requires approval.' },
   { name: 'open_path', description: 'Open a file or folder in the OS file manager. Args: path (REQUIRED). Requires approval.' },
   { name: 'open_window', description: 'Focus a window by name. Args: name (REQUIRED). Requires approval.' },
-  { name: 'type_text', description: 'Type text into the frontmost application. Args: text (REQUIRED). Requires approval.' },
+  { name: 'type_text', description: 'Type text into the front app (never presses Return). Args: text (REQUIRED), app, into (a box from ui_elements). Requires approval.' },
   { name: 'screenshot', description: 'Capture the screen or active window. Args: output (optional, default temp path). Requires approval.' },
   { name: 'notify', description: 'Send an OS notification. Args: message (optional, default "ox notification"). No approval prompt: notify() never calls requestApproval or checks ctx.yolo, unlike the six tools above it.' },
+  { name: 'ui_elements', description: "List the controls of an app's front window (buttons, text boxes, rows, labels) with a number and screen position (macOS). Args: app (optional, default the app in front). Read-only." },
+  { name: 'click', description: 'Click a control (macOS): element (its name or number from ui_elements), role (optional: button, text field, row), or x and y in screen points; app (optional); double (optional). Never presses Send, Pay, Buy, Delete or the like. Requires approval.' },
+  { name: 'press_key', description: 'Press a key (macOS): tab, shift+tab, escape, space, delete, arrows, home, end, pageup, pagedown, or cmd with a c f k l n t v x z. Never Return or Enter. Args: key (REQUIRED), app, times. Requires approval.' },
 ];
 
 export const OPERATOR_TOOL_SCHEMAS = OPERATOR_TOOLS.map((t) => ({
@@ -203,7 +247,10 @@ export const OPERATOR_TOOL_SCHEMAS = OPERATOR_TOOLS.map((t) => ({
       : t.name === 'open_url' ? { url: { type: 'string', description: 'URL to open' } }
       : t.name === 'open_path' ? { path: { type: 'string', description: 'File or folder path' } }
       : t.name === 'open_window' ? { name: { type: 'string', description: 'Window title to focus' } }
-      : t.name === 'type_text' ? { text: { type: 'string', description: 'Text to type' } }
+      : t.name === 'type_text' ? { text: { type: 'string', description: 'Text to type' }, app: { type: 'string' }, into: { type: 'string' } }
+      : t.name === 'ui_elements' ? { app: { type: 'string', description: 'App name (default: the app in front)' } }
+      : t.name === 'click' ? { app: { type: 'string' }, element: { type: 'string', description: 'Control name or number from ui_elements' }, role: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, double: { type: 'boolean' } }
+      : t.name === 'press_key' ? { app: { type: 'string' }, key: { type: 'string', description: 'tab, shift+tab, escape, down, cmd+f…' }, times: { type: 'number' } }
       : t.name === 'screenshot' ? { output: { type: 'string', description: 'Output image path' } }
       : { message: { type: 'string', description: 'Notification message' } },
   },
