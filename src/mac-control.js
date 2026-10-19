@@ -82,7 +82,10 @@ const PKG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'de
 
 export function handsPath(env = process.env) {
   const places = [env.OX_HANDS, path.join(os.homedir(), '.ox', 'island', 'OX Island.app', 'Contents', 'MacOS', 'OxHands'), path.join(PKG, '.build', 'release', 'OxHands')];
-  return places.find((p) => p && fs.existsSync(p)) ?? null;
+  // The newest build wins: the island's copy lags until the island is reinstalled.
+  if (env.OX_HANDS && fs.existsSync(env.OX_HANDS)) return env.OX_HANDS;
+  const found = places.slice(1).filter((p) => fs.existsSync(p));
+  return found.sort((x, y) => fs.statSync(y).mtimeMs - fs.statSync(x).mtimeMs)[0] ?? null;
 }
 
 let child = null, buf = '', waiting = [];

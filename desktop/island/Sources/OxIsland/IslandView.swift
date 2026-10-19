@@ -287,7 +287,7 @@ struct ExpandedContent: View {
                     // The + tab: files dropped on the notch, the focus timer, what you copied.
                     HStack(spacing: 5) {
                         ForEach([TrayTab.shelf, .focus, .clips, .mail, .recap]) { t in
-                            TabCapsule(icon: t.icon, on: bridge.tray == t) { bridge.tray = t }.help(t.title)
+                            TabCapsule(icon: t.icon, on: bridge.tray == t, label: t.title) { bridge.tray = t }
                         }
                         Spacer()
                     }

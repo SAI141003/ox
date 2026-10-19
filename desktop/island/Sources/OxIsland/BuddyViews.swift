@@ -45,7 +45,7 @@ struct BuddyBody: View {
                     Text("Listening").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.text)
                     LevelBars(level: buddy.level)
                 }
-                Text(buddy.heard.isEmpty ? "Ask about anything on your screen. Release ⌃⌥Space to send." : buddy.heard)
+                Text(buddy.heard.isEmpty ? (buddy.handsFree ? "Ask about anything on your screen. Pause when you are done, or tap stop." : "Ask about anything on your screen. Release ⌃⌥Space to send.") : buddy.heard)
                     .font(.system(size: 12)).foregroundStyle(buddy.heard.isEmpty ? Ink.muted : Ink.text.opacity(0.9))
                     .lineLimit(3).truncationMode(.head)
             case .thinking:

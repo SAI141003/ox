@@ -99,7 +99,7 @@ final class Buddy: NSObject, ObservableObject {
     @Published private(set) var starting = false
 
     /// Started by a click, not a held key: listening ends on its own at the end of speech.
-    private var handsFree = false
+    @Published private(set) var handsFree = false
     private var lastHeardChange = Date()
     private var listenStarted = Date()
     private var endWatch: Timer?

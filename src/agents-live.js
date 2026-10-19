@@ -331,10 +331,12 @@ export async function focusTerminal(id, { home = os.homedir() } = {}) {
 }
 
 /** The terminal tab of an agent running in `cwd`, brought to the front. */
+// (The variable is isUp: "running" is a property name in AppleScript, and
+// `set running to …` failed on every call, so no tab was ever found.)
 export function focusByFolder(cwd) {
   for (const tty of ttysFor(cwd)) {
-    const term = `tell application "System Events" to set running to (exists process "Terminal")
-if running then
+    const term = `tell application "System Events" to set isUp to (exists process "Terminal")
+if isUp then
 tell application "Terminal"
 repeat with w in windows
 repeat with t in tabs of w
@@ -349,8 +351,8 @@ end repeat
 end tell
 end if
 return ""`;
-    const iterm = `tell application "System Events" to set running to (exists process "iTerm2")
-if running then
+    const iterm = `tell application "System Events" to set isUp to (exists process "iTerm2")
+if isUp then
 tell application "iTerm2"
 repeat with w in windows
 repeat with t in tabs of w

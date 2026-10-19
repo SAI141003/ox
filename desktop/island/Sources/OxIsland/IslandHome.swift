@@ -56,9 +56,9 @@ struct HomeHeader: View {
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 5) {
-                tab("house.fill", on: bridge.tray == nil && bridge.card == nil) { bridge.tray = nil; bridge.card = nil }
-                tab("bubble.left.fill", on: bridge.tray == .chat) { bridge.card = nil; bridge.tray = bridge.tray == .chat ? nil : .chat }
-                tab("plus", on: [.shelf, .focus, .clips, .mail, .recap].contains(bridge.tray)) { bridge.card = nil; bridge.tray = [.shelf, .focus, .clips, .mail, .recap].contains(bridge.tray) ? nil : .shelf }
+                tab("house.fill", on: bridge.tray == nil && bridge.card == nil, label: "Home") { bridge.tray = nil; bridge.card = nil }
+                tab("bubble.left.fill", on: bridge.tray == .chat, label: "Chat with \(OxName.current)") { bridge.card = nil; bridge.tray = bridge.tray == .chat ? nil : .chat }
+                tab("plus", on: [.shelf, .focus, .clips, .mail, .recap].contains(bridge.tray), label: "Shelf, focus, clips, mail and recap") { bridge.card = nil; bridge.tray = [.shelf, .focus, .clips, .mail, .recap].contains(bridge.tray) ? nil : .shelf }
             }
             .padding(.leading, 14)
             Spacer(minLength: notchWidth + 8)
@@ -78,14 +78,16 @@ struct HomeHeader: View {
         .frame(maxHeight: .infinity)
     }
 
-    private func tab(_ icon: String, on: Bool, action: @escaping () -> Void) -> some View {
-        TabCapsule(icon: icon, on: on, action: action)
+    private func tab(_ icon: String, on: Bool, label: String = "", action: @escaping () -> Void) -> some View {
+        TabCapsule(icon: icon, on: on, label: label, action: action)
     }
 }
 
 struct TabCapsule: View {
     let icon: String
     let on: Bool
+    /// What it does, for VoiceOver and for ox's own clicks (an icon name like "Comment Left" says nothing).
+    var label: String = ""
     let action: () -> Void
     @State private var hover = false
     var body: some View {
@@ -98,6 +100,8 @@ struct TabCapsule: View {
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
+        .accessibilityLabel(label.isEmpty ? icon : label)
+        .help(label)
     }
 }
 
@@ -113,6 +117,7 @@ struct HeaderIcon: View {
                 .foregroundStyle(active || hover ? HomeInk.text : HomeInk.muted)
         }
         .buttonStyle(.plain).onHover { hover = $0 }.help(help)
+        .accessibilityLabel(help.components(separatedBy: " (").first ?? help)
     }
 }
 
@@ -149,6 +154,10 @@ struct PlanPill: View {
         .overlay(Capsule().stroke(c.opacity(hover ? 0.55 : 0.14), lineWidth: 1))
         .onHover { h in withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) { hover = h } }
         .onTapGesture { showAll.toggle() }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(gauge.label) plan, \(Int(gauge.percent.rounded())) percent used")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { showAll.toggle() }
         .help("\(gauge.label): \(Int(gauge.percent.rounded()))% of the \(gauge.window) limit\(gauge.resetsAt.map { ", resets " + $0.formatted(date: .omitted, time: .shortened) } ?? ""). Click for every plan.")
         .popover(isPresented: $showAll, arrowEdge: .bottom) {
             // Every plan window: a ring, the share used and the time to its reset.
@@ -233,6 +242,7 @@ struct OverviewHome: View {
                             .frame(width: 16, height: 16).background(Color.white.opacity(0.07)).clipShape(Circle())
                     }
                     .buttonStyle(.plain).help("Open this session: read it, message it, open it in Terminal")
+                    .accessibilityLabel("Open this session")
                     .padding(.top, 8).padding(.trailing, 10)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }

@@ -25,7 +25,7 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | A1 Allow / Deny / Always from the notch | ✓ installed | live: `~/.claude/settings.json` has ox's hooks (`ox.js hook claude`); test: agent-hooks, approval-island-race |
 | A2 Questions answered in the notch | ✓ | test: agent-hooks; installed with A1 |
 | A3 Live diff ticker, other agents too | ✓ | test: agent-hooks (lines added/removed from the edit's own input) |
-| A4 Jump to a session's own terminal tab | ~ | code: `/ox/agents/focus` (src/agents-live.js, Bridge.swift); never checked live (the screen was locked when it was built) |
+| A4 Jump to a session's own terminal tab | ✓ | live: with Calculator in front, ox brought Terminal forward on the exact tab of a stand-in agent session (2.1 s). The check found that it had never worked (an AppleScript variable named `running`, a reserved word), fixed; test: agents-live |
 | A5 Claude plan usage | ✓ installed | live: `statusLine` set in Claude Code's settings; test: statusline |
 | A6 Integrations as pills | ~ | code: open PRs with failing CI (gh); **new:** Vercel's newest deployment, read-only with your own token (test: integrations). Stripe left out by the owner (not open source); Resend, Notion, Cal.com not built |
 | A7 Hold-to-dictate | ✓ | build; owner (speech) |
@@ -137,7 +137,7 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | G1–G8 | ✓ as marked | tests: fast-browser, git-fast, market, arena, library; G2 still has no public weights |
 | H1 Team from one sentence | ✓ | test: org (`ox org team`, `ox org say`) |
 | H2 OpenDots | ~ | calls not built |
-| E1 Test by clicking | ~ | this audit clicked Calculator for real; the island's own buttons still need a person |
+| E1 Test by clicking | ~ | live with ox-hands: the island's Home, Chat, + (shelf, five tabs), Pin and mic clicked with the real pointer and checked by screenshot; one tap cancelled a starting mic, stopped a listening one, and silence ended it (island.log). Found and fixed: the listening card said "Release ⌃⌥Space" after a click; buttons were named after icons ("Comment Left"), now "Chat with ox", "Talk to ox"… Not yet clicked: session cards, approvals, mail, recap |
 | E3 Interactive answers every time | ~ | as measured |
 | E5, E6 | ✓ | D1, D2, D4, D6, D7 and ox org |
 
@@ -149,7 +149,7 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | Fast: ox-hands (desktop/island/Sources/OxHands), ox's own helper on Apple's Accessibility and CoreGraphics, no AppleScript, nothing paid; it stays warm | live: a press 8–40 ms warm (80–400 ms through the MCP call with its checks), a window read ~150–250 ms; the first call ~3.5 s (start, app reopened) |
 | Never presses Return, Enter, Send, Pay, Buy, Delete…; text is pasted, so a chat box is filled, not sent | test: mac-control; live: Return refused |
 | No more "A keychain cannot be found to store Chrome": every Chrome ox starts (browser, PR shots, rendering, web island, app window) uses `--use-mock-keychain` | test: fast-browser, web-render, island-web (15/15) |
-| One tap stops listening: the listening card, the mic (now a stop icon), the dictation chip, the pill; a tap while the mic starts cancels it; held-key listening ends after 45 s at most | build; owner (needs a real tap) |
+| One tap stops listening: the listening card, the mic (now a stop icon), the dictation chip, the pill; a tap while the mic starts cancels it; held-key listening ends after 45 s at most | live (mic button): start cancelled by a tap, listening stopped by a tap, silence ended it; the pill and chip taps not clicked yet |
 
 **Still open after this audit:** A25 phone app and lock screen (a separate
 iOS project), D9 / F1.8 cloud machines (paid), H2 calls; A13 Parakeet is

@@ -52,7 +52,9 @@ func pump(_ seconds: Double = 0) { RunLoop.current.run(mode: .default, before: D
 
 func runningApp(_ name: String) -> NSRunningApplication? {
     let n = name.lowercased()
-    let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
+    // Regular apps first; a background one (OX Island, menu-bar apps) only by its name.
+    let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy != .prohibited }
+        .sorted { ($0.activationPolicy == .regular ? 0 : 1) < ($1.activationPolicy == .regular ? 0 : 1) }
     return apps.first { $0.localizedName?.lowercased() == n }
         ?? apps.first { $0.bundleIdentifier?.lowercased() == n }
         ?? apps.first { ($0.localizedName?.lowercased() ?? "").hasPrefix(n) }
@@ -63,9 +65,16 @@ func attr(_ el: AXUIElement, _ a: String) -> AnyObject? {
     return AXUIElementCopyAttributeValue(el, a as CFString, &v) == .success ? v : nil
 }
 
+func area(_ w: AXUIElement) -> Double { frame(pos: attr(w, kAXPositionAttribute), size: attr(w, kAXSizeAttribute)).map { $0[2] * $0[3] } ?? 0 }
+
 func windows(_ app: AXUIElement) -> [AXUIElement] { (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? [] }
 
 func frontWindow(_ app: AXUIElement) -> AXUIElement? {
+    // A background app's panel is not "focused"; take its biggest window (the island, not a tooltip).
+    if let pid = { var p: pid_t = 0; AXUIElementGetPid(app, &p); return Optional(p) }(),
+       let ra = NSRunningApplication(processIdentifier: pid), ra.activationPolicy != .regular {
+        return windows(app).max { area($0) < area($1) }
+    }
     if let w = attr(app, kAXFocusedWindowAttribute), CFGetTypeID(w) == AXUIElementGetTypeID() { return (w as! AXUIElement) }
     if let w = attr(app, kAXMainWindowAttribute), CFGetTypeID(w) == AXUIElementGetTypeID() { return (w as! AXUIElement) }
     return windows(app).first
@@ -75,6 +84,8 @@ func frontWindow(_ app: AXUIElement) -> AXUIElement? {
 @discardableResult
 func activate(_ name: String) -> NSRunningApplication? {
     var app = runningApp(name)
+    // A background app (no Dock icon, like OX Island) is never brought forward: its panels are already up.
+    if let a = app, a.activationPolicy != .regular { return a }
     // Already in front: nothing to wait for (the common case between two steps).
     if let a = app, frontPid() == a.processIdentifier { return a }
     let hasWindow = app.map { !windows(AXUIElementCreateApplication($0.processIdentifier)).isEmpty } ?? false
@@ -252,9 +263,15 @@ func handle(_ args: [String]) -> [String: Any] {
             let f = frame(pos: attr(el, kAXPositionAttribute), size: attr(el, kAXSizeAttribute))
             // The pointer goes to it, so you see what ox presses; then the control's own press, else a real click.
             if let f { post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: f[0] + f[2] / 2, y: f[1] + f[3] / 2), mouseButton: .left)) }
+            // On screen: a real click at its centre (SwiftUI buttons in a panel that never takes focus,
+            // like OX Island's, report an Accessibility press as done and ignore it). Off screen: the press.
+            let onScreen = f.map { f in NSScreen.screens.contains { s in
+                let top = (NSScreen.screens.first?.frame.maxY ?? 0) - s.frame.maxY
+                return CGRect(x: s.frame.minX, y: top, width: s.frame.width, height: s.frame.height).contains(CGPoint(x: f[0] + f[2] / 2, y: f[1] + f[3] / 2))
+            } } ?? false
             var acts: CFArray?
             let canPress = AXUIElementCopyActionNames(el, &acts) == .success && ((acts as? [String]) ?? []).contains(kAXPressAction as String)
-            if argv.contains("--double") || !canPress || AXUIElementPerformAction(el, kAXPressAction as CFString) != .success {
+            if onScreen || argv.contains("--double") || !canPress || AXUIElementPerformAction(el, kAXPressAction as CFString) != .success {
                 guard let f else { try emit(["error": "it cannot be pressed and has no place on screen"]) }
                 click(CGPoint(x: f[0] + f[2] / 2, y: f[1] + f[3] / 2), double: argv.contains("--double"))
                 try emit(["done": "clicked", "ms": ms()])

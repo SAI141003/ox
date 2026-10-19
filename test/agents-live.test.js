@@ -110,3 +110,11 @@ test('codex resume uses a model the account may use; errors read as words', asyn
   assert.equal(plainError('ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-5.5\' model is not supported when using Codex with a ChatGPT account."}}'), "The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account.");
   assert.equal(plainError('line one\nERROR: not signed in'), 'not signed in');
 });
+
+test('focusByFolder: no AppleScript variable named "running" (a reserved property: every jump failed)', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/agents-live.js', import.meta.url), 'utf8');
+  const body = src.slice(src.indexOf('export function focusByFolder'), src.indexOf('export function focusByFolder') + 2000);
+  assert.ok(!/set running to/.test(body), 'uses a free variable name');
+  assert.equal((body.match(/if isUp then/g) ?? []).length, 2);
+});
