@@ -277,7 +277,9 @@ final class Shelf: ObservableObject {
 
     /// ox's own progress lines start with a dot or a bullet; the answer is the rest.
     static func clean(_ s: String) -> String {
-        s.split(separator: "\n", omittingEmptySubsequences: false)
+        // A tool mark glued to the end of a sentence ("…to-dos.● mcp__x ✗ 4265ms · 112b") goes too, not only whole lines.
+        let s = s.replacingOccurrences(of: #"[●✓]\s*\S+\s+[✓✗]\s+[\d.]+\s*m?s(?:\s+·\s+[\d.]+\s*[kKmM]?b)?"#, with: " ", options: .regularExpression)
+        return s.split(separator: "\n", omittingEmptySubsequences: false)
             .map(String.init)
             // Progress marks and ox's own warnings ("ox: MCP server … killing it") are never read aloud.
             .filter { l in !(l.hasPrefix("· ") || l.hasPrefix("● ") || l.hasPrefix("✓ ") || l.hasPrefix("ox: ") || l.hasPrefix("Shell cwd was reset")) }

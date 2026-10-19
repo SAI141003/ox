@@ -2115,6 +2115,12 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
   // (each is marked as started first, so the two never run one twice).
   if (!process.env.NODE_TEST_CONTEXT && process.env.OX_FLOWS !== '0') {
     setInterval(() => { import('./flows.js').then((F) => F.tickFlows()).catch(() => {}); }, 60_000).unref();
+    // Today's to-dos ready before you ask (Reminders takes 5–8 s to answer a script).
+    if (process.platform === 'darwin') {
+      const todos = () => import('./offline.js').then((O) => O.refreshTodos()).catch(() => {});
+      setTimeout(todos, 5_000).unref();
+      setInterval(todos, 3 * 60_000).unref();
+    }
     // The island's local voice model stays loaded (renewed before its 30 min run out).
     warmVoiceModel();
     setInterval(() => { warmVoiceModel(); }, 20 * 60_000).unref();
@@ -2145,7 +2151,9 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       // The app's server steps aside when ox's code changes under it (a pull, an
       // update), once nothing is being worked on; the app page notices and the
       // app starts a fresh server (src/app.js ensureServer). A plain `ox serve` stays.
-      if (process.env.OX_APP === '1' && !process.env.NODE_TEST_CONTEXT) {
+      // The island's own server (OX_ISLAND_SERVER) steps aside too; the island starts a fresh one within a minute.
+      const islandServer = process.env.OX_ISLAND_SERVER === '1';
+      if ((process.env.OX_APP === '1' || islandServer) && !process.env.NODE_TEST_CONTEXT) {
         const startedAt = Date.now();
         import('./code-stamp.js').then(({ codeStamp }) => {
           setInterval(() => {
@@ -2153,6 +2161,7 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
             console.log('[serve] ox was updated: handing over to a fresh server');
             // Started fresh by ox itself (src/app.js ensureServer), window open or not: the
             // island's voice must never find no server. ensureServer stops this one.
+            if (islandServer) { server.close(); announced?.(); setTimeout(() => process.exit(0), 300); return; }
             import('node:child_process').then(({ spawn }) => {
               const bin = new URL('../bin/ox.js', import.meta.url).pathname;
               spawn(process.execPath, [bin, 'app', '--print-url'], { cwd: process.cwd(), detached: true, stdio: 'ignore', env: { ...process.env } }).unref();

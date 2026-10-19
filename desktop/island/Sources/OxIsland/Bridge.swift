@@ -543,6 +543,8 @@ final class OxBridge: ObservableObject {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: ox.node)
         p.arguments = [ox.cli, "serve", "--port", "\(port)"]
+        // Marked as the island's: after an ox update it steps aside and the island starts a fresh one.
+        p.environment = ProcessInfo.processInfo.environment.merging(["OX_ISLAND_SERVER": "1"]) { _, new in new }
         p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
         let log = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/island-serve.log")
         FileManager.default.createFile(atPath: log.path, contents: nil)

@@ -344,12 +344,10 @@ export function speakTodos(items) {
   const say = rest.map((x) => x.name);
   return `you have ${items.length === 1 ? 'one thing' : `${items.length} things`}: ${say.length > 1 ? `${say.slice(0, -1).join(', ')} and ${say.at(-1)}` : say[0]}`;
 }
-function readTodos(now = new Date()) {
-  if (process.platform === 'darwin') {
-    // Names and due dates in two bulk reads (one Apple event each: reading
-    // reminder by reminder took 38 s for 7 of them); dates as y-m-d-h-m, since
-    // big numbers come back from AppleScript rounded.
-    const script = [
+// Names and due dates in two bulk reads (one Apple event each: reading
+// reminder by reminder took 38 s for 7 of them); dates as y-m-d-h-m, since
+// big numbers come back from AppleScript rounded.
+const REMINDERS_SCRIPT = [
       'tell application "Reminders"',
       'set ns to name of every reminder whose completed is false',
       'set ds to due date of every reminder whose completed is false',
@@ -362,15 +360,44 @@ function readTodos(now = new Date()) {
       'set out to out & (item i of ns) & tab & d & linefeed',
       'end repeat',
       'return out',
-    ];
-    const r = spawnSync('osascript', script.flatMap((l) => ['-e', l]), { encoding: 'utf8', timeout: 45000 });
+];
+const parseReminders = (out) => String(out).split('\n').filter((l) => l.trim()).map((l) => {
+  const [name, when = ''] = l.split('\t');
+  const p = when.trim() ? when.trim().split('-').map(Number) : null;
+  const short = name.trim().length > 70 ? `${name.trim().slice(0, 67)}…` : name.trim();
+  return { name: short, due: p ? new Date(p[0], p[1] - 1, p[2], p[3], p[4]) : null };
+});
+
+// Reminders answers a script in 5–8 s however it is asked, too slow to wait for
+// by voice: the running ox server keeps a cache fresh in the background
+// (refreshTodos, every 3 minutes) and asking reads it at once.
+const TODOS_CACHE = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'todos-cache.json');
+export function refreshTodos() {
+  return new Promise((resolve) => {
+    if (process.platform !== 'darwin') return resolve(false);
+    const p = spawn('osascript', REMINDERS_SCRIPT.flatMap((l) => ['-e', l]), { stdio: ['ignore', 'pipe', 'ignore'] });
+    let out = '';
+    p.stdout.on('data', (d) => { out += d; });
+    const t = setTimeout(() => p.kill(), 45000);
+    p.on('close', (code) => {
+      clearTimeout(t);
+      if (code !== 0) return resolve(false);
+      try { fs.mkdirSync(path.dirname(TODOS_CACHE()), { recursive: true }); fs.writeFileSync(TODOS_CACHE(), JSON.stringify({ at: Date.now(), out })); } catch {}
+      resolve(true);
+    });
+  });
+}
+
+function readTodos(now = new Date()) {
+  if (process.platform === 'darwin') {
+    try {
+      const c = JSON.parse(fs.readFileSync(TODOS_CACHE(), 'utf8'));
+      if (Date.now() - c.at < 3.5 * 60_000) { const items = pickToday(parseReminders(c.out), now); return { ok: true, message: speakTodos(items), items }; }
+    } catch {}
+    const r = spawnSync('osascript', REMINDERS_SCRIPT.flatMap((l) => ['-e', l]), { encoding: 'utf8', timeout: 45000 });
     if (r.status === 0) {
-      const all = String(r.stdout).split('\n').filter((l) => l.trim()).map((l) => {
-        const [name, when = ''] = l.split('\t');
-        const p = when.trim() ? when.trim().split('-').map(Number) : null;
-        const short = name.trim().length > 70 ? `${name.trim().slice(0, 67)}…` : name.trim();
-        return { name: short, due: p ? new Date(p[0], p[1] - 1, p[2], p[3], p[4]) : null };
-      });
+      try { fs.mkdirSync(path.dirname(TODOS_CACHE()), { recursive: true }); fs.writeFileSync(TODOS_CACHE(), JSON.stringify({ at: Date.now(), out: r.stdout })); } catch {}
+      const all = parseReminders(r.stdout);
       const items = pickToday(all, now);
       return { ok: true, message: speakTodos(items), items };
     }
