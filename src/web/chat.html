@@ -515,6 +515,7 @@
   .floor .tag .say { background: rgba(255,255,255,.94); color: #111; font: 11px/1.3 var(--mono); padding: 3px 7px; border-radius: 8px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
   .floor .tag .who { font: 600 11px var(--sans); color: #fff; background: rgba(0,0,0,.55); padding: 1px 7px; border-radius: 99px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   .floor .tag.idle .say { opacity: .7; }
+  .floor .tag.yours .say { background: #F5A524; color: #111; font-weight: 600; }
   .floor .zone { position: absolute; font: 600 10px var(--sans); letter-spacing: .06em; color: rgba(255,255,255,.55); text-transform: uppercase; }
   .room { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; padding: 14px; border-radius: 16px; border: 1px solid var(--line); min-height: 150px;
     background: repeating-conic-gradient(var(--raise) 0 25%, var(--panel) 0 50%) 0 0 / 28px 28px; }
@@ -2196,6 +2197,8 @@
     // whiteboard with a little chart, a clock
     px(246, 8, 40, 22, '#e8e8ea'); px(246, 8, 40, 2, '#9aa0a8'); px(250, 24, 4, 3, '#5AA9F0'); px(256, 20, 4, 7, '#16C47F'); px(262, 15, 4, 12, '#F5A524'); px(268, 18, 4, 9, '#A78BFA');
     px(296, 10, 12, 12, '#e8e8ea'); px(301, 12, 2, 5, '#111'); px(302, 16, 4, 1, '#111');
+    // the door, where people come in
+    px(0, 84, 4, 30, '#3b3f47'); px(1, 86, 3, 26, '#8a5a3c'); px(2, 99, 1, 2, '#e8c06a');
     // plants by the wall
     for (const [x, y] of [[4, 46], [234, 46]]) { px(x + 2, y + 10, 8, 8, '#8a5a3c'); px(x, y, 12, 10, '#2f8f4e'); px(x + 3, y - 4, 6, 6, '#3fae63'); }
     // coffee corner: rug, sofa, coffee machine
@@ -2204,19 +2207,53 @@
     px(300, 44, 14, 20, '#2c2c2e'); px(303, 48, 8, 6, '#c8c8cc'); px(305, 58, 4, 4, '#e8e8ea');
     // desks and who sits at them
     const tmp = drawFloor.tmp ??= Object.assign(document.createElement('canvas'), { width: 24, height: 24 });
-    const runs = officeRuns.filter((r) => !r.ended || r.state === 'done' || r.state === 'failed').slice(0, FLOOR.desks.length);
+    // Leads with their helpers right after them (a helper sits at the next desk), as Pixel Agents links sub-agents.
+    const all = officeRuns.filter((r) => !r.ended || r.state === 'done' || r.state === 'failed');
+    const runs = [];
+    for (const r of all.filter((x) => !x.parent)) { runs.push(r); runs.push(...all.filter((x) => x.parent === r.id)); }
+    runs.splice(FLOOR.desks.length);
+    // Everyone walks: in from the door to a desk, or to the sofa when free (one step per tick, not a jump).
+    const walk = drawFloor.walk ??= {};
+    const DOOR = [8, 100];
+    const stepTo = (key, tx, ty) => {
+      const p = walk[key] ??= { x: DOOR[0], y: DOOR[1] };
+      const dx = tx - p.x, dy = ty - p.y, d = Math.hypot(dx, dy);
+      if (d <= 9) { p.x = tx; p.y = ty; return true; }
+      p.x += (dx / d) * 9; p.y += (dy / d) * 9; p.right = dx > 0;
+      return false;
+    };
+    const walker = (x, y, who, right) => {
+      const h = hash(who), skin = SKIN[h % SKIN.length], hair = HAIR[(h >> 3) % HAIR.length], shirt = workerColor(who), st = officeFrame % 2;
+      px(x - 4, y - 22, 8, 7, skin); px(x - 4, y - 23, 8, 2, hair); px(x + (right ? 1 : -3), y - 19, 1, 1, '#111');
+      px(x - 5, y - 15, 10, 9, shirt); px(x - 4, y - 6, 3, 6 - st * 2, '#2f3542'); px(x + 1, y - 6, 3, 4 + st * 2, '#2f3542');
+    };
+    const seen = new Set();
+    const pos = [];
     FLOOR.desks.forEach(([x, y], i) => {
       const r = runs[i];
-      if (r) { drawWorker(tmp, r.who, r.state, officeFrame); g.drawImage(tmp, x - 18, y - 30, 36, 36); }
-      else { px(x - 15, y - 5, 30, 3, '#8A8F98'); px(x - 13, y - 2, 2, 7, '#6B6F76'); px(x + 11, y - 2, 2, 7, '#6B6F76'); px(x + 2, y - 15, 9, 9, '#2C2C2E'); px(x + 3, y - 14, 7, 7, '#48484A'); }
+      const empty = () => { px(x - 15, y - 5, 30, 3, '#8A8F98'); px(x - 13, y - 2, 2, 7, '#6B6F76'); px(x + 11, y - 2, 2, 7, '#6B6F76'); px(x + 2, y - 15, 9, 9, '#2C2C2E'); px(x + 3, y - 14, 7, 7, '#48484A'); };
+      if (!r) { empty(); return; }
+      seen.add(r.id);
+      if (stepTo(r.id, x, y)) { drawWorker(tmp, r.who, r.state, officeFrame); g.drawImage(tmp, x - 18, y - 30, 36, 36); pos.push([r, x, y - 30]); }
+      else { empty(); const p = walk[r.id]; walker(p.x, p.y, r.who, p.right); pos.push([r, p.x, p.y - 24]); }
     });
-    // free bots on the sofa
+    // free bots walk to the sofa
     const busy = new Set(runs.filter((r) => !r.ended && !r.ext).map((r) => r.who));
     const free = [...new Set([...Object.keys(botShapes), ...Object.keys(botColors)])].filter((n) => !busy.has(n)).slice(0, FLOOR.sofa.length);
-    free.forEach((n, i) => { const [x, y] = FLOOR.sofa[i]; drawWorker(tmp, n, 'idle', officeFrame, false); g.drawImage(tmp, x - 12, y - 22, 24, 24); });
-    // tags: names and what each is doing, as text over the picture
-    const tags = runs.map((r, i) => { const [x, y] = FLOOR.desks[i]; return `<div class="tag ${r.state === 'idle' ? 'idle' : ''}" style="left:${(x / FLOOR.w) * 100}%;top:${((y - 30) / FLOOR.h) * 100}%" title="${esc(r.who)}: ${esc(doingText(r))}${r.title ? ` · ${esc(r.title)}` : ''}"><span class="say">${esc(doingText(r))}</span><span class="who">${esc(r.who)}${r.project ? ` · ${esc(r.project)}` : ''}</span></div>`; });
-    free.forEach((n, i) => { const [x, y] = FLOOR.sofa[i]; tags.push(`<div class="tag idle" style="left:${(x / FLOOR.w) * 100}%;top:${((y - 22) / FLOOR.h) * 100}%"><span class="who">${esc(n)}</span></div>`); });
+    const freePos = free.map((n, i) => {
+      const [x, y] = FLOOR.sofa[i], key = `free:${n}`;
+      seen.add(key);
+      if (stepTo(key, x, y)) { drawWorker(tmp, n, 'idle', officeFrame, false); g.drawImage(tmp, x - 12, y - 22, 24, 24); return [n, x, y - 22]; }
+      const p = walk[key]; walker(p.x, p.y, n, p.right); return [n, p.x, p.y - 24];
+    });
+    for (const k of Object.keys(walk)) if (!seen.has(k)) delete walk[k];
+    // tags: names and what each is doing, as text over the picture; amber when a session waits on you
+    const tags = pos.map(([r, x, y]) => {
+      const yours = r.ext && r.state === 'idle' && r.idleSec < 60;
+      return `<div class="tag ${r.state === 'idle' && !yours ? 'idle' : ''} ${yours ? 'yours' : ''}" style="left:${(x / FLOOR.w) * 100}%;top:${(y / FLOOR.h) * 100}%" title="${esc(r.who)}: ${esc(doingText(r))}${r.title ? ` · ${esc(r.title)}` : ''}"><span class="say">${esc(yours ? 'your turn' : doingText(r))}</span><span class="who">${esc(r.who)}${r.project ? ` · ${esc(r.project)}` : ''}${r.parent ? ' · helper' : ''}</span></div>`;
+    });
+    freePos.forEach(([n, x, y]) => tags.push(`<div class="tag idle" style="left:${(x / FLOOR.w) * 100}%;top:${(y / FLOOR.h) * 100}%"><span class="who">${esc(n)}</span></div>`));
+    tags.push(`<div class="zone" style="left:1%;top:${(78 / FLOOR.h) * 100}%">door</div>`);
     tags.push(`<div class="zone" style="right:2%;top:${(84 / FLOOR.h) * 100}%">coffee corner</div>`);
     if (!runs.length) tags.push(`<div class="zone" style="left:4%;top:${(88 / FLOOR.h) * 100}%">nobody at their desk: start a chat or a bot</div>`);
     const html = tags.join('');
@@ -3535,8 +3572,11 @@ files: [src/billing/**]
       }
       paintIcons(el);
     } catch (e) {
+      // A section left for another before it loaded: its late failure is not shown (and its buttons were never drawn).
+      if (mine !== renderSeq) return;
       el.innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div><button class="btn" style="margin-top:12px" id="retry">${icon('refresh')}Retry</button>`;
-      $('retry').onclick = renderSection;
+      const retry = pane.querySelector('#retry');
+      if (retry) retry.onclick = renderSection;
     }
   }
 
