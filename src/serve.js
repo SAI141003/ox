@@ -2116,9 +2116,14 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
         import('./code-stamp.js').then(({ codeStamp }) => {
           setInterval(() => {
             if (busyRequests > 0 || codeStamp() <= startedAt) return;
-            console.log('[serve] ox was updated: stepping aside for a fresh server');
-            server.close(); announced?.();
-            setTimeout(() => process.exit(0), 300);
+            console.log('[serve] ox was updated: handing over to a fresh server');
+            // Started fresh by ox itself (src/app.js ensureServer), window open or not: the
+            // island's voice must never find no server. ensureServer stops this one.
+            import('node:child_process').then(({ spawn }) => {
+              const bin = new URL('../bin/ox.js', import.meta.url).pathname;
+              spawn(process.execPath, [bin, 'app', '--print-url'], { cwd: process.cwd(), detached: true, stdio: 'ignore', env: { ...process.env } }).unref();
+            }).catch(() => {});
+            setTimeout(() => { server.close(); announced?.(); process.exit(0); }, 20_000).unref();
           }, 30_000).unref();
         }).catch(() => {});
       }
