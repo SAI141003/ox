@@ -4,6 +4,7 @@
 // --ipc flag needed. OX_ISLAND=0 opts one run out; `ox island off` (config
 // "island": false) turns it off everywhere until `ox island on`.
 
+import { signApp } from './sign-local.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -80,7 +81,8 @@ export function buildIslandApp({ bin, pkg, home = os.homedir() }) {
     .map(([k, v]) => (v === null ? `\t<key>${k}</key>\n\t<true/>` : `\t<key>${k}</key>\n\t<string>${v}</string>`)).join('\n');
   plist = plist.replace(/<\/dict>\s*<\/plist>\s*$/, `${extra}\n</dict>\n</plist>\n`);
   fs.writeFileSync(path.join(contents, 'Info.plist'), plist);
-  spawnSyncImported('codesign', ['--force', '--deep', '-s', '-', app], { stdio: 'ignore' });
+  // A fixed local identity when there is one, so macOS keeps the island's permissions across updates.
+  signApp(app, 'dev.ox.island', spawnSyncImported);
   return app;
 }
 

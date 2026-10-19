@@ -704,6 +704,19 @@ final class IslandChat: ObservableObject {
                 self.reply(r.say ?? "Done.", who: nil)
                 return
             }
+            if let r, r.route == "screen" {
+                // A question about the screen: answered from a picture of it, read-only.
+                guard let shot = MainActor.assumeIsolated({ Buddy.captureScreen() }) else {
+                    IslandLog.write("screen question, but Screen Recording is off for OX Island")
+                    self.busy = false
+                    self.reply("I need to see your screen for that: turn on Screen Recording for OX Island in System Settings, Privacy and Security.", who: nil)
+                    return
+                }
+                IslandLog.write("screen question: looking at the screen after \(ms) ms")
+                self.lines.append(Line(mine: false, text: "Looking…"))
+                self.run(text, extra: ["--mode", "ask", "--image", shot], key: "ox-screen", who: nil)
+                return
+            }
             if let r, r.route == "agent" {
                 IslandLog.write("agent run (\(r.why ?? "")) after \(ms) ms")
                 self.lines.append(Line(mine: false, text: "On it…"))

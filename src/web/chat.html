@@ -904,6 +904,14 @@
     } catch {}
   }
   setTimeout(loadSkin, 300);
+  // When ox is updated its server steps aside; reload so the app comes back on the new one.
+  let healthMiss = 0;
+  setInterval(async () => {
+    if (busy) return;
+    const ok = await fetch('/health', { cache: 'no-store' }).then((r) => r.ok).catch(() => false);
+    healthMiss = ok ? 0 : healthMiss + 1;
+    if (healthMiss === 2) { try { toast('Updating ox…'); } catch {} setTimeout(() => location.reload(), 1500); }
+  }, 10_000);
   setInterval(() => { if (!document.hidden) loadSkin(); }, 4000);
   async function getJson(path) {
     const r = await api(path);

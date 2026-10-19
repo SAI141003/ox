@@ -60,5 +60,5 @@ test('install into Claude Code and Codex, skip what is not installed, uninstall 
 
 test('the built-in ox-commands skill is in step with the catalog', () => {
   const file = fs.readFileSync(new URL('../skills/ox-commands/SKILL.md', import.meta.url), 'utf8');
-  assert.equal(file, S.skillFile('ox').replace('name: ox\n', 'name: ox-commands\n'));
+  assert.equal(file, S.skillFile('ox', { compact: true }).replace('name: ox\n', 'name: ox-commands\n'));
 });

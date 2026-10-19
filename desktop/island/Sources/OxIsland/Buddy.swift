@@ -171,7 +171,26 @@ final class Buddy: NSObject, ObservableObject {
             self.request = nil
             let text = self.heard.trimmingCharacters(in: .whitespacesAndNewlines)
             IslandLog.write("voice heard: \"\(text)\" (final: \(self.finalHeard), recording: \(audioPath != nil))")
-            // Nothing heard live: say so (an empty request used to end as "can't find ox").
+            // Nothing heard live but there is a recording: whisper on this Mac listens to it again.
+            if text.isEmpty, let audioPath, let port = Dictation.serverPort, let u = URL(string: "http://127.0.0.1:\(port)/ox/voice/transcribe") {
+                var req = URLRequest(url: u, timeoutInterval: 30)
+                req.httpMethod = "POST"
+                req.setValue("application/json", forHTTPHeaderField: "content-type")
+                req.httpBody = try? JSONSerialization.data(withJSONObject: ["path": audioPath])
+                self.phase = .thinking
+                URLSession.shared.dataTask(with: req) { data, _, _ in
+                    let again = ((data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] })?["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    DispatchQueue.main.async {
+                        IslandLog.write("voice heard again from the recording: \"\(again)\"")
+                        guard !again.isEmpty, !again.hasPrefix("[") else { self.phase = .idle; self.show("I didn't catch that. Hold ⌃⌥Space, or click the mic, and talk."); return }
+                        self.heard = again
+                        guard self.send?(again, self.shot.map { [$0] } ?? [], audioPath) == true else { self.show("I can't find ox on this Mac. Open the OX app once, then ask me again."); return }
+                        self.gesture = .think
+                    }
+                }.resume()
+                return
+            }
+            // Nothing heard at all: say so (an empty request used to end as "can't find ox").
             guard !text.isEmpty else { self.show("I didn't catch that. Hold ⌃⌥Space, or click the mic, and talk."); return }
             guard self.send?(text, self.shot.map { [$0] } ?? [], audioPath) == true else {
                 IslandLog.write("voice: nobody took it (ox not found)")

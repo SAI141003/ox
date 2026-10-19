@@ -1390,6 +1390,8 @@ async function flowsRoute(b) {
 // spoken answer from the quickest model that can answer; anything that has to
 // act (open, send, play, write…) comes back as a task for an agent run.
 const VOICE_SYSTEM = (name) => `You are ${name}, a voice assistant in the notch of the user's Mac: quick, warm, a little playful. Everything you write is read aloud: one or two short sentences, no markdown, no lists, no emojis, no links. Never invent the user's own data; if you would need to act on the Mac or look something up, say so in a few words. Today is ${new Date().toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.`;
+// Questions about what is on screen need a look at it: the island attaches a screenshot.
+const SCREEN = /\b(my screen|on (?:the|my) screen|what am i looking at|what(?:'s| is) (?:this|that) (?:on|in)|this (?:page|window|screen|tab|error|message)|read (?:this|it|my screen)|look at (?:this|my|the screen)|see (?:this|my screen)|what do you see)\b/i;
 const ACTS = /\b(open|launch|close|quit|send|message|text|whatsapp|email|mail|play|pause|create|make|write|draft|delete|remove|move|rename|book|order|buy|schedule|remind|call|download|install|draw|annotate|search|look up|find|fix|build|run|deploy|commit|push|edit|change|update|turn (?:on|off)|set)\b/i;
 export async function voiceTurn(body) {
   const started = Date.now();
@@ -1401,6 +1403,7 @@ export async function voiceTurn(body) {
   // The island asks this first while a coding run is open: an errand ("play
   // Billie Jean", "volume down") is done here and never sent into that run.
   if (body?.offlineOnly === true) return { route: 'live', handled: false, why: 'not a small task', ms: Date.now() - started };
+  if (SCREEN.test(text) && !body?.image) return { route: 'screen', handled: false, why: 'it needs a look at your screen', ms: Date.now() - started };
   const { assistantName } = await import('./identity.js');
   // Small talk and questions: one short answer. Anything that acts: an agent.
   await warmLocal();
@@ -1842,6 +1845,18 @@ const ROUTES = [
   }) },
   { method: 'POST', pattern: /^\/ox\/flows\/hook\/([a-z0-9-]{1,40})\/?$/, handler: flowHook },
   { method: 'POST', pattern: /^\/ox\/voice\/?$/, handler: appRoute(voiceTurn) },
+  // The island's own recording, when live recognition heard nothing: whisper on this Mac.
+  { method: 'POST', pattern: /^\/ox\/voice\/transcribe\/?$/, handler: appRoute(async (body) => {
+    const { realpathSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    let f = '';
+    try { f = realpathSync(String(body?.path ?? '')); } catch { throw new Error('no recording there'); }
+    // Only the island's voice recordings in the temp folder.
+    if (!f.startsWith(realpathSync(tmpdir())) || !/\/ox-voice-[\w.-]+$/.test(f)) throw new Error('only the island\'s own recordings');
+    const V = await import('./video-edit.js');
+    const tr = V.transcribe(f);
+    return { text: tr.segments.map((x) => x.text).join(' ').replace(/\s+/g, ' ').trim() };
+  }) },
   { method: 'GET', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksView) },
   { method: 'POST', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksRoute) },
   { method: 'GET', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async () => (await appApi()).scheduledView()) },
@@ -2000,7 +2015,10 @@ export function requestGuard(req, bound = boundHost) {
   return null;
 }
 
+// Requests that do work (a chat turn, a run, an upload): the server never steps aside under one.
+let busyRequests = 0;
 async function handleRequest(req, res) {
+  if (req.method === 'POST') { busyRequests++; res.once('close', () => { busyRequests--; }); }
   const refused = requestGuard(req);
   if (refused) {
     sendError(res, 403, refused, 'invalid_request_error', 'forbidden_origin', null);
@@ -2090,6 +2108,20 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       console.log(`[serve] listening on http://${host}:${port}`);
       console.log(`[serve] web chat: http://${host.includes(':') ? `[${host}]` : host}:${port}/`);
       const announced = announceServer(server.address()?.port ?? port, host, !!(config.apiKey ?? apiKey()));
+      // The app's server steps aside when ox's code changes under it (a pull, an
+      // update), once nothing is being worked on; the app page notices and the
+      // app starts a fresh server (src/app.js ensureServer). A plain `ox serve` stays.
+      if (process.env.OX_APP === '1' && !process.env.NODE_TEST_CONTEXT) {
+        const startedAt = Date.now();
+        import('./code-stamp.js').then(({ codeStamp }) => {
+          setInterval(() => {
+            if (busyRequests > 0 || codeStamp() <= startedAt) return;
+            console.log('[serve] ox was updated: stepping aside for a fresh server');
+            server.close(); announced?.();
+            setTimeout(() => process.exit(0), 300);
+          }, 30_000).unref();
+        }).catch(() => {});
+      }
       resolve({
         close: () => new Promise((resolveClose) => server.close(() => { announced?.(); resolveClose(); }))
       });

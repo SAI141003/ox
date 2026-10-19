@@ -80,8 +80,12 @@ export function suggest(prefix = '') {
   return [...starts, ...inside];
 }
 
-/** The catalog as Markdown, for an agent's skill. */
-export function markdown() {
+/** The catalog as Markdown, for an agent's skill; compact: one line per group (built-in skills stay short). */
+export function markdown({ compact = false } = {}) {
+  if (compact) {
+    const groups = [...new Set(COMMANDS.map((c) => c.group))];
+    return groups.map((g) => `- **${g}:** ${COMMANDS.filter((c) => c.group === g).map((c) => `\`ox ${c.name}\` (${c.what.split(/[;:(]/)[0].trim()})`).join(', ')}`).join('\n') + '\n';
+  }
   const groups = [...new Set(COMMANDS.map((c) => c.group))];
   return groups.map((g) => [`## ${g}`, '', ...COMMANDS.filter((c) => c.group === g).map((c) => `- \`ox ${c.usage.slice(1)}\`: ${c.what}`), ''].join('\n')).join('\n');
 }
@@ -113,7 +117,7 @@ If it asks for something (a key, an approval, a choice), tell the user what it n
 `;
 
 /** The ox skill: when an agent should use ox commands, and the whole list. */
-export function skillFile(bin = 'ox') {
+export function skillFile(bin = 'ox', { compact = false } = {}) {
   return `---
 name: ox
 description: Use ox's own commands when the user wants a website task done (ox browse), an image, video or sound made (ox studio, ox create), the app restyled (ox theme), saved reading or web research (ox library, ox research), a pull request opened or fixed (ox pr), agents hired or given work (ox org), other machines checked (ox mesh), or anything else listed here. ox is installed on this machine.
@@ -122,7 +126,7 @@ description: Use ox's own commands when the user wants a website task done (ox b
 
 ox is installed (\`${bin}\`). When a request matches one of these, run the ox command with the shell instead of doing the work by hand: it is faster, it keeps the user's own settings and keys, and it asks before anything that pays, sends or deletes.
 
-${markdown()}
+${markdown({ compact })}
 Every command takes \`--help\`. Report what the command printed; do not claim a result it did not print.
 `;
 }
