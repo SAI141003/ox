@@ -157,6 +157,10 @@ struct RecapView: View {
                 stat("\(dict.words)", T("words dictated"))
                 stat("\(dict.savedMinutes) min", T("saved typing"))
                 stat("\(dict.wpm)", T("words/min")).help(dict.apps.isEmpty ? "Speaking speed" : "Dictated most into: " + dict.apps.map { "\($0.0) (\($0.1) words)" }.joined(separator: ", "))
+                if let code = week["code"] as? [String: Any], let f = code["files"] as? Int, f > 0 {
+                    stat("\(f)", T("files changed")).help("From git this week, in the folders ox's runs worked in: \(code["commits"] as? Int ?? 0) commits")
+                    stat("+\(code["added"] as? Int ?? 0) −\(code["removed"] as? Int ?? 0)", T("lines"))
+                }
                 stat(top, T("most used"))
                 stat(waterText(), T("water (est.)")).help("Estimated data-centre cooling water for cloud models: ~18 mL per 1,000 tokens, from Li et al. 2023, \"Making AI Less Thirsty\" (about 0.5 L per 20–50 responses). Local models are not counted.")
             }
@@ -209,6 +213,9 @@ struct RecapView: View {
         let card = VStack(alignment: .leading, spacing: 10) {
             Text("My week with \(OxName.current)").font(.system(size: 22, weight: .bold, design: .rounded))
             Text("\(runs) runs · \(tokens) tokens · \(dict.words) words dictated · \(dict.savedMinutes) min saved").font(.system(size: 14))
+            if let code = week["code"] as? [String: Any], let f = code["files"] as? Int, f > 0 {
+                Text("\(f) files changed · +\(code["added"] as? Int ?? 0) −\(code["removed"] as? Int ?? 0) lines · \(code["commits"] as? Int ?? 0) commits").font(.system(size: 14))
+            }
             Text("Most used: \(top)").font(.system(size: 13)).opacity(0.7)
         }
         .foregroundStyle(.white).padding(28).frame(width: 560, alignment: .leading).background(Color(hex: "#141518"))

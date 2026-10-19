@@ -19,6 +19,8 @@ enum L10n {
     static let table: [String: [String]] = [
         "All quiet": ["Todo tranquilo", "Tout est calme", "Alles ruhig", "Tudo tranquilo", "Tutto tranquillo", "静かです", "조용해요", "一切安静", "सब शांत है"],
         "Nothing running": ["Nada en marcha", "Rien en cours", "Nichts läuft", "Nada em execução", "Niente in corso", "実行中のものはありません", "실행 중인 작업 없음", "没有正在运行的任务", "कुछ नहीं चल रहा"],
+        "files changed": ["archivos cambiados", "fichiers modifiés", "geänderte Dateien", "arquivos alterados", "file modificati", "変更ファイル", "변경된 파일", "更改的文件", "बदली फ़ाइलें"],
+        "lines": ["líneas", "lignes", "Zeilen", "linhas", "righe", "行", "줄", "行", "पंक्तियाँ"],
         "Browsing": ["Navegando", "Navigation", "Surft", "Navegando", "Navigazione", "閲覧中", "탐색 중", "浏览中", "ब्राउज़ कर रहा है"],
         "Done": ["Listo", "Terminé", "Fertig", "Pronto", "Fatto", "完了", "완료", "完成", "पूरा"],
         "Needs you": ["Te necesita", "Besoin de vous", "Braucht dich", "Precisa de você", "Serve il tuo aiuto", "確認が必要", "확인 필요", "需要你", "आपकी ज़रूरत है"],
