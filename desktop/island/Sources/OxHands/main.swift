@@ -183,14 +183,19 @@ func element(window: AXUIElement, path: String) -> AXUIElement? {
 func post(_ e: CGEvent?) { e?.post(tap: .cghidEventTap) }
 
 func click(_ p: CGPoint, double: Bool) {
+    // Like a hand: when the pointer has to travel, let the hover settle before
+    // pressing (a hover redraw swallowed 2 of 3 instant clicks on OX Island's
+    // buttons), and hold the button as long as a finger does.
+    let now = CGEvent(source: nil)?.location ?? .zero
+    let moved = hypot(now.x - p.x, now.y - p.y) > 2
     post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left))
-    usleep(15_000)
+    usleep(moved ? 120_000 : 15_000)
     for n in 1...(double ? 2 : 1) {
         let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: p, mouseButton: .left)
         let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: p, mouseButton: .left)
         down?.setIntegerValueField(.mouseEventClickState, value: Int64(n))
         up?.setIntegerValueField(.mouseEventClickState, value: Int64(n))
-        post(down); usleep(8_000); post(up); usleep(30_000)
+        post(down); usleep(50_000); post(up); usleep(30_000)
     }
 }
 

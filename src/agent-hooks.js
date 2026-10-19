@@ -248,7 +248,7 @@ export function answerOutput(answer) {
 
 // ---- the relay: one ox IPC server per agent session ----------------------------------
 
-export function runRelay({ agent = 'claude', sessionId, cwd = process.cwd(), socketDir, idleMs = IDLE_MS, waitForIslandMs = 2500 } = {}) {
+export function runRelay({ agent = 'claude', sessionId, cwd = process.cwd(), socketDir, idleMs = IDLE_MS, waitForIslandMs = 4000 } = {}) {
   const key = sessionKey(agent, sessionId);
   const socketPath = socketPathFor(key, socketDir);
   const always = new Set();
@@ -324,12 +324,15 @@ function talk(socketPath, frame, { timeoutMs }) {
 
 const exists = (p) => { try { fs.statSync(p); return true; } catch { return false; } };
 
-async function ensureRelay(agent, payload, { socketDir, spawnRelay }) {
+// A new session's relay can take over 2 s to start cold (just after a restart),
+// and then its first approval went to the agent's own prompt instead of the
+// notch. Someone waits on an approval anyway, so it gets longer.
+async function ensureRelay(agent, payload, { socketDir, spawnRelay, waitMs = 2000 }) {
   const key = sessionKey(agent, payload.session_id);
   const sp = socketPathFor(key, socketDir);
   if (exists(sp)) return sp;
   spawnRelay({ agent, sessionId: payload.session_id, cwd: payload.cwd ?? process.cwd() });
-  const until = Date.now() + 2000;
+  const until = Date.now() + waitMs;
   while (!exists(sp) && Date.now() < until) await new Promise((r) => setTimeout(r, 40));
   return exists(sp) ? sp : null;
 }
@@ -355,7 +358,7 @@ export async function handleHook(agent, raw, { event = null, socketDir, spawnRel
   if (isAsk && spec.decision === 'none') return '';
   // A session ending with no relay alive has nothing to tell anyone.
   if (payload.hook_event_name === 'SessionEnd' && !exists(socketPathFor(sessionKey(agent, payload.session_id), socketDir))) return '';
-  const sp = await ensureRelay(agent, payload, { socketDir, spawnRelay });
+  const sp = await ensureRelay(agent, payload, { socketDir, spawnRelay, waitMs: isAsk || isQuestion ? 6000 : 2000 });
   if (!sp) return answer('ask');
   const reply = await talk(sp, { type: 'hook', payload }, { timeoutMs: isAsk || isQuestion ? approvalTimeoutMs : 800 });
   if (isQuestion) return reply?.decision === 'answer' && reply.answer ? answerOutput(reply.answer) : '';

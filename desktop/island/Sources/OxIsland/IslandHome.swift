@@ -319,8 +319,12 @@ struct StepTicker: View {
 /// pills); with none, the AI tools on this Mac, or what is playing.
 struct RightCard: View {
     @ObservedObject var bridge: OxBridge
+    /// Which four sessions show when there are more than four ("+2 more" pages on).
+    @State private var page = 0
     var body: some View {
-        let others = bridge.sessions.filter { $0.id != bridge.focused?.id }
+        let all = bridge.sessions.filter { $0.id != bridge.focused?.id }
+        let start = all.count > 4 ? (page * 4) % all.count : 0
+        let others = all.count > 4 ? Array(all[start...] + all[..<start]) : all
         let cols = [GridItem(.flexible(), spacing: 4), GridItem(.flexible(), spacing: 4)]
         VStack(spacing: 4) {
             Spacer(minLength: 0)
@@ -331,7 +335,13 @@ struct RightCard: View {
                 LazyVGrid(columns: cols, spacing: 4) {
                     ForEach(others.prefix(4)) { s in AgentPill(session: s) { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { bridge.focusId = s.id } } }
                 }
-                if others.count > 4 { Text("+\(others.count - 4) more").font(.system(size: 9.5)).foregroundStyle(HomeInk.dim) }
+                if others.count > 4 {
+                    Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { page += 1 } } label: {
+                        Text("+\(others.count - 4) more").font(.system(size: 9.5)).foregroundStyle(HomeInk.dim)
+                            .padding(.horizontal, 6).padding(.vertical, 2).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).help("Show the other sessions").accessibilityLabel("Show \(others.count - 4) more sessions")
+                }
             } else if !bridge.org.isEmpty {
                 // Your company (ox org): each agent with its own character.
                 LazyVGrid(columns: cols, spacing: 4) {

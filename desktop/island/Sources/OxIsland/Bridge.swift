@@ -520,6 +520,36 @@ final class OxBridge: ObservableObject {
         }.resume()
     }
 
+    /// No ox server alive (after a restart, or OX.app quit): sessions, plan usage
+    /// and the day strip would stay empty until someone opened OX.app, so the
+    /// island starts `ox serve` itself, on a free loopback port, at most once a minute.
+    private var serverStartedAt = Date.distantPast
+    private func startServerIfNeeded() {
+        guard Date().timeIntervalSince(serverStartedAt) > 60, let ox = OxRunner.paths() else { return }
+        serverStartedAt = Date()
+        let port = Self.freePort() ?? 47_802
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: ox.node)
+        p.arguments = [ox.cli, "serve", "--port", "\(port)"]
+        p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+        let log = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/island-serve.log")
+        FileManager.default.createFile(atPath: log.path, contents: nil)
+        if let h = try? FileHandle(forWritingTo: log) { p.standardOutput = h; p.standardError = h }
+        do { try p.run(); IslandLog.write("started ox serve on port \(port) (pid \(p.processIdentifier))") }
+        catch { IslandLog.write("could not start ox serve: \(error.localizedDescription)") }
+    }
+
+    /// A port nothing listens on: bind to port 0 on loopback and read what was given.
+    static func freePort() -> Int? {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        var addr = sockaddr_in(); addr.sin_family = sa_family_t(AF_INET); addr.sin_port = 0; addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let ok = withUnsafeMutablePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, len) == 0 && getsockname(fd, $0, &len) == 0 } }
+        return ok ? Int(UInt16(bigEndian: addr.sin_port)) : nil
+    }
+
     private func pollApp() {
         guard !appPolling else { return }
         // The app's server says where it is in serve.json (`ox serve`) or app.json
@@ -532,7 +562,7 @@ final class OxBridge: ObservableObject {
             return doc
         }
         guard let port = docs.compactMap({ $0["port"] as? Int }).first,
-              let url = URL(string: "http://127.0.0.1:\(port)/ox/live") else { appPort = nil; dropAppSessions(keep: []); return }
+              let url = URL(string: "http://127.0.0.1:\(port)/ox/live") else { appPort = nil; dropAppSessions(keep: []); startServerIfNeeded(); return }
         appPort = port
         Dictation.serverPort = port
         pollUsage(port: port)
@@ -819,6 +849,8 @@ final class OxBridge: ObservableObject {
                 s.cwd = frame["cwd"] as? String ?? ""
                 s.model = frame["model"] as? String ?? ""
                 s.bot = frame["bot"] as? String ?? ""
+                // Another agent's hook relay (Claude Code, Codex…) names itself: "Claude Code wants to run bash", not "ox".
+                if frame["agent"] is String, !s.bot.isEmpty { s.tool = s.bot }
                 s.mood = .idle
                 s.activity = "ready"
             }
@@ -972,6 +1004,8 @@ final class OxBridge: ObservableObject {
 
     func answer(_ session: AgentSession, _ decision: Decision) {
         guard let p = session.pending, let conn = connections[session.id] else { return }
+        // Every answer leaves a line, so an "allow" can always be traced to a click here (or shown not to be).
+        IslandLog.write("approval answered: \(decision.rawValue) · \(session.project) · \(p.tool): \(p.preview.prefix(80))")
         conn.send(["type": "approval-answer", "id": p.id, "decision": decision.rawValue])
         update(session.id) { s in
             s.pending = nil

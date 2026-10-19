@@ -152,8 +152,8 @@ struct RecapView: View {
                     .buttonStyle(.plain).font(.system(size: 10.5)).foregroundStyle(Color(hex: "#60A5FA"))
             }
             HStack(spacing: 18) {
-                stat("\(runs)", T("runs"))
-                stat(tokens >= 1_000_000 ? String(format: "%.1fM", Double(tokens) / 1e6) : tokens >= 1000 ? String(format: "%.0fk", Double(tokens) / 1000) : "\(tokens)", "tokens")
+                stat(week.isEmpty ? "…" : "\(runs)", T("runs"))
+                stat(week.isEmpty ? "…" : tokens >= 1_000_000 ? String(format: "%.1fM", Double(tokens) / 1e6) : tokens >= 1000 ? String(format: "%.0fk", Double(tokens) / 1000) : "\(tokens)", "tokens")
                 stat("\(dict.words)", T("words dictated"))
                 stat("\(dict.savedMinutes) min", T("saved typing"))
                 stat("\(dict.wpm)", T("words/min")).help(dict.apps.isEmpty ? "Speaking speed" : "Dictated most into: " + dict.apps.map { "\($0.0) (\($0.1) words)" }.joined(separator: ", "))
@@ -214,6 +214,7 @@ struct RecapView: View {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let docs = ["serve.json", "app.json"].compactMap { n -> Int? in
             guard let d = try? Data(contentsOf: home.appendingPathComponent(".ox/\(n)")), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
+            if let pid = j["pid"] as? Int, kill(pid_t(pid), 0) != 0 { return nil }   // a server that is gone
             return j["port"] as? Int
         }
         guard let port = docs.first, let url = URL(string: "http://127.0.0.1:\(port)/ox/usage?days=7") else { return }
