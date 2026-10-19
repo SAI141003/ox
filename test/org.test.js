@@ -172,3 +172,21 @@ test('hire from a sentence: weekdays are weekly, and "every Friday" is not "ever
   assert.equal(O.parseHire('every fifteen minutes check the queue').heartbeatMin, 15);
   assert.equal(O.parseHire('every day at 9 summarize').heartbeatMin, 1440);
 });
+
+test('a team from one sentence: the chief drafts it, it is hired, and its group chat answers in turn', async () => {
+  const o = fresh();
+  const draft = await O.draftTeam('a writer who drafts blog posts and a coder who writes and reviews code', {
+    ask: async () => '{"team":"Content & Code","agents":[{"name":"Wren","title":"Writer","instructions":"Draft posts"},{"name":"Cody","title":"Coder","instructions":"Write and review code"}]}',
+  });
+  assert.deepEqual(draft.agents.map((a) => a.name), ['Wren', 'Cody']);
+  const t = O.hireTeam(draft, o);
+  assert.equal(t.group, 'content-code');
+  assert.deepEqual(t.members, ['wren', 'cody']);
+  assert.match(O.group('content-code', o).messages[0].text, /Team's up: Wren \(Writer\), Cody \(Coder\)/);
+  const seen = [];
+  const replies = await O.groupSay('content-code', 'Write a post about ox mesh', { ...o, ask: async ({ system, user }) => { seen.push(user); return system.includes('Cody') ? '(pass)' : 'I will draft it today.'; } });
+  assert.deepEqual(replies, [{ from: 'Wren', text: 'I will draft it today.' }]);
+  assert.match(seen[1], /Wren: I will draft it today\./, 'the second member sees the first one\'s reply');
+  assert.equal(O.group('content-code', o).messages.length, 3);
+  await assert.rejects(O.draftTeam('x', { ask: async () => '{"agents":[{"name":"A","title":"B"}]}' }), /could not make a team/);
+});

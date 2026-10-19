@@ -1697,6 +1697,14 @@ const ROUTES = [
   }) },
   { method: 'GET', pattern: /^\/ox\/org\/timeline\/?$/, handler: appRoute(async () => (await import('./org.js')).timeline({ limit: 150 })) },
   { method: 'GET', pattern: /^\/ox\/org\/thread\/([a-z0-9-]{1,40})\/?$/, handler: appRoute(async (_, m) => (await import('./org.js')).thread(m[1])) },
+  { method: 'GET', pattern: /^\/ox\/org\/groups\/?$/, handler: appRoute(async () => ({ groups: (await import('./org.js')).readOrg().groups })) },
+  { method: 'POST', pattern: /^\/ox\/org\/(team|say)\/?$/, handler: appRoute(async (body, m) => {
+    const O = await import('./org.js');
+    const ask = async ({ system, user }) => { const { quickText } = await import('./quick-text.js'); return (await quickText(resolveBot(pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 600 })).text; };
+    if (m[1] === 'say') return { replies: await O.groupSay(String(body?.group ?? ''), String(body?.text ?? ''), { ask }) };
+    const draft = body?.draft && typeof body.draft === 'object' ? body.draft : await O.draftTeam(String(body?.sentence ?? ''), { ask });
+    return body?.confirm ? O.hireTeam(draft) : { draft };
+  }) },
   { method: 'POST', pattern: /^\/ox\/org\/(tell|hire)\/?$/, handler: appRoute(async (body, m) => {
     const O = await import('./org.js');
     if (m[1] === 'tell') { const r = await O.tell(String(body?.id ?? ''), String(body?.text ?? '')); if (body?.now) O.beat(r.agent.id).catch(() => {}); return { task: r.task }; }

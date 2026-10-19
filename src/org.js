@@ -35,8 +35,8 @@ const fileOf = (o) => o?.file ?? ORG_FILE();
 export function readOrg(opts = {}) {
   try {
     const d = JSON.parse(fs.readFileSync(fileOf(opts), 'utf8'));
-    return { agents: d.agents ?? {}, log: d.log ?? [], runs: d.runs ?? {} };
-  } catch { return { agents: {}, log: [], runs: {} }; }
+    return { agents: d.agents ?? {}, log: d.log ?? [], runs: d.runs ?? {}, groups: d.groups ?? {} };
+  } catch { return { agents: {}, log: [], runs: {}, groups: {} }; }
 }
 
 function writeOrg(org, opts = {}) {
@@ -44,7 +44,8 @@ function writeOrg(org, opts = {}) {
   fs.mkdirSync(path.dirname(f), { recursive: true });
   const tmp = `${f}.${process.pid}.tmp`;
   const runs = Object.fromEntries(Object.entries(org.runs ?? {}).map(([k, v]) => [k, v.slice(-50)]));
-  fs.writeFileSync(tmp, JSON.stringify({ agents: org.agents, log: org.log.slice(-500), runs }, null, 2), { mode: 0o600 });
+  const groups = Object.fromEntries(Object.entries(org.groups ?? {}).map(([k, g]) => [k, { ...g, messages: (g.messages ?? []).slice(-300) }]));
+  fs.writeFileSync(tmp, JSON.stringify({ agents: org.agents, log: org.log.slice(-500), runs, groups }, null, 2), { mode: 0o600 });
   fs.renameSync(tmp, f);
   return org;
 }
@@ -277,6 +278,77 @@ export async function draftHire(sentence, { ask = null } = {}) {
   draft.instructions = `${draft.instructions}${extra.instructions && !extra.instructions.includes(sentence) ? `\n\n(Asked as: ${sentence})` : ''}`;
   draft.fromModel = Object.keys(extra).length > 0;
   return draft;
+}
+
+// ---------------------------------------------------------------- a team from one sentence (after DeepSeek Bot's Chief of Staff)
+
+/** The chief's draft: 2-5 agents for the team the sentence asks for. */
+export async function draftTeam(sentence, { ask }) {
+  const text = await ask({
+    system: 'You are a chief of staff setting up a small team of AI agents. From the request, answer with JSON only: {"team": a short team name, "agents": [{"name": one first name, "title": 2-4 words, "instructions": 3-5 short imperative lines joined by newlines}]}, 2 to 5 agents, each with a distinct job. Do not invent tools, budgets or schedules.',
+    user: sentence,
+  });
+  const raw = String(text).slice(String(text).indexOf('{'), String(text).lastIndexOf('}') + 1);
+  let j; try { j = JSON.parse(raw); } catch { j = JSON.parse(raw.replace(/\r?\n/g, '\\n')); }
+  const agents = (j.agents ?? []).filter((a) => a?.name && a?.title).slice(0, 5).map((a) => ({ name: String(a.name).trim().split(/\s+/)[0].slice(0, 30), title: String(a.title).slice(0, 60), instructions: String(a.instructions ?? '').slice(0, 2000) }));
+  if (agents.length < 2) throw new Error('the chief could not make a team from that: say what each person should do');
+  const facts = parseHire(sentence);
+  return { team: String(j.team ?? 'Team').slice(0, 40), agents: agents.map((a) => ({ ...a, ...(facts.cwd ? { cwd: facts.cwd } : {}), ...(facts.runtime ? { runtime: facts.runtime } : {}) })) };
+}
+
+/** Hire the drafted team and give it one group thread. */
+export function hireTeam(draft, opts = {}) {
+  const org = readOrg(opts);
+  const ids = [];
+  for (const a of draft.agents) {
+    let name = a.name;
+    for (let k = 2; Object.values(readOrg(opts).agents).some((x) => x.id === slug(name) && x.status !== 'terminated'); k++) name = `${a.name}${k}`;
+    ids.push(hire({ ...a, name, role: a.title }, opts).id);
+  }
+  const fresh = readOrg(opts);
+  const gid = slug(draft.team) || 'team';
+  fresh.groups[gid] = { name: draft.team, members: ids, messages: [{ at: new Date().toISOString(), from: 'chief', text: `Team's up: ${ids.map((id) => `${fresh.agents[id].name} (${fresh.agents[id].title})`).join(', ')}.` }] };
+  note(fresh, opts.by ?? 'you', 'made a team', gid, { why: ids.join(', ') });
+  writeOrg(fresh, opts);
+  return { group: gid, members: ids };
+}
+
+export function group(gid, opts = {}) {
+  const g = readOrg(opts).groups[slug(gid)];
+  if (!g) throw new Error(`no team ${gid}`);
+  return g;
+}
+
+/**
+ * You say something in the team's group chat; each member answers in turn, in
+ * role, seeing what was said before (one small model call each, no tools; real
+ * work goes through ox org tell, which runs with the agent's approvals).
+ */
+export async function groupSay(gid, text, { ask, by = 'you', ...opts } = {}) {
+  const org = readOrg(opts);
+  const g = org.groups[slug(gid)];
+  if (!g) throw new Error(`no team ${gid}`);
+  g.messages.push({ at: new Date().toISOString(), from: by, text: String(text).slice(0, 4000) });
+  writeOrg(org, opts);
+  const replies = [];
+  for (const id of g.members) {
+    const a = readOrg(opts).agents[id];
+    if (!a || a.status !== 'active') continue;
+    const history = group(gid, opts).messages.slice(-20).map((m) => `${m.from === 'you' ? 'You (the owner)' : readOrg(opts).agents[m.from]?.name ?? m.from}: ${m.text}`).join('\n');
+    let said = '';
+    try {
+      said = String(await ask({
+        system: `You are ${a.name}, ${a.title}, in a team group chat with the owner and your teammates. Your job:\n${a.instructions}\nReply in 1-3 short sentences, in character, building on what others said; say what you will do. If it is not for you, reply exactly: (pass)`,
+        user: history,
+      })).trim();
+    } catch (e) { said = `(could not answer: ${e.message})`; }
+    if (!said || /^\(pass\)$/i.test(said)) continue;
+    const o = readOrg(opts);
+    o.groups[slug(gid)].messages.push({ at: new Date().toISOString(), from: id, text: said.slice(0, 2000) });
+    writeOrg(o, opts);
+    replies.push({ from: a.name, text: said });
+  }
+  return replies;
 }
 
 /** What one agent's runs cost since `since`, from the usage log (null when unpriced). */

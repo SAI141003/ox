@@ -527,6 +527,7 @@ function usageAll() {
     '  ox org tell <id> "<message>" [--now]   give an agent work in words; --now wakes it',
     '  ox org thread <id>                its runs: what it was asked and what it said',
     '  ox org timeline                   who did what, every tool call, and the count of irreversible actions',
+    '  ox org team "<sentence>" [--draft]   the chief sets up a whole team and its group chat; ox org say <team> "…"; ox org group <team>',
     '  ox skill from <book.pdf|folder>   a book or docs → a skill: an index plus chapters read only when needed',
     '',
     'library: ox library [add <url|pdf> | read | ask <id> "q" | search]   saved articles and PDFs; highlight and ask in the app',
@@ -3524,6 +3525,36 @@ async function cmdOrg(args = []) {
       const runs = args.includes('--due') ? await O.beatDue() : [await O.beat(id)];
       if (!runs.length) console.log(c.dim('nobody is due'));
       for (const r of runs) console.log(`${r.agent}: ${r.state}${r.task ? ` ${r.task}` : ''}${r.ok === false ? c.red(` failed: ${r.why}`) : r.why ? ` (${r.why})` : ''}${r.costUsd != null ? ` · $${r.costUsd.toFixed(4)}` : ''}${r.warned ? c.yellow(' · budget warning') : ''}${r.stopped ? c.red(' · budget reached, paused') : ''}`);
+      return;
+    }
+    if (sub === 'team' || sub === 'say' || sub === 'group') {
+      const askModel = async ({ system, user }) => {
+        const { workingModelSpec } = await import('./working-model.js');
+        const { quickText } = await import('./quick-text.js');
+        const cfg = loadConfig();
+        return (await quickText(resolveBot(await workingModelSpec(cfg, { say: () => {} }), cfg), { system, user, maxTokens: 600 })).text;
+      };
+      if (sub === 'team') {
+        // A team from one sentence (DeepSeek Bot's Chief of Staff): drafted, shown, hired, with a group chat.
+        const sentence = args.slice(1).filter((a) => a !== '--draft').join(' ');
+        if (!sentence) throw new Error('usage: ox org team "a writer who drafts blog posts and a coder who reviews code" [--draft]');
+        const d = await O.draftTeam(sentence, { ask: askModel });
+        console.log(`${c.bold(d.team)}`);
+        for (const a of d.agents) console.log(`  ${c.bold(a.name)} · ${a.title}  ${c.dim(a.instructions.split('\n')[0].slice(0, 90))}`);
+        if (args.includes('--draft')) return;
+        const t = O.hireTeam(d, { by });
+        console.log(`${c.green('✓ hired')} ${t.members.join(', ')}; group chat: ox org say ${t.group} "…"`);
+        return;
+      }
+      if (sub === 'say') {
+        const [gid, ...words] = args.slice(1);
+        const replies = await O.groupSay(gid, words.join(' '), { ask: askModel, by });
+        for (const r of replies) console.log(`${c.bold(r.from)}: ${r.text}`);
+        if (!replies.length) console.log(c.dim('nobody had anything to add'));
+        return;
+      }
+      const g = O.group(args[1]);
+      for (const m of g.messages.slice(-30)) console.log(`${c.dim(m.at.slice(11, 16))} ${c.bold(m.from === 'you' ? 'you' : O.readOrg().agents[m.from]?.name ?? m.from)}: ${m.text}`);
       return;
     }
     if (sub === 'timeline') {
