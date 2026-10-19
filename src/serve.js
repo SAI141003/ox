@@ -1750,8 +1750,11 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/org\/?$/, handler: appRoute(async () => {
     const O = await import('./org.js');
     const { readyFor } = O;
+    let lv = {};
+    try { lv = O.levels(); } catch {}
     const agents = Object.values(O.readOrg().agents).filter((a) => a.status !== 'terminated').map((a) => ({
       id: a.id, name: a.name, title: a.title, runtime: a.runtime, status: a.status, why: a.pausedWhy ?? null, hiredBy: a.hiredBy,
+      level: lv[a.id]?.level ?? 1, xp: lv[a.id]?.xp ?? 0, nextXp: lv[a.id]?.next ?? 50,
       spent: O.spentThisMonth(a), budget: a.budgetUsd, lastBeat: a.lastBeat, every: a.heartbeatMin,
       next: (() => { try { return readyFor(a.id)[0]?.title ?? null; } catch { return null; } })(),
     }));

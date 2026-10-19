@@ -345,7 +345,7 @@ struct RightCard: View {
             } else if !bridge.org.isEmpty {
                 // Your company (ox org): each agent with its own character.
                 LazyVGrid(columns: cols, spacing: 4) {
-                    ForEach(bridge.org.prefix(4)) { a in OrgPill(agent: a) { bridge.orgCard = bridge.orgCard == a.id ? nil : a.id } }
+                    ForEach(bridge.org.prefix(4)) { a in OrgPill(agent: a, levelledUp: bridge.levelUps[a.id].map { Date().timeIntervalSince($0) < 60 } ?? false) { bridge.orgCard = bridge.orgCard == a.id ? nil : a.id } }
                 }
             } else if bridge.player.track != nil || bridge.day.weather != nil || bridge.day.event != nil || bridge.day.prs != nil || !bridge.meshMachines.isEmpty {
                 if let t = bridge.player.track { NowPlayingPill(player: bridge.player).help("\(t.title) · \(t.artist)") }
@@ -658,6 +658,7 @@ struct HomeButton: View {
 
 struct OrgPill: View {
     let agent: OxBridge.OrgAgent
+    var levelledUp = false
     let onTap: () -> Void
     @State private var hover = false
     var body: some View {
@@ -670,13 +671,22 @@ struct OrgPill: View {
                     PixelPersonView(person: OxBridge.character(for: "org:" + agent.id), pose: PixelPose(pose: agent.status == "active" ? "stand" : "think"), height: 20).padding(.leading, 8)
                     Spacer()
                 }
-                Text(agent.name).font(.system(size: 10, weight: .semibold)).foregroundStyle(hover ? c : HomeInk.dim).lineLimit(1).padding(.leading, 30).padding(.trailing, 8)
+                Text(agent.name).font(.system(size: 10, weight: .semibold)).foregroundStyle(hover ? c : HomeInk.dim).lineLimit(1).padding(.leading, 30).padding(.trailing, 30)
+                HStack {
+                    Spacer()
+                    Text(levelledUp ? "Lv↑\(agent.level)" : "Lv \(agent.level)")
+                        .font(.system(size: 8.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(levelledUp ? Color.black : HomeInk.faint)
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(Capsule().fill(levelledUp ? Color(hex: "#FBBF24") : Color.white.opacity(0.06)))
+                        .padding(.trailing, 7)
+                }
             }
             .frame(height: 28)
         }
         .buttonStyle(.plain)
         .onHover { h in withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) { hover = h } }
-        .help("\(agent.name) — \(agent.title) · \(agent.runtime) · \(agent.status)\(agent.budget.map { String(format: " · $%.2f of $%.0f this month", agent.spent, $0) } ?? "")")
+        .help("\(agent.name) — \(agent.title) · Lv \(agent.level) (\(agent.xp)/\(agent.nextXp) XP) · \(agent.runtime) · \(agent.status)\(agent.budget.map { String(format: " · $%.2f of $%.0f this month", agent.spent, $0) } ?? "")")
     }
 }
 

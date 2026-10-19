@@ -160,6 +160,10 @@ struct RecapView: View {
                 if let code = week["code"] as? [String: Any], let f = code["files"] as? Int, f > 0 {
                     stat("\(f)", T("files changed")).help("From git this week, in the folders ox's runs worked in: \(code["commits"] as? Int ?? 0) commits")
                     stat("+\(code["added"] as? Int ?? 0) −\(code["removed"] as? Int ?? 0)", T("lines"))
+                    if let share = code["aiShare"] as? Int {
+                        // Coucou's "Claude wrote 90% of your code": from the commits' authors and Co-authored-by lines.
+                        stat("\(share)%", T("written with AI")).help("\(code["aiCommits"] as? Int ?? 0) of \(code["commits"] as? Int ?? 0) commits this week name an AI as author or co-author")
+                    }
                 }
                 stat(top, T("most used"))
                 stat(waterText(), T("water (est.)")).help("Estimated data-centre cooling water for cloud models: ~18 mL per 1,000 tokens, from Li et al. 2023, \"Making AI Less Thirsty\" (about 0.5 L per 20–50 responses). Local models are not counted." + (waterByTool().isEmpty ? "" : "\nBy tool: " + waterByTool().map { "\($0.0) \(litres($0.1))" }.joined(separator: ", ")))

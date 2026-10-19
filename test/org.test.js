@@ -190,3 +190,24 @@ test('a team from one sentence: the chief drafts it, it is hired, and its group 
   assert.equal(O.group('content-code', o).messages.length, 3);
   await assert.rejects(O.draftTeam('x', { ask: async () => '{"agents":[{"name":"A","title":"B"}]}' }), /could not make a team/);
 });
+
+test('levels: XP from finished tasks and tool calls that went through (KODEMON)', () => {
+  const o = fresh();
+  O.hire({ name: 'Ada', title: 'Engineer', runtime: 'claude' }, o);
+  O.hire({ name: 'Bo', title: 'Writer', runtime: 'claude' }, o);
+  const audit = path.join(path.dirname(o.file), 'audit.jsonl');
+  const rows = [
+    ...Array.from({ length: 4 }, (_, i) => ({ ts: 't', ref: `r${i}`, agent: 'ada', tool: 'exec', decision: 'allow' })),
+    { ts: 't', ref: 'r9', agent: 'ada', tool: 'exec', decision: 'deny' },
+    { ts: 't', ref: 'r0', t: 'outcome', ok: true },
+  ];
+  fs.writeFileSync(audit, rows.map((r) => JSON.stringify(r)).join('\n'));
+  const tasks = [{ assignee: 'ada', status: 'done' }, { assignee: 'ada', status: 'done' }, { assignee: 'ada', status: 'running' }, { assignee: 'bo', status: 'failed' }];
+  const lv = O.levels({ ...o, tasks, auditFile: audit });
+  assert.deepEqual([lv.ada.tasks, lv.ada.calls, lv.ada.xp], [2, 4, 220], 'denied calls and unfinished tasks earn nothing');
+  assert.equal(lv.ada.level, 3);
+  assert.equal(lv.ada.next, 450);
+  assert.deepEqual([lv.bo.xp, lv.bo.level, lv.bo.next], [0, 1, 50]);
+  assert.deepEqual([1, 2, 3, 4].map(O.xpFor), [0, 50, 200, 450]);
+  assert.deepEqual([0, 49, 50, 199, 200].map(O.levelFor), [1, 1, 2, 2, 3]);
+});

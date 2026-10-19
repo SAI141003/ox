@@ -336,7 +336,11 @@ final class OxBridge: ObservableObject {
     struct OrgAgent: Identifiable, Equatable {
         let id: String; let name: String; let title: String; let runtime: String; let status: String
         let why: String?; let hiredBy: String; let spent: Double; let budget: Double?; let next: String?
+        /// KODEMON's levels, from real work: tasks finished and tool calls that went through (src/org.js levels()).
+        var level: Int = 1; var xp: Int = 0; var nextXp: Int = 50
     }
+    /// When each agent last levelled up: its pill shows "Lv↑" for a minute.
+    @Published private(set) var levelUps: [String: Date] = [:]
     @Published private(set) var org: [OrgAgent] = []
     private var orgPolledAt = Date.distantPast
     var proposedHire: OrgAgent? { org.first { $0.status == "proposed" } }
@@ -354,11 +358,19 @@ final class OxBridge: ObservableObject {
                 guard let id = r["id"] as? String else { return nil }
                 return OrgAgent(id: id, name: r["name"] as? String ?? id, title: r["title"] as? String ?? "", runtime: r["runtime"] as? String ?? "ox",
                                 status: r["status"] as? String ?? "active", why: r["why"] as? String, hiredBy: r["hiredBy"] as? String ?? "you",
-                                spent: r["spent"] as? Double ?? 0, budget: r["budget"] as? Double, next: r["next"] as? String)
+                                spent: r["spent"] as? Double ?? 0, budget: r["budget"] as? Double, next: r["next"] as? String,
+                                level: r["level"] as? Int ?? 1, xp: r["xp"] as? Int ?? 0, nextXp: r["nextXp"] as? Int ?? 50)
             }
             DispatchQueue.main.async {
                 let had = self?.proposedHire?.id
+                let before = Dictionary(uniqueKeysWithValues: (self?.org ?? []).map { ($0.id, $0.level) })
                 self?.org = list
+                // A level up is a small celebration: the island opens, a chime, "Lv↑" on the pill.
+                let ups = list.filter { a in before[a.id].map { a.level > $0 } ?? false }
+                if !ups.isEmpty {
+                    for a in ups { self?.levelUps[a.id] = Date(); IslandLog.write("level up: \(a.name) is now Lv \(a.level) (\(a.xp) XP)") }
+                    self?.peek(for: 6); IslandSound.play("glass")
+                }
                 // A hire waiting for you is a decision: the island opens for it.
                 if let p = self?.proposedHire, p.id != had { self?.peek(for: 8); IslandSound.play("pop") }
             }

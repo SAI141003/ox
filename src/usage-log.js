@@ -66,10 +66,17 @@ export function summarize({ days = 30, now = Date.now(), file = USAGE_FILE() } =
   };
 }
 
+// A commit an AI wrote or co-wrote: its author, or a Co-authored-by line,
+// names an AI coding tool (Coucou's "Claude wrote 90% of your code").
+export const AI_AUTHOR = /\b(claude|anthropic|copilot|cursor|codex|openai|chatgpt|gpt-\d|gemini|aider|devin|windsurf|codeium|jules|ox agent)\b|noreply@anthropic\.com|\[bot\]/i;
+
+const aiName = (m) => { const l = m.toLowerCase(); return l.includes('anthropic') || l === 'claude' ? 'Claude' : l === 'gpt' || l.startsWith('gpt-') || l === 'chatgpt' || l === 'openai' ? 'ChatGPT' : l.includes('[bot]') ? 'a bot' : l.replace(/^./, (c) => c.toUpperCase()); };
+
 /**
  * What changed in code over the window, from git, in the folders ox's runs
- * worked in: files changed, lines added and removed, commits. Older rows carry
- * only the folder's name: ~/<name> is tried for those.
+ * worked in: files changed, lines added and removed, commits, and how much of
+ * it an AI wrote (aiCommits, aiAdded). Older rows carry only the folder's
+ * name: ~/<name> is tried for those.
  */
 export function codeChanges({ days = 7, now = Date.now(), file = USAGE_FILE(), home = os.homedir(), git = null } = {}) {
   const rows = readUsage({ file, since: now - days * 86_400_000 });
@@ -80,23 +87,25 @@ export function codeChanges({ days = 7, now = Date.now(), file = USAGE_FILE(), h
   }
   const run = git ?? ((d, args) => { const x = spawnSync('git', ['-C', d, ...args], { encoding: 'utf8', timeout: 20_000, maxBuffer: 32 * 1024 * 1024 }); return x.status === 0 ? x.stdout : ''; });
   const files = new Set();
-  let added = 0, removed = 0, commits = 0;
+  let added = 0, removed = 0, commits = 0, aiCommits = 0, aiAdded = 0;
+  const aiBy = {};
   const projects = [];
   for (const d of dirs) {
-    const out = run(d, ['log', `--since=${days}.days`, '--numstat', '--format=@%H']);
-    let c = 0, a = 0, rm = 0;
+    // @<hash>\t<author name> <email>\t<co-authors>, then the numstat lines.
+    const out = run(d, ['log', `--since=${days}.days`, '--numstat', '--format=@%H%x09%an <%ae>%x09%(trailers:key=Co-authored-by,valueonly,separator=%x2C )']);
+    let c = 0, a = 0, rm = 0, ai = false;
     for (const line of out.split('\n')) {
-      if (line.startsWith('@')) { c++; continue; }
+      if (line.startsWith('@')) { c++; const who = AI_AUTHOR.exec(line.split('\t').slice(1).join(' ')); ai = !!who; if (ai) { aiCommits++; const n = aiName(who[0]); aiBy[n] = (aiBy[n] ?? 0) + 1; } continue; }
       const m = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(line);
       if (!m) continue;
-      if (m[1] !== '-') a += Number(m[1]);
+      if (m[1] !== '-') { a += Number(m[1]); if (ai) aiAdded += Number(m[1]); }
       if (m[2] !== '-') rm += Number(m[2]);
       files.add(`${d}/${m[3]}`);
     }
     commits += c; added += a; removed += rm;
     if (c) projects.push({ project: path.basename(d), commits: c, added: a, removed: rm });
   }
-  return { days, files: files.size, added, removed, commits, projects: projects.sort((x, y) => y.commits - x.commits) };
+  return { days, files: files.size, added, removed, commits, aiCommits, aiAdded, aiBy, aiShare: added ? Math.round((aiAdded / added) * 100) : null, projects: projects.sort((x, y) => y.commits - x.commits) };
 }
 
 // Wraps a run's event stream: feeds the ledger, writes one record when it ends.

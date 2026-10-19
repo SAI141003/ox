@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { osCmd } from './tools/operator.js';
+import { codeChanges as codeChangesSync } from './usage-log.js';
 
 // ---- arithmetic without eval: + - * / ^ % ( ) and "x% of y" ----
 
@@ -148,6 +149,10 @@ export function parseIntent(text) {
     const msg = m[2].trim().replace(/^./, (c) => c.toUpperCase()).replace(/[^.!?]$/, '$&.');
     return { intent: 'email', to: '', name: m[1], subject: '', body: `Hi ${m[1]},\n\n${msg}\n` };
   }
+  // Coucou's "am I a good developer?" ("Claude wrote 90% of your code. Rude."): from git, this week.
+  if (/^am i (?:a )?(?:good|great|bad|real) (?:developer|dev|programmer|coder|engineer)\??$|^how much of (?:my|the) code (?:did|does|has) (?:ai|claude|codex|copilot|cursor|the ai|an ai) (?:write|written)\??$|^who (?:wrote|writes) (?:my|the) code\??$/i.test(low)) {
+    return { intent: 'devcheck' };
+  }
   if (/^(?:check|read)?\s*(?:my )?(?:e-?mails?|mail|inbox)(?: for me)?$|^(?:do i have |any )?(?:new |unread )(?:e-?mails?|mail)\??$|^how many (?:unread |new )?(?:e-?mails?|mails?)(?: do i have)?\??$/i.test(low)) {
     return { intent: 'unread' };
   }
@@ -168,7 +173,8 @@ export function parseIntent(text) {
     return { intent: 'play', song: m[1].trim(), artist: (m[2] ?? '').trim(), app: /spotify/i.test(m[3] ?? '') ? 'Spotify' : m[3] ? 'Music' : '' };
   }
   // "what's on my to-do list today", "read my reminders", "what do I have today".
-  if (/^(?:can you |please )?(?:open |read |show |check )?(?:me )?(?:what(?:'s| is) on )?(?:my )?(?:to-?do(?: list)?|todos|tasks|task list|reminders)(?: (?:for )?today)?(?: and tell me.*)?\??$|^what (?:do i have|have i got|is on|'s on)(?: to do)?(?: for)? today\??$/i.test(low)) {
+  // "read my to-dos for today", "today's to-dos", "what are my to-dos", "tell me my tasks"…
+  if (/^(?:can you |could you |please )?(?:open |read |show |check |tell me |list |go through )?(?:me )?(?:what(?:'s| is| are) (?:on )?)?(?:my |today'?s )?(?:to-?dos?(?: list)?|todo list|tasks|task list|reminders)(?: (?:for |due )?today)?(?: and tell me.*)?\??$|^what (?:do i have|have i got|is on|'s on|are my (?:to-?dos?|tasks))(?: to do)?(?: for)?(?: today)?\??$/i.test(low)) {
     return { intent: 'todos' };
   }
   if (/^(?:previous|last|go back)(?: the)?(?: song| track)$/i.test(low)) return { intent: 'music', command: 'previous track' };
@@ -261,10 +267,34 @@ function music(command) {
 function appInstalled(name) {
   return ['/Applications', '/System/Applications', path.join(os.homedir(), 'Applications')].some((d) => fs.existsSync(path.join(d, `${name}.app`)));
 }
+// The best-known recording of a song when no artist was said ("Billie Jean" →
+// Michael Jackson), from Apple's free iTunes search (no key; under a second).
+// Offline or no answer: the song name alone.
+export function knownArtist(song, { fetchSync = null } = {}) {
+  const get = fetchSync ?? ((url) => { const r = spawnSync('curl', ['-s', '--max-time', '2.5', url], { encoding: 'utf8', timeout: 4000 }); return r.status === 0 ? r.stdout : ''; });
+  try {
+    const j = JSON.parse(get(`https://itunes.apple.com/search?media=music&entity=song&limit=25&term=${encodeURIComponent(song)}`) || '{}');
+    const norm = (t) => String(t ?? '').toLowerCase().replace(/\s*[([].*?[)\]]\s*/g, ' ').replace(/\s+-\s+.*$/, '').trim();
+    const want = norm(song);
+    const exact = (j.results ?? []).filter((x) => norm(x.trackName) === want);
+    // The original is the one released most (single, album, deluxe…); a cover appears once.
+    const count = new Map();
+    for (const x of exact) count.set(x.artistName, (count.get(x.artistName) ?? 0) + 1);
+    const best = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    return best ?? (j.results ?? [])[0]?.artistName ?? '';
+  } catch { return ''; }
+}
+
+const running = (name) => spawnSync('pgrep', ['-x', name], { encoding: 'utf8' }).status === 0;
+
 function playSong({ song, artist = '', app = '' }) {
   if (process.platform !== 'darwin') return { ok: false, err: 'playing a song by name is macOS only for now' };
+  // Which player: the one you asked for; else Spotify when it is open (or Music is not):
+  // searching the Music library first launched Music and took 20 s before Spotify was even tried.
+  const spotifyFirst = app === 'Spotify' || (app !== 'Music' && appInstalled('Spotify') && (running('Spotify') || !running('Music')));
+  if (!artist && spotifyFirst) artist = knownArtist(song);
   const label = artist ? `${song} by ${artist}` : song;
-  if (app !== 'Spotify') {
+  if (!spotifyFirst && app !== 'Spotify') {
     const script = [
       'on run argv',
       'set s to item 1 of argv',
@@ -291,7 +321,7 @@ function playSong({ song, artist = '', app = '' }) {
     // "play" to start (checked on this Mac: Billie Jean, playing).
     const script = ['on run argv', 'tell application "Spotify"', 'play track (item 1 of argv)', 'delay 1.5', 'play', 'delay 0.5',
       'return (player state as text) & tab & (name of current track) & tab & (artist of current track)', 'end tell', 'end run'];
-    const r = spawnSync('osascript', [...script.flatMap((l) => ['-e', l]), `spotify:search:${encodeURIComponent(label)}`], { encoding: 'utf8', timeout: 30000 });
+    const r = spawnSync('osascript', [...script.flatMap((l) => ['-e', l]), `spotify:search:${encodeURIComponent(artist ? `${song} ${artist}` : song)}`], { encoding: 'utf8', timeout: 30000 });
     const [state, name, by] = String(r.stdout ?? '').trim().split('\t');
     if (r.status === 0 && state === 'playing' && name) return { ok: true, message: `playing ${name} by ${by} on Spotify` };
     return { ok: false, err: r.status === 0 ? `Spotify found ${name || 'nothing'} but did not start playing` : `Spotify did not answer: ${String(r.stderr).trim().slice(0, 120)}` };
@@ -376,6 +406,20 @@ function setVolume({ level, delta }) {
 const fmt = (n) => (Number.isInteger(n) ? n.toLocaleString() : String(n));
 
 // Carry out one parsed intent. Returns { ok, message }.
+const devCache = { at: 0, v: null };
+
+// The answer, with the real numbers and a little cheek.
+export function devCheck(code) {
+  if (!code || !code.commits) return "I can't tell yet: no commits this week in the folders ox worked in. Ship something and ask me again.";
+  const top = Object.entries(code.aiBy ?? {}).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'AI';
+  const share = code.aiShare ?? Math.round((code.aiCommits / code.commits) * 100);
+  const facts = `${code.aiCommits} of your ${code.commits} commits this week name ${top}`;
+  if (share >= 80) return `Hmm… ${top} wrote ${share}% of your code. ${facts}. You're an excellent reviewer, though.`;
+  if (share >= 40) return `A real team effort: ${share}% of your code came from ${top}. ${facts}.`;
+  if (share > 0) return `Yes. ${100 - share}% of this week's code is yours; ${top} helped with ${share}%. ${facts}.`;
+  return `All you: ${code.commits} commits this week and none of them name an AI.`;
+}
+
 export function perform(it) {
   switch (it.intent) {
     case 'calc': return { ok: true, message: `${it.expr} = ${fmt(it.value)}` };
@@ -387,6 +431,11 @@ export function perform(it) {
       return { ok: true, message: `timer set: ${mins} — "${it.label}"` };
     }
     case 'note': { const r = addNote(it.text); return { ok: r.ok, message: `noted in ${r.where}` }; }
+    case 'devcheck': {
+      // git log over a week takes seconds: kept 10 minutes, like the recap's.
+      if (!devCache.v || Date.now() - devCache.at > 600_000) devCache.v = codeChangesSync({ days: 7 }), devCache.at = Date.now();
+      return { ok: true, message: devCheck(devCache.v) };
+    }
     case 'task': { const r = addTask(it.text); return { ok: r.ok, message: `added to ${r.where}: ${it.text}` }; }
     case 'email': {
       const r = openWith(mailtoUrl(it));

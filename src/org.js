@@ -22,7 +22,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { readyTasks, claimTask, completeTask, taskBrief, addSpend } from './tasks.js';
+import { readyTasks, claimTask, completeTask, taskBrief, addSpend, listTasks } from './tasks.js';
 import { readUsage } from './usage-log.js';
 
 const OX_HOME = () => process.env.OX_HOME || path.join(os.homedir(), '.ox');
@@ -440,6 +440,36 @@ export function timeline({ limit = 100, since = 0, auditFile = null, ...opts } =
   } catch {}
   const all = [...items, ...rows].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   return { items: all.slice(0, limit), irreversible: all.filter((x) => x.irreversible).length, denied: all.filter((x) => x.denied).length };
+}
+
+// ---- levels (KODEMON's creatures that level up, from real work) -------------------
+// XP: 100 for each task the agent finished on the board, 5 for each tool call it
+// made that was not stopped. Level n needs 50·(n−1)² XP: Lv 2 at 50, Lv 3 at 200,
+// Lv 4 at 450, Lv 5 at 800, so early levels come fast and later ones take work.
+export const XP_TASK = 100;
+export const XP_CALL = 5;
+export const levelFor = (xp) => Math.floor(Math.sqrt(Math.max(0, xp) / 50)) + 1;
+export const xpFor = (level) => 50 * (level - 1) ** 2;
+
+/** { id: { xp, level, tasks, calls, next } } for every agent, from the task board and the audit log. */
+export function levels({ tasks = null, auditFile = null, ...opts } = {}) {
+  const org = readOrg(opts);
+  const out = {};
+  for (const a of Object.values(org.agents)) out[a.id] = { xp: 0, level: 1, tasks: 0, calls: 0, next: xpFor(2) };
+  let all = tasks;
+  if (!all) { try { all = listTasks(opts.tasks ?? {}); } catch { all = []; } }
+  for (const t of all ?? []) {
+    const who = out[t.assignee] ? t.assignee : Object.keys(out).find((id) => slug(id) === t.assignee);
+    if (who && t.status === 'done') out[who].tasks++;
+  }
+  try {
+    const f = auditFile ?? path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'audit.jsonl');
+    for (const l of fs.readFileSync(f, 'utf8').trim().split('\n')) {
+      try { const r = JSON.parse(l); if (r.agent && out[r.agent] && r.decision !== 'deny' && r.t !== 'outcome') out[r.agent].calls++; } catch {}
+    }
+  } catch {}
+  for (const v of Object.values(out)) { v.xp = v.tasks * XP_TASK + v.calls * XP_CALL; v.level = levelFor(v.xp); v.next = xpFor(v.level + 1); }
+  return out;
 }
 
 /** Agents whose heartbeat interval has passed (active, with an interval). */

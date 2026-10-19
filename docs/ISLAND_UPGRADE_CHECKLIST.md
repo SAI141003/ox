@@ -122,11 +122,11 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | F2.7 Vovy | ✓ | code; **new:** click and type for apps |
 | F2.8 Mission map, sessions canvas | ✓ | code: both pages in src/web/chat.html |
 | F2.9 Claudex | ✓ | C1–C4 |
-| F3.1 KODEMON | — | idea |
+| F3.1 KODEMON | ~ | **new:** `ox org` agents earn XP from real work (100 per finished task, 5 per tool call not stopped) and level up (Lv 2 at 50 XP, Lv 3 at 200…); a Lv badge on each agent's pill in the notch, "Lv↑" with a chime when one levels up (test: org; the badge not seen live: no org agents on this Mac). Fights and capture not built: a game with no job in ox |
 | F3.3 Environment recipe | ✓ | test: dev-flow (`.ox/environment.yml`) |
 | F3.4 Calendar and weather | ✓ | code: day strip (src/serve.js) |
 | F3.5 Interactive breakdowns | ~ | E3 |
-| F3.6 Stripe pill | — | left out by the owner's choice (not open source); email draft ✓ |
+| F3.6 Stripe pill | — | left out by the owner's choice (not open source); email draft ✓. **New:** "Am I a good developer?" answers from git with the real share ("Hmm… Claude wrote 100% of your code. 224 of your 225 commits this week name Claude. You're an excellent reviewer, though."): live through the island's voice route; the recap shows "% written with AI" (tests: offline, usage-log) |
 | F3.8 Machines in sync | ✓ | test: mesh; a real two-laptop test needs the second laptop |
 | F3.10 Agents gallery | ✓ | code: Favorite / I use this (src/web/chat.html) |
 
