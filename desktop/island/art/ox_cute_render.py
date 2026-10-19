@@ -436,10 +436,16 @@ FRIENDS = {
     "dot":  {"coat": "#FAFAF7", "patch": "#2A2A2E", "cut": 0.5,  "scarf": "#7C5CFF", "horns": 0.0, "wool": False, "head": 1.45},
     "pebble": {"coat": "#FAFAF7", "patch": "#2A2A2E", "cut": 0.66, "scarf": "#FF5A4E", "horns": 0.55, "wool": False, "head": 1.45},
     "puff": {"coat": "#FBFAF6", "patch": "#FBFAF6", "cut": 2.0,  "scarf": "#2EC4A0", "horns": 0.0, "wool": True, "head": 1.4, "face": "#2A2A2E"},
+    # Maple the pony (the messenger): chestnut, a darker mane-coloured back, no horns, taller and slimmer.
+    "maple": {"coat": "#A5643A", "patch": "#4A2A18", "cut": 0.62, "scarf": "#F5C542", "horns": 0.0, "wool": False, "head": 1.35, "face": "#8A5130", "shape": (0.86, 1.0, 1.16)},
 }
 if FRIEND in FRIENDS:
     F = FRIENDS[FRIEND]
     HEAD = F["head"]
+    # A different build on the same rig (Maple: taller and slimmer); the walk cycles stay intact.
+    if F.get("shape"):
+        sx, sy, sz = F["shape"]
+        arm.scale = (arm.scale[0] * sx, arm.scale[1] * sy, arm.scale[2] * sz)
     for m in bpy.data.materials:
         base = m.name.split(".")[0]
         if not m.use_nodes:

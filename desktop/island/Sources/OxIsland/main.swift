@@ -114,6 +114,43 @@ if let i = CommandLine.arguments.firstIndex(of: "--check-speech"), i + 1 < Comma
 
 // Check: `OxIsland --check-commands` runs the island's own command matching on
 // real phrases (the ones in the owner's videos included) and exits 1 on any miss.
+// Check: `OxIsland --check-herd` runs the meadow through the script (docs/HERD_SCRIPT.md) on a fake clock.
+if CommandLine.arguments.contains("--check-herd") {
+    let herd = Herd.shared
+    var t = 1000.0
+    var fails = 0
+    func run(_ secs: Double, _ w: Herd.World) { for _ in 0..<Int(secs * 12) { t += 1.0 / 12; herd.react(w, now: t, away: []); herd.step(now: t, away: []) } }
+    func expect(_ ok: Bool, _ what: String) { print("\(ok ? "✓" : "✗") \(what)"); if !ok { fails += 1 } }
+    run(30, .init())
+    expect(herd.members.allSatisfy { $0.x >= 0.03 && $0.x <= 0.97 }, "a quiet half minute: everyone stays in the meadow")
+    run(0.2, .init(done: true))
+    expect(herd.members.filter { $0.act == .hop }.count >= 5, "a run finishes: everyone hops")
+    run(5, .init())
+    run(0.2, .init(news: "2 unread mail"))
+    let maple = { herd.members.first { $0.id == "maple" }! }
+    expect(maple().act == .deliver && maple().x < 0.1, "news: Maple gallops in from the left")
+    run(4, .init(news: "2 unread mail"))
+    expect(maple().act == .stand && abs(maple().x - 0.45) < 0.05 && maple().bubble == "2 unread mail", "Maple stops at the front with the note")
+    run(1, .init())
+    run(0.2, .init(waiting: true))
+    expect(herd.members.filter { $0.act == .look }.count >= 5, "a question waits: the herd looks toward you")
+    run(6, .init())
+    run(0.2, .init(rain: true))
+    run(15, .init(rain: true))
+    let sheltered = herd.members.filter { m in Herd.shelter.contains { abs($0 - m.x) < 0.12 } }.count
+    expect(sheltered >= 4, "rain: they gather under the trees (\(sheltered) of \(herd.members.count))")
+    if sheltered < 4 { print("   " + herd.members.map { "\($0.id) x=\(String(format: "%.2f", $0.x)) \($0.act)" }.joined(separator: ", ")) }
+    run(1, .init())
+    run(0.2, .init(night: true))
+    run(5, .init(night: true))
+    expect(herd.members.allSatisfy { $0.act == .nap }, "night: everyone dozes")
+    run(25, .init(music: true))
+    var bobbed = 0
+    for _ in 0..<60 { run(1.0 / 12, .init(music: true)); bobbed = max(bobbed, herd.members.filter { $0.act == .stand || $0.act == .hop }.count) }
+    expect(bobbed >= 3, "music: they bob and hop (\(bobbed) at once)")
+    print(fails == 0 ? "the meadow follows the script" : "\(fails) scene(s) off script")
+    exit(fails == 0 ? 0 : 1)
+}
 // Check: `OxIsland --check-l10n` prints the island's words in every language and any gaps.
 if CommandLine.arguments.contains("--check-l10n") {
     var gaps = 0
