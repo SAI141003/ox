@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -343,8 +343,14 @@ export function slashHelp(arg = '') {
     row('/ui', 'redraw the last canvas; type 1, 2… to press its buttons'),
     row('/island on|off', 'the notch island'),
     row('/exit', 'save and leave'),
+    c.bold('ox tools'),
+    row('/browse "<goal>"', 'the fast browser does a task on a website'),
+    row('/studio · /create', 'images, video and sound with open models'),
+    row('/theme "<look>"', 'restyle the app from a sentence'),
+    row('/library · /research', 'your saved reading; what the web says'),
+    row('/pr · /org · /mesh', 'pull requests, your agent company, your machines'),
     '',
-    c.dim('/help all for everything · /help <word> to search (e.g. /help schedule)'),
+    c.dim('/commands for every ox command · /help all for everything · /help <word> to search'),
   ].join('\n');
 }
 
@@ -531,6 +537,7 @@ function usageAll() {
     '  ox skill from <book.pdf|folder>   a book or docs → a skill: an index plus chapters read only when needed',
     '',
     'library: ox library [add <url|pdf> | read | ask <id> "q" | search]   saved articles and PDFs; highlight and ask in the app',
+    'commands: ox commands [list | install [--claude] [--codex] [--cursor] | uninstall]   every ox command as /name, here and inside Claude Code, Codex, Cursor',
     'theme: ox theme ["<look>" | list | use <name> | reset]   restyle the app from a sentence (neumorphic, glass, paper, terminal, contrast…)',
     'browse: ox browse "<goal>" [--url <page>] [--show] [--model <id>]   the fast browser: one goal, a checked finish, asks before buy/pay/send',
     'studio: ox studio [models [kind] | recipes [name] | connect | mcp]   open image and video models for any agent (Claude, Codex, Cursor)',
@@ -4700,6 +4707,27 @@ async function runSubcommand(cmd, args) {
       } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
       return;
     }
+    case 'commands': {
+      // ox's commands as slash commands everywhere (src/slash-catalog.js).
+      const S = await import('./slash-catalog.js');
+      const sub = args[0] ?? 'list';
+      if (sub === 'install') {
+        const only = ['claude', 'codex', 'cursor'].filter((t) => args.includes(`--${t}`));
+        const bin = (() => { try { return execFileSync('which', ['ox'], { encoding: 'utf8' }).trim() ? 'ox' : null; } catch { return null; } })() ?? `${process.execPath} ${path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js')}`;
+        const done = S.install({ only: only.length ? only : null, bin });
+        if (!done.length) { console.log(c.yellow('none of Claude Code, Codex or Cursor is installed here')); return; }
+        for (const d of done) console.log(`${c.green('✓')} ${c.bold(d.tool)}: ${d.files} files · try ${d.invoke} "…"${d.tool !== 'Cursor' ? ' · and the ox skill, so it uses ox commands on its own' : ''}`);
+        console.log(c.dim('ox commands uninstall removes exactly these files'));
+        return;
+      }
+      if (sub === 'uninstall') { console.log(`removed ${S.uninstall()} files`); return; }
+      let group = '';
+      for (const x of S.COMMANDS) {
+        if (x.group !== group) { group = x.group; console.log(c.bold(group)); }
+        console.log(`  ${x.usage.padEnd(70).slice(0, 70)} ${c.dim(x.what)}`);
+      }
+      return;
+    }
     case 'theme': {
       // Restyle ox from a sentence (src/ui-theme.js); the open app picks it up in seconds.
       const T = await import('./ui-theme.js');
@@ -8607,14 +8635,19 @@ async function replWithBudget(config, opts, flags, budget) {
         return;
       }
       case '/commands': {
+        if (rest) { await runSubcommand('commands', rest.split(/\s+/)); return; }
+        const S = await import('./slash-catalog.js');
+        let group = '';
+        for (const x of S.COMMANDS) {
+          if (x.group !== group) { group = x.group; console.log(c.bold(group)); }
+          console.log(`  ${x.usage.split(' ')[0].padEnd(13)}${c.dim(x.what)}`);
+        }
         const all = [...listCustomCommands({ cwd: config.cwd }).entries()];
-        if (!all.length) {
-          console.log(c.dim('no custom commands — add .claude/commands/<name>.md or install a plugin (ox plugin add)'));
-          return;
+        if (all.length) {
+          console.log(c.bold('Yours (.claude/commands, plugins)'));
+          for (const [name, meta] of all.sort(([a], [b]) => a.localeCompare(b))) console.log(`  /${name}  ${c.dim(meta.source)}`);
         }
-        for (const [name, meta] of all.sort(([a], [b]) => a.localeCompare(b))) {
-          console.log(`  /${name}  ${c.dim(meta.source)}`);
-        }
+        console.log(c.dim('\n/<command> --help for its options · /commands install puts them in Claude Code and Codex too'));
         return;
       }
       case '/self-improve': {
@@ -8628,6 +8661,13 @@ async function replWithBudget(config, opts, flags, budget) {
         if (custom) {
           console.log(c.dim(`· /${cmd.slice(1)} (${custom.source})`));
           await runTurn(await expandLlmsRefs(expandContextRefs(expandCommand(custom.file, rest), config.cwd)));
+          return;
+        }
+        // Every ox command works here too: /browse, /studio, /theme, /library… (src/slash-catalog.js)
+        const ox = (await import('./slash-catalog.js')).parse(rawLine);
+        if (ox) {
+          try { await runSubcommand(ox.cmd.name, ox.args); } catch (e) { console.log(c.red(`✗ ${e?.message ?? e}`)); }
+          process.exitCode = 0;
           return;
         }
         console.log(c.dim(`unknown command '${cmd}' — try /help or /commands`));

@@ -358,6 +358,14 @@
   #optimize.busy { animation: pulse 1s infinite; }
   .attached .ph { padding: 0; overflow: hidden; } .attached .ph img { width: 44px; height: 44px; object-fit: cover; display: block; border-radius: 8px; }
   .u-photos { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; } .u-photos img { width: 120px; height: 90px; object-fit: cover; border-radius: 10px; display: block; }
+  .slash-menu { position: absolute; bottom: calc(100% - 6px); left: 50%; transform: translateX(-50%); width: min(var(--tw), calc(100% - 44px)); max-height: 320px; overflow-y: auto; background: var(--panel); border: 1px solid var(--line2); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.28); padding: 6px; z-index: 30; display: none; }
+  .slash-menu.on { display: block; }
+  .slash-menu .grp { font-size: 11px; color: var(--dim); padding: 6px 10px 2px; letter-spacing: .02em; }
+  .slash-menu button { display: flex; align-items: baseline; gap: 12px; width: 100%; text-align: left; padding: 7px 10px; border-radius: 8px; color: var(--text); font-size: 13.5px; }
+  .slash-menu button .n { font: 13px var(--mono); min-width: 96px; }
+  .slash-menu button .w { color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .slash-menu button .s { color: var(--dim); font-size: 11.5px; }
+  .slash-menu button.on, .slash-menu button:hover { background: var(--sel); }
   .cbox { max-width: var(--tw); margin: 0 auto; border: 1px solid var(--line2); border-radius: 16px; background: var(--panel); overflow: hidden; }
   .cbox:focus-within { border-color: var(--muted); }
   .cfoot { display: flex; align-items: center; gap: 12px; max-width: var(--tw); margin: 7px auto 0; padding: 0 6px; font-size: 11.5px; color: var(--dim); min-width: 0; }
@@ -638,6 +646,7 @@
     <section class="view on" id="v-chat">
       <div class="thread" id="thread"><div class="inner" id="inner"></div></div>
       <div class="composer">
+        <div class="slash-menu" id="slash-menu" role="listbox" aria-label="ox commands"></div>
         <div class="cbox">
           <div class="attached" id="attached"></div>
           <textarea id="input" rows="1" placeholder="Describe what you need" aria-label="Message"></textarea>
@@ -1500,6 +1509,7 @@
     if (readonly) return;
     const files = takeAttachments();
     const pics = takePhotos();
+    if (!files && !pics.length && /^\/[\w-]+/.test(input.value.trim()) && await runSlash(input.value.trim())) return;
     const text = (input.value.trim() || (files ? 'Here are the files:' : pics.length ? 'What is in this photo?' : '')) + files;
     if (!text) return;
     if (!convo()) newConvo();
@@ -1627,8 +1637,68 @@
     if (!busy) $('send').disabled = !t.value.trim() && !attachments.length;
   }
   $('input').addEventListener('input', resize);
+  // "/" opens ox's commands (src/slash-catalog.js): type to filter, ↑↓ to pick, Tab or Enter to take one.
+  let slashCmds = null, slashPick = 0, slashShown = [];
+  async function slashList() {
+    if (!slashCmds) { try { slashCmds = (await getJson('/ox/commands')).commands ?? []; } catch { slashCmds = []; } }
+    return slashCmds;
+  }
+  async function slashUpdate() {
+    const v = $('input').value, menu = $('slash-menu');
+    const m = /^\/([\w-]*)$/.exec(v);
+    if (!m) { menu.classList.remove('on'); slashShown = []; return; }
+    const q = m[1].toLowerCase(), all = await slashList();
+    slashShown = [...all.filter((c) => c.name.startsWith(q)), ...all.filter((c) => !c.name.startsWith(q) && (c.name.includes(q) || (q.length >= 3 && new RegExp(`\\b${q}`).test(c.what.toLowerCase()))))];
+    if (!slashShown.length) { menu.classList.remove('on'); return; }
+    slashPick = Math.min(slashPick, slashShown.length - 1);
+    let grp = '';
+    menu.innerHTML = slashShown.map((c, i) => `${!q && c.group !== grp ? `<div class="grp">${esc(grp = c.group)}</div>` : ''}<button type="button" role="option" data-i="${i}" class="${i === slashPick ? 'on' : ''}" aria-selected="${i === slashPick}"><span class="n">/${esc(c.name)}</span><span class="w">${esc(c.what)}</span>${c.app ? '' : '<span class="s">in a session</span>'}</button>`).join('');
+    menu.classList.add('on');
+    menu.querySelector('button.on')?.scrollIntoView({ block: 'nearest' });
+    menu.querySelectorAll('button').forEach((b) => { b.onmousedown = (e) => { e.preventDefault(); slashTake(+b.dataset.i); }; });
+  }
+  function slashTake(i) {
+    const c = slashShown[i];
+    if (!c) return;
+    $('input').value = `/${c.name} `;
+    $('slash-menu').classList.remove('on');
+    $('input').focus(); resize();
+    const hint = c.usage.replace(/^\/\S+\s*/, '');
+    if (hint) $('input').placeholder = hint;
+  }
+  $('input').addEventListener('input', () => { slashPick = 0; slashUpdate(); if (!$('input').value) $('input').placeholder = 'Describe what you need'; });
+  $('input').addEventListener('blur', () => setTimeout(() => $('slash-menu').classList.remove('on'), 120));
+  // A typed ox command: the quick ones run here and show their output; the rest go to ox as a request.
+  async function runSlash(text) {
+    const cmds = await slashList();
+    const m = /^\/([\w-]+)/.exec(text);
+    const cmd = m && cmds.find((c) => c.name === m[1].toLowerCase());
+    if (!cmd) return false;
+    if (!cmd.app) { $('input').value = `Use the ox command for this: ox ${text.slice(1)}`; return false; }
+    if (!convo()) newConvo();
+    const c = convo();
+    if (!c.messages.length) c.title = text.slice(0, 60);
+    c.messages.push({ role: 'user', content: text });
+    const reply = { role: 'assistant', content: `Running \`ox ${cmd.name}\`…`, tools: [] };
+    c.messages.push(reply);
+    $('input').value = ''; $('input').placeholder = 'Describe what you need'; resize();
+    saveConvos(); renderChat(); renderLists();
+    try {
+      const r = await api('/ox/commands/run', { method: 'POST', body: JSON.stringify({ line: text, cwd: c.cwd || undefined }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) reply.content = plainDash(j?.error?.message || `HTTP ${r.status}`);
+      else reply.content = `\`ox ${cmd.name}\`${j.code ? ` stopped (exit ${j.code})` : ''}\n\n\`\`\`\n${(j.out || '(nothing printed)').slice(0, 20000)}\n\`\`\``;
+    } catch (e) { reply.content = String(e?.message ?? e); }
+    c.updated = Date.now(); saveConvos(); renderChat(); renderLists();
+    return true;
+  }
   $('input').addEventListener('keydown', (e) => {
     if (e.isComposing) return;
+    if ($('slash-menu').classList.contains('on')) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); slashPick = (slashPick + (e.key === 'ArrowDown' ? 1 : -1) + slashShown.length) % slashShown.length; slashUpdate(); return; }
+      if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); slashTake(slashPick); return; }
+      if (e.key === 'Escape') { e.preventDefault(); $('slash-menu').classList.remove('on'); return; }
+    }
     const mod = e.metaKey || e.ctrlKey;
     if (e.key === 'Enter' && ((prefs.sendKey === 'enter' && !e.shiftKey && !mod) || (prefs.sendKey === 'mod' && mod))) { e.preventDefault(); send(); return; }
     if (e.key === 'ArrowUp' && !$('input').value) {
