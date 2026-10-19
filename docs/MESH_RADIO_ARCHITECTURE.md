@@ -10,8 +10,12 @@ control. This builds on `docs/MESH_DESIGN.md` (the mesh as it is) and
 
 Any of the owner's machines can see, ask and direct the others, and think with
 open models, whether the link between them is the internet, a router with no
-internet, a cable, the machines' own Wi-Fi radios, Bluetooth, long-range Wi-Fi
-or a LoRa radio a few kilometres away, and the owner never has to know which.
+internet, a cable, the machines' own Wi-Fi radios, Bluetooth or even sound
+from their speakers, and the owner never has to know which.
+
+**Owner rule: nothing is bought.** Every link uses hardware the machines
+already have (Wi-Fi and Bluetooth radios, speakers and microphones, ports)
+and every piece of software is open source and free.
 
 ## 2. Principles (each one from the research)
 
@@ -61,20 +65,25 @@ or a LoRa radio a few kilometres away, and the owner never has to know which.
 | Apple peer-to-peer Wi-Fi (AWDL) | every Mac, iPhone, iPad | ~a room to tens of metres | tens of MB/s | macOS: Network.framework with `includePeerToPeer`; Linux: OWL, an open AWDL implementation (Stute et al.), used by OpenDrop |
 | Wi-Fi Aware (NAN) | iPhone/iPad on iOS 26 | tens of metres | high | not on macOS (Apple DTS, Developer Forums); the phone becomes a controller |
 | Ad hoc Wi-Fi / 802.11s mesh | most Wi-Fi cards (macOS: legacy "Create Network"; Linux: 802.11s) | tens of metres per hop | high | multi-hop with batman-adv or Babel; no encryption of its own (batman-adv) |
-| Wi-Fi HaLow (802.11ah) | a sub-GHz adapter (e.g. Morse Micro based) | 1–3 km typical; 15.9 km in a vendor test | up to 32.5 Mb/s; 2 Mb/s at 15.9 km | licence-free sub-GHz bands, which vary by region |
+| Phone hotspot with no data plan | the owner's phone | building | tens of Mb/s | a local network even with no internet; works today |
 | Bluetooth LE (L2CAP channels) | every Mac | 10–30 m | about 36–100 KB/s measured by developers | control and interactive only |
-| LoRa (Meshtastic node or RNode) | a USB/BLE radio, about $25–40 each | 2–10 km open ground; multi-hop | 0.25–27 kb/s, duty-cycle limited | control only; AES-256-CTR per channel (Meshtastic) or Reticulum's own encryption |
+| Sound (near-ultrasonic data) | every machine's speaker and microphone | about 1 m | 8–16 bytes/s (ggwave, MIT; FSK with Reed-Solomon, ultrasonic mode from 15 kHz) | the last resort when every radio is off or blocked: tiny commands only (stop, approve, "are you there") |
+
+**Not used (they need hardware to buy):** Wi-Fi HaLow adapters (1–3 km, a
+vendor test reached 15.9 km at 2 Mb/s) and LoRa radios (2–10 km, 0.25–27
+kb/s). The design keeps a slot for them (any link is just an adapter), but
+the owner's rule is to buy nothing, so the plan below never needs them.
 
 ### L1: link adapters
 
 Each link is one small adapter with the same five calls: `discover()` (who is
 reachable, as rotating tokens, never raw ids), `send(frame)`, `mtu`, `rate`
 (measured), `cost` (battery, duty cycle, money). The adapters for cable and
-Wi-Fi LAN exist (ox mesh uses TCP + a UDP announcement). The new adapters:
-AWDL (a Swift helper inside OX Island, which already holds the right macOS
-permissions with its stable signature), BLE (CoreBluetooth L2CAP, same
-helper), HaLow (just IP once the adapter is up), LoRa (a Meshtastic or RNode
-radio over USB serial).
+Wi-Fi LAN exist (ox mesh uses TCP + a UDP announcement). The new adapters,
+all on hardware the machines have: AWDL (a Swift helper inside OX Island,
+which already holds the right macOS permissions with its stable signature),
+BLE (CoreBluetooth L2CAP, same helper) and sound (ggwave through the speaker
+and microphone; the island already has the microphone permission).
 
 ### L2: overlay routing
 
@@ -85,11 +94,10 @@ radio over USB serial).
   one layer does not expose anything. Alternatives with the same role:
   **Babel** (RFC 8966) or **batman-adv** (layer 2, adapts in a couple of
   seconds, no encryption of its own) for a multi-hop Wi-Fi mesh.
-- **Slow links** (LoRa, serial, packet radio): **Reticulum**, a non-IP,
-  self-configuring, encrypted, multi-hop stack built for exactly these links,
-  with RNode as its open LoRa radio. Its licence is its own ("Reticulum
-  License", with restrictions), so ox talks to it as a separate program
-  rather than copying its code.
+- **Slow links** (Bluetooth, sound): ox's own bundles directly, no IP. (If
+  radios were ever added, **Reticulum** is the open stack built for slow,
+  non-IP links; its licence is its own, so ox would run it as a separate
+  program.)
 
 ### L3: the ox mesh core (what ox adds)
 
@@ -146,9 +154,10 @@ over any link, including LoRa, because it is a few bytes.
 
 ## 4. What travels where
 
-| Class | Example | LoRa | BLE | AWDL / HaLow / LAN / cable |
+| Class | Example | Sound | BLE | AWDL / LAN / hotspot / cable |
 |---|---|---|---|---|
-| control (≤ 200 B) | status, stop, approve, "run task 12", an alert | ✓ | ✓ | ✓ |
+| tiny (≤ 48 B) | stop, approve, "are you there" | ✓ (10–15 s with its seal and signature) | ✓ | ✓ |
+| control (≤ 200 B) | status, "run task 12", an alert | ✗ | ✓ | ✓ |
 | interactive (KB) | a reply, a log tail, a diff summary | ✗ | ✓ | ✓ |
 | bulk (MB+) | files, models, screenshots, model streams | ✗ | ✗ | ✓ |
 
@@ -161,19 +170,22 @@ over any link, including LoRa, because it is a few bytes.
    inference).
 3. **Macs in different rooms, Wi-Fi off.** BLE carries control and short
    replies; anything bulky waits in the queue for a better link.
-4. **Machines kilometres apart.** HaLow carries everything at a few Mb/s;
-   without it, LoRa carries control only (status, stop, approve), and each
-   machine thinks with its own model.
+4. **Every radio off or blocked, machines side by side.** Sound carries the
+   tiny commands (stop, approve, "are you there") from speaker to microphone;
+   each machine thinks with its own model and the rest waits in the queue.
+5. **Machines far apart with no internet.** No link without buying a radio,
+   so each machine works alone with its own model and its copy of the shared
+   state, and everything merges the moment any link returns (the CRDTs and the
+   queue are built for exactly this).
 
 ## 6. Rules that are not ox's to bend
 
+- **Only the machines' own, already-certified radios** (Wi-Fi, Bluetooth) are
+  used, within their normal limits; ox never changes a radio's power or band.
 - **Amateur (ham) bands forbid encryption that hides meaning** (US 47 CFR
-  §97.113(a)(4); ITU RR 25.2A). ox never uses ham bands for its encrypted
-  control; LoRa and HaLow run in licence-free ISM bands instead.
-- **ISM limits:** each region sets its own bands, power and duty cycle (e.g.
-  1 % on EU 868 MHz); the LoRa adapter reads the radio's region and keeps to it.
-- **Meshtastic's default channel uses a publicly known key**; ox always sets
-  its own channel key and never bridges to MQTT unencrypted.
+  §97.113(a)(4); ITU RR 25.2A), one more reason ox never uses them.
+- **Sound** is kept quiet and short (near-ultrasonic, a few seconds), and only
+  when the owner turns it on.
 
 ## 7. How it gets built (each step proven before the next)
 
@@ -184,11 +196,10 @@ over any link, including LoRa, because it is a few bytes.
 | 3 | BLE adapter | Wi-Fi off: status, approvals, stop arrive; a big pull waits |
 | 4 | Health, failover, rotating beacons | kill Wi-Fi mid-transfer: control continues on BLE; bulk resumes |
 | 5 | Offline brain: model sharing and split inference (exo or llama.cpp RPC) | a model copied to one Mac reaches the other over AWDL; a 14B model answers across two Macs |
-| 6 | Yggdrasil overlay for multi-hop IP; HaLow adapter (hardware) | three machines, A reaches C through B |
-| 7 | LoRa adapter (Meshtastic or Reticulum/RNode; hardware) | two radios a few hundred metres apart: status and stop round trip within the duty cycle |
+| 6 | Multi-hop over the built-in links (Yggdrasil or ox's own relays) | three machines, A reaches C through B |
+| 7 | Sound link (ggwave, MIT) for tiny commands | Wi-Fi and Bluetooth off, two Macs side by side: "stop" and "approve" arrive |
 
-Phases 1–5 need no new hardware. Phases 6–7 need the owner's choice of radios
-(HaLow adapters; a pair of LoRa nodes, about $50–80).
+Every phase uses only what the machines already have. Nothing is bought.
 
 ## 8. Sources
 
@@ -214,7 +225,8 @@ Phases 1–5 need no new hardware. Phases 6–7 need the owner's choice of radio
 - batman-adv on OpenWrt. https://openwrt.org/docs/guide-user/network/wifi/mesh/batman
 - exo (peer-to-peer distributed inference). https://github.com/exo-explore/exo
 - llama.cpp RPC backend. https://github.com/ggml-org/llama.cpp/pull/16441/files
-- Wi-Fi HaLow 15.9 km test (Morse Micro). https://www.eenewseurope.com/en/halow-hits-record-16km-wifi-distance-at-900mhz
+- ggwave, data over sound (MIT). https://cdn.jsdelivr.net/gh/ggerganov/ggwave@master/README.md
+- For reference only (not used, hardware to buy): Wi-Fi HaLow 15.9 km test. https://www.eenewseurope.com/en/halow-hits-record-16km-wifi-distance-at-900mhz
 
 **Books**
 - S. Farrell, V. Cahill, *Delay- and Disruption-Tolerant Networking*, Artech House, 2006.
