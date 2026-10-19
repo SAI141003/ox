@@ -27,19 +27,19 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | A3 Live diff ticker, other agents too | ✓ | test: agent-hooks (lines added/removed from the edit's own input) |
 | A4 Jump to a session's own terminal tab | ✓ | live: with Calculator in front, ox brought Terminal forward on the exact tab of a stand-in agent session (2.1 s). The check found that it had never worked (an AppleScript variable named `running`, a reserved word), fixed; test: agents-live |
 | A5 Claude plan usage | ✓ installed | live: `statusLine` set in Claude Code's settings; test: statusline |
-| A6 Integrations as pills | ~ | code: open PRs with failing CI (gh); **new:** Vercel's newest deployment, read-only with your own token (test: integrations). Stripe left out by the owner (not open source); Resend, Notion, Cal.com not built |
+| A6 Integrations as pills | ✓ | open PRs and failing CI (gh); the newest Vercel deployment; your next Cal.com booking; today's failed n8n workflows: read-only with your own keys (test: integrations; tested with fake replies, no keys on this Mac). Open-source services only, by the owner's rule: Stripe, Notion and Resend left out |
 | A7 Hold-to-dictate | ✓ | build; owner (speech) |
 | A8 Hands-free, Esc, paste last | ✓ | build; owner |
 | A9 Styles per app | ✓ | test: dictation-style; commit's live check on qwen2.5:3b |
 | A10 Dictation stats | ✓ | code: words, sessions, wpm, time saved and **per app** (Dictation.swift `Summary.apps`) |
 | A11 Dictionary and snippets | ✓ | test: dictionary |
 | A12 Translate a dictation | ✓ | test: dictation-style (`ox dictation translate`) |
-| A13 Parakeet offline speech | ~ | **new**, code: used first for transcription when parakeet-mlx (Apache-2.0, `pipx install parakeet-mlx`) is installed, else whisper.cpp; not installed here (model download, low disk), so never run |
+| A13 Parakeet offline speech | — | set aside by the owner (October 19); the hook stays: used first when parakeet-mlx is installed, else whisper.cpp |
 | A14 Call notes, both sides | ✓ | code: SystemAudio.swift (ScreenCaptureKit); owner (Screen Recording) |
 | A15 Floating pill | ✓ | build: DictationPill.swift; **new:** one tap on it finishes |
 | A16 Drop a file on the notch | ✓ | build (Shelf) |
 | A17 Drop the ox on a window | ✓ | code: IslandExtras.swift `window(at:)`, `drop(at:)` |
-| A18 Character follows the cursor | ~ | code |
+| A18 Character follows the cursor | ✓ | live: the opened island's ox turns to face the pointer (screenshots left and right). The notch-lane follow code had never been switched on; the notch opens under the pointer, so facing is done in the opened island |
 | A19 Hover open, any display | ✓ | code: `island.screen active` (IslandPanel.swift) |
 | A20 Weekly recap | ✓ | code: files changed and lines from git (IslandCards.swift) |
 | A21 Your own sounds | ✓ | code: `ox island sound <event> <file>` (src/island.js) |
@@ -85,7 +85,7 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | F1.1 Krea image edit | ✓ | test: video-image-edit; a real edit needs a paid image key |
 | F1.2 Hire from one sentence | ✓ | test: org |
 | F1.3 Freebuff: Open a PR in one click | ✓ | code: Open a PR in the app (src/web/chat.html, src/serve.js); modes already listed |
-| F1.4 deepagents check | ~ | each piece has tests (subagent, offload, sandbox, memory); not run end to end from the island chat |
+| F1.4 deepagents check | ✓ | live end to end on ox's own agent (free laguna-s-2.1 via OpenRouter): todo_write, a subagent reading two files, write_file NOTES.md, to-dos marked done, lessons saved. On the Claude plan, Claude Code's own TodoWrite is off in -p mode (its choice) |
 | F1.5 Edit videos from chat | ✓ | test: video-image-edit |
 | F1.6 Errand chips | ✓ | code: chips in an empty chat (Tray.swift) |
 | F1.7 Interactive explainers | ✓ | test: openui-reliability |
@@ -93,10 +93,10 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | F1.9 Devin PR flow, wiki, app on the PR | ✓ | test: dev-flow, wiki |
 | F1.10 Skill from a GitHub link | ✓ | code: src/skill-add.js; commit's live install of AlphaInsider#strategy-creator |
 | F1.11 Voice glow | ✓ | code: VoiceLevel bars |
-| F1.12 3D office | ~ | pixel office only |
+| F1.12 3D office | ✓ | /office and `ox office`: every live agent walks to the desk of what it is doing (Editor, Terminal, Browser, Library, Whiteboard, front desk, lounge), a 3D room on a canvas, drag to turn. Live with 16 agents |
 | F1.13 Team memory in Slack | ✓ | test: channel-memory |
 | F1.14 Book to skill | ✓ | test: book-skill |
-| F1.15 Intelligent UI | ~ | see E3 |
+| F1.15 Intelligent UI | ✓ | see E3 |
 | F1.16 Hold Fn to talk | ✓ | code: FnKey (Buddy.swift); owner |
 | F1.17 Manim-style explainers | ✓ | test: video-image-edit (`ox video explain`) |
 | F1.18 Traces and stuck signals | ✓ | test: trace |
@@ -122,10 +122,10 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | F2.7 Vovy | ✓ | code; **new:** click and type for apps |
 | F2.8 Mission map, sessions canvas | ✓ | code: both pages in src/web/chat.html |
 | F2.9 Claudex | ✓ | C1–C4 |
-| F3.1 KODEMON | ~ | **new:** `ox org` agents earn XP from real work (100 per finished task, 5 per tool call not stopped) and level up (Lv 2 at 50 XP, Lv 3 at 200…); a Lv badge on each agent's pill in the notch, "Lv↑" with a chime when one levels up (test: org; the badge not seen live: no org agents on this Mac). Fights and capture not built: a game with no job in ox |
+| F3.1 KODEMON | ✓ | levels from real work (Lv badge, "Lv↑" and a chime on the notch pills); battles: `ox org battle <a> <b> "<task>"` races two agents through ox race, the winner's change is kept ("captured", applied with --apply), both earn XP; `ox org levels` (tests: org, in a clean checkout of the pushed commit). The badge not seen live: no org agents on this Mac |
 | F3.3 Environment recipe | ✓ | test: dev-flow (`.ox/environment.yml`) |
 | F3.4 Calendar and weather | ✓ | code: day strip (src/serve.js) |
-| F3.5 Interactive breakdowns | ~ | E3 |
+| F3.5 Interactive breakdowns | ✓ | see E3 |
 | F3.6 Stripe pill | — | left out by the owner's choice (not open source); email draft ✓. **New:** "Am I a good developer?" answers from git with the real share ("Hmm… Claude wrote 100% of your code. 224 of your 225 commits this week name Claude. You're an excellent reviewer, though."): live through the island's voice route; the recap shows "% written with AI" (tests: offline, usage-log) |
 | F3.8 Machines in sync | ✓ | test: mesh; a real two-laptop test needs the second laptop |
 | F3.10 Agents gallery | ✓ | code: Favorite / I use this (src/web/chat.html) |
@@ -136,10 +136,17 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 |---|---|---|
 | G1–G8 | ✓ as marked | tests: fast-browser, git-fast, market, arena, library; G2 still has no public weights |
 | H1 Team from one sentence | ✓ | test: org (`ox org team`, `ox org say`) |
-| H2 OpenDots | ~ | calls not built |
+| H2 OpenDots | ✓ | calls: "call Ada" on the island puts you through to an ox org agent; it answers from its real task board, new work asked on the call becomes a task, "hang up" ends it. Live with a real model on a throwaway agent |
 | E1 Test by clicking | ✓ | live with ox-hands (October 19): header, Chat, + and its five tabs, Pin, mic, session cards (4 of 4 switched focus), "Open this session" (card with messages, reply box, Go to Terminal), Mail, Recap, and an approval from a new Claude Code session (card shown with its risk; Deny returned `deny` to the hook). Found and fixed on the way: no sessions or plan usage after a restart until OX.app was opened (the island now starts `ox serve` itself); a new session's first approval could go to the terminal prompt (relay start wait 2 s → 6 s, island wait 2.5 s → 4 s); the card said "ox wants to run" for Claude Code; the recap showed 0 while loading; "+N more" sessions could not be reached (now a button, not clicked: only 4 sessions were live); ox-hands' clicks were faster than a hand and the island missed 2 of 3 (now 5 of 6). Two `allow` answers during testing were the owner's own clicks in the notch (confirmed); every island answer is now logged (`approval answered:` in ~/.ox/island.log) |
-| E3 Interactive answers every time | ~ | as measured |
+| E3 Interactive answers every time | ✓ | benchmark 20/20 clean (was 8/10): invented chart names (PieChart, LineChart…) draw as Chart; a drawing still broken after its own repair round is mended by the strongest model connected (test: openui-reliability) |
 | E5, E6 | ✓ | D1, D2, D4, D6, D7 and ox org |
+
+### Vovy (October 19, recording 16:34)
+
+| Item | Proof |
+|---|---|
+| "Build me a pumpkin carver game with Claude": `ox make` and the same by voice: a new project, the idea as a full brief, Claude Code in a new Terminal tab, each step narrated in the notch, the app opened when done | live: built in about 3 min and opened; Claude Code's folder-trust question is left to you and said in the notch (test: make-app) |
+| "Carve the smiley face": `draw` takes the cursor and draws shapes or any path (ox's agent with approval; Claude Code and Codex through ox mcp-mac) | live: a face carved into a test canvas, then into the pumpkin game Claude built; moving the mouse stops it; it never draws when the asked app's window is not under the point, and brings back a window parked by Stage Manager (test: mac-control) |
 
 ### New in this round (October 19)
 
