@@ -1600,6 +1600,8 @@ async function dayView() {
         out.prs = { open: list.length, failing: list.filter((x) => ['FAILURE', 'ERROR'].includes(x.ci)).length, list: list.slice(0, 6) };
       } catch {}
     }
+    // Vercel, read-only with your own token (src/integrations.js); no token, no pill.
+    try { Object.assign(out, await (await import('./integrations.js')).servicePills(process.env)); } catch {}
     dayCache.v = out; dayCache.at = Date.now(); dayCache.pending = null;
     return out;
   })().catch((e) => { dayCache.pending = null; throw e; });

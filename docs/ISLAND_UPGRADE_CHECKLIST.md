@@ -27,14 +27,14 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | A3 Live diff ticker, other agents too | ✓ | test: agent-hooks (lines added/removed from the edit's own input) |
 | A4 Jump to a session's own terminal tab | ~ | code: `/ox/agents/focus` (src/agents-live.js, Bridge.swift); never checked live (the screen was locked when it was built) |
 | A5 Claude plan usage | ✓ installed | live: `statusLine` set in Claude Code's settings; test: statusline |
-| A6 Integrations as pills | ~ | code: day strip with open PRs and failing CI (gh, src/serve.js); Vercel, Stripe, n8n, Resend, Notion, Cal.com not built (key) |
+| A6 Integrations as pills | ~ | code: open PRs with failing CI (gh); **new:** Vercel's newest deployment, read-only with your own token (test: integrations). Stripe left out by the owner (not open source); Resend, Notion, Cal.com not built |
 | A7 Hold-to-dictate | ✓ | build; owner (speech) |
 | A8 Hands-free, Esc, paste last | ✓ | build; owner |
 | A9 Styles per app | ✓ | test: dictation-style; commit's live check on qwen2.5:3b |
 | A10 Dictation stats | ✓ | code: words, sessions, wpm, time saved and **per app** (Dictation.swift `Summary.apps`) |
 | A11 Dictionary and snippets | ✓ | test: dictionary |
 | A12 Translate a dictation | ✓ | test: dictation-style (`ox dictation translate`) |
-| A13 Parakeet offline speech | ✗ | not in the code; Apple's on-device speech and whisper.cpp are used |
+| A13 Parakeet offline speech | ~ | **new**, code: used first for transcription when parakeet-mlx (Apache-2.0, `pipx install parakeet-mlx`) is installed, else whisper.cpp; not installed here (model download, low disk), so never run |
 | A14 Call notes, both sides | ✓ | code: SystemAudio.swift (ScreenCaptureKit); owner (Screen Recording) |
 | A15 Floating pill | ✓ | build: DictationPill.swift; **new:** one tap on it finishes |
 | A16 Drop a file on the notch | ✓ | build (Shelf) |
@@ -60,7 +60,7 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | C1 Rings with reset countdowns | ✓ | code: UsageRing, PlanPill (IslandHome.swift) |
 | C2 Sessions per project | ✓ | test: agents-live |
 | C3 Alerts at 80 / 95 % | ✓ | code |
-| C4 Water estimate | ~ | code: total in the recap; per tool not split |
+| C4 Water estimate | ✓ | **new**, build: per tool (Claude, OpenAI, Gemini…) in the recap's water tooltip |
 
 ### D. Screenshots, Oct 16–17
 
@@ -126,7 +126,7 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | F3.3 Environment recipe | ✓ | test: dev-flow (`.ox/environment.yml`) |
 | F3.4 Calendar and weather | ✓ | code: day strip (src/serve.js) |
 | F3.5 Interactive breakdowns | ~ | E3 |
-| F3.6 Stripe pill | ✗ | needs your Stripe key; email draft ✓ |
+| F3.6 Stripe pill | — | left out by the owner's choice (not open source); email draft ✓ |
 | F3.8 Machines in sync | ✓ | test: mesh; a real two-laptop test needs the second laptop |
 | F3.10 Agents gallery | ✓ | code: Favorite / I use this (src/web/chat.html) |
 
@@ -151,9 +151,9 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | No more "A keychain cannot be found to store Chrome": every Chrome ox starts (browser, PR shots, rendering, web island, app window) uses `--use-mock-keychain` | test: fast-browser, web-render, island-web (15/15) |
 | One tap stops listening: the listening card, the mic (now a stop icon), the dictation chip, the pill; a tap while the mic starts cancels it; held-key listening ends after 45 s at most | build; owner (needs a real tap) |
 
-**Still ✗ after this audit:** A13 Parakeet, A25 phone app and lock screen,
-A6 / F3.6 paid-service pills (Stripe, Vercel, Notion, Resend, Cal.com: each
-needs a key), D9 / F1.8 cloud machines, H2 calls.
+**Still open after this audit:** A25 phone app and lock screen (a separate
+iOS project), D9 / F1.8 cloud machines (paid), H2 calls; A13 Parakeet is
+wired but not installed or run here.
 
 ## A. From Coucou (latest)
 

@@ -94,11 +94,34 @@ export function parseSrt(text) {
 export const toSrt = (segs) => segs.map((s, i) => `${i + 1}\n${ts(s.start)} --> ${ts(s.end)}\n${s.text}\n`).join('\n');
 
 /** Speech → [{ start, end, text }]; the .srt is kept beside the video and reused. */
+// Parakeet (NVIDIA's open speech model, 25 languages, Coucou's offline engine)
+// through parakeet-mlx (Apache-2.0) on Apple silicon: `pipx install parakeet-mlx`.
+// Used first when installed and no language is forced (OX_STT=whisper skips it).
+export function parakeetBin(env = process.env) {
+  if (env.OX_STT === 'whisper') return null;
+  return ['parakeet-mlx'].find((b) => spawnSync('which', [b]).status === 0) ?? null;
+}
+
+function parakeet(bin, file, srtPath) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-parakeet-'));
+  const wav = path.join(tmp, 'a.wav');
+  ff(['-i', file, '-vn', '-ac', '1', '-ar', '16000', wav]);
+  const r = run(bin, [wav, '--output-format', 'srt', '--output-dir', tmp]);
+  const out = path.join(tmp, 'a.srt');
+  if (!r.ok || !fs.existsSync(out)) { fs.rmSync(tmp, { recursive: true, force: true }); return null; }
+  const srt = fs.readFileSync(out, 'utf8');
+  fs.writeFileSync(srtPath, srt);
+  fs.rmSync(tmp, { recursive: true, force: true });
+  return { segments: parseSrt(srt), srt: srtPath, model: 'parakeet' };
+}
+
 export function transcribe(file, { model = whisperModel(), language = null } = {}) {
   const p = probe(file);
   if (!p.audio) return { segments: [], srt: null, note: 'the file has no sound' };
   const srtPath = outPath(file, 'transcript', '.srt').replace(/\.transcript-\d+\.srt$/, '.transcript.srt');
   if (fs.existsSync(srtPath) && fs.statSync(srtPath).mtimeMs > fs.statSync(file).mtimeMs) return { segments: parseSrt(fs.readFileSync(srtPath, 'utf8')), srt: srtPath, cached: true };
+  const pk = !language && parakeetBin();
+  if (pk) { const r = parakeet(pk, file, srtPath); if (r) return r; }
   if (!model) throw new Error('speech-to-text needs a whisper.cpp model (ggml-*.bin): put one in ~/.ox/models/whisper, or set OX_WHISPER_MODEL');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-whisper-'));
   const wav = path.join(tmp, 'a.wav');

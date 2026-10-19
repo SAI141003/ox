@@ -418,7 +418,8 @@ final class OxBridge: ObservableObject {
         var event: (title: String, at: Date)?
         var weather: (tempC: Int, text: String, place: String?)?
         var prs: (open: Int, failing: Int, url: String?)?
-        static func == (a: DayInfo, b: DayInfo) -> Bool { a.event?.title == b.event?.title && a.weather?.tempC == b.weather?.tempC && a.prs?.open == b.prs?.open && a.prs?.failing == b.prs?.failing }
+        var vercel: (state: String, name: String, url: String?)?
+        static func == (a: DayInfo, b: DayInfo) -> Bool { a.event?.title == b.event?.title && a.weather?.tempC == b.weather?.tempC && a.prs?.open == b.prs?.open && a.prs?.failing == b.prs?.failing && a.vercel?.state == b.vercel?.state }
     }
     @Published private(set) var day = DayInfo()
     private var dayPolledAt = Date.distantPast
@@ -441,6 +442,7 @@ final class OxBridge: ObservableObject {
                 let first = (p["list"] as? [[String: Any]])?.first?["url"] as? String
                 d.prs = (o, p["failing"] as? Int ?? 0, first)
             }
+            if let v = doc["vercel"] as? [String: Any], let st = v["state"] as? String { d.vercel = (st, v["name"] as? String ?? "Vercel", v["url"] as? String) }
             DispatchQueue.main.async { self?.day = d }
         }.resume()
     }

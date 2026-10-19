@@ -162,7 +162,7 @@ struct RecapView: View {
                     stat("+\(code["added"] as? Int ?? 0) −\(code["removed"] as? Int ?? 0)", T("lines"))
                 }
                 stat(top, T("most used"))
-                stat(waterText(), T("water (est.)")).help("Estimated data-centre cooling water for cloud models: ~18 mL per 1,000 tokens, from Li et al. 2023, \"Making AI Less Thirsty\" (about 0.5 L per 20–50 responses). Local models are not counted.")
+                stat(waterText(), T("water (est.)")).help("Estimated data-centre cooling water for cloud models: ~18 mL per 1,000 tokens, from Li et al. 2023, \"Making AI Less Thirsty\" (about 0.5 L per 20–50 responses). Local models are not counted." + (waterByTool().isEmpty ? "" : "\nBy tool: " + waterByTool().map { "\($0.0) \(litres($0.1))" }.joined(separator: ", ")))
             }
             // Runs per day, the last 7 days.
             HStack(alignment: .bottom, spacing: 6) {
@@ -176,6 +176,21 @@ struct RecapView: View {
         }
         .onAppear(perform: load)
     }
+
+    /// Water per tool (Claudex): cloud tokens grouped by who runs the model.
+    private func waterByTool() -> [(String, Double)] {
+        var by: [String: Double] = [:]
+        for m in (week["byModel"] as? [[String: Any]]) ?? [] {
+            let k = (m["key"] as? String ?? "").lowercased()
+            if k.contains("ollama") || k.contains("qwen2.5") || k.contains("llama3") || k.hasPrefix("local") { continue }
+            let tool = k.contains("claude") || k.contains("anthropic") || k.contains("opus") || k.contains("sonnet") || k.contains("haiku") ? "Claude"
+                : k.contains("gpt") || k.contains("codex") || k.contains("openai") || k.contains("o3") || k.contains("o4") ? "OpenAI"
+                : k.contains("gemini") || k.contains("google") ? "Gemini" : k.contains("grok") ? "Grok" : k.contains("mistral") ? "Mistral" : "Other"
+            by[tool, default: 0] += Double((m["in"] as? Int) ?? 0) + Double((m["out"] as? Int) ?? 0)
+        }
+        return by.map { ($0.key, $0.value / 1000 * 0.018) }.filter { $0.1 > 0 }.sorted { $0.1 > $1.1 }
+    }
+    private func litres(_ l: Double) -> String { l < 1 ? String(format: "%.0f mL", l * 1000) : String(format: "%.1f L", l) }
 
     /// Cloud tokens only: local models (Ollama) cool on your own desk.
     private func waterText() -> String {

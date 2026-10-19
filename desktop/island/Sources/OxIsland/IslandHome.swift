@@ -430,6 +430,11 @@ struct DayStrip: View {
                     pill(icon: "arrow.triangle.pull", text: "\(p.open) PR\(p.open == 1 ? "" : "s")\(p.failing > 0 ? " · \(p.failing) failing" : "")", tint: p.failing > 0 ? Color(hex: "#F4505E") : Color(hex: "#34D399"))
                 }.buttonStyle(.plain).help("Your open pull requests and their CI (opens GitHub)")
             }
+            if let v = day.vercel {
+                Button { if let u = URL(string: v.url ?? "https://vercel.com/dashboard") { NSWorkspace.shared.open(u) } } label: {
+                    pill(icon: "triangle.fill", text: "\(v.name) \(v.state.lowercased())", tint: v.state == "ERROR" ? Color(hex: "#F4505E") : v.state == "READY" ? Color(hex: "#34D399") : Color(hex: "#FBBF24"))
+                }.buttonStyle(.plain).help("Your newest Vercel deployment (opens it)")
+            }
         }
     }
     private func icon(_ t: String) -> String {
