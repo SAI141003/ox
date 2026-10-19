@@ -207,6 +207,11 @@ final class OxBridge: ObservableObject {
         }
         // Test hook: the same path as speaking ("say" a sentence to the island).
         //   swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("dev.ox.island.say"), object: "open whatsapp", deliverImmediately: true)'
+        // Open the island for a few seconds (checks and screenshots): object = seconds, default 6.
+        DistributedNotificationCenter.default().addObserver(forName: .init("dev.ox.island.peek"), object: nil, queue: .main) { [weak self] n in
+            self?.peek(for: Double((n.object as? String) ?? "") ?? 6)
+            self?.objectWillChange.send()
+        }
         DistributedNotificationCenter.default().addObserver(forName: .init("dev.ox.island.say"), object: nil, queue: .main) { [weak self] n in
             guard let self, let text = n.object as? String, !text.isEmpty else { return }
             IslandLog.write("test say: \(text)")
@@ -389,6 +394,8 @@ final class OxBridge: ObservableObject {
         // A finished run stays on the island for 25 seconds, then leaves.
         let show = run.running || Date().timeIntervalSince(run.at) < 25
         let next = show ? run : nil
+        // Open briefly when a run starts and when it ends, so its card is seen.
+        if let n = next, n.status != browse?.status || n.startedAt != browse?.startedAt { peek(for: n.running ? 4 : 6) }
         if next != browse { browse = next }
     }
 
