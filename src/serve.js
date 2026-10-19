@@ -1641,6 +1641,7 @@ async function themeAsk() {
   } catch { return null; }
 }
 
+const codeCache = {};
 const ROUTES = [
   // Pull requests (src/dev-flow.js): Open a PR in one click, its CI and reviews, one fix round.
   { method: 'GET', pattern: /^\/ox\/pr\/?$/, handler: appRoute(async (_, __, req) => {
@@ -1872,7 +1873,15 @@ const ROUTES = [
   { method: 'POST', pattern: /^\/ox\/studio\/create\/?$/, handler: appRoute(async (b) => (await appApi()).studioCreate(b)) },
   { method: 'POST', pattern: /^\/ox\/studio\/?$/, handler: appRoute(async (b) => (await appApi()).studioAction(b)) },
   { method: 'GET', pattern: /^\/ox\/media\/([^/]+)\/([^/]+)$/, handler: serveMediaFile },
-  { method: 'GET', pattern: /^\/ox\/usage\/?$/, handler: appRoute(async (_, __, req) => (await import('./usage-log.js')).summarize({ days: Math.max(1, Math.min(365, Number(new URL(req.url, 'http://x').searchParams.get('days')) || 30)) })) },
+  { method: 'GET', pattern: /^\/ox\/usage\/?$/, handler: appRoute(async (_, __, req) => {
+    const U = await import('./usage-log.js');
+    const days = Math.max(1, Math.min(365, Number(new URL(req.url, 'http://x').searchParams.get('days')) || 30));
+    // The week's code too (files, lines, commits from git) for the island's recap.
+    // git log over the week takes seconds: kept 10 minutes.
+    const key = `code:${days}`;
+    if (days <= 31 && !(codeCache[key] && Date.now() - codeCache[key].at < 600_000)) codeCache[key] = { at: Date.now(), v: U.codeChanges({ days }) };
+    return { ...U.summarize({ days }), code: days <= 31 ? codeCache[key].v : null };
+  }) },
   { method: 'GET', pattern: /^\/ox\/map\/?$/, handler: appRoute(async () => (await import('./project-map.js')).projectMap(process.cwd())) },
   { method: 'GET', pattern: /^\/ox\/hf\/search\/?$/, handler: appRoute(async (_, __, req) => (await import('./hf-models.js')).searchModels(new URL(req.url, 'http://x').searchParams.get('q') ?? '')) },
   { method: 'GET', pattern: /^\/ox\/hf\/files\/?$/, handler: appRoute(async (_, __, req) => (await import('./hf-models.js')).modelFiles(new URL(req.url, 'http://x').searchParams.get('repo') ?? '')) },
