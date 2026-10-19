@@ -238,6 +238,7 @@ final class OxBridge: ObservableObject {
     /// ox binds sockets at os.tmpdir()/ox-ipc-<id>.sock; NSTemporaryDirectory()
     /// is the same per-user $TMPDIR for a non-sandboxed app.
     private func scan() {
+        readBrowse()
         let dir = NSTemporaryDirectory()
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
         for name in names where name.hasPrefix("ox-ipc-") && name.hasSuffix(".sock") {
@@ -365,6 +366,40 @@ final class OxBridge: ObservableObject {
     }
 
     @Published var orgCard: String?
+
+    // MARK: the fast browser (ox browse, web_task): the live run, read from ~/.ox/browse/live.json
+
+    struct BrowseRun: Equatable {
+        let goal: String
+        let host: String
+        let title: String
+        let status: String          // running | done | blocked | stopped | failed
+        let reason: String?
+        let startedAt: Date
+        let elapsedMs: Int
+        let steps: [String]
+        let at: Date
+        var running: Bool { status == "running" && Date().timeIntervalSince(at) < 90 }
+    }
+    @Published private(set) var browse: BrowseRun?
+
+    private func readBrowse() {
+        let f = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/browse/live.json")
+        guard let data = try? Data(contentsOf: f), let run = Self.parseBrowse(data) else { if browse != nil { browse = nil }; return }
+        // A finished run stays on the island for 25 seconds, then leaves.
+        let show = run.running || Date().timeIntervalSince(run.at) < 25
+        let next = show ? run : nil
+        if next != browse { browse = next }
+    }
+
+    static func parseBrowse(_ data: Data) -> BrowseRun? {
+        guard let d = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let at = d["at"] as? Double else { return nil }
+        return BrowseRun(
+            goal: d["goal"] as? String ?? "", host: d["host"] as? String ?? "", title: d["title"] as? String ?? "", status: d["status"] as? String ?? "running",
+            reason: d["reason"] as? String, startedAt: Date(timeIntervalSince1970: (d["startedAt"] as? Double ?? at) / 1000),
+            elapsedMs: d["elapsedMs"] as? Int ?? 0, steps: ((d["steps"] as? [[String: Any]]) ?? []).compactMap { $0["chip"] as? String },
+            at: Date(timeIntervalSince1970: at / 1000))
+    }
 
     // MARK: the day strip: next event, weather, your pull requests (GET /ox/day)
 

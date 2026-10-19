@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Stays · search</title>
+<style>
+body{font:15px system-ui;margin:24px;background:#fafafa;color:#222}
+form{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.combo{position:relative}
+#suggest{position:absolute;top:34px;left:0;background:#fff;border:1px solid #ccc;min-width:220px;list-style:none;margin:0;padding:0}
+#suggest li{padding:6px 10px;cursor:pointer}#suggest li:hover{background:#eef}
+.card{background:#fff;border:1px solid #ddd;border-radius:8px;padding:10px 14px;margin:8px 0}
+#overlay{position:fixed;inset:0;z-index:10;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center}
+#overlay div{background:#fff;padding:20px;border-radius:8px}
+</style></head><body>
+<div id="overlay" role="dialog" aria-label="Cookies"><div><p>We use cookies only to keep you signed in.</p><button id="cookie-ok">Only necessary</button></div></div>
+<h1>Find a stay</h1>
+<form id="f" onsubmit="event.preventDefault();search()">
+  <div class="combo"><label for="city">Destination</label>
+    <input id="city" role="combobox" aria-controls="suggest" aria-expanded="false" autocomplete="off" placeholder="Where to?">
+    <ul id="suggest" role="listbox" hidden></ul></div>
+  <label><input type="checkbox" id="design"> Design hotels</label>
+  <label><input type="checkbox" id="free"> Free cancellation</label>
+  <label for="sort">Sort</label><select id="sort"><option value="best">Best match</option><option value="price">Lowest price</option><option value="rating">Top rated</option></select>
+  <button type="submit">Search</button>
+</form>
+<p id="status"></p>
+<div id="results"></div>
+<script>
+const CITIES=['Lisbon, Portugal','Lisbon Airport (LIS)','Lima, Peru','Lille, France'];
+const HOTELS=[
+  {name:'Casa Flora',city:'Lisbon',design:true,free:true,price:142,rating:9.1},
+  {name:'Hotel Tejo',city:'Lisbon',design:false,free:true,price:98,rating:8.2},
+  {name:'Alfama Loft',city:'Lisbon',design:true,free:false,price:170,rating:9.4},
+  {name:'Miraflores Inn',city:'Lima',design:true,free:true,price:80,rating:8.0},
+];
+let chosen='';
+document.getElementById('cookie-ok').onclick=()=>document.getElementById('overlay').remove();
+const city=document.getElementById('city'), sug=document.getElementById('suggest');
+city.addEventListener('input',()=>{
+  chosen=''; const q=city.value.toLowerCase(); sug.innerHTML='';
+  if(!q){sug.hidden=true;city.setAttribute('aria-expanded','false');return}
+  setTimeout(()=>{ // suggestions arrive a little later, like a real site
+    for(const c of CITIES.filter(c=>c.toLowerCase().startsWith(q))){const li=document.createElement('li');li.setAttribute('role','option');li.textContent=c;li.onclick=()=>{city.value=c;chosen=c;sug.hidden=true;city.setAttribute('aria-expanded','false')};sug.appendChild(li)}
+    sug.hidden=!sug.children.length; city.setAttribute('aria-expanded',String(!sug.hidden));
+  },120);
+});
+function search(){
+  const st=document.getElementById('status'), out=document.getElementById('results');
+  if(!chosen){st.textContent='Pick a destination from the list.';return}
+  st.textContent='Searching…'; out.innerHTML='';
+  setTimeout(()=>{
+    const c=chosen.split(',')[0].split(' ')[0];
+    let list=HOTELS.filter(h=>h.city===c && (!design.checked||h.design) && (!free.checked||h.free));
+    const s=document.getElementById('sort').value;
+    if(s==='price')list.sort((a,b)=>a.price-b.price); if(s==='rating')list.sort((a,b)=>b.rating-a.rating);
+    st.textContent=list.length+' stays in '+c+(design.checked?' · Design':'')+(free.checked?' · Free cancellation':'');
+    for(const h of list){const d=document.createElement('div');d.className='card';d.innerHTML='<a href="#'+h.name.replace(/ /g,'-')+'">'+h.name+'</a> · €'+h.price+' · '+h.rating;d.querySelector('a').onclick=(e)=>{e.preventDefault();document.body.innerHTML='<h1>'+h.name+'</h1><p>'+h.city+' · €'+h.price+' a night · rating '+h.rating+'</p><p id="opened">You are viewing '+h.name+'.</p>';document.title=h.name+' · Stays'};out.appendChild(d)}
+  },300);
+}
+</script></body></html>

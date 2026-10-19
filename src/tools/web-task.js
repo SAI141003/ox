@@ -37,6 +37,9 @@ const BACKEND_PACKAGES = {
   // with compact accessibility snapshots instead of screenshots (fewer tokens).
   // Its own binary, not an npm package: brew install pinchtab/tap/pinchtab.
   'pinchtab': 'pinchtab',
+  // ox's own fast browser (src/fast-browser.js, jev-ultrafast's design): Chrome
+  // over DevTools directly, one model call per step. Nothing to install.
+  'fast': null,
 };
 
 const BACKEND_TOOL_HINTS = {
@@ -451,8 +454,8 @@ export async function webTaskTool(args = {}, ctx = {}) {
     if (!checked.ok) return err(`web_task: ${checked.why}`);
   }
 
-  const backend = args?.backend || 'browser-harness';
-  if (!BACKEND_PACKAGES[backend]) {
+  const backend = args?.backend || 'fast';
+  if (!(backend in BACKEND_PACKAGES)) {
     return err(`web_task: unknown backend "${backend}". Use: ${Object.keys(BACKEND_PACKAGES).join(', ')}`);
   }
 
@@ -465,6 +468,8 @@ export async function webTaskTool(args = {}, ctx = {}) {
 
   const gateResult = await gate(ctx, 'web_task', { task, url, backend }, `Run web task: ${task.slice(0, 100)}${url ? ` on ${url}` : ''}?`);
   if (!gateResult.ok) return err(gateResult.content);
+
+  if (backend === 'fast') return runFast(task, url, headless, maxSteps, ctx);
 
   const hub = new McpHub({}, {
     sandbox: ctx?.sandbox,
@@ -503,6 +508,28 @@ export async function webTaskTool(args = {}, ctx = {}) {
   }
 }
 
+// The fast backend: one goal, one decision per step, a checked DONE. A click
+// that buys, pays, sends or deletes asks again, even in --yes mode.
+async function runFast(task, url, headless, maxSteps, ctx) {
+  const F = await import('../fast-browser.js');
+  let r;
+  try {
+    r = await F.runGoal(task, {
+      url: url ?? 'about:blank', headless, maxActions: Math.min(maxSteps, F.MAX_ACTIONS), decide: ctx?.fastBrowserDecide,
+      confirm: async ({ label, url: at }) => typeof ctx?.requestApproval === 'function' && (await ctx.requestApproval('web_task', { click: label, url: at }, `The browser wants to click "${label}" on ${at}. This commits something (pays, books, sends or deletes). Allow?`).catch(() => false)) === true,
+    });
+  } catch (e) { return err(`web_task: ${e.message}`); }
+  const steps = r.history.filter((h) => !h.operation.endsWith('?'));
+  const lines = [
+    `${r.status === 'done' ? 'Done' : r.status === 'blocked' ? 'Stopped' : 'Ran out of steps'} in ${(r.elapsedMs / 1000).toFixed(2)} s, ${steps.length} action(s), ${r.decisions.length} decision(s).${r.reason ? ` ${r.reason}.` : ''}`,
+    `Final page: ${r.title} (${r.url})`,
+    ...steps.map((h) => `${h.step}. ${h.operation} ${h.label}${h.text ? ` "${h.text}"` : ''}`),
+  ];
+  const meta = { success: r.status === 'done', screenshots: [], confirmations: steps.map((h) => ({ action: h.operation.toLowerCase(), description: h.label })), steps: steps.length, elapsedMs: r.elapsedMs, backend: 'fast' };
+  const body = wrapUntrusted({ source: r.url, title: 'Web Task Result', screen: `[web-task] fast · ${r.status} · ${steps.length} action(s)`, body: lines.join('\n') });
+  return r.status === 'done' ? ok(body, meta) : { content: body, isError: true, meta: { ...meta, error: r.reason } };
+}
+
 function validateUrl(raw) {
   const text = String(raw ?? '').trim();
   if (!text) return { ok: false, why: 'a url is required' };
@@ -533,7 +560,7 @@ export const WEB_TASK_TOOL_SCHEMAS = [
     description:
       'Complete a web task (booking, scheduling, form filling, etc.) using a browser automation backend. ' +
       'Args: task (REQUIRED string describing the goal), url (optional starting URL), ' +
-      'backend (optional: "browser-harness" | "stagehand" | "camoufox" | "my-browser" (the user\'s own signed-in Chrome, through the Playwright MCP Bridge extension), default "browser-harness"), ' +
+      'backend (optional: "fast" (default: ox\'s own fast browser, a checked DONE, asks before any buy/pay/send/delete click) | "browser-harness" | "stagehand" | "camoufox" | "my-browser" (the user\'s own signed-in Chrome, through the Playwright MCP Bridge extension)), ' +
       'headless (optional boolean, default true), timeoutMs (optional, default 120000), maxSteps (optional, default 50). ' +
       'Returns screenshots, confirmations, and step count. All output is screened for credentials/injections and wrapped as untrusted content.',
     input_schema: {
@@ -541,7 +568,7 @@ export const WEB_TASK_TOOL_SCHEMAS = [
       properties: {
         task: { type: 'string', description: 'Natural language description of the web task to complete' },
         url: { type: 'string', description: 'Optional starting URL (http/https only)' },
-        backend: { type: 'string', enum: ['browser-harness', 'stagehand', 'camoufox', 'my-browser', 'pinchtab'], description: 'Browser automation backend to use; my-browser works in the user\'s own signed-in Chrome; pinchtab is a small reused daemon with token-light snapshots (when installed)' },
+        backend: { type: 'string', enum: ['fast', 'browser-harness', 'stagehand', 'camoufox', 'my-browser', 'pinchtab'], description: 'Browser automation backend to use; my-browser works in the user\'s own signed-in Chrome; pinchtab is a small reused daemon with token-light snapshots (when installed)' },
         headless: { type: 'boolean', description: 'Run browser in headless mode (default: true)' },
         timeoutMs: { type: 'number', description: 'Total timeout in milliseconds (default: 120000, max: 300000)' },
         maxSteps: { type: 'number', description: 'Maximum automation steps (default: 50, max: 200)' },

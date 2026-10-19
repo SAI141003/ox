@@ -1625,6 +1625,19 @@ async function meshView() {
   return { running: false, me: has ? { id: M.identity().id, name: M.identity().name } : null, peers: Object.values(M.readPeers()).map((p) => ({ id: p.id, name: p.name, grants: p.grants, pairedAt: p.pairedAt })), alerts: [] };
 }
 
+// One small model call for a theme, with whichever model ox works with.
+async function themeAsk() {
+  try {
+    const { loadConfig } = await import('./config.js');
+    const { resolveBot } = await import('./bots.js');
+    const { workingModelSpec } = await import('./working-model.js');
+    const { quickText } = await import('./quick-text.js');
+    const cfg = loadConfig();
+    const target = resolveBot(await workingModelSpec(cfg, { say: () => {} }), cfg);
+    return async ({ system, user }) => (await quickText(target, { system, user, maxTokens: 1500 })).text;
+  } catch { return null; }
+}
+
 const ROUTES = [
   // Pull requests (src/dev-flow.js): Open a PR in one click, its CI and reviews, one fix round.
   { method: 'GET', pattern: /^\/ox\/pr\/?$/, handler: appRoute(async (_, __, req) => {
@@ -1639,6 +1652,28 @@ const ROUTES = [
     return D.fixPr(dir, {});
   }) },
   { method: 'GET', pattern: /^\/ox\/day\/?$/, handler: appRoute(dayView) },
+  // Themes (src/ui-theme.js): the active look, and making or switching one.
+  { method: 'GET', pattern: /^\/ox\/theme\/?$/, handler: appRoute(async () => { const T = await import('./ui-theme.js'); const t = T.current(); return { theme: t, css: T.css(t), themes: T.list() }; }) },
+  { method: 'POST', pattern: /^\/ox\/theme\/?$/, handler: appRoute(async (body) => {
+    const T = await import('./ui-theme.js');
+    if (body?.reset) { T.reset(); return { theme: null }; }
+    if (body?.use) return { theme: T.use(String(body.use)) };
+    return { theme: await T.fromPrompt(String(body?.prompt ?? ''), { ask: await themeAsk() }) };
+  }) },
+  // The fast browser (src/fast-browser.js): the live run (OX Island's browser card) and starting one.
+  { method: 'GET', pattern: /^\/ox\/browse\/?$/, handler: appRoute(async () => ({ live: (await import('./fast-browser.js')).readLive() })) },
+  { method: 'POST', pattern: /^\/ox\/browse\/run\/?$/, handler: appRoute(async (body) => {
+    const F = await import('./fast-browser.js');
+    const goal = String(body?.goal ?? '').trim();
+    const url = String(body?.url ?? '').trim();
+    if (!goal) throw new Error('a goal is needed');
+    if (url && !/^https?:\/\//.test(url)) throw new Error('the start page is an http(s) link');
+    const cur = F.readLive();
+    if (cur?.status === 'running' && Date.now() - (cur.at ?? 0) < 60_000) throw new Error('a browser run is already going');
+    // Runs on; the island and the app follow it through GET /ox/browse. Buy/pay/send/delete clicks stop it.
+    F.runGoal(goal, { url: url || 'about:blank', headless: body?.show !== true }).catch(() => {});
+    return { started: true };
+  }) },
   // Your reading library (src/library.js): the shelf, one item, add, highlight, ask.
   { method: 'GET', pattern: /^\/ox\/library\/?$/, handler: appRoute(async () => ({ items: (await import('./library.js')).list() })) },
   { method: 'GET', pattern: /^\/ox\/library\/([a-f0-9]{6,20})\/?$/, handler: appRoute(async (_, m) => (await import('./library.js')).load(m[1])) },

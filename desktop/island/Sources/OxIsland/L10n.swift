@@ -19,6 +19,11 @@ enum L10n {
     static let table: [String: [String]] = [
         "All quiet": ["Todo tranquilo", "Tout est calme", "Alles ruhig", "Tudo tranquilo", "Tutto tranquillo", "静かです", "조용해요", "一切安静", "सब शांत है"],
         "Nothing running": ["Nada en marcha", "Rien en cours", "Nichts läuft", "Nada em execução", "Niente in corso", "実行中のものはありません", "실행 중인 작업 없음", "没有正在运行的任务", "कुछ नहीं चल रहा"],
+        "Browsing": ["Navegando", "Navigation", "Surft", "Navegando", "Navigazione", "閲覧中", "탐색 중", "浏览中", "ब्राउज़ कर रहा है"],
+        "Done": ["Listo", "Terminé", "Fertig", "Pronto", "Fatto", "完了", "완료", "完成", "पूरा"],
+        "Needs you": ["Te necesita", "Besoin de vous", "Braucht dich", "Precisa de você", "Serve il tuo aiuto", "確認が必要", "확인 필요", "需要你", "आपकी ज़रूरत है"],
+        "Stopped": ["Detenido", "Arrêté", "Gestoppt", "Parado", "Fermato", "停止", "중지됨", "已停止", "रुका"],
+        "Browser": ["Navegador", "Navigateur", "Browser", "Navegador", "Browser", "ブラウザ", "브라우저", "浏览器", "ब्राउज़र"],
         "No other sessions": ["No hay otras sesiones", "Aucune autre session", "Keine anderen Sitzungen", "Nenhuma outra sessão", "Nessun'altra sessione", "他のセッションはありません", "다른 세션 없음", "没有其他会话", "कोई और सत्र नहीं"],
         "Allow": ["Permitir", "Autoriser", "Erlauben", "Permitir", "Consenti", "許可", "허용", "允许", "अनुमति दें"],
         "Always": ["Siempre", "Toujours", "Immer", "Sempre", "Sempre", "常に", "항상", "始终", "हमेशा"],

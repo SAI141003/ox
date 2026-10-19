@@ -880,6 +880,22 @@
     }
     return res;
   }
+  // A theme made by you or an agent (`ox theme "<look>"`, src/ui-theme.js): applied live, checked every few seconds.
+  let skinVersion = null;
+  async function loadSkin() {
+    try {
+      const j = await (await api('/ox/theme')).json();
+      const v = j?.theme?.version ?? null;
+      if (v === skinVersion) return;
+      skinVersion = v;
+      let el = document.getElementById('ox-skin');
+      if (!el) { el = document.createElement('style'); el.id = 'ox-skin'; document.head.appendChild(el); }
+      el.textContent = j?.css ?? '';
+      if (v) document.documentElement.dataset.oxSkin = j.theme.name; else delete document.documentElement.dataset.oxSkin;
+    } catch {}
+  }
+  setTimeout(loadSkin, 300);
+  setInterval(() => { if (!document.hidden) loadSkin(); }, 4000);
   async function getJson(path) {
     const r = await api(path);
     const j = await r.json().catch(() => ({}));

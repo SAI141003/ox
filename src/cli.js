@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -531,6 +531,9 @@ function usageAll() {
     '  ox skill from <book.pdf|folder>   a book or docs → a skill: an index plus chapters read only when needed',
     '',
     'library: ox library [add <url|pdf> | read | ask <id> "q" | search]   saved articles and PDFs; highlight and ask in the app',
+    'theme: ox theme ["<look>" | list | use <name> | reset]   restyle the app from a sentence (neumorphic, glass, paper, terminal, contrast…)',
+    'browse: ox browse "<goal>" [--url <page>] [--show] [--model <id>]   the fast browser: one goal, a checked finish, asks before buy/pay/send',
+    'studio: ox studio [models [kind] | recipes [name] | connect | mcp]   open image and video models for any agent (Claude, Codex, Cursor)',
     'video: ox video transcribe|captions|cut|speed|vertical|highlights|gif|polish|understand <file> …   on this machine',
     '       ox video explain "<title>" "Step: what happens" …   an explainer video, a slide per step with a lit diagram',
     'traces: ox trace [--signals] | ox trace <id> [--steps]   each run: turns, tokens, cost, tool calls, and "stuck" signals',
@@ -4694,6 +4697,73 @@ async function runSubcommand(cmd, args) {
           return;
         }
         console.error('usage: ox library [add <url|file> | read <id> | ask <id> "<question>" | search <words> | rm <id> | connect | mcp]'); process.exitCode = 3;
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+      return;
+    }
+    case 'theme': {
+      // Restyle ox from a sentence (src/ui-theme.js); the open app picks it up in seconds.
+      const T = await import('./ui-theme.js');
+      const sub = args[0] ?? 'list';
+      try {
+        if (sub === 'list') { for (const t of T.list()) console.log(`${t.active ? c.green('●') : ' '} ${c.bold(t.name.padEnd(12))} ${c.dim(`${t.description}${t.preset ? ' (built in)' : ''}`)}`); return; }
+        if (sub === 'reset') { T.reset(); console.log('back to the app\'s own look'); return; }
+        if (sub === 'use') { const t = T.use(args[1]); console.log(`${c.green('✓')} ${t.name}: ${t.description}`); return; }
+        const askModel = async ({ system, user }) => {
+          const { workingModelSpec } = await import('./working-model.js');
+          const { quickText } = await import('./quick-text.js');
+          const cfg = loadConfig();
+          return (await quickText(resolveBot(await workingModelSpec(cfg, { say: () => {} }), cfg), { system, user, maxTokens: 1500 })).text;
+        };
+        const t = await T.fromPrompt(args.join(' '), { ask: args.includes('--preset') ? null : askModel });
+        const ratio = T.contrast(t.tokens['--text'] ?? '#EDEDED', t.tokens['--bg'] ?? '#000000');
+        console.log(`${c.green('✓')} ${c.bold(t.name)}: ${t.description}${ratio ? c.dim(` · text contrast ${ratio}:1${ratio < 4.5 ? ' (low)' : ''}`) : ''}${t.dropped.length ? c.yellow(` · left out: ${t.dropped.join(', ')}`) : ''}`);
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+      return;
+    }
+    case 'browse': {
+      // The fast browser (src/fast-browser.js; jev-ultrafast's design, ox's own code).
+      const F = await import('./fast-browser.js');
+      const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+      const VALUED = new Set(['--url', '--model']);
+      const goal = args.filter((a, i) => !a.startsWith('--') && !VALUED.has(args[i - 1])).join(' ');
+      if (!goal) { console.error('usage: ox browse "<goal>" [--url <page>] [--show] [--model <id>]'); process.exitCode = 3; return; }
+      if (flag('--model')) process.env.OX_FAST_BROWSER_MODEL = flag('--model');
+      const url = flag('--url') ?? 'about:blank';
+      if (url !== 'about:blank' && !/^(https?|file):\/\//.test(url)) { console.error(c.red('the start page is an http(s) link')); process.exitCode = 3; return; }
+      try {
+        const r = await F.runGoal(goal, {
+          url, headless: !args.includes('--show'),
+          onStep: ({ row, elapsedMs }) => { if (!row.operation.endsWith('?') && row.operation !== 'WAIT') console.log(`${c.dim(`${(elapsedMs / 1000).toFixed(2).padStart(6)}s`)} ${c.green('✓')} ${F.chip(row)} ${c.dim(row.operation.toLowerCase())}`); },
+          confirm: async ({ label, url: at }) => {
+            if (!process.stdin.isTTY) return false;
+            const rl = (await import('node:readline/promises')).createInterface({ input: process.stdin, output: process.stdout });
+            const a = await rl.question(c.yellow(`Click "${label}" on ${at}? This commits something. [y/N] `));
+            rl.close();
+            return /^y(es)?$/i.test(a.trim());
+          },
+        });
+        const secs = (r.elapsedMs / 1000).toFixed(2);
+        console.log(r.status === 'done' ? `\n${c.green(c.bold(`${secs} s`))}  ${c.dim(`done · ${r.decisions.length} decisions · ${r.title}`)}` : `\n${c.yellow(`${r.status} after ${secs} s`)}${r.reason ? `: ${r.reason}` : ''}`);
+        if (r.status !== 'done') process.exitCode = 1;
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+      return;
+    }
+    case 'studio': {
+      // OX Studio for any agent (src/studio-mcp.js, docs/STUDIO_ARCHITECTURE.md).
+      const S = await import('./studio-mcp.js');
+      const sub = args[0] ?? 'models';
+      try {
+        if (sub === 'mcp') { S.serveStudioMcp(); await new Promise(() => {}); }
+        if (sub === 'connect') {
+          const script = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+          const bin = `${process.execPath} ${script}`;
+          console.log(`Give any agent OX Studio (open image, video and audio models; it makes and edits, never deletes):\n\n  Claude Code:  claude mcp add ox-studio -- ${bin} studio mcp\n  Codex:        add to ~/.codex/config.toml:\n                [mcp_servers.ox-studio]\n                command = "${process.execPath}"\n                args = ["${script}", "studio", "mcp"]\n  Cursor:       ~/.cursor/mcp.json → {"mcpServers":{"ox-studio":{"command":"${process.execPath}","args":["${script}","studio","mcp"]}}}\n  Any MCP app:  command ${bin} studio mcp\n\nThe models run where you have a key: FAL_KEY (fal) or HF_TOKEN (Hugging Face), or your own Stable Diffusion server (OX_SD_URL). Nothing is installed.`);
+          return;
+        }
+        const st = S.createStudio();
+        if (sub === 'models') { console.log(await st.call('models_explore', args[1] ? { kind: args[1] } : {})); return; }
+        if (sub === 'recipes') { console.log(await st.call('workflow_instructions', args[1] ? { name: args[1] } : {})); return; }
+        console.error('usage: ox studio [models [kind] | recipes [name] | connect | mcp]'); process.exitCode = 3;
       } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
       return;
     }

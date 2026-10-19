@@ -114,6 +114,20 @@ if let i = CommandLine.arguments.firstIndex(of: "--check-speech"), i + 1 < Comma
 
 // Check: `OxIsland --check-commands` runs the island's own command matching on
 // real phrases (the ones in the owner's videos included) and exits 1 on any miss.
+// Check: `OxIsland --render-browse <live.json> <out.png>` draws the fast browser's card for a run, offscreen.
+if let i = CommandLine.arguments.firstIndex(of: "--render-browse"), CommandLine.arguments.count > i + 2 {
+    let args = CommandLine.arguments
+    guard let data = FileManager.default.contents(atPath: args[i + 1]), let run = OxBridge.parseBrowse(data) else { print("no run in \(args[i + 1])"); exit(1) }
+    MainActor.assumeIsolated {
+        let r = ImageRenderer(content: BrowseCard(run: run).frame(width: 300).padding(10).background(Color.black).environment(\.colorScheme, .dark))
+        r.scale = 2
+        guard let img = r.nsImage, let tiff = img.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { print("render failed"); exit(1) }
+        try? png.write(to: URL(fileURLWithPath: args[i + 2]))
+        print("wrote \(args[i + 2]) · \(run.status) · \(run.steps.count) steps")
+    }
+    exit(0)
+}
+
 // Check: `OxIsland --check-herd` runs the meadow through the script (docs/HERD_SCRIPT.md) on a fake clock.
 if CommandLine.arguments.contains("--check-herd") {
     let herd = Herd.shared

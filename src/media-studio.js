@@ -310,6 +310,8 @@ export const PROVIDERS = Object.freeze({
   fal: { label: 'fal.ai', key: 'FAL_KEY', kinds: ['image', 'video'], models: () => [{ id: 'fal-ai/flux/schnell', label: 'FLUX.1 schnell', surface: 'image' }], anyModel: true },
   openai: { label: 'OpenAI', key: 'OPENAI_API_KEY', kinds: ['image'], models: () => ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'].map((id) => ({ id, label: id, surface: 'image' })) },
   local: { label: 'This machine (Stable Diffusion)', key: null, kinds: ['image'], models: () => [{ id: 'local', label: 'the loaded model', surface: 'image' }] },
+  // Open models on Hugging Face Inference (text to image), with your HF token.
+  hf: { label: 'Hugging Face', key: 'HF_TOKEN', kinds: ['image'], models: () => [{ id: 'black-forest-labs/FLUX.1-schnell', label: 'FLUX.1 schnell', surface: 'image' }], anyModel: true },
   // Image models behind your OpenRouter key (they make and edit pictures from a prompt).
   openrouter: { label: 'OpenRouter', key: 'OPENROUTER_API_KEY', kinds: ['image'], models: () => ['google/gemini-2.5-flash-image', 'openai/gpt-5-image-mini'].map((id) => ({ id, label: id, surface: 'image' })), anyModel: true },
 });
@@ -321,7 +323,8 @@ async function sourceImage(ref, fetchImpl) {
   const f = s.replace(/^~(?=\/)/, os.homedir());
   if (!fs.existsSync(f)) throw new Error(`no image at ${s}`);
   const ext = path.extname(f).slice(1).toLowerCase();
-  return { buf: fs.readFileSync(f), type: ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png', name: path.basename(f) };
+  const TYPES = { jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', wav: 'audio/wav', mp3: 'audio/mpeg', m4a: 'audio/mp4' };
+  return { buf: fs.readFileSync(f), type: TYPES[ext] ?? 'image/png', name: path.basename(f) };
 }
 const dataUri = (img) => `data:${img.type};base64,${img.buf.toString('base64')}`;
 
@@ -343,7 +346,8 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
   if (provider === 'higgsfield') return create({ model, prompt, settings, media, fetchImpl, onStatus, wait });
   const P = PROVIDERS[provider];
   if (!P) throw new Error(`unknown provider '${provider}' (${Object.keys(PROVIDERS).join(', ')})`);
-  if (!String(prompt).trim()) throw new Error('a prompt is needed');
+  // Upscale, cutout and lip sync work from media alone.
+  if (!String(prompt).trim() && !Object.values(media).some((l) => l?.length)) throw new Error('a prompt is needed');
   const key = P.key ? String(env[P.key] ?? '').trim() : null;
   if (P.key && !key) throw new Error(`no ${P.label} key. Set ${P.key} (Settings › API keys)`);
   const id = crypto.randomBytes(5).toString('hex');
@@ -407,12 +411,24 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
       }).catch((e) => { throw new Error(`no Stable Diffusion server answered at ${LOCAL_SD()} (${e.message}). Start Draw Things, Forge or AUTOMATIC1111 with its API on, or set OX_SD_URL`); });
       fs.mkdirSync(dir, { recursive: true });
       files = (d.images ?? []).map((b64, i) => writeB64(dir, i, String(b64).replace(/^data:image\/\w+;base64,/, ''), 'png'));
+    } else if (provider === 'hf') {
+      if (!/^[\w.-]+\/[\w.-]+$/.test(String(model))) throw new Error('a Hugging Face model id looks like black-forest-labs/FLUX.1-schnell');
+      const base = (env.HF_INFERENCE_BASE || 'https://router.huggingface.co/hf-inference/models').replace(/\/$/, '');
+      const r = await fetchImpl(`${base}/${model}`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ inputs: prompt, ...(Object.keys(settings).length ? { parameters: settings } : {}) }), signal: AbortSignal.timeout(300_000) });
+      if (!r.ok) throw new Error(`Hugging Face: ${(await r.text()).slice(0, 200) || r.status}`);
+      const type = r.headers.get('content-type') || '';
+      if (!type.startsWith('image/')) throw new Error(`Hugging Face answered without an image (${type || 'no type'})`);
+      fs.mkdirSync(dir, { recursive: true });
+      const f = path.join(dir, `1.${type.includes('jpeg') ? 'jpg' : type.includes('webp') ? 'webp' : 'png'}`);
+      fs.writeFileSync(f, Buffer.from(await r.arrayBuffer()));
+      files.push(f);
     } else if (provider === 'fal') {
       if (!/^[\w.-]+\/[\w./-]+$/.test(String(model)) || String(model).includes('..')) throw new Error('a fal model id looks like fal-ai/flux/schnell');
       const base = (env.FAL_QUEUE_BASE || 'https://queue.fal.run').replace(/\/$/, '');
       const auth = { Authorization: `Key ${key}` };
-      const input = { prompt, ...settings };
-      for (const [role, list] of Object.entries(media)) if (list?.length) input[role === 'start' ? 'image_url' : `${role}_url`] = list[0];
+      const input = { ...(String(prompt).trim() ? { prompt } : {}), ...settings };
+      // A local file goes up as a data URI; links pass as they are.
+      for (const [role, list] of Object.entries(media)) if (list?.length) input[role === 'start' ? 'image_url' : `${role}_url`] = /^(https?|data):/.test(String(list[0])) ? list[0] : dataUri(await sourceImage(list[0], fetchImpl));
       const q = await jsonFetch(fetchImpl, `${base}/${model}`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
       note({ id, requestId: q.request_id });
       const statusUrl = q.status_url ?? `${base}/${model}/requests/${q.request_id}/status`;
@@ -422,11 +438,13 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
       if (done.status !== 'completed') { status = done.status; error = done.error ? String(done.error) : null; }
       else {
         const res = await jsonFetch(fetchImpl, responseUrl, { headers: auth });
-        urls = res.video?.url ? [res.video.url] : (res.images ?? []).map((x) => x?.url).filter(Boolean);
-        surface = res.video?.url ? 'video' : 'image';
+        // Shapes: video.url, images[].url, image.url (upscale, cutout), audio_file.url (audio).
+        const audioUrl = res.audio_file?.url ?? res.audio?.url ?? null;
+        urls = res.video?.url ? [res.video.url] : audioUrl ? [audioUrl] : res.image?.url ? [res.image.url] : (res.images ?? []).map((x) => x?.url).filter(Boolean);
+        surface = res.video?.url ? 'video' : audioUrl ? 'audio' : 'image';
         fs.mkdirSync(dir, { recursive: true });
         for (const [i, u] of urls.entries()) {
-          const ext = (/\.(png|jpe?g|webp|gif|mp4|mov|webm)(?:\?|$)/i.exec(u)?.[1] ?? (surface === 'video' ? 'mp4' : 'png')).toLowerCase();
+          const ext = (/\.(png|jpe?g|webp|gif|mp4|mov|webm|wav|mp3)(?:\?|$)/i.exec(u)?.[1] ?? (surface === 'video' ? 'mp4' : surface === 'audio' ? 'wav' : 'png')).toLowerCase();
           try { files.push(await download(u, path.join(dir, `${i + 1}.${ext}`), fetchImpl)); } catch {}
         }
       }

@@ -9,6 +9,7 @@
 //   vertical     9:16 (or 1:1) crop from the centre, for shorts
 //   highlights   the parts where what you asked about is said, joined
 //   gif          a small looping GIF
+//   join         clips one after another (sized to the first), for shots made apart
 //   polish       a demo that holds attention: still parts sped up, on a
 //                padded background (the Recordly idea, in ox's own code)
 //   understand   frames at scene changes plus the transcript, for the model
@@ -150,6 +151,20 @@ export function vertical(file, aspect = '9:16') {
 export function gif(file, { width = 480, fps = 12, start = null, end = null } = {}) {
   const out = outPath(file, 'loop', '.gif');
   ff([...(start != null ? ['-ss', String(seconds(start))] : []), ...(end != null ? ['-to', String(seconds(end))] : []), '-i', file, '-vf', `fps=${fps},scale=${width}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer`, out]);
+  return { file: out };
+}
+
+/** Clips one after another, each scaled and padded to the first's frame. Sound kept only when every clip has it. */
+export function join(files) {
+  const list = [].concat(files ?? []).map(String);
+  if (list.length < 2) throw new Error('join needs two or more clips');
+  const ps = list.map(probe);
+  const { width: w, height: h } = ps[0];
+  const sound = ps.every((p) => p.audio);
+  const parts = list.map((_, i) => `[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v${i}]`);
+  const ins = list.map((_, i) => `[v${i}]${sound ? `[${i}:a]` : ''}`).join('');
+  const out = outPath(list[0], 'joined', '.mp4');
+  ff([...list.flatMap((f) => ['-i', f]), '-filter_complex', `${parts.join(';')};${ins}concat=n=${list.length}:v=1:a=${sound ? 1 : 0}[v]${sound ? '[a]' : ''}`, '-map', '[v]', ...(sound ? ['-map', '[a]', '-c:a', 'aac'] : []), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', out]);
   return { file: out };
 }
 

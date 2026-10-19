@@ -314,7 +314,10 @@ struct RightCard: View {
         let cols = [GridItem(.flexible(), spacing: 4), GridItem(.flexible(), spacing: 4)]
         VStack(spacing: 4) {
             Spacer(minLength: 0)
-            if !others.isEmpty {
+            if let run = bridge.browse {
+                // The fast browser at work: a running clock, a tick per step, the final time.
+                BrowseCard(run: run)
+            } else if !others.isEmpty {
                 LazyVGrid(columns: cols, spacing: 4) {
                     ForEach(others.prefix(4)) { s in AgentPill(session: s) { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { bridge.focusId = s.id } } }
                 }
@@ -338,6 +341,76 @@ struct RightCard: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 8)
+    }
+}
+
+/// The fast browser's run (ox browse, the agent's web_task), live. In the island's own design:
+/// white figures on the dark card, the state colour (working blue, needs-you amber, done, error) only as an accent.
+struct BrowseCard: View {
+    let run: OxBridge.BrowseRun
+    private var mood: Mood {
+        switch run.status {
+        case "running": return .working("browser")
+        case "done": return .done
+        case "blocked": return .needsYou
+        default: return .error(run.reason ?? "")
+        }
+    }
+    var body: some View {
+        let accent = HomeInk.glow(mood)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                TimelineView(.animation(minimumInterval: 0.05, paused: !run.running)) { ctx in
+                    let secs = run.running ? ctx.date.timeIntervalSince(run.startedAt) : Double(run.elapsedMs) / 1000
+                    Text(String(format: "%.2f", max(0, secs)))
+                        .font(.system(size: 20, weight: .semibold, design: .rounded)).monospacedDigit()
+                        .foregroundStyle(HomeInk.text)
+                }
+                Text("s").font(.system(size: 11, weight: .medium)).foregroundStyle(HomeInk.dim)
+                Spacer(minLength: 4)
+                VStack(alignment: .trailing, spacing: 2) {
+                    HStack(spacing: 5) {
+                        Circle().fill(accent).frame(width: 6, height: 6)
+                            .shadow(color: accent.opacity(run.running ? 0.8 : 0), radius: 3)
+                        Text(label).font(.system(size: 10, weight: .semibold)).foregroundStyle(accent)
+                    }
+                    Text(run.host.isEmpty ? (run.title.isEmpty ? T("Browser") : run.title) : run.host)
+                        .font(.system(size: 9.5)).foregroundStyle(HomeInk.dim).lineLimit(1)
+                }
+            }
+            // The latest steps that fit, earlier ones counted.
+            let shown = Array(run.steps.suffix(3))
+            HStack(spacing: 4) {
+                if run.steps.count > shown.count {
+                    Text("+\(run.steps.count - shown.count)").font(.system(size: 9.5, weight: .medium)).foregroundStyle(HomeInk.dim)
+                }
+                ForEach(Array(shown.enumerated()), id: \.offset) { _, s in
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark").font(.system(size: 8, weight: .bold)).foregroundStyle(HomeInk.muted)
+                        Text(s).font(.system(size: 10, weight: .medium)).foregroundStyle(HomeInk.text).lineLimit(1)
+                    }
+                    .padding(.horizontal, 8).frame(height: 20)
+                    .background(Capsule().fill(HomeInk.tabOn))
+                    .transition(.scale(scale: 0.7).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: run.steps.count)
+            if let r = run.reason, run.status != "done", run.status != "running" {
+                Text(r).font(.system(size: 9.5)).foregroundStyle(HomeInk.muted).lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 12).fill(HomeInk.pill))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(accent.opacity(run.running ? 0.28 : 0.12), lineWidth: 1))
+        .help(run.goal)
+    }
+    private var label: String {
+        switch run.status {
+        case "running": return T("Browsing")
+        case "done": return T("Done")
+        case "blocked": return T("Needs you")
+        default: return T("Stopped")
+        }
     }
 }
 
