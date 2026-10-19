@@ -509,6 +509,13 @@
   .fl-problems { color: var(--red); font-size: 12.5px; margin: 6px 0; } .fl-ok { color: var(--muted); font-size: 12.5px; margin: 6px 0; }
   .fl-runs .card .d span { white-space: nowrap; }
   .office-head { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
+  .floor { position: relative; border-radius: 16px; overflow: hidden; border: 1px solid var(--line2); margin-bottom: 4px; background: #2a2622; }
+  .floor canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  .floor .tag { position: absolute; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; gap: 2px; pointer-events: auto; max-width: 17%; }
+  .floor .tag .say { background: rgba(255,255,255,.94); color: #111; font: 11px/1.3 var(--mono); padding: 3px 7px; border-radius: 8px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
+  .floor .tag .who { font: 600 11px var(--sans); color: #fff; background: rgba(0,0,0,.55); padding: 1px 7px; border-radius: 99px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .floor .tag.idle .say { opacity: .7; }
+  .floor .zone { position: absolute; font: 600 10px var(--sans); letter-spacing: .06em; color: rgba(255,255,255,.55); text-transform: uppercase; }
   .room { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; padding: 14px; border-radius: 16px; border: 1px solid var(--line); min-height: 150px;
     background: repeating-conic-gradient(var(--raise) 0 25%, var(--panel) 0 50%) 0 0 / 28px 28px; }
   .room.lounge { min-height: 0; background: var(--side); } .room:empty { display: block; }
@@ -770,6 +777,8 @@
 
     <section class="view" id="v-office"><div class="page"><div class="page-inner" style="max-width:1100px">
       <div class="office-head"><div><h2 style="margin:0">Office</h2><div class="small dim">Who is working on what, live: every chat, bot and helper agent this app started.</div></div><span class="grow"></span><span class="small dim" id="office-sum"></span></div>
+      <div class="floor" id="floor"><canvas id="floor-cv" width="320" height="150" aria-label="The office: who sits at which desk and what they are doing"></canvas><div id="floor-tags"></div></div>
+      <div class="lounge-h small dim" style="margin-top:16px">Desks in detail</div>
       <div class="room" id="room"></div>
       <div class="lounge-h small dim" id="lounge-h">Lounge: your bots, free</div>
       <div class="room lounge" id="lounge"></div>
@@ -2165,7 +2174,56 @@
     $('office-sum').textContent = working ? `${working} working` : 'quiet';
     paintOffice();
   }
+  // The office as a room (not a table): desks in rows under the windows, a whiteboard and plants,
+  // a coffee corner where free bots sit; drawn in pixels, names and what each is doing as real text on top.
+  const FLOOR = { w: 320, h: 150, desks: [[40, 70], [98, 70], [156, 70], [214, 70], [40, 118], [98, 118], [156, 118], [214, 118]], sofa: [[268, 104], [290, 104], [268, 132], [290, 132]] };
+  function skyAt(hour) { return hour < 6 || hour >= 21 ? ['#0b1430', '#16224a'] : hour < 8 ? ['#f4a87a', '#f7d6a8'] : hour < 18 ? ['#7fc4ff', '#bfe3ff'] : ['#f08a5d', '#6b4a8a']; }
+  function drawFloor() {
+    const cv = $('floor-cv'); if (!cv) return;
+    const g = cv.getContext('2d'), px = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
+    g.imageSmoothingEnabled = false;
+    // floor: warm boards
+    px(0, 40, FLOOR.w, FLOOR.h - 40, '#6b5240');
+    for (let y = 40, row = 0; y < FLOOR.h; y += 7, row++) {
+      px(0, y, FLOOR.w, 1, '#5d4636');                                   // seam between boards
+      for (let x = (row % 3) * 26; x < FLOOR.w; x += 78) px(x, y + 1, 1, 6, '#5d4636');   // board ends, staggered
+      if (row % 2) px(0, y + 3, FLOOR.w, 1, '#705644');                 // a little grain
+    }
+    // back wall, skirting, windows with the sky outside
+    px(0, 0, FLOOR.w, 40, '#3b3f47'); px(0, 38, FLOOR.w, 3, '#2a2d33');
+    const [s1, s2] = skyAt(new Date().getHours());
+    for (const wx of [18, 76, 134, 192]) { px(wx, 7, 40, 24, '#2a2d33'); px(wx + 2, 9, 36, 20, s1); px(wx + 2, 19, 36, 10, s2); px(wx + 19, 9, 2, 20, '#2a2d33'); px(wx + 2, 18, 36, 2, '#2a2d33'); }
+    // whiteboard with a little chart, a clock
+    px(246, 8, 40, 22, '#e8e8ea'); px(246, 8, 40, 2, '#9aa0a8'); px(250, 24, 4, 3, '#5AA9F0'); px(256, 20, 4, 7, '#16C47F'); px(262, 15, 4, 12, '#F5A524'); px(268, 18, 4, 9, '#A78BFA');
+    px(296, 10, 12, 12, '#e8e8ea'); px(301, 12, 2, 5, '#111'); px(302, 16, 4, 1, '#111');
+    // plants by the wall
+    for (const [x, y] of [[4, 46], [234, 46]]) { px(x + 2, y + 10, 8, 8, '#8a5a3c'); px(x, y, 12, 10, '#2f8f4e'); px(x + 3, y - 4, 6, 6, '#3fae63'); }
+    // coffee corner: rug, sofa, coffee machine
+    px(254, 88, 62, 58, '#4a3b5c'); px(256, 90, 58, 54, '#54456a');
+    for (const sy of [92, 120]) { px(260, sy, 52, 12, '#3f6f8f'); px(260, sy, 52, 4, '#4f87ab'); px(258, sy + 2, 4, 10, '#355f7a'); px(310, sy + 2, 4, 10, '#355f7a'); px(285, sy + 4, 1, 8, '#355f7a'); }
+    px(300, 44, 14, 20, '#2c2c2e'); px(303, 48, 8, 6, '#c8c8cc'); px(305, 58, 4, 4, '#e8e8ea');
+    // desks and who sits at them
+    const tmp = drawFloor.tmp ??= Object.assign(document.createElement('canvas'), { width: 24, height: 24 });
+    const runs = officeRuns.filter((r) => !r.ended || r.state === 'done' || r.state === 'failed').slice(0, FLOOR.desks.length);
+    FLOOR.desks.forEach(([x, y], i) => {
+      const r = runs[i];
+      if (r) { drawWorker(tmp, r.who, r.state, officeFrame); g.drawImage(tmp, x - 18, y - 30, 36, 36); }
+      else { px(x - 15, y - 5, 30, 3, '#8A8F98'); px(x - 13, y - 2, 2, 7, '#6B6F76'); px(x + 11, y - 2, 2, 7, '#6B6F76'); px(x + 2, y - 15, 9, 9, '#2C2C2E'); px(x + 3, y - 14, 7, 7, '#48484A'); }
+    });
+    // free bots on the sofa
+    const busy = new Set(runs.filter((r) => !r.ended && !r.ext).map((r) => r.who));
+    const free = [...new Set([...Object.keys(botShapes), ...Object.keys(botColors)])].filter((n) => !busy.has(n)).slice(0, FLOOR.sofa.length);
+    free.forEach((n, i) => { const [x, y] = FLOOR.sofa[i]; drawWorker(tmp, n, 'idle', officeFrame, false); g.drawImage(tmp, x - 12, y - 22, 24, 24); });
+    // tags: names and what each is doing, as text over the picture
+    const tags = runs.map((r, i) => { const [x, y] = FLOOR.desks[i]; return `<div class="tag ${r.state === 'idle' ? 'idle' : ''}" style="left:${(x / FLOOR.w) * 100}%;top:${((y - 30) / FLOOR.h) * 100}%" title="${esc(r.who)}: ${esc(doingText(r))}${r.title ? ` · ${esc(r.title)}` : ''}"><span class="say">${esc(doingText(r))}</span><span class="who">${esc(r.who)}${r.project ? ` · ${esc(r.project)}` : ''}</span></div>`; });
+    free.forEach((n, i) => { const [x, y] = FLOOR.sofa[i]; tags.push(`<div class="tag idle" style="left:${(x / FLOOR.w) * 100}%;top:${((y - 22) / FLOOR.h) * 100}%"><span class="who">${esc(n)}</span></div>`); });
+    tags.push(`<div class="zone" style="right:2%;top:${(84 / FLOOR.h) * 100}%">coffee corner</div>`);
+    if (!runs.length) tags.push(`<div class="zone" style="left:4%;top:${(88 / FLOOR.h) * 100}%">nobody at their desk: start a chat or a bot</div>`);
+    const html = tags.join('');
+    if ($('floor-tags').dataset.html !== html) { $('floor-tags').innerHTML = html; $('floor-tags').dataset.html = html; }
+  }
   function paintOffice() {
+    drawFloor();
     $('room').querySelectorAll('.desk').forEach((d) => { const r = officeRuns.find((x) => x.id === d.dataset.id); if (r) drawWorker(d.querySelector('canvas'), r.who, r.state, officeFrame); });
     $('lounge').querySelectorAll('.desk').forEach((d) => drawWorker(d.querySelector('canvas'), d.dataset.free, 'idle', officeFrame, false));
   }
