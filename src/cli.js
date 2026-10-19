@@ -4686,7 +4686,14 @@ async function runSubcommand(cmd, args) {
         if (sub === 'ask') { const r = await L.askAbout(args[1], args.slice(2).join(' '), { ask: askModel }); console.log(`${c.dim(r.title)}\n${r.answer}`); return; }
         if (sub === 'search') { for (const x of L.search(args.slice(1).join(' '))) console.log(`${c.dim(x.id)}  ${c.bold(x.title)}\n  ${c.dim(x.passage.replace(/\s+/g, ' ').slice(0, 200))}`); return; }
         if (sub === 'rm') { console.log(L.remove(args[1]) ? 'removed' : 'no such item'); return; }
-        console.error('usage: ox library [add <url|file> | read <id> | ask <id> "<question>" | search <words> | rm <id>]'); process.exitCode = 3;
+        // Connect your agent: Claude Code, Codex, ChatGPT… use the library over MCP.
+        if (sub === 'mcp') { L.serveLibraryMcp(); await new Promise(() => {}); }
+        if (sub === 'connect') {
+          const bin = `${process.execPath} ${path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js')}`;
+          console.log(`Give any agent your library (it can save, search and read; never delete):\n\n  Claude Code:  claude mcp add ox-library -- ${bin} library mcp\n  Codex:        add to ~/.codex/config.toml:\n                [mcp_servers.ox-library]\n                command = "${process.execPath}"\n                args = ["${path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js')}", "library", "mcp"]\n  Any MCP app:  command ${bin} library mcp`);
+          return;
+        }
+        console.error('usage: ox library [add <url|file> | read <id> | ask <id> "<question>" | search <words> | rm <id> | connect | mcp]'); process.exitCode = 3;
       } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
       return;
     }
