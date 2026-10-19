@@ -53,7 +53,10 @@ final class Herd {
         Member(id: "puff", name: "Puff", folder: "friends/puff", size: 0.82, napper: 1.0, player: 1.0, drinker: 1.0, x: 0.6, lane: 0.35),
         Member(id: "pebble", name: "Pebble", folder: "friends/pebble", size: 0.8, napper: 0.6, player: 1.8, drinker: 0.8, x: 0.3, lane: 0.9),
         Member(id: "dot", name: "Dot", folder: "friends/dot", size: 0.8, napper: 0.8, player: 1.0, drinker: 1.8, x: 0.75, lane: 0.6),
-        Member(id: "maple", name: "Maple", folder: "friends/maple", size: 0.9, napper: 0.8, player: 1.2, drinker: 1.0, x: 0.08, lane: 0.5),
+        Member(id: "maple", name: "Maple", folder: "friends/maple", size: 1.04, napper: 0.8, player: 1.2, drinker: 1.0, x: 0.08, lane: 0.5),
+        // Forest friends (Quaternius CC0 models, their own coats): Fern the deer, shy, explores and drinks; Rusty the fox, plays most.
+        Member(id: "fern", name: "Fern", folder: "friends/fern", size: 0.92, napper: 0.7, player: 0.8, drinker: 1.6, x: 0.88, lane: 0.25),
+        Member(id: "rusty", name: "Rusty", folder: "friends/rusty", size: 0.62, napper: 1.3, player: 2.0, drinker: 0.8, x: 0.52, lane: 0.95),
     ]
     /// Where the water is, and where the trees give shelter.
     static let pond: CGFloat = 0.86

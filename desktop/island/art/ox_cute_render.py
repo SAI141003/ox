@@ -118,7 +118,9 @@ def hexc(h):
     return [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in srgb] + [1.0]
 
 
-LOOK = CFG["look"]
+# OX_OWN_LOOK=1: keep the model's own coat (a horse, deer or fox as it is), cartoon face still added.
+OWN_LOOK = os.environ.get("OX_OWN_LOOK") == "1"
+LOOK = {} if OWN_LOOK else CFG["look"]
 for m in bpy.data.materials:
     spec = LOOK.get(m.name.split(".")[0])
     if not spec or not m.use_nodes:
@@ -142,6 +144,12 @@ def action(name):
     for a in sorted(bpy.data.actions, key=lambda a: "|" not in a.name):
         if a.name == name or a.name.endswith("|" + name):
             return a
+    # Same rig, slightly different names on some models (the fox: Idle_2_HeadLow, Jump_ToIdle, Attack).
+    alias = {"Idle_Headlow": ["Idle_2_HeadLow", "Idle_HeadLow"], "Jump_toIdle": ["Jump_ToIdle"], "Attack_Headbutt": ["Attack"], "Idle_HitReact_Left": ["Idle_HitReact_Right"]}
+    for alt in alias.get(name, []):
+        for a in sorted(bpy.data.actions, key=lambda a: "|" not in a.name):
+            if a.name.lower() == alt.lower() or a.name.lower().endswith("|" + alt.lower()):
+                return a
     raise SystemExit(f"no action {name}: {[a.name for a in bpy.data.actions]}")
 
 
@@ -277,7 +285,7 @@ M_BROW, M_BLUSH = mat("Brow", "#3A3A40", 0.6), mat("Blush", "#F29B8F", 0.7)
 
 # Charcoal patches on the coat (object space noise, so they stay put as it moves).
 for m in bpy.data.materials:
-    if m.name.split(".")[0] != "Main" or not m.use_nodes:
+    if OWN_LOOK or m.name.split(".")[0] != "Main" or not m.use_nodes:
         continue
     nt = m.node_tree
     bsdf = next(n for n in nt.nodes if n.type == "BSDF_PRINCIPLED")
@@ -436,6 +444,8 @@ FRIENDS = {
     "dot":  {"coat": "#FAFAF7", "patch": "#2A2A2E", "cut": 0.5,  "scarf": "#7C5CFF", "horns": 0.0, "wool": False, "head": 1.45},
     "pebble": {"coat": "#FAFAF7", "patch": "#2A2A2E", "cut": 0.66, "scarf": "#FF5A4E", "horns": 0.55, "wool": False, "head": 1.45},
     "puff": {"coat": "#FBFAF6", "patch": "#FBFAF6", "cut": 2.0,  "scarf": "#2EC4A0", "horns": 0.0, "wool": True, "head": 1.4, "face": "#2A2A2E"},
+    # The elder, the first ox: the only dark one in the herd, bigger horns, a grey scarf.
+    "elder": {"coat": "#3A3A40", "patch": "#2E2E33", "cut": 2.0, "scarf": "#8E939C", "horns": 1.15, "wool": False, "head": 1.3},
     # Maple the pony (the messenger): chestnut, a darker mane-coloured back, no horns, taller and slimmer.
     "maple": {"coat": "#A5643A", "patch": "#4A2A18", "cut": 0.62, "scarf": "#F5C542", "horns": 0.0, "wool": False, "head": 1.35, "face": "#8A5130", "shape": (0.86, 1.0, 1.16)},
 }

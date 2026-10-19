@@ -22,10 +22,12 @@ A strip of meadow inside the island's left card, drawn back to front:
 
 | Who | Looks | Job on the island |
 |---|---|---|
-| **Elder** | the first ox, the dark bull | Keeps time and limits. Naps most. Worries when a plan passes 80 % of its window. At night he leads everyone to sleep. |
+| **Elder** | the first ox: the only dark one, bigger horns, a grey scarf, drawn like the rest of the cast | Keeps time and limits. Naps most. Worries when a plan passes 80 % of its window. At night he leads everyone to sleep. |
 | **Ox** | cream and charcoal, the main character | Your own ox runs. While one works the ox leaves to work (it is in the card beside its run); when it ends it comes back and hops. When something needs you, it walks to the front and looks at you. |
 | **Puff, Pebble, Dot** | the white friends | Each stands in for another agent session (Claude Code, Codex…). While that session works, that friend is away "at work"; it comes back when the session goes quiet. |
-| **Maple** | a chestnut calf (a real pony when the Quaternius horse model is added) | The messenger. When mail arrives, a teammate machine raises an alert, or a hire is waiting, Maple gallops in from the left and stops at the front with a note; tap Maple to open it. |
+| **Maple** | a chestnut horse with a dark mane (Quaternius' CC0 horse, its own coat) | The messenger. When mail arrives, a teammate machine raises an alert, or a hire is waiting, Maple gallops in from the left and stops at the front with a note; tap Maple to open it. |
+| **Fern** | a deer (Quaternius CC0, its own coat) | The shy one. Drinks most and wanders to the edge of the trees; she is the first to look up when something needs you. |
+| **Rusty** | a small red fox (Quaternius CC0) | The playful one. Plays most, naps in between, and chases whoever starts a game. |
 | **Birds** | two small birds | The weather. They fly across on clear days and stay away in the rain. |
 
 ## What they do when nothing needs you
