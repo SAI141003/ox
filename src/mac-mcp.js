@@ -10,7 +10,7 @@
 // where the cursor is, press a navigation key; never Return, Send, Pay or
 // Delete, so a message is written and left for the owner to send.
 // Not exposed: shell commands, sending anything.
-import { listElements, describeElements, click, typeText, pressKey } from './mac-control.js';
+import { listElements, describeElements, click, typeText, pressKey, draw } from './mac-control.js';
 import { doOffline, resolveApp } from './offline.js';
 import { osCmd } from './tools/operator.js';
 import { currentPageTool } from './tools/current-page.js';
@@ -27,6 +27,7 @@ export const MAC_TOOLS = [
   { name: 'ui_elements', description: "The controls of an app's front window (buttons, text boxes, list rows, labels) with a number and where each is on screen. Call it before clicking. app: the app's name, or leave it out for the app in front.", inputSchema: { type: 'object', properties: { app: { type: 'string' } } } },
   { name: 'click', description: 'Click a control in an app: element is its name as ui_elements shows it ("Search", "Anna Smith") or its number from ui_elements; role narrows it ("button", "text field", "row"); or x and y in screen points. double for a double click. Never presses Send, Pay, Buy, Delete or the like: those are left for the user.', inputSchema: { type: 'object', properties: { app: { type: 'string' }, element: { type: 'string' }, role: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, double: { type: 'boolean' } } } },
   { name: 'type_text', description: 'Type text where the cursor is in an app (any language, emoji, several lines). into: a text box to click first, by its name from ui_elements. Never presses Return, so a chat message is written and left for the user to send.', inputSchema: { type: 'object', properties: { app: { type: 'string' }, text: { type: 'string' }, into: { type: 'string' } }, required: ['text'] } },
+  { name: 'draw', description: 'Draw with the cursor in an app, the way a hand would (carve a pumpkin, sketch on a canvas, sign): shape is circle, smile, frown, line, v, triangle, rectangle, star or zigzag inside the box x, y, w, h (screen points, top left and size; take a screenshot to find where), or points [[x, y], …] for any path. label names it ("left eye"). The person can move the mouse to stop it.', inputSchema: { type: 'object', properties: { app: { type: 'string' }, shape: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' }, points: { type: 'array', items: { type: 'array', items: { type: 'number' } } }, label: { type: 'string' } } } },
   { name: 'press_key', description: 'Press a key in an app: tab, shift+tab, escape, space, delete, up, down, left, right, home, end, pageup, pagedown, or ⌘ with A C F K L N T V X Z (cmd+f to search, cmd+n for new). Never Return or Enter. times repeats it.', inputSchema: { type: 'object', properties: { app: { type: 'string' }, key: { type: 'string' }, times: { type: 'number' } }, required: ['key'] } },
 ];
 
@@ -73,6 +74,7 @@ export async function callMacTool(name, args = {}, { dryRun = false } = {}) {
     case 'click': return await click(args, { dryRun });
     case 'type_text': return await typeText(args, { dryRun });
     case 'press_key': return await pressKey(args, { dryRun });
+    case 'draw': return await draw(args, { dryRun });
     default: return { isError: true, text: `no tool ${name}` };
   }
 }

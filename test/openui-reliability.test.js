@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Canvas, checkUi, uiBlocks, mendBrackets } from '../src/ui-lang.js';
-import { LIVE_UI_GUIDE, repairLiveUi } from '../src/serve.js';
+import { LIVE_UI_GUIDE, repairLiveUi, mendUi } from '../src/serve.js';
 
 const load = (src) => {
   const ev = new Canvas().load(src);
@@ -148,4 +148,27 @@ test('Explainer and Flow: built from primitives every renderer draws; clicking a
   assert.equal(f.root.type, 'Svg');
   assert.equal(f.root.props.children.filter((c) => c.type === 'Line').length, 2);
   assert.match(U.evaluate(U.parseProgram('root = Explainer("x", [])')).errors[0].msg, /Explainer needs steps/);
+});
+
+test('every time: a drawing the small model cannot mend goes to the strongest model connected', async () => {
+  const broken = '```openui\nfor i in range(10):\n  x = 1\nroot = Card("T" Text(\n```';
+  const seen = [];
+  const run = async function* ({ target }) {
+    seen.push(target.model);
+    yield { type: 'text-delta', text: String(target.model).includes('big') ? '```openui\nroot = Card("Interest", [Chart("line", ["1", "2"], [100, 105])])\n```' : 'still no block' };
+  };
+  const out = await mendUi({ text: broken, target: { model: 'qwen2.5:3b' }, pickedName: 'qwen2.5:3b', messages: [{ role: 'user', content: 'a compound interest chart' }], ctx: {}, config: {}, run, pick: () => ({ id: 'ox-ollama:big-model:32b' }) });
+  assert.deepEqual(seen, ['qwen2.5:3b', 'big-model:32b'], 'its own round first, then the stronger model');
+  assert.equal(out.by, 'ox-ollama:big-model:32b');
+  assert.equal(checkUi(out.text).ok, true);
+  // The same model is never asked twice, and a drawing that loads is left alone.
+  const same = await mendUi({ text: broken, target: { model: 'qwen2.5:3b' }, pickedName: 'qwen2.5:3b', messages: [], ctx: {}, config: {}, run, pick: () => ({ id: 'ox-ollama:qwen2.5:3b' }) });
+  assert.equal(same, null);
+  assert.equal(await mendUi({ text: '```openui\nroot = Text("hi")\n```', target: {}, pickedName: 'x', messages: [], ctx: {}, config: {}, run, pick: () => ({ id: 'ox-ollama:big-model:32b' }) }), null);
+});
+
+test('invented chart names draw as Chart with that type', () => {
+  const c = checkUi('```openui\nroot = Card("B", [PieChart(["a", "b"], [1, 2], "t"), LineChart(["x", "y"], [3, 4]), DonutChart(["p"], [1])])\n```');
+  assert.equal(c.ok, true);
+  assert.deepEqual(c.tree.props.children.map((x) => x.props.type), ['pie', 'line', 'donut']);
 });

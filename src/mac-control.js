@@ -186,6 +186,7 @@ export async function click({ app, element, role, x, y, double = false } = {}, {
   if (app && !dryRun) { const a = await hands(['activate', app]); if (a.error) return { isError: true, text: a.error }; }
   const at = await hands(['at', x, y]);
   if (at.error) return { isError: true, text: at.error };
+  if (app && at.app && !sameApp(at.app, app)) return { isError: true, text: `${app}'s window is not under ${Math.round(x)},${Math.round(y)} (${at.app} is there). Nothing was clicked.` };
   const risky = (at.chain ?? []).find(isRisky);
   if (risky) return { isError: true, text: `ox does not press "${risky.name || risky.description}": that sends, pays or deletes. It is left for you to press.` };
   const under = at.chain?.[0];
@@ -210,6 +211,85 @@ export async function typeText({ app, text, into } = {}, { dryRun = false } = {}
   if (dryRun) return { text: `would type ${chars} characters${into ? ` into "${into}"` : ''}` };
   const r = await hands(['type', t, ...(app ? ['--app', app] : [])]);
   return r.error ? { isError: true, text: r.error } : { text: `typed ${chars} characters${app ? ` in ${app}` : ''}${into ? ` into "${into}"` : ''} (${Date.now() - t0} ms); nothing sent: press Return or Send yourself when it reads right` };
+}
+
+const sameApp = (a, b) => { const x = String(a).toLowerCase(), y = String(b).toLowerCase(); return x === y || x.includes(y) || y.includes(x); };
+
+// ---- drawing with the cursor (Vovy carving a pumpkin) ---------------------
+export const SHAPES = ['circle', 'smile', 'frown', 'line', 'v', 'triangle', 'rectangle', 'star', 'zigzag'];
+
+/**
+ * The points of a shape inside a box (screen points, x right, y down). `n` is
+ * how many points a curve gets. Free paths are given as `points` instead.
+ */
+export function shapePath(shape, { x, y, w, h }, n = 48) {
+  const cx = x + w / 2, cy = y + h / 2, rx = w / 2, ry = h / 2;
+  const arc = (a0, a1, k = n) => Array.from({ length: k + 1 }, (_, i) => { const a = a0 + ((a1 - a0) * i) / k; return [cx + rx * Math.cos(a), cy + ry * Math.sin(a)]; });
+  switch (String(shape).toLowerCase()) {
+    case 'circle': case 'ellipse': case 'oval': case 'eye': return arc(0, 2 * Math.PI);
+    // A grin: the lower half of an ellipse whose top edge is the box's top.
+    case 'smile': case 'grin': return Array.from({ length: n + 1 }, (_, i) => { const a = Math.PI * 0.1 + (Math.PI * 0.8 * i) / n; return [cx + rx * Math.cos(a), y + h * Math.sin(a)]; });
+    case 'frown': return Array.from({ length: n + 1 }, (_, i) => { const a = Math.PI * 1.1 + (Math.PI * 0.8 * i) / n; return [cx + rx * Math.cos(a), y + h + h * Math.sin(a)]; });
+    case 'line': return [[x, y], [x + w, y + h]];
+    case 'v': return [[x, y], [cx, y + h], [x + w, y]];
+    case 'triangle': case 'nose': return [[cx, y], [x + w, y + h], [x, y + h], [cx, y]];
+    case 'rectangle': case 'rect': case 'square': return [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]];
+    case 'star': return Array.from({ length: 11 }, (_, i) => { const r = i % 2 ? 0.4 : 1; const a = -Math.PI / 2 + (Math.PI * i) / 5; return [cx + rx * r * Math.cos(a), cy + ry * r * Math.sin(a)]; });
+    case 'zigzag': return Array.from({ length: 7 }, (_, i) => [x + (w * i) / 6, i % 2 ? y + h : y]);
+    default: return null;
+  }
+}
+
+/** Points along a path every `step` points or so, so a drag is smooth and slow enough for a canvas to see. */
+export function densify(points, step = 6) {
+  const out = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const [ax, ay] = points[i - 1], [bx, by] = points[i];
+    const k = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / step));
+    for (let j = 1; j <= k; j++) out.push([ax + ((bx - ax) * j) / k, ay + ((by - ay) * j) / k]);
+  }
+  return out.map(([px, py]) => [Math.round(px * 10) / 10, Math.round(py * 10) / 10]);
+}
+
+// Draw with the cursor: a named shape in a box, or free points. What is under
+// the starting point is read first, like a click: a Send / Pay / Delete-like
+// control is refused. Moving the mouse yourself stops it.
+export async function draw({ app, shape, x, y, w, h, points, label } = {}, { dryRun = false } = {}) {
+  let pts = null;
+  if (Array.isArray(points) && points.length >= 2) pts = points.map((p) => (Array.isArray(p) ? p : [p.x, p.y])).map(([a, b]) => [Number(a), Number(b)]);
+  else if (shape) {
+    const box = { x: Number(x), y: Number(y), w: Number(w), h: Number(h) };
+    if (![box.x, box.y, box.w, box.h].every(Number.isFinite) || box.w <= 0 || box.h <= 0) return { isError: true, text: 'a shape needs its box: x, y (top left), w and h in screen points' };
+    pts = shapePath(shape, box);
+    if (!pts) return { isError: true, text: `ox draws these shapes: ${SHAPES.join(', ')}; or give points` };
+  }
+  if (!pts || pts.some(([a, b]) => !Number.isFinite(a) || !Number.isFinite(b))) return { isError: true, text: 'say what to draw: a shape with its box, or points [[x, y], …]' };
+  const what = label || shape || 'a path';
+  if (app && !dryRun) {
+    const a = await hands(['activate', app]);
+    if (a.error) return { isError: true, text: a.error };
+    // An app just brought forward takes a moment to take the mouse: the first
+    // stroke on a fresh window came out as a dot without this.
+    if (!a.already) await new Promise((r) => setTimeout(r, 350));
+  }
+  // A window coming back from Stage Manager slides in: wait (2 s at most) until
+  // the app's own window is settled under the first point, read twice alike.
+  let at = await hands(['at', pts[0][0], pts[0][1]]);
+  if (app && !dryRun) {
+    let seen = 0;
+    for (let i = 0; i < 10 && seen < 2; i++) {
+      if (at.app && sameApp(at.app, app)) seen++; else seen = 0;
+      if (seen < 2) { await new Promise((r) => setTimeout(r, 200)); at = await hands(['at', pts[0][0], pts[0][1]]); }
+    }
+  }
+  const risky = (at.chain ?? []).find(isRisky);
+  if (risky) return { isError: true, text: `ox does not draw on "${risky.name || risky.description}": that sends, pays or deletes.` };
+  // Never draw on the wrong thing: the app asked for must be the one under the first point.
+  if (app && at.app && !sameApp(at.app, app)) return { isError: true, text: `${app}'s window is not under that point (${at.app} is there: the window may be hidden, parked by Stage Manager or covered). Nothing was drawn.` };
+  const dense = densify(pts);
+  if (dryRun) return { text: `would draw ${what} (${dense.length} points)` };
+  const r = await hands(['path', '--points', dense.map(([a, b]) => `${a},${b}`).join(';')], { timeout: 30_000 });
+  return r.error ? { isError: true, text: r.error } : { text: `drew ${what} (${dense.length} points, ${r.ms} ms)` };
 }
 
 export async function pressKey({ app, key, times = 1 } = {}, { dryRun = false } = {}) {

@@ -149,6 +149,11 @@ export function parseIntent(text) {
     const msg = m[2].trim().replace(/^./, (c) => c.toUpperCase()).replace(/[^.!?]$/, '$&.');
     return { intent: 'email', to: '', name: m[1], subject: '', body: `Hi ${m[1]},\n\n${msg}\n` };
   }
+  // Vovy's "I want to build a pumpkin carver game with Claude, can you get it going?":
+  // a new project, Claude Code (or Codex) in a new Terminal tab with a full brief (ox make).
+  if ((m = /^(?:hey,?\s+)?(?:i (?:want|would like|'d like) to |can you |could you |please |let's |lets )?(?:build|make|create|code)\s+(?:me\s+|us\s+)?((?:a|an|the)\s+.+?)\s+(?:with|using|in)\s+(claude(?: code)?|codex)(?:[,.]?\s*(?:can you |could you )?(?:get it going|start it|kick it off|go)(?: for me)?)?\??$/i.exec(t))) {
+    return { intent: 'make', idea: m[1].trim(), builder: /codex/i.test(m[2]) ? 'codex' : 'claude' };
+  }
   // Coucou's "am I a good developer?" ("Claude wrote 90% of your code. Rude."): from git, this week.
   if (/^am i (?:a )?(?:good|great|bad|real) (?:developer|dev|programmer|coder|engineer)\??$|^how much of (?:my|the) code (?:did|does|has) (?:ai|claude|codex|copilot|cursor|the ai|an ai) (?:write|written)\??$|^who (?:wrote|writes) (?:my|the) code\??$/i.test(low)) {
     return { intent: 'devcheck' };
@@ -458,6 +463,14 @@ export function perform(it) {
       return { ok: true, message: `timer set: ${mins} — "${it.label}"` };
     }
     case 'note': { const r = addNote(it.text); return { ok: r.ok, message: `noted in ${r.where}` }; }
+    case 'make': {
+      // Runs on its own (it waits for the agent to finish), narrated in the notch.
+      const bin = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+      const child = spawn(process.execPath, [bin, 'make', it.idea, '--with', it.builder], { detached: true, stdio: 'ignore', cwd: os.homedir() });
+      child.on('error', () => {});
+      child.unref();
+      return { ok: true, message: `Sure. Setting up the project and opening ${it.builder === 'codex' ? 'Codex' : 'Claude Code'} in a new tab to build ${it.idea}.` };
+    }
     case 'devcheck': {
       // git log over a week takes seconds: kept 10 minutes, like the recap's.
       if (!devCache.v || Date.now() - devCache.at > 600_000) devCache.v = codeChangesSync({ days: 7 }), devCache.at = Date.now();

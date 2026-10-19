@@ -76,7 +76,7 @@ function shell(cwd, command, timeoutMs) {
  * { id, entries (ranked), winner, patchDir }.
  */
 export async function runArena(opts, { cwd = process.cwd(), log = () => {}, env = process.env } = {}) {
-  const { task, bots, test, maxCost, apply, timeoutMs } = opts;
+  const { task, bots, test, maxCost, apply, timeoutMs, labels = [] } = opts;
   if (!task) throw new Error('usage: ox arena "<task>" --bots a,b[,c] [--test "<command>"] [--max-cost <usd>] [--apply]');
   if (bots.length < 2) throw new Error('give at least two bots to compare: --bots claude,ox-grok (see: ox bots)');
   let root;
@@ -90,7 +90,9 @@ export async function runArena(opts, { cwd = process.cwd(), log = () => {}, env 
 
   const entries = await Promise.all(bots.map(async (bot, i) => {
     const dir = path.join(base, `${i}-${bot.replace(/[^\w.-]/g, '_')}`);
-    const e = { bot, ok: false, test: null, changedLines: 0, files: 0, costUsd: null, seconds: 0, patch: null, error: null };
+    // A label tells two entries on the same bot apart (two ox org agents on claude).
+    const label = labels[i] ?? bot;
+    const e = { bot, label, ok: false, test: null, changedLines: 0, files: 0, costUsd: null, seconds: 0, patch: null, error: null };
     try {
       git(root, ['worktree', 'add', '--detach', dir, 'HEAD']);
       log(`▸ ${bot}: working in its own copy`);
@@ -112,7 +114,7 @@ export async function runArena(opts, { cwd = process.cwd(), log = () => {}, env 
       const stat = git(dir, ['diff', '--cached', '--numstat', 'HEAD']).trim().split('\n').filter(Boolean);
       e.files = stat.length;
       e.changedLines = stat.reduce((n, l) => n + (Number(l.split('\t')[0]) || 0) + (Number(l.split('\t')[1]) || 0), 0);
-      if (diff) { e.patch = path.join(patchDir, `${bot.replace(/[^\w.-]/g, '_')}.patch`); fs.writeFileSync(e.patch, diff); }
+      if (diff) { e.patch = path.join(patchDir, `${label.replace(/[^\w.-]/g, '_')}.patch`); fs.writeFileSync(e.patch, diff); }
       if (test && e.changedLines > 0) {
         const tr = await shell(dir, test, 10 * 60_000);
         e.test = tr.code === 0;

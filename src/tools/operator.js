@@ -163,6 +163,17 @@ export async function click(args = {}, ctx = {}) {
   return macRun(() => macControl.click(args, { dryRun: isDry() }));
 }
 
+// Draw with the cursor (Vovy carving a pumpkin): a shape in a box, or points.
+export async function draw(args = {}, ctx = {}) {
+  if (!args.shape && !Array.isArray(args.points)) return err('operator draw: shape (with x, y, w, h) or points is required');
+  if (!ctx?.yolo) {
+    if (!ctx?.requestApproval) return err('draw requires approval');
+    const v = await ctx.requestApproval('draw', { app: args.app, shape: args.shape, x: args.x, y: args.y, w: args.w, h: args.h }, `Take the cursor and draw ${args.label || args.shape || 'a path'}${args.app ? ` in ${args.app}` : ''}? (Move the mouse to stop it.)`);
+    if (!v) return { content: 'User declined draw' };
+  }
+  return macRun(() => macControl.draw(args, { dryRun: isDry() }));
+}
+
 export async function press_key(args = {}, ctx = {}) {
   if (!args.key) return err('operator press_key: key is required');
   const k = macControl.parseKey(args.key);
@@ -236,6 +247,7 @@ export const OPERATOR_TOOLS = [
   { name: 'ui_elements', description: "List the controls of an app's front window (buttons, text boxes, rows, labels) with a number and screen position (macOS). Args: app (optional, default the app in front). Read-only." },
   { name: 'click', description: 'Click a control (macOS): element (its name or number from ui_elements), role (optional: button, text field, row), or x and y in screen points; app (optional); double (optional). Never presses Send, Pay, Buy, Delete or the like. Requires approval.' },
   { name: 'press_key', description: 'Press a key (macOS): tab, shift+tab, escape, space, delete, arrows, home, end, pageup, pagedown, or cmd with a c f k l n t v x z. Never Return or Enter. Args: key (REQUIRED), app, times. Requires approval.' },
+  { name: 'draw', description: 'Draw with the cursor (macOS): shape (circle smile frown line v triangle rectangle star zigzag) in a box x, y, w, h (screen points; find it with screenshot), or points [[x,y],…]; label says what it is. Requires approval.' },
 ];
 
 export const OPERATOR_TOOL_SCHEMAS = OPERATOR_TOOLS.map((t) => ({
@@ -250,6 +262,7 @@ export const OPERATOR_TOOL_SCHEMAS = OPERATOR_TOOLS.map((t) => ({
       : t.name === 'type_text' ? { text: { type: 'string', description: 'Text to type' }, app: { type: 'string' }, into: { type: 'string' } }
       : t.name === 'ui_elements' ? { app: { type: 'string', description: 'App name (default: the app in front)' } }
       : t.name === 'click' ? { app: { type: 'string' }, element: { type: 'string', description: 'Control name or number from ui_elements' }, role: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, double: { type: 'boolean' } }
+      : t.name === 'draw' ? { shape: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' }, points: { type: 'array' }, label: { type: 'string' }, app: { type: 'string' } }
       : t.name === 'press_key' ? { app: { type: 'string' }, key: { type: 'string', description: 'tab, shift+tab, escape, down, cmd+f…' }, times: { type: 'number' } }
       : t.name === 'screenshot' ? { output: { type: 'string', description: 'Output image path' } }
       : { message: { type: 'string', description: 'Notification message' } },

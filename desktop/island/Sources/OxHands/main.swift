@@ -80,14 +80,26 @@ func frontWindow(_ app: AXUIElement) -> AXUIElement? {
     return windows(app).first
 }
 
+/// Frontmost through Accessibility, then raise its window: what brings a window
+/// back from Stage Manager's side strip (activate() alone leaves it parked).
+func raiseWindow(_ app: NSRunningApplication) {
+    let ax = AXUIElementCreateApplication(app.processIdentifier)
+    AXUIElementSetAttributeValue(ax, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+    if let w = windows(ax).first {
+        AXUIElementSetAttributeValue(w, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXUIElementPerformAction(w, kAXRaiseAction as CFString)
+    }
+}
+
 /// Bring the app forward; an app running with no window is reopened (macOS gives it one).
 @discardableResult
 func activate(_ name: String) -> NSRunningApplication? {
     var app = runningApp(name)
     // A background app (no Dock icon, like OX Island) is never brought forward: its panels are already up.
     if let a = app, a.activationPolicy != .regular { return a }
-    // Already in front: nothing to wait for (the common case between two steps).
-    if let a = app, frontPid() == a.processIdentifier { return a }
+    // Already in front: nothing to wait for (the common case between two steps),
+    // but a window parked by Stage Manager is brought back.
+    if let a = app, frontPid() == a.processIdentifier { raiseWindow(a); return a }
     let hasWindow = app.map { !windows(AXUIElementCreateApplication($0.processIdentifier)).isEmpty } ?? false
     if app == nil || !hasWindow {
         let url = app?.bundleURL ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: name)
@@ -104,8 +116,11 @@ func activate(_ name: String) -> NSRunningApplication? {
     }
     guard let app else { return nil }
     app.activate()
-    // Wait (20 ms steps, 1.5 s at most) until it is in front with a window.
+    // Raise its window too: with Stage Manager an activated app can keep its
+    // window parked in the side strip, and clicks or drawing land on the desktop.
     let ax = AXUIElementCreateApplication(app.processIdentifier)
+    raiseWindow(app)
+    // Wait (20 ms steps, 1.5 s at most) until it is in front with a window.
     for _ in 0..<75 {
         if frontPid() == app.processIdentifier, frontWindow(ax) != nil { break }
         pump(0.02)
@@ -226,8 +241,9 @@ func handle(_ args: [String]) -> [String: Any] {
         if !AXIsProcessTrusted() { try emit(["error": accessHint, "access": false]) }
         switch cmd {
         case "activate":
+            let wasFront = argv.count > 1 ? (runningApp(argv[1]).map { frontPid() == $0.processIdentifier } ?? false) : false
             guard argv.count > 1, let a = activate(argv[1]) else { try emit(["error": "\(argv.dropFirst().first ?? "") is not an app on this Mac"]) }
-            try emit(["app": a.localizedName ?? argv[1], "ms": ms()])
+            try emit(["app": a.localizedName ?? argv[1], "already": wasFront, "ms": ms()])
 
         case "list":
             guard let app = targetApp() else { try emit(["error": opt("app").map { "\($0) is not an app on this Mac" } ?? "no app in front"]) }
@@ -241,6 +257,10 @@ func handle(_ args: [String]) -> [String: Any] {
             guard argv.count > 2, let x = Double(argv[1]), let y = Double(argv[2]) else { try emit(["error": "at <x> <y>"]) }
             var hit: AXUIElement?
             guard AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(x), Float(y), &hit) == .success, var el = hit else { try emit(["chain": [], "ms": ms()]) }
+            // Which app owns the point (Stage Manager can park a window off screen; another app can sit on top).
+            var owner: pid_t = 0
+            AXUIElementGetPid(el, &owner)
+            let ownerName = NSRunningApplication(processIdentifier: owner)?.localizedName ?? ""
             var chain: [[String: Any]] = []
             for _ in 0..<4 {
                 chain.append(labels(el))
@@ -248,7 +268,7 @@ func handle(_ args: [String]) -> [String: Any] {
                 el = p as! AXUIElement
                 if str(attr(el, kAXRoleAttribute)) == "AXWindow" { break }
             }
-            try emit(["chain": chain, "ms": ms()])
+            try emit(["chain": chain, "app": ownerName, "ms": ms()])
 
         case "press":
             guard let app = targetApp(), let w = frontWindow(AXUIElementCreateApplication(app.processIdentifier)) else { try emit(["error": "no window to press in"]) }
@@ -282,6 +302,39 @@ func handle(_ args: [String]) -> [String: Any] {
                 try emit(["done": "clicked", "ms": ms()])
             }
             try emit(["done": "pressed", "ms": ms()])
+
+        case "path":
+            // Draw: press at the first point, drag through the rest, release at the last.
+            // If the person moves the mouse meanwhile, stop at once and leave it to them.
+            let pts: [CGPoint] = (opt("points") ?? "").split(separator: ";").compactMap { pair in
+                let v = pair.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+                return v.count == 2 ? CGPoint(x: v[0], y: v[1]) : nil
+            }
+            guard pts.count >= 2 else { try emit(["error": "path --points \"x,y;x,y;…\" (two points at least)"]) }
+            let stepUs = UInt32(max(2, min(60, Int(opt("step-ms") ?? "") ?? 8))) * 1000
+            post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: pts[0], mouseButton: .left))
+            usleep(120_000)
+            post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: pts[0], mouseButton: .left))
+            usleep(40_000)
+            var last = pts[0], drawn = 1
+            for p in pts.dropFirst() {
+                let now = CGEvent(source: nil)?.location ?? last
+                if hypot(now.x - last.x, now.y - last.y) > 8 {
+                    post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: now, mouseButton: .left))
+                    try emit(["error": "you moved the mouse, so ox stopped drawing and gave it back", "drawn": drawn, "of": pts.count])
+                }
+                post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: p, mouseButton: .left))
+                last = p; drawn += 1
+                usleep(stepUs)
+            }
+            post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: last, mouseButton: .left))
+            try emit(["done": "drew", "points": pts.count, "ms": ms()])
+
+        case "move":
+            // Only the pointer (hover), no click.
+            guard argv.count > 2, let x = Double(argv[1]), let y = Double(argv[2]) else { try emit(["error": "move <x> <y>"]) }
+            post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: x, y: y), mouseButton: .left))
+            try emit(["done": "moved", "ms": ms()])
 
         case "click":
             guard argv.count > 2, let x = Double(argv[1]), let y = Double(argv[2]) else { try emit(["error": "click <x> <y>"]) }

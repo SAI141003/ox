@@ -676,6 +676,10 @@ export function evaluate(program, env = {}) {
     // Col is two things: OpenUI's layout column, Col([a, b]), and ox's table
     // column, Col("Label", values). A list first means the layout.
     if (n.name === 'Col' && n.args[0]?.k === 'arr') n = { ...n, name: 'Column' };
+    // PieChart(labels, values, "t"), LineChart(…), DonutChart(…), AreaChart(…):
+    // the names models reach for are ox's Chart with that type first.
+    const chartType = /^(Pie|Donut|Doughnut|Line|Area)Chart$/.exec(n.name)?.[1]?.toLowerCase();
+    if (chartType && !LIBRARY[n.name]) n = { ...n, name: 'Chart', args: [{ k: 'lit', v: chartType === 'doughnut' ? 'donut' : chartType }, ...n.args] };
     const spec = LIBRARY[n.name];
     if (!spec) {
       const near = suggest(n.name, Object.keys(LIBRARY));

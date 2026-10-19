@@ -583,6 +583,27 @@ function agentErrorShape(message) {
 }
 
 // What ox's own app can draw (src/web/chat.html renderUi): answers as interface,
+/**
+ * Interactive answers every time: the answering model gets its repair round;
+ * if the drawing still does not load, the strongest model connected (a plan, a
+ * keyed provider, or a bigger local one) mends it from the same errors. Returns
+ * { text, by } with the mended answer, or null when nothing was better.
+ */
+export async function mendUi({ text, target, pickedName, messages, ctx, config, usage = null, run = runAgent, pick = autoModel }) {
+  const own = await repairLiveUi({ text, target, messages, ctx, config, usage, run });
+  const now = own ?? text;
+  if (UI_LANG.checkUi(now).ok) return own ? { text: own, by: null } : null;
+  let better = null;
+  try { better = pick(messages, process.env, { think: true }); } catch {}
+  const same = (id) => id === pickedName || String(id).endsWith(`:${pickedName}`) || (ctx?.botId && id === ctx.botId);
+  if (!better?.id || same(better.id) || tinyModel(better.id) || !runnable(better.id)) return own ? { text: own, by: null } : null;
+  let strong;
+  try { strong = resolveBot(better.id, { bots: readConfigDoc().bots ?? {} }); } catch { return own ? { text: own, by: null } : null; }
+  const theirs = await repairLiveUi({ text: now, target: strong, messages, ctx, config, usage, run });
+  if (theirs && UI_LANG.checkUi(theirs).ok) return { text: theirs, by: better.id };
+  return own ? { text: own, by: null } : theirs ? { text: theirs, by: better.id } : null;
+}
+
 // described in JSON so even a small local model gets it right and no model-written
 // code runs. Kept short; the example is the format, copied as is.
 const NEEDS_WEB = /\b(price|prices|cost of|latest|today|this week|news|current|rate today|search|look up|website|https?:\/\/)/i;
@@ -869,8 +890,8 @@ async function handleChatCompletions(req, res) {
         }
       }
       if (route === 'ui' && fullContent) {
-        const mended = await repairLiveUi({ text: fullContent, target, messages, ctx, config, usage: totalUsage });
-        if (mended) { fullContent = mended; sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'replace', content: mended, why: 'the first drawing did not load, so it was redrawn' } }); }
+        const mended = await mendUi({ text: fullContent, target, pickedName, messages, ctx, config, usage: totalUsage });
+        if (mended) { fullContent = mended.text; sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'replace', content: mended.text, why: mended.by ? `the first drawing did not load, so ${mended.by} redrew it` : 'the first drawing did not load, so it was redrawn' } }); }
       }
       sendSSE(res, createChatCompletionChunk(targetModel, '', true, totalUsage));
       sendSSEDone(res);
@@ -898,7 +919,7 @@ async function handleChatCompletions(req, res) {
           runError = String(event.error);
         }
       }
-      if (liveUi && turnMode.answerOnly && fullContent) fullContent = (await repairLiveUi({ text: fullContent, target, messages, ctx, config, usage: totalUsage })) ?? fullContent;
+      if (liveUi && turnMode.answerOnly && fullContent) fullContent = (await mendUi({ text: fullContent, target, pickedName, messages, ctx, config, usage: totalUsage }))?.text ?? fullContent;
       board.endRun(runId);
       // The lenient contract stays (200, empty content, see the surface test),
       // but a run that stopped (rate limit, missing key) says why in an extra

@@ -211,3 +211,21 @@ test('levels: XP from finished tasks and tool calls that went through (KODEMON)'
   assert.deepEqual([1, 2, 3, 4].map(O.xpFor), [0, 50, 200, 450]);
   assert.deepEqual([0, 49, 50, 199, 200].map(O.levelFor), [1, 1, 2, 2, 3]);
 });
+
+test('battle: two agents race the same task; the winner is logged, kept and earns more XP', async () => {
+  const o = fresh();
+  O.hire({ name: 'Ada', title: 'Engineer', runtime: 'claude' }, o);
+  O.hire({ name: 'Bo', title: 'Engineer', runtime: 'claude' }, o);
+  let asked = null;
+  const run = async (opts) => { asked = opts; return { id: 'r1', patchDir: '/x', winner: { label: 'bo', bot: 'claude', applied: true } }; };
+  const r = await O.battle('Ada', 'Bo', 'fix the flaky test', { ...o, run, apply: true });
+  assert.deepEqual(asked.bots, ['claude', 'claude']);
+  assert.deepEqual(asked.labels, ['ada', 'bo'], 'two agents on the same runtime stay apart');
+  assert.equal(asked.apply, true);
+  assert.deepEqual([r.winner, r.loser], ['bo', 'ada']);
+  const lv = O.levels({ ...o, tasks: [], auditFile: '/nonexistent' });
+  assert.deepEqual([lv.bo.wins, lv.bo.xp, lv.ada.losses, lv.ada.xp], [1, 150, 1, 25]);
+  assert.equal(O.readOrg(o).log.at(-1).action, 'battle');
+  await assert.rejects(O.battle('Ada', 'Ada', 'x', { ...o, run }), /itself/);
+  await assert.rejects(O.battle('Ada', 'Zed', 'x', { ...o, run }), /no agent called Zed/);
+});

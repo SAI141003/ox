@@ -61,3 +61,22 @@ test('mac-mcp: Return is refused before anything is pressed; a dry type says wha
   assert.match(t.text, /would type 19 characters/);
   assert.equal((await callMacTool('type_text', { text: '' }, { dryRun: true })).isError, true);
 });
+
+test('draw: shapes become paths inside their box; nothing is drawn without a box or on a Send button', async () => {
+  const { shapePath, densify, draw, SHAPES } = await import('../src/mac-control.js');
+  const box = { x: 100, y: 200, w: 80, h: 40 };
+  for (const s of SHAPES) {
+    const p = shapePath(s, box);
+    assert.ok(p.length >= 2, s);
+    for (const [x, y] of p) assert.ok(x >= 99.9 && x <= 180.1 && y >= 199.9 && y <= 240.1, `${s} stays in its box`);
+  }
+  const circle = shapePath('circle', box);
+  assert.deepEqual(circle[0].map(Math.round), circle.at(-1).map(Math.round), 'a circle closes');
+  assert.deepEqual(shapePath('v', box), [[100, 200], [140, 240], [180, 200]]);
+  const smile = shapePath('smile', box);
+  assert.ok(smile[Math.floor(smile.length / 2)][1] > smile[0][1] + 20, 'a smile dips in the middle');
+  assert.equal(shapePath('dragon', box), null);
+  assert.equal(densify([[0, 0], [30, 0]], 6).length, 6, 'long segments are split so a canvas sees every step');
+  assert.match((await draw({ shape: 'circle' }, { dryRun: true })).text, /needs its box/);
+  assert.match((await draw({ shape: 'dragon', x: 1, y: 1, w: 5, h: 5 }, { dryRun: true })).text, /ox draws these shapes/);
+});

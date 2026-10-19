@@ -199,7 +199,7 @@ struct HomeCharacter: View {
                 .opacity([Mood.idle, .sleeping].contains(mood) ? 0.15 : 0.65)
                 .animation(.easeInOut(duration: 0.4), value: mood)
             OxWalker(mood: mood, height: size, roam: false,
-                     stressed: bridge.gauges.contains { $0.percent >= 80 }, onPoke: { bridge.showReaction() })
+                     stressed: bridge.gauges.contains { $0.percent >= 80 }, onPoke: { bridge.showReaction() }, facesPointer: true)
                 .frame(width: size * 4 / 3 + 4, height: size)
                 .offset(drag)
                 // Drag the ox onto any window: that window becomes context in the shelf.

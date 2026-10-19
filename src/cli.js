@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -3568,6 +3568,29 @@ async function cmdOrg(args = []) {
       return;
     }
     if (sub === 'timeline') {
+    // KODEMON: levels from real work, and battles through ox race.
+    if (sub === 'levels') {
+      const lv = O.levels();
+      const org = O.readOrg();
+      const rows = Object.entries(lv).filter(([aid]) => org.agents[aid]?.status !== 'terminated').sort((x, y) => y[1].xp - x[1].xp);
+      if (!rows.length) { console.log(c.dim('no agents yet: ox org hire "…"')); return; }
+      for (const [aid, v] of rows) console.log(`${c.bold(`Lv ${v.level}`)}  ${org.agents[aid].name.padEnd(14)} ${String(v.xp).padStart(5)} / ${v.next} XP  ${c.dim(`${v.tasks} tasks · ${v.calls} tool calls · ${v.wins} wins · ${v.losses} losses`)}`);
+      return;
+    }
+    if (sub === 'battle') {
+      const skip = new Set(['--test', '--apply']);
+      const rest = [];
+      for (let i = 3; i < args.length; i++) { if (args[i] === '--test') { i++; continue; } if (!skip.has(args[i])) rest.push(args[i]); }
+      const before = O.levels();
+      console.log(c.dim(`${args[1]} vs ${args[2]}: each works in its own copy of this project…`));
+      const r = await O.battle(args[1], args[2], rest.join(' '), { test: flag('--test') ?? null, apply: args.includes('--apply'), log: (l) => console.log(c.dim(l)) });
+      const after = O.levels();
+      if (!r.winner) { console.log(c.yellow('no winner: neither change could be kept')); return; }
+      const w = O.readOrg().agents[r.winner];
+      console.log(`${c.green('✓')} ${c.bold(w.name)} wins${r.result.winner?.applied ? ' — its change is applied (captured)' : ` — its change is kept in ${r.result.patchDir}`}`);
+      for (const aid of [r.winner, r.loser]) if (after[aid].level > before[aid].level) console.log(`  ${c.bold(O.readOrg().agents[aid].name)} levels up: Lv ${after[aid].level}`);
+      return;
+    }
       const t = O.timeline({ limit: Number(flag('--limit') ?? 40) });
       console.log(`${c.bold('irreversible actions:')} ${t.irreversible ? c.yellow(t.irreversible) : c.green('0')}   ${c.dim(`stopped by approvals: ${t.denied}`)}`);
       for (const x of t.items) console.log(`${x.at.slice(5, 16).replace('T', ' ')}  ${x.irreversible ? c.yellow('!') : x.denied ? c.red('×') : ' '} ${x.text.slice(0, 150)}`);
@@ -5631,6 +5654,35 @@ async function runSubcommand(cmd, args) {
         plan = T.deliveryPlan(session, to, handoff, { company: flagVal('--company') ?? undefined });
       } catch (e) { process.stderr.write(`ox transfer: ${e.message}\n`); process.exitCode = 1; return; }
       const from = `${T.TOOLS[session.tool].label} session ${String(session.id).slice(0, 12)}`;
+    case 'make': {
+      // Vovy's "build me a … with Claude": src/make-app.js. Each step is shown in
+      // the notch (this command is a session there), the agent works in its own
+      // Terminal tab, and the app opens when it is done.
+      const M = await import('./make-app.js');
+      const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
+      const idea = args.filter((a, i) => !a.startsWith('--') && !['--with', '--dir'].includes(args[i - 1])).join(' ').trim();
+      if (!idea || idea === 'help') { console.log(`${c.bold('ox make')} "<what to build>" [--with claude|codex] [--dir <folder>]: a new project, the idea as a full brief, the agent in a new Terminal tab, the app opened when it is done`); return; }
+      const I = await import('./ipc.js');
+      const key = `make-${M.slugOf(M.nameOf(idea))}-${Date.now().toString(36)}`;
+      let server = null;
+      try { server = I.createIpcServer({ socketPath: I.socketPathFor(key), sessionId: key, meta: { cwd: process.cwd(), bot: 'ox make', model: val('--with') ?? 'claude' } }); } catch {}
+      let n = 0;
+      const say = (step, done = false) => {
+        console.log(`${done ? c.green('✓') : c.dim('·')} ${step}`);
+        try {
+          if (!done) server?.broadcast({ type: 'tool-start', id: `m${++n}`, name: 'make', argsPreview: step });
+          else server?.broadcast({ type: 'tool-end', id: `m${n}`, name: 'make', isError: false });
+        } catch {}
+      };
+      try {
+        const r = await M.make(idea, { builder: val('--with') ?? 'claude', dir: val('--dir') ? path.resolve(val('--dir')) : null, say });
+        try { server?.broadcast({ type: 'text-delta', text: r.opened ? `${r.name} is live ✓` : `${r.name}: still being built in ${r.dir}` }); server?.broadcast({ type: 'turn-end', stopReason: 'end_turn' }); } catch {}
+        if (r.opened) console.log(c.dim(`  ${r.entry}`));
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; try { server?.broadcast({ type: 'error', error: e.message }); } catch {} }
+      await new Promise((res) => setTimeout(res, 6000));
+      try { server?.broadcast({ type: 'final' }); server?.close?.(); } catch {}
+      return;
+    }
       console.log(`${from}: ${session.messages.length} messages, ${session.files.length} files changed${session.cwd ? `, in ${session.cwd.replace(os.homedir(), '~')}` : ''}`);
       console.log(c.dim(`  handoff: ${handoff.md.replace(os.homedir(), '~')}`));
       const q = (a) => (/^[\w./:@%+=,-]+$/.test(a) ? a : `'${String(a).replace(/'/g, "'\\''")}'`);

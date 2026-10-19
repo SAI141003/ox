@@ -447,6 +447,8 @@ export function timeline({ limit = 100, since = 0, auditFile = null, ...opts } =
 // made that was not stopped. Level n needs 50·(n−1)² XP: Lv 2 at 50, Lv 3 at 200,
 // Lv 4 at 450, Lv 5 at 800, so early levels come fast and later ones take work.
 export const XP_TASK = 100;
+export const XP_WIN = 150;
+export const XP_TRY = 25;
 export const XP_CALL = 5;
 export const levelFor = (xp) => Math.floor(Math.sqrt(Math.max(0, xp) / 50)) + 1;
 export const xpFor = (level) => 50 * (level - 1) ** 2;
@@ -468,8 +470,34 @@ export function levels({ tasks = null, auditFile = null, ...opts } = {}) {
       try { const r = JSON.parse(l); if (r.agent && out[r.agent] && r.decision !== 'deny' && r.t !== 'outcome') out[r.agent].calls++; } catch {}
     }
   } catch {}
-  for (const v of Object.values(out)) { v.xp = v.tasks * XP_TASK + v.calls * XP_CALL; v.level = levelFor(v.xp); v.next = xpFor(v.level + 1); }
+  for (const e of org.log) {
+    if (e.action !== 'battle') continue;
+    if (out[e.winner]) out[e.winner].wins = (out[e.winner].wins ?? 0) + 1;
+    for (const id of e.fighters ?? []) if (out[id] && id !== e.winner) out[id].losses = (out[id].losses ?? 0) + 1;
+  }
+  for (const v of Object.values(out)) { v.wins ??= 0; v.losses ??= 0; v.xp = v.tasks * XP_TASK + v.calls * XP_CALL + v.wins * XP_WIN + v.losses * XP_TRY; v.level = levelFor(v.xp); v.next = xpFor(v.level + 1); }
   return out;
+}
+
+/**
+ * A battle (KODEMON): two agents do the same task, each in its own copy of the
+ * project (ox race); the better change wins, is kept under ~/.ox/arena (and
+ * applied with apply: true: "captured"), and both earn XP. → { winner, loser, result }
+ */
+export async function battle(aId, bId, task, { test = null, apply = false, run = null, cwd = process.cwd(), log = () => {}, ...opts } = {}) {
+  const org = readOrg(opts);
+  const a = org.agents[slug(aId)], b = org.agents[slug(bId)];
+  if (!a || !b) throw new Error(`no agent called ${!a ? aId : bId} (see: ox org)`);
+  if (a.id === b.id) throw new Error('an agent cannot battle itself');
+  if (!String(task ?? '').trim()) throw new Error('usage: ox org battle <agent> <agent> "<task>" [--test "<command>"] [--apply]');
+  const race = run ?? (await import('./arena.js')).runArena;
+  const result = await race({ task, bots: [a.runtime, b.runtime], labels: [a.id, b.id], test, apply, maxCost: null, timeoutMs: 15 * 60_000 }, { cwd, log });
+  const won = result.winner?.label ?? null;
+  const winner = won === a.id ? a : won === b.id ? b : null;
+  const next = readOrg(opts);
+  note(next, 'you', 'battle', winner?.id ?? a.id, { fighters: [a.id, b.id], winner: winner?.id ?? null, task: String(task).slice(0, 200), arena: result.id });
+  writeOrg(next, opts);
+  return { winner: winner?.id ?? null, loser: winner ? (winner.id === a.id ? b.id : a.id) : null, result };
 }
 
 /** Agents whose heartbeat interval has passed (active, with an interval). */

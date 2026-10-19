@@ -435,6 +435,9 @@ struct OxWalker: View {
     /// this view's left edge in panel coordinates.
     var follow = false
     var origin: CGFloat = 0
+    /// Turn to face the cursor while it moves over the island (Coucou's character
+    /// follows the cursor), in every mood: the opened island's ox, standing in place.
+    var facesPointer = false
     @State private var start = Date()
     @State private var seenClick: Double = 0
     private var pasture: Pasture { .shared }
@@ -443,7 +446,7 @@ struct OxWalker: View {
         if OxFrames.available {
             GeometryReader { geo in
                 TimelineView(.animation(minimumInterval: 1.0 / 24.0)) { ctx in
-                    scene(t: ctx.date.timeIntervalSince(start), now: ctx.date.timeIntervalSinceReferenceDate, size: geo.size)
+                    scene(t: ctx.date.timeIntervalSince(start), now: ctx.date.timeIntervalSinceReferenceDate, size: geo.size, left: geo.frame(in: .global).minX)
                 }
             }
             .frame(height: height)
@@ -468,7 +471,7 @@ struct OxWalker: View {
     }
 
     @ViewBuilder
-    private func scene(t: Double, now: Double, size: CGSize) -> some View {
+    private func scene(t: Double, now: Double, size: CGSize, left: CGFloat = 0) -> some View {
         let width = height * 4 / 3
         let lane = max(0, size.width - width)
         let farmerH = height * 0.62
@@ -500,7 +503,11 @@ struct OxWalker: View {
         let turnFrames = Frames.load("ox/turn")
         let frames = turn != nil && turnFrames.count == 16 ? turnFrames : OxFrames.frames(cycle)
         let idx = frames.isEmpty ? 0 : (turn != nil && turnFrames.count == 16 ? turn! : Int(t * 24) % frames.count)
-        let flip = turn == nil && !right
+        // Facing the cursor: which side of the ox it is on, while it is moving over the island.
+        let p = Pointer.shared
+        let faceRight: Bool? = facesPointer && now - p.movedAt < 4 && p.local.y <= IslandLayout.panel.height
+            ? p.local.x > left + x + width / 2 : nil
+        let flip = turn == nil && !(faceRight ?? right)
         let hidden = forced == nil && roam && pasture.home
 
         ZStack(alignment: .bottomLeading) {
