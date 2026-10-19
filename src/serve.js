@@ -594,16 +594,6 @@ export async function mendUi({ text, target, pickedName, messages, ctx, config, 
   return own ? { text: own, by: null } : theirs ? { text: theirs, by: better.id } : null;
 }
 
-// described in JSON so even a small local model gets it right and no model-written
-// code runs. Kept short; the example is the format, copied as is.
-const NEEDS_WEB = /\b(price|prices|cost of|latest|today|this week|news|current|rate today|search|look up|website|https?:\/\/)/i;
-// Asks that need a tool even without naming a file: the web, the machine, mail, memory, other agents.
-const NEEDS_TOOLS = /\b(search|look up|google|browse|latest|today|news|price|weather|open|run|install|email|mail|send|remember|forget|schedule|remind|screenshot|download|fetch|https?:\/\/|www\.|agent|subagent)\b/i;
-// Asking for something to be made or changed: that needs tools.
-const BUILDS = /\b(build|create|make|write|generate|scaffold|implement|code|script|website|app|deploy|install|edit|change|update|delete|rename|fix|refactor|add|remove|run|test)\b/i;
-const SMALL_TALK = /^\s*(hi|hey|hello|yo|thanks|thank you|ok|okay|cool|nice|great|good (morning|night|evening)|how are you|who are you|what can you do)[\s!.?]*$/i;
-const TOUCHES_CODE = /\b(file|files|repo|repository|project|codebase|function|class|module|component|test|tests|bug|fix|refactor|commit|branch|src|readme)\b|[\w-]+\.(js|ts|tsx|jsx|py|go|rs|java|rb|css|html|json|md)\b/i;
-const WANTS_UI = /\b(calculat\w*|convert\w*|compar\w*|table|chart|graph|plot|slider|interactive|estimat\w*|budget|breakdown|checklist|options|pros and cons|form)\b/i;
 function agentErrorShape(message) {
   // A missing provider key is an authentication failure, not a bug; a 500 would
   // send the caller looking in the wrong place.
@@ -614,6 +604,16 @@ function agentErrorShape(message) {
 }
 
 // What ox's own app can draw (src/web/chat.html renderUi): answers as interface,
+// described in JSON so even a small local model gets it right and no model-written
+// code runs. Kept short; the example is the format, copied as is.
+const NEEDS_WEB = /\b(price|prices|cost of|latest|today|this week|news|current|rate today|search|look up|website|https?:\/\/)/i;
+// Asks that need a tool even without naming a file: the web, the machine, mail, memory, other agents.
+const NEEDS_TOOLS = /\b(search|look up|google|browse|latest|today|news|price|weather|open|run|install|email|mail|send|remember|forget|schedule|remind|screenshot|download|fetch|https?:\/\/|www\.|agent|subagent)\b/i;
+// Asking for something to be made or changed: that needs tools.
+const BUILDS = /\b(build|create|make|write|generate|scaffold|implement|code|script|website|app|deploy|install|edit|change|update|delete|rename|fix|refactor|add|remove|run|test)\b/i;
+const SMALL_TALK = /^\s*(hi|hey|hello|yo|thanks|thank you|ok|okay|cool|nice|great|good (morning|night|evening)|how are you|who are you|what can you do)[\s!.?]*$/i;
+const TOUCHES_CODE = /\b(file|files|repo|repository|project|codebase|function|class|module|component|test|tests|bug|fix|refactor|commit|branch|src|readme)\b|[\w-]+\.(js|ts|tsx|jsx|py|go|rs|java|rb|css|html|json|md)\b/i;
+const WANTS_UI = /\b(calculat\w*|convert\w*|compar\w*|table|chart|graph|plot|slider|interactive|estimat\w*|budget|breakdown|checklist|options|pros and cons|form)\b/i;
 // OpenUI Lang (thesysdev/openui), the way OpenUI does it: the prompt is built
 // from the component library itself, so what the model is told and what the
 // page can draw never drift apart.
@@ -1414,16 +1414,6 @@ const VOICE_SYSTEM = (name) => `You are ${name}, a voice assistant in the notch 
 // Questions about what is on screen need a look at it: the island attaches a screenshot.
 const SCREEN = /\b(my screen|on (?:the|my) screen|what am i looking at|what(?:'s| is) (?:this|that) (?:on|in)|this (?:page|window|screen|tab|error|message)|read (?:this|it|my screen)|look at (?:this|my|the screen)|see (?:this|my screen)|what do you see)\b/i;
 const ACTS = /\b(open|launch|close|quit|send|message|text|whatsapp|email|mail|play|pause|create|make|write|draft|delete|remove|move|rename|book|order|buy|schedule|remind|call|download|install|draw|annotate|search|look up|find|fix|build|run|deploy|commit|push|edit|change|update|turn (?:on|off)|set)\b/i;
-export async function voiceTurn(body) {
-  const started = Date.now();
-  const text = String(body?.text ?? '').trim().slice(0, 2000);
-  if (!text) throw new Error('nothing was said');
-  const { doOffline } = await import('./offline.js');
-  const done = doOffline(text, { dryRun: body?.dryRun === true });
-  if (done.handled) return { route: 'offline', handled: true, ok: done.ok !== false, say: done.message, ms: Date.now() - started };
-  // The island asks this first while a coding run is open: an errand ("play
-  // Billie Jean", "volume down") is done here and never sent into that run.
-  if (body?.offlineOnly === true) return { route: 'live', handled: false, why: 'not a small task', ms: Date.now() - started };
 let voiceCall = null;
 export async function callRoute(text, body = {}, { O = null, ask = null } = {}) {
   O ??= await import('./org.js');
@@ -1449,14 +1439,24 @@ export async function callRoute(text, body = {}, { O = null, ask = null } = {}) 
   return { ...r, agent };
 }
 
-  if (SCREEN.test(text) && !body?.image) return { route: 'screen', handled: false, why: 'it needs a look at your screen', ms: Date.now() - started };
-  const { assistantName } = await import('./identity.js');
-  // Small talk and questions: one short answer. Anything that acts: an agent.
-  await warmLocal();
+export async function voiceTurn(body) {
+  const started = Date.now();
+  const text = String(body?.text ?? '').trim().slice(0, 2000);
+  if (!text) throw new Error('nothing was said');
   // A call with an ox org agent (OpenDots): "call Ada", then each turn goes to
   // Ada until "hang up" or ten quiet minutes.
   const call = await callRoute(text, body);
   if (call) return { route: 'call', handled: true, ok: true, say: call.say, agent: call.agent, ended: call.ended ?? false, ...(call.task ? { task: call.task.id } : {}), ms: Date.now() - started };
+  const { doOffline } = await import('./offline.js');
+  const done = doOffline(text, { dryRun: body?.dryRun === true });
+  if (done.handled) return { route: 'offline', handled: true, ok: done.ok !== false, say: done.message, ms: Date.now() - started };
+  // The island asks this first while a coding run is open: an errand ("play
+  // Billie Jean", "volume down") is done here and never sent into that run.
+  if (body?.offlineOnly === true) return { route: 'live', handled: false, why: 'not a small task', ms: Date.now() - started };
+  if (SCREEN.test(text) && !body?.image) return { route: 'screen', handled: false, why: 'it needs a look at your screen', ms: Date.now() - started };
+  const { assistantName } = await import('./identity.js');
+  // Small talk and questions: one short answer. Anything that acts: an agent.
+  await warmLocal();
   const pick = autoModel([{ role: 'user', content: text }]);
   const light = /^a quick answer/.test(pick.why) && !ACTS.test(text);
   if (!light) return { route: 'agent', handled: false, why: 'this needs ox to act', ms: Date.now() - started };
@@ -2120,6 +2120,14 @@ async function handleRequest(req, res) {
   if (await serveStaticFile(req, res, PLATFORM_ROOT)) return;
   if (req.method === 'GET' && (path === '/' || path === '/chat')) {
     await serveChatPage(res);
+    return;
+  }
+  // The 3D office (the-delegation): every live agent at the desk of what it is doing.
+  if (req.method === 'GET' && path === '/office') {
+    const page = await readFile(new URL('./web/office3d.html', import.meta.url));
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': page.length, 'Cache-Control': 'no-store',
+      'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" });
+    res.end(page);
     return;
   }
 

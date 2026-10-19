@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ox office</title>
+<style>
+  :root { --bg: #0b0d12; --ink: #e8eaf0; --dim: #8a90a0; --line: #1d2230; }
+  @media (prefers-color-scheme: light) { :root { --bg: #f4f1ea; --ink: #1d1f24; --dim: #6b6f78; --line: #ddd6c8; } }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: grab; touch-action: none; }
+  canvas:active { cursor: grabbing; }
+  header { position: fixed; top: 14px; left: 16px; right: 16px; display: flex; gap: 12px; align-items: baseline; pointer-events: none; }
+  header b { font-size: 15px; }
+  header span { color: var(--dim); }
+  #legend { position: fixed; bottom: 14px; left: 16px; right: 16px; color: var(--dim); font-size: 12px; pointer-events: none; }
+</style>
+</head>
+<body>
+<header><b>ox office</b><span id="count">looking for agents…</span></header>
+<canvas id="c" aria-label="A 3D office: each live agent walks to the desk of what it is doing"></canvas>
+<div id="legend">Each agent walks to the desk of what it is doing now: Editor, Terminal, Browser, Library (reading, searching), Whiteboard (thinking), the front desk when it needs you, the lounge when idle. Drag to turn the room.</div>
+<script>
+// the-delegation's idea, ox's way: a 3D office drawn on a canvas with plain
+// perspective maths (no library: ox's pages load nothing from anywhere).
+const cv = document.getElementById('c');
+const g = cv.getContext('2d');
+const DESKS = {
+  editor:     { x: -5, z: -4, w: 2.6, d: 1.2, h: 0.8, color: '#7C5CFF', label: 'Editor' },
+  terminal:   { x:  0, z: -4, w: 2.6, d: 1.2, h: 0.8, color: '#34D399', label: 'Terminal' },
+  browser:    { x:  5, z: -4, w: 2.6, d: 1.2, h: 0.8, color: '#38BDF8', label: 'Browser' },
+  library:    { x: -5, z:  1, w: 1.0, d: 3.0, h: 2.2, color: '#F59E0B', label: 'Library' },
+  whiteboard: { x:  5, z:  1, w: 0.3, d: 3.0, h: 2.0, color: '#F4F4F5', label: 'Whiteboard' },
+  front:      { x:  0, z:  4, w: 3.4, d: 1.0, h: 1.1, color: '#F43F5E', label: 'Front desk · needs you' },
+  lounge:     { x:  0, z:  0.6, w: 3.0, d: 1.2, h: 0.5, color: '#A78BFA', label: 'Lounge' },
+};
+const COLORS = ['#F97316', '#22D3EE', '#A3E635', '#F472B6', '#FACC15', '#60A5FA', '#C084FC', '#FB7185'];
+
+// Which desk a session's current action belongs to.
+function deskFor(s) {
+  const d = String(s.doing || '').toLowerCase();
+  if (s.state === 'needs-you' || /approval|waiting for (you|permission)|asking you/.test(d)) return 'front';
+  if (s.idleSec > 90 || s.state === 'idle') return 'lounge';
+  if (d.startsWith('$') || /\b(run|bash|npm|git|test)\b/.test(d)) return 'terminal';
+  if (/edit|writ|creat|patch|\.(js|ts|py|swift|css|html|md)\b/.test(d) && !/^read/.test(d)) return 'editor';
+  if (/http|web|brows|fetch|search the web|url/.test(d)) return 'browser';
+  if (/read|grep|glob|search|find|look/.test(d)) return 'library';
+  return 'whiteboard';
+}
+
+// ---- camera: orbits the room and looks at its middle (a proper look-at view)
+let yaw = -0.55, pitch = 0.62, dist = 17;
+let C = [0, 0, 0], R = [1, 0, 0], U = [0, 1, 0], F = [0, 0, 1];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = (a) => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+function camera() {
+  C = [dist * Math.cos(pitch) * Math.sin(yaw), dist * Math.sin(pitch), dist * Math.cos(pitch) * Math.cos(yaw)];
+  F = norm(sub([0, 0.6, 0], C)); R = norm(cross(F, [0, 1, 0])); U = cross(R, F);
+}
+function project(x, y, z) {
+  const v = sub([x, y, z], C);
+  const Z = Math.max(0.1, dot(v, F));
+  const f = Math.min(cv.width, cv.height) * 1.25 / Z;
+  return { x: cv.width / 2 + dot(v, R) * f, y: cv.height * 0.55 - dot(v, U) * f, z: Z, f };
+}
+const far = (x, y, z) => Math.hypot(...sub([x, y, z], C));
+function poly(points, fill, stroke) {
+  g.beginPath(); points.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.closePath();
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  if (stroke) { g.strokeStyle = stroke; g.lineWidth = 1; g.stroke(); }
+}
+function shade(hex, k) {
+  const n = parseInt(hex.slice(1), 16);
+  const c = (v) => Math.max(0, Math.min(255, Math.round(v * k)));
+  return `rgb(${c(n >> 16)}, ${c((n >> 8) & 255)}, ${c(n & 255)})`;
+}
+// A box: only the faces that look at the camera (a convex box needs no sorting inside).
+function box(b, list) {
+  const x0 = b.x - b.w / 2, x1 = b.x + b.w / 2, z0 = b.z - b.d / 2, z1 = b.z + b.d / 2, h = b.h;
+  const faces = [
+    { n: [0, 1, 0], c: [b.x, h, b.z], v: [[x0, h, z0], [x1, h, z0], [x1, h, z1], [x0, h, z1]], k: 1.0 },
+    { n: [0, 0, 1], c: [b.x, h / 2, z1], v: [[x0, 0, z1], [x1, 0, z1], [x1, h, z1], [x0, h, z1]], k: 0.74 },
+    { n: [0, 0, -1], c: [b.x, h / 2, z0], v: [[x0, 0, z0], [x1, 0, z0], [x1, h, z0], [x0, h, z0]], k: 0.74 },
+    { n: [1, 0, 0], c: [x1, h / 2, b.z], v: [[x1, 0, z0], [x1, 0, z1], [x1, h, z1], [x1, h, z0]], k: 0.58 },
+    { n: [-1, 0, 0], c: [x0, h / 2, b.z], v: [[x0, 0, z0], [x0, 0, z1], [x0, h, z1], [x0, h, z0]], k: 0.58 },
+  ].filter((f) => dot(f.n, sub(C, f.c)) > 0);
+  list.push({ d: far(b.x, h / 2, b.z), draw: () => faces.forEach((f) => poly(f.v.map((p) => project(...p)), shade(b.color, f.k), 'rgba(0,0,0,0.3)')) });
+}
+
+// A label on a small dark tag, so it reads over desks and floor alike.
+function tag(text, x, y, color) {
+  const w = g.measureText(text).width, h = parseInt(g.font.match(/(\d+)px/)?.[1] ?? 12, 10);
+  g.fillStyle = 'rgba(10,12,18,0.72)';
+  g.beginPath(); g.roundRect(x - w / 2 - 5, y - h + 1, w + 10, h + 5, 5); g.fill();
+  g.fillStyle = color; g.fillText(text, x, y);
+}
+
+// ---- agents
+const agents = new Map(); // id → { x, z, tx, tz, color, name, doing, desk, bob }
+let colorAt = 0;
+function sync(sessions) {
+  const seen = new Set();
+  const byDesk = {};
+  for (const s of sessions) {
+    seen.add(s.id);
+    const desk = deskFor(s);
+    const slot = (byDesk[desk] = (byDesk[desk] ?? -1) + 1);
+    const D = DESKS[desk];
+    // Around the desk in rings (8 to a ring), so a crowd stays at its own desk.
+    const ring = Math.floor(slot / 8), k = slot % 8;
+    const rad = Math.max(D.w, D.d) / 2 + 0.75 + ring * 0.85;
+    const ang = (k / 8) * Math.PI * 2 + ring * 0.4 + (desk === 'front' ? -Math.PI / 2 : Math.PI / 2);
+    const tx = D.x + Math.cos(ang) * rad, tz = D.z + Math.sin(ang) * rad * (D.d > D.w ? 1 : 0.7);
+    let a = agents.get(s.id);
+    if (!a) { a = { x: 0, z: 6.5, color: COLORS[colorAt++ % COLORS.length], bob: Math.random() * 6 }; agents.set(s.id, a); }
+    const named = s.project && !['t', 'tmp', 'private', 'var', 'folders'].includes(String(s.project).toLowerCase()) ? s.project : s.project ? 'scratch' : (s.tool || 'agent');
+    Object.assign(a, { tx, tz, desk, name: named, tool: s.tool || '', doing: String(s.doing || '').slice(0, 46) });
+  }
+  for (const id of [...agents.keys()]) if (!seen.has(id)) agents.delete(id);
+  document.getElementById('count').textContent = sessions.length ? `${sessions.length} agent${sessions.length > 1 ? 's' : ''} at work` : 'no agents running right now';
+}
+function agentDraw(a, t, depthList, labels) {
+  const walking = Math.hypot(a.tx - a.x, a.tz - a.z) > 0.05;
+  const bob = walking ? Math.abs(Math.sin(t * 9 + a.bob)) * 0.12 : Math.sin(t * 2 + a.bob) * 0.03;
+  const feet = project(a.x, 0, a.z), head = project(a.x, 1.35 + bob, a.z), body = project(a.x, 0.75 + bob, a.z);
+  depthList.push({ d: far(a.x, 0.6, a.z), draw: () => {
+    const r = 0.32 * feet.f;
+    g.fillStyle = 'rgba(0,0,0,0.28)'; g.beginPath(); g.ellipse(feet.x, feet.y, r, r * 0.4, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = shade(a.color, 0.85); g.beginPath(); g.roundRect(body.x - r * 0.9, body.y - r * 1.2, r * 1.8, (feet.y - body.y) + r * 1.2, r * 0.8); g.fill();
+    g.fillStyle = '#F5D0A9'; g.beginPath(); g.arc(head.x, head.y, r * 0.75, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#1d1f24'; g.beginPath(); g.arc(head.x - r * 0.25, head.y - r * 0.05, r * 0.09, 0, 7); g.arc(head.x + r * 0.25, head.y - r * 0.05, r * 0.09, 0, 7); g.fill();
+  } });
+  // Name and what it is doing, above the head (drawn over everything).
+  labels.push(() => {
+    const r = 0.32 * feet.f;
+    g.textAlign = 'center'; g.font = `600 ${Math.max(11, Math.round(r * 0.75))}px -apple-system, system-ui, sans-serif`;
+    tag(a.name, head.x, head.y - r * 1.25, getComputedStyle(document.body).color);
+    if (a.doing) { g.font = `${Math.max(10, Math.round(r * 0.6))}px ui-monospace, Menlo, monospace`; tag(a.doing, head.x, head.y - r * 2.35, '#c9cdd6'); }
+  });
+}
+
+// ---- frame
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const t = now / 1000;
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== innerWidth * dpr) { cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; }
+  g.clearRect(0, 0, cv.width, cv.height);
+  camera();
+  // Floor tiles.
+  const S = 7;
+  for (let i = -S; i < S; i++) for (let j = -S + 1; j < S - 1; j++) {
+    poly([project(i, 0, j), project(i + 1, 0, j), project(i + 1, 0, j + 1), project(i, 0, j + 1)], (i + j) % 2 ? 'rgba(127,127,140,0.10)' : 'rgba(127,127,140,0.05)', 'rgba(127,127,140,0.12)');
+  }
+  const depth = [], labels = [];
+  for (const [k, d] of Object.entries(DESKS)) {
+    box(d, depth);
+    const top = project(d.x, d.h + 0.45, d.z);
+    labels.push(() => { g.textAlign = 'center'; g.font = `600 ${Math.max(11, Math.round(top.f * 0.3))}px -apple-system, system-ui, sans-serif`; g.fillStyle = shade(d.color, k === 'whiteboard' ? 0.8 : 1.15); g.fillText(d.label, top.x, top.y); });
+  }
+  for (const a of agents.values()) {
+    const dx = a.tx - a.x, dz = a.tz - a.z, len = Math.hypot(dx, dz);
+    if (len > 0.02) { const step = Math.min(len, 2.6 * dt); a.x += (dx / len) * step; a.z += (dz / len) * step; }
+    agentDraw(a, t, depth, labels);
+  }
+  depth.sort((p, q) => q.d - p.d).forEach((p) => p.draw());
+  labels.forEach((l) => l());
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---- drag to turn the room
+let drag = null;
+cv.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, yaw, pitch }; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', (e) => { if (!drag) return; yaw = drag.yaw + (e.clientX - drag.x) * 0.006; pitch = Math.max(0.25, Math.min(1.25, drag.pitch + (e.clientY - drag.y) * 0.004)); });
+cv.addEventListener('pointerup', () => { drag = null; });
+cv.addEventListener('wheel', (e) => { dist = Math.max(10, Math.min(30, dist + e.deltaY * 0.01)); e.preventDefault(); }, { passive: false });
+
+// ---- live agents from ox (every agent on this Mac: Claude Code, Codex, ox…)
+async function poll() {
+  try {
+    const r = await fetch('/ox/agents', { headers: { accept: 'application/json' } });
+    if (r.ok) sync(((await r.json()).sessions ?? []).filter((s) => s.idleSec < 30 * 60));
+  } catch {}
+}
+const demo = new URLSearchParams(location.search).has('demo');
+if (!demo) { poll(); setInterval(poll, 2000); }
+if (demo) {
+  sync([{ id: 'a', project: 'shop', tool: 'Claude Code', doing: 'editing cart.ts', idleSec: 1 }, { id: 'b', project: 'api', tool: 'Codex', doing: '$ npm test', idleSec: 2 }, { id: 'c', project: 'docs', tool: 'ox', doing: 'reading README.md', idleSec: 3 }, { id: 'd', project: 'site', tool: 'Claude Code', doing: 'waiting for permission', state: 'needs-you', idleSec: 4 }, { id: 'e', project: 'blog', tool: 'Codex', doing: '', idleSec: 400 }]);
+}
+</script>
+</body>
+</html>
