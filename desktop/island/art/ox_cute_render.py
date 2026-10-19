@@ -41,7 +41,8 @@ PROFILES = {
             "gallop": ("Gallop", 14, "focused", "focused"),
             "alert": ("Jump_toIdle", 24, "wide", "up"),
             "kick": ("Idle_HitReact_Left", 24, "wide", "up"),
-            "doze": ("Idle_Headlow", 40, "closed", "calm"),
+            # Lying down asleep: the rig's lie-down (the end of Death) held, eyes closed, a slow breath (see lie_pose).
+            "doze": ("Death", 40, "closed", "calm"),
             "happy": ("Gallop_Jump", 24, "happy", "up"),
             "think": ("Idle_2", 40, "lookup", "think"),
             "worried": ("Idle_Headlow", 40, "open", "worried"),
@@ -575,6 +576,21 @@ print("OX_CAM", tuple(round(x, 2) for x in cam.location), tuple(round(math.degre
 autoframe()
 
 
+# A real doze: the rig's own lie-down (the end of its Death action) held still,
+# eyes closed, with a slow breath that swells the chest a little.
+LIE = os.environ.get("OX_LIE", "1") != "0"
+def lie_pose(phase):
+    """Hold the lying pose (the action's last frame) and breathe: the chest swells a little."""
+    act = arm.animation_data.action
+    f1 = act.frame_range[1]
+    bpy.context.scene.frame_set(int(f1) - 1)
+    t = arm.pose.bones.get("Torso")
+    if t is not None:
+        k = 1 + 0.035 * math.sin(2 * math.pi * phase)
+        t.scale = (k, k, k)
+    bpy.context.view_layer.update()
+
+
 def render_cycle(name):
     act, n, eyes, brows = (CYCLES[name] + ("open", "calm"))[:4]
     set_face(eyes, brows)
@@ -589,6 +605,8 @@ def render_cycle(name):
     for i in range(n):
         t = f0 + (f1 - f0) * i / n
         scene.frame_set(int(t), subframe=t - int(t))
+        if name == "doze" and LIE:
+            lie_pose(i / n)
         if eyes == "blink":
             set_face("closed" if 0.72 <= i / n < 0.8 else "open", brows)
         scene.render.filepath = os.path.join(d, f"{name}_{i + 1:04d}.png")
@@ -635,6 +653,8 @@ elif MODE == "sheet":
         a = use_action(act)
         f0, f1 = a.frame_range
         scene.frame_set(int(f0 + (f1 - f0) * 0.45))
+        if name == "doze" and LIE:
+            lie_pose(0.45)
         set_face("open" if eyes == "blink" else eyes, brows)
         scene.render.filepath = os.path.join(d, f"{name}.png")
         bpy.ops.render.render(write_still=True)

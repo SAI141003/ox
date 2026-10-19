@@ -144,7 +144,7 @@ if CommandLine.arguments.contains("--check-herd") {
     let maple = { herd.members.first { $0.id == "maple" }! }
     expect(maple().act == .deliver && maple().x < 0.1, "news: Maple gallops in from the left")
     run(4, .init(news: "2 unread mail"))
-    expect(maple().act == .stand && abs(maple().x - 0.45) < 0.05 && maple().bubble == "2 unread mail", "Maple stops at the front with the note")
+    expect(maple().act == .stand && abs(maple().x - 0.45) < 0.05 && maple().bubble == "2 unread mail", "Maple stops at the front with the note\(maple().act == .stand && abs(maple().x - 0.45) < 0.05 ? "" : " (now \(maple().act) at \(String(format: "%.2f", maple().x)))")")
     run(1, .init())
     run(0.2, .init(waiting: true))
     expect(herd.members.filter { $0.act == .look }.count >= 5, "a question waits: the herd looks toward you")

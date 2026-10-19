@@ -28,13 +28,14 @@ A strip of meadow inside the island's left card, drawn back to front:
 | **Maple** | a chestnut horse with a dark mane (Quaternius' CC0 horse, its own coat) | The messenger. When mail arrives, a teammate machine raises an alert, or a hire is waiting, Maple gallops in from the left and stops at the front with a note; tap Maple to open it. |
 | **Fern** | a deer (Quaternius CC0, its own coat) | The shy one. Drinks most and wanders to the edge of the trees; she is the first to look up when something needs you. |
 | **Rusty** | a small red fox (Quaternius CC0) | The playful one. Plays most, naps in between, and chases whoever starts a game. |
+| **Clover** | an alpaca (Quaternius CC0, her own coat) | The calm one. Grazes most and is the first to look up when something needs you. |
 | **Birds** | two small birds | The weather. They fly across on clear days and stay away in the rain. |
 
 ## What they do when nothing needs you
 
 Each animal picks its own next thing, so the meadow never loops the same way:
 
-- wander to a spot, graze, drink at the pond (two at a time), nap;
+- wander to a spot, graze, drink at the pond (two at a time), lie down for a nap;
 - play: two meet, head-butt, then one runs and the other chases;
 - zoomies: a short gallop, then a stop;
 - explore: walk behind the far trees and come back out;

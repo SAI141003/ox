@@ -57,6 +57,8 @@ final class Herd {
         // Forest friends (Quaternius CC0 models, their own coats): Fern the deer, shy, explores and drinks; Rusty the fox, plays most.
         Member(id: "fern", name: "Fern", folder: "friends/fern", size: 0.92, napper: 0.7, player: 0.8, drinker: 1.6, x: 0.88, lane: 0.25),
         Member(id: "rusty", name: "Rusty", folder: "friends/rusty", size: 0.62, napper: 1.3, player: 2.0, drinker: 0.8, x: 0.52, lane: 0.95),
+        // Clover the alpaca (Quaternius CC0, her own coat): grazes most, calm, first to look up when something needs you.
+        Member(id: "clover", name: "Clover", folder: "friends/clover", size: 0.9, napper: 0.9, player: 0.6, drinker: 1.0, x: 0.68, lane: 0.1),
     ]
     /// Where the water is, and where the trees give shelter.
     static let pond: CGFloat = 0.86
@@ -132,7 +134,7 @@ final class Herd {
         // Maple brings news: gallops in from the left and stops at the front.
         if let n = w.news, n != seenNews, let i = members.firstIndex(where: { $0.id == "maple" }), !away.contains("maple") {
             seenNews = n
-            members[i].x = 0.02; members[i].lane = 1; members[i].act = .deliver; members[i].target = 0.45; members[i].until = t + 8; members[i].hidden = false
+            members[i].x = 0.02; members[i].lane = 1; members[i].act = .deliver; members[i].target = 0.45; members[i].until = t + 8; members[i].hidden = false; members[i].partner = nil
         }
         if w.news == nil { seenNews = nil }
     }
@@ -191,7 +193,7 @@ final class Herd {
             m.act = .run
             m.target = m.x < 0.5 ? CGFloat.random(in: 0.65...0.95) : CGFloat.random(in: 0.05...0.35)
             m.until = t + 4
-            if pid < m.id, let j = members.firstIndex(where: { $0.id == pid }) { members[j].act = .run; members[j].target = m.target + (m.target > 0.5 ? -0.1 : 0.1); members[j].until = t + 4.5; members[j].partner = nil }
+            if pid < m.id, let j = members.firstIndex(where: { $0.id == pid }), members[j].act == .play, members[j].partner == m.id { members[j].act = .run; members[j].target = m.target + (m.target > 0.5 ? -0.1 : 0.1); members[j].until = t + 4.5; members[j].partner = nil }
             return
         }
         // Music: they bob in place (stand), now and then a hop.
@@ -203,7 +205,8 @@ final class Herd {
         m.partner = nil
         switch next {
         case .play:
-            let free = members.enumerated().filter { $0.offset != i && !away.contains($0.element.id) && [.graze, .stand, .look, .wander].contains($0.element.act) }
+            // Free to play: not away, not busy, and not showing a note (Maple with the news stays put).
+            let free = members.enumerated().filter { $0.offset != i && !away.contains($0.element.id) && [.graze, .stand, .look, .wander].contains($0.element.act) && t >= $0.element.bubbleUntil }
             guard let (j, other) = free.randomElement() else { m.act = .graze; m.until = t + 5; return }
             m.act = .play; m.partner = other.id; m.until = t + 5
             members[j].act = .play; members[j].partner = m.id; members[j].until = t + 5.2
