@@ -977,7 +977,9 @@ export function createIpcApprover(server) {
   const readyClient = () => [...(server.clients ?? [])].find((c) => c?.ready) ?? null;
   return {
     kind: 'ipc',
-    hasClient: () => readyClient() !== null,
+    // A client still finishing its handshake counts: requestApproval waits a
+    // moment for its 'ready' (readyGraceMs) and declines if it never comes.
+    hasClient: () => readyClient() !== null || [...(server.clients ?? [])].some((c) => c && !c.ready && !c.socket?.destroyed),
     ask: async ({ tool, args = {}, detail = '', cwd } = {}) => {
       const decision = await server.requestApproval({
         tool,
