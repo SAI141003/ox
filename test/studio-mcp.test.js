@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
+import { spawnSync } from 'node:child_process';
 
 process.env.OX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-studio-'));
 const S = await import('../src/studio-mcp.js');
@@ -97,10 +98,15 @@ test('this Mac: once set up it runs every kind it can with no key, first; a name
   assert.deepEqual([img.provider, img.model, img.settings], ['device', 'mac-image', { op: 'image', aspect: '16:9', fast: true }]);
   assert.equal(S.plan('generate_image', { prompt: 'a poster that says "OPEN"' }, { env: L }).provider, 'device', 'no key for Qwen-Image: this Mac draws it');
   assert.equal(S.plan('generate_image', { prompt: 'a poster that says "OPEN"' }, { env }).model, 'fal-ai/qwen-image', 'with a key, words go to the model that spells');
-  const clip = S.plan('generate_video', { prompt: 'waves', camera: 'orbit', image: '/a.png' }, { env });
-  assert.deepEqual([clip.model, clip.settings.camera, clip.media.start[0]], ['mac-video', 'orbit', '/a.png']);
   assert.equal(S.plan('edit_image', { image: '/a.png', prompt: 'night' }, { env }).model, 'mac-edit');
-  assert.equal(S.plan('upscale', { image: '/a.png', mode: 'quick' }, { env }).settings.mode, 'quick');
+  // Clips and upscale also need ffmpeg (CI's clean machines have none: those go to the host there).
+  if (spawnSync('ffmpeg', ['-version']).status === 0) {
+    const clip = S.plan('generate_video', { prompt: 'waves', camera: 'orbit', image: '/a.png' }, { env });
+    assert.deepEqual([clip.model, clip.settings.camera, clip.media.start[0]], ['mac-video', 'orbit', '/a.png']);
+    assert.equal(S.plan('upscale', { image: '/a.png', mode: 'quick' }, { env }).settings.mode, 'quick');
+  } else {
+    assert.equal(S.plan('generate_video', { prompt: 'waves' }, { env }).provider, 'fal', 'no ffmpeg: no clips on this machine');
+  }
   assert.equal(S.plan('generate_image', { prompt: 'a fox', model: 'flux-schnell' }, { env }).model, 'fal-ai/flux/schnell', 'a named hosted model goes to its host');
   assert.equal(S.plan('generate_image', { prompt: 'a fox', host: 'fal' }, { env }).provider, 'fal');
   assert.throws(() => S.plan('edit_image', { image: '/a.png' }, { env }), /say what to change/);

@@ -6,7 +6,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { offlineEvals, commandEvals, learnFromLog, evolveGoal, readCases } from '../src/island-evals.js';
+// The router, not this machine: a fixed set of installed apps (CI's clean Macs have no Chrome or Spotify).
+process.env.OX_APPS ??= 'Google Chrome,Safari,Spotify,Music,WhatsApp,Mail,Notes,Reminders,Calendar,Visual Studio Code,Terminal,System Settings,Finder';
+const { offlineEvals, commandEvals, learnFromLog, evolveGoal, readCases } = await import('../src/island-evals.js');
 
 test('every offline eval routes as expected (videos included)', () => {
   const r = offlineEvals();

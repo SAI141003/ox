@@ -17,6 +17,24 @@
   #floors button .n { font-weight: 500; color: #7c8290; margin-left: 5px; }
   #legend { position: fixed; left: 0; right: 0; bottom: 0; height: 22px; display: flex; gap: 12px; align-items: center; padding: 0 12px; color: #aeb3bd; font-size: 11px; background: linear-gradient(rgba(13,15,19,0), #0d0f13); z-index: 2; overflow-x: auto; white-space: nowrap; }
   #legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+  #legend span { cursor: pointer; padding: 1px 6px; border-radius: 999px; }
+  #legend span.sel { background: #2b3040; color: #fff; }
+  #legend span.off { opacity: 0.35; }
+  #building { position: fixed; top: 28px; left: 0; right: 0; bottom: 24px; overflow-y: auto; padding: 8px 12px; display: none; z-index: 1; }
+  .floor { display: grid; grid-template-columns: 170px 1fr 170px; gap: 10px; align-items: stretch; margin-bottom: 8px; background: #d8d4cb; border-radius: 6px; border-top: 6px solid #3d4149; box-shadow: 0 2px 0 #9c988f; cursor: pointer; min-height: 74px; }
+  .floor:hover { outline: 2px solid #7dd3fc; }
+  .floor .who { background: #2b2e34; color: #e9ebf0; padding: 8px 10px; border-radius: 0 0 0 6px; }
+  .floor .who b { display: block; font-size: 13px; }
+  .floor .who small { color: #8b919d; display: block; }
+  .floor .who .n { margin-top: 4px; color: #aeb3bd; }
+  .floor .desks, .floor .lounge { display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; padding: 8px 4px; }
+  .floor .lounge { background: #5d7b5a; border-radius: 0 0 6px 0; padding: 8px; }
+  .floor .warn { grid-column: 2 / 4; color: #7a3b10; padding: 10px; font-weight: 600; }
+  .agent { display: flex; align-items: center; gap: 5px; background: rgba(20,22,27,0.88); color: #fff; border-radius: 999px; padding: 2px 8px 2px 3px; font-size: 11px; white-space: nowrap; }
+  .agent img { width: 15px; height: 24px; image-rendering: pixelated; }
+  .agent em { font-style: normal; color: #aeb3bd; }
+  .agent.off { opacity: 0.25; }
+  .lounge .agent { background: rgba(20,22,27,0.6); }
   #floormsg { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 70vw; text-align: center; color: #ffd29a; background: rgba(40,20,10,0.9); padding: 10px 14px; border-radius: 10px; z-index: 3; display: none; }
   canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; image-rendering: pixelated; }
   body.embed header { height: 22px; font-size: 11px; }
@@ -24,7 +42,7 @@
 </head>
 <body>
 <header><span id="count">Working: 0 · Resting: 0</span><span id="floors"></span><span class="grow"></span><span class="plan" id="plan"></span></header>
-<div id="legend"></div><div id="floormsg"></div>
+<div id="legend"></div><div id="floormsg"></div><div id="building"></div>
 <canvas id="c" aria-label="The office: each agent at its desk while it works, at the coffee machine or in the lounge when it rests"></canvas>
 <script>
 // The office (lumiomac's notch office, the-delegation's idea): a clean top-down
@@ -182,10 +200,18 @@ function sync(sessions) {
   for (const id of [...agents.keys()]) if (!seen.has(id)) { agents.delete(id); deskOf.delete(id); }
   deskLit = DESKS.map((_, i) => [...agents.entries()].some(([id, A]) => deskOf.get(id) === i && A.mode === 'sit' && Math.hypot(A.x - A.tx, A.y - A.ty) < 1));
   document.getElementById('count').textContent = `Working: ${working} · Resting: ${resting}`;
+  legend(live);
+}
+// The tools at work, each in its colour; click one to light only its agents (everywhere).
+let focusTool = null;
+const busyOf = (s) => s.state !== 'idle' && (s.idleSec ?? 0) < 45;
+function legend(list, where = 'on this floor') {
   const byTool = {};
-  for (const s of live) { const [t, c] = toolOf(s); const k = byTool[t] ??= { c, work: 0, all: 0 }; k.all++; if (s.state !== 'idle' && (s.idleSec ?? 0) < 45) k.work++; }
-  document.getElementById('legend').innerHTML = Object.entries(byTool).sort((x, y) => y[1].all - x[1].all)
-    .map(([t, v]) => `<span><i style="background:${v.c}"></i>${t} ${v.work ? `<b>${v.work} working</b>` : ''}${v.work && v.all > v.work ? ' · ' : ''}${v.all > v.work ? `${v.all - v.work} resting` : ''}</span>`).join('') || '<span>No AI tools at work on this floor</span>';
+  for (const s of list) { const [t, c] = toolOf(s); const k = byTool[t] ??= { c, work: 0, all: 0 }; k.all++; if (busyOf(s)) k.work++; }
+  const box = document.getElementById('legend');
+  box.innerHTML = Object.entries(byTool).sort((x, y) => y[1].all - x[1].all)
+    .map(([t, v]) => `<span data-tool="${esc(t)}" class="${focusTool === t ? 'sel' : focusTool ? 'off' : ''}" title="Show only ${esc(t)}"><i style="background:${v.c}"></i>${esc(t)} ${v.work ? `<b>${v.work} working</b>` : ''}${v.work && v.all > v.work ? ' · ' : ''}${v.all > v.work ? `${v.all - v.work} resting` : ''}</span>`).join('') || `<span>No AI tools at work ${where}</span>`;
+  for (const sp of box.querySelectorAll('span[data-tool]')) sp.onclick = () => { focusTool = focusTool === sp.dataset.tool ? null : sp.dataset.tool; render(); };
 }
 function hash(s) { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; }
 
@@ -225,7 +251,8 @@ function frame(now) {
   for (const A of agents.values()) step(A, dt);
   deskLit = DESKS.map((_, i) => [...agents.entries()].some(([id, A]) => deskOf.get(id) === i && A.mode === 'sit' && !A.moving && Math.hypot(A.x - A.tx, A.y - A.ty) < 2));
   room(t);
-  [...agents.values()].sort((p, q) => p.y - q.y).forEach((A) => drawAgent(A, t));
+  [...agents.values()].sort((p, q) => p.y - q.y).forEach((A) => { a.globalAlpha = focusTool && A.tool !== focusTool ? 0.22 : 1; drawAgent(A, t); });
+  a.globalAlpha = 1;
   // Scale up crisply, letterboxed, then draw the text sharp on top.
   const dpr = window.devicePixelRatio || 1;
   const bw = innerWidth * dpr, bh = innerHeight * dpr;
@@ -248,7 +275,7 @@ function frame(now) {
   // Name tags: a dark pill with the agent's colour, its name, what it is doing.
   // A tag that would cover another steps up until it is clear.
   const placed = [];
-  for (const A of [...agents.values()].sort((p, q) => q.y - p.y)) {
+  for (const A of [...agents.values()].sort((p, q) => q.y - p.y).filter((A) => !focusTool || A.tool === focusTool)) {
     let [nx, ny] = at(A.x, A.y - (A.mode === 'sit' || A.mode === 'rest' ? 17 : 19));
     const fs = Math.max(10, Math.min(14, 4.2 * s));
     g.font = `600 ${fs}px -apple-system, system-ui, sans-serif`;
@@ -276,14 +303,16 @@ let floors = [], floorAt = 'this';
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 function showFloors() {
   const box = document.getElementById('floors');
-  box.innerHTML = floors.length > 1 ? floors.map((f, i) => {
-    const live = f.sessions.filter((s) => (s.idleSec ?? 0) < 30 * 60);
-    const work = live.filter((s) => s.state !== 'idle' && (s.idleSec ?? 0) < 45).length;
+  const pick = (f) => f.sessions.filter((s) => (s.idleSec ?? 0) < 30 * 60 && (!focusTool || toolOf(s)[0] === focusTool));
+  box.innerHTML = (floors.length > 1 ? `<button data-id="all" class="${floorAt === 'all' ? 'on' : ''}" title="Every floor at once">▦ All floors</button>` : '') + (floors.length > 1 ? floors.map((f, i) => {
+    const live = pick(f);
+    const work = live.filter(busyOf).length;
     return `<button data-id="${esc(f.id)}" class="${f.id === floorAt ? 'on' : ''}" title="${esc(f.machine)} — double-click to rename">${i + 1} · ${esc(f.name)}<span class="n">${f.error ? '⚠' : `●${work} ○${live.length - work}`}</span></button>`;
-  }).join('') : '';
+  }).join('') : '');
   for (const b of box.querySelectorAll('button')) {
     b.onclick = () => { floorAt = b.dataset.id; agents.clear(); deskOf.clear(); render(); };
     b.ondblclick = async () => {
+      if (b.dataset.id === 'all') return;
       const f = floors.find((x) => x.id === b.dataset.id); const name = prompt(`Name this floor (${f.machine})`, f.name);
       if (name == null) return;
       await fetch('/ox/office/name', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: f.id, name }) }).catch(() => {});
@@ -291,7 +320,48 @@ function showFloors() {
     };
   }
 }
+// A small picture of an agent (the same sprite as on the floor), for the building view.
+const minis = new Map();
+function mini(look) {
+  const key = look.h + look.s + look.c;
+  if (minis.has(key)) return minis.get(key);
+  const c = document.createElement('canvas'); c.width = 10; c.height = 16;
+  const x = c.getContext('2d');
+  const P = { h: look.h, s: look.s, e: '#1a1512', c: look.c, d: shade(look.c, 0.8), p: '#2e3440', k: '#1b1d22' };
+  FRONT.forEach((row, j) => { for (let i = 0; i < row.length; i++) { const k = row[i]; if (k !== '.') { x.fillStyle = P[k] ?? k; x.fillRect(i, j, 1, 1); } } });
+  const url = c.toDataURL(); minis.set(key, url); return url;
+}
+const lookOf = (s) => { const h = hash(s.id); return { h: HAIR[h % HAIR.length], s: SKIN[(h >> 3) % SKIN.length], c: toolOf(s)[1] }; };
+function chip(s, resting) {
+  const [tool, color] = toolOf(s);
+  const off = focusTool && tool !== focusTool;
+  const p = s.project && !['t', 'tmp', 'home', 'private', 'var'].includes(String(s.project).toLowerCase()) ? ` · ${esc(s.project)}` : '';
+  return `<span class="agent${off ? ' off' : ''}"><img alt="" src="${mini(lookOf(s))}"><b style="color:${color === '#F4F4F5' ? '#fff' : color}">${esc(tool)}</b>${p}${resting ? '' : ` <em>${esc(tagFor(s))}</em>`}</span>`;
+}
+// Every floor at once: a cross-section of the building, the top floor first.
+function building() {
+  const box = document.getElementById('building');
+  const all = [];
+  box.innerHTML = floors.map((f, i) => ({ f, i })).reverse().map(({ f, i }) => {
+    const live = f.sessions.filter((s) => (s.idleSec ?? 0) < 30 * 60);
+    all.push(...live);
+    const work = live.filter(busyOf), rest = live.filter((s) => !busyOf(s));
+    const shown = (l) => l.filter((s) => !focusTool || toolOf(s)[0] === focusTool).length;
+    return `<div class="floor" data-id="${esc(f.id)}" title="Open this floor">
+      <div class="who"><b>${i + 1} · ${esc(f.name)}</b><small>${esc(f.machine)}${f.here ? ' · this Mac' : ''}</small><div class="n">${f.error ? '⚠ not shared' : `●${shown(work)} working  ○${shown(rest)} resting`}</div></div>
+      ${f.error ? `<div class="warn">${esc(f.error)}</div>` : `<div class="desks">${work.map((s) => chip(s, false)).join('') || '<span style="color:#7c8290">no one at a desk</span>'}</div><div class="lounge">${rest.map((s) => chip(s, true)).join('')}</div>`}
+    </div>`;
+  }).join('');
+  for (const d of box.querySelectorAll('.floor')) d.onclick = () => { floorAt = d.dataset.id; agents.clear(); deskOf.clear(); render(); };
+  const w = all.filter(busyOf).length;
+  document.getElementById('count').textContent = `${floors.length} floors · Working: ${w} · Resting: ${all.length - w}`;
+  legend(all, 'in the building');
+}
 function render() {
+  const inBuilding = floorAt === 'all' && floors.length > 1;
+  document.getElementById('building').style.display = inBuilding ? 'block' : 'none';
+  cv.style.visibility = inBuilding ? 'hidden' : 'visible';
+  if (inBuilding) { document.getElementById('floormsg').style.display = 'none'; building(); showFloors(); return; }
   const f = floors.find((x) => x.id === floorAt) ?? floors[0];
   if (!f) return;
   floorAt = f.id;

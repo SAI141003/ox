@@ -53,9 +53,13 @@ test('a running ox holds the Mac awake, and the hold ends with it', { skip: proc
   Object.assign(env, { HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'ox-awake-')), OX_ISLAND: '0', NO_COLOR: '1', OX_NO_PLUGINS: '1', OX_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`, OX_API_KEY: 'x' });
   const p = spawn(process.execPath, [OX, '--bot', 'custom:m', '-p', 'hi'], { cwd: os.tmpdir(), env });
   const holds = () => spawnSync('pgrep', ['-f', `caffeinate -i -s -w ${p.pid}$`], { encoding: 'utf8' }).stdout.trim();
-  await new Promise((r) => setTimeout(r, 900));
-  assert.ok(holds(), 'caffeinate is waiting on the ox process');
-  await new Promise((r) => p.on('close', r));
+  // Polled, not a fixed wait: a slow runner (CI's Intel Mac) takes over a second to start ox.
+  let exited = false;
+  const closed = new Promise((r) => p.on('close', () => { exited = true; r(); }));
+  let seen = '';
+  for (let i = 0; i < 150 && !seen && !exited; i++) { seen = holds(); if (!seen) await new Promise((r) => setTimeout(r, 100)); }
+  assert.ok(seen, 'caffeinate is waiting on the ox process');
+  await closed;
   await new Promise((r) => setTimeout(r, 300));
   assert.equal(holds(), '', 'and it is gone once ox exits');
 });

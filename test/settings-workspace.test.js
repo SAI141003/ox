@@ -58,10 +58,13 @@ test("what's new lists commits since the one you saw, and nothing for a bad or c
   if (!head) return; // not a git install
   assert.deepEqual(A.whatsNew(head).changes, []);
   assert.deepEqual(A.whatsNew('not-a-hash;rm').changes, []);
-  const prev = spawnSync('git', ['rev-parse', '--short', 'HEAD~1'], { encoding: 'utf8', cwd: new URL('..', import.meta.url).pathname }).stdout.trim();
-  const w = A.whatsNew(prev);
-  assert.equal(w.changes.length, 1);
-  assert.match(w.changes[0].date, /^\d{4}-\d\d-\d\d$/);
+  // A shallow checkout (CI) has no parent commit to compare with.
+  const prev = spawnSync('git', ['rev-parse', '--short', 'HEAD~1'], { encoding: 'utf8', cwd: new URL('..', import.meta.url).pathname });
+  if (prev.status === 0) {
+    const w = A.whatsNew(prev.stdout.trim());
+    assert.ok(w.changes.length >= 1, 'at least the head commit (a merge brings its parent\'s branch too)');
+    assert.match(w.changes[0].date, /^\d{4}-\d\d-\d\d$/);
+  }
   const s = A.serverView({ port: 1234 });
   assert.equal(s.pid, process.pid);
   assert.equal(s.url, 'http://127.0.0.1:1234/');
