@@ -3918,8 +3918,24 @@ async function cmdRace(args = []) {
     const agents = ai >= 0 ? String(args[ai + 1]).split(',').map((x) => x.trim()).filter(Boolean) : ['ox', 'claude-plan', 'chatgpt-plan'];
     const prompt = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--agents').join(' ');
     if (!prompt) throw new Error('usage: ox race "<task>" [--agents ox,claude-plan,chatgpt-plan,<model>]');
+    // The winner is picked by evidence (src/race-select.js): a reproduction test
+    // written apart and seen to fail first, the project's checks, each lane's tests
+    // against the others, new security findings; a judge only breaks a tie.
+    const S = await import('./race-select.js');
+    const ask = args.includes('--no-model') ? null : await proofAsk(loadConfig({ cwd: process.cwd() }), null);
+    let repro = null;
+    if (ask && !args.includes('--no-repro')) {
+      console.log(c.dim('  writing a reproduction test (apart from every lane)…'));
+      const B = await import('./build-spec.js');
+      try { repro = await S.reproTest(D.repoRoot(process.cwd()), prompt, { ask, projectMap: B.projectContext(process.cwd()), dir: fs.mkdtempSync(path.join(os.tmpdir(), 'ox-race-')) }); } catch (e) { repro = { skipped: e.message }; }
+      console.log(c.dim(`  reproduction test: ${repro.skipped ?? 'fails before the change, as it should'}`));
+    }
     const r = await D.race(process.cwd(), prompt, agents, { onStep: (k, d) => console.log(c.dim(`  ${d}`)) });
     console.log(`\n${c.bold(r.id)}  ${c.dim(prompt)}`);
+    const rank = await S.rankLanes(D.repoRoot(process.cwd()), prompt, r.results, { ask, repro: repro?.file ? repro : null });
+    console.log(c.bold('\nranked by evidence'));
+    rank.ranked.forEach((x, i) => console.log(`  ${i + 1}. ${x.agent.padEnd(16)} ${c.dim(x.why || '—')}`));
+    if (rank.winner) console.log(`${c.green('winner:')} ${rank.winner}${c.dim(`   keep it: ox race keep ${r.id} ${rank.winner}`)}`);
     for (const x of r.results) console.log(`  ${x.ok && x.files ? (x.checksOk || !x.checks.length ? c.green('●') : c.yellow('●')) : c.red('●')} ${x.agent.padEnd(16)} ${x.files} files ${c.green(`+${x.plus}`)} ${c.red(`−${x.minus}`)}  ${Math.round(x.ms / 1000)} s  ${x.checks.map((k) => `${k.step} ${k.ok ? '✓' : '✗'}`).join(' ')}  ${c.dim(x.branch)}`);
     console.log(c.dim(`\ncompare: git diff ${r.results[0]?.branch} ${r.results[1]?.branch ?? ''}\nkeep one: ox race keep ${r.id} <agent>`));
   } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
