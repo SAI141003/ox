@@ -1733,7 +1733,18 @@ export async function officeFloors() {
   const { hostname } = await import('node:os');
   const names = officeNames();
   const host = hostname().replace(/\.local$/, '');
-  const floors = [{ id: 'this', machine: host, name: names.this ?? host, here: true, sessions: A.liveAgents() }];
+  // ox's own runs (app chats, bots, helpers) sit at their desks as ox, whatever
+  // model or plan they run on; Claude Code or Codex sessions ox started for them
+  // are left out of the agents list (src/own-sessions.js), so nothing shows twice.
+  const B = await import('./live-board.js');
+  const now = Date.now();
+  const via = (who) => (/^claude-plan/.test(who) ? 'on your Claude plan' : /^chatgpt-plan/.test(who) ? 'on your ChatGPT plan' : who);
+  const mine = B.liveBoard(now, { others: false }).runs.filter((r) => !r.parent && (!r.ended || now - r.ended < 60_000)).map((r) => ({
+    id: `ox:${r.id}`, tool: 'ox', project: r.title || 'ox', cwd: '', model: via(r.who ?? ''),
+    state: r.ended ? 'idle' : r.state === 'tool' ? 'tool' : 'thinking', doing: r.ended ? '' : (r.detail || r.tool || ''),
+    idleSec: r.ended ? Math.round((now - r.ended) / 1000) : 0, updated: r.updated ?? now,
+  }));
+  const floors = [{ id: 'this', machine: host, name: names.this ?? host, here: true, sessions: [...mine, ...A.liveAgents()] }];
   try {
     const M = await import('./mesh.js');
     if (M.hasIdentity()) {

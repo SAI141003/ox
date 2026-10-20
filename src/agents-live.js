@@ -4,6 +4,7 @@
 // is doing now (the file it edits, the command it runs), its model, and how
 // long it has been idle. Nothing is written to their folders and no login or
 // token file is read: only the session transcripts, as `ox transfer` reads them.
+import { isOwn } from './own-sessions.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -231,7 +232,8 @@ let cache = { at: 0, rows: [] };
 export function liveAgents({ home = os.homedir(), now = Date.now(), fresh = false } = {}) {
   if (!fresh && now - cache.at < 2000 && home === os.homedir()) return cache.rows;
   const safe = (f) => { try { return f({ home, now }); } catch { return []; } };
-  const rows = [claudeSessions, codexSessions, copilotSessions, dbSessions, antigravitySessions, cursorSessions, geminiCliSessions, continueSessions].flatMap(safe).sort((a, b) => b.updated - a.updated).slice(0, 24);
+  // Runs ox started inside Claude Code or Codex are ox's own (shown as ox), not another agent (src/own-sessions.js).
+  const rows = [claudeSessions, codexSessions, copilotSessions, dbSessions, antigravitySessions, cursorSessions, geminiCliSessions, continueSessions].flatMap(safe).filter((s) => !isOwn(s.id)).sort((a, b) => b.updated - a.updated).slice(0, 24);
   if (home === os.homedir()) cache = { at: now, rows };
   return rows;
 }

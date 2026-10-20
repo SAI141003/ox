@@ -12,6 +12,7 @@
 // Bots: `<id>-plan` (claude-plan, chatgpt-plan, ...), optionally `:<model>`.
 // More CLIs: config `subscriptions: { name: { bin, args: [..., "{prompt}"], format: "text" } }`.
 import { spawn, spawnSync } from 'node:child_process';
+import { markOwn, OWN_RUN_ENV } from './own-sessions.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -451,6 +452,7 @@ const textOf = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((p) 
 function claudeLine(j, st) {
   const ev = [];
   if (j.type === 'system' && j.subtype === 'init' && j.model) st.model = j.model;
+  if (j.type === 'system' && j.subtype === 'init' && j.session_id) markOwn('claude', j.session_id);
   if (j.type === 'assistant') {
     for (const part of j.message?.content ?? []) {
       if (part.type === 'text' && part.text) { ev.push({ type: 'text-delta', text: part.text }); st.text += part.text; }
@@ -479,6 +481,7 @@ function claudeLine(j, st) {
 
 function codexLine(j, st) {
   const ev = [];
+  if (j.type === 'thread.started' && j.thread_id) markOwn('codex', j.thread_id);
   const it = j.item ?? {};
   if (j.type === 'item.started' && it.type === 'command_execution') {
     st.tools.set(it.id, Date.now());
@@ -722,7 +725,7 @@ async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = 
     yield { type: 'turn-end', stopReason: 'error', iters: 0 };
     return;
   }
-  const child = spawn(plan.cmd, [...plan.pre, ...args], { cwd, env, stdio: [askOnStdio ? 'pipe' : 'ignore', 'pipe', 'pipe'], windowsHide: true });
+  const child = spawn(plan.cmd, [...plan.pre, ...args], { cwd, env: { ...env, [OWN_RUN_ENV]: '1' }, stdio: [askOnStdio ? 'pipe' : 'ignore', 'pipe', 'pipe'], windowsHide: true });
   if (askOnStdio) {
     child.stdin.on('error', () => {});
     child.stdin.write(`${JSON.stringify({ type: 'user', message: { role: 'user', content: cli.promptText(prompt, images) } })}\n`);

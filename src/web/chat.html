@@ -403,6 +403,10 @@
   .cmeta .i { width: 13px; height: 13px; flex: none; } #cwd { overflow: hidden; text-overflow: ellipsis; }
   .cmeta .grow { flex: 1; }
   .attached { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; }
+  .queued { display: flex; flex-direction: column; gap: 6px; margin: 0 0 8px; }
+  .queued .q { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; border: 1px dashed var(--line2); border-radius: 12px; background: var(--panel); font-size: 13.5px; }
+  .queued .q .t { flex: 1; white-space: pre-wrap; max-height: 4.5em; overflow: hidden; }
+  .queued .q .k { color: var(--muted); font-size: 11.5px; white-space: nowrap; padding-top: 2px; }
   .attached:empty { display: none; }
   .attached span { font: 12px var(--mono); padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line2); color: var(--muted); }
   .attached button { color: var(--dim); margin-left: 4px; }
@@ -691,6 +695,7 @@
       <div class="thread" id="thread"><div class="inner" id="inner"></div></div>
       <div class="composer">
         <div class="slash-menu" id="slash-menu" role="listbox" aria-label="ox commands"></div>
+        <div class="queued" id="queued" hidden></div>
         <div class="cbox">
           <div class="attached" id="attached"></div>
           <textarea id="input" rows="1" placeholder="Describe what you need" aria-label="Message"></textarea>
@@ -1553,6 +1558,9 @@
     const inner = $('inner');
     inner.innerHTML = '';
     $('title').textContent = readonly ? readonly.title : convo()?.title || 'New session';
+    renderQueued();
+    // Back on a chat whose answer ended while you were elsewhere: what you queued goes now.
+    if (!busy && convo()?.queued?.length) setTimeout(drainQueue, 0);
     document.body.classList.toggle('incog', !!convo()?.incognito && !readonly);
     $('ro').innerHTML = readonly ? 'terminal session · read-only' : convo()?.incognito ? `<span class="incog-tag">${icon('incog')}incognito, nothing is saved</span>` : '';
     $('input').disabled = !!readonly;
@@ -1610,21 +1618,70 @@
   $('nav-new').onclick = () => newConvo();
   $('nav-incog').onclick = () => newConvo(true);
 
-  async function send() {
+  // Messages sent while ox is still answering wait their turn (Claude Code's
+  // queued messages): the work in progress is never stopped by a follow-up; it
+  // goes as the next turn the moment the current one ends. Esc or the stop
+  // button (shown while the box is empty) still stops.
+  function queueFollowUp() {
+    const c = convo();
+    if (!c) return;
     const input = $('input');
-    if (busy) { busy.abort(); return; }
+    const item = { text: input.value.trim(), files: takeAttachments(), pics: takePhotos() };
+    if (!item.text && !item.files && !item.pics.length) return;
+    (c.queued ??= []).push(item);
+    input.value = ''; resize(); renderQueued(); saveConvos();
+  }
+  function renderQueued() {
+    const c = convo(), el = $('queued');
+    const q = c?.queued ?? [];
+    el.hidden = !q.length;
+    el.innerHTML = q.map((x, i) => `<div class="q"><span class="k">${i === 0 ? 'Next' : 'Then'}</span><span class="t">${esc(x.text || (x.pics.length ? 'Photo' : 'Files'))}</span><button class="iconbtn" data-unqueue="${i}" title="Remove" aria-label="Remove queued message">${icon('x')}</button></div>`).join('');
+    el.querySelectorAll('[data-unqueue]').forEach((b) => (b.onclick = () => { c.queued.splice(Number(b.dataset.unqueue), 1); renderQueued(); saveConvos(); }));
+    syncSendButton();
+  }
+  /** Send what was queued for this chat, as one turn (several queued lines are read together, as in Claude Code). */
+  async function drainQueue() {
+    const c = convo();
+    if (busy || !c?.queued?.length) return;
+    const items = c.queued.splice(0);
+    renderQueued(); saveConvos();
+    // You stopped the answer yourself: the queued words come back to the box, unsent.
+    if (c.messages.at(-1)?.error === 'Stopped.') {
+      const input = $('input');
+      input.value = [input.value.trim(), ...items.map((x) => x.text)].filter(Boolean).join('\n\n');
+      resize(); input.focus();
+      return;
+    }
+    await send({ text: items.map((x) => x.text).filter(Boolean).join('\n\n'), files: items.map((x) => x.files).join(''), pics: items.flatMap((x) => x.pics) });
+  }
+  function syncSendButton() {
+    if (!busy) return;
+    const typed = !!$('input').value.trim() || attachments.length || photos.length;
+    const b = $('send');
+    b.innerHTML = icon(typed ? 'up' : 'stop');
+    b.setAttribute('aria-label', typed ? 'Queue this message; it goes when the current answer ends' : 'Stop (Esc)');
+    b.title = typed ? 'Sends when the current answer ends (it is not stopped)' : 'Stop (Esc)';
+  }
+
+  async function send(queued = null) {
+    const input = $('input');
+    if (busy && !queued) {
+      const typed = input.value.trim() || attachments.length || photos.length;
+      if (typed) queueFollowUp(); else busy.abort();
+      return;
+    }
     if (readonly) return;
-    const files = takeAttachments();
-    const pics = takePhotos();
-    if (!files && !pics.length && /^\/[\w-]+/.test(input.value.trim()) && await runSlash(input.value.trim())) return;
-    const text = (input.value.trim() || (files ? 'Here are the files:' : pics.length ? 'What is in this photo?' : '')) + files;
+    const files = queued ? queued.files : takeAttachments();
+    const pics = queued ? queued.pics : takePhotos();
+    if (!queued && !files && !pics.length && /^\/[\w-]+/.test(input.value.trim()) && await runSlash(input.value.trim())) return;
+    const text = ((queued ? queued.text : input.value.trim()) || (files ? 'Here are the files:' : pics.length ? 'What is in this photo?' : '')) + files;
     if (!text) return;
     if (!convo()) newConvo();
     const c = convo();
     if (!c.tools && Object.keys(draftTools).length) c.tools = { ...draftTools };
     if (!c.messages.length && !c.group) c.title = text.replace(/\s+/g, ' ').slice(0, 60);
     c.messages.push({ role: 'user', content: text, ...(pics.length ? { images: pics.map((x) => ({ mediaType: x.mediaType, data: x.data })), thumbs: pics.map((x) => x.thumb) } : {}) });
-    input.value = ''; resize();
+    if (!queued) { input.value = ''; resize(); }
     // A group chat: every bot answers in turn and sees what the others said, so
     // they check, build on and correct each other. "@name" asks just that one.
     // Compare: the same message to several models at once, side by side.
@@ -1637,6 +1694,7 @@
       busy = new AbortController(); setBusy(true);
       await Promise.all(replies.map((r, k) => replyOnce(c, text, null, null, { reply: r, body: bodies[k], model: c.compare[k], signal: busy.signal })));
       c.running = false; busy = null; setBusy(false); resize(); saveConvos(); renderLists();
+      drainQueue();
       return;
     }
     const group = Array.isArray(c.group) && c.group.length ? c.group : null;
@@ -1646,6 +1704,7 @@
       const ok = await replyOnce(c, text, bot, group);
       if (!ok) break;
     }
+    drainQueue();
   }
 
   // One answer from one model (or one bot in a group).
@@ -1778,6 +1837,7 @@
     t.style.height = 'auto';
     t.style.height = `${Math.min(260, t.scrollHeight)}px`;
     if (!busy) $('send').disabled = !t.value.trim() && !attachments.length;
+    else syncSendButton();
   }
   $('input').addEventListener('input', resize);
   // "/" opens ox's commands (src/slash-catalog.js): type to filter, ↑↓ to pick, Tab or Enter to take one.

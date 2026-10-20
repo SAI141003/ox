@@ -348,6 +348,9 @@ const defaultSpawnRelay = ({ agent, sessionId, cwd }) => {
 export async function handleHook(agent, raw, { event = null, socketDir, spawnRelay = defaultSpawnRelay, approvalTimeoutMs = 118_000, env = process.env } = {}) {
   const spec = AGENTS[agent];
   if (!spec) return '';
+  // A Claude Code or Codex run that ox itself started (a plan run from the app):
+  // ox shows and asks for it already, as ox; its hooks stay quiet.
+  if (env.OX_OWN_RUN === '1') return '';
   let parsed;
   try { parsed = JSON.parse(String(raw || '{}')); } catch { return spec.decision === 'bare' && /permission/i.test(String(event)) ? decisionOutput('ask', 'bare') : ''; }
   const payload = normalize(parsed, event, env);
