@@ -29,7 +29,7 @@ struct NotchMetrics: Equatable {
 /// Every size the island can take, in one place, so the SwiftUI shape and the
 /// AppKit hit-test always agree on where the island is.
 enum IslandLayout {
-    static let panel = CGSize(width: 720, height: 460)
+    static let panel = CGSize(width: 720, height: 540)
     static let wing: CGFloat = 46
     static let ear: CGFloat = 12
     /// Standard, or Compact ("make the island smaller"): no walking-ox floor and a narrower card.
@@ -45,6 +45,9 @@ enum IslandLayout {
     static var expanded: CGSize { CGSize(width: compact ? 560 : 640, height: 160) }
     /// The session card, the chat or the + tools under the cards.
     static let panelExtra: CGFloat = 176
+    /// The office tab (a 4:3 room) is taller than the other tabs.
+    static let officeTall: CGFloat = 340
+    static var officeOpen = false
     /// Seconds the island stays open after the pointer leaves (0 = until you close it).
     static var autoClose: TimeInterval { UserDefaults.standard.object(forKey: "island.autoClose") as? Double ?? 6 }
     /// With nothing running the card is one line, so the island is shorter.
@@ -75,7 +78,7 @@ enum IslandLayout {
         case .launch: return (launchSize.width, launchSize.height, 30, -ear)
         case .hidden: return (m.width, m.height, 10, 0)
         case .compact: return tickerOn ? (max(m.width + 2 * wing + 2 * ear, 380), m.height + tickerHeight, 16, -ear) : (m.width + 2 * wing + 2 * ear, m.height, 12, -ear)
-        case .expanded: return (expanded.width, expanded.height + (office ? (cardOpen || trayOpen ? panelExtra : officeHeight) + 8 : 0), 22, -ear)
+        case .expanded: return (expanded.width, expanded.height + (office ? (officeOpen && trayOpen ? officeTall + 36 : cardOpen || trayOpen ? panelExtra : officeHeight) + 8 : 0), 22, -ear)
         }
     }
 }

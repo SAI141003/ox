@@ -106,7 +106,7 @@ final class OxBridge: ObservableObject {
     private var buddySink: AnyCancellable?
 
     /// The tray under the island (Tray.swift): which tool is open, and the tools.
-    @Published var tray: TrayTab? { didSet { IslandLayout.trayOpen = tray != nil } }
+    @Published var tray: TrayTab? { didSet { IslandLayout.trayOpen = tray != nil; IslandLayout.officeOpen = tray == .office } }
     /// Set by the panel: typing needs the panel to take keyboard focus.
     var trayChanged: ((TrayTab?) -> Void)?
     var cardChanged: ((Bool) -> Void)?

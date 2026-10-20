@@ -39,7 +39,9 @@ export function saveUpload(req, name, { limit = MAX_UPLOAD } = {}) {
     const file = path.join(dir, `${crypto.randomBytes(4).toString('hex')}-${safeName(name)}`);
     const out = fs.createWriteStream(file, { mode: 0o600 });
     let size = 0, failed = false;
-    const fail = (e) => { if (failed) return; failed = true; out.destroy(); fs.rmSync(file, { force: true }); reject(e); };
+    // Removed once the stream has closed: removing it at once raced the stream's
+    // own open, which could create the file again right after.
+    const fail = (e) => { if (failed) return; failed = true; req.unpipe?.(out); out.once('close', () => { fs.rmSync(file, { force: true }); reject(e); }); out.destroy(); };
     req.on('data', (c) => { size += c.length; if (size > limit) { fail(new Error(`over ${Math.round(limit / 1048576)} MB`)); req.destroy(); } });
     req.on('error', fail);
     out.on('error', fail);

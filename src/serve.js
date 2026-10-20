@@ -1709,6 +1709,34 @@ async function dayView() {
 
 // ox mesh (src/mesh.js): this machine's node, started with the server once
 // the machine has a mesh identity (made by the first `ox mesh` pairing).
+function officeNames() {
+  try { return JSON.parse(readFileSync(join(process.env.OX_HOME || join(homedir(), '.ox'), 'office.json'), 'utf8')).names ?? {}; } catch { return {}; }
+}
+const floorCache = new Map(); // peer id -> { at, floor }
+export async function officeFloors() {
+  const A = await import('./agents-live.js');
+  const { hostname } = await import('node:os');
+  const names = officeNames();
+  const host = hostname().replace(/\.local$/, '');
+  const floors = [{ id: 'this', machine: host, name: names.this ?? host, here: true, sessions: A.liveAgents() }];
+  try {
+    const M = await import('./mesh.js');
+    if (M.hasIdentity()) {
+      const node = await meshUp();
+      for (const p of Object.values(M.readPeers())) {
+        const hit = floorCache.get(p.id);
+        if (hit && Date.now() - hit.at < 5000) { floors.push({ ...hit.floor, name: names[p.id] ?? p.name }); continue; }
+        let floor;
+        try { const r = await node.ask(p, 'agents', {}, { timeoutMs: 4000 }); floor = { id: p.id, machine: p.name, sessions: r.sessions ?? [] }; }
+        catch (e) { floor = { id: p.id, machine: p.name, sessions: [], error: /does not allow/.test(e.message) ? `${p.name} does not share its agents: on ${p.name}, run  ox mesh allow "${M.identity().name}" agents` : `${p.name}: ${e.message}` }; }
+        floorCache.set(p.id, { at: Date.now(), floor });
+        floors.push({ ...floor, name: names[p.id] ?? p.name });
+      }
+    }
+  } catch {}
+  return { floors };
+}
+
 let meshNode = null;
 let meshStarting = null;
 async function meshUp() {
@@ -1901,6 +1929,19 @@ const ROUTES = [
   }) },
   // Other agents' sessions (src/agents-live.js): read one, message it, open it in Terminal.
   { method: 'GET', pattern: /^\/ox\/agents\/?$/, handler: appRoute(async () => ({ sessions: (await import('./agents-live.js')).liveAgents() })) },
+  // The office's floors: this Mac, then every paired machine (its agents over
+  // ox mesh, when it shares them), each with the name you gave its floor.
+  { method: 'GET', pattern: /^\/ox\/office\/floors\/?$/, handler: appRoute(officeFloors) },
+  { method: 'POST', pattern: /^\/ox\/office\/name\/?$/, handler: appRoute(async (b) => {
+    const id = String(b?.id ?? ''), name = String(b?.name ?? '').trim().slice(0, 40);
+    if (!id) throw new Error('which floor');
+    const names = officeNames();
+    if (name) names[id] = name; else delete names[id];
+    const { writeFileSync, mkdirSync } = await import('node:fs');
+    mkdirSync(join(process.env.OX_HOME || join(homedir(), '.ox')), { recursive: true });
+    writeFileSync(join(process.env.OX_HOME || join(homedir(), '.ox'), 'office.json'), JSON.stringify({ names }, null, 2));
+    return { ok: true, names };
+  }) },
   { method: 'POST', pattern: /^\/ox\/agents\/session\/?$/, handler: appRoute(async (body) => { const A = await import('./agents-live.js'); const r = await A.sessionMessages(body?.id); return { ...r, queued: A.queuedFor(body?.id) }; }) },
   { method: 'POST', pattern: /^\/ox\/agents\/send\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).sendToSession(body?.id, body?.text)) },
   { method: 'POST', pattern: /^\/ox\/agents\/open\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).openInTerminal(body?.id)) },
@@ -2212,7 +2253,8 @@ async function handleRequest(req, res) {
   }
   // The 3D office (the-delegation): every live agent at the desk of what it is doing.
   if (req.method === 'GET' && path === '/office') {
-    const page = await readFile(new URL('./web/office3d.html', import.meta.url));
+    // The pixel office (lumiomac's, top-down); ?view=3d keeps the 3D room.
+    const page = await readFile(new URL(url.searchParams.get('view') === '3d' ? './web/office3d.html' : './web/office.html', import.meta.url));
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': page.length, 'Cache-Control': 'no-store',
       'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" });
     res.end(page);

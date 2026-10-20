@@ -286,10 +286,10 @@ struct ExpandedContent: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
         } else if bridge.tray != nil {
             VStack(spacing: 6) {
-                if [.shelf, .focus, .clips, .mail, .recap].contains(bridge.tray) {
+                if [.shelf, .focus, .clips, .mail, .recap, .office].contains(bridge.tray) {
                     // The + tab: files dropped on the notch, the focus timer, what you copied.
                     HStack(spacing: 5) {
-                        ForEach([TrayTab.shelf, .focus, .clips, .mail, .recap]) { t in
+                        ForEach([TrayTab.shelf, .focus, .clips, .mail, .recap, .office]) { t in
                             TabCapsule(icon: t.icon, on: bridge.tray == t, label: t.title) { bridge.tray = t }
                         }
                         Spacer()
@@ -297,7 +297,7 @@ struct ExpandedContent: View {
                 }
                 TrayPanel(bridge: bridge)
             }
-            .frame(height: IslandLayout.panelExtra)
+            .frame(height: bridge.tray == .office ? IslandLayout.officeTall : IslandLayout.panelExtra)
             .transition(.opacity.combined(with: .move(edge: .top)))
         } else if let team = bridge.officeSession {
             PixelOffice(bridge: bridge, session: team)

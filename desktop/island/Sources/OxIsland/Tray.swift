@@ -15,7 +15,7 @@ import UniformTypeIdentifiers
 // (memory only, and never anything a password manager marks as secret).
 
 enum TrayTab: String, CaseIterable, Identifiable {
-    case chat, shelf, focus, clips, mail, recap
+    case chat, shelf, focus, clips, mail, recap, office
     var id: String { rawValue }
     var icon: String {
         switch self {
@@ -25,6 +25,7 @@ enum TrayTab: String, CaseIterable, Identifiable {
         case .clips: return "doc.on.clipboard"
         case .mail: return "envelope"
         case .recap: return "chart.bar"
+        case .office: return "building.2"
         }
     }
     var title: String { T(rawValue.capitalized) }
@@ -424,6 +425,7 @@ struct TrayPanel: View {
             case .clips: ClipsView(history: bridge.clips)
             case .mail: MailView(mail: bridge.mail)
             case .recap: RecapView(bridge: bridge)
+            case .office: OfficeWeb(port: bridge.appPort)
             case nil: EmptyView()
             }
         }

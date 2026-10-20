@@ -118,3 +118,20 @@ test('focusByFolder: no AppleScript variable named "running" (a reserved propert
   assert.ok(!/set running to/.test(body), 'uses a free variable name');
   assert.equal((body.match(/if isUp then/g) ?? []).length, 2);
 });
+
+test('Cursor, Gemini CLI and Continue show up while their files change', async () => {
+  const fs = await import('node:fs'); const os = await import('node:os'); const path = await import('node:path');
+  const { cursorSessions, geminiCliSessions, continueSessions } = await import('../src/agents-live.js');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-tools-'));
+  const put = (p) => { fs.mkdirSync(path.dirname(path.join(home, p)), { recursive: true }); fs.writeFileSync(path.join(home, p), '{}'); };
+  put('.cursor/ai-tracking/ai-code-tracking.db');
+  put('.gemini/tmp/abc123def456/chats/session-1.json');
+  put('.continue/sessions/7f3e.json'); put('.continue/sessions/sessions.json');
+  const now = Date.now() + 5_000;
+  assert.deepEqual(cursorSessions({ home, now }).map((s) => [s.tool, s.state]), [['Cursor', 'thinking']]);
+  assert.deepEqual(geminiCliSessions({ home, now }).map((s) => s.tool), ['Gemini CLI']);
+  assert.deepEqual(continueSessions({ home, now }).map((s) => s.id), ['continue:7f3e'], 'the index file is not a session');
+  assert.equal(cursorSessions({ home, now: now + 60_000 })[0].state, 'idle', 'quiet a minute: resting');
+  assert.deepEqual(cursorSessions({ home, now: now + 24 * 3600_000 }), [], 'quiet a day: gone');
+  fs.rmSync(home, { recursive: true, force: true });
+});

@@ -58,7 +58,7 @@ struct HomeHeader: View {
             HStack(spacing: 5) {
                 tab("house.fill", on: bridge.tray == nil && bridge.card == nil, label: "Home") { bridge.tray = nil; bridge.card = nil }
                 tab("bubble.left.fill", on: bridge.tray == .chat, label: "Chat with \(OxName.current)") { bridge.card = nil; bridge.tray = bridge.tray == .chat ? nil : .chat }
-                tab("plus", on: [.shelf, .focus, .clips, .mail, .recap].contains(bridge.tray), label: "Shelf, focus, clips, mail and recap") { bridge.card = nil; bridge.tray = [.shelf, .focus, .clips, .mail, .recap].contains(bridge.tray) ? nil : .shelf }
+                tab("plus", on: [.shelf, .focus, .clips, .mail, .recap, .office].contains(bridge.tray), label: "Shelf, focus, clips, mail, recap and office") { bridge.card = nil; bridge.tray = [.shelf, .focus, .clips, .mail, .recap, .office].contains(bridge.tray) ? nil : .shelf }
             }
             .padding(.leading, 14)
             Spacer(minLength: notchWidth + 8)

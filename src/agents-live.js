@@ -177,12 +177,61 @@ export function antigravitySessions({ home = os.homedir(), now = Date.now() } = 
   }).filter(Boolean);
 }
 
+/** Newest file (by mtime) under `dir`, `depth` levels down, whose name passes `ok`. */
+function newest(dir, ok, depth = 3) {
+  let best = null;
+  const walk = (d, n) => {
+    let es = [];
+    try { es = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of es) {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) { if (n > 0) walk(f, n - 1); continue; }
+      if (!ok(e.name)) continue;
+      let m = 0; try { m = fs.statSync(f).mtimeMs; } catch { continue; }
+      if (!best || m > best.m) best = { f, m };
+    }
+  };
+  walk(dir, depth);
+  return best;
+}
+const active = (tool, id, m, now, extra = {}) => {
+  const age = now - m;
+  if (age > SHOW_MS) return null;
+  return { id: `${tool.toLowerCase().replace(/\W+/g, '')}:${id}`, tool, project: tool, cwd: '', model: '', state: age < WORKING_MS ? 'thinking' : 'idle', doing: '', idleSec: age < WORKING_MS ? 0 : Math.round(age / 1000), updated: m, ...extra };
+};
+
+/** Cursor (the IDE's agent and cursor-agent): one session, active while its AI files change. */
+export function cursorSessions({ home = os.homedir(), now = Date.now() } = {}) {
+  const hits = [
+    newest(path.join(home, '.cursor', 'chats'), (n) => /\.(db|json|jsonl)$/.test(n), 3),
+    newest(path.join(home, '.cursor', 'ai-tracking'), (n) => n.endsWith('.db'), 0),
+    newest(path.join(home, 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage'), (n) => n === 'state.vscdb', 0),
+  ].filter(Boolean).sort((x, y) => y.m - x.m);
+  return hits.length ? [active('Cursor', 'cursor', hits[0].m, now)].filter(Boolean) : [];
+}
+
+/** Gemini CLI: its per-project logs and chats under ~/.gemini/tmp. */
+export function geminiCliSessions({ home = os.homedir(), now = Date.now() } = {}) {
+  const root = path.join(home, '.gemini', 'tmp');
+  let dirs = [];
+  try { dirs = fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return []; }
+  return dirs.map((d) => { const h = newest(path.join(root, d), (n) => n.endsWith('.json'), 2); return h ? active('Gemini CLI', d.slice(0, 12), h.m, now) : null; }).filter(Boolean);
+}
+
+/** Continue (the VS Code / JetBrains assistant): one file per session. */
+export function continueSessions({ home = os.homedir(), now = Date.now() } = {}) {
+  const dir = path.join(home, '.continue', 'sessions');
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.json') && n !== 'sessions.json'); } catch { return []; }
+  return names.map((n) => { let m = 0; try { m = fs.statSync(path.join(dir, n)).mtimeMs; } catch { return null; } return active('Continue', n.replace(/\.json$/, '').slice(0, 12), m, now); }).filter(Boolean);
+}
+
 let cache = { at: 0, rows: [] };
 /** Every live session of other agents, newest first (cached 2 s: the island polls often). */
 export function liveAgents({ home = os.homedir(), now = Date.now(), fresh = false } = {}) {
   if (!fresh && now - cache.at < 2000 && home === os.homedir()) return cache.rows;
   const safe = (f) => { try { return f({ home, now }); } catch { return []; } };
-  const rows = [claudeSessions, codexSessions, copilotSessions, dbSessions, antigravitySessions].flatMap(safe).sort((a, b) => b.updated - a.updated).slice(0, 16);
+  const rows = [claudeSessions, codexSessions, copilotSessions, dbSessions, antigravitySessions, cursorSessions, geminiCliSessions, continueSessions].flatMap(safe).sort((a, b) => b.updated - a.updated).slice(0, 24);
   if (home === os.homedir()) cache = { at: now, rows };
   return rows;
 }
