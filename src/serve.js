@@ -89,6 +89,38 @@ function sendSSE(res, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+// Approvals asked in the app: a run that needs a yes (a Claude plan's write, a
+// command) sends an `ox: { type: 'approval' }` chunk and waits here until the
+// page answers through POST /ox/approval, the chat is closed, or 10 minutes pass.
+// Only a literal allow says yes.
+const appApprovals = new Map();
+let appApprovalSeq = 0;
+export function appApprover(res, model, { timeoutMs = 10 * 60_000 } = {}) {
+  const mine = new Set();
+  res.on?.('close', () => { for (const id of mine) answerAppApproval(id, 'deny'); });
+  return (tool, args = {}, detail = '') => new Promise((resolve) => {
+    if (res.writableEnded || res.destroyed) { resolve(false); return; }
+    const id = `ap-${Date.now().toString(36)}-${++appApprovalSeq}`;
+    const timer = setTimeout(() => answerAppApproval(id, 'deny'), timeoutMs);
+    timer.unref?.();
+    mine.add(id);
+    appApprovals.set(id, { timer, resolve: (decision) => {
+      mine.delete(id);
+      if (!res.writableEnded && !res.destroyed) sendSSE(res, { ...createChatCompletionChunk(model, ''), ox: { type: 'approval-resolved', id, decision } });
+      resolve(decision === 'allow');
+    } });
+    sendSSE(res, { ...createChatCompletionChunk(model, ''), ox: { type: 'approval', id, tool: String(tool), preview: String(detail || '').slice(0, 400) } });
+  });
+}
+export function answerAppApproval(id, decision) {
+  const p = appApprovals.get(id);
+  if (!p) return false;
+  appApprovals.delete(id);
+  clearTimeout(p.timer);
+  p.resolve(decision === 'allow' ? 'allow' : 'deny');
+  return true;
+}
+
 function sendSSEDone(res) {
   res.write('data: [DONE]\n\n');
 }
@@ -867,6 +899,12 @@ async function handleChatCompletions(req, res) {
   }
 
   if (stream) {
+    // A plan's step that needs your yes (Claude Code's write or command) is
+    // asked here, in the chat that started it, instead of stopping the run.
+    if (target?.provider === 'subscription') {
+      ctx.requestApproval = appApprover(res, targetModel);
+      ctx.planApprovals = true;
+    }
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -1842,6 +1880,12 @@ const ROUTES = [
       return (await quickText(resolveBot(pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 400 })).text;
     } });
     return body?.confirm ? { agent: O.hire(draft) } : { draft };
+  }) },
+  // Allow / Deny for a step a chat run is waiting on (appApprover).
+  { method: 'POST', pattern: /^\/ox\/approval\/?$/, handler: appRoute(async (body) => {
+    const decision = body?.decision === 'allow' ? 'allow' : 'deny';
+    if (!answerAppApproval(String(body?.id ?? ''), decision)) throw new Error('that approval is no longer waiting');
+    return { ok: true, decision };
   }) },
   { method: 'POST', pattern: /^\/ox\/org\/(approve|reject|beat|pause|resume)\/?$/, handler: appRoute(async (body, m) => {
     const O = await import('./org.js');

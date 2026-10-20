@@ -309,6 +309,10 @@
   .steps-fold summary::before { content: '\25B8  '; } .steps-fold[open] summary::before { content: '\25BE  '; }
   .changed { margin: 10px 0 0; padding: 8px 10px; border: 1px solid var(--line2); border-radius: 10px; display: flex; flex-direction: column; gap: 2px; }
   .changed .cap { margin-bottom: 4px; }
+  .ask-card { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--accent, var(--line2)); border-radius: 10px; display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 100%; box-sizing: border-box; }
+  .ask-card .mono, .ask-done .mono { overflow-wrap: anywhere; }
+  .ask-btns { display: flex; gap: 8px; }
+  .ask-done { margin: 6px 0; }
   .step { display: flex; align-items: center; gap: 8px; font: 12.5px var(--mono); color: var(--muted); padding: 3px 0; min-width: 0; }
   .step b { color: var(--text); font-weight: 600; }
   .step span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1510,7 +1514,20 @@
       ? `<div class="worklog"><div class="cap" style="margin-bottom:6px">Plan · ${msg.plan.filter((t) => t.status === 'completed').length}/${msg.plan.length} done</div>${msg.plan.map((t) => `<div class="wl ${t.status}"><span class="dot ${PI[t.status]?.[0] ?? ''}"></span><span>${esc(t.content)}</span></div>`).join('')}</div>`
       : '';
     const canv = (msg.canvases || []).map((c) => `<div class="ui cv">${canvasNode(c.tree)}</div>`).join('');
-    body.innerHTML = routed + plan + (steps ? `<div class="steps${prefs.activity === 'detailed' ? ' detailed' : ''}">${steps}</div>` : '') + canv + text + changedHtml + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : '');
+    // "Write: /path" is shown as Write and the path.
+    const askWhat = (a) => { const p = String(a.preview || ''), t = `${a.tool}: `; return p.startsWith(t) ? p.slice(t.length) : p; };
+    const asks = (msg.asks || []).map((a) => a.state
+      ? `<div class="ask-done small dim">${a.state === 'allow' ? 'Allowed' : 'Denied'} · <b>${esc(a.tool)}</b> <span class="mono">${esc(askWhat(a))}</span></div>`
+      : `<div class="ask-card" data-ask-id="${esc(a.id)}"><div class="cap">Waiting for your OK</div><div><b>${esc(a.tool)}</b> <span class="mono small">${esc(askWhat(a))}</span></div><div class="ask-btns"><button class="btn primary small" data-ask-answer="allow">Allow</button><button class="btn ghost small" data-ask-answer="deny">Deny</button></div></div>`).join('');
+    body.innerHTML = routed + plan + (steps ? `<div class="steps${prefs.activity === 'detailed' ? ' detailed' : ''}">${steps}</div>` : '') + asks + canv + text + changedHtml + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : '');
+    body.querySelectorAll('[data-ask-answer]').forEach((b) => (b.onclick = () => {
+      const card = b.closest('[data-ask-id]');
+      const a = (msg.asks || []).find((x) => x.id === card.dataset.askId);
+      card.querySelectorAll('button').forEach((x) => (x.disabled = true));
+      postJson('/ox/approval', { id: card.dataset.askId, decision: b.dataset.askAnswer })
+        .then(() => { if (a) { a.state = b.dataset.askAnswer; paint(body, msg); } })
+        .catch((e) => { if (a) a.state = 'deny'; paint(body, msg); toast(plainDash(e.message)); });
+    }));
     mountLive(body); bindUi(body); bindOpenUI(body);
     const m = body.closest('.msg');
     m.dataset.text = msg.content || '';
@@ -1674,6 +1691,9 @@
           if (ox?.type === 'tool-start' && Array.isArray(ox.plan)) reply.plan = ox.plan;
           else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '', ...(ox.file ? { file: ox.file } : {}), ...(ox.files ? { files: ox.files } : {}) });
           if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; if (ox.canvas) { reply.canvases = (reply.canvases || []).filter((x) => x.id !== ox.id); reply.canvases.push({ id: ox.id, tree: ox.canvas }); } }
+          // A step waiting on your yes (a plan's write, a command): Allow / Deny here.
+          if (ox?.type === 'approval') (reply.asks ??= []).push({ id: ox.id, tool: ox.tool, preview: ox.preview, state: '' });
+          if (ox?.type === 'approval-resolved') { const a = (reply.asks || []).find((x) => x.id === ox.id); if (a) a.state = ox.decision === 'allow' ? 'allow' : 'deny'; }
           // The server redrew an interactive answer that did not load.
           if (ox?.type === 'replace' && typeof ox.content === 'string') reply.content = ox.content;
           const delta = ev.choices?.[0]?.delta?.content;
@@ -1688,6 +1708,7 @@
       ok = false;
     } finally {
       reply.pending = false; c.updated = Date.now();
+      for (const a of reply.asks || []) if (!a.state) a.state = 'deny';
       reply.ms = Math.round(performance.now() - t0);
       if (own) { c.running = false; busy = null; setBusy(false); resize(); }
       paint(body, reply); saveConvos(); renderLists();

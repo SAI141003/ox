@@ -16,6 +16,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+function claudePromptText(prompt, images = []) {
+  return images.length ? `${prompt}\n\n[Attached image${images.length > 1 ? 's' : ''}: read ${images.length > 1 ? 'these files' : 'this file'} to see ${images.length > 1 ? 'them' : 'it'}: ${images.join(', ')}]` : prompt;
+}
+
 // format: how the CLI's stdout is read.
 //   claude-stream  Claude Code `--output-format stream-json`
 //   codex-jsonl    Codex `exec --json`
@@ -29,8 +33,13 @@ export const SUBSCRIPTION_CLIS = Object.freeze({
     login: 'run `claude` once and sign in with your Claude account',
     format: 'claude-stream',
     // Claude Code opens image files with its Read tool: it is told where they are.
-    args: ({ prompt, model, approval, images = [] }) => [
-      '-p', images.length ? `${prompt}\n\n[Attached image${images.length > 1 ? 's' : ''}: read ${images.length > 1 ? 'these files' : 'this file'} to see ${images.length > 1 ? 'them' : 'it'}: ${images.join(', ')}]` : prompt, '--output-format', 'stream-json', '--verbose',
+    // askOnStdio: the prompt goes in on stdin and each permission Claude Code
+    // would ask for comes out as a control_request ox answers (approvals in the
+    // app). Without it a run started from the app stopped at "pending your approval".
+    stdioApprovals: true,
+    promptText: claudePromptText,
+    args: ({ prompt, model, approval, images = [], askOnStdio = false }) => [
+      '-p', ...(askOnStdio ? ['--input-format', 'stream-json', '--permission-prompt-tool', 'stdio'] : [claudePromptText(prompt, images)]), '--output-format', 'stream-json', '--verbose',
       '--permission-mode', approval === 'yolo' ? 'bypassPermissions' : approval === 'edits' ? 'acceptEdits' : approval === 'read' ? 'plan' : 'default',
       // ox's Mac actions (src/mac-mcp.js), pre-allowed: they are the safe ones
       // (open an app or a page, notes, to-dos, drafts never sent, music).
@@ -646,6 +655,34 @@ export async function* runSubscriptionTurn(opts = {}) {
   yield* runSubscriptionOnce({ ...opts, target: { ...target, model } });
 }
 
+// What an approval shows for a Claude Code tool: the file, or the command.
+export function planApprovalDetail(tool, input = {}) {
+  const i = input && typeof input === 'object' ? input : {};
+  if (i.command) return `$ ${String(i.command).slice(0, 300)}`;
+  const file = i.file_path ?? i.notebook_path ?? i.path;
+  if (file) return `${tool}: ${file}`;
+  try { return `${tool}: ${JSON.stringify(i).slice(0, 300)}`; } catch { return String(tool); }
+}
+
+// One control_request from Claude Code (--permission-prompt-tool stdio). A
+// permission is put to ctx.requestApproval; only a literal yes allows, and
+// anything else (no, a timeout, a throw) refuses. Other requests are refused
+// as unsupported so Claude Code never waits on an answer that will not come.
+export async function answerControl(child, req, ctx = {}) {
+  const id = req.request_id;
+  const r = req.request ?? {};
+  let response;
+  if (r.subtype === 'can_use_tool') {
+    const tool = String(r.tool_name ?? 'tool');
+    let ok = false;
+    try { ok = (await ctx.requestApproval(tool, r.input ?? {}, planApprovalDetail(tool, r.input))) === true; } catch { ok = false; }
+    response = { subtype: 'success', request_id: id, response: ok ? { behavior: 'allow', updatedInput: r.input ?? {} } : { behavior: 'deny', message: 'The user declined this in ox. Do not retry it another way; say what you would have done.' } };
+  } else {
+    response = { subtype: 'error', request_id: id, error: `ox does not answer ${r.subtype ?? 'this request'}` };
+  }
+  try { child.stdin.write(`${JSON.stringify({ type: 'control_response', response })}\n`); } catch {}
+}
+
 async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = {}, signal } = {}) {
   const cli = allClis(config)[target.subscription];
   const cwd = ctx.cwd ?? config.cwd ?? process.cwd();
@@ -665,7 +702,9 @@ async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = 
   const prompt = brief ? `${brief}\n\n---\n\n${foldPrompt(messages)}` : foldPrompt(messages);
   const approval = approvalFor(ctx);
   const images = imagesOf(messages);
-  const args = cli.args({ prompt, model: target.model, approval, images });
+  // Asked in the app (ctx.planApprovals, with ctx.requestApproval to answer) rather than refused.
+  const askOnStdio = cli.stdioApprovals === true && ctx.planApprovals === true && typeof ctx.requestApproval === 'function' && (approval === 'default' || approval === 'edits');
+  const args = cli.args({ prompt, model: target.model, approval, images, askOnStdio });
   const st = { text: '', tools: new Map(), done: false, error: null, usage: null, estimateUsd: null, model: null };
   const plan = execPlan(where);
   if (plan.error) {
@@ -673,7 +712,11 @@ async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = 
     yield { type: 'turn-end', stopReason: 'error', iters: 0 };
     return;
   }
-  const child = spawn(plan.cmd, [...plan.pre, ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  const child = spawn(plan.cmd, [...plan.pre, ...args], { cwd, env, stdio: [askOnStdio ? 'pipe' : 'ignore', 'pipe', 'pipe'], windowsHide: true });
+  if (askOnStdio) {
+    child.stdin.on('error', () => {});
+    child.stdin.write(`${JSON.stringify({ type: 'user', message: { role: 'user', content: cli.promptText(prompt, images) } })}\n`);
+  }
   const onAbort = () => { try { child.kill('SIGTERM'); } catch {} };
   signal?.addEventListener?.('abort', onAbort, { once: true });
 
@@ -694,7 +737,15 @@ async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = 
     while ((nl = pending.indexOf('\n')) >= 0) {
       const line = pending.slice(0, nl).trim();
       pending = pending.slice(nl + 1);
-      if (line) push(parseLine(cli.format, line, st));
+      if (!line) continue;
+      if (askOnStdio) {
+        let j = null;
+        try { j = JSON.parse(line); } catch {}
+        if (j?.type === 'control_request') { answerControl(child, j, ctx); continue; }
+        // The turn is over: closing stdin lets Claude Code exit.
+        if (j?.type === 'result') try { child.stdin.end(); } catch {}
+      }
+      push(parseLine(cli.format, line, st));
     }
   });
   child.stderr.on('data', (d) => { stderr = (stderr + d).slice(-4000); });
