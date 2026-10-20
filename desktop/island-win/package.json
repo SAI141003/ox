@@ -1,0 +1,8 @@
+{
+  "name": "ox-island-win",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OX Island for Windows: the notch bar at the top of the screen, hold Ctrl+Alt+Space to talk",
+  "scripts": { "tauri": "tauri", "build": "tauri build" },
+  "devDependencies": { "@tauri-apps/cli": "^2.0.0" }
+}

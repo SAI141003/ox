@@ -52,6 +52,7 @@
     <span class="status" id="status">starting…</span>
     <span class="timer" id="wingTimer"></span>
     <span class="tabs" id="tabs"></span>
+    <button class="pill" id="mic" title="Talk: click, or hold Ctrl+Alt+Space in the OX Island app; the words are typed where you are">🎙</button>
   </div>
   <div class="panel" id="panel"></div>
 </div>
@@ -190,6 +191,41 @@ async function poll() {
 }
 setInterval(() => { if (document.activeElement?.id !== 'q') poll(); }, 1000);
 poll();
+
+// ---- Hold to talk (Coucou for Windows): record, then ox writes it where you are.
+let rec = null, chunks = [];
+async function talkStart() {
+  if (rec) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    chunks = [];
+    rec = new MediaRecorder(stream);
+    rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    rec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      const blob = new Blob(chunks, { type: rec?.mimeType || 'audio/webm' });
+      rec = null;
+      el('status').textContent = 'writing…';
+      try {
+        const r = await fetch('/api/dictate?type=1', { method: 'POST', headers: { 'x-ox-token': token, 'content-type': blob.type }, body: blob }).then((x) => x.json());
+        el('status').textContent = r.text ? `“${r.text.slice(0, 60)}”` : (r.error || 'nothing heard');
+      } catch { el('status').textContent = 'could not reach ox'; }
+      el('mic').classList.remove('primary');
+    };
+    rec.start();
+    el('mic').classList.add('primary');
+    el('status').textContent = 'listening… (release to write it)';
+  } catch { el('status').textContent = 'the microphone is not allowed'; }
+}
+function talkStop() { if (rec && rec.state === 'recording') rec.stop(); }
+el('mic').addEventListener('click', () => (rec ? talkStop() : talkStart()));
+// In the OX Island app for Windows (desktop/island-win): the global shortcut, and a bigger window on hover.
+const tauri = window.__TAURI__;
+if (tauri?.event) tauri.event.listen('ox-talk', (e) => (e.payload?.down ? talkStart() : talkStop()));
+if (tauri?.core) {
+  document.addEventListener('mouseenter', () => tauri.core.invoke('ox_expand', { open: true }).catch(() => {}));
+  document.addEventListener('mouseleave', () => setTimeout(() => { if (!hovering) tauri.core.invoke('ox_expand', { open: false }).catch(() => {}); }, 400));
+}
 </script>
 </body>
 </html>

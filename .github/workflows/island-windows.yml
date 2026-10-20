@@ -1,0 +1,33 @@
+# OX Island for Windows (desktop/island-win): built on a Windows runner, since
+# it is a Tauri (Rust) app; the island page and its server tested there too.
+name: island-windows
+
+on:
+  push:
+    paths: ['desktop/island-win/**', 'src/web/island.html', 'src/island-web.js', '.github/workflows/island-windows.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: The island page and its server, on Windows
+        shell: bash
+        run: OX_ISLAND=0 OX_LEARN=0 OX_NO_KEYSTORE=1 node --test --test-timeout=60000 test/island-web.test.js
+      - name: Build OX Island for Windows
+        working-directory: desktop/island-win
+        run: |
+          npm install
+          npx tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ox-island-windows
+          path: |
+            desktop/island-win/src-tauri/target/release/bundle/nsis/*.exe
+            desktop/island-win/src-tauri/target/release/bundle/msi/*.msi

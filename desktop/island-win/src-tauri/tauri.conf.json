@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OX Island",
+  "version": "0.1.0",
+  "identifier": "dev.ox.island.win",
+  "build": { "frontendDist": "../dist" },
+  "app": {
+    "windows": [
+      {
+        "label": "island",
+        "title": "OX Island",
+        "url": "index.html",
+        "width": 560,
+        "height": 64,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "focus": false,
+        "shadow": false
+      }
+    ],
+    "security": { "csp": null, "capabilities": ["default"] }
+  },
+  "bundle": { "active": true, "targets": ["nsis", "msi"], "icon": ["icons/icon.ico", "icons/icon.png"] }
+}
