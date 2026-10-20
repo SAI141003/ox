@@ -14,7 +14,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function makeSandbox(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-e2e-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  // Never throws: a hook that throws stops every later t.after (the mock
+  // server's close among them) and the process then never exits. Windows
+  // reports EBUSY while a just-exited child still holds the folder.
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* temp dir */ } });
   return dir;
 }
 

@@ -109,7 +109,7 @@ async function startMock(t, decide, { onRequest = null } = {}) {
 
 function sandbox(t, prefix = 'ox-cancel-') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   return dir;
 }
 
@@ -583,12 +583,18 @@ test('no file handle, child process or socket survives a cancel', async (t) => {
   // abort (src/tools/exec.js killGroup). Measured with a REAL process, because
   // "no child process leaked" asserted about a mock is worth nothing.
   const pidFile = path.join(cwd, 'pid.txt');
+  // Git Bash on Windows: forward slashes survive the shell, and $$ is an MSYS
+  // pid there — /proc/$$/winpid is the one process.kill(pid, 0) can see.
+  const shPidFile = pidFile.replace(/\\/g, '/');
   const { port: p2 } = await startMock(t, (r) => (
     isSubagentRequest(r)
-      ? { calls: [{ id: 'b1', name: 'bash', args: { command: `echo $$ > ${pidFile}; sleep 30` } }] }
+      ? { calls: [{ id: 'b1', name: 'bash', args: { command: `{ cat /proc/$$/winpid 2>/dev/null || echo $$; } > '${shPidFile}'; sleep 30` } }] }
       : { text: 'parent final' }
   ));
   const bashRun = mkHandler(p2)({ id: 'sa_bash', task: 'run a long sleep' }, yoloCtx(cwd, { _subagentEvents: [] }));
+  // If an assertion below fails first, the agent must still be stopped: left
+  // running, it keeps this process (and the whole suite) alive.
+  t.after(async () => { try { cancelSubagent('sa_bash', { by: 'operator' }); } catch { /* already done */ } await bashRun.catch(() => {}); });
   const childPid = Number(await waitFor(() => {
     try { return JSON.parse(fs.readFileSync(pidFile, 'utf8').trim()); } catch { return null; }
   }, (p) => p && Number.isInteger(Number(p)) && Number(p) > 0, 'the bash child to report its pid'));

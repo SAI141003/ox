@@ -111,7 +111,12 @@ const STAGES = {
     const files = fs.readdirSync(path.join(ROOT, 'test')).filter((f) => f.endsWith('.test.js')).map((f) => path.join('test', f));
     // TAP explicitly: newer Node prints its "spec" summary (ℹ pass N) to a pipe,
     // and the counts below are parsed from TAP's "# pass N".
-    const r = await run(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=4', ...files], {
+    // --test-timeout is a backstop, not a budget: a test that never settles
+    // (a failed assertion that skipped its own cleanup, so a server or poll
+    // kept the file's process alive) is reported as a failure instead of
+    // holding the whole suite until the ceiling below. That is how Windows CI
+    // hung for 25+ minutes before the cleanup fixes.
+    const r = await run(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=4', '--test-timeout=600000', ...files], {
       timeoutMs: 2_400_000,
       plain: false,
       // The per-file repo guard reruns the whole suite; the dedicated full run

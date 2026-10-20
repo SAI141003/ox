@@ -317,6 +317,16 @@ function rmViolation(command) {
 }
 
 function killGroup(child, signal) {
+  // Windows has no process groups: process.kill(-pid) throws, and child.kill()
+  // ends only Git's bash.exe launcher while the real bash and its children keep
+  // the pipes open, so a timed-out or cancelled command ran to its own end.
+  // taskkill /T takes the whole tree.
+  if (process.platform === 'win32' && child.pid) {
+    try {
+      spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }).on('error', () => child.kill(signal));
+      return;
+    } catch {}
+  }
   try {
     if (child.pid) process.kill(-child.pid, signal);
     else child.kill(signal);

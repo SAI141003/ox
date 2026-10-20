@@ -10,7 +10,7 @@ import { narrowToolSchemas, listToolSchemas } from '../src/tools/index.js';
 
 function project(t, files) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-graph-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   for (const [f, text] of Object.entries(files)) {
     fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
     fs.writeFileSync(path.join(dir, f), text);

@@ -33,7 +33,7 @@ const HAND_WRITTEN = [
 
 function sandbox(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-submem-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   return dir;
 }
 

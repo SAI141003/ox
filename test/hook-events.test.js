@@ -97,7 +97,7 @@ async function drainRun(iter) {
 
 test('all six hook events fire through the real agent loop', async (t) => {
   const dir = tmpDir();
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   const { target } = await fakeProvider(t, (res) => replyWith(res, sseText('hi')));
   const events = await drainRun(
     runAgent({
@@ -120,7 +120,7 @@ test('all six hook events fire through the real agent loop', async (t) => {
 
 test('all six events fire including the two tool events when a tool runs', async (t) => {
   const dir = tmpDir();
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   let n = 0;
   const { target } = await fakeProvider(t, (res) => {
     n++;
@@ -164,7 +164,7 @@ test('all six events fire including the two tool events when a tool runs', async
 
 test('PostLLM fires when the stream dies mid-flight', async (t) => {
   const dir = tmpDir();
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   const { target } = await fakeProvider(t, (res) => {
     // Headers, one chunk, then a hard socket destroy: the stream throws.
     res.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -190,7 +190,7 @@ test('PostLLM fires when the stream dies mid-flight', async (t) => {
 
 test('PostLLM leaves OX_HOOK_ERROR unset on a clean turn', async (t) => {
   const dir = tmpDir();
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   const { target } = await fakeProvider(t, (res) => replyWith(res, sseText('clean')));
   await drainRun(
     runAgent({
@@ -210,7 +210,7 @@ test('PostLLM leaves OX_HOOK_ERROR unset on a clean turn', async (t) => {
 
 test('SessionStart and SessionStop fire exactly once for a multi-iteration turn', async (t) => {
   const dir = tmpDir();
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   let n = 0;
   const { target } = await fakeProvider(t, (res) => {
     n++;
@@ -250,7 +250,7 @@ test('SessionStart and SessionStop fire exactly once for a multi-iteration turn'
 
 test('SessionStop fires even when the turn ends in an error', async (t) => {
   const dir = tmpDir();
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   const { target } = await fakeProvider(t, (res) => replyWith(res, sseText('x')));
   await drainRun(
     runAgent({
@@ -270,7 +270,7 @@ test('SessionStop fires even when the turn ends in an error', async (t) => {
 
 test('a non-matching matcher suppresses the event entirely, including the hook-event notice', async (t) => {
   const dir = tmpDir();
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   let n = 0;
   const { target } = await fakeProvider(t, (res) => {
     n++;
@@ -315,7 +315,7 @@ test('a non-matching matcher suppresses the event entirely, including the hook-e
 
 test('a configured hook that fires emits a hook-event NDJSON event', async (t) => {
   const dir = tmpDir();
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   const { target } = await fakeProvider(t, (res) => replyWith(res, sseText('hi')));
   const events = await drainRun(
     runAgent({
@@ -341,7 +341,7 @@ test('a configured hook that fires emits a hook-event NDJSON event', async (t) =
 
 test('zero configured hooks emits no hook-event at all', async (t) => {
   const dir = tmpDir();
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   const { target } = await fakeProvider(t, (res) => replyWith(res, sseText('hi')));
   const events = await drainRun(
     runAgent({
@@ -356,7 +356,7 @@ test('zero configured hooks emits no hook-event at all', async (t) => {
 
 test('every hook-event names a declared HOOK_EVENT', async (t) => {
   const dir = tmpDir();
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   const { target } = await fakeProvider(t, (res) => replyWith(res, sseText('hi')));
   const events = await drainRun(
     runAgent({
@@ -377,7 +377,7 @@ test('every hook-event names a declared HOOK_EVENT', async (t) => {
 
 test('with zero configured hooks the four new call sites cost ~0ms', async (t) => {
   const dir = tmpDir();
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   const { target } = await fakeProvider(t, (res) => replyWith(res, sseText('hi')));
   const empty = loadHooksConfig(dir);
   for (const ev of HOOK_EVENTS) assert.equal(empty[ev].length, 0, `${ev} should be unconfigured`);
@@ -457,7 +457,7 @@ test('hooksFor and fireHooks agree on what runs', async () => {
 
 test('PreLLM/PostLLM/Session* hooks receive the documented env vars', async (t) => {
   const dir = tmpDir();
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   const out = path.join(dir, 'env.txt');
   const res = await fireHooks(
     'PreLLM',

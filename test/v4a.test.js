@@ -34,7 +34,7 @@ const FIXED_NOW = Date.UTC(2026, 7, 24, 12, 0, 0);
 
 function mkroot(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-v4a-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   return dir;
 }
 

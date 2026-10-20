@@ -89,13 +89,16 @@ test('commands work without the slash Slack keeps for itself', () => {
   assert.equal(slashless('/pair 123456'), '/pair 123456');
 });
 
-test('pair in a DM, ignore others, run from a message, approve with a button', { skip }, async () => {
+test('pair in a DM, ignore others, run from a message, approve with a button', { skip }, async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-sl-home-'));
   const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-sl-proj-')));
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/_API_KEY$|^OX_/.test(k)));
   Object.assign(env, { HOME: home, OX_NO_PLUGINS: '1', OX_NO_BUILTIN_SKILLS: '1', OX_NO_AWAKE: '1', OX_LEARN: '0', OX_BASE_URL: `http://127.0.0.1:${model.address().port}/v1`, OX_API_KEY: 'x', OX_MODEL: 'm' });
   const logs = [];
   const ac = new AbortController();
+  // A failed assertion must still stop the gateway, or its socket keeps this
+  // process (and the whole suite) alive forever.
+  t.after(() => { ac.abort(); ws?.destroy(); });
   const base = `http://127.0.0.1:${slack.address().port}/api`;
   const done = runSlackGateway({
     appToken: 'xapp-1', botToken: 'xoxb-1', cwd, env, signal: ac.signal, log: (s) => logs.push(s),
