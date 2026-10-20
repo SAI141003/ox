@@ -170,7 +170,9 @@ final class Dictation: ObservableObject {
         URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
             let doc = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
             let out = (doc?["text"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? text
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.pasteNow(out, app: app) } }
+            // A constant, not the captured weak var: older compilers (CI's macOS 14) refuse the var here.
+            let owner = self
+            DispatchQueue.main.async { MainActor.assumeIsolated { owner?.pasteNow(out, app: app) } }
         }.resume()
     }
 

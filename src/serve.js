@@ -2208,8 +2208,8 @@ async function serveChatPage(res) {
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Length': chatPage.length,
     'Cache-Control': 'no-cache',
-    // The page talks only to this server and loads nothing else.
-    'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    // The page talks only to this server and loads nothing else (it frames only its own /office).
+    'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
   });
@@ -2269,7 +2269,7 @@ async function handleRequest(req, res) {
     // The pixel office (lumiomac's, top-down); ?view=3d keeps the 3D room.
     const page = await readFile(new URL(url.searchParams.get('view') === '3d' ? './web/office3d.html' : './web/office.html', import.meta.url));
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': page.length, 'Cache-Control': 'no-store',
-      'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" });
+      'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'" });
     res.end(page);
     return;
   }
