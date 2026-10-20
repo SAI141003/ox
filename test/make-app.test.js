@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { make, nameOf, briefOf, terminalCommand, slugOf } from '../src/make-app.js';
+import { make, nameOf, briefOf, terminalCommand, slugOf, binOf } from '../src/make-app.js';
 import { parseIntent } from '../src/offline.js';
 
 test('make: a name, a full brief and a quoted Terminal command from one sentence', () => {
@@ -13,9 +13,16 @@ test('make: a name, a full brief and a quoted Terminal command from one sentence
   const brief = briefOf('a pumpkin-carver game', 'Pumpkin Carver');
   assert.match(brief, /plain HTML, CSS and JavaScript and no build step/);
   assert.match(brief, /README\.md/);
-  const cmd = terminalCommand("/tmp/it's here", "say 'hi'", 'claude');
+  const cmd = terminalCommand("/tmp/it's here", "say 'hi'", 'claude', { bin: (n) => n });
   assert.equal(cmd, `cd '/tmp/it'\\''s here' && claude --permission-mode acceptEdits 'say '\\''hi'\\'''`, 'quotes survive the shell');
-  assert.match(terminalCommand('/x', 'b', 'codex'), / && codex --full-auto 'b'$/);
+  assert.match(terminalCommand('/x', 'b', 'codex', { bin: (n) => n }), / && codex --sandbox workspace-write --ask-for-approval on-request 'b'$/);
+  // No working codex command: the copy inside the ChatGPT extension or app is used, quoted.
+  const none = () => [];
+  assert.equal(binOf('codex', { resolve: () => ({ where: '/Apps/Codex.app/Contents/Resources/codex', from: 'app' }), extra: none }), "'/Apps/Codex.app/Contents/Resources/codex'");
+  assert.equal(binOf('codex', { resolve: () => ({ where: '/usr/bin/codex', from: 'PATH' }), extra: none }), 'codex');
+  assert.equal(binOf('codex', { resolve: () => null, extra: none }), 'codex');
+  // A model the ChatGPT account allows, when Codex's config names one it does not.
+  assert.equal(binOf('codex', { resolve: () => null, extra: () => ['-m', 'gpt-6-luna'] }), 'codex -m gpt-6-luna');
 });
 
 test('make: Vovy\'s sentence is understood; a build without a named tool is left to ox', () => {
@@ -34,7 +41,7 @@ test('make: narrates each step, waits for the agent, opens the page once it is q
     if (polls === 2) fs.writeFileSync(path.join(dir, 'index.html'), '<h1>pumpkin</h1>');
     return [{ cwd: dir, idleSec: polls < 4 ? 2 : 40 }];
   };
-  const r = await make('a pumpkin-carver game', { home, say: (s, done) => steps.push(`${done ? '✓' : '·'} ${s}`), terminal: (c) => { ran = c; return { ok: true }; }, open: (p) => { opened = p; }, live, sleep: async () => {}, pollMs: 0 });
+  const r = await make('a pumpkin-carver game', { home, say: (s, done) => steps.push(`${done ? '✓' : '·'} ${s}`), terminal: (c) => { ran = c; return { ok: true }; }, bin: (n) => n, open: (p) => { opened = p; }, live, sleep: async () => {}, pollMs: 0 });
   assert.equal(r.opened, true);
   assert.equal(opened, path.join(dir, 'index.html'));
   assert.match(ran, /&& claude --permission-mode acceptEdits '/);

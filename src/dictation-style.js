@@ -1,12 +1,13 @@
 // Dictation styles and translation (Coucou's Flow styles): what you said can
 // be pasted as said, made natural (fillers out, punctuation in), polished
-// (clear, well-formed sentences), or translated, per app. Settings live in
+// (clear, well-formed sentences), turned into a prompt for an AI tool (prompt
+// mode: a rough spoken idea becomes a clear request), or translated, per app. Settings live in
 // ~/.ox/dictation-styles.json; the rewrite is one small model call.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export const STYLES = ['as-said', 'natural', 'polished'];
+export const STYLES = ['as-said', 'natural', 'polished', 'prompt'];
 const file = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'dictation-styles.json');
 
 export function readStyles() {
@@ -39,6 +40,7 @@ export function prompt({ style, translate, app }) {
   const parts = [];
   if (style === 'natural') parts.push('Clean up this dictation: remove fillers (um, uh, like, you know), false starts and repeated words; add punctuation and capitals. Keep the speaker\'s words and tone; do not add anything.');
   if (style === 'polished') parts.push('Turn this dictation into clear, well-formed writing: fix grammar, structure run-on speech into sentences (and short paragraphs if long). Keep the meaning and the speaker\'s voice; do not add facts.');
+  if (style === 'prompt') parts.push('Prompt mode: the speaker is telling an AI assistant (a coding agent or a chat) what they want, out loud and roughly. Rewrite it as a clear prompt to that assistant, in the first person as the speaker: the goal first, then the context and every requirement or constraint they said, then what a good result looks like. Short lines or a few bullet points when there are several requirements. Keep every detail they gave and their names for things; do not invent requirements, do not answer the request yourself.');
   if (translate) parts.push(`Then translate it into ${translate}, naturally, as a native speaker would write it.`);
   if (app) parts.push(`It will be pasted into ${app}; match that context (an email reads like an email, a chat like a chat).`);
   parts.push('Answer with the final text only: no quotes, no notes.');

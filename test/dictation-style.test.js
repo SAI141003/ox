@@ -24,4 +24,12 @@ test('styles per app, translation, and a safe fallback to what was said', async 
   D.setTranslate('off');
   assert.equal(D.styleFor('Mail').translate, null);
   assert.throws(() => D.setStyle('fancy'), /a style is one of/);
+  // Prompt mode: a rough spoken idea becomes a clear request to an AI tool, per app.
+  D.setStyle('prompt', 'Terminal');
+  assert.equal(D.styleFor('Terminal').style, 'prompt');
+  let ps = '';
+  const pr = await D.restyle('um so make the login page uh remember me for a week', 'Terminal', async ({ system }) => { ps = system; return 'Make the login page remember me for a week.'; });
+  assert.equal(pr.changed, true);
+  assert.match(ps, /Prompt mode/);
+  assert.match(ps, /do not answer the request yourself/);
 });

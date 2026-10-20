@@ -47,10 +47,10 @@ test('race: both tools in their own folder and tab, moments pinned, the first to
     if (polls === 5) fs.writeFileSync(path.join(x, 'index.html'), 'codex');
     return [{ cwd: c, idleSec: polls >= 3 ? 60 : 0 }, { cwd: x, idleSec: polls >= 6 ? 60 : 0 }];
   };
-  const r = await race('make a self-driving snake game', { home, terminal: (cmd) => { tabs.push(cmd); return { ok: true }; }, live, find, say: (s, d) => said.push(`${d ? '✓ ' : ''}${s}`), now, sleep: async () => {}, pollMs: 0, check: false });
+  const r = await race('make a self-driving snake game', { home, terminal: (cmd) => { tabs.push(cmd); return { ok: true }; }, live, find, say: (s, d) => said.push(`${d ? '✓ ' : ''}${s}`), now, sleep: async () => {}, pollMs: 0, check: false, bin: (n) => n });
   assert.equal(tabs.length, 2);
   assert.match(tabs[0], /&& claude --permission-mode acceptEdits 'make a self-driving snake game'$/);
-  assert.match(tabs[1], /&& codex --full-auto /);
+  assert.match(tabs[1], /&& codex --sandbox workspace-write --ask-for-approval on-request /);
   assert.equal(r.winner.label, 'Claude Code');
   assert.ok(r.lanes[1].done > r.lanes[0].done);
   assert.deepEqual(r.lanes[0].moments.map((m) => m.label), ['writes a test']);
@@ -64,6 +64,8 @@ test('race: a tool that is missing or broken is named with its fix, before any t
   const { notReady } = await import('../src/race-live.js');
   assert.equal(notReady('claude', { run: () => ({ status: 0, stdout: '2.1' }) }), null);
   assert.match(notReady('gemini', { run: () => ({ error: { code: 'ENOENT' } }) }), /Gemini CLI is not installed \(npm install -g @google\/gemini-cli\)/);
-  assert.match(notReady('codex', { run: () => ({ status: 1, stderr: 'Error: spawn …/codex ENOENT' }) }), /Codex is installed but does not start: Error: spawn/);
+  assert.match(notReady('codex', { run: () => ({ status: 1, stderr: 'Error: spawn …/codex ENOENT' }), resolve: () => null }), /Codex is installed but does not start: Error: spawn/);
+  // A broken codex command, but a working Codex inside the ChatGPT extension or app: ready.
+  assert.equal(notReady('codex', { run: () => ({ status: 1, stderr: 'Error: spawn …/codex ENOENT' }), resolve: () => ({ where: '/x/codex', from: 'app' }) }), null);
   await assert.rejects(race('x', { tools: ['claude'] }), /two tools at least/);
 });

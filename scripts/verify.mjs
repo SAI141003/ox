@@ -127,7 +127,12 @@ const STAGES = {
     const pass = num('pass');
     const fail = num('fail');
     const cancelled = num('cancelled');
-    const failing = [...r.out.matchAll(/^not ok \d+ - (.+)$/gm)].map((m) => m[1]).slice(0, 20);
+    // Each failure with the first line of its error, so a CI log says why, not only what.
+    const failing = [...r.out.matchAll(/^\s*not ok \d+ - (.+)$/gm)].map((m) => {
+      const after = r.out.slice(m.index, m.index + 4000);
+      const why = /^\s*error: \|?-?\s*\n?\s*(.+)$/m.exec(after.split('\n').slice(1).join('\n'))?.[1]?.trim().replace(/^['"]|['"]$/g, '');
+      return why ? `${m[1]}\n      ${why.slice(0, 300)}` : m[1];
+    }).filter((x, i, a) => a.indexOf(x) === i).slice(0, 20);
     const list = failing.length ? `\n  - ${failing.join('\n  - ')}` : '';
     if (Number.isNaN(pass)) {
       // No summary: the run never finished (killed at the ceiling, or crashed).

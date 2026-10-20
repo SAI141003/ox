@@ -30,10 +30,10 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | A6 Integrations as pills | ✓ | open PRs and failing CI (gh); the newest Vercel deployment; your next Cal.com booking; today's failed n8n workflows: read-only with your own keys (test: integrations; tested with fake replies, no keys on this Mac). Open-source services only, by the owner's rule: Stripe, Notion and Resend left out |
 | A7 Hold-to-dictate | ✓ | build; owner (speech) |
 | A8 Hands-free, Esc, paste last | ✓ | build; owner |
-| A9 Styles per app | ✓ | test: dictation-style; commit's live check on qwen2.5:3b |
+| A9 Styles per app | ✓ | as said / natural / polished / prompt, set per app in the app (Settings › Voice › Dictation) or `ox dictation style`; test: dictation-style |
 | A10 Dictation stats | ✓ | code: words, sessions, wpm, time saved and **per app** (Dictation.swift `Summary.apps`) |
 | A11 Dictionary and snippets | ✓ | test: dictionary |
-| A12 Translate a dictation | ✓ | test: dictation-style (`ox dictation translate`) |
+| A12 Translate a dictation, prompt mode | ✓ | translate and **prompt mode** (live October 20 through the server); test: dictation-style |
 | A13 Parakeet offline speech | — | set aside by the owner (October 19); the hook stays: used first when parakeet-mlx is installed, else whisper.cpp |
 | A14 Call notes, both sides | ✓ | code: SystemAudio.swift (ScreenCaptureKit); owner (Screen Recording) |
 | A15 Floating pill | ✓ | build: DictationPill.swift; **new:** one tap on it finishes |
@@ -152,6 +152,7 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 
 | What it shows | In ox | Proof |
 |---|---|---|
+| (Owner, October 20) No working Codex command: use the ChatGPT app's | ✓ ox uses the Codex inside the ChatGPT editor extension or the ChatGPT / Codex desktop app when the `codex` command is missing or broken, with a model your ChatGPT sign-in allows | live: the broken `codex` command skipped; the ChatGPT extension's codex-cli 0.162 (signed in) wrote a file on request with `gpt-6-luna`; newer Codex dropped `--full-auto`, ox now passes `--sandbox workspace-write --ask-for-approval on-request` (works on old and new); tests: make-app, race-live |
 | The same prompt to Claude Code and Codex, watched from the notch: a timeline per tool with its time, moments pinned ("skills: design + tests", "test fails, on purpose", "bug… fixed", "30 games"), the finish ("Claude Code — 5m 49s") | ✓ `ox vs "<prompt>" --tools claude,codex` (also gemini, opencode, ox): each tool in its own folder and Terminal tab; moments read from each tool's own transcript (skills, a test written, failing, passing, a browser check); the notch shows one row per tool and the winner | tests: race-live (Claude and Codex transcript formats); notch screenshots; a real race not run here: Codex is installed but broken on this Mac (`npm install -g @openai/codex`), Gemini CLI and OpenCode not installed; ox vs says so before opening any tab |
 | A clean top-down pixel office: desks with computers and chairs, windows, bookshelf, a stats board, a clock, coffee, cabinets, servers, a lounge; "Working: 1 · Resting: 1"; "Claude · 5 h 89%"; agents at their desks with tags ("Codex running a command", "Claude ✓"); coffee time when done | ✓ /office, `ox office`, and the Office tab in the notch: ox's own pixel sprites; agents sit and type (monitor shows code), stand with "needs you", rest in the lounge, go for coffee when just finished | live: the notch and the browser with 9 real sessions; demo screenshots |
 | (Owner) Six or seven AI tools on one Mac: which is which | ✓ each tool its own colour (uniform, tag, legend: Claude, Codex, Copilot, Cursor, Gemini, Antigravity, Hermes, OpenCode, Continue, ox); Cursor, Gemini CLI and Continue now detected | test: agents-live |
@@ -188,34 +189,37 @@ not installed), dev servers on a real second laptop.
 
 ## A. From Coucou (latest)
 
-| # | Feature | Island now | |
+Checked again row by row on October 20 (code found, then run where it can be
+run from here). ✓ = built and working; — = left out by the owner.
+
+| # | Feature | State | Proof (October 20) |
 |---|---|---|---|
-| A1 | Approve other agents from the notch: Allow / Deny / Always for Claude Code, Codex, Gemini CLI, Cursor, Copilot… (through each agent's hooks; installer shows the diff and keeps a dated backup) | ✓ now (audit at the top) | done October 20 (all five agents) |
-| A2 | Answer an agent's multiple-choice question (AskUserQuestion) in the notch | ✓ built: the Claude PreToolUse hook sends the question to the island, which shows a cyan card with the options; the choice goes back as the answer (tests in test/agent-hooks.test.js) | installed with A1 |
-| A3 | Live diff ticker: each file an agent edits with +N −M; click opens the diff | ✓ now (audit at the top) — was: ~ ox runs only | |
-| A4 | Jump to the exact terminal window of a session | ✓ now (audit at the top) — was: ✗ | |
-| A5 | Plan usage: Claude 5-hour and weekly, Codex limits, reset times | ✓ now (audit at the top) | done (statusLine set) |
-| A6 | Integrations as pills/cards: GitHub (PRs, CI, reviews), Vercel, Stripe, n8n, Resend, Notion, Cal.com | ✓ now (audit at the top) — was: ✗ | |
-| A7 | Flow dictation: hold a key, speak, pasted anywhere | ✓ (⌃⌥D) | |
-| A8 | Hands-free: two quick taps keep listening; Esc cancels; paste the last dictation again | ✓ double tap ⌃⌥D = hands-free, Esc cancels, ⌃⌥V pastes the last one again | |
-| A9 | Styles: optional clean-up of a dictation by a model, per app (as said / natural / polished) | ✓ now (audit at the top) — was: ✗ | |
-| A10 | Dictation statistics: words, time saved, words per minute, apps | ✓ now (audit at the top) | |
-| A11 | Dictionary and snippets | ✓ | |
-| A12 | Translate a dictation into ~70 languages; prompt mode | ✓ now (audit at the top) — was: ✗ | |
-| A13 | Parakeet offline speech (25 languages) | — set aside by the owner | |
-| A14 | Notetaker: the other side of the call too (system audio), speakers named, summary and to-dos | ✓ built: the call's sound recorded with ScreenCaptureKit, transcribed with whisper.cpp, merged by time as You / Them, summary and to-dos (transcription path checked; live capture needs Screen Recording access) | your step: allow Screen Recording once |
-| A15 | The pill: see-through, bottom or side of the screen, toolbar on hover, voice level dots | ✓ now (audit at the top) — was: ✗ | |
-| A16 | Drop a file on the notch, ask about it or email it | ✓ (Shelf) | |
-| A17 | Drag the character onto a window to give it as context | ✓ now (audit at the top) — was: ✗ | |
-| A18 | Character on the desktop, follows the cursor | ✓ now (audit at the top) — was: ~ | |
-| A19 | Open on hover; invisible when idle; any Mac and several displays | ✓ now (audit at the top) — was: ~ | |
-| A20 | Weekly recap (time, sessions, files, lines, top agent), shareable image | ✓ now (audit at the top) | |
-| A21 | Your own sounds (drop a file to replace one) | ✓ now (audit at the top) — was: ✗ | |
-| A22 | Character reacts to the Mac's load (stressed when hot or busy) | ✓ now (audit at the top) | |
-| A23 | Capture shortcut (⌘⇧S) with a tick | ✓ now (audit at the top) — was: ✗ | |
-| A24 | 10 languages | ✓ English, Español, Français, Deutsch, Português, Italiano, 日本語, 한국어, 简体中文, हिन्दी (OxIsland --check-l10n: 61 strings, 0 missing) | |
-| A25 | iPhone / Android: approvals from the phone, widgets, Live Activity | ✓ now (audit at the top) — was: ✗ | desktop/ios |
-| A26 | Chat in the notch with any provider, switchable | ✓ (Tray chat through ox) | |
+| A1 | Allow / Deny / Always for other agents from the notch | ✓ | `ox hooks status`: Claude Code, Codex, Gemini CLI, Cursor, Copilot CLI all connected (configs backed up first); each hook run here with a harmless event, exit 0; tests: agent-hooks, approval-island-race. Codex: trust the hooks once with `/hooks` |
+| A2 | Answer an agent's multiple-choice question in the notch | ✓ | AskUserQuestion → cyan card → the choice goes back (src/agent-hooks.js, Bridge.swift); test: agent-hooks |
+| A3 | Live diff ticker with +N −M, other agents too | ✓ | `diffStat` reads lines added/removed from each edit's own input (Claude edits, Codex patches); test: agent-hooks |
+| A4 | Jump to a session's own terminal tab | ✓ | `focusByFolder` (src/agents-live.js); live October 19 (Terminal brought forward on the exact tab) |
+| A5 | Plan usage with reset times | ✓ | `ox statusline` set as Claude Code's statusLine; Codex limits read; test: statusline |
+| A6 | Integrations as pills | ✓ | GitHub PRs/CI, Vercel, Cal.com, n8n (src/integrations.js `servicePills`); test: integrations. Stripe, Notion, Resend left out (not open source) |
+| A7 | Hold a key, speak, pasted anywhere | ✓ | ⌃⌥D (Dictation.swift) |
+| A8 | Hands-free, Esc cancels, paste the last again | ✓ | double tap ⌃⌥D, Esc, ⌃⌥V (Dictation.swift, Buddy.swift) |
+| A9 | Styles per app | ✓ | as said / natural / polished / **prompt**, per app; **new:** set in the app (Settings › Voice › Dictation: style, per-app list with Add and Remove, translate), clicked through here; test: dictation-style |
+| A10 | Dictation stats: words, wpm, time saved, apps | ✓ | `Summary` with words, sessions, wpm, saved minutes and the top apps (Dictation.swift) |
+| A11 | Dictionary and snippets | ✓ | test: dictionary |
+| A12 | Translate (~70 languages) and prompt mode | ✓ | translate after the style (`ox dictation translate <language>` or Settings); **new: prompt mode**, a rough spoken idea pasted as a clear request to an AI tool. Live through the server: "um so like make the login page uh remember me for a week and also the button should be blue" came back as a clean prompt with goal, requirements and the expected result; test: dictation-style |
+| A13 | Parakeet offline speech | — | set aside by the owner; whisper.cpp (and parakeet-mlx if installed) used |
+| A14 | Call notes, both sides | ✓ | ScreenCaptureKit system audio + mic, whisper.cpp, You / Them, summary and to-dos (SystemAudio.swift, Notetaker.swift); needs Screen Recording allowed once |
+| A15 | Floating pill | ✓ | DictationPill.swift: see-through, voice level, one tap finishes |
+| A16 | Drop a file on the notch | ✓ | Shelf |
+| A17 | Drop the character on a window as context | ✓ | `window(at:)`, `drop(at:)` (IslandExtras.swift) |
+| A18 | Character follows the cursor | ✓ | `facesPointer` (OxWalker.swift); live October 19 |
+| A19 | Open on hover, any display | ✓ | IslandPanel.swift (`island.screen active`, the mouse's screen) |
+| A20 | Weekly recap with files and lines, shareable | ✓ | files changed, +/− lines, commits, % written with AI, Save as image (IslandCards.swift) |
+| A21 | Your own sounds | ✓ | `ox island sound <event> <file>` (src/island.js, IslandExtras.swift) |
+| A22 | Character reacts to the Mac's load | ✓ | thermalState and getloadavg (IslandView.swift) |
+| A23 | Capture shortcut with a tick | ✓ | ⌃⌥S into the shelf with the capture sound (IslandExtras.swift; ⌘⇧S stays Save As) |
+| A24 | 10 languages | ✓ | `OxIsland --check-l10n` |
+| A25 | Phone: approvals, lock screen, widgets | ✓ | desktop/ios + src/phone-bridge.js (`ox phone pair`); bridge and crypto tested; not run on a phone here (Xcode's iOS platform not installed) |
+| A26 | Chat in the notch with any provider | ✓ | Tray chat (Tray.swift) |
 
 ## B. From the videos
 

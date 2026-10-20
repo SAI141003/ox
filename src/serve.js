@@ -1844,6 +1844,15 @@ const ROUTES = [
     } });
   }) },
   // Dictation styles and translation, per app (src/dictation-style.js).
+  { method: 'GET', pattern: /^\/ox\/dictation\/styles\/?$/, handler: appRoute(async () => { const D = await import('./dictation-style.js'); return { ...D.readStyles(), styles: D.STYLES }; }) },
+  { method: 'POST', pattern: /^\/ox\/dictation\/styles\/?$/, handler: appRoute(async (body) => {
+    const D = await import('./dictation-style.js');
+    const app = body?.app ? String(body.app).slice(0, 80) : null;
+    if (body?.remove && app) { const s = D.readStyles(); delete s.apps[app]; D.writeStyles(s); }
+    else if (body?.style) D.setStyle(String(body.style), app);
+    if (body && 'translate' in body) D.setTranslate(body.translate ? String(body.translate) : 'off');
+    return { ...D.readStyles(), styles: D.STYLES };
+  }) },
   { method: 'POST', pattern: /^\/ox\/dictation\/style\/?$/, handler: appRoute(async (body) => {
     const D = await import('./dictation-style.js');
     return D.restyle(String(body?.text ?? ''), String(body?.app ?? ''), async ({ system, user }) => {
