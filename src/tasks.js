@@ -276,9 +276,19 @@ function breakStaleLock(file) {
     return false;
   }
   try {
+    let raw;
+    try { raw = fs.readFileSync(file, 'utf8'); } catch (err) {
+      // Already gone: an earlier breaker removed it. Nothing to break, so delete
+      // nothing: a claimer may create its fresh lock at any moment now, and an
+      // unlink here would remove THAT lock and let two claimers win (seen on CI).
+      if (err?.code === 'ENOENT') return true;
+      throw err;
+    }
     let rec = null;
-    try { rec = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+    try { rec = JSON.parse(raw); } catch {}
     if (lockLive(rec)) return false; // someone re-took it: not stale any more
+    // The stale lock read above cannot have been replaced since: a new lock can
+    // only be linked once this one is gone, and only the break-lock holder removes it.
     try { fs.unlinkSync(file); } catch {}
     return true;
   } finally {
