@@ -115,7 +115,7 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 |---|---|---|
 | F2.1 Mail in the notch | ✓ | test: mail |
 | F2.2 Live feed, approvals, done hop | ✓ | installed (A1); lock screen ✗ (A25) |
-| F2.3 Coucou for Windows | ~ | the web island runs on Windows (src/web/island.html; Windows IPC over named pipes, PR #2); a native Windows app needs a Windows machine to build and test |
+| F2.3 Coucou for Windows | ✓ | desktop/island-win: a native Tauri bar at the top of the screen (always on top, never takes the focus, grows on hover) showing ox's island (runs, approvals, shelf, focus); hold Ctrl+Alt+Space to talk, the words written where you are (/api/dictate, Whisper; Windows types by paste). Built on a Windows runner (island-windows workflow, run 39381101047: the island's tests pass on Windows, the NSIS and MSI installers are built); dictation checked on this Mac with real speech. Not tried on a Windows PC with a screen |
 | F2.4 Pixie | ✓ | code; owner (voice) |
 | F2.5 Research on X / Reddit / LinkedIn | ✓ | test: social-research; X and LinkedIn need a search key |
 | F2.6 Clicky | ✓ | code |
@@ -173,8 +173,7 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | No more "A keychain cannot be found to store Chrome": every Chrome ox starts (browser, PR shots, rendering, web island, app window) uses `--use-mock-keychain` | test: fast-browser, web-render, island-web (15/15) |
 | One tap stops listening: the listening card, the mic (now a stop icon), the dictation chip, the pill; a tap while the mic starts cancels it; held-key listening ends after 45 s at most | live (mic button): start cancelled by a tap, listening stopped by a tap, silence ended it; the pill and chip taps not clicked yet |
 
-**Still open after this audit (October 19, evening):** F2.3, a native Windows
-app (needs a Windows machine; the web island runs there). Left out by the
+**Still open after this audit (October 20):** nothing built is missing. Left out by the
 owner: A13 Parakeet (set aside), D8 Fish Audio and Stripe (paid, not open
 source). Not run here: the iPhone app on a device (Xcode's iOS platform is
 not installed), dev servers on a real second laptop.
