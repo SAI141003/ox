@@ -132,7 +132,7 @@ export function preview(input = {}) {
     if (f) return f[1].trim();
   }
   const cmd = Array.isArray(i.command) ? i.command.join(' ') : i.command;
-  const s = cmd ?? i.file_path ?? i.notebook_path ?? i.path ?? i.pattern ?? i.url ?? i.query ?? i.description ?? i.prompt ?? '';
+  const s = cmd ?? i.file_path ?? i.notebook_path ?? i.path ?? i.pattern ?? i.url ?? i.query ?? i.description ?? i.prompt ?? i.label ?? i.shape ?? '';
   return String(s).replace(/\s+/g, ' ').slice(0, 300);
 }
 

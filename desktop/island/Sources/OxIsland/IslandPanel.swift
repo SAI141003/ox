@@ -66,12 +66,15 @@ enum IslandLayout {
     /// width, height, bottom corner radius, top radius (<0 = concave ears)
     /// A session card is a little taller than the office (it has a message box).
     static var cardOpen = false
+    /// A narrated step under the closed notch (Vovy's "Checking your project setup"): one line taller.
+    static var tickerOn = false
+    static let tickerHeight: CGFloat = 26
     static var trayOpen = false
     static func shape(_ phase: Phase, _ m: NotchMetrics, office: Bool = false, idle: Bool = false) -> (w: CGFloat, h: CGFloat, corner: CGFloat, top: CGFloat) {
         switch phase {
         case .launch: return (launchSize.width, launchSize.height, 30, -ear)
         case .hidden: return (m.width, m.height, 10, 0)
-        case .compact: return (m.width + 2 * wing + 2 * ear, m.height, 12, -ear)
+        case .compact: return tickerOn ? (max(m.width + 2 * wing + 2 * ear, 380), m.height + tickerHeight, 16, -ear) : (m.width + 2 * wing + 2 * ear, m.height, 12, -ear)
         case .expanded: return (expanded.width, expanded.height + (office ? (cardOpen || trayOpen ? panelExtra : officeHeight) + 8 : 0), 22, -ear)
         }
     }

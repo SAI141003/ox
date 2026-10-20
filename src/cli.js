@@ -5721,8 +5721,9 @@ async function runSubcommand(cmd, args) {
       const say = (step, done = false) => {
         console.log(`${done ? c.green('✓') : c.dim('·')} ${step}`);
         try {
-          if (!done) server?.broadcast({ type: 'tool-start', id: `m${++n}`, name: 'make', argsPreview: step });
-          else server?.broadcast({ type: 'tool-end', id: `m${n}`, name: 'make', isError: false });
+          // narrate: the island shows these steps under the closed notch (Vovy's step line).
+          if (!done) server?.broadcast({ type: 'tool-start', id: `m${++n}`, name: 'make', argsPreview: step, narrate: true });
+          else { server?.broadcast({ type: 'tool-start', id: `m${++n}`, name: 'make', argsPreview: step, narrate: true }); server?.broadcast({ type: 'tool-end', id: `m${n}`, name: 'make', isError: false, narrate: true }); }
         } catch {}
       };
       try {

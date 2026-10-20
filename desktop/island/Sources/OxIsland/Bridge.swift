@@ -619,6 +619,17 @@ final class OxBridge: ObservableObject {
     }
     /// The session the home card shows (tap a pill to change it; nil = the most urgent).
     @Published var focusId: String?
+
+    /// A narrated step shown under the closed notch (Vovy's step line): only
+    /// events marked `narrate` (ox make's steps), so ordinary tool calls never
+    /// scroll past. Cleared a few seconds after its last change.
+    struct Ticker: Equatable { let text: String; let done: Bool; let sessionId: String; let at: Date }
+    @Published var ticker: Ticker? { didSet { IslandLayout.tickerOn = ticker != nil } }
+    func showTicker(_ text: String, done: Bool, session: String) {
+        let t = Ticker(text: text, done: done, sessionId: session, at: Date())
+        ticker = t
+        DispatchQueue.main.asyncAfter(deadline: .now() + (done ? 5 : 12)) { [weak self] in if self?.ticker == t { self?.ticker = nil } }
+    }
     var focused: AgentSession? {
         if let p = pendingSession { return p }
         if let id = focusId, let s = sessions.first(where: { $0.id == id }) { return s }
@@ -918,6 +929,13 @@ final class OxBridge: ObservableObject {
                 s.lastText = String(t.suffix(240))
                 if s.pending == nil { s.mood = .thinking; s.activity = "thinking" }
             case "tool-start":
+                if (ev["narrate"] as? Bool) == true, let text = ev["argsPreview"] as? String { DispatchQueue.main.async { self.showTicker(text, done: false, session: path) } }
+                // Drawing with the cursor is said out loud (Vovy's "Taking your cursor", "Carving the left eye").
+                if let n = ev["name"] as? String, n == "draw" || n.hasSuffix("__draw") {
+                    let raw = ev["argsPreview"] as? String ?? ""
+                    let label = raw.range(of: #""label"\s*:\s*"([^"]+)""#, options: .regularExpression).map { String(raw[$0]).components(separatedBy: "\"").dropLast().last ?? "" } ?? raw
+                    DispatchQueue.main.async { self.showTicker(label.isEmpty ? "Taking your cursor" : "Drawing the \(label)", done: false, session: path) }
+                }
                 let name = ev["name"] as? String ?? "tool"
                 s.lastText = "" // the next reply is a new message, not a continuation
                 s.buddyReply = "" // only the final answer is spoken, not the narration
@@ -926,6 +944,7 @@ final class OxBridge: ObservableObject {
                 s.activity = Self.describe(tool: name, preview: ev["argsPreview"] as? String ?? "")
                 s.note(s.activity)
             case "tool-end":
+                if (ev["narrate"] as? Bool) == true || (ev["name"] as? String).map({ $0 == "draw" || $0.hasSuffix("__draw") }) == true, let t = ticker, t.sessionId == path { DispatchQueue.main.async { self.showTicker(t.text, done: true, session: path) } }
                 if (ev["isError"] as? Bool) == true { s.activity = "\(ev["name"] as? String ?? "tool") failed — recovering" }
                 // The live diff ticker: "editing app.js +12 −3".
                 if let d = ev["diff"] as? [String: Any], let file = d["file"] as? String {

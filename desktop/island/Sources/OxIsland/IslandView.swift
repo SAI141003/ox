@@ -93,8 +93,11 @@ struct IslandRoot: View {
                 case .hidden:
                     Color.clear
                 case .compact:
-                    CompactBar(bridge: bridge, metrics: metrics)
-                        .transition(.opacity)
+                    VStack(spacing: 0) {
+                        CompactBar(bridge: bridge, metrics: metrics)
+                        if let t = bridge.ticker { TickerLine(ticker: t).transition(.opacity.combined(with: .move(edge: .top))) }
+                    }
+                    .transition(.opacity)
                 case .expanded:
                     ExpandedContent(bridge: bridge, metrics: metrics)
                         .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
@@ -758,5 +761,30 @@ struct VoiceLevel: View {
             .opacity(buddy.phase == .listening ? 1 : 0)
             .animation(.easeOut(duration: 0.2), value: buddy.phase == .listening)
         }
+    }
+}
+
+
+/// One narrated step under the closed notch: a spinner while it runs, a green
+/// check when it is done (Vovy's "Claude Code is building ✓").
+struct TickerLine: View {
+    let ticker: OxBridge.Ticker
+    @State private var spin = false
+    var body: some View {
+        HStack(spacing: 7) {
+            if ticker.done {
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color(hex: "#34D399"))
+            } else {
+                Circle().trim(from: 0, to: 0.7).stroke(Color(hex: "#7DD3FC"), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                    .frame(width: 10, height: 10).rotationEffect(.degrees(spin ? 360 : 0))
+                    .onAppear { withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { spin = true } }
+            }
+            Text(ticker.text).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Ink.text).lineLimit(1).truncationMode(.tail)
+        }
+        .frame(height: IslandLayout.tickerHeight - 4)
+        .padding(.horizontal, 16)
+        .id(ticker.text + (ticker.done ? "✓" : ""))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(ticker.done ? "\(ticker.text), done" : ticker.text)
     }
 }
