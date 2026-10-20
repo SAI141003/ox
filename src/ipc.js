@@ -326,6 +326,9 @@ export function createIpcServer(opts = {}) {
     sessionId = 'default',
     meta = {},
     approvalTimeoutMs = DEFAULT_APPROVAL_TIMEOUT_MS,
+    // A client that has connected but whose 'ready' is still in flight: how long
+    // an approval waits for it instead of declining as if nobody were there.
+    readyGraceMs = 3000,
     logger = null,
     onRequest = null,
   } = opts;
@@ -395,6 +398,23 @@ export function createIpcServer(opts = {}) {
     // never starts.
     const client = [...clients].find((c) => c.ready) || null;
     if (!client) {
+      // A client mid-handshake (connected, its 'ready' not read yet) is about
+      // to be the holder: on a busy machine the approval can arrive first, and
+      // declining then drops the request the person attached to answer (seen on
+      // CI's Ubuntu runner). Wait briefly for it; with nobody connecting, ask at once.
+      const joining = () => [...clients].some((c) => !c.ready);
+      if (readyGraceMs > 0 && joining()) {
+        return new Promise((resolve) => {
+          const until = Date.now() + readyGraceMs;
+          const tick = () => {
+            if ([...clients].some((c) => c.ready)) return resolve(requestApproval({ tool, args, cwd, preview, risk }));
+            if (!joining() || Date.now() >= until) { log('ipc: approval requested with no ready client -> ask'); return resolve(DECLINE); }
+            const t = setTimeout(tick, 20);
+            if (typeof t.unref === 'function') t.unref();
+          };
+          tick();
+        });
+      }
       log('ipc: approval requested with no connected client -> ask');
       return Promise.resolve(DECLINE);
     }

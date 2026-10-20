@@ -869,3 +869,42 @@ describe('ipc secret-key classification', () => {
     assert.equal(out.ok, true);
   });
 });
+
+// A client mid-handshake: connected, its 'ready' not read yet when the approval
+// comes (a busy machine). It must still get the request, not a silent decline.
+test('ipc: an approval waits briefly for a client whose ready is still in flight', async (t) => {
+  const dir = mkdtemp();
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best effort */ } });
+  const server = createIpcServer({ socketPath: sockPath(dir, 'grace'), sessionId: 'grace', readyGraceMs: 2000 });
+  t.after(() => server.close());
+  await new Promise((r) => server.once('listening', r));
+  const raw = net.connect(sockPath(dir, 'grace'));
+  t.after(() => raw.destroy());
+  await new Promise((r) => raw.once('connect', r));
+  let buf = '';
+  raw.on('data', (d) => { buf += d; });
+  await sleep(50); // the server has the socket, but no 'ready' yet
+  const decision = server.requestApproval({ tool: 'write_file', args: { path: 'x' } });
+  await sleep(150);
+  raw.write(`${JSON.stringify({ type: 'ready', clientId: 'late' })}\n`);
+  const req = await (async () => { for (let i = 0; i < 100; i++) { const f = buf.split('\n').filter(Boolean).map((l) => JSON.parse(l)).find((m) => m.type === 'approval-request'); if (f) return f; await sleep(20); } return null; })();
+  assert.ok(req, 'the approval reached the client that announced itself late');
+  raw.write(`${JSON.stringify({ type: 'approval-answer', id: req.id, decision: 'allow' })}\n`);
+  assert.equal(await decision, 'allow');
+});
+
+test('ipc: with a socket that never says ready, the approval declines after the grace', async (t) => {
+  const dir = mkdtemp();
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best effort */ } });
+  const server = createIpcServer({ socketPath: sockPath(dir, 'mute'), sessionId: 'mute', readyGraceMs: 200 });
+  t.after(() => server.close());
+  await new Promise((r) => server.once('listening', r));
+  const raw = net.connect(sockPath(dir, 'mute'));
+  t.after(() => raw.destroy());
+  await new Promise((r) => raw.once('connect', r));
+  await sleep(50);
+  const started = Date.now();
+  assert.equal(await server.requestApproval({ tool: 'write_file', args: {} }), 'ask');
+  assert.ok(Date.now() - started >= 150, 'it waited for the grace, not longer than needed');
+  assert.ok(Date.now() - started < 2000);
+});
