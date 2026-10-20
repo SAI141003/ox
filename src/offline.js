@@ -3,6 +3,7 @@
 // action, so the island and `ox do` keep working on a plane, offline, or with
 // no model configured. It never guesses: anything it does not recognise is
 // handed back as "not a small task" for a model to take, if there is one.
+import * as MAIL from './tools/mail.js';
 import { assistantName } from './identity.js';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -140,6 +141,13 @@ export function parseIntent(text) {
     return { intent: 'note', text: m[1].trim() };
   }
   // Email, never sent from here: a draft opens in your mail app for you to send.
+  // "… from gmail" / "from my work account" names the sending account (Mail asks otherwise).
+  // Only before the message itself: "…saying it came from mom" is the message, not an account.
+  const head = t.split(/\s+(?:saying|that says|telling|tell|body)\b/i)[0];
+  if (/\b(?:e-?mail|mail)\b/i.test(head) && (m = /\s+from\s+(?:my\s+)?([\w.@+-]+)(?:\s+(?:account|address|mail|email))?(?=\s+(?:about|subject|re|regarding|and)\b|[,:]|\s*$)/i.exec(head))) {
+    const rest = parseIntent(t.slice(0, m.index) + t.slice(m.index + m[0].length));
+    if (rest?.intent === 'email') return { ...rest, from: m[1] };
+  }
   if ((m = /^(?:send |write |draft )?(?:an? )?(?:e-?mail|mail)(?: to)?\s+([^\s@]+@[^\s@]+\.[a-z]{2,})(?:\s+(?:about|subject|re|regarding)[:\s]+(.+?))?(?:\s+(?:saying|that says|telling (?:him|her|them)|body|:)\s+(.+))?$/i.exec(t))) {
     return { intent: 'email', to: m[1], subject: (m[2] ?? '').trim(), body: (m[3] ?? '').trim() };
   }
@@ -209,6 +217,20 @@ export function parseIntent(text) {
   if ((m = /^(?:what is|what's|calculate|calc|compute)\s+(.+)$/i.exec(low)) && calc(m[1]) !== null) return { intent: 'calc', expr: m[1], value: calc(m[1]) };
   if (calc(low) !== null && /[+\-*/^%]/.test(low)) return { intent: 'calc', expr: low, value: calc(low) };
   return null;
+}
+
+// Mail's accounts and a visible draft, through the same scripts as the mail tool (src/tools/mail.js).
+let mailScripts = null;
+function mailAccounts() {
+  try {
+    mailScripts ??= MAIL;
+    const r = spawnSync('osascript', mailScripts.ACCOUNTS_SCRIPT.flatMap((l) => ['-e', l]), { encoding: 'utf8', timeout: 15_000 });
+    return r.status === 0 ? mailScripts.parseAccounts(r.stdout) : [];
+  } catch { return []; }
+}
+function mailDraft({ from, to = [], subject = '', body = '' }) {
+  const r = spawnSync('osascript', [...MAIL.COMPOSE_SCRIPT.flatMap((l) => ['-e', l]), from, subject, body, 'draft', ...to.map((a) => `to:${a}`)], { encoding: 'utf8', timeout: 30_000 });
+  return { ok: r.status === 0 && !/^MISMATCH/.test(r.stdout), err: r.stderr };
 }
 
 function run(cmd, env = {}) {
@@ -478,6 +500,20 @@ export function perform(it) {
     }
     case 'task': { const r = addTask(it.text); return { ok: r.ok, message: `added to ${r.where}: ${it.text}` }; }
     case 'email': {
+      // macOS with Mail set up: a visible draft from the account you choose (asked when there are several).
+      if (process.platform === 'darwin') {
+        const acc = mailAccounts();
+        if (acc.length) {
+          const pick = it.from ? acc.filter((a) => a.address.toLowerCase().includes(it.from.toLowerCase()) || a.account.toLowerCase().includes(it.from.toLowerCase())) : acc.length === 1 ? acc : [];
+          if (pick.length !== 1) {
+            const names = acc.map((a) => a.address);
+            const say = names.length === 2 ? `${names[0]} or ${names[1]}` : `${names.slice(0, -1).join(', ')} or ${names.at(-1)}`;
+            return { ok: true, ask: 'account', accounts: names, message: `${it.from && !pick.length ? `No account matches "${it.from}". ` : ''}Which account should it come from: ${say}? Say it again with "from ${acc[0].account.split(/\s/)[0].toLowerCase()}", for example.` };
+          }
+          const r = mailDraft({ from: pick[0].address, to: it.to ? [it.to] : [], subject: it.subject, body: it.body });
+          if (r.ok) return { ok: true, message: `draft from ${pick[0].address}${it.to ? ` to ${it.to}` : ` to ${it.name}`} is open in Mail${it.to ? '' : ': add their address'}; check it and press Send (ox never sends it)` };
+        }
+      }
       const r = openWith(mailtoUrl(it));
       return r.ok ? { ok: true, message: it.to ? `draft to ${it.to} is open in your mail app: check it and press Send (ox never sends it)` : `draft to ${it.name} is open in your mail app: add their address and press Send (ox never sends it)` } : { ok: false, message: r.err };
     }

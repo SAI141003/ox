@@ -5,7 +5,7 @@ The working list. Each feature: what it does, how it was checked, its state.
 **✗** broken or missing · **?** not tested yet. Nothing is ✓ without a run.
 Work goes top to bottom through the ~, ✗ and ? rows, each one: test, fix, test again.
 
-Updated October 16 2026.
+Updated October 20 2026.
 
 ## 1. Connections and models
 
@@ -81,7 +81,10 @@ Updated October 16 2026.
 |---|---|---|---|
 | 7.1 | Logo, launch screen, black and white theme | ✓ | Your logo, traced; light and dark |
 | 7.2 | Capabilities | ✓ | Opens on the first item |
-| 7.3 | Studio (images, video) | ~ | No provider key here to test generation |
+| 7.3 | Studio (images, video) | ✓ | On this Mac's own chip, no key (M3 / 16 GB): image ~25 s (12 s fast), edit, 5 s clip ~3 min (living picture), cut-out ~18 s (Apple Vision), 2x upscale; made from the Studio page and `ox create`. Hosted models still need their keys |
+| 7.3a | Animate a script (Flick-style) | ✓ | Video, transcript or script → scene plan → 7 animated templates with sound effects; 3-scene 12.5 s video from the Studio page; `ox video animate`, redo one scene, save a look |
+| 7.3b | Restyle a video (Genjutsu-style: move, swap, new look) | ~ | Routed to open Wan 2.2 Animate / VACE on fal; not run here (no fal key) |
+| 7.3c | Settings after OpenCode: activity detail, changed files, what's new, Notifications, Projects, Worktrees, Models, Extensions, Server, Providers with a Connect dialog | ✓ | Every page opened in the app; changed files and the compact fold drawn; Connect dialog lands on the filtered key |
 | 7.4 | Marketplace | ✓ | 329 plugins, 30 GitHub skills listed |
 | 7.5 | Messaging (Telegram, Discord) | ~ | Setup shown; not paired here |
 | 7.6 | Scheduled runs | ✓ | Create in words, pause, resume; no edit, delete or history yet |
@@ -164,7 +167,7 @@ Updated October 16 2026.
 | 13.4 | Reply by voice from the phone (Harness) | Telegram and Discord, voice notes transcribed | ~ no phone app |
 | 13.5 | One-command skill to research LinkedIn, YouTube transcripts, X talk (AgentReach for Hermes, video 2) | youtube_transcript reads any video's transcript (tested: 3Blue1Brown, 31 languages, 18,895 chars), no yt-dlp; web search for the rest | ~ no LinkedIn or X research channel (both need a signed-in session) |
 | 13.6 | Every language and stack a recruiter asks for: Java, Go, Spring, SQL Server, Postgres, Oracle, MongoDB, Redis, Cosmos, React, Angular, Azure/AWS/GCP, Docker, Kubernetes, RabbitMQ, Kafka, gRPC, GraphQL, SOAP, SignalR, MAUI, Unity, GitHub Actions, Azure DevOps, Terraform (image) | General coding works in any language; no per-stack skills | ~ (12.3) |
-| 13.7 | Precise one-prompt image edits at 2K (Krea, image) | Studio makes images and video with your provider keys | ✗ editing an existing image |
+| 13.7 | Precise one-prompt image edits at 2K (Krea, image) | Studio edits an existing image on this Mac (SD-Turbo image to image, ~512 px) or with a key (Qwen-Image-Edit, OpenAI, OpenRouter) | ~ local edits are ~512 px, 2x with upscale; not 2K |
 | 13.8 | Make agents from plain language, self-developing (AutoAgent, HKUDS, image) | Bots page and `ox agent new`; ox evolve improves ox | ~ no "describe the agent, ox builds it" |
 | 13.9 | Chat bar with Build / Plan / Mission / Skills and a model picker (Freebuff, image) | Mode list with descriptions, + menu, model picker | ✓ (11.1, 11.9) |
 | 13.10 | Subagents with isolated context, pluggable filesystem, summarize long threads and offload tool outputs to disk, shell, persistent memory (deepagents, MIT, image) | Subagents, compaction, sandbox, memory; tool results over 20,000 characters are kept whole in a file, the model gets the ends and the path (test) | ✓ |

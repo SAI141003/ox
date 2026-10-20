@@ -37,7 +37,7 @@ export const ACCOUNTS_SCRIPT = [
   'end tell',
 ];
 
-const COMPOSE_SCRIPT = [
+export const COMPOSE_SCRIPT = [
   'on run argv',
   'set fromAddr to item 1 of argv',
   'set subj to item 2 of argv',

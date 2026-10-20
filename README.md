@@ -70,6 +70,21 @@ DeepSeek, Mistral, OpenRouter… 22 providers); or run a local model with Ollama
   and offline, in about 0.1 s**. Questions go to your local model in 2–3 s, and
   real tasks to an agent. Hold **Fn** to talk, rename it, dictation anywhere,
   call notes.
+- **OX Studio on your own Mac, no key**: images (~25 s on an M3), edits, 5 s
+  clips (a generated scene with a camera move), cut-outs (Apple Vision) and 2x
+  upscale, all on your chip, nothing sent anywhere. One-time setup of about
+  2 GB, every download checked by sha256 (`ox studio local install`). Hosted open
+  models (FLUX, Wan, Qwen-Image…) when you add a key.
+- **Animate a script**: a video, transcript or script becomes scene-by-scene
+  motion graphics (headlines, counting numbers, lists, vs, quotes, steps,
+  captions) with sound effects, on this machine (`ox video animate`).
+- **Approvals everywhere**: every write and command asks Allow / Deny, in the
+  app (on any model, Claude and ChatGPT plans included), in the notch, and on
+  your iPhone's lock screen.
+- **The office**: a floor per connected machine, every AI tool in its own colour,
+  each agent at a desk with what it is doing.
+- **`ox vs`**: the same prompt to Claude Code and Codex (or more), each in its
+  own folder, raced in the notch.
 - **Automations**, n8n-style and built in: triggers (by hand, schedule,
   webhook) and steps (HTTP, ask a model, extract, if, notify, write).
 - **Marketplace**: 1,129 plugins from 11 MIT/Apache catalogues, scanned before

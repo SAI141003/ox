@@ -137,3 +137,14 @@ test('devcheck: "am I a good developer?" answers from git, with the real share',
   assert.match(devCheck({ commits: 3, aiCommits: 0, aiShare: 0, aiBy: {} }), /All you: 3 commits/);
   assert.match(devCheck({ commits: 0 }), /no commits this week/);
 });
+
+test('email: "from gmail" / "from my work account" names the sending account; a "from" inside the message does not', async () => {
+  const { parseIntent } = await import('../src/offline.js');
+  assert.equal(parseIntent('send an email to bob@example.com from gmail saying hi').from, 'gmail');
+  assert.equal(parseIntent('send an email to bob@example.com from gmail saying hi').body, 'hi');
+  assert.equal(parseIntent('write an email to Camille from my work account, tell her it is done').from, 'work');
+  const inBody = parseIntent('email bob@example.com about lunch saying it came from mom');
+  assert.equal(inBody.from, undefined);
+  assert.equal(inBody.body, 'it came from mom');
+  assert.equal(parseIntent('email bob@example.com saying hi').from, undefined, 'no account named: Mail is asked which');
+});
