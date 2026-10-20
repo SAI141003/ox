@@ -82,6 +82,8 @@ export function hire(spec = {}, opts = {}) {
     // in its folder; commands are declined), all (everything, no approvals).
     approval: ['read', 'edits', 'all'].includes(spec.approval) ? spec.approval : 'edits',
     cwd: spec.cwd ? path.resolve(String(spec.cwd)) : null,
+    // A paired machine its runs happen on (ox mesh), or null for this one.
+    machine: spec.machine ? String(spec.machine).slice(0, 60) : null,
     status: by === 'you' ? 'active' : 'proposed',
     spend: {}, lastBeat: null, hiredBy: by, hiredAt: new Date().toISOString(),
   };
@@ -127,6 +129,7 @@ export const terminate = (id, opts = {}) => change(id, (a) => { a.status = 'term
 export function update(id, patch = {}, opts = {}) {
   return change(id, (a) => {
     for (const k of ['title', 'role', 'runtime', 'instructions']) if (patch[k] != null) a[k] = String(patch[k]);
+    if (patch.machine !== undefined) a.machine = patch.machine ? String(patch.machine).slice(0, 60) : null;
     if (patch.approval != null) { if (!['read', 'edits', 'all'].includes(patch.approval)) throw new Error('approval is read, edits or all'); a.approval = patch.approval; }
     if (patch.budgetUsd !== undefined) a.budgetUsd = patch.budgetUsd == null ? null : Math.max(0, Number(patch.budgetUsd));
     if (patch.heartbeatMin !== undefined) a.heartbeatMin = patch.heartbeatMin == null ? null : Math.max(1, Number(patch.heartbeatMin));
@@ -202,7 +205,11 @@ function briefFor(agent, task, opts) {
 }
 
 /** Run one task through `ox -p --bot <runtime>`; resolves { ok, output, error }. */
-export function runThroughOx(agent, task, prompt, { timeoutMs = 30 * 60_000 } = {}) {
+export function runThroughOx(agent, task, prompt, { timeoutMs = 30 * 60_000, mesh = null } = {}) {
+  // An agent with its own computer (Sauna.ai's cloud teammate, on a machine you
+  // own): its runs happen on that paired machine through ox mesh, which must
+  // allow it there (ox mesh allow <this machine> tasks).
+  if (agent.machine) return runOnMachine(agent, task, prompt, { timeoutMs, mesh });
   return new Promise((resolve) => {
     const bin = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
     const approval = agent.approval === 'all' ? ['--dangerously-skip-approvals'] : agent.approval === 'read' ? ['--mode', 'ask'] : ['--yes-edits'];
@@ -219,6 +226,20 @@ export function runThroughOx(agent, task, prompt, { timeoutMs = 30 * 60_000 } = 
     child.on('close', (code) => { clearTimeout(timer); resolve({ ok: code === 0, output: out, error: code === 0 ? null : (err.trim().split('\n').pop() || `exit ${code}`) }); });
     child.on('error', (e) => { clearTimeout(timer); resolve({ ok: false, output: out, error: e.message }); });
   });
+}
+
+async function runOnMachine(agent, task, prompt, { timeoutMs, mesh }) {
+  const M = mesh ?? await import('./mesh.js');
+  let node = null;
+  try {
+    node = await M.startNode({ port: 0, proxyPort: 0, beacon: false, heartbeat: false });
+    let out = '';
+    const brief = `${prompt}\n\n(You are ${agent.name}, working on ${agent.machine} for the task "${task.title}".)`;
+    await node.ask(agent.machine, 'run', { prompt: brief, cwd: agent.cwd ?? undefined }, { timeoutMs, onChunk: (b) => { out += Buffer.from(b).toString('utf8'); if (out.length > 200_000) out = out.slice(-100_000); } });
+    return { ok: true, output: out, error: null, machine: agent.machine };
+  } catch (e) {
+    return { ok: false, output: '', error: `${agent.machine}: ${e.message}`, machine: agent.machine };
+  } finally { try { await node?.close(); } catch {} }
 }
 
 // ---------------------------------------------------------------- hire from a sentence

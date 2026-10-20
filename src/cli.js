@@ -524,6 +524,7 @@ function usageAll() {
     '  ox org hire <name> [--title T] [--reports-to <id>] [--runtime ox|claude-plan|chatgpt-plan|<bot>]',
     '      [--budget <usd/month>] [--every <minutes>] [--instructions <text>] [--cwd <dir>]',
     '      [--approval read|edits|all]   unattended, edits (default) changes files in --cwd; commands are declined',
+    '      [--machine <paired machine>]  its runs happen on that machine (ox mesh; it must allow tasks there)',
     '  ox org hire "<a sentence>" [--draft]   the job in your words: name, title, schedule, budget, runtime filled in',
     '  ox org approve|reject <id>        decide a hire an agent proposed',
     '  ox org pause|resume|fire <id>     stop or restart waking an agent',
@@ -3516,7 +3517,7 @@ async function cmdOrg(args = []) {
         console.log(a.status === 'proposed' ? `${c.yellow('proposed')} ${a.id}: waits for the owner (ox org approve ${a.id})` : `${c.green('✓ hired')} ${a.name} (${a.id})`);
         return;
       }
-      const a = O.hire({ name, title: flag('--title'), role: flag('--role'), reportsTo: flag('--reports-to'), runtime: flag('--runtime'), budgetUsd: num(flag('--budget')), heartbeatMin: num(flag('--every')), instructions: flag('--instructions'), cwd: flag('--cwd'), approval: flag('--approval') }, { by: process.env.OX_ORG_AGENT || 'you' });
+      const a = O.hire({ name, title: flag('--title'), role: flag('--role'), reportsTo: flag('--reports-to'), runtime: flag('--runtime'), budgetUsd: num(flag('--budget')), heartbeatMin: num(flag('--every')), instructions: flag('--instructions'), cwd: flag('--cwd'), approval: flag('--approval'), machine: flag('--machine') }, { by: process.env.OX_ORG_AGENT || 'you' });
       console.log(a.status === 'proposed' ? `${c.yellow('proposed')} ${a.id}: waits for the owner (ox org approve ${a.id})` : `${c.green('✓ hired')} ${a.name} (${a.id}) — ${a.title}, runs on ${a.runtime}${a.heartbeatMin ? `, wakes every ${a.heartbeatMin} min` : ''}`);
       return;
     }

@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-export const OP_GRANT = Object.freeze({ describe: 'status', agents: 'agents', 'agent-read': 'agents', ls: 'files', pull: 'files' });
+export const OP_GRANT = Object.freeze({ describe: 'status', agents: 'agents', 'agent-read': 'agents', ls: 'files', pull: 'files', 'dev-start': 'dev', 'dev-stop': 'dev', 'dev-list': 'dev', http: 'dev' });
 const CHUNK = 48 * 1024;
 const b64 = (b) => Buffer.from(b).toString('base64');
 const expand = (p) => String(p ?? '').replace(/^~(?=$|\/)/, os.homedir());
@@ -94,6 +94,24 @@ export async function serveOp({ ch, peer, msg, grants, roots, home, ollamaUrl, m
       return { name: e.name, dir: e.isDirectory(), size, mtime };
     }).sort((x, y) => (y.dir - x.dir) || x.name.localeCompare(y.name));
     reply({ path: d, entries });
+    return true;
+  }
+  // Dev servers (src/mesh-dev.js): the project's own start command, in a shared
+  // folder; pages are read only from ports started this way.
+  if (op === 'dev-start') {
+    const d = inside(a.path ?? '', roots);
+    if (!d || !fs.statSync(d).isDirectory()) { refuse(`${a.path} is not a folder ${meName} shares`); return true; }
+    try { reply(await (await import('./mesh-dev.js')).startDev(d)); } catch (e) { refuse(`${meName}: ${e.message}`); }
+    return true;
+  }
+  if (op === 'dev-stop') { reply({ stopped: (await import('./mesh-dev.js')).stopDev(a.port) }); return true; }
+  if (op === 'dev-list') { reply({ servers: (await import('./mesh-dev.js')).listDev() }); return true; }
+  if (op === 'http') {
+    const D = await import('./mesh-dev.js');
+    try {
+      await D.forward(a, { onHead: (h) => ch.send({ t: 'head', rid: msg.rid, status: h.status, type: JSON.stringify(h.headers) }), onChunk: (c) => ch.send({ t: 'chunk', rid: msg.rid, data: b64(c) }) });
+      reply({ done: true });
+    } catch (e) { refuse(e.message); }
     return true;
   }
   if (op === 'pull') {

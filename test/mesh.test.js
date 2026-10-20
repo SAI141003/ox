@@ -213,7 +213,7 @@ test('v2: describe, agents, shared folders (no escaping them), audit, presets an
     // Presets, set on B for A.
     M.setGrant(M.identity({ home: ha }).name, 'full', true, { home: hb });
     const g = Object.values(M.readPeers({ home: hb }))[0].grants;
-    assert.deepEqual(g, { status: true, infer: true, tasks: true, files: true, agents: true });
+    assert.deepEqual(g, { status: true, infer: true, tasks: true, files: true, agents: true, dev: true });
     assert.ok(Array.isArray((await A.ask('Laptop B', 'agents', {}, { timeoutMs: 20_000 })).sessions));
 
     // Files only inside what B shares; a symlink out of it does not count.
@@ -238,4 +238,46 @@ test('v2: describe, agents, shared folders (no escaping them), audit, presets an
     await assert.rejects(A.ask('Laptop B', 'agents'), /does not allow agents/);
     assert.ok((await A.ask('Laptop B', 'describe', {}, { timeoutMs: 20_000 })).cores >= 1, 'status stays');
   } finally { await B.close(); await A.close(); }
+});
+
+test('dev servers on another machine: start its own dev command there, read its pages here, nothing else', async () => {
+  const ha = home(), hb = home();
+  const A = await node(ha);
+  const B = await node(hb);
+  const site = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-devsite-'));
+  // A tiny project whose dev script serves on $PORT (as most dev servers do).
+  fs.writeFileSync(path.join(site, 'server.js'), "require('http').createServer((q, s) => s.end(q.method + ' ' + q.url + ' from B')).listen(process.env.PORT, '127.0.0.1');");
+  fs.writeFileSync(path.join(site, 'package.json'), JSON.stringify({ name: 'site', scripts: { dev: 'node server.js' } }));
+  const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-devplain-'));
+  fs.writeFileSync(path.join(plain, 'index.html'), '<h1>pumpkin</h1>');
+  try {
+    const { code } = A.invite();
+    await M.join({ code, at: `127.0.0.1:${A.port}`, name: 'Laptop B', o: { home: hb }, myPort: B.port });
+    const me = M.identity({ home: ha }).name;
+    await assert.rejects(A.ask('Laptop B', 'dev-start', { path: site }), /does not allow dev/);
+    M.setGrant(me, 'dev', true, { home: hb });
+    M.setRoots(me, [site, plain], { home: hb });
+    await assert.rejects(A.ask('Laptop B', 'dev-start', { path: os.homedir() }), /not a folder .* shares/);
+    const s = await A.ask('Laptop B', 'dev-start', { path: site }, { timeoutMs: 30_000 });
+    assert.ok(s.port > 0);
+    assert.equal(s.command, 'npm run dev');
+    const r = await fetch(`http://127.0.0.1:${A.proxyPort}/dev/${encodeURIComponent('Laptop B')}/${s.port}/hello?x=1`);
+    assert.equal(r.status, 200);
+    assert.equal(await r.text(), 'GET /hello?x=1 from B');
+    const post = await fetch(`http://127.0.0.1:${A.proxyPort}/dev/${encodeURIComponent('Laptop B')}/${s.port}/form`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'a=1' });
+    assert.equal(await post.text(), 'POST /form from B');
+    // A static site gets a file server; it never serves outside its folder.
+    const p = await A.ask('Laptop B', 'dev-start', { path: plain }, { timeoutMs: 30_000 });
+    assert.equal(p.command, 'static files');
+    assert.equal(await (await fetch(`http://127.0.0.1:${A.proxyPort}/dev/${encodeURIComponent('Laptop B')}/${p.port}/`)).text(), '<h1>pumpkin</h1>');
+    // Only ports started this way: B's other services stay out of reach.
+    const other = await fetch(`http://127.0.0.1:${A.proxyPort}/dev/${encodeURIComponent('Laptop B')}/${B.proxyPort}/mesh-control/status`);
+    assert.equal(other.status, 403);
+    assert.equal((await A.ask('Laptop B', 'dev-list')).servers.length, 2);
+    assert.equal((await A.ask('Laptop B', 'dev-stop', { port: s.port })).stopped, true);
+    assert.equal((await A.ask('Laptop B', 'dev-stop', { port: p.port })).stopped, true);
+  } finally {
+    await A.close(); await B.close();
+    fs.rmSync(site, { recursive: true, force: true }); fs.rmSync(plain, { recursive: true, force: true });
+  }
 });

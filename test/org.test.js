@@ -248,3 +248,21 @@ test('calls: "call Ada" puts you through; work asked on the call lands on her bo
   assert.match(asked.user, /Owner: How is it going\?\nAda: All good on my side\.\nOwner: Can you fix/);
   assert.deepEqual(await O.callTurn(call, 'ok bye', { ...o, ask }), { say: 'Talk soon.', ended: true });
 });
+
+test('an agent with its own computer: its runs happen on that machine through the mesh', async () => {
+  const o = fresh();
+  const a = O.hire({ name: 'Sam', title: 'Researcher', runtime: 'claude', machine: 'Studio Mac', cwd: '/tmp' }, o);
+  assert.equal(a.machine, 'Studio Mac');
+  let asked = null, closed = false;
+  const mesh = { startNode: async () => ({ ask: async (who, op, args, { onChunk }) => { asked = { who, op, args }; onChunk(Buffer.from('report: done')); return { code: 0 }; }, close: async () => { closed = true; } }) };
+  const r = await O.runThroughOx(a, { id: 't1', title: 'Find papers' }, 'Find three papers', { mesh });
+  assert.deepEqual([r.ok, r.output, r.machine], [true, 'report: done', 'Studio Mac']);
+  assert.deepEqual([asked.who, asked.op, asked.args.cwd], ['Studio Mac', 'run', '/tmp']);
+  assert.match(asked.args.prompt, /Find three papers[\s\S]*working on Studio Mac/);
+  assert.equal(closed, true);
+  const refused = { startNode: async () => ({ ask: async () => { throw new Error('Studio Mac does not allow tasks'); }, close: async () => {} }) };
+  const bad = await O.runThroughOx(a, { id: 't2', title: 'x' }, 'x', { mesh: refused });
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /^Studio Mac: Studio Mac does not allow tasks/);
+  assert.equal(O.update('sam', { machine: null }, o).machine, null);
+});

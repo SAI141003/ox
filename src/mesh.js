@@ -84,10 +84,10 @@ export function setName(name, o = {}) {
 
 // ---------------------------------------------------------------- paired machines
 
-const DEFAULT_GRANTS = { status: true, infer: false, tasks: false, files: false, agents: false };
+const DEFAULT_GRANTS = { status: true, infer: false, tasks: false, files: false, agents: false, dev: false };
 export const GRANTS = Object.keys(DEFAULT_GRANTS);
 // Presets for `ox mesh allow <machine> <preset>`.
-export const PRESETS = Object.freeze({ viewer: ['status'], helper: ['status', 'infer', 'tasks'], full: ['status', 'infer', 'tasks', 'files', 'agents'] });
+export const PRESETS = Object.freeze({ viewer: ['status'], helper: ['status', 'infer', 'tasks'], full: ['status', 'infer', 'tasks', 'files', 'agents', 'dev'] });
 
 export function readPeers(o = {}) {
   try { return JSON.parse(fs.readFileSync(path.join(dir(o), 'peers.json'), 'utf8')).peers ?? {}; } catch { return {}; }
@@ -633,6 +633,28 @@ export async function startNode(o = {}) {
     const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress)
       && /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(String(req.headers.host ?? ''));
     const json = (code, obj) => res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(obj));
+    // A dev server on a paired machine (src/mesh-dev.js): /dev/<machine>/<port>/<path>.
+    const dev = /^\/dev\/([^/]+)\/(\d{2,5})(\/.*)?$/.exec(req.url ?? '');
+    if (local && dev) {
+      const peer = findPeer(decodeURIComponent(dev[1]), o);
+      if (!peer) return json(404, { error: { message: `no paired machine ${decodeURIComponent(dev[1])}` } });
+      const chunks = [];
+      req.on('data', (d) => chunks.push(d));
+      req.on('end', async () => {
+        let started = false;
+        const body = chunks.length ? Buffer.concat(chunks).toString('base64') : null;
+        const headers = Object.fromEntries(Object.entries(req.headers).filter(([k]) => !/^(host|cookie|authorization)$/i.test(k)));
+        try {
+          await ask(peer, 'http', { port: Number(dev[2]), method: req.method, path: dev[3] || '/', headers, body }, {
+            timeoutMs: 60_000,
+            onHead: (h) => { started = true; let hs = {}; try { hs = JSON.parse(h.type); } catch {} delete hs['content-length']; res.writeHead(h.status, hs); },
+            onChunk: (c) => { if (!started) { started = true; res.writeHead(200); } res.write(c); },
+          });
+          res.end();
+        } catch (e) { if (!started) json(/does not allow|not a dev server/.test(e.message) ? 403 : 502, { error: { message: e.message } }); else res.end(); }
+      });
+      return;
+    }
     if (!local || (req.method === 'POST' && !/^application\/json/i.test(String(req.headers['content-type'] ?? '')))) { res.writeHead(404).end(); return; }
     const ctl = /^\/mesh-control\/(status|invite|heartbeat)\/?$/.exec(req.url ?? '');
     if (ctl) {
