@@ -445,7 +445,9 @@ struct OxWalker: View {
     var body: some View {
         if OxFrames.available {
             GeometryReader { geo in
-                TimelineView(.animation(minimumInterval: 1.0 / 24.0)) { ctx in
+                // 12 frames a second (the session sprites' beat, so one layout pass serves
+                // both) while something happens; 10 (6 on battery) while ox only grazes or sleeps.
+                TimelineView(.animation(minimumInterval: Energy.interval(12, active: ![Mood.idle, .sleeping].contains(mood)))) { ctx in
                     scene(t: ctx.date.timeIntervalSince(start), now: ctx.date.timeIntervalSinceReferenceDate, size: geo.size, left: geo.frame(in: .global).minX)
                 }
             }

@@ -208,19 +208,29 @@ struct ActivityDots: View {
         if count > 1 {
             Text("\(count)").font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(Ink.text)
         } else {
-            TimelineView(.animation(minimumInterval: 1 / 30)) { ctx in
-                let t = ctx.date.timeIntervalSinceReferenceDate
-                HStack(spacing: 3) {
-                    ForEach(0..<3) { i in
-                        Circle().fill(Ink.text)
-                            .frame(width: 4, height: 4)
-                            .opacity(0.3 + 0.7 * max(0, sin(t * 5 - Double(i) * 0.7)))
-                    }
-                }
-            }
+            PulsingDots()
         }
     }
 }
+
+/// Three dots that pulse in turn. A repeating animation that the system's render
+/// server plays, so the island does no work per frame (a TimelineView redrew
+/// the view 30 times a second on the main thread).
+struct PulsingDots: View {
+    @State private var on = false
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<3) { i in
+                Circle().fill(Ink.text)
+                    .frame(width: 4, height: 4)
+                    .opacity(on ? 1 : 0.3)
+                    .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true).delay(Double(i) * 0.2), value: on)
+            }
+        }
+        .onAppear { on = true }
+    }
+}
+
 
 // MARK: - Expanded
 
@@ -627,8 +637,13 @@ struct SessionCharacter: View {
         }
     }
 
+    /// Only a session that is doing something moves; one waiting or asleep holds still (no redraws).
+    private var moving: Bool {
+        switch session.mood { case .working, .thinking, .needsYou, .done, .error: return true; default: return false }
+    }
+
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 12.0)) { ctx in
+        TimelineView(.animation(minimumInterval: Energy.interval(12, active: true), paused: !moving)) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate
             let name = Self.friend(for: session.id)
             let frames = Frames.load("friends/\(name)/\(Self.cycle(session.mood, t: t))")

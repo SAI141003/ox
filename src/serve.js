@@ -33,7 +33,7 @@ import { readFile } from 'fs/promises';
 import { join, resolve, extname, dirname } from 'path';
 import { homedir } from 'os';
 import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync } from 'fs';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createReadStream } from 'fs';
 import { stat, unlink } from 'fs/promises';
 import { resolveTurnMode } from './modes.js';
@@ -1538,9 +1538,18 @@ export async function warmVoiceModel() {
     const model = localOllama()[0];
     if (!model) return false;
     const base = (process.env.OLLAMA_HOST ? `http://${process.env.OLLAMA_HOST.replace(/^https?:\/\//, '')}` : 'http://127.0.0.1:11434');
-    const r = await fetch(`${base}/api/generate`, { method: 'POST', body: JSON.stringify({ model, keep_alive: '30m' }), signal: AbortSignal.timeout(60_000) });
+    // On battery the model is let go after 5 minutes (it holds gigabytes of
+    // memory); on power it stays 30 minutes and is renewed.
+    const battery = onBattery();
+    const r = await fetch(`${base}/api/generate`, { method: 'POST', body: JSON.stringify({ model, keep_alive: battery ? '5m' : '30m' }), signal: AbortSignal.timeout(60_000) });
     return r.ok;
   } catch { return false; }
+}
+
+/** True when this Mac runs on its battery (pmset; false elsewhere or when unknown). */
+export function onBattery({ run = () => spawnSync('pmset', ['-g', 'batt'], { encoding: 'utf8', timeout: 3000 }).stdout ?? '' } = {}) {
+  if (process.platform !== 'darwin') return false;
+  try { return /'Battery Power'/.test(run()); } catch { return false; }
 }
 
 // The task board (src/tasks.js, Paperclip's model): every task with whether
@@ -2335,11 +2344,10 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
     if (process.platform === 'darwin') {
       const todos = () => import('./offline.js').then((O) => O.refreshTodos()).catch(() => {});
       setTimeout(todos, 5_000).unref();
-      setInterval(todos, 3 * 60_000).unref();
     }
     // The island's local voice model stays loaded (renewed before its 30 min run out).
     warmVoiceModel();
-    setInterval(() => { warmVoiceModel(); }, 20 * 60_000).unref();
+    setInterval(() => { if (!onBattery()) warmVoiceModel(); }, 20 * 60_000).unref();
   }
   if (!process.env.NODE_TEST_CONTEXT && process.env.OX_MESH !== '0'
     && existsSync(join(process.env.OX_HOME || join(homedir(), '.ox'), 'mesh', 'identity.json'))) {
@@ -2378,8 +2386,11 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       const islandServer = process.env.OX_ISLAND_SERVER === '1';
       if ((process.env.OX_APP === '1' || islandServer) && !process.env.NODE_TEST_CONTEXT) {
         const startedAt = Date.now();
-        import('./code-stamp.js').then(({ codeStamp }) => {
-          setInterval(() => {
+        import('./code-stamp.js').then(({ codeStamp, onCodeChange }) => {
+          // Told by the file system when ox's code changes (no polling while idle);
+          // then checked every 30 s until nothing is being worked on.
+          let changed = false, timer = null;
+          const check = () => {
             if (busyRequests > 0 || codeStamp() <= startedAt) return;
             console.log('[serve] ox was updated: handing over to a fresh server');
             // Started fresh by ox itself (src/app.js ensureServer), window open or not: the
@@ -2390,7 +2401,9 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
               spawn(process.execPath, [bin, 'app', '--print-url'], { cwd: process.cwd(), detached: true, stdio: 'ignore', env: { ...process.env } }).unref();
             }).catch(() => {});
             setTimeout(() => { server.close(); announced?.(); process.exit(0); }, 20_000).unref();
-          }, 30_000).unref();
+          };
+          const arm = () => { if (changed) return; changed = true; timer = setInterval(check, 30_000); timer.unref(); };
+          if (!onCodeChange(arm)) { timer = setInterval(check, 30_000); timer.unref(); }
         }).catch(() => {});
       }
       resolve({

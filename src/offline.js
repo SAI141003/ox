@@ -402,8 +402,9 @@ const parseReminders = (out) => String(out).split('\n').filter((l) => l.trim()).
 });
 
 // Reminders answers a script in 5–8 s however it is asked, too slow to wait for
-// by voice: the running ox server keeps a cache fresh in the background
-// (refreshTodos, every 3 minutes) and asking reads it at once.
+// by voice: asking reads the cache at once and, when it is over 3 minutes old,
+// refreshes it in the background for next time. Nothing runs while nobody asks
+// (ox's idle promise: no polling); only a cache over 30 minutes old is waited for.
 const TODOS_CACHE = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'todos-cache.json');
 export function refreshTodos() {
   return new Promise((resolve) => {
@@ -425,7 +426,12 @@ function readTodos(now = new Date()) {
   if (process.platform === 'darwin') {
     try {
       const c = JSON.parse(fs.readFileSync(TODOS_CACHE(), 'utf8'));
-      if (Date.now() - c.at < 3.5 * 60_000) { const items = pickToday(parseReminders(c.out), now); return { ok: true, message: speakTodos(items), items }; }
+      const age = Date.now() - c.at;
+      if (age < 30 * 60_000) {
+        if (age > 3 * 60_000) refreshTodos().catch(() => {});
+        const items = pickToday(parseReminders(c.out), now);
+        return { ok: true, message: speakTodos(items), items };
+      }
     } catch {}
     const r = spawnSync('osascript', REMINDERS_SCRIPT.flatMap((l) => ['-e', l]), { encoding: 'utf8', timeout: 45000 });
     if (r.status === 0) {

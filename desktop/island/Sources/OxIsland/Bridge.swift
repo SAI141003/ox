@@ -246,17 +246,47 @@ final class OxBridge: ObservableObject {
 
     /// ox binds sockets at os.tmpdir()/ox-ipc-<id>.sock; NSTemporaryDirectory()
     /// is the same per-user $TMPDIR for a non-sandboxed app.
+    /// The temp folder's modification time at the last listing: it changes only
+    /// when a file is added or removed, so an unchanged folder is not listed again.
+    private var tmpStamp = timespec()
+
+    /// New ox runs' sockets in the temp folder. The folder can hold thousands of
+    /// files, so it is listed only when it changed, with readdir, comparing the
+    /// "ox-ipc-" prefix before making any string (this was most of the island's idle CPU).
+    private func newSockets() -> [String] {
+        let dir = NSTemporaryDirectory()
+        var st = stat()
+        guard stat(dir, &st) == 0 else { return [] }
+        if st.st_mtimespec.tv_sec == tmpStamp.tv_sec && st.st_mtimespec.tv_nsec == tmpStamp.tv_nsec { return [] }
+        tmpStamp = st.st_mtimespec
+        guard let d = opendir(dir) else { return [] }
+        defer { closedir(d) }
+        var out: [String] = []
+        while let e = readdir(d) {
+            let name: String? = withUnsafePointer(to: &e.pointee.d_name) { p in
+                p.withMemoryRebound(to: CChar.self, capacity: 256) { c in
+                    strncmp(c, "ox-ipc-", 7) == 0 ? String(cString: c) : nil
+                }
+            }
+            if let name, name.hasSuffix(".sock") { out.append((dir as NSString).appendingPathComponent(name)) }
+        }
+        return out
+    }
+
+    /// Sockets seen in the temp folder; one not connected yet (its run still
+    /// starting) is tried again on each scan until it answers or its file is gone.
+    private var knownSockets = Set<String>()
+
     private func scan() {
         readBrowse()
-        let dir = NSTemporaryDirectory()
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
-        for name in names where name.hasPrefix("ox-ipc-") && name.hasSuffix(".sock") {
-            let path = (dir as NSString).appendingPathComponent(name)
-            if connections[path] == nil { connect(path) }
+        knownSockets.formUnion(newSockets())
+        for path in knownSockets where connections[path] == nil {
+            if FileManager.default.fileExists(atPath: path) { connect(path) } else { knownSockets.remove(path) }
         }
         // Forget runs that ended a few seconds ago.
         let now = Date()
-        sessions.removeAll { s in s.closedAt.map { now.timeIntervalSince($0) > 6 } ?? false }
+        let gone: (AgentSession) -> Bool = { s in s.closedAt.map { now.timeIntervalSince($0) > 6 } ?? false }
+        if sessions.contains(where: gone) { sessions.removeAll(where: gone) }
         pollApp()
     }
 
@@ -285,7 +315,7 @@ final class OxBridge: ObservableObject {
             let tokens = ((total["in"] as? Int) ?? 0) + ((total["out"] as? Int) ?? 0)
             let top = ((doc["byModel"] as? [[String: Any]])?.first?["key"] as? String) ?? ""
             let t = Today(tokens: tokens, runs: total["runs"] as? Int ?? 0, cost: total["cost"] as? Double, topModel: top)
-            DispatchQueue.main.async { self?.today = t }
+            DispatchQueue.main.async { if self?.today != t { self?.today = t } }
         }.resume()
     }
 
@@ -315,7 +345,7 @@ final class OxBridge: ObservableObject {
                 let reset = (top["resetsAt"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
                 return PlanGauge(id: id, label: Self.planLabel(id), window: top["name"] as? String ?? "", percent: (top["usedPercent"] as? Double) ?? 0, resetsAt: reset)
             }
-            DispatchQueue.main.async { self?.gauges = gs }
+            DispatchQueue.main.async { if self?.gauges != gs { self?.gauges = gs } }
         }.resume()
     }
 
@@ -460,7 +490,7 @@ final class OxBridge: ObservableObject {
             if let c = doc["cal"] as? [String: Any], let t = c["title"] as? String, let s = c["start"] as? String,
                let at = ISO8601DateFormatter.withFractions.date(from: s) ?? ISO8601DateFormatter().date(from: s) { d.cal = (t, c["with"] as? String, at) }
             if let n = doc["n8n"] as? [String: Any], let f = n["failed"] as? Int, let u = n["url"] as? String { d.n8n = (f, n["workflows"] as? [String] ?? [], u) }
-            DispatchQueue.main.async { self?.day = d }
+            DispatchQueue.main.async { if self?.day != d { self?.day = d } }
         }.resume()
     }
 
@@ -533,7 +563,7 @@ final class OxBridge: ObservableObject {
                 guard let id = r["id"] as? String, let name = r["name"] as? String else { return nil }
                 return ConnectedTool(id: id, name: name, via: r["via"] as? String ?? "", ready: (r["state"] as? String) == "ready", fix: r["fix"] as? String)
             }
-            DispatchQueue.main.async { self?.connected = tools }
+            DispatchQueue.main.async { if self?.connected != tools { self?.connected = tools } }
         }.resume()
     }
 
@@ -787,7 +817,8 @@ final class OxBridge: ObservableObject {
     func previewBoard(_ runs: [[String: Any]]) { mergeApp(runs) }
 
     private func dropAppSessions(keep: Set<String>) {
-        sessions.removeAll { $0.id.hasPrefix("app:") && !keep.contains($0.id) }
+        let gone: (AgentSession) -> Bool = { $0.id.hasPrefix("app:") && !keep.contains($0.id) }
+        if sessions.contains(where: gone) { sessions.removeAll(where: gone) }
     }
 
     private func mergeApp(_ runs: [[String: Any]]) {
@@ -868,7 +899,11 @@ final class OxBridge: ObservableObject {
 
     private func update(_ path: String, _ change: (inout AgentSession) -> Void) {
         if let i = sessions.firstIndex(where: { $0.id == path }) {
-            change(&sessions[i])
+            // Written only when something changed: every write to `sessions` redraws
+            // the whole island, and the app poll touches each session every 1.5 s.
+            var copy = sessions[i]
+            change(&copy)
+            if copy != sessions[i] { sessions[i] = copy }
         } else {
             var s = AgentSession(id: path)
             change(&s)

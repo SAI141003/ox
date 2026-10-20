@@ -8,6 +8,26 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+/**
+ * Call `fn` when a file under bin/ or src/ changes, through the file system's own
+ * notices (FSEvents on macOS), so nothing runs while nothing changes. false when
+ * this platform cannot watch a folder tree (the caller then checks on a timer).
+ */
+export function onCodeChange(fn, root = ROOT) {
+  const watchers = [];
+  try {
+    for (const d of ['bin', 'src']) {
+      const w = fs.watch(path.join(root, d), { recursive: true, persistent: false }, (_e, name) => { if (!name || /\.(js|mjs|html|css|json)$/.test(String(name))) fn(); });
+      w.on('error', () => {});
+      watchers.push(w);
+    }
+    return true;
+  } catch {
+    for (const w of watchers) try { w.close(); } catch {}
+    return false;
+  }
+}
+
 export function codeStamp(root = ROOT) {
   let newest = 0;
   const look = (dir, depth) => {
