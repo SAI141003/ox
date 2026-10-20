@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import { spawnSync } from 'node:child_process';
 import { MODELS, getModel, toPlatform, parseSettings, create, history, waitFor } from '../src/media-studio.js';
 
 test('the catalogue: 38 models, 8 image and 30 video, each with its own settings', () => {
@@ -131,7 +132,7 @@ test('create_media: the agent picks a provider from the keys you have, and asks 
   const mac = { OX_HOME: home, OPENAI_API_KEY: 'k' };
   assert.deepEqual(pick({ kind: 'image' }, mac), { provider: 'device', model: 'mac-image' });
   assert.deepEqual(pick({ kind: 'image', edit: true }, mac), { provider: 'device', model: 'mac-edit' });
-  assert.deepEqual(pick({ kind: 'video' }, mac), { provider: 'device', model: 'mac-video' });
+  if (spawnSync('ffmpeg', ['-version']).status === 0) assert.deepEqual(pick({ kind: 'video' }, mac), { provider: 'device', model: 'mac-video' }, 'clips need ffmpeg too');
   assert.deepEqual(pick({ kind: 'image', provider: 'openai' }, mac), { provider: 'openai', model: 'gpt-image-2' });
   assert.match((await createMediaTool({ prompt: '' })).content, /prompt is required/);
   const { classifyTool } = await import('../src/resource-class.js');

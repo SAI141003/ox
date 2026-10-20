@@ -69,6 +69,12 @@ let appNames = null;
 export function installedApps(dirs = ['/Applications', '/Applications/Utilities', '/System/Applications', '/System/Applications/Utilities', path.join(os.homedir(), 'Applications')]) {
   if (appNames && arguments.length === 0) return appNames;
   const names = new Map();
+  // Evals and tests pin the app list (OX_APPS="Google Chrome,WhatsApp"), so they check the router, not this machine.
+  if (arguments.length === 0 && process.env.OX_APPS != null) {
+    for (const n of process.env.OX_APPS.split(',').map((x) => x.trim()).filter(Boolean)) names.set(n.toLowerCase(), n);
+    appNames = names;
+    return names;
+  }
   for (const d of dirs) {
     let list = [];
     try { list = fs.readdirSync(d); } catch { continue; }
