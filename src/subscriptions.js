@@ -310,12 +310,22 @@ export function knownCopies(bin, home = accountHome()) {
     return [...exts.flatMap((d) => pick(d, /^anthropic\.claude-code-/, ['resources', 'native-binary', 'claude'])), ...fromApp];
   }
   if (bin === 'codex') {
-    // openai.chatgpt-*/bin/<platform>/codex
-    return exts.flatMap((d) => pick(d, /^openai\.chatgpt-/, ['bin'])).flatMap((binDir) => {
+    // openai.chatgpt-*/bin/<platform>/codex (the ChatGPT editor extension), then
+    // the copy inside the ChatGPT or Codex desktop app, wherever that app lives.
+    const fromExt = exts.flatMap((d) => pick(d, /^openai\.chatgpt-/, ['bin'])).flatMap((binDir) => {
       try { return fs.readdirSync(binDir).map((plat) => path.join(binDir, plat, 'codex')); } catch { return []; }
     });
+    return [...fromExt, ...openaiApps(home).map((a) => path.join(a, 'Contents', 'Resources', 'codex'))];
   }
   return [];
+}
+
+/** The ChatGPT and Codex desktop apps on this Mac (the usual folders, then Spotlight for one kept elsewhere). */
+export function openaiApps(home = accountHome(), { find = (q) => spawnSync('mdfind', [q], { encoding: 'utf8', timeout: 3000 }).stdout ?? '' } = {}) {
+  if (process.platform !== 'darwin') return [];
+  const out = ['/Applications', path.join(home, 'Applications')].flatMap((d) => ['Codex.app', 'ChatGPT.app'].map((a) => path.join(d, a)));
+  try { out.push(...find("kMDItemCFBundleIdentifier == 'com.openai.codex' || kMDItemCFBundleIdentifier == 'com.openai.chat'").split('\n').filter((p) => p.endsWith('.app'))); } catch {}
+  return [...new Set(out)];
 }
 
 const versionOf = (file, env) => {

@@ -8,13 +8,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { slugOf, nameOf, openInTerminal, entryOf } from './make-app.js';
+import { slugOf, nameOf, openInTerminal, entryOf, binOf } from './make-app.js';
+import { resolveCli } from './subscriptions.js';
 
 const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
 
 export const RACERS = {
-  claude: { label: 'Claude Code', cmd: (p) => `claude --permission-mode acceptEdits ${q(p)}` },
-  codex: { label: 'Codex', cmd: (p) => `codex --full-auto ${q(p)}` },
+  claude: { label: 'Claude Code', cmd: (p, bin = binOf) => `${bin('claude')} --permission-mode acceptEdits ${q(p)}` },
+  codex: { label: 'Codex', cmd: (p, bin = binOf) => `${bin('codex')} --sandbox workspace-write --ask-for-approval on-request ${q(p)}` },
   gemini: { label: 'Gemini CLI', cmd: (p) => `gemini --yolo -i ${q(p)}` },
   opencode: { label: 'OpenCode', cmd: (p) => `opencode run ${q(p)}` },
   ox: { label: 'ox', cmd: (p) => `ox --yes-edits ${q(p)}` },
@@ -22,9 +23,11 @@ export const RACERS = {
 
 const BIN = { claude: 'claude', codex: 'codex', gemini: 'gemini', opencode: 'opencode', ox: 'ox' };
 const FIX = { claude: 'npm install -g @anthropic-ai/claude-code', codex: 'npm install -g @openai/codex', gemini: 'npm install -g @google/gemini-cli', opencode: 'brew install sst/tap/opencode', ox: 'npm install -g ox-agent' };
-/** Whether a tool's command starts here: null when it does, else what is wrong and the fix. */
-export function notReady(tool, { run = (b) => spawnSync(b, ['--version'], { encoding: 'utf8', timeout: 15_000 }) } = {}) {
+/** Whether a tool's command starts here: null when it does (or a working copy inside an app does), else what is wrong and the fix. */
+export function notReady(tool, { run = (b) => spawnSync(b, ['--version'], { encoding: 'utf8', timeout: 15_000 }), resolve = (b) => resolveCli({ bin: b }) } = {}) {
   const r = run(BIN[tool]);
+  if (r.status === 0 && !r.error) return null;
+  try { if (resolve(BIN[tool])?.from === 'app') return null; } catch {}
   if (r.error?.code === 'ENOENT') return `${RACERS[tool].label} is not installed (${FIX[tool]})`;
   if (r.status !== 0) return `${RACERS[tool].label} is installed but does not start: ${String(r.stderr || r.stdout || '').trim().split('\n')[0].slice(0, 120)} (reinstall: ${FIX[tool]})`;
   return null;
@@ -132,7 +135,7 @@ export function raceLine(lanes, now = Date.now()) {
  */
 export async function race(prompt, {
   tools = ['claude', 'codex'], home = os.homedir(), say = () => {}, update = () => {}, terminal = openInTerminal,
-  live = null, read = (f) => fs.readFileSync(f, 'utf8'), find = transcriptFor, quietSec = 30, timeoutMs = 60 * 60_000, pollMs = 3000,
+  live = null, read = (f) => fs.readFileSync(f, 'utf8'), find = transcriptFor, bin = binOf, quietSec = 30, timeoutMs = 60 * 60_000, pollMs = 3000,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = () => Date.now(), check = true,
 } = {}) {
   if (!String(prompt ?? '').trim()) throw new Error('usage: ox vs "<prompt>" [--tools claude,codex]');
@@ -146,7 +149,7 @@ export async function race(prompt, {
   const lanes = tools.map((t) => ({ tool: t, label: RACERS[t].label, dir: path.join(base, t), started: t0, moments: [], done: null, file: null, quietSince: null }));
   for (const l of lanes) {
     fs.mkdirSync(l.dir, { recursive: true });
-    const r = terminal(`cd ${q(l.dir)} && ${RACERS[l.tool].cmd(prompt)}`);
+    const r = terminal(`cd ${q(l.dir)} && ${RACERS[l.tool].cmd(prompt, bin)}`);
     if (r?.error) throw new Error(`could not open Terminal for ${l.label}: ${r.error}`);
   }
   say(`${lanes.map((l) => l.label).join(' vs ')}: ready, go`);

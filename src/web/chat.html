@@ -3310,7 +3310,7 @@ files: [src/billing/**]
     ['appearance', 'Appearance', 'palette', 'theme dark light text size width motion'],
     ['notifications', 'Notifications', 'bell', 'notify alert sound finished done failed background'],
     ['desktop', 'OX Island & desktop', 'monitor', 'island notch awake sleep buddy restart'],
-    ['voice', 'Voice', 'mic', 'speech language read aloud'],
+    ['voice', 'Voice', 'mic', 'speech language read aloud dictation style prompt mode translate polished natural'],
     ['memory', 'Memory', 'brain', 'remember forget profile facts preferences'],
     ['usage', 'Usage', 'chart', 'tokens cost spend models agents billing'],
     ['gap'],
@@ -3517,6 +3517,24 @@ files: [src/billing/**]
           const play = () => speakText(`Hi, I'm ${botName}. I edited three files and the tests pass.`, true);
           $('s-kvoice').onchange = () => { prefs.kvoice = $('s-kvoice').value; savePrefs(); play(); };
           $('s-vtest').onclick = play;
+        }
+        // Dictation (the island's hold-to-talk): how what you say is pasted, per app.
+        const DS = await getJson('/ox/dictation/styles').catch(() => null);
+        if (DS) {
+          const SN = { 'as-said': 'As said', natural: 'Natural', polished: 'Polished', prompt: 'Prompt' };
+          const opts = (cur) => DS.styles.map((x) => `<option value="${x}" ${x === cur ? 'selected' : ''}>${SN[x] ?? x}</option>`).join('');
+          el.insertAdjacentHTML('beforeend', `<div class="section-cap cap">Dictation</div>
+            <p class="sdesc">What you dictate with OX Island (hold ⌃⌥D) is pasted as said, or rewritten first. <b>Natural</b> takes out ums and adds punctuation; <b>Polished</b> makes clean sentences; <b>Prompt</b> turns a rough spoken idea into a clear request for an AI tool (good for Terminal, ChatGPT, Cursor). Each app can have its own.</p>
+            ${row('Style', 'For every app without its own.', `<select id="s-dstyle">${opts(DS.default)}</select>`)}
+            ${Object.entries(DS.apps).map(([a, v]) => row(esc(a), '', `<span style="display:flex;gap:6px"><select data-dapp="${esc(a)}">${opts(v)}</select><button class="btn ghost small" data-drm="${esc(a)}">Remove</button></span>`)).join('')}
+            ${row('Add an app', 'Its name as the Mac shows it, e.g. Terminal, Mail, Slack.', `<span style="display:flex;gap:6px"><input class="field" id="s-dapp" placeholder="Terminal" style="width:140px"><select id="s-dappst">${opts('prompt')}</select><button class="btn small" id="s-dadd">Add</button></span>`)}
+            ${row('Translate into', 'Every dictation, after its style (about 70 languages). Empty: off.', `<input class="field" id="s-dtr" placeholder="e.g. French" value="${esc(DS.translate ?? '')}" style="width:160px">`)}`);
+          const put = async (b) => { try { await postJson('/ox/dictation/styles', b); toast('Saved'); renderSection(); } catch (e) { toast(e.message); } };
+          $('s-dstyle').onchange = () => put({ style: $('s-dstyle').value });
+          el.querySelectorAll('[data-dapp]').forEach((s) => (s.onchange = () => put({ style: s.value, app: s.dataset.dapp })));
+          el.querySelectorAll('[data-drm]').forEach((b) => (b.onclick = () => put({ remove: true, app: b.dataset.drm })));
+          $('s-dadd').onclick = () => { const a = $('s-dapp').value.trim(); if (a) put({ style: $('s-dappst').value, app: a }); };
+          $('s-dtr').onchange = () => put({ translate: $('s-dtr').value.trim() });
         }
         bindSegs(el, (k, v) => { prefs[k] = v; savePrefs(); renderSection(); });
         $('s-lang').onchange = () => { prefs.lang = $('s-lang').value; savePrefs(); };

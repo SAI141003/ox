@@ -8,12 +8,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { resolveCli } from './subscriptions.js';
+import { codexModelArgs } from './session-transfer.js';
 
 // In the new, empty project folder the agent writes files without asking about
 // each one; commands still ask (in the notch, through the hooks).
 export const BUILDERS = {
   claude: { label: 'Claude Code', bin: 'claude', args: '--permission-mode acceptEdits' },
-  codex: { label: 'Codex', bin: 'codex', args: '--full-auto' },
+  codex: { label: 'Codex', bin: 'codex', args: '--sandbox workspace-write --ask-for-approval on-request' },
 };
 
 /** "build me a pumpkin carver game" → "Pumpkin Carver" (the name in the notch and the folder). */
@@ -45,10 +47,24 @@ export function briefOf(idea, name) {
 
 const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
 
+/**
+ * The command to start a tool: its own name when that works, else a working
+ * copy inside an app (Codex inside the ChatGPT extension or the ChatGPT / Codex
+ * app when the codex command line is missing or broken).
+ */
+export function binOf(name, { resolve = (b) => resolveCli({ bin: b }), extra = (tool, b) => (tool === 'codex' ? codexModelArgs(b) : []) } = {}) {
+  let where = name, cmd = name;
+  try { const r = resolve(name); if (r?.from === 'app') { where = r.where; cmd = q(r.where); } } catch {}
+  // Codex signed in with ChatGPT may not run the model its config names: use one the account allows.
+  let more = [];
+  try { more = extra(name, where) ?? []; } catch {}
+  return [cmd, ...more.map((a) => (/^[\w.:/-]+$/.test(a) ? a : q(a)))].join(' ');
+}
+
 /** The Terminal command that opens the agent in the folder with the brief. */
-export function terminalCommand(dir, brief, builder = 'claude') {
+export function terminalCommand(dir, brief, builder = 'claude', { bin = binOf } = {}) {
   const b = BUILDERS[builder] ?? BUILDERS.claude;
-  return `cd ${q(dir)} && ${b.bin} ${b.args} ${q(brief)}`;
+  return `cd ${q(dir)} && ${bin(b.bin)} ${b.args} ${q(brief)}`;
 }
 
 /** The project's entry page, if the agent has written one. */
@@ -66,7 +82,7 @@ export function entryOf(dir) {
  * → { dir, name, entry, opened }
  */
 export async function make(idea, {
-  builder = 'claude', dir = null, home = os.homedir(), say = () => {},
+  builder = 'claude', dir = null, home = os.homedir(), say = () => {}, bin = binOf,
   terminal = openInTerminal, open = (p) => spawnSync('open', [p]), live = null,
   quietSec = 25, timeoutMs = 45 * 60_000, pollMs = 3000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
 } = {}) {
@@ -81,7 +97,7 @@ export async function make(idea, {
   const brief = briefOf(idea, name);
   fs.writeFileSync(path.join(where, '.ox-brief.md'), `${brief}\n`);
   say(`Opening ${b.label} in a new tab`);
-  const t = terminal(terminalCommand(where, brief, builder));
+  const t = terminal(terminalCommand(where, brief, builder, { bin }));
   if (t?.error) throw new Error(`could not open Terminal: ${t.error}`);
   say(`Handing ${b.label === 'Codex' ? 'Codex' : 'Claude'} your prompt`);
   const sessions = live ?? (async () => (await import('./agents-live.js')).liveAgents({ fresh: true }));
