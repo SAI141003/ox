@@ -41,7 +41,7 @@ export function osCmd(action, target) {
   if (isWindows()) {
     // cmd.exe re-parses its command line, so metacharacters in a target would
     // run as commands; refuse them rather than try to escape cmd's rules.
-    if (action !== 'notify' && action !== 'open_url' && /[&|<>^%"\r\n]/.test(target)) return null;
+    if (action !== 'notify' && action !== 'open_url' && action !== 'type_text' && /[&|<>^%"\r\n]/.test(target)) return null;
     switch (action) {
       case 'open_app': return ['cmd', '/c', `start`, '', target];
       // No cmd.exe in between, so a URL's `&` stays part of the URL.
@@ -49,6 +49,9 @@ export function osCmd(action, target) {
       case 'open_path': return ['cmd', '/c', 'start', '', target];
       // The text travels in an environment variable, not inside the command.
       case 'notify': return ['powershell', '-NoProfile', '-Command', "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null; [System.Windows.Forms.MessageBox]::Show($env:OX_NOTIFY_TEXT, 'ox') | Out-Null"];
+      // Typed by pasting (any language, several lines; a paste never presses Enter).
+      // The text travels in OX_TYPE_TEXT, never inside the command.
+      case 'type_text': return ['powershell', '-NoProfile', '-Command', "Set-Clipboard -Value $env:OX_TYPE_TEXT; Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')"];
     }
   }
   return null;
@@ -135,7 +138,7 @@ export async function type_text(args = {}, ctx = {}) {
   if (isMac()) return macRun(() => macControl.typeText({ app: args.app, text, into: args.into }, { dryRun: isDry() }));
   const cmd = osCmd('type_text', text);
   if (!cmd) return err(`No type_text support on ${os.platform()}`);
-  return runCmd(cmd, `type "${text.slice(0, 50)}..."`);
+  return runCmd(cmd, `type "${text.slice(0, 50)}..."`, isWindows() ? { OX_TYPE_TEXT: String(text) } : undefined);
 }
 
 const isDry = () => !!(process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1');

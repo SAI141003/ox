@@ -52,6 +52,9 @@ test('a run appears on the web island and its approval is answered from there', 
   // A private temp dir for the run's socket: a real OX Island on this machine
   // watches the shared one and would take this test's approval.
   const sockDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-iws-'));
+  // Windows reads the home from USERPROFILE and the temp dir from TEMP/TMP.
+  const win = process.platform === 'win32';
+  if (win) Object.assign(env, { USERPROFILE: home, TEMP: sockDir, TMP: sockDir });
   Object.assign(env, { HOME: home, TMPDIR: sockDir, NO_COLOR: '1', OX_NO_PLUGINS: '1', OX_NO_BUILTIN_SKILLS: '1', OX_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`, OX_API_KEY: 'x' });
   const run = spawn(process.execPath, [OX, '--bot', 'custom:m', '-p', 'write approved.txt'], { cwd, env });
   let out = '';
@@ -60,8 +63,9 @@ test('a run appears on the web island and its approval is answered from there', 
   const done = new Promise((r) => run.on('close', r));
 
   // Only this test's run: the machine may have real ox runs open too.
-  const mine = socketPathFor(`run-${run.pid}`, sockDir);
-  const island = await createIslandServer({ watcher: createRunWatcher({ list: () => listIpcSockets(sockDir).filter((s) => s === mine) }) });
+  // On Windows a run's socket is a named pipe (\\.\pipe\ox-ipc-…), not a file in the temp dir.
+  const mine = win ? socketPathFor(`run-${run.pid}`) : socketPathFor(`run-${run.pid}`, sockDir);
+  const island = await createIslandServer({ watcher: createRunWatcher({ list: () => (win ? listIpcSockets() : listIpcSockets(sockDir)).filter((s) => s === mine) }) });
   after(() => island.close());
   const base = `http://127.0.0.1:${island.port}`;
   const get = (p, headers = {}) => fetch(base + p, { headers: { 'x-ox-token': island.token, ...headers } });
@@ -91,4 +95,23 @@ test('a run appears on the web island and its approval is answered from there', 
   assert.equal(ans.ok, true);
   await done;
   assert.equal(fs.readFileSync(path.join(cwd, 'approved.txt'), 'utf8'), 'yes', out);
+});
+
+test('hold to talk: /api/dictate needs the token and turns speech into text', { skip: (process.platform !== 'darwin' || !(await import('node:child_process')).spawnSync('which', ['whisper-cli']).stdout?.length) && 'needs say and whisper.cpp' }, async () => {
+  const fs = await import('node:fs'); const os = await import('node:os'); const path = await import('node:path');
+  const { spawnSync } = await import('node:child_process');
+  const { createIslandServer } = await import('../src/island-web.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-dictate-'));
+  spawnSync('say', ['-o', path.join(dir, 'a.aiff'), 'Testing the island']);
+  spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', path.join(dir, 'a.aiff'), '-ar', '16000', '-ac', '1', path.join(dir, 'a.wav')]);
+  const srv = await createIslandServer({ watcher: { scan() {}, snapshot: () => [], answer: () => false, close() {} } });
+  try {
+    const base = srv.url.replace(/\?.*/, '');
+    const t = new URL(srv.url).searchParams.get('t');
+    assert.equal((await fetch(`${base}api/dictate`, { method: 'POST', body: 'x' })).status, 401);
+    const r = await (await fetch(`${base}api/dictate?t=${t}`, { method: 'POST', headers: { 'content-type': 'audio/wav' }, body: fs.readFileSync(path.join(dir, 'a.wav')) })).json();
+    assert.match(r.text, /testing the island/i);
+    assert.equal(r.typed, false, 'typed only when asked');
+    assert.equal(fs.readdirSync(os.tmpdir()).filter((f) => /^ox-voice-.*\.wav$/.test(f) && fs.statSync(path.join(os.tmpdir(), f)).mtimeMs > Date.now() - 60_000).length, 0, 'the recording is removed');
+  } finally { await srv.close?.(); fs.rmSync(dir, { recursive: true, force: true }); }
 });

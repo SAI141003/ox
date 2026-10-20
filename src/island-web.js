@@ -140,6 +140,30 @@ export function createIslandServer({ port = 0, token = crypto.randomBytes(18).to
         try { fs.unlinkSync(p); } catch {}
         return send(200, { ok: true });
       }
+      // Hold-to-talk (Coucou for Windows): the recording in, the words out,
+      // typed where you are when ?type=1 (pasted: Enter is never pressed).
+      if (req.method === 'POST' && url.pathname === '/api/dictate') {
+        const buf = await readBody(req, 25 * 1024 * 1024);
+        if (!buf.length) return send(400, { error: 'no audio' });
+        const f = path.join(os.tmpdir(), `ox-voice-${Date.now()}-${crypto.randomBytes(3).toString('hex')}.${/ogg/.test(req.headers['content-type'] ?? '') ? 'ogg' : /wav/.test(req.headers['content-type'] ?? '') ? 'wav' : 'webm'}`);
+        fs.writeFileSync(f, buf);
+        try {
+          const V = await import('./video-edit.js');
+          const tr = V.transcribe(f);
+          const text = tr.segments.map((x) => x.text).join(' ').replace(/\s+/g, ' ').trim();
+          let typed = false;
+          if (url.searchParams.get('type') === '1' && text) {
+            const O = await import('./tools/operator.js');
+            const r = await O.type_text({ text }, { yolo: true });
+            typed = !r.isError;
+          }
+          return send(200, { text, typed });
+        } catch (e) {
+          return send(500, { error: String(e?.message ?? e) });
+        } finally {
+          for (const x of [f, f.replace(/\.\w+$/, '.transcript.srt')]) { try { fs.rmSync(x, { force: true }); } catch {} }
+        }
+      }
       if (req.method === 'POST' && url.pathname === '/api/ask') {
         const b = JSON.parse((await readBody(req, 16384)).toString('utf8') || '{}');
         const name = path.basename(String(b.name ?? ''));
