@@ -69,3 +69,10 @@ test("what's new lists commits since the one you saw, and nothing for a bad or c
   assert.equal(s.pid, process.pid);
   assert.equal(s.url, 'http://127.0.0.1:1234/');
 });
+
+test('a server started from the app window still finds Homebrew tools (ffmpeg, whisper-cli)', async () => {
+  const { withToolPath } = await import('../src/serve.js');
+  assert.equal(withToolPath({ PATH: '/usr/bin:/bin' }, (d) => d === '/opt/homebrew/bin'), '/usr/bin:/bin:/opt/homebrew/bin');
+  assert.equal(withToolPath({ PATH: '/opt/homebrew/bin:/usr/bin' }, () => true).split(':')[0], '/opt/homebrew/bin', 'the PATH you set keeps its order');
+  assert.equal(withToolPath({ PATH: '/usr/bin' }, () => false), '/usr/bin', 'folders that do not exist are not added');
+});

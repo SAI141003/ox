@@ -2344,7 +2344,18 @@ function announceServer(port, host, keyed) {
 
 // `host` defaults to loopback rather than 0.0.0.0: the wide bind is opt-in, and
 // it is only reachable with auth configured at all.
+// Started by the app window or the island, the server inherits macOS's GUI
+// PATH (/usr/bin:/bin:/usr/sbin:/sbin): no Homebrew, so ffmpeg, whisper-cli and
+// friends were "missing" and Studio could not make clips. The usual tool folders
+// are added, after whatever PATH already has.
+export function withToolPath(env = process.env, exists = (d) => existsSync(d)) {
+  const have = String(env.PATH ?? '').split(':').filter(Boolean);
+  const add = ['/opt/homebrew/bin', '/opt/homebrew/sbin', '/usr/local/bin', join(homedir(), '.local', 'bin')].filter((d) => !have.includes(d) && exists(d));
+  return add.length ? [...have, ...add].join(':') : env.PATH;
+}
+
 export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
+  if (process.platform !== 'win32') process.env.PATH = withToolPath();
   // System 1 loads its model now (seconds), so the first turns can use it.
   warmSystem1();
   // Scheduled flows run while the app is open, as they do under the daemon
