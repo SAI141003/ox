@@ -4844,10 +4844,33 @@ async function runSubcommand(cmd, args) {
       const sub = args[0] ?? 'models';
       try {
         if (sub === 'mcp') { S.serveStudioMcp(); await new Promise(() => {}); }
+        // ox studio local [status|install|make "<prompt>"|clip "<prompt>"]: this Mac's own chip, no key.
+        if (sub === 'local') {
+          const L = await import('./studio-local.js');
+          const act = args[1] ?? 'status';
+          if (act === 'install') {
+            const st = await L.install({ onStep: (what, d) => { if (what !== 'progress') console.log(c.dim(`downloading ${d}`)); else process.stdout.write(c.dim(`\r  ${d}   `)); } });
+            console.log(`\n${c.green('✓')} this Mac can now make: ${Object.entries(st.can).filter(([, v]) => v).map(([k]) => k).join(', ')}`);
+            return;
+          }
+          if (act === 'make' || act === 'clip') {
+            const prompt = args.slice(2).filter((a, i, l) => !a.startsWith('--') && !(l[i - 1] ?? '').startsWith('--')).join(' ');
+            const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+            const r = await S.createStudio().call(act === 'clip' ? 'generate_video' : 'generate_image', { prompt, host: 'device', ...(flag('--aspect') ? { aspect: flag('--aspect') } : {}), ...(flag('--camera') ? { camera: flag('--camera') } : {}), ...(args.includes('--fast') ? { fast: true } : {}), wait_seconds: 290 });
+            const job = /job (\w+) is/.exec(r)?.[1];
+            console.log(job ? await S.createStudio().call('jobs_wait', { ids: [job] }).catch(() => r) : r);
+            return;
+          }
+          const st = L.status();
+          console.log(`${st.chip} · ${st.ramGB} GB memory · ${st.freeGB} GB free on disk`);
+          for (const [k, v] of Object.entries(st.can)) console.log(`  ${v ? c.green('✓') : c.dim('·')} ${k}`);
+          if (!st.can.image) console.log(c.dim(`set up once (about ${Math.round((L.MODELS['sd-turbo'].size + L.MODELS.taesd.size + L.ENGINE.size) / 2 ** 20)} MB, checked by sha256): ox studio local install`));
+          return;
+        }
         if (sub === 'connect') {
           const script = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
           const bin = `${process.execPath} ${script}`;
-          console.log(`Give any agent OX Studio (open image, video and audio models; it makes and edits, never deletes):\n\n  Claude Code:  claude mcp add ox-studio -- ${bin} studio mcp\n  Codex:        add to ~/.codex/config.toml:\n                [mcp_servers.ox-studio]\n                command = "${process.execPath}"\n                args = ["${script}", "studio", "mcp"]\n  Cursor:       ~/.cursor/mcp.json → {"mcpServers":{"ox-studio":{"command":"${process.execPath}","args":["${script}","studio","mcp"]}}}\n  Any MCP app:  command ${bin} studio mcp\n\nThe models run where you have a key: FAL_KEY (fal) or HF_TOKEN (Hugging Face), or your own Stable Diffusion server (OX_SD_URL). Nothing is installed.`);
+          console.log(`Give any agent OX Studio (open image, video and audio models; it makes and edits, never deletes):\n\n  Claude Code:  claude mcp add ox-studio -- ${bin} studio mcp\n  Codex:        add to ~/.codex/config.toml:\n                [mcp_servers.ox-studio]\n                command = "${process.execPath}"\n                args = ["${script}", "studio", "mcp"]\n  Cursor:       ~/.cursor/mcp.json → {"mcpServers":{"ox-studio":{"command":"${process.execPath}","args":["${script}","studio","mcp"]}}}\n  Any MCP app:  command ${bin} studio mcp\n\nOn this Mac's own chip, with no key: images, edits, clips, upscale and cut-outs (set up once with ox studio local install). The hosted models run where you have a key: FAL_KEY (fal) or HF_TOKEN (Hugging Face), or your own Stable Diffusion server (OX_SD_URL).`);
           return;
         }
         const st = S.createStudio();
@@ -6106,8 +6129,9 @@ async function runSubcommand(cmd, args) {
       // --edit <image>: one prompt edits that picture (Krea), on a provider that edits.
       if (flag('--edit')) media.edit = [path.resolve(flag('--edit'))];
       const edits = !!media.edit;
-      const provider = flag('--provider') ?? (edits ? ((await import('./tools/media.js')).pick({ kind: 'image', edit: true }).provider ?? 'openai') : 'higgsfield');
-      const model = flag('--model') ?? (provider === 'higgsfield' ? 'soul-2' : provider === 'openai' ? 'gpt-image-2' : provider === 'fal' ? (edits ? 'fal-ai/flux-pro/kontext' : 'fal-ai/flux/schnell') : provider === 'openrouter' ? 'google/gemini-2.5-flash-image' : 'local');
+      const picked = (await import('./tools/media.js')).pick({ kind: flag('--video') || args.includes('--clip') ? 'video' : 'image', edit: !!edits });
+      const provider = flag('--provider') ?? picked.provider ?? (edits ? 'openai' : 'higgsfield');
+      const model = flag('--model') ?? (provider === 'device' ? picked.model : provider === 'higgsfield' ? 'soul-2' : provider === 'openai' ? 'gpt-image-2' : provider === 'fal' ? (edits ? 'fal-ai/flux-pro/kontext' : 'fal-ai/flux/schnell') : provider === 'openrouter' ? 'google/gemini-2.5-flash-image' : 'local');
       // Settings from the command line are text; the catalogue turns numbers and switches back.
       if (provider === 'higgsfield') {
         const m = ms.getModel(model);

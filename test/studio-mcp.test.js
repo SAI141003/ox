@@ -11,10 +11,11 @@ process.env.OX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-studio-'));
 const S = await import('../src/studio-mcp.js');
 const C = await import('../src/studio-catalog.js');
 
-test('the catalog: every model has a kind, a licence and a fal id; defaults exist', () => {
+test('the catalog: every model has a kind, a licence, and a fal id or runs on this Mac; defaults exist', () => {
   for (const m of C.OPEN_MODELS) {
     assert.ok(m.id && m.name && m.kind && m.license && m.good, m.id);
-    assert.match(m.fal, /^fal-ai\//, m.id);
+    if (m.device) assert.match(m.device, /^(image|edit|video|upscale|cutout)$/, m.id);
+    else assert.match(m.fal, /^fal-ai\//, m.id);
   }
   for (const id of Object.values(C.DEFAULTS)) assert.ok(C.find(id), id);
   assert.equal(new Set(C.OPEN_MODELS.map((m) => m.id)).size, C.OPEN_MODELS.length);
@@ -33,7 +34,7 @@ test('hosts: nothing to run on says which key; fal, hf and local are picked by w
 });
 
 test('routing: words go to Qwen-Image, aspect and camera become model settings', () => {
-  const env = { FAL_KEY: 'k' };
+  const env = { FAL_KEY: 'k', OX_STUDIO_LOCAL: '0' };
   assert.equal(S.plan('generate_image', { prompt: 'a red fox' }, { env }).model, 'fal-ai/flux/schnell');
   assert.equal(S.plan('generate_image', { prompt: 'a poster that says "OPEN LATE"' }, { env }).model, 'fal-ai/qwen-image');
   const wide = S.plan('generate_image', { prompt: 'a fox', aspect: '16:9', n: 9 }, { env });
@@ -52,9 +53,9 @@ test('routing: words go to Qwen-Image, aspect and camera become model settings',
   assert.equal(S.plan('remove_background', { image: '/a.png' }, { env }).model, 'fal-ai/birefnet');
   assert.throws(() => S.plan('lip_sync', { video: 'https://v' }, { env }), /needs a video.*and an audio/);
   assert.deepEqual(S.plan('generate_audio', { prompt: 'rain on a tin roof', seconds: 90 }, { env }).settings, { seconds_total: 47 });
-  const hf = S.plan('generate_image', { prompt: 'a fox' }, { env: { HF_TOKEN: 't' } });
+  const hf = S.plan('generate_image', { prompt: 'a fox' }, { env: { HF_TOKEN: 't', OX_STUDIO_LOCAL: '0' } });
   assert.deepEqual([hf.provider, hf.model], ['hf', 'black-forest-labs/FLUX.1-schnell']);
-  const local = S.plan('generate_image', { prompt: 'a fox', aspect: '16:9' }, { env: { OX_SD_URL: 'http://x' } });
+  const local = S.plan('generate_image', { prompt: 'a fox', aspect: '16:9' }, { env: { OX_SD_URL: 'http://x', OX_STUDIO_LOCAL: '0' } });
   assert.deepEqual(local.settings, { width: 1024, height: 576 });
 });
 
@@ -63,7 +64,7 @@ test('jobs: an image waits for its file; a video returns a job that jobs_wait fi
   const gate = new Promise((r) => { release = r; });
   const calls = [];
   const st = S.createStudio({
-    env: { FAL_KEY: 'k' },
+    env: { FAL_KEY: 'k', OX_STUDIO_LOCAL: '0' },
     generate: async (o) => { calls.push(o); if (o.model.includes('wan')) await gate; return { id: 'r1', status: 'completed', files: [`/out/${calls.length}.${o.model.includes('wan') ? 'mp4' : 'png'}`], urls: [] }; },
     history: () => [{ id: 'r1', status: 'completed', label: 'FLUX.1 [schnell]', prompt: 'a fox', files: ['/out/1.png'] }],
   });
@@ -76,12 +77,38 @@ test('jobs: an image waits for its file; a video returns a job that jobs_wait fi
   assert.match(await st.call('jobs_wait', { ids: [id] }), /done \(Wan 2\.2 A14B\): \/out\/2\.mp4/);
   await assert.rejects(st.call('jobs_wait', { ids: ['nope'] }), /no job nope/);
   assert.match(await st.call('history', {}), /r1 completed · FLUX\.1 \[schnell\] · "a fox" · \/out\/1\.png/);
-  const failing = S.createStudio({ env: { FAL_KEY: 'k' }, generate: async () => { throw new Error('fal said no'); } });
+  const failing = S.createStudio({ env: { FAL_KEY: 'k', OX_STUDIO_LOCAL: '0' }, generate: async () => { throw new Error('fal said no'); } });
   assert.match(await failing.call('upscale', { image: '/a.png' }), /failed \(Real-ESRGAN\): fal said no/);
 });
 
+test('this Mac: once set up it runs every kind it can with no key, first; a named hosted model still goes out', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-studio-mac-'));
+  const L = { OX_HOME: home };
+  const flux = C.find('flux-schnell');
+  assert.throws(() => S.hostFor(C.find('mac-image'), { env: { OX_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'ox-studio-bare-')) } }), /not set up yet: press Set up this Mac/);
+  // Set up: the program and the model files present.
+  const root = path.join(home, 'studio-local');
+  fs.mkdirSync(path.join(root, 'bin-master-929-3f8527a'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'bin-master-929-3f8527a', 'sd-cli'), '');
+  fs.mkdirSync(path.join(root, 'models'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'models', 'sd_turbo-f16-q8_0.gguf'), '');
+  const env = { ...L, FAL_KEY: 'k' };
+  const img = S.plan('generate_image', { prompt: 'a fox', aspect: '16:9', fast: true }, { env });
+  assert.deepEqual([img.provider, img.model, img.settings], ['device', 'mac-image', { op: 'image', aspect: '16:9', fast: true }]);
+  assert.equal(S.plan('generate_image', { prompt: 'a poster that says "OPEN"' }, { env: L }).provider, 'device', 'no key for Qwen-Image: this Mac draws it');
+  assert.equal(S.plan('generate_image', { prompt: 'a poster that says "OPEN"' }, { env }).model, 'fal-ai/qwen-image', 'with a key, words go to the model that spells');
+  const clip = S.plan('generate_video', { prompt: 'waves', camera: 'orbit', image: '/a.png' }, { env });
+  assert.deepEqual([clip.model, clip.settings.camera, clip.media.start[0]], ['mac-video', 'orbit', '/a.png']);
+  assert.equal(S.plan('edit_image', { image: '/a.png', prompt: 'night' }, { env }).model, 'mac-edit');
+  assert.equal(S.plan('upscale', { image: '/a.png', mode: 'quick' }, { env }).settings.mode, 'quick');
+  assert.equal(S.plan('generate_image', { prompt: 'a fox', model: 'flux-schnell' }, { env }).model, 'fal-ai/flux/schnell', 'a named hosted model goes to its host');
+  assert.equal(S.plan('generate_image', { prompt: 'a fox', host: 'fal' }, { env }).provider, 'fal');
+  assert.throws(() => S.plan('edit_image', { image: '/a.png' }, { env }), /say what to change/);
+  assert.equal(S.hostFor(flux, { env }), 'fal');
+});
+
 test('models_explore says what is ready; recipes and video ops are reachable', async () => {
-  const st = S.createStudio({ env: { HF_TOKEN: 't' }, video: { join: (files) => ({ file: `${files[0]}.joined.mp4` }), explainerVideo: async (t, steps) => ({ file: '/x.mp4', slides: steps.length, seconds: 12 }) } });
+  const st = S.createStudio({ env: { HF_TOKEN: 't', OX_STUDIO_LOCAL: '0' }, video: { join: (files) => ({ file: `${files[0]}.joined.mp4` }), explainerVideo: async (t, steps) => ({ file: '/x.mp4', slides: steps.length, seconds: 12 }) } });
   const all = await st.call('models_explore', {});
   assert.match(all, /flux-schnell \(image\).*ready on hf/);
   assert.match(all, /wan-2\.2 \(video\).*needs a host key/);

@@ -7,12 +7,27 @@
 // own Stable Diffusion server when one is running.
 import fs from 'node:fs';
 import * as C from './studio-catalog.js';
+import * as LOCAL from './studio-local.js';
 
 const IMAGE_SIZE = { '1:1': 'square_hd', '16:9': 'landscape_16_9', '9:16': 'portrait_16_9', '4:3': 'landscape_4_3', '3:4': 'portrait_4_3' };
 const ASPECTS = Object.keys(IMAGE_SIZE);
 
 /** Where a model can run right now, given the keys and servers this machine has. */
+// What this Mac can run on its own (cached a few seconds: status reads the disk).
+let localCache = { at: 0, can: null };
+function localCan(env) {
+  if ((env.OX_STUDIO_LOCAL ?? process.env.OX_STUDIO_LOCAL) === '0') return {};
+  const home = env.OX_HOME ?? process.env.OX_HOME ?? '';
+  if (Date.now() - localCache.at > 5000 || localCache.home !== home) { try { localCache = { at: Date.now(), home, can: LOCAL.status({ ...process.env, ...env }).can }; } catch { localCache = { at: Date.now(), home, can: {} }; } }
+  return localCache.can ?? {};
+}
+
 export function hostFor(model, { host = null, env = process.env } = {}) {
+  if (model.device) {
+    if (host && host !== 'device') throw new Error(`${model.name} runs only on this Mac`);
+    if (!localCan(env)[model.device]) throw new Error(`${model.name} is not set up yet: press Set up this Mac in Studio, or run ox studio local install`);
+    return 'device';
+  }
   const can = [];
   if (model.fal && env.FAL_KEY) can.push('fal');
   if (model.hf && model.kind === 'image' && env.HF_TOKEN) can.push('hf');
@@ -34,8 +49,10 @@ function hostHint(model) {
 }
 
 /** The model for a request: by id, or the default for the kind. */
-function modelFor(kind, ref, fallbackKind = kind) {
-  const m = ref ? C.find(ref) : C.find(C.DEFAULTS[fallbackKind]);
+function modelFor(kind, ref, fallbackKind = kind, env = process.env, host = null) {
+  let m = ref ? C.find(ref) : C.find(C.DEFAULTS[fallbackKind]);
+  // No model named: the default if it can run here (on the host asked for), else the first of this kind that can.
+  if (!ref && m) { const runs = (x) => { try { hostFor(x, { env, host }); return true; } catch { return false; } }; if (!runs(m)) m = C.byKind(kind).find(runs) ?? (host && host !== 'device' ? C.byKind(kind).find((x) => !x.device) : null) ?? m; }
   if (!m) throw new Error(`no model '${ref}'. models_explore lists them`);
   if (m.kind !== kind) throw new Error(`${m.name} makes ${m.kind}, not ${kind}`);
   return m;
@@ -46,11 +63,13 @@ export function plan(tool, a = {}, { env = process.env } = {}) {
   const aspect = a.aspect ? String(a.aspect) : null;
   if (aspect && !ASPECTS.includes(aspect)) throw new Error(`aspect is one of ${ASPECTS.join(', ')}`);
   const n = a.n != null ? Math.max(1, Math.min(4, Number(a.n) || 1)) : null;
+  const onMac = devicePlan(tool, a, { env, aspect, n });
+  if (onMac) return onMac;
   if (tool === 'generate_image') {
     const prompt = String(a.prompt ?? '').trim();
     if (!prompt) throw new Error('a prompt is needed');
     // Words in the picture: Qwen-Image is the open model that spells.
-    const m = modelFor('image', a.model, a.model ? 'image' : /["“].+["”]|\b(text|title|sign|poster|logo|words?|caption)\b/i.test(prompt) ? 'text' : 'image');
+    const m = modelFor('image', a.model, a.model ? 'image' : /["“].+["”]|\b(text|title|sign|poster|logo|words?|caption)\b/i.test(prompt) ? 'text' : 'image', env, a.host);
     const provider = hostFor(m, { host: a.host, env });
     if (provider === 'hf') return { provider, model: m.hf, prompt, settings: {}, media: {}, label: m.name };
     if (provider === 'local') return { provider, model: 'local', prompt, settings: { ...(n ? { n } : {}), ...(aspect ? sizeFor(aspect) : {}) }, media: {}, label: m.name };
@@ -60,7 +79,7 @@ export function plan(tool, a = {}, { env = process.env } = {}) {
     const raw = String(a.prompt ?? '').trim();
     if (!raw) throw new Error('a prompt is needed');
     if (a.camera && !C.CAMERA[a.camera]) throw new Error(`camera is one of ${Object.keys(C.CAMERA).join(', ')}`);
-    const m = modelFor('video', a.model);
+    const m = modelFor('video', a.model, 'video', env, a.host);
     const provider = hostFor(m, { host: a.host, env });
     const fromImage = a.image ? String(a.image) : null;
     return {
@@ -72,19 +91,19 @@ export function plan(tool, a = {}, { env = process.env } = {}) {
   if (tool === 'edit_image') {
     if (!a.image) throw new Error('image is the picture to edit (a path or a link)');
     if (!String(a.prompt ?? '').trim()) throw new Error('say what to change');
-    const m = modelFor('edit', a.model);
+    const m = modelFor('edit', a.model, 'edit', env, a.host);
     const provider = hostFor(m, { host: a.host, env });
     return { provider, model: m.fal, prompt: String(a.prompt), settings: {}, media: { edit: [String(a.image)] }, label: m.name };
   }
   const single = { upscale: ['upscale', 'image'], remove_background: ['cutout', 'image'] }[tool];
   if (single) {
     if (!a.image) throw new Error('image is a path or a link');
-    const m = modelFor(single[0], a.model);
+    const m = modelFor(single[0], a.model, single[0], env, a.host);
     return { provider: hostFor(m, { host: a.host, env }), model: m.fal, prompt: '', settings: tool === 'upscale' && a.scale ? { scale: Number(a.scale) } : {}, media: { start: [String(a.image)] }, label: m.name };
   }
   if (tool === 'lip_sync') {
     if (!a.video || !a.audio) throw new Error('lip_sync needs a video (the face) and an audio file (the voice), as links');
-    const m = modelFor('lipsync', a.model);
+    const m = modelFor('lipsync', a.model, 'lipsync', env, a.host);
     return { provider: hostFor(m, { host: a.host, env }), model: m.fal, prompt: '', settings: {}, media: { video: [String(a.video)], audio: [String(a.audio)] }, label: m.name };
   }
   if (tool === 'restyle_video') {
@@ -99,10 +118,32 @@ export function plan(tool, a = {}, { env = process.env } = {}) {
   }
   if (tool === 'generate_audio') {
     if (!String(a.prompt ?? '').trim()) throw new Error('describe the sound');
-    const m = modelFor('audio', a.model);
+    const m = modelFor('audio', a.model, 'audio', env, a.host);
     return { provider: hostFor(m, { host: a.host, env }), model: m.fal, prompt: String(a.prompt), settings: a.seconds ? { seconds_total: Math.min(47, Number(a.seconds)) } : {}, media: {}, label: m.name };
   }
   throw new Error(`no plan for ${tool}`);
+}
+
+/** A request this Mac runs itself, or null when it goes to a hosted model. */
+function devicePlan(tool, a, { env, aspect, n }) {
+  const kind = { generate_image: 'image', edit_image: 'edit', generate_video: 'video', upscale: 'upscale', remove_background: 'cutout' }[tool];
+  if (!kind) return null;
+  if (a.host && a.host !== 'device') return null;
+  const textWanted = tool === 'generate_image' && !a.model && /["“].+["”]|\b(text|title|sign|poster|logo|words?|caption)\b/i.test(String(a.prompt ?? ''));
+  let m;
+  try { m = modelFor(kind, a.model, textWanted ? 'text' : kind, env); } catch { return null; }
+  if (!m.device) return null;
+  hostFor(m, { host: a.host, env });
+  const prompt = String(a.prompt ?? '').trim();
+  if ((kind === 'image' || kind === 'edit') && !prompt) throw new Error(kind === 'edit' ? 'say what to change' : 'a prompt is needed');
+  if (kind === 'video' && !prompt && !a.image) throw new Error('a prompt (or a starting image) is needed');
+  if (['edit', 'upscale', 'cutout'].includes(kind) && !a.image) throw new Error('image is the picture (a path on this Mac or a link)');
+  if (a.camera && !C.CAMERA[a.camera]) throw new Error(`camera is one of ${Object.keys(C.CAMERA).join(', ')}`);
+  return {
+    provider: 'device', model: m.id, prompt,
+    settings: { op: kind, ...(aspect ? { aspect } : {}), ...(n ? { n } : {}), ...(a.seed != null ? { seed: Number(a.seed) } : {}), ...(a.camera ? { camera: a.camera } : {}), ...(a.strength != null ? { strength: Number(a.strength) } : {}), ...(a.fast ? { fast: true } : {}), ...(a.mode ? { mode: String(a.mode) } : {}) },
+    media: a.image ? { start: [String(a.image)] } : {}, label: m.name,
+  };
 }
 
 const sizeFor = (aspect) => {
@@ -113,7 +154,7 @@ const sizeFor = (aspect) => {
 
 const prop = (type, description, extra = {}) => ({ type, description, ...extra });
 const aspectProp = prop('string', `Frame shape: ${ASPECTS.join(', ')}.`, { enum: ASPECTS });
-const hostProp = prop('string', 'Where to run it: fal, hf (Hugging Face) or local (your Stable Diffusion server). Default: the first one this machine can use.', { enum: ['fal', 'hf', 'local'] });
+const hostProp = prop('string', 'Where to run it: device (this Mac\'s own chip, no key), fal, hf (Hugging Face) or local (your Stable Diffusion server). Default: this Mac when it is set up, else the first one that can.', { enum: ['device', 'fal', 'hf', 'local'] });
 const waitProp = prop('number', 'Seconds to wait for the result before returning the job id (default 45 for images, 0 for video). Use jobs_wait after.');
 
 export const STUDIO_MCP_TOOLS = [
@@ -121,7 +162,7 @@ export const STUDIO_MCP_TOOLS = [
   { name: 'generate_image', description: 'Make pictures from a prompt with an open model (FLUX.1 schnell by default; Qwen-Image when the prompt has words to spell). Returns the files, or a job id if it is still running.', inputSchema: { type: 'object', properties: { prompt: prop('string', 'What to make.'), model: prop('string', 'A model id from models_explore.'), aspect: aspectProp, n: prop('number', 'How many (1-4).'), seed: prop('number', 'Seed, to repeat a result.'), host: hostProp, wait_seconds: waitProp }, required: ['prompt'] } },
   { name: 'generate_video', description: 'Make a 5-second clip from a prompt, or from a starting image, with an open video model (Wan 2.2 by default). Add a camera move. Returns a job id; call jobs_wait.', inputSchema: { type: 'object', properties: { prompt: prop('string', 'What happens in the shot.'), image: prop('string', 'Optional first frame: a path or a link.'), camera: prop('string', `A camera move: ${Object.keys(C.CAMERA).join(', ')}.`, { enum: Object.keys(C.CAMERA) }), model: prop('string', 'A video model id from models_explore.'), aspect: aspectProp, seed: prop('number', 'Seed.'), host: hostProp, wait_seconds: waitProp }, required: ['prompt'] } },
   { name: 'edit_image', description: 'Change a picture by instruction ("make it night", "put the product on marble"), keeping the rest. Qwen-Image-Edit by default.', inputSchema: { type: 'object', properties: { image: prop('string', 'The picture: a path or a link.'), prompt: prop('string', 'What to change.'), model: prop('string', 'qwen-image-edit or flux-kontext-dev (non-commercial licence).'), host: hostProp, wait_seconds: waitProp }, required: ['image', 'prompt'] } },
-  { name: 'upscale', description: 'Make a picture 4x larger with more detail (Real-ESRGAN).', inputSchema: { type: 'object', properties: { image: prop('string', 'A path or a link.'), scale: prop('number', '2 or 4.'), wait_seconds: waitProp }, required: ['image'] } },
+  { name: 'upscale', description: 'Make a picture larger with more detail. On this Mac: 2x, mode detail (the model redraws fine detail, a few minutes) or quick (instant). Hosted: Real-ESRGAN 4x.', inputSchema: { type: 'object', properties: { image: prop('string', 'A path or a link.'), scale: prop('number', '2 or 4 (hosted).'), mode: prop('string', 'On this Mac: detail or quick.', { enum: ['detail', 'quick'] }), wait_seconds: waitProp }, required: ['image'] } },
   { name: 'remove_background', description: 'Cut the subject out of a picture onto a clear background (BiRefNet).', inputSchema: { type: 'object', properties: { image: prop('string', 'A path or a link.'), wait_seconds: waitProp }, required: ['image'] } },
   { name: 'lip_sync', description: 'Make the face in a video speak an audio track (LatentSync). Both as links.', inputSchema: { type: 'object', properties: { video: prop('string', 'Link to the video.'), audio: prop('string', 'Link to the audio.'), wait_seconds: waitProp }, required: ['video', 'audio'] } },
   { name: 'generate_audio', description: 'Make a sound effect or a short loop from a description (Stable Audio Open).', inputSchema: { type: 'object', properties: { prompt: prop('string', 'The sound.'), seconds: prop('number', 'Length, up to 47.'), wait_seconds: waitProp }, required: ['prompt'] } },

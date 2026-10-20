@@ -116,11 +116,23 @@ test('no single company: fal, OpenAI and a local Stable Diffusion server each ma
 
 test('create_media: the agent picks a provider from the keys you have, and asks first', async () => {
   const { pick, createMediaTool } = await import('../src/tools/media.js');
-  assert.deepEqual(pick({ kind: 'image' }, { OPENAI_API_KEY: 'k' }), { provider: 'openai', model: 'gpt-image-2' });
-  assert.deepEqual(pick({ kind: 'image' }, {}), { provider: 'local', model: 'local' }, 'no keys: this machine');
-  assert.deepEqual(pick({ kind: 'video' }, { HIGGSFIELD_API_KEY: 'a:b' }), { provider: 'higgsfield', model: 'kling-3-pro' });
-  assert.match(pick({ kind: 'video' }, {}).error, /No video provider/);
-  assert.match(pick({ kind: 'video', provider: 'openai' }, {}).error, /image only/);
+  const off = { OX_STUDIO_LOCAL: '0' };
+  assert.deepEqual(pick({ kind: 'image' }, { ...off, OPENAI_API_KEY: 'k' }), { provider: 'openai', model: 'gpt-image-2' });
+  assert.deepEqual(pick({ kind: 'image' }, off), { provider: 'local', model: 'local' }, 'no keys: a Stable Diffusion server here');
+  assert.deepEqual(pick({ kind: 'video' }, { ...off, HIGGSFIELD_API_KEY: 'a:b' }), { provider: 'higgsfield', model: 'kling-3-pro' });
+  assert.match(pick({ kind: 'video' }, off).error, /No video maker is set up.*ox studio local install/);
+  assert.match(pick({ kind: 'video', provider: 'openai' }, off).error, /image only/);
+  // This Mac set up: it comes first, for images, edits and clips; a named provider still wins.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-mac-pick-'));
+  const L = await import('../src/studio-local.js');
+  fs.mkdirSync(path.dirname(L.sdBin({ OX_HOME: home })), { recursive: true }); fs.writeFileSync(L.sdBin({ OX_HOME: home }), '');
+  fs.mkdirSync(path.dirname(L.modelPath('sd-turbo', { OX_HOME: home })), { recursive: true }); fs.writeFileSync(L.modelPath('sd-turbo', { OX_HOME: home }), '');
+  await new Promise((r) => setTimeout(r, 5100)); // past the 5 s readiness cache
+  const mac = { OX_HOME: home, OPENAI_API_KEY: 'k' };
+  assert.deepEqual(pick({ kind: 'image' }, mac), { provider: 'device', model: 'mac-image' });
+  assert.deepEqual(pick({ kind: 'image', edit: true }, mac), { provider: 'device', model: 'mac-edit' });
+  assert.deepEqual(pick({ kind: 'video' }, mac), { provider: 'device', model: 'mac-video' });
+  assert.deepEqual(pick({ kind: 'image', provider: 'openai' }, mac), { provider: 'openai', model: 'gpt-image-2' });
   assert.match((await createMediaTool({ prompt: '' })).content, /prompt is required/);
   const { classifyTool } = await import('../src/resource-class.js');
   assert.equal(classifyTool('create_media'), 'approval_gated');

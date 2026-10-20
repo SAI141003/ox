@@ -3,6 +3,12 @@
 // checked against fal's model pages on Oct 18, 2026 (fal answers 200 even for
 // a made-up id, so each was checked by its page title).
 export const OPEN_MODELS = Object.freeze([
+  // On this Mac's own chip (src/studio-local.js): no key, nothing leaves the machine.
+  { id: 'mac-image', name: 'SD-Turbo on this Mac', kind: 'image', license: 'Stability AI Community', good: 'your own chip, no key: about 25 s an image (12 s fast)', device: 'image' },
+  { id: 'mac-edit', name: 'SD-Turbo edit on this Mac', kind: 'edit', license: 'Stability AI Community', good: 'your own chip: keeps the layout, changes the look', device: 'edit' },
+  { id: 'mac-video', name: 'Living picture on this Mac', kind: 'video', license: 'Stability AI Community', good: 'your own chip: a generated scene, its camera move, re-imagined keyframes and smooth frames between (about 3 min for 5 s)', device: 'video' },
+  { id: 'mac-upscale', name: 'Hires fix on this Mac', kind: 'upscale', license: 'Stability AI Community', good: 'your own chip: 2x, the model redraws fine detail (a few minutes), or a quick sharp resize', device: 'upscale' },
+  { id: 'mac-cutout', name: 'Apple Vision cut-out', kind: 'cutout', license: 'built into macOS', good: 'your own chip, no download: the subject on a clear background', device: 'cutout' },
   { id: 'flux-schnell', name: 'FLUX.1 [schnell]', kind: 'image', license: 'Apache-2.0', good: 'fast, 1-4 steps', fal: 'fal-ai/flux/schnell', hf: 'black-forest-labs/FLUX.1-schnell' },
   { id: 'qwen-image', name: 'Qwen-Image', kind: 'image', license: 'Apache-2.0', good: 'text inside images, posters, signs', fal: 'fal-ai/qwen-image' },
   { id: 'hidream-i1', name: 'HiDream-I1 Full', kind: 'image', license: 'MIT', good: 'detail, long prompts', fal: 'fal-ai/hidream-i1-full' },
@@ -110,7 +116,7 @@ export const find = (ref) => OPEN_MODELS.find((m) => m.id === ref || m.fal === r
 export const byKind = (kind) => OPEN_MODELS.filter((m) => m.kind === kind);
 
 /** The default model for a kind (the strongest open one). */
-export const DEFAULTS = Object.freeze({ image: 'flux-schnell', text: 'qwen-image', edit: 'qwen-image-edit', video: 'wan-2.2', upscale: 'esrgan', cutout: 'birefnet', lipsync: 'latentsync', audio: 'stable-audio', restyle: 'wan-animate-move' });
+export const DEFAULTS = Object.freeze({ image: 'mac-image', text: 'qwen-image', edit: 'mac-edit', video: 'mac-video', upscale: 'mac-upscale', cutout: 'mac-cutout', lipsync: 'latentsync', audio: 'stable-audio', restyle: 'wan-animate-move' });
 
 export function withCamera(prompt, move) {
   const m = CAMERA[move];

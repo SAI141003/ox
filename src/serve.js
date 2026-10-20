@@ -1773,6 +1773,7 @@ async function themeAsk() {
 const codeCache = {};
 let studioOpen = null;
 const SERVER_STARTED = new Date().toISOString();
+let localSetup = { running: false, step: null, error: null };
 const ROUTES = [
   // Pull requests (src/dev-flow.js): Open a PR in one click, its CI and reviews, one fix round.
   { method: 'GET', pattern: /^\/ox\/pr\/?$/, handler: appRoute(async (_, __, req) => {
@@ -2028,6 +2029,18 @@ const ROUTES = [
     const S = await import('./studio-mcp.js');
     const ready = (m) => { try { return S.hostFor(m); } catch { return null; } };
     return { models: C.OPEN_MODELS.map((m) => ({ ...m, ready: ready(m) })), camera: C.CAMERA, workflows: C.WORKFLOWS, defaults: C.DEFAULTS };
+  }) },
+  // Studio on this Mac's own chip (src/studio-local.js): what it can make, and a one-time setup with progress.
+  { method: 'GET', pattern: /^\/ox\/studio\/local\/?$/, handler: appRoute(async () => ({ ...(await import('./studio-local.js')).status(), setup: localSetup })) },
+  { method: 'POST', pattern: /^\/ox\/studio\/local\/?$/, handler: appRoute(async (b) => {
+    if (b.action !== 'install') throw new Error('action: install');
+    if (localSetup.running) return { setup: localSetup };
+    const L = await import('./studio-local.js');
+    localSetup = { running: true, step: 'starting', error: null };
+    L.install({ onStep: (what, d) => { localSetup.step = what === 'progress' ? `${localSetup.what} · ${d}` : d; if (what !== 'progress') localSetup.what = d; } })
+      .then(() => { localSetup = { running: false, step: 'done', error: null }; })
+      .catch((e) => { localSetup = { running: false, step: 'failed', error: e.message }; });
+    return { setup: localSetup };
   }) },
   { method: 'POST', pattern: /^\/ox\/studio\/open\/?$/, handler: appRoute(async (body) => {
     const S = await import('./studio-mcp.js');

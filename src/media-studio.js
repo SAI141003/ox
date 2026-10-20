@@ -310,6 +310,8 @@ export const PROVIDERS = Object.freeze({
   fal: { label: 'fal.ai', key: 'FAL_KEY', kinds: ['image', 'video'], models: () => [{ id: 'fal-ai/flux/schnell', label: 'FLUX.1 schnell', surface: 'image' }], anyModel: true },
   openai: { label: 'OpenAI', key: 'OPENAI_API_KEY', kinds: ['image'], models: () => ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'].map((id) => ({ id, label: id, surface: 'image' })) },
   local: { label: 'This machine (Stable Diffusion)', key: null, kinds: ['image'], models: () => [{ id: 'local', label: 'the loaded model', surface: 'image' }] },
+  // This Mac's own chip (src/studio-local.js): images, edits, clips, upscale, cut-out. No key.
+  device: { label: 'This Mac (own chip, no key)', key: null, kinds: ['image', 'video'], models: () => [{ id: 'mac-image', label: 'SD-Turbo on this Mac', surface: 'image' }, { id: 'mac-video', label: 'Living picture on this Mac', surface: 'video' }] },
   // Open models on Hugging Face Inference (text to image), with your HF token.
   hf: { label: 'Hugging Face', key: 'HF_TOKEN', kinds: ['image'], models: () => [{ id: 'black-forest-labs/FLUX.1-schnell', label: 'FLUX.1 schnell', surface: 'image' }], anyModel: true },
   // Image models behind your OpenRouter key (they make and edit pictures from a prompt).
@@ -380,6 +382,23 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
       const imgs = d.choices?.[0]?.message?.images ?? [];
       for (const [i, im] of imgs.entries()) { const u = im?.image_url?.url ?? ''; const m = /^data:image\/(\w+);base64,(.+)$/.exec(u); if (m) files.push(writeB64(dir, i, m[2], m[1] === 'jpeg' ? 'jpg' : m[1])); else if (u) files.push(await download(u, path.join(dir, `${i + 1}.png`), fetchImpl)); }
       if (!files.length) throw new Error(`${model || 'the model'} answered without an image${d.choices?.[0]?.message?.content ? `: ${String(d.choices[0].message.content).slice(0, 160)}` : ''}`);
+    } else if (provider === 'device') {
+      const L = await import('./studio-local.js');
+      const op = settings.op ?? (model === 'mac-video' ? 'video' : editOf || model === 'mac-edit' ? 'edit' : model === 'mac-upscale' ? 'upscale' : model === 'mac-cutout' ? 'cutout' : 'image');
+      // A link becomes a local file first: everything below reads files.
+      let src = media.start?.[0] ?? editOf ?? null;
+      if (src && /^https?:/.test(String(src))) { const img = await sourceImage(src, fetchImpl); fs.mkdirSync(dir, { recursive: true }); src = path.join(dir, `source${path.extname(img.name) || '.png'}`); fs.writeFileSync(src, img.buf); }
+      const common = { outDir: dir, env, onLine: (l) => { const m = /\|\s*(\d+)\/(\d+)/.exec(l); if (m) onStatus({ status: 'in_progress', step: `${m[1]}/${m[2]}` }); } };
+      const r = op === 'video' ? await L.livingPicture({ ...common, prompt, image: src, aspect: settings.aspect ?? '16:9', camera: settings.camera ?? 'push-in', seed: settings.seed ?? null, onStep: (what, detail) => onStatus({ status: 'in_progress', step: `${what} ${detail ?? ''}`.trim() }) })
+        : op === 'edit' ? await L.imageToImage({ ...common, image: src, prompt, strength: settings.strength ?? 0.5, seed: settings.seed ?? null, fast: !!settings.fast })
+        : op === 'upscale' ? await L.upscale({ ...common, image: src, prompt, mode: settings.mode ?? 'detail' })
+        : op === 'cutout' ? await L.cutout({ ...common, image: src })
+        : await L.textToImage({ ...common, prompt, aspect: settings.aspect ?? '1:1', n: settings.n ?? 1, seed: settings.seed ?? null, fast: !!settings.fast });
+      files = r.files;
+      surface = op === 'video' ? 'video' : 'image';
+      recipe.label = { 'mac-image': 'SD-Turbo on this Mac', 'mac-edit': 'Edit on this Mac', 'mac-video': 'Living picture on this Mac', 'mac-upscale': `Upscale on this Mac (${r.mode ?? 'detail'})`, 'mac-cutout': 'Apple Vision cut-out' }[model] ?? model;
+      recipe.surface = surface;
+      if (r.seed != null) recipe.settings = { ...settings, seed: r.seed };
     } else if (provider === 'local' && editOf) {
       const img = await sourceImage(editOf, fetchImpl);
       const d = await jsonFetch(fetchImpl, `${LOCAL_SD()}/sdapi/v1/img2img`, {
@@ -452,7 +471,7 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
   } catch (e) {
     status = 'failed'; error = e.message;
   }
-  const row = { id, status, surface, urls, files, error, doneAt: Date.now() };
+  const row = { id, status, surface, urls, files, error, doneAt: Date.now(), label: recipe.label, settings: recipe.settings };
   note(row);
   if (status === 'failed' && error && !files.length) { const err = new Error(error); err.record = { ...recipe, ...row }; throw err; }
   return { ...recipe, ...row };

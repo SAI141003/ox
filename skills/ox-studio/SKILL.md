@@ -8,6 +8,14 @@ OX Studio makes and edits images, video and sound with open-weights models
 (FLUX.1, Qwen-Image, HiDream, Wan 2.2, LTX-Video, HunyuanVideo, Real-ESRGAN,
 BiRefNet, LatentSync, Stable Audio Open). Connect it with `ox studio connect`.
 
+On this Mac's own chip, with no key (`ox studio local` says what is set up):
+images (SD-Turbo, about 25 s; `fast: true` about 12 s), edits, clips (a "living
+picture": a generated scene, its camera move and re-imagined keyframes, about
+3 minutes for 5 s), upscale (`mode` detail or quick) and cut-outs (Apple
+Vision). These are picked first when no model is named; a named hosted model,
+or `host`, still goes to that host. Say how long a clip will take before
+starting one.
+
 ## Route the request
 
 - One picture → `generate_image`. Words in the picture → leave the model unset;
