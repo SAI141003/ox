@@ -310,6 +310,9 @@ export const PROVIDERS = Object.freeze({
   fal: { label: 'fal.ai', key: 'FAL_KEY', kinds: ['image', 'video'], models: () => [{ id: 'fal-ai/flux/schnell', label: 'FLUX.1 schnell', surface: 'image' }], anyModel: true },
   openai: { label: 'OpenAI', key: 'OPENAI_API_KEY', kinds: ['image'], models: () => ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'].map((id) => ({ id, label: id, surface: 'image' })) },
   local: { label: 'This machine (Stable Diffusion)', key: null, kinds: ['image'], models: () => [{ id: 'local', label: 'the loaded model', surface: 'image' }] },
+  // Your own ComfyUI (Comfy-Org/ComfyUI, GPL-3.0, run by you): its standard text-to-image
+  // graph on a checkpoint you have, or your own workflow saved with "Save (API)".
+  comfyui: { label: 'ComfyUI on this machine', key: null, kinds: ['image', 'video'], models: () => [{ id: 'default', label: 'your first checkpoint', surface: 'image' }], anyModel: true },
   // This Mac's own chip (src/studio-local.js): images, edits, clips, upscale, cut-out. No key.
   device: { label: 'This Mac (own chip, no key)', key: null, kinds: ['image', 'video'], models: () => [{ id: 'mac-image', label: 'SD-Turbo on this Mac', surface: 'image' }, { id: 'mac-video', label: 'Living picture on this Mac', surface: 'video' }] },
   // Open models on Hugging Face Inference (text to image), with your HF token.
@@ -331,6 +334,49 @@ async function sourceImage(ref, fetchImpl) {
 const dataUri = (img) => `data:${img.type};base64,${img.buf.toString('base64')}`;
 
 const LOCAL_SD = () => (process.env.OX_SD_URL || 'http://127.0.0.1:7860').replace(/\/$/, '');
+const COMFY = () => (process.env.OX_COMFYUI_URL || 'http://127.0.0.1:8188').replace(/\/$/, '');
+
+/** ComfyUI's standard text-to-image graph (API format). */
+export function comfyTxt2img({ ckpt, prompt, negative = '', width = 1024, height = 1024, steps = 25, cfg = 7, seed = Math.floor(Math.random() * 2 ** 32), n = 1 }) {
+  return {
+    4: { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: ckpt } },
+    5: { class_type: 'EmptyLatentImage', inputs: { width, height, batch_size: n } },
+    6: { class_type: 'CLIPTextEncode', inputs: { text: prompt, clip: ['4', 1] } },
+    7: { class_type: 'CLIPTextEncode', inputs: { text: negative, clip: ['4', 1] } },
+    3: { class_type: 'KSampler', inputs: { seed, steps, cfg, sampler_name: 'euler', scheduler: 'normal', denoise: 1, model: ['4', 0], positive: ['6', 0], negative: ['7', 0], latent_image: ['5', 0] } },
+    8: { class_type: 'VAEDecode', inputs: { samples: ['3', 0], vae: ['4', 2] } },
+    9: { class_type: 'SaveImage', inputs: { filename_prefix: 'ox', images: ['8', 0] } },
+  };
+}
+
+/** Run a graph on ComfyUI and bring its images (and videos) home. */
+async function runComfy({ graph, dir, fetchImpl, onStatus, timeoutMs = 15 * 60_000 }) {
+  const q = await jsonFetch(fetchImpl, `${COMFY()}/prompt`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: graph, client_id: 'ox' }) });
+  if (!q.prompt_id) throw new Error(`ComfyUI did not queue it: ${JSON.stringify(q.node_errors ?? q.error ?? q).slice(0, 200)}`);
+  const t0 = Date.now();
+  for (;;) {
+    if (Date.now() - t0 > timeoutMs) throw new Error('ComfyUI took too long');
+    const h = await jsonFetch(fetchImpl, `${COMFY()}/history/${q.prompt_id}`);
+    const run = h[q.prompt_id];
+    if (run?.status?.status_str === 'error') throw new Error(`ComfyUI: ${JSON.stringify(run.status.messages ?? '').slice(0, 200)}`);
+    if (run?.outputs && Object.keys(run.outputs).length) {
+      fs.mkdirSync(dir, { recursive: true });
+      const files = [];
+      for (const out of Object.values(run.outputs)) {
+        for (const it of [...(out.images ?? []), ...(out.gifs ?? []), ...(out.videos ?? [])]) {
+          const r = await fetchImpl(`${COMFY()}/view?${new URLSearchParams({ filename: it.filename, subfolder: it.subfolder ?? '', type: it.type ?? 'output' })}`);
+          if (!r.ok) continue;
+          const f = path.join(dir, `${files.length + 1}${path.extname(it.filename) || '.png'}`);
+          fs.writeFileSync(f, Buffer.from(await r.arrayBuffer()));
+          files.push(f);
+        }
+      }
+      return files;
+    }
+    onStatus?.('ComfyUI is working');
+    await new Promise((res) => setTimeout(res, 1500));
+  }
+}
 
 async function jsonFetch(fetchImpl, url, init = {}) {
   const r = await fetchImpl(url, { ...init, signal: init.signal ?? AbortSignal.timeout(300_000) });
@@ -423,6 +469,24 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
         if (item.b64_json) files.push(writeB64(dir, i, item.b64_json, ext));
         else if (item.url) { urls.push(item.url); files.push(await download(item.url, path.join(dir, `${i + 1}.${ext}`), fetchImpl)); }
       }
+    } else if (provider === 'comfyui') {
+      let graph;
+      if (settings.workflow) {
+        // Your own graph, exported with "Save (API)"; {{prompt}} marks where the prompt goes.
+        graph = JSON.parse(fs.readFileSync(String(settings.workflow).replace(/^~(?=\/)/, os.homedir()), 'utf8').split('{{prompt}}').join(JSON.stringify(String(prompt)).slice(1, -1)));
+      } else {
+        let ckpt = model && model !== 'default' ? model : null;
+        if (!ckpt) {
+          const info = await jsonFetch(fetchImpl, `${COMFY()}/object_info/CheckpointLoaderSimple`).catch((e) => { throw new Error(`no ComfyUI answered at ${COMFY()} (${e.message}). Start it (python main.py) or set OX_COMFYUI_URL`); });
+          ckpt = info?.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0]?.[0];
+          if (!ckpt) throw new Error('ComfyUI has no checkpoint: put a model in ComfyUI/models/checkpoints');
+        }
+        graph = comfyTxt2img({ ckpt, prompt, negative: settings.negative ?? '', width: Number(settings.width ?? 1024), height: Number(settings.height ?? 1024), steps: Number(settings.steps ?? 25), n: Number(settings.n ?? 1), ...(settings.seed != null ? { seed: Number(settings.seed) } : {}) });
+        recipe.label = `ComfyUI · ${ckpt}`;
+      }
+      files = await runComfy({ graph, dir, fetchImpl, onStatus });
+      if (!files.length) throw new Error('ComfyUI finished without an image');
+      if (files.some((f) => /\.(mp4|webm|gif)$/i.test(f))) { surface = 'video'; recipe.surface = 'video'; }
     } else if (provider === 'local') {
       const d = await jsonFetch(fetchImpl, `${LOCAL_SD()}/sdapi/v1/txt2img`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },

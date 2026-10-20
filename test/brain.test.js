@@ -69,3 +69,23 @@ test('brain: consolidation merges duplicates and deletes nothing', async () => {
   assert.equal(hits.length, 1, 'one current note left');
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('brain: one search over notes, call notes and the library, each hit saying where it came from', async () => {
+  const dir = vault();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-brain-src-'));
+  fs.mkdirSync(path.join(home, 'ox-notes', 'calls'), { recursive: true });
+  fs.writeFileSync(path.join(home, 'ox-notes', 'calls', 'Call 2026-10-20 10.00.md'), '## Summary\nAgreed with Priya to ship the billing page on Friday.\n');
+  fs.mkdirSync(path.join(home, 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(home, 'lib', 'x1.json'), JSON.stringify({ id: 'x1', title: 'Stripe vs Paddle', source: 'https://example.com/billing', text: 'Paddle is a merchant of record for billing.' }));
+  B.remember({ title: 'Billing provider', body: 'We use Paddle for billing.' }, { dir });
+  const sources = [{ kind: 'notes', dir: path.join(home, 'ox-notes') }, { kind: 'library', dir: path.join(home, 'lib') }];
+  await B.index({ dir, sources });
+  const hits = await B.search('billing', { dir, sources });
+  const from = Object.fromEntries(hits.map((h) => [h.title, h.from]));
+  assert.equal(from['Billing provider'], 'ox brain');
+  assert.equal(from['Call 2026-10-20 10.00'], 'your notes');
+  assert.equal(from['Stripe vs Paddle'], 'your library');
+  assert.match(B.formatHits(hits), /\(from your library: https:\/\/example\.com\/billing\)/);
+  assert.doesNotMatch(fs.readFileSync(path.join(dir, 'INDEX.md'), 'utf8'), /Stripe vs Paddle|Call 2026/, 'other sources are searched, not listed as notes');
+  fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true });
+});

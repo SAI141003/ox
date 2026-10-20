@@ -44,6 +44,32 @@ export const FEATURED = Object.freeze([
   { kind: 'mcp', name: 'pinchtab', source: 'pinchtab', license: 'MIT', description: 'PinchTab (pinchtab/pinchtab): browser control for agents from one small Go daemon, compact snapshots, 10–20 % fewer tokens; also a web_task backend (backend: pinchtab). Install: brew install pinchtab/tap/pinchtab' },
   { kind: 'tool', name: 'strix', source: 'strix-agent', license: 'Apache-2.0', install: 'pipx install strix-agent', run: 'strix --target ./your-app',
     description: 'Strix (usestrix/strix): AI agents that penetration-test YOUR OWN app and propose fixes. Only on code and sites you own or are authorized to test' },
+  // October 20 screenshots, licences checked on GitHub that day.
+  // Skills for Real Engineers (mattpocock/skills, MIT): small, composable engineering skills.
+  ...[['grill-with-docs', 'grills your plan against the docs and writes the decisions down as you go'], ['grill-me', 'asks hard questions about a plan until it holds'],
+    ['to-spec', 'turns a conversation into a spec'], ['implement-spec', 'builds from a spec, step by step'], ['tdd', 'test-driven development, red then green'],
+    ['diagnosing-bugs', 'finds the cause of a bug before changing code'], ['code-review', 'reviews a change like a senior engineer'], ['triage', 'sorts incoming issues'],
+    ['handoff', 'writes a handoff another agent or person can pick up'], ['research', 'researches a technical question before building']].map(([n, d]) => ({
+    kind: 'skill', name: n, source: `mattpocock/skills#${n}`, license: 'MIT', description: `Skills for Real Engineers (mattpocock/skills): ${n}, ${d}`,
+  })),
+  { kind: 'skill', name: 'anatomy', source: 'wheresryan22/anatomy', license: 'MIT', description: 'Anatomy (wheresryan22/anatomy): detailed, interactive isometric illustrations of real machines and systems, as polished SVG with optional WebGL' },
+  // Open-source apps that replace paid ones, to run yourself; ox has its own take on several (in brackets).
+  { kind: 'tool', name: 'weknora', source: 'Tencent/WeKnora', license: 'see repo', install: 'git clone https://github.com/Tencent/WeKnora && cd WeKnora && docker compose up -d', run: 'open http://localhost',
+    description: 'WeKnora (Tencent): your documents as a searchable knowledge base with answers (replaces Notion AI) [ox: ox brain, library]' },
+  { kind: 'tool', name: 'openwhispr', source: 'OpenWhispr/openwhispr', license: 'MIT', install: 'git clone https://github.com/OpenWhispr/openwhispr', run: 'see its README',
+    description: 'OpenWhispr: dictation with local Parakeet or Whisper (replaces Wispr Flow) [ox: dictation in OX Island]' },
+  { kind: 'tool', name: 'openproject', source: 'opf/openproject', license: 'GPL-3.0', install: 'docker run -it -p 8080:80 openproject/openproject:16', run: 'open http://localhost:8080',
+    description: 'OpenProject: project management (replaces Asana) [ox: task board, mission map]' },
+  { kind: 'tool', name: 'cal-com', source: 'calcom/cal.diy', license: 'MIT', install: 'git clone https://github.com/calcom/cal.diy', run: 'see its README (self-hosted)',
+    description: 'Cal.com: scheduling with Google and Outlook sync, self-hosted (replaces Calendly) [ox: your next booking in the notch with a Cal.com key]' },
+  { kind: 'tool', name: 'comfyui', source: 'Comfy-Org/ComfyUI', license: 'GPL-3.0', install: 'git clone https://github.com/Comfy-Org/ComfyUI && cd ComfyUI && pip install -r requirements.txt', run: 'python main.py   (then ox Studio uses it: OX_COMFYUI_URL=http://127.0.0.1:8188)',
+    description: 'ComfyUI: node-graph image, video and audio generation on your own machine [ox: Studio sends work to it when it runs]' },
+  { kind: 'tool', name: 'open-design', source: 'nexu-io/open-design', license: 'Apache-2.0', install: 'git clone https://github.com/nexu-io/open-design', run: 'see its README',
+    description: 'Open Design: a local-first AI design workspace (motion, slides, UI)' },
+  { kind: 'tool', name: 'gbrain', source: 'garrytan/gbrain', license: 'MIT', install: 'git clone https://github.com/garrytan/gbrain', run: 'see its README',
+    description: "gbrain (Garry Tan): an opinionated agent brain for OpenClaw and Hermes [ox: ox brain, built in]" },
+  { kind: 'tool', name: 'agent-reach', source: 'Panniantong/Agent-Reach', license: 'MIT', install: 'git clone https://github.com/Panniantong/Agent-Reach', run: 'see its README',
+    description: 'Agent Reach: read and search Twitter, Reddit, YouTube and more for your agent [ox: ox research]' },
 ]);
 const RAW = () => process.env.OX_MARKET_RAW_BASE || 'https://raw.githubusercontent.com';
 const API = () => process.env.OX_MARKET_API_BASE || 'https://api.github.com';

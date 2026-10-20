@@ -123,22 +123,58 @@ async function open(dir) {
   return db;
 }
 
+// ---------------------------------------------------------------- your other words
+// Read-only sources searched with the notes (ShogunAI's "Ask": one question over
+// your notes, meetings and reading, each answer saying where it came from):
+// the call notes and other files in ~/ox-notes, and what you saved to the library.
+// Indexed under "@notes/…" and "@library/…"; never written to, never in INDEX.md.
+export function defaultSources(home = os.homedir()) {
+  if (process.env.OX_BRAIN_SOURCES === '0') return [];
+  return [{ kind: 'notes', dir: path.join(home, 'ox-notes') }, { kind: 'library', dir: path.join(process.env.OX_HOME || path.join(home, '.ox'), 'library') }];
+}
+function sourceEntries(sources) {
+  const out = [];
+  for (const s of sources) {
+    if (s.kind === 'notes') for (const f of walk(s.dir)) out.push({ rel: `@notes/${f}`, mtime: () => fs.statSync(f).mtimeMs, load: () => ({ meta: { title: path.basename(f, '.md'), source: f, project: '@notes' }, body: fs.readFileSync(f, 'utf8') }) });
+    if (s.kind === 'library') {
+      let names = [];
+      try { names = fs.readdirSync(s.dir).filter((n) => n.endsWith('.json')); } catch {}
+      for (const n of names) {
+        const f = path.join(s.dir, n);
+        out.push({ rel: `@library/${n.replace(/\.json$/, '')}`, mtime: () => fs.statSync(f).mtimeMs, load: () => { const j = JSON.parse(fs.readFileSync(f, 'utf8')); return { meta: { title: j.title || n, source: j.source || f, project: '@library' }, body: String(j.text ?? '') }; } });
+      }
+    }
+  }
+  return out;
+}
+function loadEntry(dir, rel, sources) {
+  if (!rel.startsWith('@')) return parseNote(fs.readFileSync(path.join(dir, rel), 'utf8'));
+  const e = sourceEntries(sources).find((x) => x.rel === rel);
+  return e ? e.load() : null;
+}
+
 /** Bring brain.db up to date with the notes (only changed files are read). → { indexed, removed, total } */
-export async function index({ dir = brainDir(), embed = null } = {}) {
+export async function index({ dir = brainDir(), embed = null, sources = dir === brainDir() ? defaultSources() : [] } = {}) {
   const db = await open(dir);
   if (!db) return { indexed: 0, removed: 0, total: walk(dir).length, noIndex: 'this Node has no built-in SQLite (Node 22.5+); search reads the files directly' };
-  const files = walk(dir);
+  const entries = [
+    ...walk(dir).map((f) => ({ rel: path.relative(dir, f), mtime: () => fs.statSync(f).mtimeMs, load: () => parseNote(fs.readFileSync(f, 'utf8')) })),
+    ...sourceEntries(sources),
+  ];
   const known = new Map(db.prepare('select path, mtime from notes').all().map((r) => [r.path, r.mtime]));
   let indexed = 0;
   db.exec('begin');
   try {
-    for (const f of files) {
-      const rel = path.relative(dir, f);
-      const mtime = fs.statSync(f).mtimeMs;
+    for (const e of entries) {
+      const rel = e.rel;
+      let mtime;
+      try { mtime = e.mtime(); } catch { continue; }
       if (known.get(rel) === mtime) { known.delete(rel); continue; }
       known.delete(rel);
-      const { meta, body } = parseNote(fs.readFileSync(f, 'utf8'));
-      const title = meta.title || path.basename(f, '.md');
+      let loaded;
+      try { loaded = e.load(); } catch { continue; }
+      const { meta, body } = loaded;
+      const title = meta.title || path.basename(rel, '.md');
       db.prepare('delete from fts where path = ?').run(rel);
       db.prepare('delete from links where src = ?').run(rel);
       db.prepare('insert or replace into notes values (?, ?, ?, ?, ?, ?)').run(rel, title, mtime, meta.valid_to || null, meta.project || null, Math.ceil(body.length / 4));
@@ -158,7 +194,7 @@ export async function index({ dir = brainDir(), embed = null } = {}) {
 
 /** INDEX.md: the current notes, one line each, at most 200 lines (what the prompt loads). */
 function writeIndexFile(dir, db) {
-  const rows = db.prepare('select n.path, n.title, n.project, (select count(*) from links l where l.dst = n.title) inbound from notes n where n.valid_to is null order by inbound desc, n.title').all();
+  const rows = db.prepare("select n.path, n.title, n.project, (select count(*) from links l where l.dst = n.title) inbound from notes n where n.valid_to is null and n.path not like '@%' order by inbound desc, n.title").all();
   const lines = rows.slice(0, 199).map((r) => `- [[${r.title}]]${r.project ? ` (${r.project})` : ''}`);
   if (rows.length > 199) lines.push(`- … and ${rows.length - 199} more (ox brain search)`);
   fs.writeFileSync(path.join(dir, 'INDEX.md'), `# ox brain\n\n${lines.join('\n')}\n`);
@@ -183,14 +219,14 @@ const cosine = (a, b) => { let d = 0, x = 0, y = 0; for (let i = 0; i < a.length
  * rank, current notes first, one hop along links, capped at `tokens`.
  * → [{ title, path, current, why, text }]
  */
-export async function search(query, { dir = brainDir(), limit = 6, tokens = 1500, embed = null, includeOld = false } = {}) {
+export async function search(query, { dir = brainDir(), limit = 6, tokens = 1500, embed = null, includeOld = false, sources = dir === brainDir() ? defaultSources() : [] } = {}) {
   const q = String(query ?? '').trim();
   if (!q) return [];
   const db = await open(dir);
   const ranks = new Map();
   const addRank = (list, why) => list.forEach((p, i) => { const r = ranks.get(p) ?? { score: 0, why: [] }; r.score += 1 / (60 + i + 1); r.why.push(why); ranks.set(p, r); });
   if (db) {
-    if (db.prepare('select count(*) n from notes').get().n === 0) { db.close(); await index({ dir }); return search(query, { dir, limit, tokens, embed, includeOld }); }
+    if (db.prepare('select count(*) n from notes').get().n === 0) { db.close(); const r = await index({ dir, sources }); if (!r.total) return []; return search(query, { dir, limit, tokens, embed, includeOld, sources }); }
     const terms = q.toLowerCase().match(/[\p{L}\p{N}_]{2,}/gu) ?? [];
     if (terms.length) {
       const match = terms.map((t) => `"${t.replace(/"/g, '')}"*`).join(' OR ');
@@ -209,7 +245,7 @@ export async function search(query, { dir = brainDir(), limit = 6, tokens = 1500
     const scored = walk(dir).map((f) => { const t = fs.readFileSync(f, 'utf8').toLowerCase(); return { p: path.relative(dir, f), n: terms.filter((w) => t.includes(w)).length }; }).filter((x) => x.n).sort((a, b) => b.n - a.n);
     addRank(scored.slice(0, 30).map((x) => x.p), 'words');
   }
-  const read = (rel) => { try { return parseNote(fs.readFileSync(path.join(dir, rel), 'utf8')); } catch { return null; } };
+  const read = (rel) => { try { return loadEntry(dir, rel, sources); } catch { return null; } };
   let hits = [...ranks.entries()].map(([p, r]) => { const n = read(p); return n && { path: p, title: n.meta.title || path.basename(p, '.md'), current: !n.meta.valid_to, score: r.score * (n.meta.valid_to ? 0.35 : 1), why: r.why, body: n.body, meta: n.meta }; }).filter(Boolean);
   if (!includeOld) hits = hits.filter((h) => h.current || !hits.some((o) => o.current && o.title === h.meta.superseded_by));
   hits.sort((a, b) => b.score - a.score);
@@ -238,7 +274,8 @@ export async function search(query, { dir = brainDir(), limit = 6, tokens = 1500
     if (left <= 200) break;
     const text = h.body.trim().slice(0, Math.min(left, 1800));
     left -= text.length + h.title.length + 40;
-    out.push({ title: h.title, path: h.path, current: h.current, why: [...new Set(h.why)].join(', '), text });
+    const from = h.path.startsWith('@notes/') ? 'your notes' : h.path.startsWith('@library/') ? 'your library' : 'ox brain';
+    out.push({ title: h.title, path: h.path, current: h.current, why: [...new Set(h.why)].join(', '), text, from, source: h.meta?.source ?? null });
   }
   return out;
 }
@@ -246,7 +283,7 @@ export async function search(query, { dir = brainDir(), limit = 6, tokens = 1500
 /** The results as one block for a prompt or a tool answer. */
 export function formatHits(hits) {
   if (!hits.length) return 'Nothing in the brain matches.';
-  return hits.map((h) => `## ${h.title}${h.current ? '' : ' (no longer current)'}\n${h.text}`).join('\n\n');
+  return hits.map((h) => `## ${h.title}${h.current ? '' : ' (no longer current)'}\n(from ${h.from ?? 'ox brain'}${h.source && h.from !== 'ox brain' ? `: ${h.source}` : ''})\n${h.text}`).join('\n\n');
 }
 
 // ---------------------------------------------------------------- consolidation
