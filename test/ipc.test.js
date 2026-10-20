@@ -908,3 +908,19 @@ test('ipc: with a socket that never says ready, the approval declines after the 
   assert.ok(Date.now() - started >= 150, 'it waited for the grace, not longer than needed');
   assert.ok(Date.now() - started < 2000);
 });
+
+test('ipc: the approval gate counts a client that is still connecting', async (t) => {
+  const { createIpcApprover } = await import('../src/ipc.js');
+  const dir = mkdtemp();
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best effort */ } });
+  const server = createIpcServer({ socketPath: sockPath(dir, 'gate'), sessionId: 'gate', readyGraceMs: 2000 });
+  t.after(() => server.close());
+  await new Promise((r) => server.once('listening', r));
+  const approver = createIpcApprover(server);
+  assert.equal(approver.hasClient(), false, 'nobody connected');
+  const raw = net.connect(sockPath(dir, 'gate'));
+  t.after(() => raw.destroy());
+  await new Promise((r) => raw.once('connect', r));
+  await sleep(50);
+  assert.equal(approver.hasClient(), true, 'connected, ready not read yet: still asked');
+});
