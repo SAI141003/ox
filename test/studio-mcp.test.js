@@ -94,7 +94,7 @@ test('models_explore says what is ready; recipes and video ops are reachable', a
   assert.equal(await st.call('explainer_video', { title: 'T', steps: ['A: a', 'B: b'] }), 'explainer done: /x.mp4 (2 slides, 12 s)');
 });
 
-test('the MCP server: initialize, list 13 tools, calls answer independently', async () => {
+test('the MCP server: initialize, list 15 tools, calls answer independently', async () => {
   const input = new PassThrough(), output = new PassThrough();
   const got = [];
   output.on('data', (d) => String(d).split('\n').filter(Boolean).forEach((l) => got.push(JSON.parse(l))));
@@ -111,7 +111,7 @@ test('the MCP server: initialize, list 13 tools, calls answer independently', as
   await new Promise((r) => setTimeout(r, 30));
   const by = (id) => got.find((m) => m.id === id);
   assert.equal(by(1).result.serverInfo.name, 'ox-studio');
-  assert.equal(by(2).result.tools.length, 13);
+  assert.equal(by(2).result.tools.length, 15);
   assert.equal(by(3), undefined, 'the slow wait has not answered yet');
   assert.equal(by(4).result.content[0].text, 'ok models_explore');
   assert.equal(by(5).result.isError, true);
@@ -151,4 +151,18 @@ test('engine: fal upscale (image.url), a local file sent as a data URI, audio re
   assert.equal(hfCalls[0].init.headers.Authorization, 'Bearer t');
   assert.match(hf.files[0], /1\.jpg$/);
   await assert.rejects(ms.generate({ provider: 'hf', model: 'x/y', prompt: 'a', env: { HF_TOKEN: 't', HF_INFERENCE_BASE: 'https://hf.test' }, fetchImpl: async () => new Response('{"error":"loading"}', { status: 200, headers: { 'content-type': 'application/json' } }) }), /answered without an image/);
+});
+
+test('restyle_video: Genjutsu-style modes go to the open Wan models with the right inputs', async () => {
+  const S = await import('../src/studio-mcp.js');
+  const env = { FAL_KEY: 'test-key' };
+  const move = S.plan('restyle_video', { mode: 'move', video: 'https://x/clip.mp4', image: 'https://x/me.png' }, { env });
+  assert.equal(move.model, 'fal-ai/wan/v2.2-14b/animate/move');
+  assert.deepEqual(move.media, { video: ['https://x/clip.mp4'], start: ['https://x/me.png'] });
+  assert.equal(S.plan('restyle_video', { mode: 'swap', video: 'https://x/c.mp4', image: 'https://x/i.png' }, { env }).model, 'fal-ai/wan/v2.2-14b/animate/replace');
+  const look = S.plan('restyle_video', { mode: 'restyle', video: 'https://x/c.mp4', prompt: 'claymation' }, { env });
+  assert.equal(look.model, 'fal-ai/wan-vace-14b/depth');
+  assert.deepEqual(look.media, { video: ['https://x/c.mp4'] });
+  assert.throws(() => S.plan('restyle_video', { mode: 'move', video: 'https://x/c.mp4' }, { env }), /needs image/);
+  assert.throws(() => S.plan('restyle_video', { mode: 'move', video: '/local.mp4', image: 'x' }, { env }), /link/);
 });

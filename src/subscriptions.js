@@ -476,7 +476,7 @@ function codexLine(j, st) {
     }
     if (it.type === 'file_change') {
       const files = (it.changes ?? []).map((c) => `${c.kind ?? 'edit'} ${c.path}`).join(', ');
-      ev.push({ type: 'tool-start', id: it.id, name: 'edit', argsPreview: preview(files) });
+      ev.push({ type: 'tool-start', id: it.id, name: 'edit', argsPreview: preview(files), files: (it.changes ?? []).map((c) => c.path).filter((x) => typeof x === 'string') });
       ev.push({ type: 'tool-end', id: it.id, name: 'edit', ok: it.status !== 'failed', isError: it.status === 'failed', ms: 0, bytes: files.length, content: files });
     }
   }

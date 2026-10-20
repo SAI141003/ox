@@ -719,7 +719,7 @@ final class IslandChat: ObservableObject {
                 }
                 IslandLog.write("screen question: looking at the screen after \(ms) ms")
                 self.lines.append(Line(mine: false, text: "Looking…"))
-                self.run(text, extra: ["--mode", "ask", "--image", shot], key: "ox-screen", who: nil)
+                self.run(text, extra: ["--mode", "ask", "--buddy", "--image", shot], key: "ox-screen", who: nil)
                 return
             }
             if let r, r.route == "agent" {
@@ -768,7 +768,9 @@ final class IslandChat: ObservableObject {
     }
 
     private func reply(_ text: String, who: String?) {
-        lines.append(Line(mine: false, text: text, who: who))
+        // Circles and arrows are drawn over the screen (Buddy.speak), not shown as tags here.
+        let shown = Buddy.parseMarks(text).0.trimmingCharacters(in: .whitespacesAndNewlines)
+        lines.append(Line(mine: false, text: shown.isEmpty ? text : shown, who: who))
         IslandLog.write("replied: \(text.prefix(200))")
         onReply?(text)
         onReply = nil

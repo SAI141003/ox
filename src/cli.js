@@ -543,6 +543,7 @@ function usageAll() {
     'studio: ox studio [models [kind] | recipes [name] | connect | mcp]   open image and video models for any agent (Claude, Codex, Cursor)',
     'video: ox video transcribe|captions|cut|speed|vertical|highlights|gif|polish|understand <file> …   on this machine',
     '       ox video explain "<title>" "Step: what happens" …   an explainer video, a slide per step with a lit diagram',
+    '       ox video animate <video|transcript|"script"> [--aspect 9:16]   scene-by-scene motion animations with sound effects',
     'traces: ox trace [--signals] | ox trace <id> [--steps]   each run: turns, tokens, cost, tool calls, and "stuck" signals',
     '',
     'pull requests (until they can merge; merging stays yours):',
@@ -3763,6 +3764,43 @@ async function cmdMesh(args = []) {
       } finally { await node.close(); }
       return;
     }
+    // A dev server on another machine (Tesser's idea, your own machines): its own
+    // dev command in a folder it shares, the pages here through the mesh.
+    if (sub === 'dev') {
+      const [who, p] = target(args[1]);
+      if (!who) throw new Error('usage: ox mesh dev <machine>:<folder> | ox mesh dev <machine> list | ox mesh dev <machine> stop <port>');
+      const node = await oneShot();
+      let keep = false;
+      try {
+        if (args[2] === 'list') {
+          const r = await node.ask(who, 'dev-list', {}, { timeoutMs: 20_000 });
+          if (!r.servers.length) console.log(c.dim(`no dev servers started through ox on ${who}`));
+          for (const x of r.servers) console.log(`${c.bold(String(x.port))}  ${x.dir}  ${c.dim(x.command)}`);
+          return;
+        }
+        if (args[2] === 'stop') {
+          const r = await node.ask(who, 'dev-stop', { port: Number(args[3]) }, { timeoutMs: 20_000 });
+          console.log(r.stopped ? `${c.green('✓')} stopped` : c.yellow(`no dev server on port ${args[3]}`));
+          return;
+        }
+        if (!p) throw new Error('say which folder: ox mesh dev <machine>:<folder>');
+        console.log(c.dim(`starting ${p} on ${who}…`));
+        const d = await node.ask(who, 'dev-start', { path: p }, { timeoutMs: 90_000 });
+        const M = await import('./mesh.js');
+        let base = null;
+        try { if ((await M.control('status', { timeoutMs: 1500 }))) base = `http://127.0.0.1:${M.PROXY_PORT}`; } catch {}
+        if (!base) { base = `http://127.0.0.1:${node.proxyPort}`; keep = true; }
+        const url = `${base}/dev/${encodeURIComponent(who)}/${d.port}/`;
+        console.log(`${c.green('✓')} ${c.bold(path.basename(d.dir))} is running on ${who} (${d.command})`);
+        console.log(`  ${url}`);
+        if (args.includes('--open')) { const { spawnSync } = await import('node:child_process'); spawnSync('open', [url]); }
+        if (keep) {
+          console.log(c.dim('  served from here until Ctrl-C (with ox running, its mesh node serves it instead)'));
+          await new Promise((res) => process.once('SIGINT', res));
+        }
+      } finally { await node.close(); }
+      return;
+    }
     if (sub === 'ls') {
       const [who, p] = target(args[1]);
       if (!who) throw new Error('usage: ox mesh ls <machine>[:<folder>]');
@@ -5135,6 +5173,43 @@ async function runSubcommand(cmd, args) {
         if (!title || steps.length < 2) { console.error('usage: ox video explain "<title>" "Step one: what happens" "Step two: …" [--out file.mp4]'); process.exitCode = 3; return; }
         try { const r = await V.explainerVideo(title, steps, { out: oi >= 0 ? path.resolve(args[oi + 1]) : null }); console.log(`${c.green('✓')} ${r.file} ${c.dim(`(${r.slides} slides, ${r.seconds} s)`)}`); }
         catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+        return;
+      }
+      // ox video animate <video|transcript|"script"> : scene-by-scene motion animations (Flick's idea; src/animate.js).
+      if (args[0] === 'animate') {
+        const A = await import('./animate.js');
+        const rest = args.slice(1);
+        const flag = (n) => { const i = rest.indexOf(n); return i >= 0 ? rest[i + 1] : undefined; };
+        const valued = new Set(['--out', '--aspect', '--bg', '--fg', '--accent', '--logo', '--font', '--redo', '--save', '--as']);
+        const pos = rest.filter((a, i) => !a.startsWith('--') && !valued.has(rest[i - 1]));
+        const step = (what, detail) => console.log(c.dim(`${what} ${detail ?? ''}`));
+        try {
+          if (rest.includes('--list')) {
+            const saved = A.savedAnimations();
+            console.log(`templates: ${A.TEMPLATES.join(', ')}`);
+            console.log(saved.length ? `saved: ${saved.map((s) => `${s.name} (from ${s.from})`).join(', ')}` : c.dim('saved: none yet (ox video animate --save <scene> <folder>)'));
+            return;
+          }
+          if (flag('--save')) { const r = A.saveAnimation(path.resolve(pos[0] ?? '.'), flag('--save'), flag('--as')); console.log(`${c.green('✓')} saved ${r.name} ${c.dim(r.file)}`); return; }
+          if (flag('--redo')) {
+            const r = await A.renderSpec(path.resolve(pos[0] ?? '.'), { only: flag('--redo') === 'all' ? null : flag('--redo').split(','), onStep: step, sfx: !rest.includes('--no-sfx') });
+            for (const s of r.scenes) console.log(`  ${s.name} ${c.dim(s.file)}`);
+            console.log(`${c.green('✓')} ${r.all}`);
+            return;
+          }
+          const source = pos.length === 1 && fs.existsSync(pos[0]) ? path.resolve(pos[0]) : pos.join(' ');
+          if (!source) { console.error('usage: ox video animate <video | transcript.txt | "the script"> [--aspect 9:16|16:9|1:1|4:5] [--bg #hex --fg #hex --accent #hex --logo file --font name] [--plan-only] [--no-model] [--no-sfx] [--out dir]\n       ox video animate --redo <scene>[,<scene>] <folder>    re-render after editing scene-spec.json\n       ox video animate --save <scene> <folder> [--as name]  keep a scene\'s animation for later runs\n       ox video animate --list'); process.exitCode = 3; return; }
+          const plan = rest.includes('--no-model') ? null : async (system, user) => {
+            const { workingModelSpec } = await import('./working-model.js');
+            const { quickText } = await import('./quick-text.js');
+            const cfg = loadConfig();
+            return (await quickText(resolveBot(await workingModelSpec(cfg, { say: () => {} }), cfg), { system, user, maxTokens: 2500 })).text;
+          };
+          const r = await A.animate(source, { out: flag('--out') ? path.resolve(flag('--out')) : null, aspect: flag('--aspect') ?? '9:16', brand: { bg: flag('--bg'), fg: flag('--fg'), accent: flag('--accent'), logo: flag('--logo') ? path.resolve(flag('--logo')) : null, font: flag('--font') }, plan, render: !rest.includes('--plan-only'), sfx: !rest.includes('--no-sfx'), onStep: step });
+          console.log(fs.readFileSync(r.plan, 'utf8'));
+          for (const s of r.scenes) console.log(`  ${s.name} ${c.dim(`${s.seconds}s · ${s.file}`)}`);
+          console.log(r.all ? `${c.green('✓')} ${r.all}` : `${c.green('✓')} plan ready: ${r.dir} (render it: ox video animate --redo all ${r.dir})`);
+        } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
         return;
       }
       const ops = ['transcribe', 'captions', 'cut', 'speed', 'vertical', 'highlights', 'gif', 'polish', 'understand'];
@@ -9108,6 +9183,11 @@ export async function main(argv = []) {
         i++;
         break;
       }
+      // A question about the screen, answered to be spoken with marks drawn over it
+      // (src/buddy.js buddyGuidance): the island's screen route passes it.
+      case '--buddy':
+        flags.buddy = true;
+        break;
       // Documented for `ox -p` (and used by the island's "write it for me"), but
       // this loop never took it: `ox -p "…" --image shot.png` printed the help.
       case '--image': {
@@ -9469,6 +9549,12 @@ export async function main(argv = []) {
     }
     if (ipcServer) await closeIpcBridge();
     return;
+  }
+  if (print && flags.buddy) {
+    const { buddyGuidance, pngSize } = await import('./buddy.js');
+    let size = null;
+    try { size = pngSize(fs.readFileSync(flags.images?.[0])); } catch {}
+    words.push(`\n\n${buddyGuidance({ size, voice: true })}`);
   }
   if (print) {
     let initialMessages = [];

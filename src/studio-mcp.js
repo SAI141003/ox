@@ -5,6 +5,7 @@
 // production recipes and edit video on this machine. Nothing is installed:
 // the models run on a host you have a key for (fal, Hugging Face) or on your
 // own Stable Diffusion server when one is running.
+import fs from 'node:fs';
 import * as C from './studio-catalog.js';
 
 const IMAGE_SIZE = { '1:1': 'square_hd', '16:9': 'landscape_16_9', '9:16': 'portrait_16_9', '4:3': 'landscape_4_3', '3:4': 'portrait_4_3' };
@@ -86,6 +87,16 @@ export function plan(tool, a = {}, { env = process.env } = {}) {
     const m = modelFor('lipsync', a.model);
     return { provider: hostFor(m, { host: a.host, env }), model: m.fal, prompt: '', settings: {}, media: { video: [String(a.video)], audio: [String(a.audio)] }, label: m.name };
   }
+  if (tool === 'restyle_video') {
+    const mode = String(a.mode ?? (a.image ? 'move' : 'restyle'));
+    const id = { move: 'wan-animate-move', swap: 'wan-animate-replace', replace: 'wan-animate-replace', restyle: 'wan-vace' }[mode];
+    if (!id) throw new Error('mode is move (motion transfer), swap (replace the person) or restyle (a new look from words)');
+    if (!/^https?:/.test(String(a.video ?? ''))) throw new Error('video is a link to the clip (upload it first)');
+    if (id !== 'wan-vace' && !a.image) throw new Error(`${mode} needs image: the person or character to use`);
+    if (id === 'wan-vace' && !String(a.prompt ?? '').trim()) throw new Error('restyle needs a prompt: the new look');
+    const m = C.find(id);
+    return { provider: hostFor(m, { host: a.host, env }), model: m.fal, prompt: String(a.prompt ?? ''), settings: a.seed != null ? { seed: Number(a.seed) } : {}, media: { video: [String(a.video)], ...(id !== 'wan-vace' ? { start: [String(a.image)] } : {}) }, label: m.name };
+  }
   if (tool === 'generate_audio') {
     if (!String(a.prompt ?? '').trim()) throw new Error('describe the sound');
     const m = modelFor('audio', a.model);
@@ -106,7 +117,7 @@ const hostProp = prop('string', 'Where to run it: fal, hf (Hugging Face) or loca
 const waitProp = prop('number', 'Seconds to wait for the result before returning the job id (default 45 for images, 0 for video). Use jobs_wait after.');
 
 export const STUDIO_MCP_TOOLS = [
-  { name: 'models_explore', description: 'The open-weights models OX Studio can use: what each makes, its licence, what it is good at, and whether this machine can run it now. Also the camera moves and the production recipes.', inputSchema: { type: 'object', properties: { kind: prop('string', 'image, edit, video, upscale, cutout, lipsync or audio. Omit for all.') } } },
+  { name: 'models_explore', description: 'The open-weights models OX Studio can use: what each makes, its licence, what it is good at, and whether this machine can run it now. Also the camera moves and the production recipes.', inputSchema: { type: 'object', properties: { kind: prop('string', 'image, edit, video, restyle, upscale, cutout, lipsync or audio. Omit for all.') } } },
   { name: 'generate_image', description: 'Make pictures from a prompt with an open model (FLUX.1 schnell by default; Qwen-Image when the prompt has words to spell). Returns the files, or a job id if it is still running.', inputSchema: { type: 'object', properties: { prompt: prop('string', 'What to make.'), model: prop('string', 'A model id from models_explore.'), aspect: aspectProp, n: prop('number', 'How many (1-4).'), seed: prop('number', 'Seed, to repeat a result.'), host: hostProp, wait_seconds: waitProp }, required: ['prompt'] } },
   { name: 'generate_video', description: 'Make a 5-second clip from a prompt, or from a starting image, with an open video model (Wan 2.2 by default). Add a camera move. Returns a job id; call jobs_wait.', inputSchema: { type: 'object', properties: { prompt: prop('string', 'What happens in the shot.'), image: prop('string', 'Optional first frame: a path or a link.'), camera: prop('string', `A camera move: ${Object.keys(C.CAMERA).join(', ')}.`, { enum: Object.keys(C.CAMERA) }), model: prop('string', 'A video model id from models_explore.'), aspect: aspectProp, seed: prop('number', 'Seed.'), host: hostProp, wait_seconds: waitProp }, required: ['prompt'] } },
   { name: 'edit_image', description: 'Change a picture by instruction ("make it night", "put the product on marble"), keeping the rest. Qwen-Image-Edit by default.', inputSchema: { type: 'object', properties: { image: prop('string', 'The picture: a path or a link.'), prompt: prop('string', 'What to change.'), model: prop('string', 'qwen-image-edit or flux-kontext-dev (non-commercial licence).'), host: hostProp, wait_seconds: waitProp }, required: ['image', 'prompt'] } },
@@ -116,12 +127,14 @@ export const STUDIO_MCP_TOOLS = [
   { name: 'generate_audio', description: 'Make a sound effect or a short loop from a description (Stable Audio Open).', inputSchema: { type: 'object', properties: { prompt: prop('string', 'The sound.'), seconds: prop('number', 'Length, up to 47.'), wait_seconds: waitProp }, required: ['prompt'] } },
   { name: 'jobs_wait', description: 'Wait for jobs to finish and return their files.', inputSchema: { type: 'object', properties: { ids: prop('array', 'Job ids.', { items: { type: 'string' } }), timeout_seconds: prop('number', 'Give up after this long (default 300).') }, required: ['ids'] } },
   { name: 'history', description: 'What the Studio made recently: prompt, model, status and files.', inputSchema: { type: 'object', properties: { limit: prop('number', 'How many (default 20).') } } },
-  { name: 'workflow_instructions', description: 'Step-by-step recipes for a production: product-photoshoot, youtube-thumbnail, character-sheet, explainer-video, short-ad. Omit the name for the list.', inputSchema: { type: 'object', properties: { name: prop('string', 'The recipe.') } } },
+  { name: 'workflow_instructions', description: 'Step-by-step recipes for a production: product-photoshoot, youtube-thumbnail, character-sheet, explainer-video, scene-animation, video-restyle, short-ad. Omit the name for the list.', inputSchema: { type: 'object', properties: { name: prop('string', 'The recipe.') } } },
   { name: 'video_edit', description: 'Edit a video file on this machine with ffmpeg: captions (burned in from the speech), join (clips one after another; pass files), cut, speed, vertical (crop to 9:16 or 1:1), gif, highlights (the parts about a topic), polish (speed through idle stretches).', inputSchema: { type: 'object', properties: { op: prop('string', 'captions, join, cut, speed, vertical, gif, highlights or polish.', { enum: ['captions', 'join', 'cut', 'speed', 'vertical', 'gif', 'highlights', 'polish'] }), file: prop('string', 'The video file path.'), files: prop('array', 'join: the clips in order.', { items: { type: 'string' } }), start: prop('string', 'cut/gif: start (seconds or m:ss).'), end: prop('string', 'cut/gif: end.'), factor: prop('number', 'speed: 2 = twice as fast.'), aspect: prop('string', 'vertical: 9:16 or 1:1.'), query: prop('string', 'highlights: the topic.') }, required: ['op'] } },
+  { name: 'restyle_video', description: 'Keep a video\'s motion and change what is in it (Genjutsu-style, open Wan models): move = the person in your picture does what the video shows; swap = the person in the video becomes the one in your picture; restyle = a new look or world from a prompt. Returns a job id; call jobs_wait.', inputSchema: { type: 'object', properties: { mode: prop('string', 'move, swap or restyle.', { enum: ['move', 'swap', 'restyle'] }), video: prop('string', 'Link to the clip (4-10 s is best).'), image: prop('string', 'move/swap: link or path to the person or character.'), prompt: prop('string', 'restyle: the new look.'), seed: prop('number', 'Seed.'), host: hostProp, wait_seconds: waitProp }, required: ['mode', 'video'] } },
+  { name: 'animate_script', description: 'Turn a video, a transcript or a script into scene-by-scene motion animations on this machine (Flick-style: animated headlines, counting stats, lists, comparisons, quotes, flows, kinetic captions, sound effects). No key needed. plan_only first, then render; redo one scene after editing scene-spec.json.', inputSchema: { type: 'object', properties: { source: prop('string', 'A video/audio file path, a transcript file path, or the script text.'), folder: prop('string', 'An existing animation folder (to render a plan, redo or save a scene).'), aspect: prop('string', '9:16, 16:9, 1:1 or 4:5.', { enum: ['9:16', '16:9', '1:1', '4:5'] }), bg: prop('string', 'Background colour (#hex).'), fg: prop('string', 'Text colour.'), accent: prop('string', 'Accent colour.'), logo: prop('string', 'Logo image path.'), plan_only: prop('boolean', 'Write plan.md and scene-spec.json without rendering.'), redo: prop('array', 'Scene names to render again.', { items: { type: 'string' } }), save: prop('string', 'A scene name to keep as a reusable animation.') } } },
   { name: 'explainer_video', description: 'Turn steps into an explainer video on this machine: one slide per step with a lit diagram, crossfades. No model or key needed.', inputSchema: { type: 'object', properties: { title: prop('string', 'The title.'), steps: prop('array', 'Steps as "Label: what happens".', { items: { type: 'string' } }) }, required: ['title', 'steps'] } },
 ];
 
-const GENERATORS = new Set(['generate_image', 'generate_video', 'edit_image', 'upscale', 'remove_background', 'lip_sync', 'generate_audio']);
+const GENERATORS = new Set(['generate_image', 'generate_video', 'edit_image', 'upscale', 'remove_background', 'lip_sync', 'generate_audio', 'restyle_video']);
 
 /**
  * The Studio's tools, bound to an engine. deps: { generate, history, video, env, now }
@@ -160,7 +173,7 @@ export function createStudio(deps = {}) {
   async function call(name, a = {}) {
     if (name === 'models_explore') {
       const list = a.kind ? C.byKind(String(a.kind)) : C.OPEN_MODELS;
-      if (!list.length) throw new Error('kinds: image, edit, video, upscale, cutout, lipsync, audio');
+      if (!list.length) throw new Error('kinds: image, edit, video, restyle, upscale, cutout, lipsync, audio');
       const ready = (m) => { try { return `ready on ${hostFor(m, { env })}`; } catch { return 'needs a host key'; } };
       const lines = list.map((m) => `${m.id} (${m.kind}) ${m.name}. Licence ${m.license}. Good at: ${m.good}. ${ready(m)}.`);
       if (!a.kind) lines.push('', `Camera moves for generate_video: ${Object.keys(C.CAMERA).join(', ')}.`, `Recipes for workflow_instructions: ${Object.keys(C.WORKFLOWS).join(', ')}.`);
@@ -169,7 +182,7 @@ export function createStudio(deps = {}) {
     if (GENERATORS.has(name)) {
       const p = plan(name, a, { env });
       const job = start(p);
-      const secs = a.wait_seconds != null ? Number(a.wait_seconds) : name === 'generate_video' || name === 'lip_sync' ? 0 : 45;
+      const secs = a.wait_seconds != null ? Number(a.wait_seconds) : name === 'generate_video' || name === 'lip_sync' || name === 'restyle_video' ? 0 : 45;
       if (secs > 0) await waitOn([job], Math.min(secs, 290) * 1000);
       return show(job);
     }
@@ -205,6 +218,15 @@ export function createStudio(deps = {}) {
       if (!ops[a.op]) throw new Error(`op is one of ${Object.keys(ops).join(', ')}`);
       const r = await ops[a.op]();
       return `${a.op} done: ${r.file ?? JSON.stringify(r)}`;
+    }
+    if (name === 'animate_script') {
+      const A = deps.animate ?? (await import('./animate.js'));
+      if (a.save) { if (!a.folder) throw new Error('folder is the animation folder'); const r = A.saveAnimation(String(a.folder), String(a.save)); return `saved ${r.name}: later plans can reuse it`; }
+      const done = (r) => `${r.scenes.map((x) => `${x.name}: ${x.file}`).join('\n')}\nall: ${r.all ?? '(one scene)'}\nplan: ${r.plan}`;
+      if (a.folder && !a.source) return done(await A.renderSpec(String(a.folder), { only: a.redo?.length ? [].concat(a.redo) : null }));
+      if (!a.source) throw new Error('source is a video, a transcript file or the script; folder is an existing animation');
+      const r = await A.animate(String(a.source), { out: a.folder ? String(a.folder) : null, aspect: a.aspect ?? '9:16', brand: { bg: a.bg, fg: a.fg, accent: a.accent, logo: a.logo }, render: !a.plan_only, plan: deps.plan ?? null });
+      return a.plan_only ? `${fs.readFileSync(r.plan, 'utf8')}\nfolder: ${r.dir} (render: animate_script with this folder)` : done(r);
     }
     if (name === 'explainer_video') {
       const V = deps.video ?? (await import('./video-edit.js'));

@@ -2019,7 +2019,9 @@ async function* runAgentLoop(opts = {}) {
       const plan = name === 'todo_write' && Array.isArray(args.todos)
         ? args.todos.filter((t) => t && typeof t.content === 'string').slice(0, 40).map((t) => ({ content: String(t.content).slice(0, 200), status: String(t.status ?? 'pending') }))
         : null;
-      yield { type: 'tool-start', id: call.id, name, argsPreview: truncate(JSON.stringify(args), 120), ...(plan ? { plan } : {}) };
+      // The file a write or edit touches, so "changed files" can be listed when the turn ends.
+      const file = /^(write_file|edit_file|multi_edit|apply_patch|create_file)$/.test(name) && typeof (args?.path ?? args?.file_path) === 'string' ? (args.path ?? args.file_path) : null;
+      yield { type: 'tool-start', id: call.id, name, argsPreview: truncate(JSON.stringify(args), 120), ...(plan ? { plan } : {}), ...(file ? { file } : {}) };
       const started = Date.now();
       let result;
       let neutral = false;

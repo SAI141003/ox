@@ -304,6 +304,11 @@
   .wl.completed span:last-child { color: var(--dim); text-decoration: line-through; }
   .wl.in_progress { color: var(--text); }
   .steps { display: flex; flex-direction: column; gap: 2px; margin: 0 0 10px; }
+  .steps.detailed .step span { white-space: normal; word-break: break-all; font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; }
+  .steps-fold summary { cursor: pointer; color: var(--muted); font-size: 12.5px; list-style: none; padding: 2px 0; }
+  .steps-fold summary::before { content: '\25B8  '; } .steps-fold[open] summary::before { content: '\25BE  '; }
+  .changed { margin: 10px 0 0; padding: 8px 10px; border: 1px solid var(--line2); border-radius: 10px; display: flex; flex-direction: column; gap: 2px; }
+  .changed .cap { margin-bottom: 4px; }
   .step { display: flex; align-items: center; gap: 8px; font: 12.5px var(--mono); color: var(--muted); padding: 3px 0; min-width: 0; }
   .step b { color: var(--text); font-weight: 600; }
   .step span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -750,7 +755,9 @@
       <div class="box os-box">
         <div class="os-modes" id="os-modes" role="tablist" aria-label="What to make"></div>
         <textarea class="field os-prompt" id="os-prompt" rows="3" placeholder="Describe it: subject, setting, light, style, mood. ⌘/Ctrl+Enter to make it"></textarea>
+        <input class="field" id="os-video" placeholder="The clip: a link to the video (4-10 s works best)" hidden>
         <input class="field" id="os-image" placeholder="Image to start from: a path on this Mac or a link" hidden>
+        <div class="small muted" id="os-hint" hidden></div>
         <div class="os-row" id="os-chips"></div>
         <div class="os-models" id="os-models"></div>
         <div class="os-go"><button class="btn primary" id="os-go">Make it</button><span class="small muted" id="os-state"></span></div>
@@ -836,7 +843,7 @@
   const P = {
     plus: 'M12 5v14M5 12h14', search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM20 20l-4-4', gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z',
     contrast: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 3v18', keyboard: 'M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M7 14h10', sidebar: 'M3 4h18v16H3zM9 4v16',
-    blocks: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z', chat: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12Z', clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 7v5l3 2',
+    blocks: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z', bell: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0', branch: 'M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM18 9a9 9 0 0 1-9 9', server: 'M3 4h18v6H3zM3 14h18v6H3zM7 7h.01M7 17h.01', chat: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12Z', clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 7v5l3 2',
     folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z', mic: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5 11a7 7 0 0 0 14 0M12 18v3',
     up: 'M12 19V5M5 12l7-7 7 7', stop: 'M7 7h10v10H7z', x: 'M6 6l12 12M18 6 6 18', pin: 'M12 17v5M9 3h6l-1 6 4 4H6l4-4Z', archive: 'M3 4h18v4H3zM5 8v12h14V8M10 12h4',
     trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13', copy: 'M9 9h11v11H9zM5 15H4V4h11v1', mode: 'M4 6h10M4 12h16M4 18h7M17 4v4M13 16h6M16 13v6',
@@ -904,7 +911,7 @@
   }
 
   // ---------- preferences (this browser only)
-  const prefs = Object.assign({ theme: null, size: 'medium', width: 'medium', motion: 'system', sendKey: 'enter', speakReplies: false, lang: '', voice: '' }, store.get('ox.prefs', {}));
+  const prefs = Object.assign({ theme: null, size: 'medium', width: 'medium', motion: 'system', sendKey: 'enter', speakReplies: false, lang: '', voice: '', activity: 'normal', changedFiles: true, whatsNew: true, notifyDone: false, notifyFail: false, notifySound: false, hiddenModels: [] }, store.get('ox.prefs', {}));
   const savePrefs = () => { store.set('ox.prefs', prefs); applyPrefs(); };
   function applyPrefs() {
     const r = document.documentElement;
@@ -1485,7 +1492,15 @@
       if (th.length) body.insertAdjacentHTML('afterbegin', `<div class="u-photos">${th.map((t) => `<img src="${t}" alt="photo">`).join('')}</div>`);
       return;
     }
-    const steps = (msg.tools || []).map((t) => `<div class="step"><span class="dot ${t.state === 'ok' ? 'ok' : t.state === 'err' ? 'err' : 'run'}"></span><b>${esc(t.name)}</b><span>${esc(t.preview || '')}</span></div>`).join('');
+    const tools = msg.tools || [];
+    let steps = tools.map((t) => `<div class="step"><span class="dot ${t.state === 'ok' ? 'ok' : t.state === 'err' ? 'err' : 'run'}"></span><b>${esc(t.name)}</b><span>${esc(prefs.activity === 'detailed' ? t.preview || '' : (t.file || t.preview || ''))}</span></div>`).join('');
+    // Activity detail (Settings › General): compact folds every step into one line.
+    if (steps && prefs.activity === 'compact') {
+      const okN = tools.filter((t) => t.state === 'ok').length, errN = tools.filter((t) => t.state === 'err').length, runN = tools.length - okN - errN;
+      steps = `<details class="steps-fold"><summary>${tools.length} step${tools.length === 1 ? '' : 's'}${okN ? ` · ${okN} done` : ''}${errN ? ` · ${errN} failed` : ''}${runN ? ' · working…' : ''}</summary>${steps}</details>`;
+    }
+    const changed = prefs.changedFiles !== false && !msg.pending ? [...new Set(tools.filter((t) => t.state === 'ok').flatMap((t) => [...(t.file ? [t.file] : []), ...(t.files ?? [])]))] : [];
+    const changedHtml = changed.length ? `<div class="changed"><div class="cap">Changed ${changed.length} file${changed.length === 1 ? '' : 's'}</div>${changed.map((f) => `<div class="mono small">${esc(f)}</div>`).join('')}</div>` : '';
     msg.key ??= `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     const text = msg.content ? md(msg.content, msg.key) : (msg.pending ? '<span class="typing"><i></i><i></i><i></i></span>' : '');
     const routed = (msg.compare ? `<span class="botname">${esc(msg.compare)}</span>` : '') + (msg.bot ? `<span class="botname">${esc(msg.bot)}</span>` : '') + (msg.routed ? `<span class="routed">${icon('mode')}${esc(msg.routed)}</span>` : '');
@@ -1495,7 +1510,7 @@
       ? `<div class="worklog"><div class="cap" style="margin-bottom:6px">Plan · ${msg.plan.filter((t) => t.status === 'completed').length}/${msg.plan.length} done</div>${msg.plan.map((t) => `<div class="wl ${t.status}"><span class="dot ${PI[t.status]?.[0] ?? ''}"></span><span>${esc(t.content)}</span></div>`).join('')}</div>`
       : '';
     const canv = (msg.canvases || []).map((c) => `<div class="ui cv">${canvasNode(c.tree)}</div>`).join('');
-    body.innerHTML = routed + plan + (steps ? `<div class="steps">${steps}</div>` : '') + canv + text + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : '');
+    body.innerHTML = routed + plan + (steps ? `<div class="steps${prefs.activity === 'detailed' ? ' detailed' : ''}">${steps}</div>` : '') + canv + text + changedHtml + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : '');
     mountLive(body); bindUi(body); bindOpenUI(body);
     const m = body.closest('.msg');
     m.dataset.text = msg.content || '';
@@ -1657,7 +1672,7 @@
           const ox = ev.ox;
           if (ox?.type === 'mode') reply.routed = `${ox.routed ? 'auto → ' : ''}${ox.mode}${ox.reason ? ` · ${ox.reason}` : ''}${ox.model ? ` · ${ox.model} (${ox.modelWhy})` : ''}`;
           if (ox?.type === 'tool-start' && Array.isArray(ox.plan)) reply.plan = ox.plan;
-          else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '' });
+          else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '', ...(ox.file ? { file: ox.file } : {}), ...(ox.files ? { files: ox.files } : {}) });
           if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; if (ox.canvas) { reply.canvases = (reply.canvases || []).filter((x) => x.id !== ox.id); reply.canvases.push({ id: ox.id, tree: ox.canvas }); } }
           // The server redrew an interactive answer that did not load.
           if (ox?.type === 'replace' && typeof ox.content === 'string') reply.content = ox.content;
@@ -1683,9 +1698,41 @@
           .catch(() => {});
       }
       if (prefs.speakReplies && reply.content && !talk) speakText(reply.content);
+      notifyRun(c, reply, ok);
     }
     return ok;
   }
+  // Settings › Notifications: tell you when a run ends while you are looking elsewhere.
+  function ding() {
+    try { const a = new (window.AudioContext || window.webkitAudioContext)(); const o = a.createOscillator(), g = a.createGain(); o.frequency.value = 880; o.frequency.exponentialRampToValueAtTime(1320, a.currentTime + 0.12); g.gain.setValueAtTime(0.12, a.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + 0.35); o.connect(g).connect(a.destination); o.start(); o.stop(a.currentTime + 0.36); } catch {}
+  }
+  function notifyRun(c, reply, ok) {
+    const failed = !ok || !!reply.error;
+    if (failed ? !prefs.notifyFail : !prefs.notifyDone) return;
+    if (document.visibilityState === 'visible' && document.hasFocus()) return;
+    if (prefs.notifySound) ding();
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    try {
+      const n = new Notification(failed ? `${botName} stopped` : `${botName} finished`, { body: `${c.title || 'Session'}: ${(reply.error || reply.content || '').replace(/\s+/g, ' ').slice(0, 140)}`, tag: `ox-${c.id}`, silent: true });
+      n.onclick = () => { window.focus(); n.close(); };
+    } catch {}
+  }
+  // What's new: after ox updates, the changes since the version you last saw (Settings › General).
+  async function showWhatsNew() {
+    if (prefs.whatsNew === false) return;
+    let w;
+    try { w = (await getJson(`/ox/workspace?since=${encodeURIComponent(store.get('ox.seenHead', ''))}`)).whatsNew; } catch { return; }
+    if (!w?.head) return;
+    const first = !store.get('ox.seenHead', '');
+    store.set('ox.seenHead', w.head);
+    if (first || !w.changes.length) return;
+    const d = document.createElement('div');
+    d.className = 'ask-ovl';
+    d.innerHTML = `<div class="ask-box" role="dialog" aria-modal="true" aria-label="What's new" style="max-width:560px"><div class="shead" style="margin:0 0 6px">What\u2019s new in ${esc(botName)}</div><div class="small muted" style="margin-bottom:10px">${w.changes.length} change${w.changes.length === 1 ? '' : 's'} since you last opened it</div><div style="max-height:50vh;overflow:auto;display:flex;flex-direction:column;gap:8px">${w.changes.map((x) => `<div><span class="dim small mono">${esc(x.date)}</span> ${esc(x.subject)}</div>`).join('')}</div><div class="ask-row"><button class="btn" data-a="off">Don\u2019t show these</button><button class="btn primary" data-a="ok">Got it</button></div></div>`;
+    d.onclick = (e) => { const a = e.target.closest('[data-a]')?.dataset.a; if (!a && e.target !== d) return; if (a === 'off') { prefs.whatsNew = false; savePrefs(); } d.remove(); };
+    document.body.append(d);
+  }
+  setTimeout(showWhatsNew, 1500);
   function setBusy(on) {
     const b = $('send');
     if (on) { b.hidden = false; $('speak').hidden = true; }
@@ -1786,6 +1833,7 @@
         if (!list.length) continue;
         const g = document.createElement('optgroup'); g.label = label;
         for (const m of list) {
+          if ((prefs.hiddenModels || []).includes(m.id) && store.get('ox.model', null) !== m.id) continue;
           const o = document.createElement('option'); o.value = m.id;
           o.textContent = m.ox?.agent ? `${m.id.slice(6)} · ${m.ox.mode}` : m.ox?.plan ? `${m.id} · ${m.ox.desc.split(' via ')[0]}` : m.id;
           if (off) o.disabled = true;
@@ -2528,13 +2576,15 @@ files: [src/billing/**]
     { k: 'upscale', label: 'Upscale', kind: 'upscale', tool: 'upscale', image: true, noPrompt: true },
     { k: 'cutout', label: 'Cut out', kind: 'cutout', tool: 'remove_background', image: true, noPrompt: true },
     { k: 'audio', label: 'Sound', kind: 'audio', tool: 'generate_audio' },
+    { k: 'animate', label: 'Animate a script', kind: null, tool: 'animate_script', hint: 'Paste a script, or the path to a video or transcript on this Mac. Each idea becomes its own animated scene (headlines, counting numbers, lists, vs, quotes, steps, captions) with sound effects. Runs here, no key.' },
+    { k: 'restyle', label: 'Restyle a video', kind: 'restyle', tool: 'restyle_video', hint: 'Keeps the clip\u2019s motion. Pick Move (your picture does what the video shows), Replace (the person becomes your picture) or VACE (a new look from words).' },
   ];
-  let osCat = null, osMode = store.get('ox.os.mode', 'image'), osPick = {}, osAspect = '1:1', osN = 1, osCam = '';
+  let osCat = null, osMode = store.get('ox.os.mode', 'image'), osPick = {}, osAspect = '1:1', osN = 1, osCam = '', osAnimAspect = '9:16', osAccent = '#ffb020';
   async function loadOpenStudio() {
     try { osCat = await getJson('/ox/studio/catalog'); } catch (e) { $('os-models').innerHTML = `<div class="alert">${esc(e.message)}</div>`; return; }
     renderOpenStudio();
     // Recipes in plain words: the tool names agents use read as actions here.
-    const plain = (t) => t.replace(/\bgenerate_image\b/g, 'make an image').replace(/\bgenerate_video\b/g, 'make a clip').replace(/\bedit_image\b/g, 'edit the image').replace(/\bremove_background\b/g, 'cut out').replace(/\bupscale\b/g, 'upscale').replace(/\bvideo_edit\b/g, 'video tools').replace(/\bexplainer_video\b/g, 'the explainer maker').replace(/\bop (\w+)/g, '$1').replace(/\b(qwen-image-edit|qwen-image|flux-kontext-dev|wan-2\.2)\b/g, (m) => osCat.models.find((x) => x.id === m)?.name ?? m);
+    const plain = (t) => t.replace(/\bgenerate_image\b/g, 'make an image').replace(/\bgenerate_video\b/g, 'make a clip').replace(/\bedit_image\b/g, 'edit the image').replace(/\bremove_background\b/g, 'cut out').replace(/\bupscale\b/g, 'upscale').replace(/\bvideo_edit\b/g, 'video tools').replace(/\bexplainer_video\b/g, 'the explainer maker').replace(/\banimate_script\b/g, 'Animate a script').replace(/\brestyle_video\b/g, 'Restyle a video').replace(/\bjobs_wait\b/g, 'wait for it').replace(/\bop (\w+)/g, '$1').replace(/\b(qwen-image-edit|qwen-image|flux-kontext-dev|wan-2\.2)\b/g, (m) => osCat.models.find((x) => x.id === m)?.name ?? m);
     $('os-recipes').innerHTML = Object.entries(osCat.workflows).map(([k, w]) => `<button class="os-recipe" data-rec="${k}" aria-expanded="false"><b>${esc(w.title)}</b><div class="s">${esc(plain(w.steps[0]).slice(0, 90))}…</div><ol class="s" hidden>${w.steps.map((x) => `<li>${esc(plain(x))}</li>`).join('')}</ol></button>`).join('');
     $('os-recipes').querySelectorAll('[data-rec]').forEach((b) => (b.onclick = () => { const ol = b.querySelector('ol'), open = ol.hidden; ol.hidden = !open; b.querySelector('div').hidden = open; b.setAttribute('aria-expanded', String(open)); }));
   }
@@ -2542,10 +2592,16 @@ files: [src/billing/**]
     const mode = OS_MODES.find((m) => m.k === osMode) ?? OS_MODES[0];
     $('os-modes').innerHTML = OS_MODES.map((m) => `<button role="tab" aria-selected="${m.k === mode.k}" class="${m.k === mode.k ? 'on' : ''}" data-mode="${m.k}">${m.label}</button>`).join('');
     $('os-modes').querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => { osMode = b.dataset.mode; store.set('ox.os.mode', osMode); renderOpenStudio(); }));
-    $('os-prompt').hidden = !!mode.noPrompt;
-    $('os-image').hidden = !mode.image && mode.k !== 'video';
-    $('os-image').placeholder = mode.k === 'video' ? 'Optional first frame: a path on this Mac or a link' : 'The image: a path on this Mac or a link';
+    if (mode.k === 'restyle' && !osPick.restyle) osPick.restyle = osCat.defaults.restyle;
+    $('os-prompt').hidden = !!mode.noPrompt || (mode.k === 'restyle' && osPick.restyle !== 'wan-vace');
+    $('os-prompt').placeholder = mode.k === 'animate' ? 'Your script (or /path/to/video.mp4). \u2318/Ctrl+Enter to animate' : mode.k === 'restyle' ? 'The new look: \u201cclaymation, warm studio light\u201d' : 'Describe it: subject, setting, light, style, mood. \u2318/Ctrl+Enter to make it';
+    $('os-image').hidden = !mode.image && mode.k !== 'video' && !(mode.k === 'restyle' && osPick.restyle !== 'wan-vace');
+    $('os-image').placeholder = mode.k === 'video' ? 'Optional first frame: a path on this Mac or a link' : mode.k === 'restyle' ? 'The person or character: a link to the picture' : 'The image: a path on this Mac or a link';
+    $('os-video').hidden = mode.k !== 'restyle';
+    $('os-hint').hidden = !mode.hint; $('os-hint').textContent = mode.hint ?? '';
+    $('os-go').textContent = mode.k === 'animate' ? 'Animate it' : 'Make it';
     const chips = [];
+    if (mode.k === 'animate') chips.push(`<span class="lbl">Shape</span>${['9:16', '16:9', '1:1', '4:5'].map((a) => `<button class="${a === osAnimAspect ? 'on' : ''}" data-aaspect="${a}">${a}</button>`).join('')}<span class="lbl" style="margin-left:10px">Accent</span><input type="color" id="os-accent" value="${osAccent}" aria-label="Accent colour" style="width:34px;height:26px;border:0;background:none;padding:0">`);
     if (mode.k === 'image' || mode.k === 'video') chips.push(`<span class="lbl">Shape</span>${['1:1', '16:9', '9:16', '4:3', '3:4'].map((a) => `<button class="${a === osAspect ? 'on' : ''}" data-aspect="${a}">${a}</button>`).join('')}`);
     if (mode.k === 'image') chips.push(`<span class="lbl" style="margin-left:10px">How many</span>${[1, 2, 3, 4].map((n) => `<button class="${n === osN ? 'on' : ''}" data-n="${n}">${n}</button>`).join('')}`);
     if (mode.k === 'video') chips.push(`<span class="lbl" style="margin-left:10px">Camera</span>${['', ...Object.keys(osCat.camera)].map((c) => `<button class="${c === osCam ? 'on' : ''}" data-cam="${c}">${c || 'none'}</button>`).join('')}`);
@@ -2553,14 +2609,33 @@ files: [src/billing/**]
     $('os-chips').querySelectorAll('[data-aspect]').forEach((b) => (b.onclick = () => { osAspect = b.dataset.aspect; renderOpenStudio(); }));
     $('os-chips').querySelectorAll('[data-n]').forEach((b) => (b.onclick = () => { osN = Number(b.dataset.n); renderOpenStudio(); }));
     $('os-chips').querySelectorAll('[data-cam]').forEach((b) => (b.onclick = () => { osCam = b.dataset.cam; renderOpenStudio(); }));
-    const models = osCat.models.filter((m) => m.kind === mode.kind);
+    $('os-chips').querySelectorAll('[data-aaspect]').forEach((b) => (b.onclick = () => { osAnimAspect = b.dataset.aaspect; renderOpenStudio(); }));
+    if ($('os-accent')) $('os-accent').oninput = (e) => { osAccent = e.target.value; };
+    const models = mode.kind ? osCat.models.filter((m) => m.kind === mode.kind) : [];
     if (!osPick[mode.k] || !models.some((m) => m.id === osPick[mode.k])) osPick[mode.k] = osCat.defaults[mode.kind] ?? models[0]?.id;
     $('os-models').innerHTML = models.map((m) => `<button class="os-model ${m.id === osPick[mode.k] ? 'on' : ''}" data-model="${m.id}"><b>${esc(m.name)}</b><span class="g">${esc(m.good)}</span><span class="l">${esc(m.license)}</span><span class="ready ${m.ready ? '' : 'no'}">${m.ready ? `runs on ${m.ready === 'hf' ? 'Hugging Face' : m.ready}` : 'needs a fal key or Hugging Face token (Settings › API keys)'}</span></button>`).join('');
     $('os-models').querySelectorAll('[data-model]').forEach((b) => (b.onclick = () => { osPick[mode.k] = b.dataset.model; renderOpenStudio(); }));
   }
   async function openStudioGo() {
     const mode = OS_MODES.find((m) => m.k === osMode);
-    const prompt = $('os-prompt').value.trim(), image = $('os-image').value.trim();
+    const prompt = $('os-prompt').value.trim(), image = $('os-image').value.trim(), video = $('os-video').value.trim();
+    if (mode.k === 'animate') {
+      if (!prompt) { toast('Paste the script, or a path to a video or transcript'); return; }
+      $('os-go').disabled = true; $('os-state').textContent = 'Planning the scenes and drawing every frame: about a minute\u2026';
+      try { const r = await postJson('/ox/studio/open', { tool: 'animate_script', args: { source: prompt, aspect: osAnimAspect, accent: osAccent } }); toast(r.text); loadStudio(); } catch (e) { toast(e.message); }
+      $('os-go').disabled = false; $('os-state').textContent = '';
+      return;
+    }
+    if (mode.k === 'restyle') {
+      const m = osPick.restyle, kind = { 'wan-animate-move': 'move', 'wan-animate-replace': 'swap', 'wan-vace': 'restyle' }[m] ?? 'move';
+      if (!/^https?:/.test(video)) { toast('Add the clip as a link'); return; }
+      if (kind !== 'restyle' && !image) { toast('Add the person or character picture'); return; }
+      if (kind === 'restyle' && !prompt) { toast('Describe the new look'); return; }
+      $('os-go').disabled = true; $('os-state').textContent = 'Restyling the clip: a few minutes\u2026';
+      try { const r = await postJson('/ox/studio/open', { tool: 'restyle_video', args: { mode: kind, video, ...(image ? { image } : {}), ...(prompt ? { prompt } : {}) } }); toast(r.text); loadStudio(); } catch (e) { toast(e.message); }
+      $('os-go').disabled = false; $('os-state').textContent = '';
+      return;
+    }
     if (!mode.noPrompt && !prompt) { toast('Describe what to make first'); return; }
     if (mode.image && !image) { toast('Add the image: a path on this Mac or a link'); return; }
     const args = { model: osPick[mode.k] };
@@ -3142,22 +3217,28 @@ files: [src/billing/**]
     ['general', 'General', 'gear', 'name rename call it default model mode send enter agents'],
     ['instructions', 'Instructions', 'wand', 'custom instructions personal preferences how to respond style tone about me rules system prompt'],
     ['appearance', 'Appearance', 'palette', 'theme dark light text size width motion'],
+    ['notifications', 'Notifications', 'bell', 'notify alert sound finished done failed background'],
     ['desktop', 'OX Island & desktop', 'monitor', 'island notch awake sleep buddy restart'],
     ['voice', 'Voice', 'mic', 'speech language read aloud'],
     ['memory', 'Memory', 'brain', 'remember forget profile facts preferences'],
     ['usage', 'Usage', 'chart', 'tokens cost spend models agents billing'],
     ['gap'],
-    ['providers', 'Providers', 'bolt', 'models'],
+    ['projects', 'Projects', 'folder', 'folders repos workspaces recent'],
+    ['worktrees', 'Worktrees', 'branch', 'git worktree branches parallel race remove'],
+    ['gap'],
+    ['providers', 'Providers', 'bolt', 'models connect popular'],
     ['accounts', 'Accounts', 'user', 'subscription claude chatgpt plan', true],
     ['keys', 'API keys', 'key', 'api key keys token secret provider add connect anthropic openai xai gemini openrouter search web tavily brave serper images video fal', true],
     ['endpoints', 'Custom endpoints', 'globe', 'openai compatible vllm llama.cpp gateway url server azure bedrock proxy base url self-hosted', true],
     ['local', 'Local models', 'cpu', 'ollama lm studio offline ram hugging face', true],
-    ['connectors', 'Connectors', 'blocks', 'mcp servers tools connectors plugins integrations github slack notion database'],
+    ['models', 'Models', 'mode', 'model picker show hide list enable disable'],
+    ['connectors', 'Extensions', 'blocks', 'mcp servers tools connectors plugins skills extensions integrations github slack notion database'],
     ['messaging', 'Messaging', 'chat', 'telegram discord slack phone'],
     ['shortcuts', 'Keyboard shortcuts', 'keyboard', 'keys hotkeys'],
     ['archived', 'Archived chats', 'archive', 'archive restore'],
     ['data', 'Data & privacy', 'shield', 'export download delete all chats privacy telemetry data where stored'],
     ['gap'],
+    ['server', 'Server', 'server', 'port pid address url uptime restart local server'],
     ['about', 'About', 'info', 'version'],
   ];
   let sec = 'general';
@@ -3246,7 +3327,10 @@ files: [src/billing/**]
           <div class="sblock"><div class="shead">${icon('chat')}Chat</div><p class="sdesc">How this app behaves. Kept in this browser.</p>
           ${row('Default mode', 'What new chats start in. Auto picks per message.', `<select id="s-mode">${['auto', 'code', 'ask', 'plan', 'debug', 'data', 'orchestrate'].map((m) => `<option value="${m}">${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}</select>`)}
           ${row('Send with', 'The other key adds a new line.', seg('sendKey', [['enter', 'Enter'], ['mod', `${MOD}+Enter`]], prefs.sendKey))}
-          ${row('Suggest follow-ups', 'Three questions to ask next under each answer. Costs one small extra model call per answer (about 250 tokens).', sw('s-follow', prefs.followups === true))}</div>`;
+          ${row('Suggest follow-ups', 'Three questions to ask next under each answer. Costs one small extra model call per answer (about 250 tokens).', sw('s-follow', prefs.followups === true))}
+          ${row('Activity detail', prefs.activity === 'compact' ? 'Compact: every step folded into one line you can open' : prefs.activity === 'detailed' ? 'Detailed: every step with its full arguments' : 'Normal: each step with the file or a short preview', seg('activity', [['compact', 'Compact'], ['normal', 'Normal'], ['detailed', 'Detailed']], prefs.activity || 'normal'))}
+          ${row('Changed files', 'List the files each turn changed when it finishes.', sw('s-changed', prefs.changedFiles !== false))}
+          ${row('What\u2019s new', 'Show what changed after ox updates.', sw('s-whatsnew', prefs.whatsNew !== false))}</div>`;
         bindIsland(el);
         $('s-name').value = st.name === 'ox' ? '' : st.name;
         $('s-name-save').onclick = async () => { try { const r = await postJson('/ox/settings', { name: $('s-name').value }); applyName(r.name); toast(`Name: ${r.name}`); renderSection(); } catch (e) { toast(e.message); } };
@@ -3261,7 +3345,55 @@ files: [src/billing/**]
         $('s-mode').value = store.get('ox.prefs', {}).defaultMode || 'auto';
         $('s-mode').onchange = () => { prefs.defaultMode = $('s-mode').value; savePrefs(); };
         $('s-follow').onchange = () => { prefs.followups = $('s-follow').checked; savePrefs(); };
-        bindSegs(el, (k, v) => { prefs[k] = v; savePrefs(); });
+        $('s-changed').onchange = () => { prefs.changedFiles = $('s-changed').checked; savePrefs(); renderChat(); };
+        $('s-whatsnew').onchange = () => { prefs.whatsNew = $('s-whatsnew').checked; savePrefs(); };
+        bindSegs(el, (k, v) => { prefs[k] = v; savePrefs(); if (k === 'activity') { renderChat(); renderSection(); } });
+      } else if (sec === 'notifications') {
+        const perm = 'Notification' in window ? Notification.permission : 'unsupported';
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('bell')}Notifications</div><p class="sdesc">Only while you are in another tab or app. Kept in this browser.</p>
+          ${row('System notifications', perm === 'granted' ? 'Allowed' : perm === 'denied' ? 'Blocked: allow them for this page in your browser\u2019s site settings' : perm === 'unsupported' ? 'This browser cannot show them' : 'Not allowed yet', perm === 'default' ? '<button class="btn" id="n-allow">Allow</button>' : `<span class="small ${perm === 'granted' ? 'ok' : 'muted'}">${perm === 'granted' ? 'On' : '\u2014'}</span>`)}
+          ${row('When a run finishes', 'A notification with the start of the answer.', sw('n-done', !!prefs.notifyDone))}
+          ${row('When a run stops with an error', 'So a failed run does not wait unseen.', sw('n-fail', !!prefs.notifyFail))}
+          ${row('Sound', 'A short chime with each one.', `<span style="display:flex;gap:8px;align-items:center"><button class="btn ghost" id="n-test">Test</button>${sw('n-sound', !!prefs.notifySound)}</span>`)}`;
+        if ($('n-allow')) $('n-allow').onclick = async () => { await Notification.requestPermission(); renderSection(); };
+        for (const [id, k] of [['n-done', 'notifyDone'], ['n-fail', 'notifyFail'], ['n-sound', 'notifySound']]) $(id).onchange = () => { prefs[k] = $(id).checked; savePrefs(); if (k !== 'notifySound' && prefs[k] && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission().then(renderSection); };
+        $('n-test').onclick = () => { ding(); if ('Notification' in window && Notification.permission === 'granted') new Notification(`${botName} finished`, { body: 'This is how a finished run looks.', silent: true }); };
+      } else if (sec === 'projects') {
+        const W = await getJson('/ox/workspace');
+        const ago = (t) => { const s = (Date.now() - t) / 1000; return s < 3600 ? `${Math.max(1, Math.round(s / 60))} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} days ago`; };
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('folder')}Projects</div><p class="sdesc">The folders ox has worked in, newest first. This app works in the folder its server started in; open another with <code>ox app</code> from that folder.</p>
+          <div class="cards">${W.projects.map((p) => `<div class="card"><span class="dot ${p.current ? 'ok' : ''}"></span><span class="t"><div class="n">${esc(p.name)} ${p.current ? '<span class="badge ok">This app</span>' : ''}</div><div class="d mono"><span>${esc(p.path)}</span>${p.branch ? `<span>${esc(p.branch)}</span>` : ''}<span>${p.sessions} terminal session${p.sessions === 1 ? '' : 's'}</span><span>${ago(p.last)}</span></div></span>${p.current ? '' : `<button class="btn ghost" data-copy-cmd="cd ${esc(p.path.replace(/(["\s'$`\\])/g, '\\$1'))} && ox app">${icon('copy')}Open command</button>`}</div>`).join('') || '<div class="box muted small">No projects yet.</div>'}</div>`;
+      } else if (sec === 'worktrees') {
+        const W = await getJson('/ox/workspace');
+        const extra = W.worktrees.filter((t) => !t.main);
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('branch')}Worktrees</div><p class="sdesc">Extra checkouts of your repos, each on its own branch, so several agents (or a race) can work at once without touching your main folder. Removing one deletes that folder, never the branch; git refuses if it has changes that are not committed.</p>
+          ${W.worktrees.filter((t) => t.main).map((r) => {
+            const mine = extra.filter((t) => t.repo === r.repo);
+            return `<div class="section-cap cap">${esc(r.repo)} <span class="dim">\u00b7 ${esc(r.branch)}</span></div><div class="cards">${mine.map((t) => `<div class="card"><span class="dot ${t.missing ? 'err' : t.dirty ? 'run' : 'ok'}"></span><span class="t"><div class="n">${esc(t.branch || t.head)} ${t.missing ? '<span class="badge err">Folder gone</span>' : t.dirty ? '<span class="badge">Uncommitted changes</span>' : ''}</div><div class="d mono"><span>${esc(t.path)}</span><span>${esc(t.head)}</span></div></span><button class="btn ghost danger" data-wt-rm="${esc(t.path)}" data-wt-repo="${esc(t.repo)}" ${t.dirty ? 'disabled title="Commit or discard its changes first"' : ''}>${t.missing ? 'Clean up' : 'Remove'}</button></div>`).join('') || '<div class="box muted small">No extra worktrees.</div>'}</div>`;
+          }).join('')}`;
+        el.querySelectorAll('[data-wt-rm]').forEach((b) => (b.onclick = async () => {
+          if (!(await askSure(`Remove the worktree at ${b.dataset.wtRm}? The folder goes; its branch stays.`, 'Remove'))) return;
+          try { await postJson('/ox/workspace', { action: 'remove-worktree', repo: b.dataset.wtRepo, path: b.dataset.wtRm }); toast('Worktree removed'); } catch (e) { toast(e.message); }
+          renderSection();
+        }));
+      } else if (sec === 'models') {
+        const { data = [] } = await getJson('/v1/models');
+        const hidden = new Set(prefs.hiddenModels || []);
+        const groups = [['Plans you pay for', data.filter((m) => m.ox?.plan)], ['Your agents', data.filter((m) => m.ox?.agent)], ['Your endpoints', data.filter((m) => m.ox?.endpoint)], ['Ready to use', data.filter((m) => !m.ox?.agent && !m.ox?.endpoint && !m.ox?.plan && m.ox?.available !== false)], ['Needs a key', data.filter((m) => !m.ox?.agent && !m.ox?.endpoint && !m.ox?.plan && m.ox?.available === false)]];
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('mode')}Models</div><p class="sdesc">Which models the picker shows. Hidden ones still work by name and for Auto. Kept in this browser.</p>
+          <label class="search" style="margin:0 0 10px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:9px 12px"><span data-i="search"></span><input id="md-q" placeholder="Search models" aria-label="Search models"></label>
+          <div style="display:flex;gap:8px;margin-bottom:6px"><button class="btn ghost" id="md-all">Show all</button><span class="small muted" style="align-self:center">${data.length - [...hidden].filter((h) => data.some((m) => m.id === h)).length} of ${data.length} shown</span></div>
+          ${groups.filter(([, l]) => l.length).map(([label, l]) => `<div class="section-cap cap">${label}</div>${l.map((m) => `<div class="srow" data-md="${esc(m.id.toLowerCase())}"><div class="l"><b class="mono">${esc(m.id)}</b>${m.ox?.desc ? `<span>${esc(m.ox.desc)}</span>` : ''}</div>${sw(`md-${btoa(unescape(encodeURIComponent(m.id))).replace(/[^A-Za-z0-9]/g, '')}`, !hidden.has(m.id)).replace('<input', `<input data-model-id="${esc(m.id)}"`)}</div>`).join('')}`).join('')}`;
+        el.querySelectorAll('[data-model-id]').forEach((i) => (i.onchange = () => { const h = new Set(prefs.hiddenModels || []); if (i.checked) h.delete(i.dataset.modelId); else h.add(i.dataset.modelId); prefs.hiddenModels = [...h]; savePrefs(); loadModels(); }));
+        $('md-all').onclick = () => { prefs.hiddenModels = []; savePrefs(); loadModels(); renderSection(); };
+        $('md-q').oninput = () => { const q = $('md-q').value.toLowerCase().trim(); el.querySelectorAll('[data-md]').forEach((r) => (r.style.display = !q || r.dataset.md.includes(q) ? '' : 'none')); };
+      } else if (sec === 'server') {
+        const W = await getJson('/ox/workspace');
+        const S = W.server;
+        const up = S.uptime < 3600 ? `${Math.round(S.uptime / 60)} min` : `${(S.uptime / 3600).toFixed(1)} h`;
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('server')}Server</div><p class="sdesc">This app talks to an ox server on this machine. It only listens on this computer (127.0.0.1); nothing reaches it from the network.</p>
+          <dl class="kv"><dt>address</dt><dd class="mono">${esc(location.origin)}/</dd><dt>process</dt><dd>pid ${S.pid} \u00b7 Node ${esc(S.node)} \u00b7 up ${up}</dd><dt>started</dt><dd>${esc(new Date(S.startedAt).toLocaleString())}</dd><dt>started by</dt><dd>${S.island ? 'OX Island' : S.app ? 'the OX app' : 'a terminal (ox serve)'}</dd><dt>code</dt><dd class="mono">${esc(S.code)}${S.commit ? ` \u00b7 ${esc(S.commit)}` : ''}</dd><dt>folder</dt><dd class="mono">${esc(S.cwd)}</dd></dl>
+          <p class="small muted">When ox\u2019s code changes, the app restarts its server by itself within a minute. From a terminal: <code>ox app</code>.</p>`;
       } else if (sec === 'appearance') {
         el.innerHTML = `${mobileBack}<div class="shead">${icon('palette')}Appearance</div><p class="sdesc">Kept in this browser.</p>
           ${row('Theme', '', seg('theme', [['', 'System'], ['light', 'Light'], ['dark', 'Dark']], prefs.theme || ''))}
@@ -3332,11 +3464,34 @@ files: [src/billing/**]
             <button class="card" data-go="keys" style="text-align:left">${icon('key')}<span class="t"><div class="n">API keys</div><div class="d">${n ? `${n} connected` : 'None yet'} · ${keys.length} providers</div></span></button>
             <button class="card" data-go="local" style="text-align:left">${icon('cpu')}<span class="t"><div class="n">Local models</div><div class="d">Run models on this machine. No account, works offline</div></span></button>
           </div>
+          <div class="section-cap cap">Connected providers</div>
+          <div class="cards">${keys.filter((k) => k.set).map((k) => `<div class="card"><span class="dot ok"></span><span class="t"><div class="n">${esc(k.label)}</div><div class="d">API key · <span class="mono">${esc(k.env)}</span></div></span><button class="btn ghost" data-prov-key="${esc(k.label)}">Manage</button></div>`).join('') || '<div class="box muted small">No connected providers.</div>'}</div>
+          <div class="section-cap cap" style="display:flex;align-items:center">Popular providers<span style="flex:1"></span><button class="btn ghost" id="prov-more">${icon('plus')}All providers</button></div>
+          <div class="cards">${[['anthropic', 'Claude models by API key'], ['openai', 'GPT models for fast, capable general tasks'], ['gemini', 'Gemini models for fast, structured answers'], ['openrouter', 'One key for hundreds of models'], ['groq', 'Very fast open models'], ['xai', 'Grok models']].map(([id, d]) => keys.find((k) => k.id === id)).filter((k) => k && !k.set).map((k) => `<div class="card"><span class="dot"></span><span class="t"><div class="n">${esc(k.label)}</div><div class="d">${esc({ anthropic: 'Claude models by API key', openai: 'GPT models for fast, capable general tasks', gemini: 'Gemini models for fast, structured answers', openrouter: 'One key for hundreds of models', groq: 'Very fast open models', xai: 'Grok models' }[k.id])}</div></span><button class="btn" data-prov-key="${esc(k.label)}">${icon('plus')}Connect</button></div>`).join('')}</div>
           <div class="section-cap cap">Find a model on Hugging Face</div>
           <label class="search" style="margin:0 0 8px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:9px 12px"><span data-i="search"></span><input id="prov-hf" placeholder="qwen coder, llama, gemma, deepseek, bitnet…" aria-label="Search Hugging Face models"></label>
           <p class="small muted" style="margin:0 0 16px">Every GGUF model on Hugging Face, most downloaded first, with its real size and whether it fits this machine. Downloads through Ollama.</p>
           <div class="section-cap cap">In use</div><div class="box">${esc(st.model.defaultBot)} <span class="dim small">· ${esc(st.model.source)}</span></div>`;
         paintIcons();
+        el.querySelectorAll('[data-prov-key]').forEach((b) => (b.onclick = () => { sec = 'keys'; pendingKeyQuery = b.dataset.provKey; renderSnav(); renderSection(); }));
+        // "Connect provider": every provider ox knows, searchable, plus plans and custom endpoints.
+        $('prov-more').onclick = () => {
+          const d = document.createElement('div');
+          d.className = 'ask-ovl';
+          d.innerHTML = `<div class="ask-box" role="dialog" aria-modal="true" aria-label="Connect provider" style="max-width:520px;width:92vw"><div style="display:flex;align-items:center;margin-bottom:8px"><b style="flex:1">Connect provider</b><button class="btn ghost" data-x aria-label="Close">\u2715</button></div><label class="search" style="margin:0 0 8px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:8px 10px"><span data-i="search"></span><input id="cp-q" placeholder="Search providers" aria-label="Search providers"></label><div id="cp-list" style="max-height:52vh;overflow:auto;display:flex;flex-direction:column"></div></div>`;
+          document.body.append(d); paintIcons(d);
+          const extra = [{ label: 'A plan you pay for (Claude, ChatGPT…)', go: 'accounts' }, { label: 'Custom endpoint (OpenAI-compatible URL)', go: 'endpoints' }, { label: 'A model on this machine (Ollama, LM Studio)', go: 'local' }];
+          const draw = () => {
+            const q = d.querySelector('#cp-q').value.toLowerCase().trim();
+            const hit = (t) => !q || t.toLowerCase().includes(q);
+            d.querySelector('#cp-list').innerHTML = keys.filter((k) => hit(`${k.label} ${k.id} ${k.aliases ?? ''}`)).map((k) => `<button class="mi" data-cp="${esc(k.label)}" style="text-align:left;padding:9px 8px;border-radius:8px;display:flex;gap:8px;align-items:center"><span class="dot ${k.set ? 'ok' : ''}"></span><span style="flex:1">${esc(k.label)}</span><span class="small muted">${k.set ? 'connected' : ''}</span></button>`).join('') + extra.filter((x) => hit(x.label)).map((x) => `<button class="mi" data-cp-go="${x.go}" style="text-align:left;padding:9px 8px;border-radius:8px;color:var(--muted)">${esc(x.label)} \u203a</button>`).join('');
+            d.querySelectorAll('[data-cp]').forEach((b) => (b.onclick = () => { d.remove(); sec = 'keys'; pendingKeyQuery = b.dataset.cp; renderSnav(); renderSection(); }));
+            d.querySelectorAll('[data-cp-go]').forEach((b) => (b.onclick = () => { d.remove(); sec = b.dataset.cpGo; renderSnav(); renderSection(); }));
+          };
+          d.querySelector('#cp-q').oninput = draw; draw(); d.querySelector('#cp-q').focus();
+          d.onclick = (e) => { if (e.target === d || e.target.closest('[data-x]')) d.remove(); };
+          d.onkeydown = (e) => { if (e.key === 'Escape') d.remove(); };
+        };
         $('prov-hf').onkeydown = (e) => { if (e.key === 'Enter' && $('prov-hf').value.trim()) { pendingHf = $('prov-hf').value.trim(); sec = 'local'; renderSnav(); renderSection(); } };
         el.querySelectorAll('[data-go]').forEach((b) => (b.onclick = () => { sec = b.dataset.go; renderSnav(); renderSection(); }));
         el.querySelectorAll('.card svg:last-child').forEach((s) => (s.style.transform = 'rotate(180deg)'));
@@ -3530,8 +3685,21 @@ files: [src/billing/**]
         $('ins-text').oninput = count; count();
         $('ins-save').onclick = async () => { try { await postJson('/ox/instructions', { text: $('ins-text').value }); toast($('ins-text').value.trim() ? 'Instructions saved: used from the next message' : 'Instructions cleared'); } catch (e) { toast(e.message); } };
       } else if (sec === 'connectors') {
+        const extTab = store.get('ox.extTab', 'mcp');
+        const tabs = `<div class="seg" id="ext-tabs" style="margin:0 0 14px">${[['mcp', 'MCPs'], ['plugins', 'Plugins'], ['skills', 'Skills']].map(([k, l]) => `<button data-ext="${k}" class="${extTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+        const bindTabs = () => el.querySelectorAll('[data-ext]').forEach((b) => (b.onclick = () => { store.set('ox.extTab', b.dataset.ext); renderSection(); }));
+        if (extTab !== 'mcp') {
+          if (!caps) await loadCaps().catch(() => {});
+          const list = extTab === 'skills' ? (caps?.skills ?? []) : (caps?.plugins ?? []);
+          el.innerHTML = `${mobileBack}<div class="shead">${icon('blocks')}Extensions</div>${tabs}<p class="sdesc">${extTab === 'skills' ? 'Skills: instructions ox reads when a task matches. Available to every project; your own live in ~/.ox/skills.' : 'Plugins: bundles of skills, commands and MCP servers from a marketplace. Kept in ~/.ox/plugins.json.'} <a href="#" id="ext-market" style="color:var(--gold)">Find more in the Marketplace</a></p>
+            <div class="cards">${list.map((x) => `<div class="card"><span class="dot ${x.enabled === false ? '' : 'ok'}"></span><span class="t"><div class="n">${esc(x.name ?? x.id)}</div><div class="d">${esc(String(x.desc ?? x.description ?? x.source ?? '').slice(0, 160))}</div></span></div>`).join('') || `<div class="box muted small">No ${extTab} yet.</div>`}</div>`;
+          bindTabs();
+          $('ext-market').onclick = (e) => { e.preventDefault(); closeSettings(); document.querySelector('[data-view="market"],[data-go-view="market"]')?.click(); };
+          paintIcons(el);
+          return;
+        }
         const C = await getJson('/ox/connectors');
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('blocks')}Connectors</div><p class="sdesc">MCP servers give ox more tools: GitHub, a database, Notion, your own. Every run can use them; each call asks first unless you allow that server. Ready-made ones are in the Marketplace.</p>
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('blocks')}Extensions</div>${tabs}<p class="sdesc">MCP servers give ox more tools: GitHub, a database, Notion, your own. Every run can use them; each call asks first unless you allow that server. Ready-made ones are in the Marketplace.</p>
           <div class="cards">${C.map((c) => `<div class="card"><span class="dot ok"></span><span class="t"><div class="n">${esc(c.name)}</div><div class="d mono"><span>${esc(c.kind)}</span><span>${esc(c.target)}</span></div></span><button class="btn ghost danger" data-con-rm="${esc(c.name)}">Remove</button></div>`).join('') || '<div class="box muted small">None yet.</div>'}</div>
           <div class="section-cap cap">Add one</div>
           <div class="box" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -3541,6 +3709,7 @@ files: [src/billing/**]
             <label class="small muted">or a URL (a remote server)<input class="field" id="con-url" placeholder="https://example.com/mcp"></label>
             <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center"><button class="btn primary" id="con-add">Add</button><span class="small muted" id="con-state"></span></div>
           </div>`;
+        bindTabs();
         $('con-add').onclick = async () => { try { await postJson('/ox/connectors', { name: $('con-name').value.trim(), command: $('con-cmd').value.trim(), args: $('con-args').value.trim(), url: $('con-url').value.trim() }); toast('Connector added: used from the next run'); renderSection(); } catch (e) { $('con-state').textContent = e.message; } };
         el.querySelectorAll('[data-con-rm]').forEach((b) => (b.onclick = async () => { try { await postJson('/ox/connectors', { action: 'remove', name: b.dataset.conRm }); toast('Connector removed'); renderSection(); } catch (e) { toast(e.message); } }));
       } else if (sec === 'data') {

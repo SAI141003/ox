@@ -518,9 +518,19 @@ function tallyUsage(total, event) {
 // completion came back as an empty string inside a 200 that looked like an
 // answer. These two read the events that actually exist.
 // Only names and a short preview leave the server: never tool output.
+// The file a write or edit touched: from ox's own tools, or read from a plan's
+// tool input (Claude Code's Write/Edit/MultiEdit carry file_path).
+export function toolFile(event) {
+  if (typeof event.file === 'string') return event.file;
+  if (!/^(write|edit|multiedit|multi_edit|write_file|edit_file|notebookedit|apply_patch|create_file)$/i.test(String(event.name ?? ''))) return null;
+  const m = /"(?:file_path|path|notebook_path)"\s*:\s*"((?:[^"\\]|\\.)+)"/.exec(String(event.argsPreview ?? ''));
+  return m ? m[1].replace(/\\(.)/g, '$1') : null;
+}
+
 function oxToolEvent(event) {
+  const file = event.type === 'tool-start' ? toolFile(event) : null;
   return event.type === 'tool-start'
-    ? { type: 'tool-start', id: event.id ?? null, name: String(event.name ?? 'tool'), preview: String(event.argsPreview ?? '').slice(0, 120), ...(Array.isArray(event.plan) ? { plan: event.plan } : {}) }
+    ? { type: 'tool-start', id: event.id ?? null, name: String(event.name ?? 'tool'), preview: String(event.argsPreview ?? '').slice(0, 120), ...(Array.isArray(event.plan) ? { plan: event.plan } : {}), ...(file ? { file: file.slice(0, 300) } : {}), ...(Array.isArray(event.files) && event.files.length ? { files: event.files.slice(0, 50).map((f) => String(f).slice(0, 300)) } : {}) }
     : { type: 'tool-end', id: event.id ?? null, name: String(event.name ?? 'tool'), isError: event.isError === true, ...(event.meta?.canvas?.tree ? { canvas: event.meta.canvas.tree } : {}) };
 }
 
@@ -1695,6 +1705,7 @@ async function themeAsk() {
 
 const codeCache = {};
 let studioOpen = null;
+const SERVER_STARTED = new Date().toISOString();
 const ROUTES = [
   // Pull requests (src/dev-flow.js): Open a PR in one click, its CI and reviews, one fix round.
   { method: 'GET', pattern: /^\/ox\/pr\/?$/, handler: appRoute(async (_, __, req) => {
@@ -1934,15 +1945,47 @@ const ROUTES = [
   }) },
   { method: 'POST', pattern: /^\/ox\/studio\/open\/?$/, handler: appRoute(async (body) => {
     const S = await import('./studio-mcp.js');
-    const tools = new Set(['generate_image', 'generate_video', 'edit_image', 'upscale', 'remove_background', 'generate_audio', 'workflow_instructions']);
+    const tools = new Set(['generate_image', 'generate_video', 'edit_image', 'upscale', 'remove_background', 'generate_audio', 'restyle_video', 'animate_script', 'workflow_instructions']);
     const tool = String(body?.tool ?? '');
-    if (!tools.has(tool)) throw new Error('tools: generate_image, generate_video, edit_image, upscale, remove_background, generate_audio');
+    if (!tools.has(tool)) throw new Error('tools: generate_image, generate_video, edit_image, upscale, remove_background, generate_audio, restyle_video, animate_script');
+    // Scene animations run here and land in the gallery like any other result.
+    if (tool === 'animate_script') {
+      const A = await import('./animate.js');
+      const ms = await import('./media-studio.js');
+      const a = body?.args ?? {};
+      const source = String(a.source ?? '').trim();
+      if (!source) throw new Error('paste the script, or a path to a video or transcript on this Mac');
+      const id = (await import('node:crypto')).randomBytes(6).toString('hex');
+      const dir = join(ms.MEDIA_DIR(), id);
+      const plan = async (system, user) => {
+        const { workingModelSpec } = await import('./working-model.js');
+        const { quickText } = await import('./quick-text.js');
+        const { loadConfig } = await import('./config.js');
+        const cfg = loadConfig();
+        return (await quickText(resolveBot(await workingModelSpec(cfg, { say: () => {} }), cfg), { system, user, maxTokens: 2500 })).text;
+      };
+      const r = await A.animate(source, { out: dir, aspect: a.aspect ?? '9:16', brand: { accent: a.accent, bg: a.bg, fg: a.fg }, plan: a.no_model ? null : plan });
+      const all = join(dir, 'all.mp4');
+      if (!existsSync(all) && r.scenes[0]) (await import('node:fs')).copyFileSync(r.scenes[0].file, all);
+      ms.note({ id, at: Date.now(), provider: 'local', model: 'ox animate', label: `Scene animation · ${r.scenes.length} scene${r.scenes.length === 1 ? '' : 's'}`, surface: 'video', prompt: source.slice(0, 300), settings: { aspect: a.aspect ?? '9:16' }, media: {}, status: 'completed', files: [all] });
+      return { text: `Animated ${r.scenes.length} scene${r.scenes.length === 1 ? '' : 's'}: ${r.scenes.map((x) => `${x.name} (${x.seconds}s)`).join(', ')}. Folder: ${dir}` };
+    }
     studioOpen ??= S.createStudio();
     // The page waits for the result: up to 10 minutes for a video.
-    const text = await studioOpen.call(tool, { ...(body?.args ?? {}), wait_seconds: tool === 'generate_video' ? 290 : 120 });
+    const text = await studioOpen.call(tool, { ...(body?.args ?? {}), wait_seconds: tool === 'generate_video' || tool === 'restyle_video' ? 290 : 120 });
     const job = /job (\w+) is/.exec(text)?.[1];
     if (job) return { text: await studioOpen.call('jobs_wait', { ids: [job], timeout_seconds: 600 }) };
     return { text };
+  }) },
+  // Settings › Projects, Worktrees, Server, What's new.
+  { method: 'GET', pattern: /^\/ox\/workspace\/?$/, handler: appRoute(async (_b, _m, req) => {
+    const A = await appApi();
+    const since = new URL(req.url, 'http://x').searchParams.get('since');
+    return { projects: A.projectsView(), worktrees: A.worktreesView(), server: A.serverView({ port: req.socket.localPort, startedAt: SERVER_STARTED }), whatsNew: A.whatsNew(since) };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/workspace\/?$/, handler: appRoute(async (b) => {
+    if (b.action === 'remove-worktree') return (await appApi()).removeWorktree(String(b.repo ?? ''), String(b.path ?? ''));
+    throw new Error('action: remove-worktree');
   }) },
   { method: 'GET', pattern: /^\/ox\/studio\/?$/, handler: appRoute(async () => (await appApi()).studioView()) },
   { method: 'POST', pattern: /^\/ox\/studio\/create\/?$/, handler: appRoute(async (b) => (await appApi()).studioCreate(b)) },

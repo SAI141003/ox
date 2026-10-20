@@ -266,7 +266,7 @@ final class Buddy: NSObject, ObservableObject {
         let (marked, marks) = Self.parseMarks(reply)
         let (say, point) = Self.parsePoint(marked)
         let text = say.isEmpty ? "Done." : say
-        if !marks.isEmpty { showMarks(marks) }
+        if !marks.isEmpty { IslandLog.write("marks drawn: \(marks.map { "\($0.kind.lowercased()) \($0.label)" }.joined(separator: ", "))"); showMarks(marks) }
         saying = text
         pendingPoint = point
         wordCount = 0
@@ -417,7 +417,7 @@ final class Buddy: NSObject, ObservableObject {
 
     /// [CIRCLE:x,y,r:label] [ARROW:x1,y1,x2,y2:label] [BOX:x,y,w,h:label], in
     /// screenshot pixels (the same rules as src/buddy.js parseMarks).
-    static func parseMarks(_ reply: String) -> (String, [ScreenMark]) {
+    nonisolated static func parseMarks(_ reply: String) -> (String, [ScreenMark]) {
         let pattern = #"\[(CIRCLE|ARROW|BOX):\s*([\d.\s,]+?)\s*(?::\s*([^\]]*))?\]"#
         guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return (reply, []) }
         let ns = reply as NSString

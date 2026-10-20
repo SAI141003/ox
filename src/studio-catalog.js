@@ -15,6 +15,10 @@ export const OPEN_MODELS = Object.freeze([
   { id: 'hunyuan-video', name: 'HunyuanVideo', kind: 'video', license: 'Tencent Hunyuan Community', good: 'cinematic motion', fal: 'fal-ai/hunyuan-video' },
   { id: 'mochi-1', name: 'Mochi 1', kind: 'video', license: 'Apache-2.0', good: 'smooth motion', fal: 'fal-ai/mochi-v1' },
   { id: 'cogvideox-5b', name: 'CogVideoX-5B', kind: 'video', license: 'CogVideoX License', good: 'steady short clips', fal: 'fal-ai/cogvideox-5b' },
+  // Video to video (Higgsfield Genjutsu's two modes, open models): keep a clip's motion, change who or what is in it.
+  { id: 'wan-animate-move', name: 'Wan 2.2 Animate Move', kind: 'restyle', license: 'Apache-2.0', good: 'motion transfer: the person in your picture does what the video shows', fal: 'fal-ai/wan/v2.2-14b/animate/move' },
+  { id: 'wan-animate-replace', name: 'Wan 2.2 Animate Replace', kind: 'restyle', license: 'Apache-2.0', good: 'swap: the person in the video becomes the one in your picture, same scene and light', fal: 'fal-ai/wan/v2.2-14b/animate/replace' },
+  { id: 'wan-vace', name: 'Wan VACE 14B (depth)', kind: 'restyle', license: 'Apache-2.0', good: 'same motion and layout, a new look or world from a prompt', fal: 'fal-ai/wan-vace-14b/depth' },
   { id: 'esrgan', name: 'Real-ESRGAN', kind: 'upscale', license: 'BSD-3-Clause', good: '4x detail', fal: 'fal-ai/esrgan' },
   { id: 'birefnet', name: 'BiRefNet', kind: 'cutout', license: 'MIT', good: 'background removal', fal: 'fal-ai/birefnet' },
   { id: 'latentsync', name: 'LatentSync', kind: 'lipsync', license: 'Apache-2.0', good: 'a face speaks the audio', fal: 'fal-ai/latentsync' },
@@ -72,6 +76,26 @@ export const WORKFLOWS = Object.freeze({
       'Optional: generate_video a b-roll clip per step with wan-2.2 and add them with video_edit op join.',
     ],
   },
+  'scene-animation': {
+    title: 'Scene-by-scene animation from a video or a script (Flick-style)',
+    steps: [
+      'Get the words: a video or audio file (transcribed here with Whisper), a transcript, or the script itself.',
+      'Ask the aspect (9:16 for Shorts/Reels, 16:9, 1:1 or 4:5), brand colours and a logo if they have one, and their opinion of the tone.',
+      'animate_script with plan_only true: read plan.md back to them (scene, animation, length, words on screen) and change it until they approve.',
+      'animate_script with the folder to render: each scene becomes its own MP4 and poster, with sound effects only where something moves in; all.mp4 joins them.',
+      'Change one scene: edit its entry in scene-spec.json, then animate_script with redo set to that scene. Ask which scenes to keep for later runs (save).',
+    ],
+  },
+  'video-restyle': {
+    title: 'Restyle a video, keep its motion (Genjutsu-style)',
+    steps: [
+      'Pick the mode: motion transfer (a picture of someone does what the video shows: wan-animate-move), swap (the person in the video becomes the one in the picture: wan-animate-replace), or a new look or world from words (wan-vace).',
+      'Clip 4-10 s works best; trim it first with video_edit op cut. The video and picture are links (upload first if they are files).',
+      'For a swap or a transfer, make the reference picture first if needed (generate_image, then edit_image for the outfit), full body, plain background, the same pose as the video\'s first frame.',
+      'restyle_video, then jobs_wait. Check the face and hands frame by frame before calling it done; run again with another seed if they drift.',
+      'Use only footage and faces you have the right to use.',
+    ],
+  },
   'short-ad': {
     title: 'Short-form ad (9:16)',
     steps: [
@@ -86,7 +110,7 @@ export const find = (ref) => OPEN_MODELS.find((m) => m.id === ref || m.fal === r
 export const byKind = (kind) => OPEN_MODELS.filter((m) => m.kind === kind);
 
 /** The default model for a kind (the strongest open one). */
-export const DEFAULTS = Object.freeze({ image: 'flux-schnell', text: 'qwen-image', edit: 'qwen-image-edit', video: 'wan-2.2', upscale: 'esrgan', cutout: 'birefnet', lipsync: 'latentsync', audio: 'stable-audio' });
+export const DEFAULTS = Object.freeze({ image: 'flux-schnell', text: 'qwen-image', edit: 'qwen-image-edit', video: 'wan-2.2', upscale: 'esrgan', cutout: 'birefnet', lipsync: 'latentsync', audio: 'stable-audio', restyle: 'wan-animate-move' });
 
 export function withCamera(prompt, move) {
   const m = CAMERA[move];
