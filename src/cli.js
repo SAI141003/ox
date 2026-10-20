@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -343,8 +343,14 @@ export function slashHelp(arg = '') {
     row('/ui', 'redraw the last canvas; type 1, 2… to press its buttons'),
     row('/island on|off', 'the notch island'),
     row('/exit', 'save and leave'),
+    c.bold('ox tools'),
+    row('/browse "<goal>"', 'the fast browser does a task on a website'),
+    row('/studio · /create', 'images, video and sound with open models'),
+    row('/theme "<look>"', 'restyle the app from a sentence'),
+    row('/library · /research', 'your saved reading; what the web says'),
+    row('/pr · /org · /mesh', 'pull requests, your agent company, your machines'),
     '',
-    c.dim('/help all for everything · /help <word> to search (e.g. /help schedule)'),
+    c.dim('/commands for every ox command · /help all for everything · /help <word> to search'),
   ].join('\n');
 }
 
@@ -511,6 +517,62 @@ function usageAll() {
     '  ox task spend <id> <usd>          record spend; past the budget the task is blocked',
     '  ox task log [<id>] [--limit n]    activity: who did what, when',
     '  ox task get|run|update|delete <id>',
+    '  ox task assign <id> <agent|none>  give a task to an org agent (its heartbeat picks it up)',
+    '',
+    'org (a company of agents, after Paperclip):',
+    '  ox org                            the org chart: who reports to whom, runtime, budget, state',
+    '  ox org hire <name> [--title T] [--reports-to <id>] [--runtime ox|claude-plan|chatgpt-plan|<bot>]',
+    '      [--budget <usd/month>] [--every <minutes>] [--instructions <text>] [--cwd <dir>]',
+    '      [--approval read|edits|all]   unattended, edits (default) changes files in --cwd; commands are declined',
+    '      [--machine <paired machine>]  its runs happen on that machine (ox mesh; it must allow tasks there)',
+    '  ox org hire "<a sentence>" [--draft]   the job in your words: name, title, schedule, budget, runtime filled in',
+    '  ox org approve|reject <id>        decide a hire an agent proposed',
+    '  ox org pause|resume|fire <id>     stop or restart waking an agent',
+    '  ox org set <id> [--budget n|none] [--every n|none] [--title T] [--reports-to id] [--runtime r]',
+    '  ox org beat <id> | --due          wake an agent now (or every agent that is due): it runs its next task',
+    '  ox org log                        hires, approvals, pauses, budget warnings and stops',
+    '  ox org tell <id> "<message>" [--now]   give an agent work in words; --now wakes it',
+    '  ox org thread <id>                its runs: what it was asked and what it said',
+    '  ox org timeline                   who did what, every tool call, and the count of irreversible actions',
+    '  ox org team "<sentence>" [--draft]   the chief sets up a whole team and its group chat; ox org say <team> "…"; ox org group <team>',
+    '  ox skill from <book.pdf|folder>   a book or docs → a skill: an index plus chapters read only when needed',
+    '',
+    'library: ox library [add <url|pdf> | read | ask <id> "q" | search]   saved articles and PDFs; highlight and ask in the app',
+    'commands: ox commands [list | install [--claude] [--codex] [--cursor] | uninstall]   every ox command as /name, here and inside Claude Code, Codex, Cursor',
+    'theme: ox theme ["<look>" | list | use <name> | reset]   restyle the app from a sentence (neumorphic, glass, paper, terminal, contrast…)',
+    'browse: ox browse "<goal>" [--url <page>] [--show] [--model <id>]   the fast browser: one goal, a checked finish, asks before buy/pay/send',
+    'studio: ox studio [models [kind] | recipes [name] | connect | mcp]   open image and video models for any agent (Claude, Codex, Cursor)',
+    'video: ox video transcribe|captions|cut|speed|vertical|highlights|gif|polish|understand <file> …   on this machine',
+    '       ox video explain "<title>" "Step: what happens" …   an explainer video, a slide per step with a lit diagram',
+    '       ox video animate <video|transcript|"script"> [--aspect 9:16]   scene-by-scene motion animations with sound effects',
+    'traces: ox trace [--signals] | ox trace <id> [--steps]   each run: turns, tokens, cost, tool calls, and "stuck" signals',
+    '',
+    'pull requests (until they can merge; merging stays yours):',
+    '  ox env [show|detect|check]        how this repo installs, lints, builds, tests (.ox/environment.yml, saved once)',
+    '  ox pr open [--title T] [--draft] [--shots /,/pricing]  branch, commit, checks, push, PR; --shots adds the running app\'s pages and a GIF',
+    '  ox pr status | comments           CI checks, review state and comments',
+    '  ox pr fix [--rounds n]            review comments and failing CI become one ox task; committed and pushed',
+    '  ox task run <id> --worktree [--pr]   a task in its own worktree and branch, then a PR from it',
+    '  ox race "<task>" --agents ox,claude-plan,<model>   several agents on one task, side by side; ox race keep <id> <agent>',
+    '  ox git clone <url> [dir]          clones that borrow history from one local mirror (no second download)',
+    '  ox wiki [--out dir]               the project\'s wiki from its code graph: subsystems, files, what uses what',
+    '',
+    'mesh (your own machines as one ox; every file, key and model stays on its machine):',
+    '  ox mesh                           this machine, your paired machines, their health and alerts',
+    '  ox mesh name <name>               name this machine ("Studio Mac")',
+    '  ox mesh invite                    show a one-time code (10 min) for another machine to join',
+    '  ox mesh join <code> [--name N] [--at host:port]   pair this machine (--at: across networks, e.g. Tailscale)',
+    '  ox mesh allow|deny <machine> <grant|preset>   what that machine may ask of THIS one: status, infer, tasks, files, agents; presets viewer, helper, full',
+    '  ox mesh describe <machine>        its makeup: chip, cores, memory, GPU, disks, OS, agent tools, models, keys (names)',
+    '  ox mesh agents <machine> [read <id>]   the agent sessions running there, and what one said',
+    '  ox mesh ls <machine>[:<folder>] · ox mesh pull <machine>:<file> [<here>]   its shared folders',
+    '  ox mesh share <machine> <folder>…  which folders of THIS machine that one may browse (default: home)',
+    '  ox mesh audit · ox mesh lockdown  what other machines asked here · every machine back to status only',
+    '  ox mesh forget <machine>          unpair',
+    '  ox mesh up [--port n]             run this machine\'s node in the foreground (the OX app runs it too)',
+    '  ox mesh models                    every model your machines offer, as mesh:<machine>/<model>',
+    '  ox mesh run <machine> "<task>" [--in <folder>]   an ox task on that machine, under its own approvals',
+    '      use another machine\'s model anywhere a model goes:  ox --model "mesh:Gaming laptop/qwen2.5:7b" -p "…"',
     '',
     'serve:',
     '  ox serve [--port <port>] [--host <host>] [--api-key]   start HTTP server (OpenAI-compatible API)',
@@ -2637,6 +2699,23 @@ async function cmdSkill(args) {
     await cmdSkillAdd(args.slice(1));
     return;
   }
+  if (sub === 'from') {
+    // A book, PDF or folder of docs → a skill with an index and chapters read on demand.
+    const rest = args.slice(1);
+    const flag = (n) => { const i = rest.indexOf(n); return i >= 0 ? rest[i + 1] : undefined; };
+    const src = rest.find((a, i) => !a.startsWith('--') && !['--name', '--description'].includes(rest[i - 1]));
+    if (!src) { process.stderr.write('usage: ox skill from <book.pdf | file.md | folder> [--name N] [--description D] [--force]\n'); process.exitCode = 3; return; }
+    try {
+      const B = await import('./book-skill.js');
+      const r = B.bookToSkill(src, { name: flag('--name') ?? null, description: flag('--description') ?? null, force: rest.includes('--force') });
+      console.log(`${c.green('✓ skill')} ${c.bold(r.name)}  ${c.dim(r.dir)}`);
+      if (r.short) console.log(`  ${r.chapters.length} chapter${r.chapters.length > 1 ? 's' : ''} · ≈ ${r.bookTokens.toLocaleString('en-US')} tokens: short enough that reading it whole is as cheap; the skill still makes it findable`);
+      else console.log(`  ${r.chapters.length} chapters${r.parts ? ` in ${r.parts} parts` : ''} · the whole text ≈ ${r.bookTokens.toLocaleString('en-US')} tokens · per question ≈ ${(r.indexTokens + r.avgChapterTokens).toLocaleString('en-US')} (index + one chapter) → ${r.ratio}× fewer`);
+      for (const ch of r.chapters.slice(0, 12)) console.log(c.dim(`  ${String(ch.n).padStart(2)}. ${ch.title.slice(0, 70)}  (${ch.terms.slice(0, 4).join(', ')})`));
+      if (r.chapters.length > 12) console.log(c.dim(`  … ${r.chapters.length - 12} more`));
+    } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+    return;
+  }
   if (sub === 'curate') {
     cmdSkillCurate(args.slice(1));
     return;
@@ -3405,9 +3484,485 @@ async function cmdVoiceDictation(action, rest) {
   return true;
 }
 
+async function cmdOrg(args = []) {
+  const O = await import('./org.js');
+  const sub = String(args[0] ?? '').toLowerCase();
+  const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+  const num = (v) => (v === undefined ? undefined : v === 'none' ? null : Number(v));
+  try {
+    if (!sub || sub === 'chart' || sub === 'list') {
+      const lines = O.chart({ all: args.includes('--all') });
+      console.log(lines.length > 1 ? lines.join('\n') : `${lines[0]}\n${c.dim('  no agents yet: ox org hire <name> --title <title>')}`);
+      const waiting = Object.values(O.readOrg().agents).filter((a) => a.status === 'proposed');
+      if (waiting.length) console.log(c.yellow(`\n${waiting.length} hire(s) waiting for you: ${waiting.map((a) => `${a.id} (proposed by ${a.hiredBy})`).join(', ')} — ox org approve <id>`));
+      return;
+    }
+    if (sub === 'hire') {
+      const name = args.slice(1).filter((a, i, l) => !a.startsWith('--') && !(l[i - 1] ?? '').startsWith('--')).join(' ');
+      // A sentence ("someone who reviews my PRs every morning on claude, $20 a month"): drafted, shown, hired.
+      if (!flag('--title') && name.split(/\s+/).length >= 5) {
+        const ask = async ({ system, user }) => {
+          const { workingModelSpec } = await import('./working-model.js');
+          const { quickText } = await import('./quick-text.js');
+          const cfg = loadConfig();
+          const spec = await workingModelSpec(cfg, { say: () => {} });
+          return (await quickText(resolveBot(spec, cfg), { system, user, maxTokens: 400 })).text;
+        };
+        const d = await O.draftHire(name, { ask: args.includes('--no-model') ? null : ask });
+        console.log(c.dim(`from your sentence${d.fromModel ? ' (with a model)' : ' (no model answered: read from the words)'}:`));
+        for (const [k, v] of [['name', d.name], ['title', d.title], ['runtime', d.runtime ?? 'ox'], ['every', d.heartbeatMin ? `${d.heartbeatMin} min` : null], ['budget', d.budgetUsd != null ? `$${d.budgetUsd}/month` : null], ['may', d.approval ?? 'edits'], ['folder', d.cwd ?? null], ['reports to', d.reportsTo ?? null]]) if (v) console.log(`  ${k.padEnd(11)} ${v}`);
+        console.log(c.dim(`  instructions: ${d.instructions.split('\n')[0].slice(0, 120)}`));
+        if (args.includes('--draft')) return;
+        const a = O.hire(d, { by: process.env.OX_ORG_AGENT || 'you' });
+        console.log(a.status === 'proposed' ? `${c.yellow('proposed')} ${a.id}: waits for the owner (ox org approve ${a.id})` : `${c.green('✓ hired')} ${a.name} (${a.id})`);
+        return;
+      }
+      const a = O.hire({ name, title: flag('--title'), role: flag('--role'), reportsTo: flag('--reports-to'), runtime: flag('--runtime'), budgetUsd: num(flag('--budget')), heartbeatMin: num(flag('--every')), instructions: flag('--instructions'), cwd: flag('--cwd'), approval: flag('--approval'), machine: flag('--machine') }, { by: process.env.OX_ORG_AGENT || 'you' });
+      console.log(a.status === 'proposed' ? `${c.yellow('proposed')} ${a.id}: waits for the owner (ox org approve ${a.id})` : `${c.green('✓ hired')} ${a.name} (${a.id}) — ${a.title}, runs on ${a.runtime}${a.heartbeatMin ? `, wakes every ${a.heartbeatMin} min` : ''}`);
+      return;
+    }
+    const id = args[1];
+    const by = process.env.OX_ORG_AGENT || 'you';
+    if (sub === 'approve') { O.approveHire(id, { by }); console.log(`${c.green('✓')} ${id} hired`); return; }
+    if (sub === 'reject') { O.rejectHire(id, { by }); console.log(`${id} not hired`); return; }
+    if (sub === 'pause') { O.pause(id, { by }); console.log(`${id} paused`); return; }
+    if (sub === 'resume') { O.resume(id, { by }); console.log(`${c.green('✓')} ${id} active`); return; }
+    if (sub === 'fire' || sub === 'terminate') { O.terminate(id, { by }); console.log(`${id} terminated`); return; }
+    if (sub === 'set') {
+      const a = O.update(id, { budgetUsd: num(flag('--budget')), heartbeatMin: num(flag('--every')), warnAt: flag('--warn-at'), title: flag('--title'), role: flag('--role'), reportsTo: flag('--reports-to'), runtime: flag('--runtime'), instructions: flag('--instructions'), approval: flag('--approval') }, { by });
+      console.log(`${c.green('✓')} ${a.id} updated`);
+      return;
+    }
+    if (sub === 'beat') {
+      const runs = args.includes('--due') ? await O.beatDue() : [await O.beat(id)];
+      if (!runs.length) console.log(c.dim('nobody is due'));
+      for (const r of runs) console.log(`${r.agent}: ${r.state}${r.task ? ` ${r.task}` : ''}${r.ok === false ? c.red(` failed: ${r.why}`) : r.why ? ` (${r.why})` : ''}${r.costUsd != null ? ` · $${r.costUsd.toFixed(4)}` : ''}${r.warned ? c.yellow(' · budget warning') : ''}${r.stopped ? c.red(' · budget reached, paused') : ''}`);
+      return;
+    }
+    if (sub === 'team' || sub === 'say' || sub === 'group') {
+      const askModel = async ({ system, user }) => {
+        const { workingModelSpec } = await import('./working-model.js');
+        const { quickText } = await import('./quick-text.js');
+        const cfg = loadConfig();
+        return (await quickText(resolveBot(await workingModelSpec(cfg, { say: () => {} }), cfg), { system, user, maxTokens: 600 })).text;
+      };
+      if (sub === 'team') {
+        // A team from one sentence (DeepSeek Bot's Chief of Staff): drafted, shown, hired, with a group chat.
+        const sentence = args.slice(1).filter((a) => a !== '--draft').join(' ');
+        if (!sentence) throw new Error('usage: ox org team "a writer who drafts blog posts and a coder who reviews code" [--draft]');
+        const d = await O.draftTeam(sentence, { ask: askModel });
+        console.log(`${c.bold(d.team)}`);
+        for (const a of d.agents) console.log(`  ${c.bold(a.name)} · ${a.title}  ${c.dim(a.instructions.split('\n')[0].slice(0, 90))}`);
+        if (args.includes('--draft')) return;
+        const t = O.hireTeam(d, { by });
+        console.log(`${c.green('✓ hired')} ${t.members.join(', ')}; group chat: ox org say ${t.group} "…"`);
+        return;
+      }
+      if (sub === 'say') {
+        const [gid, ...words] = args.slice(1);
+        const replies = await O.groupSay(gid, words.join(' '), { ask: askModel, by });
+        for (const r of replies) console.log(`${c.bold(r.from)}: ${r.text}`);
+        if (!replies.length) console.log(c.dim('nobody had anything to add'));
+        return;
+      }
+      const g = O.group(args[1]);
+      for (const m of g.messages.slice(-30)) console.log(`${c.dim(m.at.slice(11, 16))} ${c.bold(m.from === 'you' ? 'you' : O.readOrg().agents[m.from]?.name ?? m.from)}: ${m.text}`);
+      return;
+    }
+    // KODEMON: levels from real work, and battles through ox race.
+    if (sub === 'levels') {
+      const lv = O.levels();
+      const org = O.readOrg();
+      const rows = Object.entries(lv).filter(([aid]) => org.agents[aid]?.status !== 'terminated').sort((x, y) => y[1].xp - x[1].xp);
+      if (!rows.length) { console.log(c.dim('no agents yet: ox org hire "…"')); return; }
+      for (const [aid, v] of rows) console.log(`${c.bold(`Lv ${v.level}`)}  ${org.agents[aid].name.padEnd(14)} ${String(v.xp).padStart(5)} / ${v.next} XP  ${c.dim(`${v.tasks} tasks · ${v.calls} tool calls · ${v.wins} wins · ${v.losses} losses`)}`);
+      return;
+    }
+    if (sub === 'battle') {
+      const skip = new Set(['--test', '--apply']);
+      const rest = [];
+      for (let i = 3; i < args.length; i++) { if (args[i] === '--test') { i++; continue; } if (!skip.has(args[i])) rest.push(args[i]); }
+      const before = O.levels();
+      console.log(c.dim(`${args[1]} vs ${args[2]}: each works in its own copy of this project…`));
+      const r = await O.battle(args[1], args[2], rest.join(' '), { test: flag('--test') ?? null, apply: args.includes('--apply'), log: (l) => console.log(c.dim(l)) });
+      const after = O.levels();
+      if (!r.winner) { console.log(c.yellow('no winner: neither change could be kept')); return; }
+      const w = O.readOrg().agents[r.winner];
+      console.log(`${c.green('✓')} ${c.bold(w.name)} wins${r.result.winner?.applied ? ' — its change is applied (captured)' : ` — its change is kept in ${r.result.patchDir}`}`);
+      for (const aid of [r.winner, r.loser]) if (after[aid].level > before[aid].level) console.log(`  ${c.bold(O.readOrg().agents[aid].name)} levels up: Lv ${after[aid].level}`);
+      return;
+    }
+    if (sub === 'timeline') {
+      const t = O.timeline({ limit: Number(flag('--limit') ?? 40) });
+      console.log(`${c.bold('irreversible actions:')} ${t.irreversible ? c.yellow(t.irreversible) : c.green('0')}   ${c.dim(`stopped by approvals: ${t.denied}`)}`);
+      for (const x of t.items) console.log(`${x.at.slice(5, 16).replace('T', ' ')}  ${x.irreversible ? c.yellow('!') : x.denied ? c.red('×') : ' '} ${x.text.slice(0, 150)}`);
+      return;
+    }
+    if (sub === 'thread') {
+      const th = O.thread(id);
+      console.log(`${c.bold(th.agent.name)} ${c.dim(`${th.agent.title} · ${th.runs.length} runs`)}`);
+      for (const r of th.runs.slice(-Number(flag('--last') ?? 10))) {
+        console.log(`\n${c.dim(r.at.slice(0, 16).replace('T', ' '))} ${r.ok ? c.green('✓') : c.red('✗')} ${c.bold(r.title)}${r.costUsd != null ? c.dim(` · $${r.costUsd.toFixed(4)}`) : ''}`);
+        console.log(r.ok ? r.said.split('\n').slice(-6).join('\n') : c.red(r.why ?? 'failed'));
+      }
+      if (!th.runs.length) console.log(c.dim(`no runs yet: ox org tell ${th.agent.id} "…" --now`));
+      return;
+    }
+    if (sub === 'tell') {
+      const text = args.slice(2).filter((a) => a !== '--now').join(' ');
+      const r = await O.tell(id, text, { by });
+      console.log(`${c.green('✓')} ${r.agent.name} has it (${r.task.id})${args.includes('--now') ? '' : c.dim(' — picked up on its next beat; --now to wake it')}`);
+      if (args.includes('--now')) {
+        const b = await O.beat(id);
+        console.log(`${b.agent}: ${b.state}${b.ok === false ? c.red(` failed: ${b.why}`) : ''}`);
+        const last = O.thread(id).runs.at(-1);
+        if (last) console.log(last.said.split('\n').slice(-8).join('\n'));
+      }
+      return;
+    }
+    if (sub === 'log') { for (const e of O.readOrg().log.slice(-40)) console.log(`${e.at.slice(0, 19)}  ${e.by.padEnd(10)} ${e.action} ${e.agent}${e.why ? c.dim(` — ${e.why}`) : ''}`); return; }
+    console.error('usage: ox org [hire|approve|reject|pause|resume|fire|set|beat|tell|thread|timeline|log] — ox help for details');
+    process.exitCode = 1;
+  } catch (e) {
+    console.error(c.red(e.message));
+    process.exitCode = 1;
+  }
+}
+
+async function cmdMesh(args = []) {
+  const M = await import('./mesh.js');
+  const sub = String(args[0] ?? 'status').toLowerCase();
+  const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+  const words = (from) => args.slice(from).filter((a, i, l) => !a.startsWith('--') && !(l[from + i - 1] ?? '').startsWith('--'));
+  const pct = (v) => (v == null ? '—' : `${Math.round(v * 100)} %`);
+  const showAlerts = (alerts) => {
+    for (const a of alerts ?? []) {
+      console.log(c.yellow(`! ${a.text}`));
+      a.options.forEach((o, i) => console.log(`    ${i + 1}. ${o.label}${o.model ? c.dim(`  (ox --model "${o.model}")`) : ''}`));
+    }
+  };
+  // A throwaway node for one request when the machine's node is busy elsewhere:
+  // peers know this machine by its key, not its port.
+  const oneShot = () => M.startNode({ port: 0, proxyPort: 0, beacon: false, heartbeat: false });
+  try {
+    if (sub === 'status' || sub === 'list') {
+      if (!M.hasIdentity()) { console.log(`This machine is not on a mesh yet.\n  ${c.bold('ox mesh invite')}       on the machine you use most, then\n  ${c.bold('ox mesh join <code>')}  on each other machine`); return; }
+      let st = null;
+      try { st = await M.control('heartbeat', { method: 'POST', timeoutMs: 8000 }); } catch {}
+      const me = M.identity();
+      console.log(`${c.bold(me.name)} ${c.dim(`(this machine, ${me.id})`)}${st ? '' : c.dim(' — node not running: ox mesh up, or open the OX app')}`);
+      if (st?.self) console.log(c.dim(`  CPU ${pct(st.self.load)} · memory ${pct(st.self.mem)} · ${st.self.models.length} local models · keys: ${st.self.providers.join(', ') || 'none'}`));
+      const peers = st?.peers ?? Object.values(M.readPeers()).map((p) => ({ ...p, live: null }));
+      if (!peers.length) console.log(c.dim('  no paired machines yet: ox mesh invite here, then ox mesh join <code> on the other one'));
+      for (const p of peers) {
+        const s = p.live?.stats;
+        const state = !st ? c.dim('?') : p.live?.error ? c.red(`unreachable (${p.live.error})`) : s ? c.green('up') : c.dim('…');
+        const gives = Object.entries(p.grants ?? {}).filter(([, v]) => v).map(([k]) => k).join(', ');
+        console.log(`${c.bold(p.name)} ${c.dim(p.id)}  ${state}${s ? `  CPU ${pct(s.load)} · memory ${pct(s.mem)}${s.battery != null ? ` · battery ${pct(s.battery)}${s.charging ? ' charging' : ''}` : ''} · ${s.models.length} models` : ''}`);
+        console.log(c.dim(`    this machine lets it: ${gives || 'nothing'}${p.addr ? ` · at ${p.addr}` : ''}`));
+      }
+      showAlerts(st?.alerts);
+      return;
+    }
+    if (sub === 'name') {
+      const n = words(1).join(' ');
+      if (!n) { console.log(M.identity().name); return; }
+      console.log(`${c.green('✓')} this machine is now ${c.bold(M.setName(n))}`);
+      return;
+    }
+    if (sub === 'invite') {
+      let inv = null;
+      try { inv = await M.control('invite', { method: 'POST' }); } catch {}
+      if (inv) {
+        console.log(`On the other machine:  ${c.bold(`ox mesh join ${inv.code}`)}\n${c.dim(`one use, until ${new Date(inv.expires).toLocaleTimeString()}; this machine's node is listening`)}`);
+        return;
+      }
+      // No node running: run one here until someone joins (or the code expires).
+      const node = await M.startNode({ plans: M.planHeadroom });
+      const { code, expires } = node.invite();
+      console.log(`${c.bold(M.identity().name)} is waiting. On the other machine:\n\n    ${c.bold(`ox mesh join ${code}`)}\n`);
+      console.log(c.dim(`one use, 10 minutes. Same network: found automatically. Elsewhere: add --at <this machine's address>:${node.port}`));
+      await new Promise((resolve) => {
+        const t = setInterval(() => {
+          if (!node.state.invite) { clearInterval(t); resolve(); }
+          else if (Date.now() > expires) { clearInterval(t); console.log(c.yellow('the code expired')); resolve(); }
+        }, 500);
+      });
+      const paired = Object.values(M.readPeers()).sort((a, b) => String(b.pairedAt).localeCompare(String(a.pairedAt)))[0];
+      if (paired && Date.now() - Date.parse(paired.pairedAt) < 60_000) console.log(`${c.green('✓ paired with')} ${c.bold(paired.name)}. It may see this machine's status; model calls and tasks stay off until you allow them: ox mesh allow "${paired.name}" infer`);
+      await node.close();
+      return;
+    }
+    if (sub === 'join') {
+      const code = args[1];
+      if (!code) throw new Error('usage: ox mesh join <code> [--name <this machine>] [--at host:port]');
+      console.log(c.dim(flag('--at') ? `pairing with ${flag('--at')}…` : 'looking for the inviting machine on this network…'));
+      const peer = await M.join({ code, at: flag('--at') ?? null, name: flag('--name') ?? null, myPort: flag('--port') ? Number(flag('--port')) : undefined });
+      console.log(`${c.green('✓ paired with')} ${c.bold(peer.name)} as ${c.bold(M.identity().name)}. Start this machine's node (ox mesh up, or the OX app) so it can be reached.`);
+      return;
+    }
+    if (sub === 'allow' || sub === 'deny') {
+      const grant = args[args.length - 1];
+      const who = args.slice(1, -1).join(' ');
+      const p = M.setGrant(who, grant, sub === 'allow');
+      const what = M.PRESETS?.[grant] ? `${grant === 'full' ? 'everything' : grant} (${M.PRESETS[grant].join(', ')})` : grant;
+      console.log(`${c.green('✓')} ${p.name} ${sub === 'allow' ? 'may now' : 'may no longer'} ask this machine for ${what}`);
+      return;
+    }
+    if (sub === 'forget') { const p = M.forget(words(1).join(' ')); console.log(`${p.name} unpaired`); return; }
+    if (sub === 'up') {
+      const node = await M.startNode({ port: flag('--port') ? Number(flag('--port')) : undefined, plans: M.planHeadroom, onLog: (l) => console.log(c.dim(`[mesh] ${l}`)), onPaired: (p) => console.log(`${c.green('✓ paired with')} ${p.name}`) });
+      console.log(`${c.bold(node.me.name)} is on the mesh ${c.dim(`(port ${node.port}, local endpoint ${node.proxyPort ?? 'held by another ox'}). Ctrl-C to stop.`)}`);
+      let last = '';
+      setInterval(() => {
+        const now = JSON.stringify(node.state.alerts.map((a) => a.id));
+        if (now !== last) { last = now; showAlerts(node.state.alerts); }
+      }, 2000);
+      await new Promise(() => {});
+    }
+    if (sub === 'models') {
+      const node = await oneShot();
+      try {
+        await node.heartbeat();
+        let any = false;
+        for (const m of node.machines()) {
+          if (m.error) { console.log(c.dim(`${m.name}: ${m.error}`)); continue; }
+          for (const x of m.stats?.models ?? []) { any = true; console.log(`mesh:${m.name}/${x.name}`); }
+          for (const pr of m.stats?.providers ?? []) { any = true; console.log(`mesh:${m.name}/${pr}  ${c.dim('(its key; needs a model, e.g. mesh:' + m.name + '/' + pr + ':<model>)')}`); }
+        }
+        if (!any) console.log(c.dim('no models offered yet (each machine shares what its local models and keys can run; model calls need: ox mesh allow <this machine> infer, on that machine)'));
+      } finally { await node.close(); }
+      return;
+    }
+    // Another machine's makeup, its agent sessions, its shared folders (read-only).
+    const target = (ref) => { const i = String(ref ?? '').indexOf(':'); return i > 0 ? [ref.slice(0, i), ref.slice(i + 1)] : [ref, null]; };
+    if (sub === 'describe' || sub === 'machine') {
+      if (!args[1]) throw new Error('usage: ox mesh describe <machine>');
+      const node = await oneShot();
+      try {
+        const d = await node.ask(args.slice(1).join(' '), 'describe', {}, { timeoutMs: 20_000 });
+        console.log(`${c.bold(d.name)}  ${c.dim(`${d.model ?? ''} · ${d.os} · ${d.arch}`)}`);
+        console.log(`  ${d.cpu ?? '?'} · ${d.cores} cores · ${d.memGb} GB memory${d.gpu ? ` · ${d.gpu}` : ''} · up ${d.uptimeH} h`);
+        for (const k of d.disks) console.log(`  disk ${k.path}: ${k.freeGb} of ${k.totalGb} GB free`);
+        console.log(`  agent tools: ${d.tools.join(', ') || 'none'}`);
+        console.log(`  local models: ${d.models.join(', ') || 'none'}   keys for: ${d.providers.join(', ') || 'none'}`);
+        console.log(`  ox ${d.ox ?? '?'} · ${d.sessions} agent session(s) live`);
+      } finally { await node.close(); }
+      return;
+    }
+    if (sub === 'agents') {
+      if (!args[1]) throw new Error('usage: ox mesh agents <machine> [read <session id>]');
+      const node = await oneShot();
+      try {
+        if (args[2] === 'read' && args[3]) {
+          const r = await node.ask(args[1], 'agent-read', { id: args[3] }, { timeoutMs: 20_000 });
+          for (const m of (r.messages ?? []).slice(-12)) console.log(`${c.bold(m.role)}: ${String(m.text).slice(0, 400)}`);
+        } else {
+          const r = await node.ask(args[1], 'agents', {}, { timeoutMs: 20_000 });
+          if (!r.sessions.length) console.log(c.dim('no agent sessions there'));
+          for (const x of r.sessions) console.log(`${x.state === 'idle' ? c.dim('○') : c.green('●')} ${c.bold(x.project)} ${c.dim(x.tool)}  ${x.doing || (x.state === 'idle' ? `idle ${Math.round(x.idleSec / 60)} min` : x.state)}  ${c.dim(x.id)}`);
+        }
+      } finally { await node.close(); }
+      return;
+    }
+    // A dev server on another machine (Tesser's idea, your own machines): its own
+    // dev command in a folder it shares, the pages here through the mesh.
+    if (sub === 'dev') {
+      const [who, p] = target(args[1]);
+      if (!who) throw new Error('usage: ox mesh dev <machine>:<folder> | ox mesh dev <machine> list | ox mesh dev <machine> stop <port>');
+      const node = await oneShot();
+      let keep = false;
+      try {
+        if (args[2] === 'list') {
+          const r = await node.ask(who, 'dev-list', {}, { timeoutMs: 20_000 });
+          if (!r.servers.length) console.log(c.dim(`no dev servers started through ox on ${who}`));
+          for (const x of r.servers) console.log(`${c.bold(String(x.port))}  ${x.dir}  ${c.dim(x.command)}`);
+          return;
+        }
+        if (args[2] === 'stop') {
+          const r = await node.ask(who, 'dev-stop', { port: Number(args[3]) }, { timeoutMs: 20_000 });
+          console.log(r.stopped ? `${c.green('✓')} stopped` : c.yellow(`no dev server on port ${args[3]}`));
+          return;
+        }
+        if (!p) throw new Error('say which folder: ox mesh dev <machine>:<folder>');
+        console.log(c.dim(`starting ${p} on ${who}…`));
+        const d = await node.ask(who, 'dev-start', { path: p }, { timeoutMs: 90_000 });
+        const M = await import('./mesh.js');
+        let base = null;
+        try { if ((await M.control('status', { timeoutMs: 1500 }))) base = `http://127.0.0.1:${M.PROXY_PORT}`; } catch {}
+        if (!base) { base = `http://127.0.0.1:${node.proxyPort}`; keep = true; }
+        const url = `${base}/dev/${encodeURIComponent(who)}/${d.port}/`;
+        console.log(`${c.green('✓')} ${c.bold(path.basename(d.dir))} is running on ${who} (${d.command})`);
+        console.log(`  ${url}`);
+        if (args.includes('--open')) { const { spawnSync } = await import('node:child_process'); spawnSync('open', [url]); }
+        if (keep) {
+          console.log(c.dim('  served from here until Ctrl-C (with ox running, its mesh node serves it instead)'));
+          await new Promise((res) => process.once('SIGINT', res));
+        }
+      } finally { await node.close(); }
+      return;
+    }
+    if (sub === 'ls') {
+      const [who, p] = target(args[1]);
+      if (!who) throw new Error('usage: ox mesh ls <machine>[:<folder>]');
+      const node = await oneShot();
+      try {
+        const r = await node.ask(who, 'ls', { path: p ?? '~', all: args.includes('-a') }, { timeoutMs: 20_000 });
+        console.log(c.dim(r.path));
+        for (const e of r.entries) console.log(`${e.dir ? c.cyan(`${e.name}/`) : e.name}${!e.dir && e.size != null ? c.dim(`  ${e.size >= 1e6 ? `${(e.size / 1e6).toFixed(1)} MB` : `${Math.ceil(e.size / 1024)} KB`}`) : ''}`);
+      } finally { await node.close(); }
+      return;
+    }
+    if (sub === 'pull') {
+      const [who, p] = target(args[1]);
+      if (!who || !p) throw new Error('usage: ox mesh pull <machine>:<file> [<where here>]');
+      const node = await oneShot();
+      try {
+        let dest = path.resolve(args[2] ?? '.');
+        if (fs.existsSync(dest) && fs.statSync(dest).isDirectory()) dest = path.join(dest, path.basename(p));
+        if (fs.existsSync(dest) && !args.includes('--overwrite')) throw new Error(`${dest} exists (--overwrite to replace it)`);
+        const tmp = `${dest}.ox-part`;
+        const fd = fs.openSync(tmp, 'w');
+        let got = 0;
+        const r = await node.ask(who, 'pull', { path: p }, { timeoutMs: 60_000, onChunk: (b) => { fs.writeSync(fd, b); got += b.length; } });
+        fs.closeSync(fd);
+        if (got !== r.size) { fs.rmSync(tmp, { force: true }); throw new Error(`incomplete copy (${got} of ${r.size} bytes)`); }
+        fs.renameSync(tmp, dest);
+        console.log(`${c.green('✓')} ${dest} ${c.dim(`(${got} bytes from ${who})`)}`);
+      } finally { await node.close(); }
+      return;
+    }
+    if (sub === 'share') {
+      const who = args[1], folders = args.slice(2);
+      if (!who || !folders.length) throw new Error('usage: ox mesh share <machine> <folder> [<folder>…]   (what that machine may browse and copy from here)');
+      const pr = M.setRoots(who, folders);
+      console.log(`${c.green('✓')} ${pr.name} may browse and copy from: ${pr.roots.join(', ')} ${c.dim(pr.grants.files ? '' : `(also: ox mesh allow "${pr.name}" files)`)}`);
+      return;
+    }
+    if (sub === 'audit') {
+      const S = await import('./mesh-services.js');
+      const rows = S.readAudit(path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox')), { limit: Number(args[1]) || 40 });
+      if (!rows.length) console.log(c.dim('no other machine has asked anything of this one'));
+      for (const r of rows) console.log(`${r.at.slice(0, 16).replace('T', ' ')}  ${c.bold(r.from)} ${r.op}${r.detail ? c.dim(` ${r.detail}`) : ''}`);
+      return;
+    }
+    if (sub === 'lockdown') {
+      const n = M.lockdown();
+      console.log(`${c.green('✓')} ${n} paired machine(s) back to status only. Allow again with ox mesh allow <machine> <grant>`);
+      return;
+    }
+    if (sub === 'run') {
+      const who = args[1];
+      const prompt = words(2).join(' ');
+      if (!who || !prompt) throw new Error('usage: ox mesh run <machine> "<task>" [--in <folder on that machine>]');
+      const node = await oneShot();
+      try {
+        const r = await node.ask(who, 'run', { prompt, cwd: flag('--in') ?? null }, { timeoutMs: 0, onChunk: (b) => process.stdout.write(b) });
+        if (r?.code) process.exitCode = r.code;
+      } finally { await node.close(); }
+      return;
+    }
+    console.error('usage: ox mesh [status|name|invite|join|allow|deny|forget|up|models|run|describe|agents|ls|pull|share|audit|lockdown] — ox help for details');
+    process.exitCode = 1;
+  } catch (e) {
+    console.error(c.red(e.message));
+    process.exitCode = 1;
+  }
+}
+
+async function cmdPr(args = []) {
+  const D = await import('./dev-flow.js');
+  const sub = String(args[0] ?? 'status').toLowerCase();
+  const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+  const step = (s, d) => console.log(c.dim(`  ${s}: ${String(d).split('\n')[0].slice(0, 140)}`));
+  try {
+    if (sub === 'open' || sub === 'create') {
+      const shots = flag('--shots');
+      const pr = await D.openPr(process.cwd(), { title: flag('--title') ?? null, body: flag('--body') ?? '', base: flag('--base') ?? null, draft: args.includes('--draft'), checks: !args.includes('--no-checks'), onStep: step, capture: shots || flag('--url') ? { routes: (shots ?? '/').split(',').map((x) => x.trim()).filter(Boolean), base: flag('--url') ?? null } : null });
+      for (const r of pr.checks.results) console.log(`  ${r.ok ? c.green('✓') : c.red('✗')} ${r.command}`);
+      console.log(`${c.green(pr.created ? '✓ opened' : '✓ updated')} ${pr.url}`);
+      if (!pr.checks.ok) console.log(c.yellow('a check failed before opening: ox pr fix hands it to ox'));
+      return;
+    }
+    if (sub === 'status' || sub === 'comments') {
+      const st = D.prStatus(process.cwd(), flag('--pr') ?? args[1] ?? null);
+      console.log(`${c.bold(`#${st.number}`)} ${st.title}  ${c.dim(st.url)}`);
+      console.log(`  ${st.state.toLowerCase()} · review: ${st.review?.toLowerCase().replace('_', ' ') ?? 'none'} · ${st.mergeable === 'CONFLICTING' ? c.red('conflicts with base') : 'no conflicts'}`);
+      if (!st.checks.length) console.log(c.dim('  no CI checks on this PR'));
+      for (const ch of st.checks) console.log(`  ${['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(ch.state) ? c.green('✓') : st.failing.includes(ch) ? c.red('✗') : c.yellow('…')} ${ch.name}`);
+      if (sub === 'comments' || st.comments.length) for (const cm of st.comments) console.log(`  ${c.cyan(cm.author ?? '?')}${cm.path ? c.dim(` ${cm.path}:${cm.line ?? ''}`) : ''}: ${cm.body.trim().split('\n')[0].slice(0, 160)}`);
+      console.log(st.canMerge ? c.green('ready to merge (merging is yours)') : c.dim(`not ready yet${st.openThreads ? ` (${st.openThreads} unresolved review thread${st.openThreads > 1 ? 's' : ''})` : ''}: ox pr fix`));
+      return;
+    }
+    if (sub === 'fix') {
+      const rounds = Number(flag('--rounds') ?? 1);
+      for (let i = 0; i < rounds; i++) {
+        const r = await D.fixPr(process.cwd(), { ref: flag('--pr') ?? null, onStep: step });
+        console.log(`${r.done ? c.green('✓') : '•'} ${r.why}`);
+        if (r.done || !r.pushed) break;
+        if (i + 1 < rounds) { console.log(c.dim('  waiting for CI…')); await new Promise((res) => setTimeout(res, 90_000)); }
+      }
+      return;
+    }
+    console.error('usage: ox pr open [--title T] [--body B] [--base main] [--draft] [--no-checks] | status | comments | fix [--rounds n]');
+    process.exitCode = 1;
+  } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+}
+
+async function cmdRace(args = []) {
+  // ox race "<task>" --agents ox,claude-plan,chatgpt-plan  |  ox race keep <race-id> <agent>
+  const D = await import('./dev-flow.js');
+  try {
+    if (args[0] === 'keep') { const r = D.keep(process.cwd(), args[1], args[2]); console.log(`${c.green('✓ kept')} ${r.merged}; ${r.removed} worktree(s) cleaned up`); return; }
+    const ai = args.indexOf('--agents');
+    const agents = ai >= 0 ? String(args[ai + 1]).split(',').map((x) => x.trim()).filter(Boolean) : ['ox', 'claude-plan', 'chatgpt-plan'];
+    const prompt = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--agents').join(' ');
+    if (!prompt) throw new Error('usage: ox race "<task>" [--agents ox,claude-plan,chatgpt-plan,<model>]');
+    const r = await D.race(process.cwd(), prompt, agents, { onStep: (k, d) => console.log(c.dim(`  ${d}`)) });
+    console.log(`\n${c.bold(r.id)}  ${c.dim(prompt)}`);
+    for (const x of r.results) console.log(`  ${x.ok && x.files ? (x.checksOk || !x.checks.length ? c.green('●') : c.yellow('●')) : c.red('●')} ${x.agent.padEnd(16)} ${x.files} files ${c.green(`+${x.plus}`)} ${c.red(`−${x.minus}`)}  ${Math.round(x.ms / 1000)} s  ${x.checks.map((k) => `${k.step} ${k.ok ? '✓' : '✗'}`).join(' ')}  ${c.dim(x.branch)}`);
+    console.log(c.dim(`\ncompare: git diff ${r.results[0]?.branch} ${r.results[1]?.branch ?? ''}\nkeep one: ox race keep ${r.id} <agent>`));
+  } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+}
+
+async function cmdEnv(args = []) {
+  const D = await import('./dev-flow.js');
+  const sub = String(args[0] ?? 'show').toLowerCase();
+  try {
+    const root = D.repoRoot(process.cwd());
+    if (sub === 'show' || sub === 'detect') {
+      if (sub === 'detect') D.writeRecipe(root, D.detectRecipe(root));
+      const r = D.recipe(root);
+      if (!Object.keys(r.recipe).length) { console.log(c.dim('nothing detected: write .ox/environment.yml (install:, lint:, build:, test:, start:)')); return; }
+      if (r.saved) console.log(c.dim(`saved to ${path.relative(root, r.file)}`));
+      for (const [k, v] of Object.entries(r.recipe)) console.log(`${k.padEnd(8)} ${v}`);
+      return;
+    }
+    if (sub === 'check' || sub === 'run') {
+      const steps = args.slice(1).filter((a) => !a.startsWith('--'));
+      const out = D.runChecks(root, steps.length ? steps : ['lint', 'build', 'test'], { onStep: (s, cmd) => console.log(c.dim(`${s}: ${cmd}`)) });
+      for (const r of out.results) console.log(`${r.ok ? c.green('✓') : c.red('✗')} ${r.step} ${c.dim(`${Math.round(r.ms / 1000)} s`)}${r.ok ? '' : `\n${r.tail}`}`);
+      if (!out.results.length) console.log(c.dim('no steps to run'));
+      if (!out.ok) process.exitCode = 1;
+      return;
+    }
+    console.error('usage: ox env [show|detect|check [steps…]]');
+    process.exitCode = 1;
+  } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+}
+
 async function cmdTask(args = []) {
   const sub = String(args[0] ?? '').trim().toLowerCase();
   const rest = args.slice(1);
+  if (sub === 'assign') {
+    const [id, who] = rest;
+    if (!id || !who) { console.error('usage: ox task assign <id> <agent|none>'); process.exitCode = 1; return; }
+    const t = getTask(id);
+    if (!t) { console.error(`no task ${id}`); process.exitCode = 1; return; }
+    updateTask(id, { assignee: who === 'none' ? null : who });
+    console.log(`${c.green('✓')} ${id} ${who === 'none' ? 'unassigned' : `assigned to ${who}`}`);
+    return;
+  }
   if (sub === 'list' || sub === '') {
     let statusFilter = null;
     for (let i = 0; i < rest.length; i++) {
@@ -3514,10 +4069,25 @@ async function cmdTask(args = []) {
     }
     const pi = rest.indexOf('--prompt');
     const prompt = pi >= 0 ? rest[pi + 1] : undefined;
+    // --worktree: its own checkout and branch (agent-orchestrator), --pr: then a pull request from it.
+    let wt = null;
+    if (rest.includes('--worktree') || rest.includes('--pr')) {
+      const D = await import('./dev-flow.js');
+      wt = D.taskWorktree(process.cwd(), id);
+      console.log(c.dim(`${wt.created ? 'new worktree' : 'worktree'} ${wt.dir} on ${wt.branch}`));
+    }
     console.log(c.dim(`running task ${id}: ${task.title}`));
-    const result = await runTask(id, { prompt });
+    const result = await runTask(id, { prompt, cwd: wt?.dir });
     if (result.success) {
       console.log(c.green('✓ task completed'));
+      if (wt && rest.includes('--pr')) {
+        const D = await import('./dev-flow.js');
+        try {
+          const pr = await D.openPr(wt.dir, { title: task.title, body: `Task ${id}: ${task.title}\n\n${task.description ?? ''}`, onStep: (s, d) => console.log(c.dim(`  ${s}: ${d}`)) });
+          updateTask(id, { pr: pr.url, branch: wt.branch });
+          console.log(`${c.green('✓ pull request')} ${pr.url}`);
+        } catch (e) { console.log(c.yellow(`no PR: ${e.message}`)); }
+      }
     } else {
       console.log(c.red(`✗ task failed: ${result.error}`));
     }
@@ -4049,14 +4619,14 @@ const SUB_USAGE = {
   skill: 'usage: ox skill <name> | ox skill add <dir | owner/repo[/path]>',
   episode: 'usage: ox episode ls | ox episode promote <id>',
   'memory-loss': 'usage: ox memory-loss [--limit <n>]',
-  create: 'usage: ox create "<prompt>" [--provider higgsfield|fal|openai|local] [--model <id>] [--set key=value]... [--start <url>] [--end <url>] [--ref <url>]... [--video <url>] [--audio <url>] | --models [provider] | --history',
+  create: 'usage: ox create "<prompt>" [--edit <image>] [--provider higgsfield|fal|openai|openrouter|local] [--model <id>] [--set key=value]... [--start <url>] [--end <url>] [--ref <url>]... [--video <url>] [--audio <url>] | --models [provider] | --history',
   hf: 'usage: ox hf search "<words>" | ox hf files <owner/repo> | ox hf pull <owner/repo>[:QUANT]',
   name: 'usage: ox name [<new name> | --reset]  — what ox is called everywhere; it answers to that name when you say it',
   usage: 'usage: ox usage [--days <n>] [--json]  — tokens and cost by model, agent, surface, project and day',
   market: 'usage: ox market ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
   hook: 'usage: ox hook <claude|codex|gemini|cursor|copilot> [event]  — run by the agent itself with the event on stdin (set up with: ox hooks install <agent>)',
   'hook-relay': 'usage: ox hook-relay <agent> <session id>  — started by ox hook; one per agent session, not run by hand',
-  hooks: 'usage: ox hooks install <claude|codex|gemini|cursor|copilot> [--yes] | uninstall <agent> [--yes] | status',
+  hooks: 'usage: ox hooks install <claude|codex|gemini|cursor|copilot> [--yes] | uninstall <agent> [--yes] | status | safe on|off',
   memory: 'usage: ox memory [recall "<question>" | add "<fact>" [--project] | history <id> | forget <id> | all [--project]]',
   auto: 'usage: ox auto "<goal>" [--contract ["<goal>"]] [--max-cost <usd>] [--json] [--bot <name>] [--yes-edits] [-y] [--side-effects-ok]',
   attach: 'usage: ox attach <worker id>  — follow a detached run (ox agents lists them)',
@@ -4157,6 +4727,245 @@ async function runSubcommand(cmd, args) {
     case 'task':
       await cmdTask(args);
       return;
+    case 'org':
+      await cmdOrg(args);
+      return;
+    case 'mesh':
+      await cmdMesh(args);
+      return;
+    case 'pr':
+      await cmdPr(args);
+      return;
+    case 'library': {
+      // ox library [add <url|file> | read <id> | ask <id> "q" | search <words> | rm <id>]
+      const L = await import('./library.js');
+      const sub = args[0] ?? 'list';
+      const askModel = async ({ system, user }) => {
+        const { workingModelSpec } = await import('./working-model.js');
+        const { quickText } = await import('./quick-text.js');
+        const cfg = loadConfig();
+        return (await quickText(resolveBot(await workingModelSpec(cfg, { say: () => {} }), cfg), { system, user, maxTokens: 700 })).text;
+      };
+      try {
+        if (sub === 'list') {
+          const items = L.list();
+          if (!items.length) { console.log(c.dim('your library is empty: ox library add <link or file>')); return; }
+          for (const it of items) console.log(`${c.dim(it.id)}  ${c.bold(it.title.slice(0, 70))}  ${c.dim(`${it.kind} · ${it.words.toLocaleString('en-US')} words${it.highlights.length ? ` · ${it.highlights.length} highlights` : ''}`)}`);
+          return;
+        }
+        if (sub === 'add') { const it = await L.add(args[1]); console.log(`${c.green('✓ on the shelf')} ${c.bold(it.title)} ${c.dim(`(${it.kind}, ${it.words.toLocaleString('en-US')} words, ${it.id})`)}`); return; }
+        if (sub === 'read') { const it = L.load(args[1]); if (!it) throw new Error(`no item ${args[1]}`); console.log(`${c.bold(it.title)}\n${c.dim(it.source)}\n\n${it.text}`); return; }
+        if (sub === 'ask') { const r = await L.askAbout(args[1], args.slice(2).join(' '), { ask: askModel }); console.log(`${c.dim(r.title)}\n${r.answer}`); return; }
+        if (sub === 'search') { for (const x of L.search(args.slice(1).join(' '))) console.log(`${c.dim(x.id)}  ${c.bold(x.title)}\n  ${c.dim(x.passage.replace(/\s+/g, ' ').slice(0, 200))}`); return; }
+        if (sub === 'rm') { console.log(L.remove(args[1]) ? 'removed' : 'no such item'); return; }
+        // Connect your agent: Claude Code, Codex, ChatGPT… use the library over MCP.
+        if (sub === 'mcp') { L.serveLibraryMcp(); await new Promise(() => {}); }
+        if (sub === 'connect') {
+          const bin = `${process.execPath} ${path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js')}`;
+          console.log(`Give any agent your library (it can save, search and read; never delete):\n\n  Claude Code:  claude mcp add ox-library -- ${bin} library mcp\n  Codex:        add to ~/.codex/config.toml:\n                [mcp_servers.ox-library]\n                command = "${process.execPath}"\n                args = ["${path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js')}", "library", "mcp"]\n  Any MCP app:  command ${bin} library mcp`);
+          return;
+        }
+        console.error('usage: ox library [add <url|file> | read <id> | ask <id> "<question>" | search <words> | rm <id> | connect | mcp]'); process.exitCode = 3;
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+      return;
+    }
+    case 'commands': {
+      // ox's commands as slash commands everywhere (src/slash-catalog.js).
+      const S = await import('./slash-catalog.js');
+      const sub = args[0] ?? 'list';
+      if (sub === 'install') {
+        const only = ['claude', 'codex', 'cursor'].filter((t) => args.includes(`--${t}`));
+        const bin = (() => { try { return execFileSync('which', ['ox'], { encoding: 'utf8' }).trim() ? 'ox' : null; } catch { return null; } })() ?? `${process.execPath} ${path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js')}`;
+        const done = S.install({ only: only.length ? only : null, bin });
+        if (!done.length) { console.log(c.yellow('none of Claude Code, Codex or Cursor is installed here')); return; }
+        for (const d of done) console.log(`${c.green('✓')} ${c.bold(d.tool)}: ${d.files} files · try ${d.invoke} "…"${d.tool !== 'Cursor' ? ' · and the ox skill, so it uses ox commands on its own' : ''}`);
+        console.log(c.dim('ox commands uninstall removes exactly these files'));
+        return;
+      }
+      if (sub === 'uninstall') { console.log(`removed ${S.uninstall()} files`); return; }
+      let group = '';
+      for (const x of S.COMMANDS) {
+        if (x.group !== group) { group = x.group; console.log(c.bold(group)); }
+        console.log(`  ${x.usage.padEnd(70).slice(0, 70)} ${c.dim(x.what)}`);
+      }
+      return;
+    }
+    case 'theme': {
+      // Restyle ox from a sentence (src/ui-theme.js); the open app picks it up in seconds.
+      const T = await import('./ui-theme.js');
+      const sub = args[0] ?? 'list';
+      try {
+        if (sub === 'list') { for (const t of T.list()) console.log(`${t.active ? c.green('●') : ' '} ${c.bold(t.name.padEnd(12))} ${c.dim(`${t.description}${t.preset ? ' (built in)' : ''}`)}`); return; }
+        if (sub === 'reset') { T.reset(); console.log('back to the app\'s own look'); return; }
+        if (sub === 'use') { const t = T.use(args[1]); console.log(`${c.green('✓')} ${t.name}: ${t.description}`); return; }
+        const askModel = async ({ system, user }) => {
+          const { workingModelSpec } = await import('./working-model.js');
+          const { quickText } = await import('./quick-text.js');
+          const cfg = loadConfig();
+          return (await quickText(resolveBot(await workingModelSpec(cfg, { say: () => {} }), cfg), { system, user, maxTokens: 1500 })).text;
+        };
+        const t = await T.fromPrompt(args.join(' '), { ask: args.includes('--preset') ? null : askModel });
+        const ratio = T.contrast(t.tokens['--text'] ?? '#EDEDED', t.tokens['--bg'] ?? '#000000');
+        console.log(`${c.green('✓')} ${c.bold(t.name)}: ${t.description}${ratio ? c.dim(` · text contrast ${ratio}:1${ratio < 4.5 ? ' (low)' : ''}`) : ''}${t.dropped.length ? c.yellow(` · left out: ${t.dropped.join(', ')}`) : ''}`);
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+      return;
+    }
+    case 'browse': {
+      // The fast browser (src/fast-browser.js; jev-ultrafast's design, ox's own code).
+      const F = await import('./fast-browser.js');
+      const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+      const VALUED = new Set(['--url', '--model']);
+      const goal = args.filter((a, i) => !a.startsWith('--') && !VALUED.has(args[i - 1])).join(' ');
+      if (!goal) { console.error('usage: ox browse "<goal>" [--url <page>] [--show] [--model <id>]'); process.exitCode = 3; return; }
+      if (flag('--model')) process.env.OX_FAST_BROWSER_MODEL = flag('--model');
+      const url = flag('--url') ?? 'about:blank';
+      if (url !== 'about:blank' && !/^(https?|file):\/\//.test(url)) { console.error(c.red('the start page is an http(s) link')); process.exitCode = 3; return; }
+      try {
+        const r = await F.runGoal(goal, {
+          url, headless: !args.includes('--show'),
+          onStep: ({ row, elapsedMs }) => { if (!row.operation.endsWith('?') && row.operation !== 'WAIT') console.log(`${c.dim(`${(elapsedMs / 1000).toFixed(2).padStart(6)}s`)} ${c.green('✓')} ${F.chip(row)} ${c.dim(row.operation.toLowerCase())}`); },
+          confirm: async ({ label, url: at }) => {
+            if (!process.stdin.isTTY) return false;
+            const rl = (await import('node:readline/promises')).createInterface({ input: process.stdin, output: process.stdout });
+            const a = await rl.question(c.yellow(`Click "${label}" on ${at}? This commits something. [y/N] `));
+            rl.close();
+            return /^y(es)?$/i.test(a.trim());
+          },
+        });
+        const secs = (r.elapsedMs / 1000).toFixed(2);
+        console.log(r.status === 'done' ? `\n${c.green(c.bold(`${secs} s`))}  ${c.dim(`done · ${r.decisions.length} decisions · ${r.title}`)}` : `\n${c.yellow(`${r.status} after ${secs} s`)}${r.reason ? `: ${r.reason}` : ''}`);
+        if (r.status !== 'done') process.exitCode = 1;
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+      return;
+    }
+    case 'studio': {
+      // OX Studio for any agent (src/studio-mcp.js, docs/STUDIO_ARCHITECTURE.md).
+      const S = await import('./studio-mcp.js');
+      const sub = args[0] ?? 'models';
+      try {
+        if (sub === 'mcp') { S.serveStudioMcp(); await new Promise(() => {}); }
+        // ox studio local [status|install|make "<prompt>"|clip "<prompt>"]: this Mac's own chip, no key.
+        if (sub === 'local') {
+          const L = await import('./studio-local.js');
+          const act = args[1] ?? 'status';
+          if (act === 'install') {
+            const st = await L.install({ onStep: (what, d) => { if (what !== 'progress') console.log(c.dim(`downloading ${d}`)); else process.stdout.write(c.dim(`\r  ${d}   `)); } });
+            console.log(`\n${c.green('✓')} this Mac can now make: ${Object.entries(st.can).filter(([, v]) => v).map(([k]) => k).join(', ')}`);
+            return;
+          }
+          if (act === 'make' || act === 'clip') {
+            const prompt = args.slice(2).filter((a, i, l) => !a.startsWith('--') && !(l[i - 1] ?? '').startsWith('--')).join(' ');
+            const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+            const r = await S.createStudio().call(act === 'clip' ? 'generate_video' : 'generate_image', { prompt, host: 'device', ...(flag('--aspect') ? { aspect: flag('--aspect') } : {}), ...(flag('--camera') ? { camera: flag('--camera') } : {}), ...(args.includes('--fast') ? { fast: true } : {}), wait_seconds: 290 });
+            const job = /job (\w+) is/.exec(r)?.[1];
+            console.log(job ? await S.createStudio().call('jobs_wait', { ids: [job] }).catch(() => r) : r);
+            return;
+          }
+          const st = L.status();
+          console.log(`${st.chip} · ${st.ramGB} GB memory · ${st.freeGB} GB free on disk`);
+          for (const [k, v] of Object.entries(st.can)) console.log(`  ${v ? c.green('✓') : c.dim('·')} ${k}`);
+          if (!st.can.image) console.log(c.dim(`set up once (about ${Math.round((L.MODELS['sd-turbo'].size + L.MODELS.taesd.size + L.ENGINE.size) / 2 ** 20)} MB, checked by sha256): ox studio local install`));
+          return;
+        }
+        if (sub === 'connect') {
+          const script = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+          const bin = `${process.execPath} ${script}`;
+          console.log(`Give any agent OX Studio (open image, video and audio models; it makes and edits, never deletes):\n\n  Claude Code:  claude mcp add ox-studio -- ${bin} studio mcp\n  Codex:        add to ~/.codex/config.toml:\n                [mcp_servers.ox-studio]\n                command = "${process.execPath}"\n                args = ["${script}", "studio", "mcp"]\n  Cursor:       ~/.cursor/mcp.json → {"mcpServers":{"ox-studio":{"command":"${process.execPath}","args":["${script}","studio","mcp"]}}}\n  Any MCP app:  command ${bin} studio mcp\n\nOn this Mac's own chip, with no key: images, edits, clips, upscale and cut-outs (set up once with ox studio local install). The hosted models run where you have a key: FAL_KEY (fal) or HF_TOKEN (Hugging Face), or your own Stable Diffusion server (OX_SD_URL).`);
+          return;
+        }
+        const st = S.createStudio();
+        if (sub === 'models') { console.log(await st.call('models_explore', args[1] ? { kind: args[1] } : {})); return; }
+        if (sub === 'recipes') { console.log(await st.call('workflow_instructions', args[1] ? { name: args[1] } : {})); return; }
+        console.error('usage: ox studio [models [kind] | recipes [name] | connect | mcp]'); process.exitCode = 3;
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+      return;
+    }
+    case 'research': {
+      // ox research "<topic>" [--on reddit,hn,youtube,x,linkedin]: what people say.
+      const S = await import('./social-research.js');
+      const oi = args.indexOf('--on');
+      const q = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--on').join(' ');
+      if (!q) { console.error('usage: ox research "<topic>" [--on reddit,hn,youtube,x,linkedin]'); process.exitCode = 3; return; }
+      const r = await S.research(q, { platforms: oi >= 0 ? String(args[oi + 1]).split(',') : S.PLATFORMS });
+      for (const p of r) {
+        console.log(`\n${c.bold(p.platform === 'hn' ? 'Hacker News' : p.platform[0].toUpperCase() + p.platform.slice(1))}${p.error ? c.yellow(`  ${p.error}`) : p.rows.length ? '' : c.dim('  nothing found')}`);
+        for (const x of p.rows) console.log(`  ${x.title}${c.dim(`${x.where ? ` · ${x.where}` : ''}${x.author ? ` · ${x.author}` : ''}${x.score != null ? ` · ${x.score} pts` : ''}`)}\n  ${c.dim(x.url)}`);
+      }
+      return;
+    }
+    case 'dictation': {
+      // ox dictation style <as-said|natural|polished> [--app Mail] | translate <language|off> | show
+      const D = await import('./dictation-style.js');
+      const sub = args[0] ?? 'show';
+      const ai = args.indexOf('--app');
+      try {
+        if (sub === 'style') D.setStyle(args[1], ai >= 0 ? args[ai + 1] : null);
+        else if (sub === 'translate') D.setTranslate(args.slice(1).join(' '));
+        else if (sub !== 'show') { console.error('usage: ox dictation style <as-said|natural|polished> [--app <App>] | translate <language|off> | show'); process.exitCode = 3; return; }
+        const st = D.readStyles();
+        console.log(`style: ${st.default}${Object.keys(st.apps).length ? `  ·  ${Object.entries(st.apps).map(([a, v]) => `${a}: ${v}`).join(', ')}` : ''}${st.translate ? `  ·  translated into ${st.translate}` : ''}`);
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+      return;
+    }
+    case 'trace':
+    case 'traces': {
+      const T = await import('./trace.js');
+      const id = args.find((a) => !a.startsWith('--'));
+      const fmt = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+      if (!id) {
+        const list = T.listTraces({ limit: Number(args[args.indexOf('--limit') + 1]) || 20, signals: args.includes('--signals') });
+        if (args.includes('--json')) { console.log(JSON.stringify(list, null, 2)); return; }
+        if (!list.length) { console.log(c.dim('no traces yet: every ox run from now on keeps one (~/.ox/traces)')); return; }
+        for (const t of list) console.log(`${c.dim(t.id)}  ${t.outcome === 'error' ? c.red('✗') : t.signals.length ? c.yellow('!') : c.green('✓')} ${String(t.surface ?? '').padEnd(6)} ${String(t.model ?? '?').slice(0, 22).padEnd(22)} ${String(t.turns).padStart(3)} turns ${fmt(t.inTokens + t.outTokens).padStart(6)} tok ${t.cost != null ? `$${t.cost.toFixed(4)}` : '     —'} ${String(t.tools).padStart(3)} tools${t.failed ? c.red(` ${t.failed} failed`) : ''}  ${c.dim(t.prompt.slice(0, 50))}${t.signals.length ? `\n${' '.repeat(18)}${c.yellow(t.signals.map((x) => x.text).join(' · '))}` : ''}`);
+        return;
+      }
+      const t = T.readTrace(id);
+      if (args.includes('--json')) { console.log(JSON.stringify(t, null, 2)); return; }
+      console.log(`${c.bold(t.id)}  ${t.outcome} · ${Math.round(t.ms / 1000)} s · ${t.model ?? '?'} · ${t.surface}${t.agent ? ` · agent ${t.agent}` : ''}\n${c.dim(t.prompt)}`);
+      console.log(`${t.turns} turns · ${fmt(t.inTokens)} in / ${fmt(t.outTokens)} out${t.cost != null ? ` · $${t.cost.toFixed(4)}` : ''} · ${t.tools} tool calls${t.failed ? `, ${t.failed} failed` : ''}`);
+      for (const [n, b] of Object.entries(t.byTool).sort((a, b) => b[1].calls - a[1].calls)) console.log(c.dim(`  ${n.padEnd(18)} ${b.calls}×${b.failed ? ` (${b.failed} failed)` : ''} ${Math.round(b.ms)} ms`));
+      for (const s of t.signals) console.log(c.yellow(`! ${(s.at / 1000).toFixed(1)} s: ${s.text}`));
+      if (args.includes('--steps')) for (const r of t.rows) if (r.t !== 'run') console.log(c.dim(`${(r.at / 1000).toFixed(1).padStart(7)} s  ${r.t === 'tool' ? `→ ${r.name} ${r.args}` : r.t === 'tool-end' ? `  ${r.ok ? 'ok' : 'FAILED'} ${r.ms ?? '?'} ms ${r.bytes ?? ''}b` : r.t === 'turn' ? `model ${r.in}+${r.out} tok` : `${r.t} ${r.text ?? r.error ?? r.outcome ?? ''}`}`));
+      return;
+    }
+    case 'env':
+      await cmdEnv(args);
+      return;
+    case 'race':
+      await cmdRace(args);
+      return;
+    case 'wiki': {
+      // ox wiki [--out <dir>] [--top N]: the project's wiki from its code graph (Devin's Wiki, no model).
+      const W = await import('./wiki.js');
+      const oi = args.indexOf('--out'), ti = args.indexOf('--top');
+      const t = Date.now();
+      const r = W.buildWiki(process.cwd(), { ...(oi >= 0 ? { out: path.resolve(args[oi + 1]) } : {}), ...(ti >= 0 ? { top: Number(args[ti + 1]) } : {}) });
+      console.log(`${c.green('✓')} ${r.pages} pages, ${r.subsystems} subsystems in ${((Date.now() - t) / 1000).toFixed(1)} s ${c.dim(`→ ${path.relative(process.cwd(), r.dir) || r.dir}/index.md`)}`);
+      return;
+    }
+    case 'git': {
+      // ox git clone <url> [dir] | ox git mirror <url> | ox git mirrors: one local mirror per repo.
+      const D = await import('./dev-flow.js');
+      try {
+        if (args[0] === 'clone' && args[1]) {
+          const dest = args[2] ?? path.basename(String(args[1]).replace(/\.git$/, '').replace(/\/$/, ''));
+          const t = Date.now();
+          const r = D.mirrorClone(args[1], dest, { dissociate: !args.includes('--shared') });
+          console.log(`${c.green('✓')} ${r.dest} ${c.dim(`(${((Date.now() - t) / 1000).toFixed(1)} s; history from the local mirror${r.mirrorCreated ? ', made just now' : ''}: ${r.mirror})`)}`);
+          return;
+        }
+        if (args[0] === 'mirror' && args[1]) { const m = D.mirror(args[1]); console.log(`${c.green('✓')} ${m.path} ${c.dim(m.created ? 'made' : 'up to date')}`); return; }
+        if (args[0] === 'mirrors') {
+          const root = path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'git-mirrors');
+          const walk = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.name.endsWith('.git') ? [path.join(d, e.name)] : e.isDirectory() ? walk(path.join(d, e.name)) : [])); } catch { return []; } };
+          const list = walk(root);
+          console.log(list.length ? list.map((x) => path.relative(root, x)).join('\n') : c.dim('no mirrors yet: ox git clone <url> makes one'));
+          return;
+        }
+        console.error('usage: ox git clone <url> [dir] [--shared] | ox git mirror <url> | ox git mirrors'); process.exitCode = 3;
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+      return;
+    }
     case 'serve':
       await cmdServe(args);
       return;
@@ -4378,6 +5187,67 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'video': {
+      // ox video <op> <file> …: edit a video here (src/video-edit.js).
+      // ox video explain "<title>" "Step: what happens" … : an explainer video from steps (ManimGX's idea).
+      if (args[0] === 'explain') {
+        const V = await import('./video-edit.js');
+        const oi = args.indexOf('--out');
+        const rest = args.slice(1).filter((a, i, l) => a !== '--out' && l[i - 1] !== '--out');
+        const [title, ...steps] = rest;
+        if (!title || steps.length < 2) { console.error('usage: ox video explain "<title>" "Step one: what happens" "Step two: …" [--out file.mp4]'); process.exitCode = 3; return; }
+        try { const r = await V.explainerVideo(title, steps, { out: oi >= 0 ? path.resolve(args[oi + 1]) : null }); console.log(`${c.green('✓')} ${r.file} ${c.dim(`(${r.slides} slides, ${r.seconds} s)`)}`); }
+        catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+        return;
+      }
+      // ox video animate <video|transcript|"script"> : scene-by-scene motion animations (Flick's idea; src/animate.js).
+      if (args[0] === 'animate') {
+        const A = await import('./animate.js');
+        const rest = args.slice(1);
+        const flag = (n) => { const i = rest.indexOf(n); return i >= 0 ? rest[i + 1] : undefined; };
+        const valued = new Set(['--out', '--aspect', '--bg', '--fg', '--accent', '--logo', '--font', '--redo', '--save', '--as']);
+        const pos = rest.filter((a, i) => !a.startsWith('--') && !valued.has(rest[i - 1]));
+        const step = (what, detail) => console.log(c.dim(`${what} ${detail ?? ''}`));
+        try {
+          if (rest.includes('--list')) {
+            const saved = A.savedAnimations();
+            console.log(`templates: ${A.TEMPLATES.join(', ')}`);
+            console.log(saved.length ? `saved: ${saved.map((s) => `${s.name} (from ${s.from})`).join(', ')}` : c.dim('saved: none yet (ox video animate --save <scene> <folder>)'));
+            return;
+          }
+          if (flag('--save')) { const r = A.saveAnimation(path.resolve(pos[0] ?? '.'), flag('--save'), flag('--as')); console.log(`${c.green('✓')} saved ${r.name} ${c.dim(r.file)}`); return; }
+          if (flag('--redo')) {
+            const r = await A.renderSpec(path.resolve(pos[0] ?? '.'), { only: flag('--redo') === 'all' ? null : flag('--redo').split(','), onStep: step, sfx: !rest.includes('--no-sfx') });
+            for (const s of r.scenes) console.log(`  ${s.name} ${c.dim(s.file)}`);
+            console.log(`${c.green('✓')} ${r.all}`);
+            return;
+          }
+          const source = pos.length === 1 && fs.existsSync(pos[0]) ? path.resolve(pos[0]) : pos.join(' ');
+          if (!source) { console.error('usage: ox video animate <video | transcript.txt | "the script"> [--aspect 9:16|16:9|1:1|4:5] [--bg #hex --fg #hex --accent #hex --logo file --font name] [--plan-only] [--no-model] [--no-sfx] [--out dir]\n       ox video animate --redo <scene>[,<scene>] <folder>    re-render after editing scene-spec.json\n       ox video animate --save <scene> <folder> [--as name]  keep a scene\'s animation for later runs\n       ox video animate --list'); process.exitCode = 3; return; }
+          const plan = rest.includes('--no-model') ? null : async (system, user) => {
+            const { workingModelSpec } = await import('./working-model.js');
+            const { quickText } = await import('./quick-text.js');
+            const cfg = loadConfig();
+            return (await quickText(resolveBot(await workingModelSpec(cfg, { say: () => {} }), cfg), { system, user, maxTokens: 2500 })).text;
+          };
+          const r = await A.animate(source, { out: flag('--out') ? path.resolve(flag('--out')) : null, aspect: flag('--aspect') ?? '9:16', brand: { bg: flag('--bg'), fg: flag('--fg'), accent: flag('--accent'), logo: flag('--logo') ? path.resolve(flag('--logo')) : null, font: flag('--font') }, plan, render: !rest.includes('--plan-only'), sfx: !rest.includes('--no-sfx'), onStep: step });
+          console.log(fs.readFileSync(r.plan, 'utf8'));
+          for (const s of r.scenes) console.log(`  ${s.name} ${c.dim(`${s.seconds}s · ${s.file}`)}`);
+          console.log(r.all ? `${c.green('✓')} ${r.all}` : `${c.green('✓')} plan ready: ${r.dir} (render it: ox video animate --redo all ${r.dir})`);
+        } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+        return;
+      }
+      const ops = ['transcribe', 'captions', 'cut', 'speed', 'vertical', 'highlights', 'gif', 'polish', 'understand'];
+      if (ops.includes(args[0])) {
+        const { editVideoTool } = await import('./tools/video.js');
+        const [op, file, ...rest] = args;
+        const flag = (n) => { const i = rest.indexOf(n); return i >= 0 ? rest[i + 1] : undefined; };
+        const pos = rest.filter((a, i) => !a.startsWith('--') && !(rest[i - 1] ?? '').startsWith('--'));
+        if (!file) { console.error(`usage: ox video ${op} <file> ${op === 'cut' ? '<start> [end]' : op === 'speed' ? '<factor>' : op === 'highlights' ? '"<what is talked about>"' : op === 'vertical' ? '[9:16|1:1]' : ''}`); process.exitCode = 3; return; }
+        const r = await editVideoTool({ op, file: path.resolve(file), start: flag('--start') ?? (op === 'cut' ? pos[0] : undefined), end: flag('--end') ?? (op === 'cut' ? pos[1] : undefined), factor: op === 'speed' ? Number(pos[0] ?? 2) : undefined, aspect: op === 'vertical' ? pos[0] : undefined, query: op === 'highlights' ? pos.join(' ') : undefined });
+        console.log(r.isError ? c.red(r.content) : r.content.replace(/^edit_video: /, `${c.green('✓')} `));
+        if (r.isError) process.exitCode = 1;
+        return;
+      }
       const tmpl = getTemplate('video');
       if (tmpl) {
         console.log(`${c.bold(tmpl.title)}`);
@@ -4845,6 +5715,108 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'transfer':
+    case 'vs': {
+      // lumiomac's "Claude Code vs Codex": the same prompt to two or more tools,
+      // each in its own folder and Terminal tab; the race is shown in the notch.
+      const R = await import('./race-live.js');
+      const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
+      const prompt = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--tools').join(' ').trim();
+      if (!prompt || prompt === 'help') { console.log(`${c.bold('ox vs')} "<prompt>" [--tools claude,codex]: the same prompt to each tool in its own folder and Terminal tab; the race, its moments and the winner in the notch (tools: ${Object.keys(R.RACERS).join(', ')})`); return; }
+      const I = await import('./ipc.js');
+      const key = `race-${Date.now().toString(36)}`;
+      let server = null;
+      try { server = I.createIpcServer({ socketPath: I.socketPathFor(key), sessionId: key, meta: { cwd: process.cwd(), bot: 'ox vs', model: 'race' } }); } catch {}
+      let n = 0, last = '';
+      const say = (line, done = false) => {
+        if (line === last && !done) return;
+        last = line;
+        if (done) console.log(`${c.green('✓')} ${line}`);
+        try { server?.broadcast({ type: 'tool-start', id: `r${++n}`, name: 'race', argsPreview: line, narrate: true }); if (done) server?.broadcast({ type: 'tool-end', id: `r${n}`, name: 'race', isError: false, narrate: true }); } catch {}
+      };
+      try {
+        const r = await R.race(prompt, { tools: (val('--tools') ?? 'claude,codex').split(',').map((t) => t.trim()).filter(Boolean), say, update: (lanes) => { for (const l of lanes) for (const m of l.moments.slice(-1)) console.log(c.dim(`  ${l.label}: ${m.label}`)); } });
+        console.log(r.winner ? `${c.bold(r.winner.label)} wins. Folders: ${r.dir}` : c.yellow(`no one finished. Folders: ${r.dir}`));
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+      await new Promise((res) => setTimeout(res, 6000));
+      try { server?.broadcast({ type: 'final' }); server?.close?.(); } catch {}
+      return;
+    }
+    case 'phone': {
+      // OX on your iPhone (src/phone-bridge.js, desktop/ios): pair, list, forget, serve.
+      const P = await import('./phone-bridge.js');
+      const sub = args[0] ?? 'list';
+      if (sub === 'pair') {
+        const p = P.pairDevice(args.slice(1).join(' ') || 'iPhone');
+        console.log(`${c.green('✓')} paired ${c.bold(p.name)}. Open this on the phone (scan the code, or AirDrop / paste the link):`);
+        console.log(`  ${p.link}`);
+        console.log(c.dim('  The link holds the key: show it to nobody else. ox phone forget <name> revokes it.'));
+        try {
+          const { spawnSync } = await import('node:child_process');
+          spawnSync('pbcopy', { input: p.link });
+          const { handsPath } = await import('./mac-control.js');
+          const hb = handsPath();
+          const png = path.join(os.tmpdir(), `ox-phone-${p.id}.png`);
+          if (hb && spawnSync(hb, ['qr', p.link, png]).status === 0) { spawnSync('open', [png]); console.log(c.dim(`  the QR code is open (${png}); the link is on the clipboard`)); }
+          setTimeout(() => { try { fs.rmSync(png, { force: true }); } catch {} }, 120_000).unref?.();
+        } catch {}
+        return;
+      }
+      if (sub === 'forget' || sub === 'rm') { console.log(P.forgetDevice(args[1] ?? '') ? `${c.green('✓')} forgotten: that phone can no longer reach this Mac` : c.yellow('no such phone')); return; }
+      if (sub === 'serve') {
+        const b = await P.startPhoneBridge();
+        console.log(`approvals for your phone on ${P.lanAddress()}:${b.port} (Ctrl-C to stop)`);
+        await new Promise((res) => process.once('SIGINT', res));
+        await b.close();
+        return;
+      }
+      const all = P.readDevices();
+      if (!all.length) console.log(c.dim('no phone paired: ox phone pair "My iPhone"'));
+      for (const d of all) console.log(`${c.bold(d.name)}  ${c.dim(`${d.id} · paired ${d.added.slice(0, 10)}`)}`);
+      return;
+    }
+    case 'office': {
+      // The 3D office (the-delegation): every live agent at the desk of what it is doing.
+      let port = null;
+      for (const f of ['serve.json', 'app.json']) {
+        try { const d = JSON.parse(fs.readFileSync(path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), f), 'utf8')); try { process.kill(d.pid, 0); port = d.port; break; } catch {} } catch {}
+      }
+      if (!port) { console.error('ox office needs ox running: ox serve (or open OX.app, or the island starts it)'); process.exitCode = 1; return; }
+      const url = `http://127.0.0.1:${port}/office`;
+      const { spawnSync } = await import('node:child_process');
+      spawnSync(process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open', [url]);
+      console.log(url);
+      return;
+    }
+    case 'make': {
+      // Vovy's "build me a … with Claude": src/make-app.js. Each step is shown in
+      // the notch (this command is a session there), the agent works in its own
+      // Terminal tab, and the app opens when it is done.
+      const M = await import('./make-app.js');
+      const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
+      const idea = args.filter((a, i) => !a.startsWith('--') && !['--with', '--dir'].includes(args[i - 1])).join(' ').trim();
+      if (!idea || idea === 'help') { console.log(`${c.bold('ox make')} "<what to build>" [--with claude|codex] [--dir <folder>]: a new project, the idea as a full brief, the agent in a new Terminal tab, the app opened when it is done`); return; }
+      const I = await import('./ipc.js');
+      const key = `make-${M.slugOf(M.nameOf(idea))}-${Date.now().toString(36)}`;
+      let server = null;
+      try { server = I.createIpcServer({ socketPath: I.socketPathFor(key), sessionId: key, meta: { cwd: process.cwd(), bot: 'ox make', model: val('--with') ?? 'claude' } }); } catch {}
+      let n = 0;
+      const say = (step, done = false) => {
+        console.log(`${done ? c.green('✓') : c.dim('·')} ${step}`);
+        try {
+          // narrate: the island shows these steps under the closed notch (Vovy's step line).
+          if (!done) server?.broadcast({ type: 'tool-start', id: `m${++n}`, name: 'make', argsPreview: step, narrate: true });
+          else { server?.broadcast({ type: 'tool-start', id: `m${++n}`, name: 'make', argsPreview: step, narrate: true }); server?.broadcast({ type: 'tool-end', id: `m${n}`, name: 'make', isError: false, narrate: true }); }
+        } catch {}
+      };
+      try {
+        const r = await M.make(idea, { builder: val('--with') ?? 'claude', dir: val('--dir') ? path.resolve(val('--dir')) : null, say });
+        try { server?.broadcast({ type: 'text-delta', text: r.opened ? `${r.name} is live ✓` : `${r.name}: still being built in ${r.dir}` }); server?.broadcast({ type: 'turn-end', stopReason: 'end_turn' }); } catch {}
+        if (r.opened) console.log(c.dim(`  ${r.entry}`));
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; try { server?.broadcast({ type: 'error', error: e.message }); } catch {} }
+      await new Promise((res) => setTimeout(res, 6000));
+      try { server?.broadcast({ type: 'final' }); server?.close?.(); } catch {}
+      return;
+    }
     case 'handoff': {
       // Carry a session from one AI tool to another (src/session-transfer.js):
       // other tools' stores are only read; the target gets a handoff file and
@@ -4906,6 +5878,15 @@ async function runSubcommand(cmd, args) {
       console.log(c.dim(`  ${plan.kind === 'resume' ? plan.note : `starting ${T.TOOLS[T.toolName(to)].label} in ${plan.cwd.replace(os.homedir(), '~')}`}`));
       const r = (await import('node:child_process')).spawnSync(plan.cmd, plan.args, { cwd: plan.cwd, stdio: 'inherit' });
       process.exitCode = r.status ?? 0;
+      return;
+    }
+    case 'statusline': {
+      // Claude Code's status-line command (src/statusline.js): records your
+      // plan limits for the island, then shows the status line you had.
+      const { runStatusline } = await import('./statusline.js');
+      const chunks = [];
+      for await (const c of process.stdin) chunks.push(c);
+      process.stdout.write(runStatusline(Buffer.concat(chunks).toString('utf8')));
       return;
     }
     case 'mcp-mac': {
@@ -4986,6 +5967,28 @@ async function runSubcommand(cmd, args) {
           if (problems.length) console.log(`${c.bold('check found:')}\n${problems.map((p) => `  ✗ ${p}`).join('\n')}`);
           else console.log('check: every GET answered and every extract found something');
           console.log(c.dim(`try it: ox flow run ${saved.id} · change it: ox flow show ${saved.id} > f.json, edit, ox flow add f.json · remove: ox flow rm ${saved.id}`));
+          return;
+        }
+        if (verb === 'templates') {
+          // n8n templates (Zie619/n8n-workflows, MIT) to import as flows.
+          const N = await import('./n8n-import.js');
+          const list = await N.searchTemplates(args.slice(1).join(' '), { limit: 25 });
+          if (!list.length) { console.log(c.dim('no template matches those words')); return; }
+          for (const t of list) console.log(`${t.name.padEnd(60).slice(0, 60)} ${c.dim(`ox flow import ${t.path}`)}`);
+          return;
+        }
+        if (verb === 'import') {
+          if (!id) return fail('usage: ox flow import <n8n.json | workflows/…json template> [--name N]');
+          const N = await import('./n8n-import.js');
+          const wf = fs.existsSync(id) ? JSON.parse(fs.readFileSync(id, 'utf8')) : await N.fetchTemplate(id);
+          const ni = args.indexOf('--name');
+          const r = N.convert(wf, { name: ni >= 0 ? args[ni + 1] : null });
+          console.log(`${c.bold(r.flow.name)}: ${r.converted} step(s) converted${r.skipped.length ? `, ${r.skipped.length} not (ox has no step for them yet)` : ''}`);
+          for (const st of r.flow.steps) console.log(`  ${c.green('✓')} ${st.type.padEnd(7)} ${st.name}`);
+          for (const k of r.skipped) console.log(`  ${c.yellow('–')} ${k.type.padEnd(14)} ${k.node}`);
+          if (r.problems.length) { console.log(c.red(`not saved: ${r.problems.join('; ')}`)); process.exitCode = 1; return; }
+          const saved = F.saveFlow(r.flow);
+          console.log(`saved ${saved.id} (off: check it with ox flow show ${saved.id}, run it with ox flow run ${saved.id}, then ox flow on ${saved.id})`);
           return;
         }
         if (verb === 'add') {
@@ -5142,15 +6145,19 @@ async function runSubcommand(cmd, args) {
         for (const r of ms.history({ limit: 30 })) console.log(`${r.status === 'completed' ? c.green('✓') : c.yellow(r.status ?? '?')} ${c.dim(r.id)} ${r.label ?? r.model}  ${String(r.prompt ?? '').slice(0, 60)}  ${c.dim((r.files ?? [])[0] ?? '')}`);
         return;
       }
-      const VALUED = new Set(['--provider', '--model', '--set', '--start', '--end', '--ref', '--video', '--audio']);
+      const VALUED = new Set(['--provider', '--model', '--set', '--start', '--end', '--ref', '--video', '--audio', '--edit']);
       const prompt = args.filter((a, i) => !a.startsWith('--') && !VALUED.has(args[i - 1])).join(' ');
       if (!prompt) { console.log(SUB_USAGE.create); process.exitCode = 2; return; }
       const settings = {};
       for (const kv of all('--set')) { const [k, ...v] = kv.split('='); settings[k] = v.join('='); }
       const media = {};
       for (const [f, role] of [['--start', 'start'], ['--end', 'end'], ['--ref', 'reference'], ['--video', 'video'], ['--audio', 'audio']]) if (all(f).length) media[role] = all(f);
-      const provider = flag('--provider') ?? 'higgsfield';
-      const model = flag('--model') ?? (provider === 'higgsfield' ? 'soul-2' : provider === 'openai' ? 'gpt-image-2' : provider === 'fal' ? 'fal-ai/flux/schnell' : 'local');
+      // --edit <image>: one prompt edits that picture (Krea), on a provider that edits.
+      if (flag('--edit')) media.edit = [path.resolve(flag('--edit'))];
+      const edits = !!media.edit;
+      const picked = (await import('./tools/media.js')).pick({ kind: flag('--video') || args.includes('--clip') ? 'video' : 'image', edit: !!edits });
+      const provider = flag('--provider') ?? picked.provider ?? (edits ? 'openai' : 'higgsfield');
+      const model = flag('--model') ?? (provider === 'device' ? picked.model : provider === 'higgsfield' ? 'soul-2' : provider === 'openai' ? 'gpt-image-2' : provider === 'fal' ? (edits ? 'fal-ai/flux-pro/kontext' : 'fal-ai/flux/schnell') : provider === 'openrouter' ? 'google/gemini-2.5-flash-image' : 'local');
       // Settings from the command line are text; the catalogue turns numbers and switches back.
       if (provider === 'higgsfield') {
         const m = ms.getModel(model);
@@ -5183,6 +6190,11 @@ async function runSubcommand(cmd, args) {
         return;
       }
       const r = await mk.search(args.join(' '));
+      if (r.featured?.length) {
+        console.log(c.dim('  featured (licences checked)'));
+        for (const f of r.featured) console.log(`${f.installed ? c.green('✓') : ' '} ${c.bold(f.name)} ${c.dim(`[${f.kind}, ${f.license}]`)}  ${c.dim(f.description.slice(0, 90))}  ${c.dim(`ox market install ${f.name}`)}`);
+        console.log('');
+      }
       for (const p of r.plugins.slice(0, 25)) console.log(`${p.installed ? c.green('✓') : ' '} ${c.bold(p.name)}${p.category ? c.dim(` [${p.category}]`) : ''}  ${c.dim(p.description.slice(0, 90))}  ${c.dim(`ox market install ${p.name}@${p.catalog}`)}`);
       if (r.repos.length) console.log(c.dim('\n  from GitHub (topic: agent-skills)'));
       for (const x of r.repos.slice(0, 15)) console.log(`${x.installed ? c.green('✓') : ' '} ${c.bold(x.repo)} ${c.dim(`★${x.stars}`)}  ${c.dim(x.description.slice(0, 80))}`);
@@ -5218,6 +6230,12 @@ async function runSubcommand(cmd, args) {
           try { on = ah.installed(JSON.parse(fs.readFileSync(a.settings(), 'utf8')), id); } catch {}
           console.log(`${on ? c.green('connected') : c.dim('not connected')}  ${a.label.padEnd(12)} ${c.dim(`ox hooks install ${id}  ·  ${a.settings()}`)}`);
         }
+        return;
+      }
+      if (sub === 'safe') {
+        // Read-only calls (ls, git status, reading files) allowed without asking; risky ones still wait.
+        if (args[1] === 'on' || args[1] === 'off') ah.setAutoSafe(args[1] === 'on');
+        console.log(`safe commands run on their own: ${ah.autoSafe() ? c.green('on') : c.yellow('off')}  ${c.dim('(only reading: ls, cat, git status/log/diff, rg… never chained or redirected)')}`);
         return;
       }
       if (sub !== 'install' && sub !== 'uninstall') { console.log(SUB_USAGE.hooks); process.exitCode = 2; return; }
@@ -7842,14 +8860,19 @@ async function replWithBudget(config, opts, flags, budget) {
         return;
       }
       case '/commands': {
+        if (rest) { await runSubcommand('commands', rest.split(/\s+/)); return; }
+        const S = await import('./slash-catalog.js');
+        let group = '';
+        for (const x of S.COMMANDS) {
+          if (x.group !== group) { group = x.group; console.log(c.bold(group)); }
+          console.log(`  ${x.usage.split(' ')[0].padEnd(13)}${c.dim(x.what)}`);
+        }
         const all = [...listCustomCommands({ cwd: config.cwd }).entries()];
-        if (!all.length) {
-          console.log(c.dim('no custom commands — add .claude/commands/<name>.md or install a plugin (ox plugin add)'));
-          return;
+        if (all.length) {
+          console.log(c.bold('Yours (.claude/commands, plugins)'));
+          for (const [name, meta] of all.sort(([a], [b]) => a.localeCompare(b))) console.log(`  /${name}  ${c.dim(meta.source)}`);
         }
-        for (const [name, meta] of all.sort(([a], [b]) => a.localeCompare(b))) {
-          console.log(`  /${name}  ${c.dim(meta.source)}`);
-        }
+        console.log(c.dim('\n/<command> --help for its options · /commands install puts them in Claude Code and Codex too'));
         return;
       }
       case '/self-improve': {
@@ -7863,6 +8886,13 @@ async function replWithBudget(config, opts, flags, budget) {
         if (custom) {
           console.log(c.dim(`· /${cmd.slice(1)} (${custom.source})`));
           await runTurn(await expandLlmsRefs(expandContextRefs(expandCommand(custom.file, rest), config.cwd)));
+          return;
+        }
+        // Every ox command works here too: /browse, /studio, /theme, /library… (src/slash-catalog.js)
+        const ox = (await import('./slash-catalog.js')).parse(rawLine);
+        if (ox) {
+          try { await runSubcommand(ox.cmd.name, ox.args); } catch (e) { console.log(c.red(`✗ ${e?.message ?? e}`)); }
+          process.exitCode = 0;
           return;
         }
         console.log(c.dim(`unknown command '${cmd}' — try /help or /commands`));
@@ -8238,6 +9268,20 @@ export async function main(argv = []) {
         i++;
         break;
       }
+      // A question about the screen, answered to be spoken with marks drawn over it
+      // (src/buddy.js buddyGuidance): the island's screen route passes it.
+      case '--buddy':
+        flags.buddy = true;
+        break;
+      // Documented for `ox -p` (and used by the island's "write it for me"), but
+      // this loop never took it: `ox -p "…" --image shot.png` printed the help.
+      case '--image': {
+        const v = needValue(a, i);
+        if (v === null) return;
+        (flags.images ??= []).push(v);
+        i++;
+        break;
+      }
       case '--model': {
         const v = needValue(a, i);
         if (v === null) return;
@@ -8590,6 +9634,12 @@ export async function main(argv = []) {
     }
     if (ipcServer) await closeIpcBridge();
     return;
+  }
+  if (print && flags.buddy) {
+    const { buddyGuidance, pngSize } = await import('./buddy.js');
+    let size = null;
+    try { size = pngSize(fs.readFileSync(flags.images?.[0])); } catch {}
+    words.push(`\n\n${buddyGuidance({ size, voice: true })}`);
   }
   if (print) {
     let initialMessages = [];

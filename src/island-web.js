@@ -195,7 +195,7 @@ export function openIslandWindow(url, { platform = process.platform } = {}) {
   const browser = findAppBrowser(platform);
   const profile = path.join(os.homedir(), '.ox', 'island', 'browser-profile');
   if (browser) {
-    const child = spawn(browser, [`--app=${url}`, '--window-size=520,72', '--window-position=0,0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check'], { detached: true, stdio: 'ignore', windowsHide: false });
+    const child = spawn(browser, [`--app=${url}`, '--window-size=520,72', '--window-position=0,0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--use-mock-keychain', '--password-store=basic'], { detached: true, stdio: 'ignore', windowsHide: false });
     child.on('error', () => {});
     child.unref();
     if (platform === 'win32') keepOnTopWindows(child.pid);

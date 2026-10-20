@@ -10,8 +10,13 @@ struct NotchMetrics: Equatable {
     let width: CGFloat
     let screenFrame: CGRect
 
+    /// Which display: the notched one (default), or the one your pointer is on
+    /// with several displays:  defaults write dev.ox.island island.screen active
+    static var followsPointer: Bool { UserDefaults.standard.string(forKey: "island.screen") == "active" && NSScreen.screens.count > 1 }
+    static func pointerScreen() -> NSScreen? { let p = NSEvent.mouseLocation; return NSScreen.screens.first { $0.frame.contains(p) } }
+
     static func current() -> NotchMetrics {
-        let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? NSScreen.screens[0]
+        let screen = (followsPointer ? pointerScreen() : nil) ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? NSScreen.screens[0]
         let top = screen.safeAreaInsets.top
         if top > 0, let l = screen.auxiliaryTopLeftArea, let r = screen.auxiliaryTopRightArea {
             return NotchMetrics(hasNotch: true, height: top, width: screen.frame.width - l.width - r.width, screenFrame: screen.frame)
@@ -24,18 +29,29 @@ struct NotchMetrics: Equatable {
 /// Every size the island can take, in one place, so the SwiftUI shape and the
 /// AppKit hit-test always agree on where the island is.
 enum IslandLayout {
-    static let panel = CGSize(width: 720, height: 400)
+    static let panel = CGSize(width: 720, height: 540)
     static let wing: CGFloat = 46
     static let ear: CGFloat = 12
     /// Standard, or Compact ("make the island smaller"): no walking-ox floor and a narrower card.
     static var compact: Bool { UserDefaults.standard.string(forKey: "island.size") == "compact" }
     /// The floor the (full-size) ox walks on, under the card (none when compact).
-    static var floorHeight: CGFloat { compact ? 0 : 92 }
-    static var expanded: CGSize { CGSize(width: compact ? 520 : 640, height: 168 + floorHeight) }
+    /// Sessions are listed: the island stays slim like Coucou's and Claudex's
+    /// (small characters in the rows, no walking-ox floor under them).
+    static var busy = false
+    /// The ox lives in the card now (at its left, like Mochi in Coucou's), so
+    /// there is no separate floor under it: the island stays slim in every state.
+    static var floorHeight: CGFloat { 0 }
+    /// Coucou's proportions: 640 wide, 160 tall (8 top, 34 header, 98 cards, 10 bottom, 10 spare).
+    static var expanded: CGSize { CGSize(width: compact ? 560 : 640, height: 160) }
+    /// The session card, the chat or the + tools under the cards.
+    static let panelExtra: CGFloat = 176
+    /// The office tab (a 4:3 room) is taller than the other tabs.
+    static let officeTall: CGFloat = 340
+    static var officeOpen = false
     /// Seconds the island stays open after the pointer leaves (0 = until you close it).
     static var autoClose: TimeInterval { UserDefaults.standard.object(forKey: "island.autoClose") as? Double ?? 6 }
     /// With nothing running the card is one line, so the island is shorter.
-    static let idleCardTrim: CGFloat = 70
+    static let idleCardTrim: CGFloat = 26
     /// Extra height under the card: the agent office, or the run's OX Canvas.
     static let officeHeight: CGFloat = 132
 
@@ -51,12 +67,20 @@ enum IslandLayout {
     }
 
     /// width, height, bottom corner radius, top radius (<0 = concave ears)
+    /// A session card is a little taller than the office (it has a message box).
+    static var cardOpen = false
+    /// A narrated step under the closed notch (Vovy's "Checking your project setup"): one line taller.
+    static var tickerOn = false
+    static let tickerHeight: CGFloat = 26
+    /// A race shows one row per lane (lumiomac's two timelines).
+    static var tickerRows = 1
+    static var trayOpen = false
     static func shape(_ phase: Phase, _ m: NotchMetrics, office: Bool = false, idle: Bool = false) -> (w: CGFloat, h: CGFloat, corner: CGFloat, top: CGFloat) {
         switch phase {
         case .launch: return (launchSize.width, launchSize.height, 30, -ear)
         case .hidden: return (m.width, m.height, 10, 0)
-        case .compact: return (m.width + 2 * wing + 2 * ear, m.height, 12, -ear)
-        case .expanded: return (expanded.width, expanded.height - (idle ? idleCardTrim : 0) + (office ? officeHeight : 0), 26, -ear)
+        case .compact: return tickerOn ? (max(m.width + 2 * wing + 2 * ear, tickerRows > 1 ? 470 : 380), m.height + tickerHeight * CGFloat(tickerRows) + (tickerRows > 1 ? 4 : 0), 16, -ear) : (m.width + 2 * wing + 2 * ear, m.height, 12, -ear)
+        case .expanded: return (expanded.width, expanded.height + (office ? (officeOpen && trayOpen ? officeTall + 36 : cardOpen || trayOpen ? panelExtra : officeHeight) + 8 : 0), 22, -ear)
         }
     }
 }
@@ -72,6 +96,8 @@ final class IslandPanel: NSPanel {
     private var awaySince: Date?
     private var cancellables = Set<AnyCancellable>()
     private var clickMonitor: Any?
+    /// The notch geometry, refreshed when displays change (not 60 times a second).
+    private var metrics = NotchMetrics.current()
 
     init(bridge: OxBridge) {
         self.bridge = bridge
@@ -86,7 +112,7 @@ final class IslandPanel: NSPanel {
         ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
 
-        let host = NSHostingView(rootView: IslandRoot(bridge: bridge))
+        let host = FirstClickHostingView(rootView: IslandRoot(bridge: bridge))
         host.wantsLayer = true
         host.layer?.backgroundColor = .clear
         contentView = host
@@ -100,6 +126,9 @@ final class IslandPanel: NSPanel {
             }
             return ev
         }
+        bridge.cardChanged = { [weak self] open in
+            DispatchQueue.main.async { if open { self?.makeKeyAndOrderFront(nil) } else if self?.isKeyWindow == true, self?.bridge.tray != .chat { self?.resignKey() } }
+        }
         bridge.trayChanged = { [weak self] tab in
             DispatchQueue.main.async {
                 if tab == .chat { self?.makeKeyAndOrderFront(nil) } else if self?.isKeyWindow == true { self?.resignKey() }
@@ -109,11 +138,12 @@ final class IslandPanel: NSPanel {
 
     // Only while the chat is open: the island never takes keystrokes from the
     // app you are typing in unless you opened its text box.
-    override var canBecomeKey: Bool { bridge.tray == .chat }
+    override var canBecomeKey: Bool { bridge.tray == .chat || bridge.card != nil }
     override var canBecomeMain: Bool { false }
 
     func reposition(animated: Bool) {
-        let m = NotchMetrics.current()
+        metrics = NotchMetrics.current()
+        let m = metrics
         let f = NSRect(x: m.screenFrame.midX - IslandLayout.panel.width / 2,
                        y: m.screenFrame.maxY - IslandLayout.panel.height,
                        width: IslandLayout.panel.width, height: IslandLayout.panel.height)
@@ -134,10 +164,12 @@ final class IslandPanel: NSPanel {
     }
 
     private func tick() {
+        // Several displays, following the pointer: move when it crosses to another screen.
+        if NotchMetrics.followsPointer, let sc = NotchMetrics.pointerScreen(), sc.frame != metrics.screenFrame, !bridge.expanded { reposition(animated: false) }
         let mouse = NSEvent.mouseLocation
         let f = frame
         let local = CGPoint(x: mouse.x - f.minX, y: f.maxY - mouse.y) // top-down
-        let m = NotchMetrics.current()
+        let m = metrics
         let s = IslandLayout.shape(IslandLayout.phase(bridge), m, office: bridge.hasExtraPanel, idle: bridge.idleIsland)
         let island = CGRect(x: (f.width - s.w) / 2, y: 0, width: s.w, height: s.h)
         let inside = island.insetBy(dx: -6, dy: -4).contains(local)
@@ -147,13 +179,16 @@ final class IslandPanel: NSPanel {
         // Opened by a click (or a tool), it closes on its own once the pointer
         // has been away a few seconds, unless an answer is coming or ox waits on you.
         if inside { awaySince = nil }
-        else if bridge.pinnedOpen || bridge.tray != nil {
+        else if bridge.pinnedOpen || bridge.tray != nil || bridge.card != nil {
             if awaySince == nil { awaySince = Date() }
             let wait = IslandLayout.autoClose
             if wait > 0, let since = awaySince, Date().timeIntervalSince(since) > wait,
-               !bridge.chat.busy, bridge.pendingSession == nil, !bridge.buddyActive {
+               !bridge.chat.busy, bridge.pendingSession == nil, !bridge.buddyActive, !(bridge.card?.busy ?? false),
+               // Typing in the island (a message to a session, the chat): it stays until you close it.
+               !isKeyWindow {
                 bridge.pinnedOpen = false
                 bridge.tray = nil
+                bridge.card = nil
                 awaySince = nil
             }
         }
@@ -178,4 +213,11 @@ final class IslandPanel: NSPanel {
         let near = island.insetBy(dx: -260, dy: -200).contains(local)
         setPoll(near || bridge.expanded ? 1.0 / 60 : 1.0 / 10)
     }
+}
+
+
+/// The island never takes focus from the app you are in, so the first click on
+/// it must act (Allow, a session, a tray tool), not just bring the panel forward.
+final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

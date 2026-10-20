@@ -94,6 +94,49 @@ function runQuiet(cmd, args, env = {}) {
 }
 
 // Speak (or, with `out`, write a WAV). Returns { ok, engine, out?, message }.
+// ---- Fish Audio's lessons, in ox's own voice: sound starts after the first
+// sentence (the next one renders while this one plays), and emotion tags at
+// the start of a sentence, like (excited) (calm) (whispering) (sad), change
+// how it is said. Measured on Kokoro: a 4-sentence reply played after ~17 s
+// whole; the first sentence alone is ~1.9 s with the model warm.
+const EMOTIONS = { excited: 1.15, happy: 1.1, cheerful: 1.1, urgent: 1.15, calm: 0.92, serious: 0.92, sad: 0.86, whispering: 0.88, whisper: 0.88, gentle: 0.9 };
+const SAY_RATE = { excited: 230, happy: 215, cheerful: 215, urgent: 235, calm: 170, serious: 170, sad: 155, whispering: 160, whisper: 160, gentle: 165 };
+
+/** "(excited) It worked!" → [{ text: "It worked!", mood: "excited", speed: 1.15 }], one per sentence. */
+export function sentences(text) {
+  const out = [];
+  let mood = null;
+  for (const raw of String(text ?? '').replace(/\s+/g, ' ').match(/[^.!?…]+[.!?…]+["')\]]*|[^.!?…]+$/g) ?? []) {
+    let t = raw.trim();
+    const tag = /^[([]\s*([a-z]+)\s*[)\]]\s*/i.exec(t);
+    if (tag && EMOTIONS[tag[1].toLowerCase()]) { mood = tag[1].toLowerCase(); t = t.slice(tag[0].length); }
+    if (t) out.push({ text: t, mood, speed: mood ? EMOTIONS[mood] : 1 });
+  }
+  // Very short pieces ride with the next one (no gaps between "Done." and the rest).
+  const merged = [];
+  for (const x of out) { const last = merged[merged.length - 1]; if (last && last.text.length < 18 && last.mood === x.mood) last.text += ` ${x.text}`; else merged.push({ ...x }); }
+  // A short last piece ("Done.") joins the one before it.
+  const end = merged[merged.length - 1], before = merged[merged.length - 2];
+  if (end && before && end.text.length < 18 && end.mood === before.mood) { before.text += ` ${end.text}`; merged.pop(); }
+  return merged;
+}
+
+/** Live speech, sentence by sentence: render the next while this one plays. */
+async function speakStreamed(parts, { voice, env }) {
+  let next = kokoroSpeak(parts[0].text, { voice, speed: parts[0].speed });
+  let firstAt = null;
+  const t0 = Date.now();
+  for (let i = 0; i < parts.length; i++) {
+    const r = await next;
+    next = i + 1 < parts.length ? kokoroSpeak(parts[i + 1].text, { voice, speed: parts[i + 1].speed }) : null;
+    const play = playCommand(r.out);
+    firstAt ??= Date.now() - t0;
+    if (play && !env.OX_TTS_SILENT) await runQuiet(play[0], play[1], { OX_TTS_OUT: r.out });
+    try { fs.unlinkSync(r.out); } catch {}
+  }
+  return firstAt;
+}
+
 export async function speak(text, { engine = 'auto', voice = null, out = null, model = null, env = process.env } = {}) {
   const t = String(text ?? '').trim();
   if (!t) return { ok: false, message: 'nothing to say' };
@@ -103,7 +146,13 @@ export async function speak(text, { engine = 'auto', voice = null, out = null, m
   const wantKokoro = engine === 'kokoro' || (engine === 'auto' && !(voice && !kokoroVoice) && env.OX_TTS_ENGINE !== 'system' && env.OX_TTS_ENGINE !== 'voxcpm');
   if (wantKokoro && kokoroStatus().ready) {
     try {
-      const r = await kokoroSpeak(t, { voice: kokoroVoice ?? env.OX_TTS_VOICE ?? DEFAULT_VOICE, out });
+      const parts = sentences(t);
+      // Speaking now (not writing a file): start after the first sentence.
+      if (!out && parts.length > 1) {
+        const firstMs = await speakStreamed(parts, { voice: kokoroVoice ?? env.OX_TTS_VOICE ?? DEFAULT_VOICE, env });
+        return { ok: true, engine: 'kokoro', out: null, message: 'spoken', firstSoundMs: firstMs, sentences: parts.length };
+      }
+      const r = await kokoroSpeak(parts.map((p) => p.text).join(' ') || t, { voice: kokoroVoice ?? env.OX_TTS_VOICE ?? DEFAULT_VOICE, out, speed: parts[0]?.speed ?? 1 });
       if (!out) {
         const play = playCommand(r.out);
         if (play) await runQuiet(play[0], play[1], { OX_TTS_OUT: r.out });
@@ -133,7 +182,10 @@ export async function speak(text, { engine = 'auto', voice = null, out = null, m
     }
     return { ok: true, engine: 'voxcpm', out: out ?? null, message: out ? `wrote ${out}` : 'spoken' };
   }
-  const c = systemCommand(t, { out });
+  const parts = sentences(t);
+  const mood = parts.find((p) => p.mood)?.mood;
+  const c = systemCommand(parts.map((p) => p.text).join(' ') || t, { out });
+  if (c && mood && SAY_RATE[mood] && c.cmd === 'say') c.args = ['-r', String(SAY_RATE[mood]), ...c.args];
   if (!c) return { ok: false, engine: 'system', message: 'no system voice found (install espeak-ng)' };
   const r = await runQuiet(c.cmd, c.args, c.env);
   return r.ok ? { ok: true, engine: 'system', out, message: out ? `wrote ${out}` : 'spoken' } : { ok: false, engine: 'system', message: r.err || 'the system voice failed' };

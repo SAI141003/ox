@@ -50,9 +50,18 @@ export function endRun(runId, { failed = false } = {}) {
   }
 }
 
-export function liveBoard(now = Date.now()) {
+export function liveBoard(now = Date.now(), { others = true } = {}) {
   for (const [id, r] of runs) if (r.ended && now - r.ended > KEEP_DONE_MS) runs.delete(id);
-  return { at: now, runs: [...runs.values()].map((r) => ({ ...r, seconds: Math.round(((r.ended ?? now) - r.started) / 1000) })) };
+  const own = [...runs.values()].map((r) => ({ ...r, seconds: Math.round(((r.ended ?? now) - r.started) / 1000) }));
+  // Claude Code and Codex sessions on this Mac (src/agents-live.js), read-only.
+  return { at: now, runs: others ? [...own, ...otherAgents(now)] : own };
+}
+
+let agentsLive = null;
+import('./agents-live.js').then((m) => { agentsLive = m; }).catch(() => {});
+function otherAgents(now) {
+  if (!agentsLive || process.env.OX_OTHER_AGENTS === '0') return [];
+  try { return agentsLive.asBoardRows(agentsLive.liveAgents({ now }), now); } catch { return []; }
 }
 
 // The broadcaster a run's ctx carries (see withIpcBroadcast in agent.js).

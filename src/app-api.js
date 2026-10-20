@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { KEY_ENV, BOTS } from './bots.js';
 import { keyStatus, setKey } from './keystore.js';
 
@@ -191,7 +192,7 @@ export async function updateView() {
 
 // Subscriptions you already pay for (Claude, ChatGPT, …) through their CLIs.
 export async function accountsView(env = process.env) {
-  const { checkAll } = await import('./subscriptions.js');
+  const { checkAll, planModel } = await import('./subscriptions.js');
   const { loadConfig } = await import('./config.js');
   let config = {};
   try { config = loadConfig(); } catch {}
@@ -199,6 +200,8 @@ export async function accountsView(env = process.env) {
     id: c.id, label: c.label, bin: c.bin, installed: !!c.installed, works: !!c.works,
     version: c.version ?? null, problem: c.problem ?? null, fix: c.fix ?? null, login: c.login ?? null,
     bot: `${c.id}-plan`,
+    // The model this account accepted last time (e.g. a free ChatGPT account), shown on its card.
+    model: c.works ? (c.model ?? planModel(c.id)) : null,
   }));
 }
 
@@ -252,7 +255,12 @@ export async function capabilitiesView(cwd = process.cwd()) {
       return { name, mode: a.mode ?? 'code', bot: a.bot ?? null, desc: a.description ?? a.desc ?? '', tools: a.tools ?? null };
     } catch { return { name, broken: true }; }
   });
-  return { skills, tools, mcp, agents };
+  let plugins = [];
+  try {
+    const pj = JSON.parse(fs.readFileSync(path.join(home, '.ox', 'plugins.json'), 'utf8')).plugins ?? {};
+    plugins = Object.entries(pj).map(([name, x]) => ({ name, source: x.source ?? '', enabled: x.enabled !== false, version: x.version ?? null }));
+  } catch {}
+  return { skills, tools, mcp, agents, plugins };
 }
 
 export function skillBody(name, cwd = process.cwd()) {
@@ -507,4 +515,70 @@ export async function botDelete(name, env = process.env) {
   const { deleteAgent, AGENT_NAME } = await import('./agents.js');
   if (!AGENT_NAME.test(String(name)) || !deleteAgent(String(name))) throw new Error(`no bot called ${name}`);
   return botsView(env);
+}
+
+// Settings › Projects, Worktrees, Server, What's new (after OpenCode's settings):
+// the folders ox has worked in, the git worktrees in them, this server, and
+// what changed in ox since the version you last saw.
+const gitOut = (cwd, args) => {
+  const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout: 5000 });
+  return r.status === 0 ? r.stdout.trim() : null;
+};
+
+export function projectsView({ limit = 400 } = {}) {
+  const byCwd = new Map();
+  for (const s of sessionsView({ limit })) {
+    if (!s.cwd) continue;
+    const p = byCwd.get(s.cwd) ?? { path: s.cwd, sessions: 0, last: 0 };
+    p.sessions++; p.last = Math.max(p.last, s.at);
+    byCwd.set(s.cwd, p);
+  }
+  if (!byCwd.has(process.cwd())) byCwd.set(process.cwd(), { path: process.cwd(), sessions: 0, last: Date.now() });
+  return [...byCwd.values()].filter((p) => fs.existsSync(p.path)).sort((a, b) => b.last - a.last).slice(0, 40).map((p) => ({
+    ...p, name: path.basename(p.path), current: p.path === process.cwd(), branch: gitOut(p.path, ['rev-parse', '--abbrev-ref', 'HEAD']),
+  }));
+}
+
+/** git worktree list --porcelain → [{ path, branch, head, main, dirty }] for each project that is a repo. */
+export function worktreesView() {
+  const seen = new Set(), out = [];
+  for (const p of projectsView()) {
+    const root = gitOut(p.path, ['rev-parse', '--show-toplevel']);
+    if (!root || seen.has(root)) continue;
+    seen.add(root);
+    const txt = gitOut(root, ['worktree', 'list', '--porcelain']);
+    if (!txt) continue;
+    const trees = txt.split('\n\n').map((b) => Object.fromEntries(b.split('\n').map((l) => [l.split(' ')[0], l.slice(l.indexOf(' ') + 1)])));
+    for (const [i, t] of trees.entries()) {
+      if (!t.worktree) continue;
+      const dirty = i > 0 && fs.existsSync(t.worktree) ? !!gitOut(t.worktree, ['status', '--porcelain']) : null;
+      out.push({ repo: root, path: t.worktree, branch: (t.branch ?? '').replace('refs/heads/', '') || (t.detached != null ? 'detached' : ''), head: (t.HEAD ?? '').slice(0, 8), main: i === 0, dirty, ox: /[/\\]\.ox[/\\]|ox-(task|race)/.test(t.worktree), missing: !fs.existsSync(t.worktree) });
+    }
+  }
+  return out;
+}
+
+/** Remove a worktree git knows about (never the main one; git itself refuses one with changes). */
+export function removeWorktree(repo, wt) {
+  const listed = worktreesView().find((t) => t.repo === repo && t.path === wt);
+  if (!listed) throw new Error('that is not a worktree of a project ox knows');
+  if (listed.main) throw new Error('the main checkout is not removed here');
+  const r = spawnSync('git', ['-C', repo, 'worktree', listed.missing ? 'prune' : 'remove', ...(listed.missing ? [] : [wt])], { encoding: 'utf8', timeout: 20_000 });
+  if (r.status !== 0) throw new Error((r.stderr || 'git could not remove it').trim().replace(/^fatal: /, ''));
+  return { removed: wt };
+}
+
+export function serverView({ port = null, startedAt = null } = {}) {
+  const root = path.dirname(path.dirname(new URL(import.meta.url).pathname));
+  return { pid: process.pid, port, url: port ? `http://127.0.0.1:${port}/` : null, node: process.version, uptime: Math.round(process.uptime()), startedAt, cwd: process.cwd(), code: root, commit: gitOut(root, ['rev-parse', '--short', 'HEAD']), app: process.env.OX_APP === '1', island: process.env.OX_ISLAND_SERVER === '1' };
+}
+
+/** What changed in ox since a commit you saw (git installs), newest first. */
+export function whatsNew(since) {
+  const root = path.dirname(path.dirname(new URL(import.meta.url).pathname));
+  const head = gitOut(root, ['rev-parse', '--short', 'HEAD']);
+  if (!head) return { head: null, changes: [] };
+  if (!since || !/^[0-9a-f]{6,40}$/.test(since) || since === head) return { head, changes: [] };
+  const log = gitOut(root, ['log', '--no-merges', '--format=%h\t%ad\t%s', '--date=short', `${since}..HEAD`, '-n', '30']);
+  return { head, changes: (log ?? '').split('\n').filter(Boolean).map((l) => { const [hash, date, subject] = l.split('\t'); return { hash, date, subject }; }) };
 }

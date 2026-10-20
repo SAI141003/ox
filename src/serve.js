@@ -89,6 +89,38 @@ function sendSSE(res, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+// Approvals asked in the app: a run that needs a yes (a Claude plan's write, a
+// command) sends an `ox: { type: 'approval' }` chunk and waits here until the
+// page answers through POST /ox/approval, the chat is closed, or 10 minutes pass
+// (OX_APP_APPROVAL_MS overrides that, for tests). Only a literal allow says yes.
+const appApprovals = new Map();
+let appApprovalSeq = 0;
+export function appApprover(res, model, { timeoutMs = Number(process.env.OX_APP_APPROVAL_MS) || 10 * 60_000 } = {}) {
+  const mine = new Set();
+  res.on?.('close', () => { for (const id of mine) answerAppApproval(id, 'deny'); });
+  return (tool, args = {}, detail = '') => new Promise((resolve) => {
+    if (res.writableEnded || res.destroyed) { resolve(false); return; }
+    const id = `ap-${Date.now().toString(36)}-${++appApprovalSeq}`;
+    const timer = setTimeout(() => answerAppApproval(id, 'deny'), timeoutMs);
+    timer.unref?.();
+    mine.add(id);
+    appApprovals.set(id, { timer, resolve: (decision) => {
+      mine.delete(id);
+      if (!res.writableEnded && !res.destroyed) sendSSE(res, { ...createChatCompletionChunk(model, ''), ox: { type: 'approval-resolved', id, decision } });
+      resolve(decision === 'allow');
+    } });
+    sendSSE(res, { ...createChatCompletionChunk(model, ''), ox: { type: 'approval', id, tool: String(tool), preview: String(detail || '').slice(0, 400) } });
+  });
+}
+export function answerAppApproval(id, decision) {
+  const p = appApprovals.get(id);
+  if (!p) return false;
+  appApprovals.delete(id);
+  clearTimeout(p.timer);
+  p.resolve(decision === 'allow' ? 'allow' : 'deny');
+  return true;
+}
+
 function sendSSEDone(res) {
   res.write('data: [DONE]\n\n');
 }
@@ -518,9 +550,19 @@ function tallyUsage(total, event) {
 // completion came back as an empty string inside a 200 that looked like an
 // answer. These two read the events that actually exist.
 // Only names and a short preview leave the server: never tool output.
+// The file a write or edit touched: from ox's own tools, or read from a plan's
+// tool input (Claude Code's Write/Edit/MultiEdit carry file_path).
+export function toolFile(event) {
+  if (typeof event.file === 'string') return event.file;
+  if (!/^(write|edit|multiedit|multi_edit|write_file|edit_file|notebookedit|apply_patch|create_file)$/i.test(String(event.name ?? ''))) return null;
+  const m = /"(?:file_path|path|notebook_path)"\s*:\s*"((?:[^"\\]|\\.)+)"/.exec(String(event.argsPreview ?? ''));
+  return m ? m[1].replace(/\\(.)/g, '$1') : null;
+}
+
 function oxToolEvent(event) {
+  const file = event.type === 'tool-start' ? toolFile(event) : null;
   return event.type === 'tool-start'
-    ? { type: 'tool-start', id: event.id ?? null, name: String(event.name ?? 'tool'), preview: String(event.argsPreview ?? '').slice(0, 120), ...(Array.isArray(event.plan) ? { plan: event.plan } : {}) }
+    ? { type: 'tool-start', id: event.id ?? null, name: String(event.name ?? 'tool'), preview: String(event.argsPreview ?? '').slice(0, 120), ...(Array.isArray(event.plan) ? { plan: event.plan } : {}), ...(file ? { file: file.slice(0, 300) } : {}), ...(Array.isArray(event.files) && event.files.length ? { files: event.files.slice(0, 50).map((f) => String(f).slice(0, 300)) } : {}) }
     : { type: 'tool-end', id: event.id ?? null, name: String(event.name ?? 'tool'), isError: event.isError === true, ...(event.meta?.canvas?.tree ? { canvas: event.meta.canvas.tree } : {}) };
 }
 
@@ -540,6 +582,58 @@ export function finalText(event, alreadyHave) {
   if (typeof c === 'string') return c;
   if (Array.isArray(c)) return c.map((p) => (typeof p === 'string' ? p : p?.type === 'text' ? p.text ?? '' : '')).join('');
   return '';
+}
+
+/**
+ * An interactive answer that does not load cleanly gets one more try: the
+ * engine's own errors go back to the model, which answers with the corrected
+ * block. Returns the mended answer (prose kept, block swapped) or null when the
+ * first one was fine or the retry was no better. A small local model draws far
+ * more often with one round of its own errors than without.
+ */
+export async function repairLiveUi({ text, target, messages, ctx, config, run = runAgent, usage = null }) {
+  const first = UI_LANG.checkUi(text);
+  if (first.ok) return null;
+  const errs = first.errors.slice(0, 6).map((e) => `line ${e.line}: ${e.msg}`).join('\n');
+  const ask = first.blocks
+    ? `That \`\`\`openui block did not load:\n${errs || first.why}\nReply with only the corrected \`\`\`openui block: every line \`name = Expression\`, positional arguments, ending with \`root = …\`.`
+    : 'Draw that as an ```openui block, as described in your instructions. Reply with only the block.';
+  let fixed = '';
+  try {
+    for await (const ev of run({ target, messages: [...messages, { role: 'assistant', content: text }, { role: 'user', content: ask }], ctx: { ...ctx, noTools: true, onlyTools: undefined, allowedTools: undefined }, config, maxIterations: 1 })) {
+      fixed += textDelta(ev) || finalText(ev, fixed);
+      if (ev.type === 'usage' && usage) tallyUsage(usage, ev);
+    }
+  } catch { return null; }
+  const second = UI_LANG.checkUi(fixed);
+  const better = second.ok || (second.root && (!first.root || second.errors.length < first.errors.length));
+  if (!better) return null;
+  const block = `\`\`\`openui\n${UI_LANG.uiBlocks(fixed).join('\n').trim()}\n\`\`\``;
+  const re = /(?<=^|\n)[ \t]*```[ \t]*(openui|open-ui|openui-lang|ox-?canvas)[^\n]*\n[\s\S]*?(?:```|$)/gi;
+  if (!first.blocks) return `${text.trim()}\n\n${block}`;
+  let placed = false;
+  return text.replace(re, () => (placed ? '' : ((placed = true), block))).replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
+ * Interactive answers every time: the answering model gets its repair round;
+ * if the drawing still does not load, the strongest model connected (a plan, a
+ * keyed provider, or a bigger local one) mends it from the same errors. Returns
+ * { text, by } with the mended answer, or null when nothing was better.
+ */
+export async function mendUi({ text, target, pickedName, messages, ctx, config, usage = null, run = runAgent, pick = autoModel }) {
+  const own = await repairLiveUi({ text, target, messages, ctx, config, usage, run });
+  const now = own ?? text;
+  if (UI_LANG.checkUi(now).ok) return own ? { text: own, by: null } : null;
+  let better = null;
+  try { better = pick(messages, process.env, { think: true }); } catch {}
+  const same = (id) => id === pickedName || String(id).endsWith(`:${pickedName}`) || (ctx?.botId && id === ctx.botId);
+  if (!better?.id || same(better.id) || tinyModel(better.id) || !runnable(better.id)) return own ? { text: own, by: null } : null;
+  let strong;
+  try { strong = resolveBot(better.id, { bots: readConfigDoc().bots ?? {} }); } catch { return own ? { text: own, by: null } : null; }
+  const theirs = await repairLiveUi({ text: now, target: strong, messages, ctx, config, usage, run });
+  if (theirs && UI_LANG.checkUi(theirs).ok) return { text: theirs, by: better.id };
+  return own ? { text: own, by: null } : theirs ? { text: theirs, by: better.id } : null;
 }
 
 function agentErrorShape(message) {
@@ -565,19 +659,38 @@ const WANTS_UI = /\b(calculat\w*|convert\w*|compar\w*|table|chart|graph|plot|sli
 // OpenUI Lang (thesysdev/openui), the way OpenUI does it: the prompt is built
 // from the component library itself, so what the model is told and what the
 // page can draw never drift apart.
+// The interactive-answer guide. Small models copy what they see, so it shows
+// complete, correct programs (each checked by the parser in a test) and plain
+// rules, never the grammar's placeholders: `name = Expression` written as
+// grammar came back as code ("$name = Expression"), and 0 of 10 answers drew
+// on qwen2.5:3b (bench/openui).
 export const LIVE_UI_GUIDE = [
   'This chat draws interface with OpenUI Lang. When a calculator, form, table, comparison, dashboard, step list, chart or set of next choices answers better than prose, write it in a block fenced with ```openui on its own line. Keep prose short, outside the block.',
-  UI_LANG.languageSpec().replace(/^Write OX Canvas:/, 'OpenUI Lang:').split('\n').filter((l) => !l.startsWith('Edit an existing canvas')).join('\n'),
+  'Rules: one statement per line, `something = value`. The last line is `root = ...`. State the user can change is `$name = default` (always give the default). Arguments are positional: write Input("Amount", $amount, "number"), never type="number". Strings in double quotes. A negative number is 0 - x. Use only the components and @functions listed; no other words.',
   `Components: ${Object.keys(UI_LANG.LIBRARY).map(UI_LANG.signature).join(' ')}`,
-  'Example:',
+  'Functions: @Pow(b, e) @Sqrt(x) @Abs(x) @Round(n, digits) @Format(n, "currency") @Format(n, "percent") @Sum(list) @Avg(list) @Min(list) @Max(list) @Count(list) @Clamp(n, lo, hi) @Range(0, n) @Each(rows, "r", Text(r.name)). Buttons: Button("Label", @Set($v, 1)).',
+  'Example, a calculator:',
   '```openui',
-  '$P = 300000',
+  '$amount = 300000',
   '$rate = 6',
-  '$n = 360',
+  '$years = 30',
   'r = $rate / 1200',
-  'pay = $P * r / (1 - @Pow(1 + r, 0 - $n))',
-  'root = Card("Loan payments", [Row([Input("Loan amount", $P, "number"), Slider("Interest % a year", $rate, 0, 20, 0.1), Input("Months", $n, "number")]), Row([Stat("Monthly payment", @Round(pay, 2), null, "USD"), Stat("Total interest", @Round(pay * $n - $P, 0), null, "USD")]), Buttons([Button("Compare two loans", @ToAssistant("Compare two loans side by side"))])])',
+  'n = $years * 12',
+  'pay = $amount * r / (1 - @Pow(1 + r, 0 - n))',
+  'root = Card("Loan payment", [Input("Loan amount", $amount, "number"), Slider("Interest % a year", $rate, 0, 20, 0.1), Slider("Years", $years, 1, 40, 1), Stat("Monthly payment", @Format(pay, "currency"))])',
   '```',
+  'Example, a chart:',
+  '```openui',
+  'labels = ["India", "China", "USA"]',
+  'values = [1441, 1425, 340]',
+  'root = Card("Population, millions", [Chart("bar", labels, values, "Population")])',
+  '```',
+  'Example, a table and a checkbox:',
+  '```openui',
+  '$bought = false',
+  'root = Card("Phones", [Table([Col("Phone", ["iPhone", "Pixel"]), Col("Price", [999, 799])]), Checkbox("Bought one", $bought)])',
+  '```',
+  'Write one block like these, filled with what the user asked for, then at most one short sentence.',
   'Every $var a line reads must be declared. Use 0 - x for a negative number. For anything the components cannot show, a block fenced with ```html-live holds one self-contained HTML snippet (inline style and script, no network).',
 ].join('\n');
 
@@ -655,16 +768,25 @@ async function handleChatCompletions(req, res) {
   // agent's own mode applies unless a specific mode was picked.
   const lastUser = [...messages].reverse().find((m) => m?.role === 'user');
   const pickedMode = body.ox_mode && body.ox_mode !== 'auto' ? body.ox_mode : (agentDef?.mode ?? body.ox_mode ?? 'code');
-  let turnMode = resolveTurnMode(pickedMode, typeof lastUser?.content === 'string' ? lastUser.content : '');
+  // Routing reads what you typed: the app appends attached files after it
+  // ("\n\n`name`:\n```…```"), and a question with a video attached is still a
+  // question (it was routed to Code because it no longer ended with "?").
+  const typedText = (typeof lastUser?.content === 'string' ? lastUser.content : '').replace(/\n\n`[^`\n]+`:\n```[\s\S]*?```/g, '').trim();
+  let turnMode = resolveTurnMode(pickedMode, typedText);
   // In ox's own app, "make a loan calculator" asks for something to look at and
   // use here, not a change to the project: auto keeps it an answer (ask), unless
   // the message points at code or files.
-  const said = typeof lastUser?.content === 'string' ? lastUser.content : '';
+  const said = typedText;
   const wantsUi = WANTS_UI.test(said) || s1?.kind === 'interactive';
   const needsWeb = NEEDS_WEB.test(said) || s1?.kind === 'current';
   const by = s1 ? ` (System 1, ${s1.ms} ms)` : '';
-  if (turnMode.routed && turnMode.mode !== 'ask' && body.ox_ui === 'live'
-    && wantsUi && !TOUCHES_CODE.test(said)) {
+  // Choosing "Interactive answer" (ox_canvas) means exactly that: an answer to
+  // use here, drawn, with no tools to wander off with (a 3B model offered tools
+  // made to-do lists instead of drawing).
+  // (An "ask" guess counts too: "Compare iPhone, Pixel and Galaxy in a table"
+  // was guessed ask, kept every tool, and the model stopped at an approval.)
+  if ((turnMode.routed || tool.canvas) && !turnMode.answerOnly && body.ox_ui === 'live'
+    && (wantsUi || tool.canvas) && !TOUCHES_CODE.test(said)) {
     turnMode = { mode: 'ask', routed: true, reason: 'an answer to use here, not a change to your files', answerOnly: true };
   }
   // A model under 1B parameters cannot write an interactive answer (SmolLM2-135M
@@ -733,7 +855,9 @@ async function handleChatCompletions(req, res) {
     ...(agentDef || liveUi || howTo ? { personaBlock: [agentDef ? agentPersonaBlock(agentDef) : '', liveUi, howTo].filter(Boolean).join('\n\n') } : {}),
     ...(agentDef ? { agentName: agentDef.name } : {}),
     ...(Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools }
-      : turnMode.answerOnly ? (tool.web || tool.research || needsWeb || /youtube\.com|youtu\.be/i.test(lastText) ? { onlyTools: ['web_search', 'web_fetch', 'youtube_transcript'] } : { noTools: true })
+      // A drawn answer searches only when web search is switched on: "price" in
+      // "compare phones in a table" sent a 3B model off to the YouTube tool.
+      : turnMode.answerOnly ? (tool.web || tool.research || (needsWeb && !liveUi) || /youtube\.com|youtu\.be/i.test(lastText) ? { onlyTools: /youtube\.com|youtu\.be/i.test(lastText) ? ['web_search', 'web_fetch', 'youtube_transcript'] : ['web_search', 'web_fetch'] } : { noTools: true })
       // A question about the project in ask mode: only the four readers.
       : turnMode.mode === 'ask' && TOUCHES_CODE.test(lastText) && !NEEDS_TOOLS.test(lastText) ? { onlyTools: ['read_file', 'list_dir', 'glob', 'grep'] }
       : {}),
@@ -747,6 +871,17 @@ async function handleChatCompletions(req, res) {
     try { (await import('./memory-graph.js')).learnFromMessages([{ role: 'user', content: lastText }], { source: 'app' }); } catch {}
   }
   const config = { maxTokens: max_tokens };
+  // The backup model (Settings > General): app chats fall back the way
+  // terminal runs do (src/headless.js), to models that can run here and are
+  // not the chat's own. A plan's turn runs inside its CLI and is not bounced.
+  try {
+    const fdoc = readConfigDoc() ?? {};
+    const specs = fdoc.fallback_bots ?? fdoc.fallbackBots ?? [];
+    ctx.fallbackTargets = (Array.isArray(specs) ? specs : [])
+      .filter((sp) => runnable(sp))
+      .map((sp) => { try { return resolveBot(sp, { bots: fdoc.bots ?? {} }); } catch { return null; } })
+      .filter((t) => t && t.provider !== 'subscription' && !(t.provider === target?.provider && t.model === target?.model));
+  } catch {}
   // Delegation in the app, as in the terminal (src/headless.js): the subagent
   // tool was offered here with nothing behind it ("not configured"), and agents
   // could not see or message each other. Now a helper really runs, shows up in
@@ -764,6 +899,13 @@ async function handleChatCompletions(req, res) {
   }
 
   if (stream) {
+    // A step that needs your yes (a write, a command, a Claude plan's step) is
+    // asked here, in the chat that started it, instead of being declined. Only
+    // the app can answer the card (it sends ox_mode); a plain OpenAI client
+    // keeps the old answer, no, rather than waiting on a card it never shows.
+    const fromApp = Boolean(body.ox_mode || body.ox_ui);
+    if (fromApp || target?.provider === 'subscription') ctx.requestApproval = appApprover(res, targetModel);
+    if (target?.provider === 'subscription') ctx.planApprovals = true;
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -796,6 +938,10 @@ async function handleChatCompletions(req, res) {
           sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: oxToolEvent(event) });
         }
       }
+      if (route === 'ui' && fullContent) {
+        const mended = await mendUi({ text: fullContent, target, pickedName, messages, ctx, config, usage: totalUsage });
+        if (mended) { fullContent = mended.text; sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'replace', content: mended.text, why: mended.by ? `the first drawing did not load, so ${mended.by} redrew it` : 'the first drawing did not load, so it was redrawn' } }); }
+      }
       sendSSE(res, createChatCompletionChunk(targetModel, '', true, totalUsage));
       sendSSEDone(res);
       res.end();
@@ -811,16 +957,23 @@ async function handleChatCompletions(req, res) {
     const totalUsage = usageTally();
 
     try {
+      let runError = null;
       for await (const event of runAgent({ target, messages, ctx, config, maxIterations: 40 })) {
         const last = textDelta(event) || finalText(event, fullContent);
         if (last) {
           fullContent += last;
         } else if (event.type === 'usage') {
           tallyUsage(totalUsage, event);
+        } else if (event.type === 'error') {
+          runError = String(event.error);
         }
       }
+      if (liveUi && turnMode.answerOnly && fullContent) fullContent = (await mendUi({ text: fullContent, target, pickedName, messages, ctx, config, usage: totalUsage }))?.text ?? fullContent;
       board.endRun(runId);
-      sendJson(res, 200, createChatCompletionResponse(targetModel, fullContent, totalUsage));
+      // The lenient contract stays (200, empty content, see the surface test),
+      // but a run that stopped (rate limit, missing key) says why in an extra
+      // field OpenAI clients ignore.
+      sendJson(res, 200, { ...createChatCompletionResponse(targetModel, fullContent, totalUsage), ...(!fullContent && runError ? { ox_error: runError } : {}) });
     } catch (error) {
       board.endRun(runId, { failed: true });
       const shape = agentErrorShape(error.message);
@@ -1179,15 +1332,17 @@ async function settingsView() {
     return { id, provider: d.provider, desc: d.desc, ready: !keyEnv || !!process.env[keyEnv], key: keyEnv };
   });
   // Your own endpoints (Settings › Custom endpoints) are choices here too.
-  for (const [id] of Object.entries(doc.bots ?? {}).filter(([, d]) => d?.provider === 'custom' && d.baseUrl && d.model)) {
-    try { const t = resolveBot(id, { bots: doc.bots }); bots.unshift({ id, provider: 'custom', desc: t.desc, ready: !t.keyEnv || !!process.env[t.keyEnv], key: t.keyEnv }); } catch {}
+  // And models picked in Settings › API keys ("Use").
+  for (const [id, d] of Object.entries(doc.bots ?? {}).filter(([, d]) => d?.provider && d.model && (d.provider !== 'custom' || d.baseUrl))) {
+    if (bots.some((b) => b.id === id)) continue;
+    try { const t = resolveBot(id, { bots: doc.bots }); bots.unshift({ id, provider: d.provider, desc: t.desc, ready: !t.keyEnv || !!process.env[t.keyEnv], key: t.keyEnv }); } catch {}
   }
   const { assistantName } = await import('./identity.js');
   return {
     name: assistantName(),
     island: { enabled: islandEnabled(), running: islandRunning({ env: {} }), platform: process.platform },
     // What a new chat actually uses: the configured default if it can run, else the best that can.
-    model: { defaultBot: pickWorkingDefault(), configured: config.defaultBot ?? null, source: runnable(config.defaultBot ?? '') ? (config.defaultBotSource ?? 'config') : 'auto: the configured model cannot run here', bots },
+    model: { defaultBot: pickWorkingDefault(), configured: config.defaultBot ?? null, source: runnable(config.defaultBot ?? '') ? (config.defaultBotSource ?? 'config') : 'auto: the configured model cannot run here', bots, fallback: (doc.fallback_bots ?? doc.fallbackBots ?? [])[0] ?? null },
     awake: { on: doc.awake !== false && process.env.OX_NO_AWAKE !== '1' },
   };
 }
@@ -1219,6 +1374,14 @@ async function handleSettingsPost(req, res) {
       return;
     }
     saveConfigDoc((doc) => { doc.defaultBot = body.defaultBot; });
+  }
+  // The backup model: what a chat moves to when its own model fails (a key
+  // revoked, a provider down, a rate limit). '' clears it.
+  if (typeof body.fallbackBot === 'string') {
+    if (body.fallbackBot) {
+      try { resolveBot(body.fallbackBot, { bots: readConfigDoc().bots ?? {} }); } catch (e) { sendError(res, 400, String(e?.message ?? e), 'invalid_request_error', 'invalid_bot', 'fallbackBot'); return; }
+    }
+    saveConfigDoc((doc) => { delete doc.fallbackBots; if (body.fallbackBot) doc.fallback_bots = [body.fallbackBot]; else delete doc.fallback_bots; });
   }
   if (typeof body.awake === 'boolean') saveConfigDoc((doc) => { doc.awake = body.awake; });
   if (typeof body.name === 'string') {
@@ -1297,14 +1460,49 @@ async function flowsRoute(b) {
 // spoken answer from the quickest model that can answer; anything that has to
 // act (open, send, play, write…) comes back as a task for an agent run.
 const VOICE_SYSTEM = (name) => `You are ${name}, a voice assistant in the notch of the user's Mac: quick, warm, a little playful. Everything you write is read aloud: one or two short sentences, no markdown, no lists, no emojis, no links. Never invent the user's own data; if you would need to act on the Mac or look something up, say so in a few words. Today is ${new Date().toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.`;
+// Questions about what is on screen need a look at it: the island attaches a screenshot.
+const SCREEN = /\b(my screen|on (?:the|my) screen|what am i looking at|what(?:'s| is) (?:this|that) (?:on|in)|this (?:page|window|screen|tab|error|message)|read (?:this|it|my screen)|look at (?:this|my|the screen)|see (?:this|my screen)|what do you see)\b/i;
 const ACTS = /\b(open|launch|close|quit|send|message|text|whatsapp|email|mail|play|pause|create|make|write|draft|delete|remove|move|rename|book|order|buy|schedule|remind|call|download|install|draw|annotate|search|look up|find|fix|build|run|deploy|commit|push|edit|change|update|turn (?:on|off)|set)\b/i;
+let voiceCall = null;
+export async function callRoute(text, body = {}, { O = null, ask = null } = {}) {
+  O ??= await import('./org.js');
+  // The model a run would use (plans and local models checked first, as `ox -p` does).
+  ask ??= async ({ system, user }) => {
+    const { quickText } = await import('./quick-text.js');
+    const { workingModelSpec } = await import('./working-model.js');
+    const spec = await workingModelSpec(readConfigDoc(), { say: () => {} });
+    return (await quickText(resolveBot(spec || pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 200 })).text;
+  };
+  if (voiceCall && Date.now() - voiceCall.at > 10 * 60_000) voiceCall = null;
+  const m = /^(?:hey,?\s+)?(?:call|phone|ring|get me|put me through to|talk to)\s+(.{1,40}?)[.!?]*$/i.exec(text);
+  if (!voiceCall && m) {
+    const c = O.startCall(m[1]);
+    if (!c) return null;
+    voiceCall = c;
+    return { say: c.say, agent: c.agent };
+  }
+  if (!voiceCall || body?.dryRun) return null;
+  const r = await O.callTurn(voiceCall, text, { ask });
+  const agent = voiceCall.agent;
+  if (r.ended) voiceCall = null;
+  return { ...r, agent };
+}
+
 export async function voiceTurn(body) {
   const started = Date.now();
   const text = String(body?.text ?? '').trim().slice(0, 2000);
   if (!text) throw new Error('nothing was said');
+  // A call with an ox org agent (OpenDots): "call Ada", then each turn goes to
+  // Ada until "hang up" or ten quiet minutes.
+  const call = await callRoute(text, body);
+  if (call) return { route: 'call', handled: true, ok: true, say: call.say, agent: call.agent, ended: call.ended ?? false, ...(call.task ? { task: call.task.id } : {}), ms: Date.now() - started };
   const { doOffline } = await import('./offline.js');
   const done = doOffline(text, { dryRun: body?.dryRun === true });
   if (done.handled) return { route: 'offline', handled: true, ok: done.ok !== false, say: done.message, ms: Date.now() - started };
+  // The island asks this first while a coding run is open: an errand ("play
+  // Billie Jean", "volume down") is done here and never sent into that run.
+  if (body?.offlineOnly === true) return { route: 'live', handled: false, why: 'not a small task', ms: Date.now() - started };
+  if (SCREEN.test(text) && !body?.image) return { route: 'screen', handled: false, why: 'it needs a look at your screen', ms: Date.now() - started };
   const { assistantName } = await import('./identity.js');
   // Small talk and questions: one short answer. Anything that acts: an agent.
   await warmLocal();
@@ -1341,10 +1539,16 @@ export async function warmVoiceModel() {
 
 // The task board (src/tasks.js, Paperclip's model): every task with whether
 // it is ready, who holds it, and the activity log; add / move / run / review.
+const prCache = new Map();
 export async function tasksView() {
   const T = await import('./tasks.js');
   const ready = new Set(T.readyTasks().map((t) => t.id));
-  const tasks = T.listTasks().map((t) => ({ ...t, ready: ready.has(t.id), owner: T.taskOwner(t.id)?.owner ?? null }));
+  const tasks = T.listTasks().map((t) => ({ ...t, ready: ready.has(t.id), owner: T.taskOwner(t.id)?.owner ?? null, prState: t.branch ? prCache.get(t.branch)?.v ?? null : null }));
+  // PR and CI state on the board (agent-orchestrator), refreshed in the background, at most once a minute per branch.
+  for (const t of tasks) if (t.branch && !(Date.now() - (prCache.get(t.branch)?.at ?? 0) < 60_000)) {
+    prCache.set(t.branch, { at: Date.now(), v: prCache.get(t.branch)?.v ?? null });
+    import('./dev-flow.js').then((D) => prCache.set(t.branch, { at: Date.now(), v: D.prForBranch(process.cwd(), t.branch) })).catch(() => {});
+  }
   return { tasks, activity: T.taskActivity({ limit: 40 }).reverse(), statuses: T.STATUSES };
 }
 async function tasksRoute(b) {
@@ -1464,7 +1668,286 @@ async function handleImage(req, res) {
   createReadStream(r.file).pipe(res);
 }
 
+// The island's day strip (theaiskool's widgets, Coucou's GitHub pills): the next
+// calendar event (only when Calendar is open: never launches it), the weather
+// (wttr.in, no key), and your open pull requests with their CI. Cached.
+const dayCache = { at: 0, v: null, pending: null };
+async function dayView() {
+  if (dayCache.v && Date.now() - dayCache.at < 10 * 60_000) return dayCache.v;
+  if (dayCache.pending) return dayCache.pending;
+  dayCache.pending = (async () => {
+    const { spawnSync } = await import('node:child_process');
+    const out = { event: null, weather: null, prs: null };
+    if (process.platform === 'darwin') {
+      const running = spawnSync('pgrep', ['-x', 'Calendar']).status === 0;
+      if (running) {
+        const script = 'set out to ""\ntell application "Calendar"\nset nowD to current date\nset best to missing value\nset bestT to nowD + 2 * days\nrepeat with c in calendars\ntry\nset evs to (every event of c whose start date > nowD and start date < bestT)\nrepeat with e in evs\nif start date of e < bestT then\nset bestT to start date of e\nset best to e\nend if\nend repeat\nend try\nend repeat\nif best is not missing value then set out to (summary of best) & "\t" & ((start date of best) as «class isot» as string)\nend tell\nreturn out';
+        const r = spawnSync('osascript', ['-e', script], { encoding: 'utf8', timeout: 8000 });
+        const [title, at] = String(r.stdout ?? '').trim().split('\t');
+        if (title && at) out.event = { title: title.slice(0, 80), at };
+      }
+    }
+    try {
+      const r = await fetch('https://wttr.in/?format=j1', { headers: { 'User-Agent': 'curl/8' }, signal: AbortSignal.timeout(6000) });
+      if (r.ok) { const j = await r.json(); const c = j.current_condition?.[0]; if (c) out.weather = { tempC: Number(c.temp_C), feelsC: Number(c.FeelsLikeC), text: c.weatherDesc?.[0]?.value ?? '', place: j.nearest_area?.[0]?.areaName?.[0]?.value ?? null }; }
+    } catch {}
+    const gh = spawnSync('gh', ['api', 'graphql', '-f', 'query=query{viewer{pullRequests(states:OPEN,first:20,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{title number url repository{nameWithOwner} commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}}'], { encoding: 'utf8', timeout: 15000 });
+    if (gh.status === 0) {
+      try {
+        const nodes = JSON.parse(gh.stdout).data.viewer.pullRequests.nodes;
+        const list = nodes.map((n) => ({ title: n.title, number: n.number, url: n.url, repo: n.repository.nameWithOwner, ci: n.commits.nodes[0]?.commit?.statusCheckRollup?.state ?? null }));
+        out.prs = { open: list.length, failing: list.filter((x) => ['FAILURE', 'ERROR'].includes(x.ci)).length, list: list.slice(0, 6) };
+      } catch {}
+    }
+    // Vercel, read-only with your own token (src/integrations.js); no token, no pill.
+    try { Object.assign(out, await (await import('./integrations.js')).servicePills(process.env)); } catch {}
+    dayCache.v = out; dayCache.at = Date.now(); dayCache.pending = null;
+    return out;
+  })().catch((e) => { dayCache.pending = null; throw e; });
+  return dayCache.pending;
+}
+
+// ox mesh (src/mesh.js): this machine's node, started with the server once
+// the machine has a mesh identity (made by the first `ox mesh` pairing).
+function officeNames() {
+  try { return JSON.parse(readFileSync(join(process.env.OX_HOME || join(homedir(), '.ox'), 'office.json'), 'utf8')).names ?? {}; } catch { return {}; }
+}
+const floorCache = new Map(); // peer id -> { at, floor }
+export async function officeFloors() {
+  const A = await import('./agents-live.js');
+  const { hostname } = await import('node:os');
+  const names = officeNames();
+  const host = hostname().replace(/\.local$/, '');
+  const floors = [{ id: 'this', machine: host, name: names.this ?? host, here: true, sessions: A.liveAgents() }];
+  try {
+    const M = await import('./mesh.js');
+    if (M.hasIdentity()) {
+      const node = await meshUp();
+      for (const p of Object.values(M.readPeers())) {
+        const hit = floorCache.get(p.id);
+        if (hit && Date.now() - hit.at < 5000) { floors.push({ ...hit.floor, name: names[p.id] ?? p.name }); continue; }
+        let floor;
+        try { const r = await node.ask(p, 'agents', {}, { timeoutMs: 4000 }); floor = { id: p.id, machine: p.name, sessions: r.sessions ?? [] }; }
+        catch (e) { floor = { id: p.id, machine: p.name, sessions: [], error: /does not allow/.test(e.message) ? `${p.name} does not share its agents: on ${p.name}, run  ox mesh allow "${M.identity().name}" agents` : `${p.name}: ${e.message}` }; }
+        floorCache.set(p.id, { at: Date.now(), floor });
+        floors.push({ ...floor, name: names[p.id] ?? p.name });
+      }
+    }
+  } catch {}
+  return { floors };
+}
+
+let meshNode = null;
+let meshStarting = null;
+async function meshUp() {
+  if (meshNode) return meshNode;
+  meshStarting ??= (async () => {
+    const M = await import('./mesh.js');
+    meshNode = await M.startNode({ plans: M.planHeadroom, onLog: (l) => console.log(`[mesh] ${l}`) });
+    return meshNode;
+  })().catch((e) => { meshStarting = null; throw e; });
+  return meshStarting;
+}
+async function meshView() {
+  if (meshNode) return { running: true, ...meshNode.status() };
+  const M = await import('./mesh.js');
+  // Another process (ox mesh up) may run this machine's node.
+  try { return { running: true, ...(await M.control('status', { timeoutMs: 800 })) }; } catch {}
+  const has = existsSync(join(process.env.OX_HOME || join(homedir(), '.ox'), 'mesh', 'identity.json'));
+  return { running: false, me: has ? { id: M.identity().id, name: M.identity().name } : null, peers: Object.values(M.readPeers()).map((p) => ({ id: p.id, name: p.name, grants: p.grants, pairedAt: p.pairedAt })), alerts: [] };
+}
+
+// One small model call for a theme, with whichever model ox works with.
+async function themeAsk() {
+  try {
+    const { loadConfig } = await import('./config.js');
+    const { resolveBot } = await import('./bots.js');
+    const { workingModelSpec } = await import('./working-model.js');
+    const { quickText } = await import('./quick-text.js');
+    const cfg = loadConfig();
+    const target = resolveBot(await workingModelSpec(cfg, { say: () => {} }), cfg);
+    return async ({ system, user }) => (await quickText(target, { system, user, maxTokens: 1500 })).text;
+  } catch { return null; }
+}
+
+const codeCache = {};
+let studioOpen = null;
+const SERVER_STARTED = new Date().toISOString();
+let localSetup = { running: false, step: null, error: null };
 const ROUTES = [
+  // Pull requests (src/dev-flow.js): Open a PR in one click, its CI and reviews, one fix round.
+  { method: 'GET', pattern: /^\/ox\/pr\/?$/, handler: appRoute(async (_, __, req) => {
+    const D = await import('./dev-flow.js');
+    const dir = new URL(req.url, 'http://x').searchParams.get('cwd') || process.cwd();
+    return { status: D.prStatus(dir), recipe: D.readRecipe(D.repoRoot(dir)) };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/pr\/(open|fix)\/?$/, handler: appRoute(async (body, m) => {
+    const D = await import('./dev-flow.js');
+    const dir = String(body?.cwd || process.cwd());
+    if (m[1] === 'open') return D.openPr(dir, { title: body?.title || null, body: body?.body ?? '', draft: body?.draft === true, capture: Array.isArray(body?.shots) ? { routes: body.shots } : null });
+    return D.fixPr(dir, {});
+  }) },
+  { method: 'GET', pattern: /^\/ox\/day\/?$/, handler: appRoute(dayView) },
+  // Slash commands in the app (src/slash-catalog.js): the menu, and running one of the inline-safe ones.
+  { method: 'GET', pattern: /^\/ox\/commands\/?$/, handler: appRoute(async () => ({ commands: (await import('./slash-catalog.js')).COMMANDS })) },
+  { method: 'POST', pattern: /^\/ox\/commands\/run\/?$/, handler: appRoute(async (body) => {
+    const S = await import('./slash-catalog.js');
+    const p = S.parse(String(body?.line ?? ''));
+    if (!p) throw new Error('not an ox command (type / for the list)');
+    if (!p.cmd.app) throw new Error(`/${p.cmd.name} runs in a session: ask ox to do it, or use the terminal`);
+    const { spawn } = await import('node:child_process');
+    const bin = new URL('../bin/ox.js', import.meta.url).pathname;
+    const cwd = typeof body?.cwd === 'string' && body.cwd ? body.cwd : process.cwd();
+    // Its own process, no shell, nothing to type into: a command that would ask stops instead.
+    return await new Promise((resolve) => {
+      const child = spawn(process.execPath, [bin, p.cmd.name, ...p.args], { cwd, env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
+      let out = '';
+      const add = (d) => { if (out.length < 40_000) out += d; };
+      child.stdout.on('data', add); child.stderr.on('data', add);
+      const timer = setTimeout(() => { child.kill(); add('\n(stopped after the time limit)'); }, p.cmd.slow ? 300_000 : 60_000);
+      child.on('close', (code) => { clearTimeout(timer); resolve({ command: p.cmd.name, code, out: out.replace(/\x1b\[[0-9;]*m/g, '').trimEnd() }); });
+    });
+  }) },
+  // Themes (src/ui-theme.js): the active look, and making or switching one.
+  { method: 'GET', pattern: /^\/ox\/theme\/?$/, handler: appRoute(async () => { const T = await import('./ui-theme.js'); const t = T.current(); return { theme: t, css: T.css(t), themes: T.list() }; }) },
+  { method: 'POST', pattern: /^\/ox\/theme\/?$/, handler: appRoute(async (body) => {
+    const T = await import('./ui-theme.js');
+    if (body?.reset) { T.reset(); return { theme: null }; }
+    if (body?.use) return { theme: T.use(String(body.use)) };
+    return { theme: await T.fromPrompt(String(body?.prompt ?? ''), { ask: await themeAsk() }) };
+  }) },
+  // The fast browser (src/fast-browser.js): the live run (OX Island's browser card) and starting one.
+  { method: 'GET', pattern: /^\/ox\/browse\/?$/, handler: appRoute(async () => ({ live: (await import('./fast-browser.js')).readLive() })) },
+  { method: 'POST', pattern: /^\/ox\/browse\/run\/?$/, handler: appRoute(async (body) => {
+    const F = await import('./fast-browser.js');
+    const goal = String(body?.goal ?? '').trim();
+    const url = String(body?.url ?? '').trim();
+    if (!goal) throw new Error('a goal is needed');
+    if (url && !/^https?:\/\//.test(url)) throw new Error('the start page is an http(s) link');
+    const cur = F.readLive();
+    if (cur?.status === 'running' && Date.now() - (cur.at ?? 0) < 60_000) throw new Error('a browser run is already going');
+    // Runs on; the island and the app follow it through GET /ox/browse. Buy/pay/send/delete clicks stop it.
+    F.runGoal(goal, { url: url || 'about:blank', headless: body?.show !== true }).catch(() => {});
+    return { started: true };
+  }) },
+  // Your reading library (src/library.js): the shelf, one item, add, highlight, ask.
+  { method: 'GET', pattern: /^\/ox\/library\/?$/, handler: appRoute(async () => ({ items: (await import('./library.js')).list() })) },
+  { method: 'GET', pattern: /^\/ox\/library\/([a-f0-9]{6,20})\/?$/, handler: appRoute(async (_, m) => (await import('./library.js')).load(m[1])) },
+  { method: 'POST', pattern: /^\/ox\/library\/(add|ask|highlight|remove)\/?$/, handler: appRoute(async (body, m) => {
+    const L = await import('./library.js');
+    if (m[1] === 'add') return { item: await L.add(String(body?.ref ?? '')) };
+    if (m[1] === 'highlight') return { highlights: L.highlight(String(body?.id ?? ''), body?.quote, body?.note ?? '') };
+    if (m[1] === 'remove') return { removed: L.remove(String(body?.id ?? '')) };
+    return L.askAbout(String(body?.id ?? ''), String(body?.question ?? ''), { quote: body?.quote ?? null, ask: async ({ system, user }) => {
+      const { quickText } = await import('./quick-text.js');
+      return (await quickText(resolveBot(pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 700 })).text;
+    } });
+  }) },
+  // Dictation styles and translation, per app (src/dictation-style.js).
+  { method: 'POST', pattern: /^\/ox\/dictation\/style\/?$/, handler: appRoute(async (body) => {
+    const D = await import('./dictation-style.js');
+    return D.restyle(String(body?.text ?? ''), String(body?.app ?? ''), async ({ system, user }) => {
+      const { quickText } = await import('./quick-text.js');
+      return (await quickText(resolveBot(pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 800 })).text;
+    });
+  }) },
+  // Your machines (ox mesh): status, an invite code, names, grants, and your
+  // choice on an alert. Grants are set here, for what this machine gives.
+  { method: 'GET', pattern: /^\/ox\/mesh\/?$/, handler: appRoute(meshView) },
+  { method: 'POST', pattern: /^\/ox\/mesh\/(invite|name|allow|deny|forget|choose)\/?$/, handler: appRoute(async (body, m) => {
+    const M = await import('./mesh.js');
+    switch (m[1]) {
+      case 'invite': {
+        const node = await meshUp().catch(() => null);
+        if (node) return node.invite();
+        return M.control('invite', { method: 'POST' });
+      }
+      case 'name': return { name: M.setName(String(body?.name ?? '')) };
+      case 'allow': case 'deny': return { peer: M.setGrant(String(body?.machine ?? ''), String(body?.grant ?? ''), m[1] === 'allow') };
+      case 'forget': return { forgot: M.forget(String(body?.machine ?? '')).name };
+      default: {
+        if (!meshNode) throw new Error('the mesh is not running in this app');
+        const out = meshNode.choose(String(body?.alert ?? ''), body?.option ?? {});
+        // Your choice of another machine's model: the next turns use it (switch back in Settings).
+        if (out.model) { resolveBot(out.model, { bots: readConfigDoc().bots ?? {} }); (await import('./config.js')).saveConfigDoc((doc) => { doc.defaultBot = out.model; }); }
+        return out;
+      }
+    }
+  }) },
+  // The company of agents (src/org.js, after Paperclip) for the island: who works
+  // here, hires waiting for you, and wake / approve / reject from the notch.
+  { method: 'GET', pattern: /^\/ox\/org\/?$/, handler: appRoute(async () => {
+    const O = await import('./org.js');
+    const { readyFor } = O;
+    let lv = {};
+    try { lv = O.levels(); } catch {}
+    const agents = Object.values(O.readOrg().agents).filter((a) => a.status !== 'terminated').map((a) => ({
+      id: a.id, name: a.name, title: a.title, runtime: a.runtime, status: a.status, why: a.pausedWhy ?? null, hiredBy: a.hiredBy,
+      level: lv[a.id]?.level ?? 1, xp: lv[a.id]?.xp ?? 0, nextXp: lv[a.id]?.next ?? 50,
+      spent: O.spentThisMonth(a), budget: a.budgetUsd, lastBeat: a.lastBeat, every: a.heartbeatMin,
+      next: (() => { try { return readyFor(a.id)[0]?.title ?? null; } catch { return null; } })(),
+    }));
+    return { agents, proposed: agents.filter((a) => a.status === 'proposed') };
+  }) },
+  { method: 'GET', pattern: /^\/ox\/org\/timeline\/?$/, handler: appRoute(async () => (await import('./org.js')).timeline({ limit: 150 })) },
+  { method: 'GET', pattern: /^\/ox\/org\/thread\/([a-z0-9-]{1,40})\/?$/, handler: appRoute(async (_, m) => (await import('./org.js')).thread(m[1])) },
+  { method: 'GET', pattern: /^\/ox\/org\/groups\/?$/, handler: appRoute(async () => ({ groups: (await import('./org.js')).readOrg().groups })) },
+  { method: 'POST', pattern: /^\/ox\/org\/(team|say)\/?$/, handler: appRoute(async (body, m) => {
+    const O = await import('./org.js');
+    const ask = async ({ system, user }) => { const { quickText } = await import('./quick-text.js'); return (await quickText(resolveBot(pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 600 })).text; };
+    if (m[1] === 'say') return { replies: await O.groupSay(String(body?.group ?? ''), String(body?.text ?? ''), { ask }) };
+    const draft = body?.draft && typeof body.draft === 'object' ? body.draft : await O.draftTeam(String(body?.sentence ?? ''), { ask });
+    return body?.confirm ? O.hireTeam(draft) : { draft };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/org\/(tell|hire)\/?$/, handler: appRoute(async (body, m) => {
+    const O = await import('./org.js');
+    if (m[1] === 'tell') { const r = await O.tell(String(body?.id ?? ''), String(body?.text ?? '')); if (body?.now) O.beat(r.agent.id).catch(() => {}); return { task: r.task }; }
+    // Hire in words: drafted with the working model, shown back; hired only with confirm.
+    const sentence = String(body?.sentence ?? '').trim();
+    if (!sentence) throw new Error('describe the job in a sentence');
+    const draft = body?.draft && typeof body.draft === 'object' ? body.draft : await O.draftHire(sentence, { ask: async ({ system, user }) => {
+      const { quickText } = await import('./quick-text.js');
+      return (await quickText(resolveBot(pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 400 })).text;
+    } });
+    return body?.confirm ? { agent: O.hire(draft) } : { draft };
+  }) },
+  // Allow / Deny for a step a chat run is waiting on (appApprover).
+  { method: 'POST', pattern: /^\/ox\/approval\/?$/, handler: appRoute(async (body) => {
+    const decision = body?.decision === 'allow' ? 'allow' : 'deny';
+    if (!answerAppApproval(String(body?.id ?? ''), decision)) throw new Error('that approval is no longer waiting');
+    return { ok: true, decision };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/org\/(approve|reject|beat|pause|resume)\/?$/, handler: appRoute(async (body, m) => {
+    const O = await import('./org.js');
+    const id = String(body?.id ?? '');
+    switch (m[1]) {
+      case 'approve': return { agent: O.approveHire(id) };
+      case 'reject': return { agent: O.rejectHire(id) };
+      case 'pause': return { agent: O.pause(id) };
+      case 'resume': return { agent: O.resume(id) };
+      default: { O.beat(id).catch(() => {}); return { started: true }; }
+    }
+  }) },
+  // Other agents' sessions (src/agents-live.js): read one, message it, open it in Terminal.
+  { method: 'GET', pattern: /^\/ox\/agents\/?$/, handler: appRoute(async () => ({ sessions: (await import('./agents-live.js')).liveAgents() })) },
+  // The office's floors: this Mac, then every paired machine (its agents over
+  // ox mesh, when it shares them), each with the name you gave its floor.
+  { method: 'GET', pattern: /^\/ox\/office\/floors\/?$/, handler: appRoute(officeFloors) },
+  { method: 'POST', pattern: /^\/ox\/office\/name\/?$/, handler: appRoute(async (b) => {
+    const id = String(b?.id ?? ''), name = String(b?.name ?? '').trim().slice(0, 40);
+    if (!id) throw new Error('which floor');
+    const names = officeNames();
+    if (name) names[id] = name; else delete names[id];
+    const { writeFileSync, mkdirSync } = await import('node:fs');
+    mkdirSync(join(process.env.OX_HOME || join(homedir(), '.ox')), { recursive: true });
+    writeFileSync(join(process.env.OX_HOME || join(homedir(), '.ox'), 'office.json'), JSON.stringify({ names }, null, 2));
+    return { ok: true, names };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/agents\/session\/?$/, handler: appRoute(async (body) => { const A = await import('./agents-live.js'); const r = await A.sessionMessages(body?.id); return { ...r, queued: A.queuedFor(body?.id) }; }) },
+  { method: 'POST', pattern: /^\/ox\/agents\/send\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).sendToSession(body?.id, body?.text)) },
+  { method: 'POST', pattern: /^\/ox\/agents\/open\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).openInTerminal(body?.id)) },
+  // Jump to the exact terminal tab the session runs in (Coucou); the island falls back to opening one.
+  { method: 'POST', pattern: /^\/ox\/agents\/focus\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).focusTerminal(body?.id)) },
   { method: 'GET', pattern: /^\/ox\/live\/?$/, handler: async (req, res) => { if (!authorized(req)) return unauthorized(res); sendJson(res, 200, (await import('./live-board.js')).liveBoard()); } },
   { method: 'GET', pattern: /^\/ox\/image\/?$/, handler: handleImage },
   { method: 'POST', pattern: /^\/ox\/followups\/?$/, handler: appRoute(followupsRoute) },
@@ -1482,6 +1965,18 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/voice\/?$/, handler: appRoute(async () => { const k = await import('./kokoro.js'); const st = k.kokoroStatus(); return { kokoro: st.ready, install: 'ox voice install', voices: st.ready ? (await k.kokoroVoices()).map((id) => ({ id, label: k.VOICE_LABELS[id] ?? id })) : [], default: k.DEFAULT_VOICE }; }) },
   { method: 'GET', pattern: /^\/ox\/providers\/?$/, handler: appRoute(async () => (await appApi()).providersView()) },
   { method: 'POST', pattern: /^\/ox\/providers\/?$/, handler: appRoute(async (b) => { const a = await appApi(); if (b.action === 'test') return a.testProviderKey(String(b.provider ?? ''), typeof b.key === 'string' ? b.key : null); if (b.action === 'use') return a.useProviderModel(String(b.provider ?? ''), String(b.model ?? '')); return a.saveProviderKey(String(b.provider ?? ''), b.key ?? null); }) },
+  // Any file from the app (videos, PDFs, audio, anything over 200 KB): saved,
+  // then described for the model (src/uploads.js).
+  { method: 'POST', pattern: /^\/ox\/upload\/?$/, handler: async (req, res) => {
+    if (!authorized(req)) { unauthorized(res); return; }
+    const U = await import('./uploads.js');
+    let name = 'file';
+    try { name = decodeURIComponent(String(req.headers['x-ox-filename'] ?? 'file')); } catch {}
+    try {
+      const { file, size } = await U.saveUpload(req, name);
+      sendJson(res, 200, U.describeUpload(file, name, String(req.headers['content-type'] ?? ''), size));
+    } catch (e) { sendError(res, 413, `upload refused: ${e?.message ?? e}`, 'invalid_request_error', 'upload_failed', null); }
+  } },
   { method: 'GET', pattern: /^\/ox\/instructions\/?$/, handler: appRoute(async () => (await appApi()).instructionsView()) },
   { method: 'POST', pattern: /^\/ox\/instructions\/?$/, handler: appRoute(async (b) => (await appApi()).saveInstructions(b.text ?? '')) },
   { method: 'GET', pattern: /^\/ox\/connectors\/?$/, handler: appRoute(async () => (await appApi()).connectorsView()) },
@@ -1495,9 +1990,28 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/flows\/?$/, handler: appRoute(async () => { const F = await import('./flows.js'); return { flows: F.listFlows(), runs: F.flowRuns({ limit: 40 }), steps: F.FLOW_STEP_TYPES, triggers: F.FLOW_TRIGGERS }; }) },
   { method: 'POST', pattern: /^\/ox\/flows\/?$/, handler: appRoute(flowsRoute) },
   { method: 'GET', pattern: /^\/ox\/connected\/?$/, handler: appRoute(connectedRoute) },
-  { method: 'GET', pattern: /^\/ox\/plan-usage\/?$/, handler: appRoute(async () => ({ plans: (await import('./plan-usage.js')).planUsage() })) },
+  { method: 'GET', pattern: /^\/ox\/plan-usage\/?$/, handler: appRoute(async () => {
+    const P = await import('./plan-usage.js');
+    const plans = P.planUsage();
+    // A notification before a limit is reached (once per level and reset period).
+    const alerts = process.env.NODE_TEST_CONTEXT ? [] : P.limitAlerts(plans);
+    if (alerts.length) { try { const { osCmd } = await import('./tools/operator.js'); const { spawnSync: run } = await import('node:child_process'); for (const a of alerts) { const c = osCmd('notify', a.text); if (c) run(c[0], c.slice(1), { timeout: 5000 }); } } catch {} }
+    return { plans, alerts };
+  }) },
   { method: 'POST', pattern: /^\/ox\/flows\/hook\/([a-z0-9-]{1,40})\/?$/, handler: flowHook },
   { method: 'POST', pattern: /^\/ox\/voice\/?$/, handler: appRoute(voiceTurn) },
+  // The island's own recording, when live recognition heard nothing: whisper on this Mac.
+  { method: 'POST', pattern: /^\/ox\/voice\/transcribe\/?$/, handler: appRoute(async (body) => {
+    const { realpathSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    let f = '';
+    try { f = realpathSync(String(body?.path ?? '')); } catch { throw new Error('no recording there'); }
+    // Only the island's voice recordings in the temp folder.
+    if (!f.startsWith(realpathSync(tmpdir())) || !/\/ox-voice-[\w.-]+$/.test(f)) throw new Error('only the island\'s own recordings');
+    const V = await import('./video-edit.js');
+    const tr = V.transcribe(f);
+    return { text: tr.segments.map((x) => x.text).join(' ').replace(/\s+/g, ' ').trim() };
+  }) },
   { method: 'GET', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksView) },
   { method: 'POST', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksRoute) },
   { method: 'GET', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async () => (await appApi()).scheduledView()) },
@@ -1509,11 +2023,82 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/market\/?$/, handler: appRoute(async (_, __, req) => (await import('./market.js')).search(new URL(req.url, 'http://x').searchParams.get('q') ?? '')) },
   { method: 'POST', pattern: /^\/ox\/market\/install\/?$/, handler: appRoute(async (b) => (await import('./market.js')).install({ name: b.name, catalog: b.catalog, repo: b.repo })) },
   { method: 'POST', pattern: /^\/ox\/market\/catalogs\/?$/, handler: appRoute(async (b) => ({ catalogs: await (await import('./market.js')).addCatalog(String(b.repo ?? '')) })) },
+  // The open-model Studio (src/studio-catalog.js, src/studio-mcp.js): the catalog with what can run here, and one tool call.
+  { method: 'GET', pattern: /^\/ox\/studio\/catalog\/?$/, handler: appRoute(async () => {
+    const C = await import('./studio-catalog.js');
+    const S = await import('./studio-mcp.js');
+    const ready = (m) => { try { return S.hostFor(m); } catch { return null; } };
+    return { models: C.OPEN_MODELS.map((m) => ({ ...m, ready: ready(m) })), camera: C.CAMERA, workflows: C.WORKFLOWS, defaults: C.DEFAULTS };
+  }) },
+  // Studio on this Mac's own chip (src/studio-local.js): what it can make, and a one-time setup with progress.
+  { method: 'GET', pattern: /^\/ox\/studio\/local\/?$/, handler: appRoute(async () => ({ ...(await import('./studio-local.js')).status(), setup: localSetup })) },
+  { method: 'POST', pattern: /^\/ox\/studio\/local\/?$/, handler: appRoute(async (b) => {
+    if (b.action !== 'install') throw new Error('action: install');
+    if (localSetup.running) return { setup: localSetup };
+    const L = await import('./studio-local.js');
+    localSetup = { running: true, step: 'starting', error: null };
+    L.install({ onStep: (what, d) => { localSetup.step = what === 'progress' ? `${localSetup.what} · ${d}` : d; if (what !== 'progress') localSetup.what = d; } })
+      .then(() => { localSetup = { running: false, step: 'done', error: null }; })
+      .catch((e) => { localSetup = { running: false, step: 'failed', error: e.message }; });
+    return { setup: localSetup };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/studio\/open\/?$/, handler: appRoute(async (body) => {
+    const S = await import('./studio-mcp.js');
+    const tools = new Set(['generate_image', 'generate_video', 'edit_image', 'upscale', 'remove_background', 'generate_audio', 'restyle_video', 'animate_script', 'workflow_instructions']);
+    const tool = String(body?.tool ?? '');
+    if (!tools.has(tool)) throw new Error('tools: generate_image, generate_video, edit_image, upscale, remove_background, generate_audio, restyle_video, animate_script');
+    // Scene animations run here and land in the gallery like any other result.
+    if (tool === 'animate_script') {
+      const A = await import('./animate.js');
+      const ms = await import('./media-studio.js');
+      const a = body?.args ?? {};
+      const source = String(a.source ?? '').trim();
+      if (!source) throw new Error('paste the script, or a path to a video or transcript on this Mac');
+      const id = (await import('node:crypto')).randomBytes(6).toString('hex');
+      const dir = join(ms.MEDIA_DIR(), id);
+      const plan = async (system, user) => {
+        const { workingModelSpec } = await import('./working-model.js');
+        const { quickText } = await import('./quick-text.js');
+        const { loadConfig } = await import('./config.js');
+        const cfg = loadConfig();
+        return (await quickText(resolveBot(await workingModelSpec(cfg, { say: () => {} }), cfg), { system, user, maxTokens: 2500 })).text;
+      };
+      const r = await A.animate(source, { out: dir, aspect: a.aspect ?? '9:16', brand: { accent: a.accent, bg: a.bg, fg: a.fg }, plan: a.no_model ? null : plan });
+      const all = join(dir, 'all.mp4');
+      if (!existsSync(all) && r.scenes[0]) (await import('node:fs')).copyFileSync(r.scenes[0].file, all);
+      ms.note({ id, at: Date.now(), provider: 'local', model: 'ox animate', label: `Scene animation · ${r.scenes.length} scene${r.scenes.length === 1 ? '' : 's'}`, surface: 'video', prompt: source.slice(0, 300), settings: { aspect: a.aspect ?? '9:16' }, media: {}, status: 'completed', files: [all] });
+      return { text: `Animated ${r.scenes.length} scene${r.scenes.length === 1 ? '' : 's'}: ${r.scenes.map((x) => `${x.name} (${x.seconds}s)`).join(', ')}. Folder: ${dir}` };
+    }
+    studioOpen ??= S.createStudio();
+    // The page waits for the result: up to 10 minutes for a video.
+    const text = await studioOpen.call(tool, { ...(body?.args ?? {}), wait_seconds: tool === 'generate_video' || tool === 'restyle_video' ? 290 : 120 });
+    const job = /job (\w+) is/.exec(text)?.[1];
+    if (job) return { text: await studioOpen.call('jobs_wait', { ids: [job], timeout_seconds: 600 }) };
+    return { text };
+  }) },
+  // Settings › Projects, Worktrees, Server, What's new.
+  { method: 'GET', pattern: /^\/ox\/workspace\/?$/, handler: appRoute(async (_b, _m, req) => {
+    const A = await appApi();
+    const since = new URL(req.url, 'http://x').searchParams.get('since');
+    return { projects: A.projectsView(), worktrees: A.worktreesView(), server: A.serverView({ port: req.socket.localPort, startedAt: SERVER_STARTED }), whatsNew: A.whatsNew(since) };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/workspace\/?$/, handler: appRoute(async (b) => {
+    if (b.action === 'remove-worktree') return (await appApi()).removeWorktree(String(b.repo ?? ''), String(b.path ?? ''));
+    throw new Error('action: remove-worktree');
+  }) },
   { method: 'GET', pattern: /^\/ox\/studio\/?$/, handler: appRoute(async () => (await appApi()).studioView()) },
   { method: 'POST', pattern: /^\/ox\/studio\/create\/?$/, handler: appRoute(async (b) => (await appApi()).studioCreate(b)) },
   { method: 'POST', pattern: /^\/ox\/studio\/?$/, handler: appRoute(async (b) => (await appApi()).studioAction(b)) },
   { method: 'GET', pattern: /^\/ox\/media\/([^/]+)\/([^/]+)$/, handler: serveMediaFile },
-  { method: 'GET', pattern: /^\/ox\/usage\/?$/, handler: appRoute(async (_, __, req) => (await import('./usage-log.js')).summarize({ days: Math.max(1, Math.min(365, Number(new URL(req.url, 'http://x').searchParams.get('days')) || 30)) })) },
+  { method: 'GET', pattern: /^\/ox\/usage\/?$/, handler: appRoute(async (_, __, req) => {
+    const U = await import('./usage-log.js');
+    const days = Math.max(1, Math.min(365, Number(new URL(req.url, 'http://x').searchParams.get('days')) || 30));
+    // The week's code too (files, lines, commits from git) for the island's recap.
+    // git log over the week takes seconds: kept 10 minutes.
+    const key = `code:${days}`;
+    if (days <= 31 && !(codeCache[key] && Date.now() - codeCache[key].at < 600_000)) codeCache[key] = { at: Date.now(), v: U.codeChanges({ days }) };
+    return { ...U.summarize({ days }), code: days <= 31 ? codeCache[key].v : null };
+  }) },
   { method: 'GET', pattern: /^\/ox\/map\/?$/, handler: appRoute(async () => (await import('./project-map.js')).projectMap(process.cwd())) },
   { method: 'GET', pattern: /^\/ox\/hf\/search\/?$/, handler: appRoute(async (_, __, req) => (await import('./hf-models.js')).searchModels(new URL(req.url, 'http://x').searchParams.get('q') ?? '')) },
   { method: 'GET', pattern: /^\/ox\/hf\/files\/?$/, handler: appRoute(async (_, __, req) => (await import('./hf-models.js')).modelFiles(new URL(req.url, 'http://x').searchParams.get('repo') ?? '')) },
@@ -1656,7 +2241,10 @@ export function requestGuard(req, bound = boundHost) {
   return null;
 }
 
+// Requests that do work (a chat turn, a run, an upload): the server never steps aside under one.
+let busyRequests = 0;
 async function handleRequest(req, res) {
+  if (req.method === 'POST') { busyRequests++; res.once('close', () => { busyRequests--; }); }
   const refused = requestGuard(req);
   if (refused) {
     sendError(res, 403, refused, 'invalid_request_error', 'forbidden_origin', null);
@@ -1674,6 +2262,15 @@ async function handleRequest(req, res) {
   if (await serveStaticFile(req, res, PLATFORM_ROOT)) return;
   if (req.method === 'GET' && (path === '/' || path === '/chat')) {
     await serveChatPage(res);
+    return;
+  }
+  // The 3D office (the-delegation): every live agent at the desk of what it is doing.
+  if (req.method === 'GET' && path === '/office') {
+    // The pixel office (lumiomac's, top-down); ?view=3d keeps the 3D room.
+    const page = await readFile(new URL(url.searchParams.get('view') === '3d' ? './web/office3d.html' : './web/office.html', import.meta.url));
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': page.length, 'Cache-Control': 'no-store',
+      'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" });
+    res.end(page);
     return;
   }
 
@@ -1719,9 +2316,26 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
   // (each is marked as started first, so the two never run one twice).
   if (!process.env.NODE_TEST_CONTEXT && process.env.OX_FLOWS !== '0') {
     setInterval(() => { import('./flows.js').then((F) => F.tickFlows()).catch(() => {}); }, 60_000).unref();
+    // Today's to-dos ready before you ask (Reminders takes 5–8 s to answer a script).
+    if (process.platform === 'darwin') {
+      const todos = () => import('./offline.js').then((O) => O.refreshTodos()).catch(() => {});
+      setTimeout(todos, 5_000).unref();
+      setInterval(todos, 3 * 60_000).unref();
+    }
     // The island's local voice model stays loaded (renewed before its 30 min run out).
     warmVoiceModel();
     setInterval(() => { warmVoiceModel(); }, 20 * 60_000).unref();
+  }
+  if (!process.env.NODE_TEST_CONTEXT && process.env.OX_MESH !== '0'
+    && existsSync(join(process.env.OX_HOME || join(homedir(), '.ox'), 'mesh', 'identity.json'))) {
+    meshUp().catch((e) => console.log(`[mesh] not started: ${e.code === 'EADDRINUSE' ? 'another ox already runs this machine\'s node' : e.message}`));
+  }
+  // OX on your iPhone (src/phone-bridge.js): only once a phone is paired.
+  if (!process.env.NODE_TEST_CONTEXT && process.env.OX_PHONE !== '0'
+    && existsSync(join(process.env.OX_HOME || join(homedir(), '.ox'), 'phone.json'))) {
+    import('./phone-bridge.js').then((P) => (P.readDevices().length ? P.startPhoneBridge() : null))
+      .then((b) => { if (b) console.log(`[phone] approvals for your phone on port ${b.port}`); })
+      .catch((e) => console.log(`[phone] not started: ${e.code === 'EADDRINUSE' ? 'another ox already serves your phone' : e.message}`));
   }
   const exposure = authExposure({ host, key: config.apiKey ?? apiKey() });
   if (exposure.level === 'refuse') {
@@ -1742,6 +2356,28 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       console.log(`[serve] listening on http://${host}:${port}`);
       console.log(`[serve] web chat: http://${host.includes(':') ? `[${host}]` : host}:${port}/`);
       const announced = announceServer(server.address()?.port ?? port, host, !!(config.apiKey ?? apiKey()));
+      // The app's server steps aside when ox's code changes under it (a pull, an
+      // update), once nothing is being worked on; the app page notices and the
+      // app starts a fresh server (src/app.js ensureServer). A plain `ox serve` stays.
+      // The island's own server (OX_ISLAND_SERVER) steps aside too; the island starts a fresh one within a minute.
+      const islandServer = process.env.OX_ISLAND_SERVER === '1';
+      if ((process.env.OX_APP === '1' || islandServer) && !process.env.NODE_TEST_CONTEXT) {
+        const startedAt = Date.now();
+        import('./code-stamp.js').then(({ codeStamp }) => {
+          setInterval(() => {
+            if (busyRequests > 0 || codeStamp() <= startedAt) return;
+            console.log('[serve] ox was updated: handing over to a fresh server');
+            // Started fresh by ox itself (src/app.js ensureServer), window open or not: the
+            // island's voice must never find no server. ensureServer stops this one.
+            if (islandServer) { server.close(); announced?.(); setTimeout(() => process.exit(0), 300); return; }
+            import('node:child_process').then(({ spawn }) => {
+              const bin = new URL('../bin/ox.js', import.meta.url).pathname;
+              spawn(process.execPath, [bin, 'app', '--print-url'], { cwd: process.cwd(), detached: true, stdio: 'ignore', env: { ...process.env } }).unref();
+            }).catch(() => {});
+            setTimeout(() => { server.close(); announced?.(); process.exit(0); }, 20_000).unref();
+          }, 30_000).unref();
+        }).catch(() => {});
+      }
       resolve({
         close: () => new Promise((resolveClose) => server.close(() => { announced?.(); resolveClose(); }))
       });

@@ -59,6 +59,9 @@ export const LIBRARY = {
   Pressable: { params: [['children', 'nodes'], ['action', 'action', true], ['selected', 'bool', true]], desc: 'clickable area' },
   Checkbox: { params: [['label', 'str'], ['value', 'bool']], desc: 'tick bound to a $var' },
   Segmented: { params: [['value', 'any'], ['options', 'list']], desc: 'one-of choice bound to a $var' },
+  // Built from the pieces above, so every renderer draws them (the /anatomy and /hairline ideas).
+  Explainer: { params: [['title', 'str'], ['steps', 'list'], ['diagram', 'bool', true]], desc: 'how something works, step by step: steps are "Label: what happens" strings or {label, text}; the reader clicks through, the current step lights up in a diagram' },
+  Flow: { params: [['nodes', 'list'], ['direction', 'row|column', true], ['current', 'any', true]], desc: 'boxes joined by arrows (a pipeline, a funnel, a process); nodes are strings or {label, color}' },
   Chart: { params: [['type', 'bar|line|area|pie|donut'], ['labels', 'list'], ['values', 'list'], ['title', 'str', true], ['format', 'number|currency|percent|compact', true]], desc: 'chart in colour' },
   Svg: { params: [['children', 'nodes'], ['viewBox', 'str', true]], desc: 'drawing (about 240 wide)' },
   Rect: { params: [['x', 'num'], ['y', 'num'], ['w', 'num'], ['h', 'num'], ['fill', 'str', true], ['stroke', 'str', true], ['width', 'num', true]], desc: 'drawing rectangle', inner: true },
@@ -92,8 +95,14 @@ const BUILTINS = {
   Format: (n, kind = 'number', digits = null, currency = 'USD') => {
     const v = Number(n);
     if (!Number.isFinite(v)) return '';
-    const d = digits == null ? undefined : Number(digits);
-    if (kind === 'currency') return v.toLocaleString('en-US', { style: 'currency', currency: String(currency || 'USD'), maximumFractionDigits: d ?? 2, minimumFractionDigits: d ?? (Math.abs(v) >= 1000 ? 0 : 2) });
+    // Digits clamped to what Intl accepts; an unknown currency code falls back
+    // to USD instead of throwing (models write "$" or "dollars").
+    const d = digits == null || !Number.isFinite(Number(digits)) ? undefined : Math.max(0, Math.min(20, Math.round(Number(digits))));
+    const cur = /^[A-Za-z]{3}$/.test(String(currency)) ? String(currency).toUpperCase() : 'USD';
+    if (kind === 'currency') {
+      try { return v.toLocaleString('en-US', { style: 'currency', currency: cur, maximumFractionDigits: d ?? 2, minimumFractionDigits: d ?? (Math.abs(v) >= 1000 ? 0 : 2) }); }
+      catch { return v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: d ?? 2, minimumFractionDigits: d ?? (Math.abs(v) >= 1000 ? 0 : 2) }); }
+    }
     if (kind === 'percent') return `${v.toLocaleString('en-US', { maximumFractionDigits: d ?? 1 })}%`;
     if (kind === 'compact') return v.toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: d ?? 1 });
     return v.toLocaleString('en-US', { maximumFractionDigits: d ?? 2 });
@@ -111,6 +120,13 @@ const BUILTINS = {
   Upper: (t) => String(t ?? '').toUpperCase(),
   Today: () => new Date().toISOString().slice(0, 10),
   Sqrt: (n) => Math.sqrt(Number(n)),
+  // Names models reach for; the operators do the same.
+  Divide: (a, b) => Number(a) / Number(b),
+  Multiply: (a, b) => Number(a) * Number(b),
+  Add: (a, b) => Number(a) + Number(b),
+  Subtract: (a, b) => Number(a) - Number(b),
+  IndexOf: (a, v) => (Array.isArray(a) ? a.indexOf(v) : String(a ?? '').indexOf(String(v))),
+  Concat: (...xs) => xs.map((x) => String(x ?? '')).join(''),
   Floor: (n) => Math.floor(Number(n)),
   Ceil: (n) => Math.ceil(Number(n)),
   Join: (a, sep = ', ') => (Array.isArray(a) ? a.join(sep) : String(a ?? '')),
@@ -123,6 +139,15 @@ const BUILTINS = {
   },
 };
 const ACTION_STEPS = new Set(['Run', 'Set', 'Reset', 'ToAssistant', 'OpenUrl']);
+
+// "$80.00", "1,200", "15%": numbers as a reader sees them, for arithmetic.
+function toNum(x) {
+  if (typeof x === 'string') {
+    const m = /^\s*([-+]?)\s*[$€£¥₹]?\s*([\d,]*\.?\d+)\s*%?\s*$/.exec(x);
+    if (m) return Number(`${m[1]}${m[2].replace(/,/g, '')}`);
+  }
+  return Number(x);
+}
 
 function nums(a) {
   return (Array.isArray(a) ? a : []).map(Number).filter((n) => Number.isFinite(n));
@@ -178,8 +203,8 @@ function tokenize(src) {
       const w = m[0];
       if (w[0] === '$') out.push({ t: 'state', v: w.slice(1) });
       else if (w[0] === '@') out.push({ t: 'builtin', v: w.slice(1) });
-      else if (w === 'true' || w === 'false') out.push({ t: 'bool', v: w === 'true' });
-      else if (w === 'null') out.push({ t: 'null', v: null });
+      else if (/^(true|false)$/i.test(w)) out.push({ t: 'bool', v: w.toLowerCase() === 'true' });
+      else if (w === 'null' || w === 'None') out.push({ t: 'null', v: null });
       else out.push({ t: 'id', v: w });
       i += w.length;
       continue;
@@ -196,7 +221,52 @@ function tokenize(src) {
 
 const BIN_PREC = { '||': 1, '&&': 2, '==': 3, '!=': 3, '>': 4, '<': 4, '>=': 4, '<=': 4, '+': 5, '-': 5, '*': 6, '/': 6, '%': 6 };
 
+/**
+ * Stat("Tip", "$bill * $pct / 100"): a formula in quotes, as small models write
+ * it, is meant to be worked out, not shown. A string that parses whole as an
+ * expression reading $values or @functions is that expression; text ("Total:
+ * $5", "Hello $name") does not parse whole and stays text.
+ */
+function quotedFormula(str) {
+  if (!/\$[A-Za-z_]|@[A-Z][A-Za-z]*\(/.test(str) || str.length > 300) return null;
+  try {
+    const ast = parseExpr(tokenize(str));
+    const reads = (n) => n && typeof n === 'object' && (n.k === 'state' || n.k === 'builtin' || Object.values(n).some((v) => (Array.isArray(v) ? v.some(reads) : reads(v))));
+    if (ast.k !== 'lit' && reads(ast)) return ast;
+  } catch {}
+  // "Hello $name", "Total: $total": text with values in it.
+  return /\$[A-Za-z_]/.test(str) ? { k: 'tmpl', src: str } : null;
+}
+
+const CLOSE = { '(': ')', '[': ']', '{': '}' };
+
+/**
+ * Mend brackets the way a reader would: a closer for something opened further
+ * out closes the inner ones first, a closer nothing opened is dropped, and
+ * whatever is still open at the end is closed.
+ */
+export function mendBrackets(tokens) {
+  const out = [];
+  const open = [];
+  for (const tk of tokens) {
+    if (tk.t === 'p' && CLOSE[tk.v]) { open.push(tk.v); out.push(tk); continue; }
+    if (tk.t === 'p' && Object.values(CLOSE).includes(tk.v)) {
+      const at = open.map((o) => CLOSE[o]).lastIndexOf(tk.v);
+      if (at < 0) continue;
+      // Card("T", [a, b)) → the ) closes the list first; the spare ) is then dropped.
+      while (open.length - 1 > at) out.push({ t: 'p', v: CLOSE[open.pop()] });
+      open.pop();
+      out.push(tk);
+      continue;
+    }
+    out.push(tk);
+  }
+  while (open.length) out.push({ t: 'p', v: CLOSE[open.pop()] });
+  return out;
+}
+
 function parseExpr(tokens) {
+  tokens = mendBrackets(tokens);
   let i = 0;
   const peek = () => tokens[i];
   const isP = (v) => peek()?.t === 'p' && peek().v === v;
@@ -204,11 +274,20 @@ function parseExpr(tokens) {
     if (!isP(v)) throw new SyntaxError(`expected '${v}'${peek() ? ` near '${peek().v}'` : ' before end of line'}`);
     i++;
   };
-  function list(close) {
+  function list(close, named = false) {
     const items = [];
     while (!isP(close)) {
-      items.push(expr(0));
+      // Slider(label="Rate", min=0) / Card(title: "T"): named arguments, as
+      // models often write them; placed into position by placeNamed().
+      const nx = tokens[i + 1];
+      if (named && peek()?.t === 'id' && nx?.t === 'p' && (nx.v === '=' || nx.v === ':')) {
+        const name = peek().v;
+        i += 2;
+        items.push({ k: 'named', name, x: expr(0) });
+      } else items.push(expr(0));
       if (isP(',')) i++;
+      // [Text("a") Text("b")]: a missing comma between two items.
+      else if (peek() && peek().t !== 'p' || isP('[') || isP('{')) continue;
       else break;
     }
     expect(close);
@@ -217,11 +296,12 @@ function parseExpr(tokens) {
   function primary() {
     const tk = tokens[i++];
     if (!tk) throw new SyntaxError('unexpected end of expression');
-    if (tk.t === 'str' || tk.t === 'num' || tk.t === 'bool' || tk.t === 'null') return { k: 'lit', v: tk.v };
+    if (tk.t === 'str') return quotedFormula(tk.v) ?? { k: 'lit', v: tk.v };
+    if (tk.t === 'num' || tk.t === 'bool' || tk.t === 'null') return { k: 'lit', v: tk.v };
     if (tk.t === 'state') return { k: 'state', name: tk.v };
-    if (tk.t === 'builtin') { expect('('); return { k: 'builtin', name: tk.v, args: list(')') }; }
+    if (tk.t === 'builtin') { expect('('); return { k: 'builtin', name: tk.v, args: list(')', true).map((a) => (a.k === 'named' ? a.x : a)) }; }
     if (tk.t === 'id') {
-      if (isP('(')) { i++; return { k: 'call', name: tk.v, args: list(')') }; }
+      if (isP('(')) { i++; return { k: 'call', name: tk.v, args: placeNamed(tk.v, list(')', true)) }; }
       return { k: 'ref', name: tk.v };
     }
     if (tk.t === 'p' && tk.v === '[') return { k: 'arr', items: list(']') };
@@ -280,6 +360,29 @@ function parseExpr(tokens) {
   const node = expr(0);
   if (i < tokens.length) throw new SyntaxError(`unexpected '${tokens[i].v}'`);
   return node;
+}
+
+// Other names models use for a parameter.
+const PARAM_ALIAS = { text: ['label', 'title', 'content', 'value'], label: ['text', 'title', 'name'], title: ['text', 'label', 'heading'], children: ['items', 'content', 'children', 'nodes', 'columns'], values: ['data', 'value'], labels: ['categories', 'keys'], columns: ['cols', 'children'], options: ['items', 'choices'], value: ['default', 'initial', 'bind', 'state'], step: ['increment'] };
+
+/** Put named arguments where the component's signature expects them. */
+function placeNamed(name, args) {
+  if (!args.some((a) => a.k === 'named')) return args;
+  const params = (LIBRARY[name === 'Col' && args[0]?.k === 'arr' ? 'Column' : name]?.params ?? []).map(([p]) => p);
+  const out = [];
+  const loose = [];
+  args.forEach((a, i) => {
+    if (a.k !== 'named') { out[i] = a; return; }
+    let at = params.indexOf(a.name);
+    if (at < 0) at = params.findIndex((p) => (PARAM_ALIAS[p] ?? []).includes(a.name) && out[params.indexOf(p)] === undefined);
+    if (at >= 0 && out[at] === undefined) out[at] = a.x;
+    else loose.push(a.x);
+  });
+  // A name the component does not have (Row(…, gap="medium")) is left out,
+  // unless the component has no signature to check it against.
+  if (!params.length) for (const x of loose) { let k = 0; while (out[k] !== undefined) k++; out[k] = x; }
+  for (let k = 0; k < out.length; k++) if (out[k] === undefined) out[k] = { k: 'lit', v: null };
+  return out;
 }
 
 /** Strip ``` fences and split source into statements, joining lines while brackets are open. */
@@ -488,6 +591,10 @@ export function evaluate(program, env = {}) {
   function value(n, id) {
     switch (n.k) {
       case 'lit': return n.v;
+      case 'tmpl': return n.src.replace(/\$([A-Za-z_]\w*)/g, (m, name) => {
+        const v = name in state || program.stmts.has(`$${name}`) ? value({ k: 'state', name }, id) : undefined;
+        return v === undefined || v === null || typeof v === 'object' ? m : typeof v === 'number' ? String(Math.round(v * 100) / 100) : String(v);
+      });
       case 'state': return n.name in state || !program.stmts.has(`$${n.name}`) ? state[n.name] ?? null : resolve(`$${n.name}`, id);
       case 'ref': return resolve(n.name, id);
       case 'arr': return n.items.map((x) => value(x, id)).filter((x) => x !== undefined);
@@ -501,10 +608,10 @@ export function evaluate(program, env = {}) {
         const r = value(n.r, id);
         switch (n.op) {
           case '+': return typeof l === 'string' || typeof r === 'string' ? `${l ?? ''}${r ?? ''}` : Number(l) + Number(r);
-          case '-': return Number(l) - Number(r);
-          case '*': return Number(l) * Number(r);
-          case '/': return Number(r) === 0 ? 0 : Number(l) / Number(r);
-          case '%': return Number(l) % Number(r);
+          case '-': return toNum(l) - toNum(r);
+          case '*': return toNum(l) * toNum(r);
+          case '/': return toNum(r) === 0 ? 0 : toNum(l) / toNum(r);
+          case '%': return toNum(l) % toNum(r);
           case '&&': return l && r;
           case '||': return l || r;
           default: return compare(l, n.op, r);
@@ -519,7 +626,11 @@ export function evaluate(program, env = {}) {
           err(id, 'builtin', `unknown @${n.name}${near ? ` (use @${near})` : ''}`);
           return null;
         }
-        return fn(...n.args.map((a) => value(a, id)));
+        // A built-in that throws on odd arguments drops this value, with the
+        // reason, instead of taking the whole answer down (OpenUI: bad lines
+        // are dropped, the rest renders).
+        try { return fn(...n.args.map((a) => value(a, id))); }
+        catch (e) { err(id, 'builtin', `@${n.name}: ${String(e?.message ?? e).slice(0, 120)}`); return null; }
       }
       case 'call': return call(n, id);
       default: return null;
@@ -565,6 +676,10 @@ export function evaluate(program, env = {}) {
     // Col is two things: OpenUI's layout column, Col([a, b]), and ox's table
     // column, Col("Label", values). A list first means the layout.
     if (n.name === 'Col' && n.args[0]?.k === 'arr') n = { ...n, name: 'Column' };
+    // PieChart(labels, values, "t"), LineChart(…), DonutChart(…), AreaChart(…):
+    // the names models reach for are ox's Chart with that type first.
+    const chartType = /^(Pie|Donut|Doughnut|Line|Area)Chart$/.exec(n.name)?.[1]?.toLowerCase();
+    if (chartType && !LIBRARY[n.name]) n = { ...n, name: 'Chart', args: [{ k: 'lit', v: chartType === 'doughnut' ? 'donut' : chartType }, ...n.args] };
     const spec = LIBRARY[n.name];
     if (!spec) {
       const near = suggest(n.name, Object.keys(LIBRARY));
@@ -584,12 +699,15 @@ export function evaluate(program, env = {}) {
       if (strays.length) n = { ...n, args: kept };
     }
     if (n.args.length > spec.params.length) {
-      err(id, 'arity', `${n.name} takes ${spec.params.length} argument(s): ${signature(n.name)}`);
+      // The extra ones are left out; the component still draws.
+      err(id, 'ignored', `${n.name} takes ${spec.params.length} argument(s): ${signature(n.name)} (the extra ones were left out)`);
     }
     const props = {};
     for (let p = 0; p < spec.params.length; p++) {
       const [name, type, optional] = spec.params[p];
       let v = p < n.args.length ? value(n.args[p], id) : undefined;
+      // A sum with no real result reads as "—", never NaN or a made-up 0.
+      if (typeof v === 'number' && !Number.isFinite(v)) v = type === 'any' || type === 'str' ? '—' : undefined;
       if (v === undefined || v === null) {
         if (!optional && p >= n.args.length) {
           err(id, 'missing', `${n.name} is missing \`${name}\`: ${signature(n.name)}`);
@@ -599,6 +717,8 @@ export function evaluate(program, env = {}) {
       }
       // OpenUI Lang: "a single action needs no wrapper", so @Set($n, 1) alone is Action([@Set($n, 1)]).
       if (type === 'action' && v && typeof v === 'object' && typeof v.step === 'string') v = { kind: 'action', steps: [v] };
+      // Select("People", $n, ["1", "2"]): plain choices become Options.
+      if (type === 'nodes' && n.name === 'Select' && Array.isArray(v)) v = v.flat().map((x) => (x !== null && typeof x !== 'object' ? { type: 'Option', props: { value: typeof x === 'string' && /^-?\d+(\.\d+)?$/.test(x) ? Number(x) : x, label: String(x) } } : x));
       if (type === 'nodes' && isNode(v)) v = [v];
       if (type === 'nodes' && Array.isArray(v)) v = v.flat().filter(isNode);
       // Title("Planets", 2): a heading level, as models write it.
@@ -619,11 +739,58 @@ export function evaluate(program, env = {}) {
       const name = spec.params[listAt][0];
       props[name] = [...(props[name] ?? []), ...strays.map((a) => value(a, id))].flat().filter(isNode);
     }
+    // Stat("Tip", 3.6, "currency"): a format where the delta goes, as models write it.
+    if (n.name === 'Stat' && n.args[2]) {
+      const f = value(n.args[2], id);
+      if (typeof f === 'string' && /^(currency|percent|number|compact)$/i.test(f) && typeof props.value === 'number') props.value = BUILTINS.Format(props.value, f.toLowerCase());
+    }
     // A Select's value arg binds a $var: keep the name so actions can set it.
     if (n.name === 'Select' && n.args[1]?.k === 'state') props.bind = n.args[1].name;
     if ((n.name === 'Input' || n.name === 'Slider' || n.name === 'Checkbox') && n.args[1]?.k === 'state') props.bind = n.args[1].name;
     if (n.name === 'Segmented' && n.args[0]?.k === 'state') props.bind = n.args[0].name;
+    if (n.name === 'Flow') return flowNode(props);
+    if (n.name === 'Explainer') return explainerNode(props, id);
     return { type: n.name, props };
+  }
+
+  // ---- Explainer and Flow, expanded into primitives every renderer has.
+  const stepOf = (x, i) => {
+    if (x && typeof x === 'object') return { label: String(x.label ?? x.title ?? `Step ${i + 1}`), text: String(x.text ?? x.body ?? x.detail ?? '') };
+    const m = /^([^:]{1,40}):\s*([\s\S]*)$/.exec(String(x ?? ''));
+    return m ? { label: m[1].trim(), text: m[2].trim() } : { label: `Step ${i + 1}`, text: String(x ?? '') };
+  };
+  function flowNode({ nodes = [], direction = 'row', current = null }) {
+    const items = nodes.map((x, i) => (x && typeof x === 'object' ? { label: String(x.label ?? x.title ?? ''), color: x.color ?? null } : { label: String(x ?? ''), color: null })).filter((x) => x.label).slice(0, 8);
+    if (!items.length) return null;
+    const row = direction !== 'column';
+    const W = 240, gap = 10;
+    const bw = row ? Math.max(28, (W - gap * (items.length - 1)) / items.length) : 150, bh = row ? 34 : 24;
+    const cur = typeof current === 'number' ? current : items.findIndex((x) => x.label === current);
+    const kids = [];
+    items.forEach((it, i) => {
+      const x = row ? i * (bw + gap) : (W - bw) / 2, y = row ? 10 : 6 + i * (bh + gap);
+      const on = i === cur;
+      kids.push({ type: 'Rect', props: { x, y, w: bw, h: bh, fill: on ? (it.color ?? 'info') : 'surface', stroke: on ? (it.color ?? 'info') : 'muted', width: 1 } });
+      kids.push({ type: 'SvgText', props: { text: it.label.length > Math.floor(bw / 6) ? `${it.label.slice(0, Math.max(3, Math.floor(bw / 6) - 1))}…` : it.label, x: x + bw / 2, y: y + bh / 2 + 4, size: 9, fill: on ? 'ink' : 'muted', anchor: 'middle' } });
+      if (i < items.length - 1) kids.push(row
+        ? { type: 'Line', props: { x1: x + bw + 1, y1: y + bh / 2, x2: x + bw + gap - 1, y2: y + bh / 2, stroke: 'muted', width: 1.5 } }
+        : { type: 'Line', props: { x1: W / 2, y1: y + bh + 1, x2: W / 2, y2: y + bh + gap - 1, stroke: 'muted', width: 1.5 } });
+    });
+    const H = row ? bh + 20 : 12 + items.length * (bh + gap);
+    return { type: 'Svg', props: { children: kids, viewBox: `0 0 ${W} ${H}` } };
+  }
+  function explainerNode({ title, steps = [], diagram = true }, id) {
+    const list = steps.map(stepOf).filter((x) => x.text || x.label).slice(0, 10);
+    if (!list.length) { err(id, 'missing', 'Explainer needs steps, e.g. ["Intake: air comes in", "Compress: …"]'); return null; }
+    const bind = `ex_${String(id ?? 'x').replace(/\W/g, '_')}`;
+    const labels = list.map((x) => x.label);
+    const chosen = labels.includes(state[bind]) ? state[bind] : labels[0];
+    const i = labels.indexOf(chosen);
+    const kids = [{ type: 'Title', props: { text: title, size: 'md' } }];
+    if (diagram !== false) { const f = flowNode({ nodes: labels, direction: list.length > 5 ? 'column' : 'row', current: i }); if (f) kids.push(f); }
+    kids.push({ type: 'Segmented', props: { value: chosen, options: labels, bind } });
+    kids.push({ type: 'Card', props: { title: `${i + 1}. ${chosen}`, children: [{ type: 'Text', props: { text: list[i].text } }] } });
+    return { type: 'Stack', props: { children: kids } };
   }
 
   let root = null;
@@ -1053,4 +1220,38 @@ export function digest(root) {
   };
   walk(root);
   return Object.entries(counts).map(([k, v]) => (v > 1 ? `${k}×${v}` : k)).join(', ');
+}
+
+/** The ```openui blocks in an answer, as the app takes them out. */
+export function uiBlocks(text) {
+  const out = [];
+  const re = /(?:^|\n)[ \t]*```[ \t]*(openui|open-ui|openui-lang|ox-?canvas)?[^\n]*\n([\s\S]*?)(?:```|$)/gi;
+  let m;
+  while ((m = re.exec(String(text ?? '')))) {
+    const named = !m[1] && /^\s*openui\s*\n/i.exec(m[2]);
+    if (m[1] || named) out.push(named ? m[2].replace(/^\s*openui\s*\n/i, '') : m[2]);
+  }
+  return out;
+}
+
+/**
+ * Does an answer draw? ok: a block, a root, and no line lost ('ignored' notes,
+ * where the component still drew, do not count).
+ */
+export function checkUi(text) {
+  const blocks = uiBlocks(text);
+  if (!blocks.length) return { ok: false, blocks: 0, root: false, errors: [], why: 'no openui block' };
+  const ev = new Canvas().load(blocks.join('\n'));
+  const errors = [...(ev.parseErrors ?? []), ...(ev.errors ?? [])].filter((e) => e.code !== 'ignored');
+  // A formula still showing as text ("$bill * 0.1" on screen) is broken to a reader.
+  const shown = [];
+  const walk = (x) => {
+    if (typeof x === 'string') { if (/\$[A-Za-z_]\w*|@[A-Z][A-Za-z]*\(/.test(x)) shown.push(x); return; }
+    if (Array.isArray(x)) { x.forEach(walk); return; }
+    if (x && typeof x === 'object') for (const [k, v] of Object.entries(x.props ?? x)) if (k !== 'bind') walk(v);
+  };
+  walk(ev.root);
+  for (const t of shown.slice(0, 3)) errors.push({ line: null, id: null, code: 'formula-text', msg: `a formula is shown as text: ${t.slice(0, 60)}` });
+  const why = !ev.root ? `nothing to draw (${errors[0]?.msg ?? 'no root'})` : errors.length ? `${errors.length} line(s) dropped: ${errors[0].msg}` : '';
+  return { ok: !!ev.root && !errors.length, blocks: blocks.length, root: !!ev.root, errors, why, tree: ev.root ?? null };
 }

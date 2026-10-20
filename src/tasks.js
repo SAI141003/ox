@@ -23,7 +23,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 
-const TASKS_DIR = path.join(os.homedir(), '.ox', 'tasks');
+const TASKS_DIR = path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'tasks');
 
 export const STATUSES = ['pending', 'running', 'in_review', 'blocked', 'done', 'failed', 'cancelled'];
 const OPEN = new Set(['pending', 'running', 'in_review', 'blocked']);
@@ -54,12 +54,33 @@ function normalize(t) {
   };
 }
 
+// On Windows a rename onto a file another process has open (a reader, or a
+// second writer mid-rename) fails with EPERM/EBUSY/EACCES instead of replacing
+// it. The holder lets go within milliseconds, so wait briefly and try again.
+const RENAME_RETRY = new Set(['EPERM', 'EBUSY', 'EACCES']);
+const RENAME_ATTEMPTS = 20;
+
+function renameWithRetry(from, to) {
+  for (let i = 1; ; i++) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (err) {
+      if (!RENAME_RETRY.has(err?.code) || i >= RENAME_ATTEMPTS) {
+        try { fs.unlinkSync(from); } catch {}
+        throw err;
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.min(5 * i, 50));
+    }
+  }
+}
+
 function writeTask(t, dir) {
   ensureTasksDir(dir);
   const file = taskPath(t.id, dir);
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(t, null, 2));
-  fs.renameSync(tmp, file); // atomic replace: a reader never sees half a task
+  renameWithRetry(tmp, file); // atomic replace: a reader never sees half a task
   return t;
 }
 
@@ -334,7 +355,9 @@ function readyTasks(opts = {}) {
 
 /** Claim the oldest ready task for `owner`; null when nothing is ready. */
 function nextTask(opts = {}) {
-  for (const t of readyTasks(opts)) {
+  const owner = opts.owner ?? actor(opts);
+  // A task assigned to someone else (an org agent's work) is theirs to take.
+  for (const t of readyTasks(opts).filter((x) => !x.assignee || x.assignee === owner)) {
     const r = claimTask(t.id, opts);
     if (r.ok) return r.task;
   }
@@ -408,7 +431,7 @@ function runTask(id, opts = {}) {
     const args = ['-p', [brief, opts.prompt].filter(Boolean).join('\n\n')];
     execFile(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js'), ...args],
       // OX_TASK_ID offers the run its task_board tool (src/tools/task-board.js).
-      { timeout: 300000, env: { ...process.env, OX_TASK_ID: id, OX_AGENT_NAME: 'ox-run' } }, (error, stdout, stderr) => {
+      { timeout: 300000, cwd: opts.cwd ?? process.cwd(), env: { ...process.env, OX_TASK_ID: id, OX_AGENT_NAME: 'ox-run' } }, (error, stdout, stderr) => {
         if (error) {
           completeTask(id, { ...opts, owner: 'ox-run', failed: true, note: error.message.slice(0, 300) });
           resolve({ success: false, error: error.message, stdout, stderr });

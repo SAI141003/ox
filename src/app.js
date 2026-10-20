@@ -9,6 +9,7 @@
 //   ox app install        macOS: put OX.app in ~/Applications (Spotlight, Launchpad)
 //   ox app stop           stop the app's server
 //   ox app --print-url    start the server if needed and print its address
+import { signApp } from './sign-local.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -61,9 +62,18 @@ async function answers(url, ms = 1500) {
 // The app's server: reused when it is up and serving this folder, else started.
 export async function ensureServer({ cwd = process.cwd(), log = () => {} } = {}) {
   const st = readState();
-  if (st.pid && alive(st.pid) && st.cwd === cwd && st.url && (await answers(st.url))) return st;
-  if (st.pid && alive(st.pid)) { try { process.kill(st.pid); } catch {} }
-  const port = await freePort();
+  // Reused only when it runs the current code: a server started before ox was
+  // updated keeps serving the old app until it is replaced.
+  const { codeStamp } = await import('./code-stamp.js');
+  const fresh = st.startedAt && Date.parse(st.startedAt) >= codeStamp();
+  if (st.pid && alive(st.pid) && st.cwd === cwd && st.url && fresh && (await answers(st.url))) return st;
+  if (st.pid && alive(st.pid) && !fresh) log('ox was updated since its server started: starting a fresh one');
+  if (st.pid && alive(st.pid)) {
+    try { process.kill(st.pid); } catch {}
+    // Let it let go of its port, so the app keeps the same address.
+    for (let i = 0; i < 40 && alive(st.pid); i++) await new Promise((r) => setTimeout(r, 50));
+  }
+  const port = await freePort(st.port || 47800);
   const child = spawn(process.execPath, [OX_CLI, 'serve', '--port', String(port)], {
     cwd, detached: true, stdio: 'ignore', windowsHide: true, env: { ...process.env, OX_APP: '1' },
   });
@@ -119,7 +129,8 @@ export function buildMacApp({ home = os.homedir() } = {}) {
 ${icon ? '\t<key>CFBundleIconFile</key><string>AppIcon</string>\n' : ''}</dict>
 </plist>
 `);
-  spawnSync('codesign', ['--force', '--deep', '-s', '-', app], { stdio: 'ignore' });
+  // A fixed local identity when there is one (src/sign-local.js): permissions survive updates.
+  signApp(app, 'dev.ox.app');
   return app;
 }
 
@@ -158,7 +169,7 @@ export async function openApp({ cwd = process.cwd(), log = console.log } = {}) {
   const browser = findAppBrowser();
   const profile = path.join(os.homedir(), '.ox', 'app', 'browser-profile');
   if (browser) {
-    const child = spawn(browser, [`--app=${st.url}`, '--window-size=1120,760', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check'], { detached: true, stdio: 'ignore' });
+    const child = spawn(browser, [`--app=${st.url}`, '--window-size=1120,760', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--use-mock-keychain', '--password-store=basic'], { detached: true, stdio: 'ignore' });
     child.on('error', () => {});
     child.unref();
     log(`ox is open in its own window — working in ${cwd}`);

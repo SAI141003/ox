@@ -7,6 +7,9 @@ import SwiftUI
 final class NowPlaying: ObservableObject {
     struct Track: Equatable { let app: String; let title: String; let artist: String; let playing: Bool }
     @Published private(set) var track: Track?
+    /// The album art (Pixie's music card), fetched once per track.
+    @Published private(set) var artwork: NSImage?
+    private var artFor = ""
     private var timer: Timer?
 
     static let apps: [(name: String, bundle: String)] = [("Spotify", "com.spotify.client"), ("Music", "com.apple.Music")]
@@ -38,7 +41,28 @@ final class NowPlaying: ObservableObject {
             let out = NSAppleScript(source: script)?.executeAndReturnError(&err).stringValue ?? ""
             let parts = out.components(separatedBy: "\n")
             let t: Track? = parts.count >= 3 && !parts[0].isEmpty ? Track(app: app, title: parts[0], artist: parts[1], playing: parts[2] == "true") : nil
-            DispatchQueue.main.async { if self?.track != t { self?.track = t } }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if self.track != t { self.track = t }
+                let key = t.map { "\($0.app)|\($0.title)|\($0.artist)" } ?? ""
+                if key != self.artFor { self.artFor = key; self.artwork = nil; if t != nil { self.fetchArt(app: app) } }
+            }
+        }
+    }
+
+    private func fetchArt(app: String) {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            var img: NSImage?
+            if app == "Spotify" {
+                var err: NSDictionary?
+                let url = NSAppleScript(source: "tell application \"Spotify\" to return artwork url of current track")?.executeAndReturnError(&err).stringValue ?? ""
+                if let u = URL(string: url), let d = try? Data(contentsOf: u) { img = NSImage(data: d) }
+            } else {
+                var err: NSDictionary?
+                let desc = NSAppleScript(source: "tell application \"Music\" to return raw data of artwork 1 of current track")?.executeAndReturnError(&err)
+                if let d = desc?.data, !d.isEmpty { img = NSImage(data: d) }
+            }
+            DispatchQueue.main.async { self?.artwork = img }
         }
     }
 
@@ -57,14 +81,18 @@ struct NowPlayingPill: View {
     var body: some View {
         if let t = player.track {
             HStack(spacing: 8) {
-                Image(systemName: t.app == "Spotify" ? "music.note" : "music.quarternote.3").font(.system(size: 10)).foregroundStyle(Ink.dim)
+                if let art = player.artwork {
+                    Image(nsImage: art).resizable().aspectRatio(contentMode: .fill).frame(width: 22, height: 22).clipShape(RoundedRectangle(cornerRadius: 5))
+                } else {
+                    Image(systemName: t.app == "Spotify" ? "music.note" : "music.quarternote.3").font(.system(size: 10)).foregroundStyle(Ink.dim)
+                }
                 Text(t.title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Ink.text).lineLimit(1)
                 Text(t.artist).font(.system(size: 11)).foregroundStyle(Ink.muted).lineLimit(1)
                 Spacer(minLength: 4)
                 Button { player.send("playpause") } label: { Image(systemName: t.playing ? "pause.fill" : "play.fill").font(.system(size: 10)) }
                     .buttonStyle(.plain).foregroundStyle(Ink.text).help(t.playing ? "Pause" : "Play").accessibilityLabel(t.playing ? "Pause" : "Play")
                 Button { player.send("next track") } label: { Image(systemName: "forward.fill").font(.system(size: 10)) }
-                    .buttonStyle(.plain).foregroundStyle(Ink.text).help("Next").accessibilityLabel("Next track")
+                    .buttonStyle(.plain).foregroundStyle(Ink.text).help(T("Next")).accessibilityLabel("Next track")
             }
             .padding(.horizontal, 10).padding(.vertical, 5)
             .background(Capsule().fill(Color.white.opacity(0.06)))

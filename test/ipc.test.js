@@ -28,6 +28,19 @@ function mkdtemp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'ox-ipc-test-'));
 }
 
+// A listenable path for a test server. Node on Windows has no unix socket
+// files: local IPC is a named pipe, and a pipe name must live in the \\.\pipe\
+// namespace or listen() never fires. The temp dir's unique basename keeps
+// pipes from parallel tests and runs apart.
+const IS_WIN = process.platform === 'win32';
+function sockPath(dir, name) {
+  return IS_WIN ? `\\\\.\\pipe\\${path.basename(dir)}-${name}` : path.join(dir, `${name}.sock`);
+}
+
+// Tests about socket FILES (existence on disk, stale-file unlinking, the
+// socket dir) have nothing to check on Windows, where a pipe is not a file.
+const SOCKET_FILES = IS_WIN ? 'named pipes are not files on Windows' : false;
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 10s, not 2s. A unix-socket round trip on one machine takes microseconds; 2s
@@ -73,7 +86,7 @@ function collect(client) {
 // Stand up a server + one connected, ready client. Returns a teardown fn.
 async function pair(t, opts = {}) {
   const dir = mkdtemp();
-  const socketPath = opts.socketPath ?? path.join(dir, 'bridge.sock');
+  const socketPath = opts.socketPath ?? sockPath(dir, 'bridge');
   const server = createIpcServer({
     socketPath,
     sessionId: opts.sessionId ?? 'sess',
@@ -122,7 +135,7 @@ test('ipc: DEFAULT_SOCKET_DIR is the tmpdir', () => {
   assert.equal(DEFAULT_SOCKET_DIR, os.tmpdir());
 });
 
-test('ipc: socketPathFor is deterministic and stays inside the socket dir', () => {
+test('ipc: socketPathFor is deterministic and stays inside the socket dir', { skip: SOCKET_FILES }, () => {
   const a = socketPathFor('abc-123');
   const b = socketPathFor('abc-123');
   assert.equal(a, b);
@@ -131,7 +144,7 @@ test('ipc: socketPathFor is deterministic and stays inside the socket dir', () =
   assert.notEqual(a, socketPathFor('abc-124'));
 });
 
-test('ipc: socketPathFor sanitizes traversal and separators out of sessionId', () => {
+test('ipc: socketPathFor sanitizes traversal and separators out of sessionId', { skip: SOCKET_FILES }, () => {
   for (const evil of ['../../etc/passwd', 'a/b c', '..', '/abs/path']) {
     const p = socketPathFor(evil);
     assert.equal(path.dirname(p), os.tmpdir(), `${evil} escaped the socket dir`);
@@ -142,7 +155,16 @@ test('ipc: socketPathFor sanitizes traversal and separators out of sessionId', (
   assert.match(socketPathFor(''), /ox-ipc-default\.sock$/);
 });
 
-test('ipc: defaults stagger — connect timeout is far shorter than approval timeout', () => {
+test('ipc: socketPathFor on Windows is a sanitized named pipe', () => {
+  assert.equal(socketPathFor('abc-123', DEFAULT_SOCKET_DIR, 'win32'), '\\\\.\\pipe\\ox-ipc-abc-123');
+  for (const evil of ['../../etc/passwd', 'a\\b c', '..']) {
+    const p = socketPathFor(evil, DEFAULT_SOCKET_DIR, 'win32');
+    assert.ok(p.startsWith('\\\\.\\pipe\\ox-ipc-'), p);
+    assert.ok(!p.slice('\\\\.\\pipe\\'.length).includes('\\'), `${evil} smuggled a separator: ${p}`);
+  }
+});
+
+test('ipc: defaults stagger —connect timeout is far shorter than approval timeout', () => {
   assert.equal(DEFAULT_CONNECT_TIMEOUT_MS, 300);
   assert.equal(DEFAULT_APPROVAL_TIMEOUT_MS, 115000);
   assert.ok(DEFAULT_CONNECT_TIMEOUT_MS < DEFAULT_APPROVAL_TIMEOUT_MS);
@@ -358,7 +380,7 @@ test('ipc: a socket destroyed out from under the server also resolves ask', asyn
 
 test('ipc: an approval with no client at all resolves ask immediately', async (t) => {
   const dir = mkdtemp();
-  const socketPath = path.join(dir, 'lonely.sock');
+  const socketPath = sockPath(dir, 'lonely');
   const server = createIpcServer({ socketPath, sessionId: 'lonely', approvalTimeoutMs: TINY });
   t.after(() => { server.close(); fs.rmSync(dir, { recursive: true, force: true }); });
   await once(server, 'listening');
@@ -513,7 +535,7 @@ test('ipc: malformed JSON does not crash the server and the next valid frame sti
 });
 
 test('ipc: a client message larger than the frame cap is dropped, not buffered', async (t) => {
-  const { server, client } = await pair(t);
+  const { server, client, messages } = await pair(t);
   const warnings = [];
   server.on('protocol-warning', (w) => warnings.push(w));
   const before = warnings.length;
@@ -524,6 +546,9 @@ test('ipc: a client message larger than the frame cap is dropped, not buffered',
   // the connection survived and still answers
   assert.equal(server.clients.size, 1);
   client.ping();
+  assert.ok(await waitFor(() => messages.of('pong')[0], { what: 'pong after the oversize frame', timeoutMs: 10_000 }));
+  // the tail of the dropped frame is skipped, not parsed as a frame of its own
+  assert.deepEqual(warnings.filter((w) => w.reason === 'malformed-json'), []);
 });
 
 test('ipc: ping is answered with pong', async (t) => {
@@ -536,9 +561,9 @@ test('ipc: ping is answered with pong', async (t) => {
 // rule 3: socket lifecycle
 // ---------------------------------------------------------------------------
 
-test('ipc: the socket file exists while listening and is removed on close', async (t) => {
+test('ipc: the socket file exists while listening and is removed on close', { skip: SOCKET_FILES }, async (t) => {
   const dir = mkdtemp();
-  const socketPath = path.join(dir, 'lifecycle.sock');
+  const socketPath = sockPath(dir, 'lifecycle');
   t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   const server = createIpcServer({ socketPath, sessionId: 'lifecycle' });
   await once(server, 'listening');
@@ -549,9 +574,9 @@ test('ipc: the socket file exists while listening and is removed on close', asyn
   assert.equal(fs.existsSync(socketPath), false, 'socket file should be unlinked on close');
 });
 
-test('ipc: a stale socket file from a crashed server is unlinked on start', async (t) => {
+test('ipc: a stale socket file from a crashed server is unlinked on start', { skip: SOCKET_FILES }, async (t) => {
   const dir = mkdtemp();
-  const socketPath = path.join(dir, 'stale.sock');
+  const socketPath = sockPath(dir, 'stale');
   t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
 
   // Simulate a crash for real: SIGKILL a process that owns the socket, so
@@ -583,9 +608,9 @@ test('ipc: a stale socket file from a crashed server is unlinked on start', asyn
   await once(client, 'open');
 });
 
-test('ipc: a stale socket is unlinked even when it is not a socket at all', async (t) => {
+test('ipc: a stale socket is unlinked even when it is not a socket at all', { skip: SOCKET_FILES }, async (t) => {
   const dir = mkdtemp();
-  const socketPath = path.join(dir, 'garbage.sock');
+  const socketPath = sockPath(dir, 'garbage');
   t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   fs.writeFileSync(socketPath, 'not a socket');
 
@@ -605,7 +630,7 @@ test('ipc: a stale socket is unlinked even when it is not a socket at all', asyn
 
 test('ipc: connecting to a nonexistent socket errors fast and does not hang', async () => {
   const dir = mkdtemp();
-  const socketPath = path.join(dir, 'nobody-home.sock');
+  const socketPath = sockPath(dir, 'nobody-home');
   const started = Date.now();
   const client = connectIpcClient({ socketPath, clientId: 'ghost', connectTimeoutMs: 50 });
   // attach before awaiting: finish() emits 'error' and 'close' in one tick
@@ -623,7 +648,7 @@ test('ipc: connecting to a nonexistent socket errors fast and does not hang', as
 
 test('ipc: a client pointed at a socket with no server never opens', async () => {
   const dir = mkdtemp();
-  const socketPath = path.join(dir, 'ghost.sock');
+  const socketPath = sockPath(dir, 'ghost');
   const client = connectIpcClient({ socketPath, connectTimeoutMs: 40 });
   client.on('open', () => { throw new Error('must never open'); });
   const [err] = await once(client, 'error');
@@ -634,7 +659,7 @@ test('ipc: a client pointed at a socket with no server never opens', async () =>
 
 test('ipc: send/answer on a dead client are no-ops that return false', async () => {
   const dir = mkdtemp();
-  const socketPath = path.join(dir, 'ghost.sock');
+  const socketPath = sockPath(dir, 'ghost');
   const client = connectIpcClient({ socketPath, connectTimeoutMs: 40 });
   await once(client, 'error');
   assert.equal(client.send({ type: 'ping' }), false);
@@ -686,7 +711,7 @@ test('ipc: the newest queued message survives the drop-oldest policy', async (t)
 
 test('ipc: client-connected / client-disconnected are emitted', async (t) => {
   const dir = mkdtemp();
-  const socketPath = path.join(dir, 'conn.sock');
+  const socketPath = sockPath(dir, 'conn');
   const server = createIpcServer({ socketPath, sessionId: 'conn' });
   t.after(() => { server.close(); fs.rmSync(dir, { recursive: true, force: true }); });
   await once(server, 'listening');
@@ -740,7 +765,7 @@ test('ipc: server.close() is idempotent and broadcasts still work before it', as
 
 test('ipc: a live server socket is never stolen by a second server', async (t) => {
   const dir = mkdtemp();
-  const socketPath = path.join(dir, 'owned.sock');
+  const socketPath = sockPath(dir, 'owned');
   t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
 
   const owner = createIpcServer({ socketPath, sessionId: 'owner' });
@@ -756,7 +781,9 @@ test('ipc: a live server socket is never stolen by a second server', async (t) =
   const client = connectIpcClient({ socketPath, clientId: 'still-here' });
   t.after(() => client.close());
   await once(client, 'open');
-  assert.equal(owner.clients.size, 1);
+  // A pipe client can see its connect complete before the server's accept
+  // callback has run, so wait for the owner to register it.
+  await waitFor(() => owner.clients.size === 1, { what: 'the owner to accept the client' });
   assert.equal(intruder.clients.size, 0);
 });
 

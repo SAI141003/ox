@@ -1,0 +1,22 @@
+{"text":"play Billie Jean by Michael Jackson","intent":"play","from":"Pixie video (F2.4)"}
+{"text":"turn down the volume just a little bit","intent":"volume","from":"Pixie video (F2.4)"}
+{"text":"open my to-do list and tell me what I have for the rest of the day","intent":"todos","from":"Pixie video (F2.4)"}
+{"text":"open Spotify and play Life is a Highway","intent":"chain","from":"Vovy video (F2.7)"}
+{"text":"write an email to Camille, tell her it's done","intent":"email","from":"Coucou talk video (F3.6)"}
+{"text":"what do I have today","intent":"todos"}
+{"text":"set a timer for 10 minutes","intent":"timer"}
+{"text":"what time is it","intent":"time"}
+{"text":"open chrome and youtube","intent":"chain"}
+{"text":"pause the music","intent":"music"}
+{"text":"next song","intent":"music"}
+{"text":"volume up","intent":"volume"}
+{"text":"turn up the music a bit","intent":"volume"}
+{"text":"take a note buy milk","intent":"note"}
+{"text":"add a to-do call mom","intent":"task"}
+{"text":"open youtube","intent":"url"}
+{"text":"what is 15% of 80","intent":"calc"}
+{"text":"how many unread emails do I have","intent":"unread"}
+{"text":"mute","intent":"mute"}
+{"text":"find some new Callaway irons for sale","intent":null,"why":"needs the web: an agent, not the offline router (Vovy video)"}
+{"text":"did anybody pay me today","intent":null,"why":"needs Stripe: an agent with your key (Coucou talk video)"}
+{"text":"open whatsapp and message all my friends","intent":null,"why":"real work: an agent, with approvals"}

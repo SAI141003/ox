@@ -1,0 +1,421 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0497D4DF6FC32053D5A9B3AF /* OxPhoneApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BA7AEC7500925226964A1BE /* OxPhoneApp.swift */; };
+		082241BE2AA6338162FDCD73 /* OxWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2352C0EE653AD82525790820 /* OxWidgets.swift */; };
+		13984E4BEC79E5AE9CD3D80B /* OxActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72E45221A3CEAB66CD6758C4 /* OxActivity.swift */; };
+		47B5FE9A774837F1E90B16B0 /* OxLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6179293BB3BE93393985421F /* OxLink.swift */; };
+		6431F8C70BB0B59F5FEEFD21 /* OxActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72E45221A3CEAB66CD6758C4 /* OxActivity.swift */; };
+		E2424CA01DA8189CC0AAAB16 /* OXWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7BC7497128D3F012B7227C5B /* OXWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F49B0476D736CF46480BFA5A /* OxLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6179293BB3BE93393985421F /* OxLink.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7F9E0717D7B32C188A3BA3D8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C2A7CE74B20B73458ADBB7E3 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4C2949DAA189A9AFA3930980;
+			remoteInfo = OXWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		BAFD82AADB6D17B39D4D0512 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				E2424CA01DA8189CC0AAAB16 /* OXWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		0BA7AEC7500925226964A1BE /* OxPhoneApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OxPhoneApp.swift; sourceTree = "<group>"; };
+		2352C0EE653AD82525790820 /* OxWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OxWidgets.swift; sourceTree = "<group>"; };
+		236A4D1AEBE5253E8061A399 /* OXPhone.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OXPhone.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6179293BB3BE93393985421F /* OxLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OxLink.swift; sourceTree = "<group>"; };
+		7280E3C1B69693C74557265C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		72E45221A3CEAB66CD6758C4 /* OxActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OxActivity.swift; sourceTree = "<group>"; };
+		7BC7497128D3F012B7227C5B /* OXWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OXWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		FB5C6B30BE24C13B57DCB657 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		220CF4806E27946B0970E84E /* Widgets */ = {
+			isa = PBXGroup;
+			children = (
+				FB5C6B30BE24C13B57DCB657 /* Info.plist */,
+				2352C0EE653AD82525790820 /* OxWidgets.swift */,
+			);
+			path = Widgets;
+			sourceTree = "<group>";
+		};
+		799F1164E08E2255C8B01D98 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				236A4D1AEBE5253E8061A399 /* OXPhone.app */,
+				7BC7497128D3F012B7227C5B /* OXWidgets.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		8374A7AC3DB9E652ED49FFAE /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				72E45221A3CEAB66CD6758C4 /* OxActivity.swift */,
+				6179293BB3BE93393985421F /* OxLink.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		A43D5180EE02A6F6506B3727 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				7280E3C1B69693C74557265C /* Info.plist */,
+				0BA7AEC7500925226964A1BE /* OxPhoneApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		D746A6403435C29F99425AB2 = {
+			isa = PBXGroup;
+			children = (
+				A43D5180EE02A6F6506B3727 /* App */,
+				8374A7AC3DB9E652ED49FFAE /* Shared */,
+				220CF4806E27946B0970E84E /* Widgets */,
+				799F1164E08E2255C8B01D98 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4C2949DAA189A9AFA3930980 /* OXWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4C2A3C7CE7E8DE1A3F0A5380 /* Build configuration list for PBXNativeTarget "OXWidgets" */;
+			buildPhases = (
+				CF84D4F00049E02B6B6BE332 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = OXWidgets;
+			packageProductDependencies = (
+			);
+			productName = OXWidgets;
+			productReference = 7BC7497128D3F012B7227C5B /* OXWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		65F7E3401C86818EDB47F3BB /* OXPhone */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D485A9B0ABF6421843002B9E /* Build configuration list for PBXNativeTarget "OXPhone" */;
+			buildPhases = (
+				804CE030352648092C894629 /* Sources */,
+				BAFD82AADB6D17B39D4D0512 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B6A1D63DC4387F152793C5CE /* PBXTargetDependency */,
+			);
+			name = OXPhone;
+			packageProductDependencies = (
+			);
+			productName = OXPhone;
+			productReference = 236A4D1AEBE5253E8061A399 /* OXPhone.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C2A7CE74B20B73458ADBB7E3 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 69BDCAA85152E6912FF18C7E /* Build configuration list for PBXProject "OXPhone" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = D746A6403435C29F99425AB2;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 799F1164E08E2255C8B01D98 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				65F7E3401C86818EDB47F3BB /* OXPhone */,
+				4C2949DAA189A9AFA3930980 /* OXWidgets */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		804CE030352648092C894629 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				13984E4BEC79E5AE9CD3D80B /* OxActivity.swift in Sources */,
+				F49B0476D736CF46480BFA5A /* OxLink.swift in Sources */,
+				0497D4DF6FC32053D5A9B3AF /* OxPhoneApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CF84D4F00049E02B6B6BE332 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6431F8C70BB0B59F5FEEFD21 /* OxActivity.swift in Sources */,
+				47B5FE9A774837F1E90B16B0 /* OxLink.swift in Sources */,
+				082241BE2AA6338162FDCD73 /* OxWidgets.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B6A1D63DC4387F152793C5CE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4C2949DAA189A9AFA3930980 /* OXWidgets */;
+			targetProxy = 7F9E0717D7B32C188A3BA3D8 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		208CC94F96DC0D55E8D6C803 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = ai.ox.phone;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		369FA697DA7C30F850157C66 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = Widgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = ai.ox.phone.widgets;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		4D74D5B07A66485945D66760 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.10;
+			};
+			name = Release;
+		};
+		520DC7363BA4918A2BC7F645 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.10;
+			};
+			name = Debug;
+		};
+		75F3325557D397C02A48B4CA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = ai.ox.phone;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		8AB39D64F427AE1954A841D4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = Widgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = ai.ox.phone.widgets;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4C2A3C7CE7E8DE1A3F0A5380 /* Build configuration list for PBXNativeTarget "OXWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8AB39D64F427AE1954A841D4 /* Debug */,
+				369FA697DA7C30F850157C66 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		69BDCAA85152E6912FF18C7E /* Build configuration list for PBXProject "OXPhone" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				520DC7363BA4918A2BC7F645 /* Debug */,
+				4D74D5B07A66485945D66760 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D485A9B0ABF6421843002B9E /* Build configuration list for PBXNativeTarget "OXPhone" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				208CC94F96DC0D55E8D6C803 /* Debug */,
+				75F3325557D397C02A48B4CA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = C2A7CE74B20B73458ADBB7E3 /* Project object */;
+}

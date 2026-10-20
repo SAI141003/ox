@@ -26,7 +26,7 @@ test('one owner per task: a second claimer is refused and told who holds it', ()
 });
 
 async function race(o, t) {
-  // A file URL, not a path: import('D:\\...') is refused on Windows.
+  // A URL, not a path: import() of a bare D:\... path fails on Windows.
   const mod = pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'tasks.js')).href;
   // Every process waits at a start line (the "go" file), claims at once, and
   // stays alive until all have answered, so no lock is ever legitimately stale.
@@ -38,23 +38,22 @@ async function race(o, t) {
     process.stdout.write(r.ok?'WIN':'LOSE');
     while(!fs.existsSync(${JSON.stringify(done)}))await new Promise(r=>setTimeout(r,20));})`;
   const answers = [];
-  let died = null;
   const procs = Array.from({ length: 8 }, () => {
     const p = spawn(process.execPath, ['-e', code]);
     let out = '';
     let err = '';
     p.stdout.on('data', (d) => { out += d; if (out === 'WIN' || out === 'LOSE') answers.push(out); });
-    p.stderr.on('data', (d) => (err += d));
-    return new Promise((resolve) => p.on('close', (c) => {
-      // A child that dies before answering would leave the wait below spinning forever.
-      if (out !== 'WIN' && out !== 'LOSE') died ??= `racer exited ${c} without answering: ${err.slice(0, 400)}`;
+    p.stderr.on('data', (d) => { err += d; });
+    // A child that dies without answering is an answer too, or the wait below
+    // would never end.
+    return new Promise((resolve) => p.on('close', (code) => {
+      if (out !== 'WIN' && out !== 'LOSE') answers.push(`EXIT ${code}: ${err.split('\n').find((l) => /Error/.test(l)) ?? err.trim()}`);
       resolve();
     }));
   });
   await new Promise((r) => setTimeout(r, 1500)); // let them all reach the start line
   fs.writeFileSync(go, '');
-  while (answers.length < 8 && !died) await new Promise((r) => setTimeout(r, 20));
-  if (died) { fs.writeFileSync(done, ''); await Promise.all(procs); throw new Error(died); }
+  while (answers.length < 8) await new Promise((r) => setTimeout(r, 20));
   fs.writeFileSync(done, '');
   await Promise.all(procs);
   return answers;
@@ -174,4 +173,32 @@ test('a CLI claim (no process) holds for its lease, then lapses', () => {
   fs.writeFileSync(lock, JSON.stringify({ ...rec, at: new Date(Date.now() - rec.leaseMs - 1000).toISOString() }));
   assert.equal(taskOwner(t.id, o), null);
   assert.equal(claimTask(t.id, { ...o, owner: 'mira', pid: null }).ok, true);
+});
+
+// Windows refuses a rename onto a file another process holds open (EPERM,
+// EBUSY). The write waits for the holder to let go instead of failing.
+test('a task write retries a rename refused because the file is held', (t) => {
+  const o = fresh();
+  const task = addTask({ title: 'held' }, o);
+  const real = fs.renameSync;
+  let refusals = 0;
+  t.after(() => { fs.renameSync = real; });
+  fs.renameSync = (from, to) => {
+    if (refusals < 2) { refusals++; throw Object.assign(new Error('held'), { code: refusals === 1 ? 'EPERM' : 'EBUSY' }); }
+    return real(from, to);
+  };
+  assert.equal(claimTask(task.id, { ...o, owner: 'mira' }).ok, true);
+  assert.equal(refusals, 2);
+  assert.equal(getTask(task.id, o).assignee, 'mira');
+});
+
+test('a task write that cannot rename throws and leaves no temp file behind', (t) => {
+  const o = fresh();
+  const task = addTask({ title: 'stuck' }, o);
+  const real = fs.renameSync;
+  t.after(() => { fs.renameSync = real; });
+  fs.renameSync = () => { throw Object.assign(new Error('nope'), { code: 'ENOSPC' }); };
+  assert.throws(() => claimTask(task.id, { ...o, owner: 'mira' }), /nope/);
+  fs.renameSync = real;
+  assert.deepEqual(fs.readdirSync(o.dir).filter((f) => f.endsWith('.tmp')), []);
 });

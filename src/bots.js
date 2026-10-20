@@ -252,6 +252,14 @@ export function defaultBotSpec(config = {}, env = process.env) {
 export function resolveBot(nameOrSpec, config = {}, env = process.env) {
   if (typeof nameOrSpec !== 'string' || !nameOrSpec.trim()) fail('no bot specified');
   const spec = nameOrSpec.trim();
+  // `mesh:<machine>/<model>`: the model call runs on another of your machines
+  // (src/mesh.js), reached through this machine's loopback endpoint. That
+  // machine answers from its local model or its own key, which never travels.
+  const mesh = /^mesh:([^/]+)\/(.+)$/.exec(spec);
+  if (mesh) {
+    const port = Number(env?.OX_MESH_PROXY_PORT) || 47872;
+    return { ...build({ name: null, provider: 'custom', model: mesh[2].trim(), desc: '', baseUrlOverride: `http://127.0.0.1:${port}/mesh/${encodeURIComponent(mesh[1].trim())}/v1`, config, env }), keyEnv: null, bot: spec, desc: `${mesh[2].trim()} on ${mesh[1].trim()} (ox mesh)` };
+  }
   // `claude-plan`, `chatgpt-plan:gpt-5`, ...: a turn run by the vendor's own
   // signed-in CLI on the user's subscription (src/subscriptions.js).
   const sub = subscriptionTarget(spec, config);

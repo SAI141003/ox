@@ -23,6 +23,27 @@ export const DEFAULT_CATALOGS = Object.freeze([
   'addyosmani/agent-skills', 'obra/superpowers', 'wshobson/agents', 'alirezarezvani/claude-skills',
   'ruvnet/ruflo', 'jeremylongshore/claude-code-plugins-plus-skills', 'VoltAgent/awesome-claude-code-subagents',
   'huggingface/skills',
+  // Everything Claude Code (MIT, checked Oct 18): 71 agents, 311 skills, hooks and rules in one plugin.
+  'affaan-m/everything-claude-code',
+]);
+
+// Featured from the owner's screenshots, licences checked (Oct 18). Skills
+// that live inside a project repo (Google ADK keeps eight in .agents/skills),
+// and tools that run as an MCP server (REA).
+export const FEATURED = Object.freeze([
+  ...['adk-agent-builder', 'adk-setup', 'adk-architecture', 'adk-debug', 'adk-review', 'adk-sample-creator'].map((n) => ({
+    kind: 'skill', name: n, source: `google/adk-python#${n}`, license: 'Apache-2.0',
+    description: `Google Agent Development Kit (google/adk-python): ${n.replace(/^adk-/, '').replace(/-/g, ' ')} skill, from the ADK team's own repo`,
+  })),
+  { kind: 'mcp', name: 'rea', source: 'rea', license: 'MIT', description: 'REA, Reverse Engineer Anything (morluto/rea): understand apps, bundles and binaries with Ghidra/Hopper/Rizin when installed. Lawful use only: your own or authorized software, research, interoperability' },
+  // Google's agents-cli (Apache-2.0, checked Oct 18): its skills for building agents on Google Cloud.
+  ...['scaffold', 'adk-code', 'eval', 'deploy', 'observability', 'publish', 'workflow'].map((n) => ({
+    kind: 'skill', name: `google-agents-cli-${n}`, source: `google/agents-cli#google-agents-cli-${n}`, license: 'Apache-2.0',
+    description: `Google agents-cli: ${n.replace('-', ' ')} skill for agents on Gemini Enterprise Agent Platform (works with ox, Claude Code, Codex)`,
+  })),
+  { kind: 'mcp', name: 'pinchtab', source: 'pinchtab', license: 'MIT', description: 'PinchTab (pinchtab/pinchtab): browser control for agents from one small Go daemon, compact snapshots, 10–20 % fewer tokens; also a web_task backend (backend: pinchtab). Install: brew install pinchtab/tap/pinchtab' },
+  { kind: 'tool', name: 'strix', source: 'strix-agent', license: 'Apache-2.0', install: 'pipx install strix-agent', run: 'strix --target ./your-app',
+    description: 'Strix (usestrix/strix): AI agents that penetration-test YOUR OWN app and propose fixes. Only on code and sites you own or are authorized to test' },
 ]);
 const RAW = () => process.env.OX_MARKET_RAW_BASE || 'https://raw.githubusercontent.com';
 const API = () => process.env.OX_MARKET_API_BASE || 'https://api.github.com';
@@ -108,6 +129,7 @@ export async function search(query = '', { sources = ['catalogs', 'github'] } = 
       } catch (e) { out.errors.push(`${repo}: ${e.message}`); }
     }
   }
+  out.featured = FEATURED.filter((f) => !q || `${f.name} ${f.description}`.toLowerCase().includes(q)).map((f) => ({ ...f, installed: have.has(f.name) }));
   if (sources.includes('github')) {
     try { out.repos = (await searchGithub(q)).map((r) => ({ ...r, installed: have.has(r.repo.split('/')[1]) })); } catch (e) { out.errors.push(`GitHub: ${e.message}`); }
   }
@@ -118,6 +140,15 @@ export async function search(query = '', { sources = ['catalogs', 'github'] } = 
 // with SKILL.md at its root is one skill, anything else is tried as a plugin.
 export async function install({ name, catalog, repo, force = false } = {}) {
   const { addPlugin } = await import('./plugins.js');
+  // A featured entry by name: a skill from inside a repo, or an MCP server template.
+  const feat = !catalog && FEATURED.find((f) => f.name === (name ?? repo));
+  if (feat?.kind === 'skill') {
+    const { installSkill } = await import('./skill-add.js');
+    const r = await installSkill(feat.source, { force });
+    return { ok: !!r.ok, message: r.ok ? `installed ${r.name} (${feat.license}) to ${r.dest}` : r.message, findings: (r.findings ?? []).length };
+  }
+  if (feat?.kind === 'mcp') return { ok: true, message: `${feat.name} runs as an MCP server: ox mcp add ${feat.source}  (then ox mcp test ${feat.source})${feat.name === 'pinchtab' ? '. First: brew install pinchtab/tap/pinchtab' : ''}` };
+  if (feat?.kind === 'tool') return { ok: true, message: `${feat.name} is a command-line tool: install it with  ${feat.install}  then run  ${feat.run}  (${feat.description.split(': ').slice(1).join(': ')})` };
   if (catalog) {
     if (!REPO_RE.test(catalog) || !/^[\w.-]+$/.test(String(name))) throw new Error('bad plugin name or catalogue');
     const r = await addPlugin(`${name}@${catalog}`, { force });

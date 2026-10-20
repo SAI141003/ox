@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { recordRun, summarize, withUsageLog } from '../src/usage-log.js';
+import { recordRun, summarize, withUsageLog, codeChanges } from '../src/usage-log.js';
 
 test('runs are summed by model, agent, surface and project', () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-usage-')), 'usage.jsonl');
@@ -38,4 +38,24 @@ test('the wrapper writes one record per top-level run, none for incognito or nes
   } finally {
     for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
   }
+});
+
+test('codeChanges: the share an AI wrote, from authors and Co-authored-by lines', async () => {
+  const fs = await import('node:fs'); const os = await import('node:os'); const path = await import('node:path');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-aishare-'));
+  fs.mkdirSync(path.join(home, 'shop', '.git'), { recursive: true });
+  const file = path.join(home, 'usage.jsonl');
+  fs.writeFileSync(file, `${JSON.stringify({ at: Date.now(), dir: path.join(home, 'shop'), model: 'x' })}\n`);
+  const log = [
+    '@a1\tSai <s@x.dev>\tClaude Opus 5.5 <noreply@anthropic.com>', '90\t5\tsrc/a.js',
+    '@a2\tSai <s@x.dev>\t', '10\t0\tsrc/b.js',
+    '@a3\tdevin-ai-integration[bot] <d@x>\t', '0\t3\tREADME.md',
+  ].join('\n');
+  const r = codeChanges({ days: 7, file, home, git: () => log });
+  assert.equal(r.commits, 3);
+  assert.equal(r.aiCommits, 2);
+  assert.equal(r.added, 100);
+  assert.equal(r.aiAdded, 90);
+  assert.equal(r.aiShare, 90);
+  fs.rmSync(home, { recursive: true, force: true });
 });

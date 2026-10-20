@@ -4,6 +4,7 @@
 // --ipc flag needed. OX_ISLAND=0 opts one run out; `ox island off` (config
 // "island": false) turns it off everywhere until `ox island on`.
 
+import { signApp } from './sign-local.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -64,6 +65,10 @@ export function buildIslandApp({ bin, pkg, home = os.homedir() }) {
   fs.mkdirSync(path.join(contents, 'Resources'), { recursive: true });
   fs.copyFileSync(bin, path.join(contents, 'MacOS', 'OxIsland'));
   fs.chmodSync(path.join(contents, 'MacOS', 'OxIsland'), 0o755);
+  // ox-hands rides inside the island, so a click asked of the island is done
+  // under the island's own Accessibility permission (src/mac-control.js).
+  const hands = path.join(path.dirname(bin), 'OxHands');
+  if (fs.existsSync(hands)) { fs.copyFileSync(hands, path.join(contents, 'MacOS', 'OxHands')); fs.chmodSync(path.join(contents, 'MacOS', 'OxHands'), 0o755); }
   const res = path.join(path.dirname(bin), 'OxIsland_OxIsland.bundle');
   if (fs.existsSync(res)) fs.cpSync(res, path.join(contents, 'Resources', 'OxIsland_OxIsland.bundle'), { recursive: true });
   const icns = path.join(pkg, 'AppIcon.icns');
@@ -80,7 +85,8 @@ export function buildIslandApp({ bin, pkg, home = os.homedir() }) {
     .map(([k, v]) => (v === null ? `\t<key>${k}</key>\n\t<true/>` : `\t<key>${k}</key>\n\t<string>${v}</string>`)).join('\n');
   plist = plist.replace(/<\/dict>\s*<\/plist>\s*$/, `${extra}\n</dict>\n</plist>\n`);
   fs.writeFileSync(path.join(contents, 'Info.plist'), plist);
-  spawnSyncImported('codesign', ['--force', '--deep', '-s', '-', app], { stdio: 'ignore' });
+  // A fixed local identity when there is one, so macOS keeps the island's permissions across updates.
+  signApp(app, 'dev.ox.island', spawnSyncImported);
   return app;
 }
 
@@ -91,6 +97,54 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
   const pkg = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'desktop', 'island');
   const bin = path.join(pkg, '.build', 'release', 'OxIsland');
   const live = () => islandRunning({ env: {} });
+
+  // Your own sounds: ox island sound <event> <file> | ox island sound <event> reset | ox island sounds.
+  if (action === 'sound' || action === 'sounds') {
+    const EVENTS = ['pop', 'glass', 'capture', 'done', 'needs-you', 'error'];
+    const dir = path.join(os.homedir(), '.ox', 'island', 'sounds');
+    const [ev, file] = [args[1], args[2]];
+    const mine = (e) => { try { return fs.readdirSync(dir).find((f) => f.replace(/\.[^.]+$/, '') === e) ?? null; } catch { return null; } };
+    if (action === 'sounds' || !ev) { for (const e of EVENTS) log(`${e.padEnd(10)} ${mine(e) ? `your ${mine(e)}` : 'system sound'}`); return; }
+    if (!EVENTS.includes(ev)) { err(`a sound is one of ${EVENTS.join(', ')}\n`); process.exitCode = 3; return; }
+    for (const f of (() => { try { return fs.readdirSync(dir); } catch { return []; } })()) if (f.replace(/\.[^.]+$/, '') === ev) fs.rmSync(path.join(dir, f));
+    if (file === 'reset' || !file) { log(`${ev}: back to the system sound`); return; }
+    const ext = path.extname(file).toLowerCase();
+    if (!['.aiff', '.aif', '.wav', '.mp3', '.m4a', '.caf'].includes(ext)) { err('a sound file is .aiff, .wav, .mp3, .m4a or .caf\n'); process.exitCode = 3; return; }
+    fs.mkdirSync(dir, { recursive: true });
+    fs.copyFileSync(file, path.join(dir, `${ev}${ext === '.aif' ? '.aiff' : ext}`));
+    log(`${ev}: now plays ${path.basename(file)}`);
+    return;
+  }
+  // The island checks itself (src/island-evals.js) and learns from real use.
+  if (action === 'evals' || action === 'learn' || action === 'evolve') {
+    const E = await import('./island-evals.js');
+    if (action === 'evals') {
+      const r = E.runEvals();
+      const fmt = (x) => `${x.pass}/${x.total}`;
+      log(`offline errands   ${fmt(r.offline)}${r.offline.failing.length ? '' : '  ✓'}`);
+      for (const f of r.offline.failing) log(`  ✗ "${f.text}": wanted ${f.want ?? 'an agent'}, got ${f.got ?? 'nothing'}`);
+      log(r.commands.skipped ? `island commands   skipped: ${r.commands.skipped}` : `island commands   ${fmt(r.commands)}${r.commands.failing.length ? '' : '  ✓'}`);
+      for (const f of r.commands.failing ?? []) log(`  ✗ ${f}`);
+      const h = E.history();
+      if (h.length > 1) { const p = h[h.length - 2]; log(`last time: offline ${p.offline.pass}/${p.offline.total}${p.commands ? `, commands ${p.commands.pass}/${p.commands.total}` : ''}`); }
+      return r.offline.failing.length || (r.commands.failing ?? []).length ? 1 : 0;
+    }
+    if (action === 'learn') {
+      const r = E.learn();
+      if (r.note) { log(r.note); return 0; }
+      if (!r.candidates.length) { log('nothing new to learn from the island log'); return 0; }
+      log(`${r.candidates.length} request(s) that did not go well (saved to ${E.CANDIDATES()}):`);
+      for (const c of r.candidates) log(`  "${c.text}" — ${c.saw}. ${c.ask}`);
+      log('add the right answer for each to evals/island/offline.jsonl, then: ox island evolve');
+      return 0;
+    }
+    const goal = E.evolveGoal();
+    if (!goal) { log('every island eval passes: nothing to evolve'); return 0; }
+    const { evolve } = await import('./evolve.js');
+    const r = await evolve({ goal, log: (l) => err(`${l}\n`) });
+    log(r.accepted ? `attempt ${r.id} measured better: ${r.why}\n  keep: ox evolve accept ${r.id}` : `attempt ${r.id ?? ''} not kept: ${r.why}`);
+    return 0;
+  }
 
   if (action === 'status') {
     if (!islandEnabled()) {

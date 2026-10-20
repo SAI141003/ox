@@ -16,6 +16,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+function claudePromptText(prompt, images = []) {
+  return images.length ? `${prompt}\n\n[Attached image${images.length > 1 ? 's' : ''}: read ${images.length > 1 ? 'these files' : 'this file'} to see ${images.length > 1 ? 'them' : 'it'}: ${images.join(', ')}]` : prompt;
+}
+
 // format: how the CLI's stdout is read.
 //   claude-stream  Claude Code `--output-format stream-json`
 //   codex-jsonl    Codex `exec --json`
@@ -29,8 +33,13 @@ export const SUBSCRIPTION_CLIS = Object.freeze({
     login: 'run `claude` once and sign in with your Claude account',
     format: 'claude-stream',
     // Claude Code opens image files with its Read tool: it is told where they are.
-    args: ({ prompt, model, approval, images = [] }) => [
-      '-p', images.length ? `${prompt}\n\n[Attached image${images.length > 1 ? 's' : ''}: read ${images.length > 1 ? 'these files' : 'this file'} to see ${images.length > 1 ? 'them' : 'it'}: ${images.join(', ')}]` : prompt, '--output-format', 'stream-json', '--verbose',
+    // askOnStdio: the prompt goes in on stdin and each permission Claude Code
+    // would ask for comes out as a control_request ox answers (approvals in the
+    // app). Without it a run started from the app stopped at "pending your approval".
+    stdioApprovals: true,
+    promptText: claudePromptText,
+    args: ({ prompt, model, approval, images = [], askOnStdio = false }) => [
+      '-p', ...(askOnStdio ? ['--input-format', 'stream-json', '--permission-prompt-tool', 'stdio'] : [claudePromptText(prompt, images)]), '--output-format', 'stream-json', '--verbose',
       '--permission-mode', approval === 'yolo' ? 'bypassPermissions' : approval === 'edits' ? 'acceptEdits' : approval === 'read' ? 'plan' : 'default',
       // ox's Mac actions (src/mac-mcp.js), pre-allowed: they are the safe ones
       // (open an app or a page, notes, to-dos, drafts never sent, music).
@@ -39,7 +48,8 @@ export const SUBSCRIPTION_CLIS = Object.freeze({
     ],
   },
   chatgpt: {
-    label: 'ChatGPT (Plus / Pro / Team) via Codex',
+    // Any ChatGPT account works, Free included; which models it may use depends on the plan.
+    label: 'ChatGPT (Free, Plus, Pro, Team) via Codex',
     bin: 'codex',
     install: 'npm install -g @openai/codex',
     login: 'run `codex login` and choose "Sign in with ChatGPT"',
@@ -328,7 +338,7 @@ export function macMcpArgs(env = process.env) {
 export function claudeMacMcpArgs(env = process.env) {
   if (env.OX_MAC_MCP === '0') return [];
   const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
-  const tools = ['open_app', 'open_url', 'current_page', 'youtube_transcript', 'ox_do', 'notify'].map((t) => `mcp__ox__${t}`);
+  const tools = ['open_app', 'open_url', 'current_page', 'youtube_transcript', 'ox_do', 'notify', 'ui_elements', 'click', 'type_text', 'press_key', 'draw'].map((t) => `mcp__ox__${t}`);
   return ['--mcp-config', JSON.stringify({ mcpServers: { ox: { command: process.execPath, args: [cli, 'mcp-mac'] } } }), '--allowedTools', tools.join(',')];
 }
 
@@ -387,7 +397,8 @@ export function checkCli(id, config = {}, env = process.env) {
     const version = versionOf(app.where, env);
     const signedIn = signInState(id, app.where, env);
     if (signedIn === false) return { id, label: cli.label, bin: cli.bin, path: app.where, installed: true, works: false, signedIn, version, via: 'app', problem: 'installed and working, but not signed in', fix: signInHow(id, app.where, cli) };
-    return { id, label: cli.label, bin: cli.bin, path: app.where, installed: true, works: true, signedIn, version, via: 'app', login: cli.login };
+    // The model this account accepted before (a free ChatGPT account, for one), so the page can say what it runs.
+    return { id, label: cli.label, bin: cli.bin, path: app.where, installed: true, works: true, signedIn, version, via: 'app', login: cli.login, model: planModel(id) };
   }
   const where = findOnPath(cli.bin, env);
   if (!where) {
@@ -474,7 +485,7 @@ function codexLine(j, st) {
     }
     if (it.type === 'file_change') {
       const files = (it.changes ?? []).map((c) => `${c.kind ?? 'edit'} ${c.path}`).join(', ');
-      ev.push({ type: 'tool-start', id: it.id, name: 'edit', argsPreview: preview(files) });
+      ev.push({ type: 'tool-start', id: it.id, name: 'edit', argsPreview: preview(files), files: (it.changes ?? []).map((c) => c.path).filter((x) => typeof x === 'string') });
       ev.push({ type: 'tool-end', id: it.id, name: 'edit', ok: it.status !== 'failed', isError: it.status === 'failed', ms: 0, bytes: files.length, content: files });
     }
   }
@@ -531,7 +542,15 @@ export function imagesOf(messages = [], dir = os.tmpdir()) {
   const last = [...messages].reverse().find((m) => m?.role === 'user');
   if (!last) return [];
   const out = [];
-  for (const p of Array.isArray(last.images) ? last.images : []) if (typeof p === 'string' && fs.existsSync(p)) out.push(p);
+  for (const p of Array.isArray(last.images) ? last.images : []) {
+    if (typeof p === 'string' && fs.existsSync(p)) out.push(p);
+    // `ox -p … --image f` attaches { mediaType, data } (providers/images.js): the plan CLIs need a file.
+    else if (p && typeof p.data === 'string' && /^image\/(png|jpe?g|gif|webp)$/i.test(p.mediaType ?? p.media_type ?? '')) {
+      const ext = String(p.mediaType ?? p.media_type).split('/')[1].toLowerCase().replace('jpeg', 'jpg');
+      const f = path.join(dir, `ox-plan-image-${Date.now()}-${out.length}.${ext}`);
+      try { fs.writeFileSync(f, Buffer.from(p.data, 'base64')); out.push(f); } catch {}
+    }
+  }
   for (const part of Array.isArray(last.content) ? last.content : []) {
     const url = part?.image_url?.url ?? part?.image_url ?? (part?.type === 'image' ? part?.source?.data && `data:${part.source.media_type};base64,${part.source.data}` : null);
     if (typeof url !== 'string') continue;
@@ -594,8 +613,30 @@ export function codexListedModel(where, env = process.env) {
   } catch { return null; }
 }
 
+// The model a plan's account accepted last time (a free ChatGPT account cannot use
+// every model Codex asks for): used straight away next time, no refused first try.
+const PLAN_MODELS = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'plan-models.json');
+export function planModel(id) { try { return JSON.parse(fs.readFileSync(PLAN_MODELS(), 'utf8'))[id]?.model ?? null; } catch { return null; } }
+export function rememberPlanModel(id, model) {
+  let j = {};
+  try { j = JSON.parse(fs.readFileSync(PLAN_MODELS(), 'utf8')); } catch {}
+  if (model) j[id] = { model, at: new Date().toISOString() }; else delete j[id];
+  try { fs.mkdirSync(path.dirname(PLAN_MODELS()), { recursive: true }); fs.writeFileSync(PLAN_MODELS(), JSON.stringify(j, null, 2)); } catch {}
+}
+
 export async function* runSubscriptionTurn(opts = {}) {
   const { target, config = {}, ctx = {} } = opts;
+  // A model this account accepted before: go straight to it.
+  const known = target?.subscription === 'chatgpt' && !target.model ? planModel('chatgpt') : null;
+  if (known) {
+    let refusedKnown = false;
+    for await (const ev of runSubscriptionOnce({ ...opts, target: { ...target, model: known } })) {
+      if (ev.type === 'error' && CHATGPT_MODEL_REFUSED.test(ev.error)) { refusedKnown = true; break; }
+      yield ev;
+    }
+    if (!refusedKnown) return;
+    rememberPlanModel('chatgpt', null);   // the plan changed: learn again below
+  }
   const held = [];
   let refused = null;
   for await (const ev of runSubscriptionOnce(opts)) {
@@ -609,8 +650,37 @@ export async function* runSubscriptionTurn(opts = {}) {
   const where = cli && resolveCli(cli, env)?.where;
   const model = where ? codexListedModel(where, env) : null;
   if (!model) { yield refused; for (const ev of held) yield ev; return; }
-  process.stderr.write(`ox: Codex's own setting asks for a model your ChatGPT account cannot use (${String(refused.error).match(/'([^']+)'/)?.[1] ?? 'its default'}); used ${model} instead. Set it in ~/.codex/config.toml or pick one: ox --bot chatgpt-plan:${model}\n`);
+  process.stderr.write(`ox: your ChatGPT account cannot use ${String(refused.error).match(/'([^']+)'/)?.[1] ?? 'Codex\'s default model'}; ox uses ${model} for it from now on (another: ox --bot chatgpt-plan:<model>)\n`);
+  rememberPlanModel('chatgpt', model);
   yield* runSubscriptionOnce({ ...opts, target: { ...target, model } });
+}
+
+// What an approval shows for a Claude Code tool: the file, or the command.
+export function planApprovalDetail(tool, input = {}) {
+  const i = input && typeof input === 'object' ? input : {};
+  if (i.command) return `$ ${String(i.command).slice(0, 300)}`;
+  const file = i.file_path ?? i.notebook_path ?? i.path;
+  if (file) return `${tool}: ${file}`;
+  try { return `${tool}: ${JSON.stringify(i).slice(0, 300)}`; } catch { return String(tool); }
+}
+
+// One control_request from Claude Code (--permission-prompt-tool stdio). A
+// permission is put to ctx.requestApproval; only a literal yes allows, and
+// anything else (no, a timeout, a throw) refuses. Other requests are refused
+// as unsupported so Claude Code never waits on an answer that will not come.
+export async function answerControl(child, req, ctx = {}) {
+  const id = req.request_id;
+  const r = req.request ?? {};
+  let response;
+  if (r.subtype === 'can_use_tool') {
+    const tool = String(r.tool_name ?? 'tool');
+    let ok = false;
+    try { ok = (await ctx.requestApproval(tool, r.input ?? {}, planApprovalDetail(tool, r.input))) === true; } catch { ok = false; }
+    response = { subtype: 'success', request_id: id, response: ok ? { behavior: 'allow', updatedInput: r.input ?? {} } : { behavior: 'deny', message: 'The user declined this in ox. Do not retry it another way; say what you would have done.' } };
+  } else {
+    response = { subtype: 'error', request_id: id, error: `ox does not answer ${r.subtype ?? 'this request'}` };
+  }
+  try { child.stdin.write(`${JSON.stringify({ type: 'control_response', response })}\n`); } catch {}
 }
 
 async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = {}, signal } = {}) {
@@ -632,7 +702,9 @@ async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = 
   const prompt = brief ? `${brief}\n\n---\n\n${foldPrompt(messages)}` : foldPrompt(messages);
   const approval = approvalFor(ctx);
   const images = imagesOf(messages);
-  const args = cli.args({ prompt, model: target.model, approval, images });
+  // Asked in the app (ctx.planApprovals, with ctx.requestApproval to answer) rather than refused.
+  const askOnStdio = cli.stdioApprovals === true && ctx.planApprovals === true && typeof ctx.requestApproval === 'function' && (approval === 'default' || approval === 'edits');
+  const args = cli.args({ prompt, model: target.model, approval, images, askOnStdio });
   const st = { text: '', tools: new Map(), done: false, error: null, usage: null, estimateUsd: null, model: null };
   const plan = execPlan(where);
   if (plan.error) {
@@ -640,7 +712,11 @@ async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = 
     yield { type: 'turn-end', stopReason: 'error', iters: 0 };
     return;
   }
-  const child = spawn(plan.cmd, [...plan.pre, ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  const child = spawn(plan.cmd, [...plan.pre, ...args], { cwd, env, stdio: [askOnStdio ? 'pipe' : 'ignore', 'pipe', 'pipe'], windowsHide: true });
+  if (askOnStdio) {
+    child.stdin.on('error', () => {});
+    child.stdin.write(`${JSON.stringify({ type: 'user', message: { role: 'user', content: cli.promptText(prompt, images) } })}\n`);
+  }
   const onAbort = () => { try { child.kill('SIGTERM'); } catch {} };
   signal?.addEventListener?.('abort', onAbort, { once: true });
 
@@ -661,7 +737,15 @@ async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = 
     while ((nl = pending.indexOf('\n')) >= 0) {
       const line = pending.slice(0, nl).trim();
       pending = pending.slice(nl + 1);
-      if (line) push(parseLine(cli.format, line, st));
+      if (!line) continue;
+      if (askOnStdio) {
+        let j = null;
+        try { j = JSON.parse(line); } catch {}
+        if (j?.type === 'control_request') { answerControl(child, j, ctx); continue; }
+        // The turn is over: closing stdin lets Claude Code exit.
+        if (j?.type === 'result') try { child.stdin.end(); } catch {}
+      }
+      push(parseLine(cli.format, line, st));
     }
   });
   child.stderr.on('data', (d) => { stderr = (stderr + d).slice(-4000); });

@@ -81,6 +81,8 @@ export function recordDecision(entry = {}) {
     argsSha256: argsSha,
     detail: String(entry.detail ?? '').slice(0, 120),
     decision: entry.decision === 'deny' ? 'deny' : 'allow',
+    // Which org agent made the call (ox org's timeline), when one did.
+    ...(process.env.OX_ORG_AGENT ? { agent: String(process.env.OX_ORG_AGENT).slice(0, 40) } : {}),
     ...(entry.rule ? { rule: String(entry.rule).slice(0, 120) } : {}),
     actor: ['policy', 'approval', 'sandbox', 'readonly-classifier'].includes(entry.actor)
       ? entry.actor

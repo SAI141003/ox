@@ -33,7 +33,8 @@ test('errors name the line and suggest the fix the model needs', () => {
   const p = parseProgram(['root = Stack([hdr, tabel])', 'hdr = Header("x"', 'q = Query("bash", {command: "ls"})'].join('\n'));
   const ev = evaluate(p);
   const all = [...p.errors, ...ev.errors].map((e) => `${e.line}:${e.msg}`);
-  assert.ok(all.some((m) => /^2:expected '\)'/.test(m)), all.join(' | '));
+  // An unclosed Header("x" is mended (closed), not dropped.
+  assert.ok(!all.some((m) => /^2:/.test(m)), all.join(' | '));
   assert.ok(all.some((m) => /`tabel` is never defined/.test(m)), all.join(' | '));
   assert.ok(all.some((m) => /Query can only call read-only tools/.test(m)), 'bash cannot be a Query');
 });

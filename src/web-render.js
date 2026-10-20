@@ -76,6 +76,9 @@ export function renderPage(url, { browser, timeoutMs = 20_000, maxBytes = 512 * 
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-render-'));
   const args = [
     '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
+    // A throwaway profile must not ask macOS's keychain for "Chrome Safe Storage"
+    // (the "A keychain cannot be found to store Chrome" dialog).
+    '--use-mock-keychain', '--password-store=basic',
     '--disable-extensions', '--disable-sync', '--disable-background-networking',
     '--disable-component-update', '--mute-audio', '--hide-scrollbars',
     `--user-data-dir=${profile}`,

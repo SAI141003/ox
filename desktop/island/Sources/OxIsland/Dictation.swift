@@ -13,6 +13,8 @@ final class Dictation: ObservableObject {
     enum Phase: Equatable { case idle, listening, message(String) }
     @Published var phase: Phase = .idle
     @Published var heard = ""
+    /// Loudness 0…1 while listening, for the pill's bars.
+    @Published var level: Double = 0
 
     private let recognizer = SFSpeechRecognizer()
     private let audio = AVAudioEngine()
@@ -25,14 +27,71 @@ final class Dictation: ObservableObject {
     var willListen: () -> Void = {}
     var didFinish: () -> Void = {}
 
+    // Coucou's Flow controls: hold to talk; tap twice quickly to keep listening
+    // hands-free until the next tap; Esc cancels (nothing is pasted); ⌃⌥V
+    // pastes the last dictation again.
+    @Published private(set) var handsFree = false
+    private var pressedAt = Date.distantPast
+    private var lastTapEnd = Date.distantPast
+    private var escMonitor: Any?
+
     func install() {
         BuddyHotKey.register(id: 2, keyCode: kVK_ANSI_D, modifiers: controlKey | optionKey,
-                             press: { [weak self] in MainActor.assumeIsolated { self?.start() } },
-                             release: { [weak self] in MainActor.assumeIsolated { self?.stop() } })
+                             press: { [weak self] in MainActor.assumeIsolated { self?.keyDown() } },
+                             release: { [weak self] in MainActor.assumeIsolated { self?.keyUp() } })
+        BuddyHotKey.register(id: 3, keyCode: kVK_ANSI_V, modifiers: controlKey | optionKey,
+                             press: { [weak self] in MainActor.assumeIsolated { self?.pasteLast() } }, release: {})
+        escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] e in
+            guard e.keyCode == 53 else { return }
+            MainActor.assumeIsolated { self?.cancel() }
+        }
+    }
+
+    private func keyDown() {
+        if handsFree { handsFree = false; stop(); return }        // the tap that ends hands-free
+        let quickSecond = Date().timeIntervalSince(lastTapEnd) < 0.45
+        pressedAt = Date()
+        if phase == .listening, quickSecond { handsFree = true; say("Hands-free: tap ⌃⌥D to finish, Esc to cancel."); phase = .listening; return }
+        start()
+    }
+
+    private func keyUp() {
+        let held = Date().timeIntervalSince(pressedAt)
+        if handsFree { return }
+        if held < 0.3 {
+            // A quick tap: wait a moment for a second tap (hands-free) before finishing.
+            lastTapEnd = Date()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, !self.handsFree, self.phase == .listening, Date().timeIntervalSince(self.lastTapEnd) >= 0.45 else { return }
+                self.stop()
+            }
+            return
+        }
+        stop()
+    }
+
+    /// Esc while listening: drop it, paste nothing.
+    func cancel() {
+        guard phase == .listening else { return }
+        handsFree = false
+        audio.stop()
+        audio.inputNode.removeTap(onBus: 0)
+        request?.endAudio()
+        task?.cancel(); task = nil; request = nil
+        heard = ""
+        say("Cancelled.")
+        didFinish()
+    }
+
+    /// ⌃⌥V: the last dictation, pasted again.
+    func pasteLast() {
+        guard let t = lastPasted, !t.isEmpty else { say("Nothing dictated yet."); return }
+        if !Paster.paste(t) { say("Copied the last dictation: press ⌘V.") }
     }
 
     func start() {
         guard Self.enabled, phase != .listening else { return }
+        guard VoicePermission.described else { say(VoicePermission.howToFix); return }
         willListen()
         heard = ""
         finalHeard = false
@@ -54,7 +113,16 @@ final class Dictation: ObservableObject {
         request = req
         let input = audio.inputNode
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { buf, _ in req.append(buf) }
+        input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { [weak self] buf, _ in
+            req.append(buf)
+            // RMS of the first channel → the pill's voice bars.
+            if let ch = buf.floatChannelData?[0] {
+                let n = Int(buf.frameLength); var sum: Float = 0
+                for i in 0..<n { sum += ch[i] * ch[i] }
+                let rms = n > 0 ? sqrt(sum / Float(n)) : 0
+                DispatchQueue.main.async { self?.level = min(1, Double(rms) * 14) }
+            }
+        }
         task = recognizer.recognitionTask(with: req) { [weak self] result, _ in
             guard let result else { return }
             let text = result.bestTranscription.formattedString
@@ -87,30 +155,110 @@ final class Dictation: ObservableObject {
 
     /// Put the words where the person types: ⌘V into the front app, then the
     /// clipboard gets back what it held.
+    /// The app's server, for styles and translation (set by the bridge when it finds it).
+    nonisolated(unsafe) static var serverPort: Int?
+
     private func paste(_ text: String) {
+        let app = NSWorkspace.shared.frontmostApplication?.localizedName ?? ""
+        // A style or a language for this app (ox dictation style … / translate …): one small model call first.
+        guard let port = Self.serverPort, let url = URL(string: "http://127.0.0.1:\(port)/ox/dictation/style") else { pasteNow(text, app: app); return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 12
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text, "app": app])
+        URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
+            let doc = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            let out = (doc?["text"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? text
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.pasteNow(out, app: app) } }
+        }.resume()
+    }
+
+    private func pasteNow(_ text: String, app: String) {
+        let seconds = max(0.5, Date().timeIntervalSince(pressedAt))
+        DictationStats.record(words: text.split(whereSeparator: { $0.isWhitespace }).count, seconds: seconds, app: app)
+        if Paster.paste(text) {
+            lastPasted = text
+            let today = DictationStats.today()
+            say("Pasted. Today: \(today.words) words, about \(today.savedMinutes) min saved.")
+        }
+        else { lastPasted = text; say("Copied: “\(text.prefix(60))”. Allow Accessibility for OX Island to paste it for you.") }
+    }
+
+    /// The last dictation, to paste again.
+    private(set) var lastPasted: String?
+
+    private func say(_ m: String) {
+        // A start that failed still gives the microphone back (« OK ox » listens again).
+        if phase != .listening, request == nil { didFinish() }
+        phase = .message(m)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in if case .message = self?.phase { self?.phase = .idle } }
+    }
+}
+
+/// macOS kills an app that asks for the microphone or speech recognition
+/// without saying why in its Info.plist (a TCC "privacy violation"): that is
+/// what happened when the bare binary ran outside OX Island.app. Every
+/// listener checks this first and says what to do instead of crashing.
+enum VoicePermission {
+    static var described: Bool {
+        let info = Bundle.main.infoDictionary ?? [:]
+        return info["NSMicrophoneUsageDescription"] != nil && info["NSSpeechRecognitionUsageDescription"] != nil
+    }
+    static let howToFix = "Voice needs OX Island.app (run  ox island start ), not the bare binary."
+}
+
+/// Coucou's Flow statistics, kept on this Mac (~/.ox/dictation-stats.jsonl):
+/// words, how fast you spoke, and the time saved against typing at 40 wpm.
+enum DictationStats {
+    static var file: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/dictation-stats.jsonl") }
+    struct Summary { let words: Int; let sessions: Int; let wpm: Int; let savedMinutes: Int; let apps: [(String, Int)] }
+
+    static func record(words: Int, seconds: Double, app: String) {
+        guard words > 0 else { return }
+        let row: [String: Any] = ["at": Int(Date().timeIntervalSince1970), "words": words, "seconds": (seconds * 10).rounded() / 10, "app": app]
+        guard let d = try? JSONSerialization.data(withJSONObject: row), let line = String(data: d, encoding: .utf8).map({ $0 + "\n" }) else { return }
+        if let h = try? FileHandle(forWritingTo: file) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() }
+        else { try? Data(line.utf8).write(to: file) }
+    }
+
+    static func summary(since: Date) -> Summary {
+        let rows = ((try? String(contentsOf: file, encoding: .utf8)) ?? "").split(separator: "\n").compactMap { l -> [String: Any]? in
+            (try? JSONSerialization.jsonObject(with: Data(l.utf8))) as? [String: Any]
+        }.filter { (($0["at"] as? Double) ?? 0) >= since.timeIntervalSince1970 }
+        let words = rows.reduce(0) { $0 + (($1["words"] as? Int) ?? 0) }
+        let secs = rows.reduce(0.0) { $0 + (($1["seconds"] as? Double) ?? 0) }
+        var apps: [String: Int] = [:]
+        for r in rows { if let a = r["app"] as? String, !a.isEmpty { apps[a, default: 0] += (r["words"] as? Int) ?? 0 } }
+        let typing = Double(words) / 40.0 * 60.0           // seconds it would take at 40 wpm
+        return Summary(words: words, sessions: rows.count, wpm: secs > 0 ? Int(Double(words) / (secs / 60)) : 0,
+                       savedMinutes: max(0, Int((typing - secs) / 60)), apps: apps.sorted { $0.value > $1.value }.prefix(3).map { ($0.key, $0.value) })
+    }
+    static func today() -> Summary { summary(since: Calendar.current.startOfDay(for: Date())) }
+    static func week() -> Summary { summary(since: Date().addingTimeInterval(-7 * 86400)) }
+}
+
+/// Text into whatever app you are typing in: ⌘V, then the clipboard gets back
+/// what it held. Never presses Return: sending is always yours.
+enum Paster {
+    /// False without the Accessibility permission (the text is then left on the clipboard).
+    @discardableResult
+    static func paste(_ text: String) -> Bool {
         let pb = NSPasteboard.general
         let previous = pb.string(forType: .string)
         pb.clearContents()
         pb.setString(text, forType: .string)
         let trusted = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
-        guard trusted else {
-            say("Copied: “\(text.prefix(60))”. Allow Accessibility for OX Island to paste it for you.")
-            return
-        }
+        guard trusted else { return false }
         let src = CGEventSource(stateID: .combinedSessionState)
         let v = CGKeyCode(kVK_ANSI_V)
         let down = CGEvent(keyboardEventSource: src, virtualKey: v, keyDown: true); down?.flags = .maskCommand
         let up = CGEvent(keyboardEventSource: src, virtualKey: v, keyDown: false); up?.flags = .maskCommand
         down?.post(tap: .cghidEventTap); up?.post(tap: .cghidEventTap)
-        phase = .idle
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             if let previous { pb.clearContents(); pb.setString(previous, forType: .string) }
         }
-    }
-
-    private func say(_ m: String) {
-        phase = .message(m)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in if case .message = self?.phase { self?.phase = .idle } }
+        return true
     }
 }
 

@@ -10,6 +10,11 @@
 	<string>1.0</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>OX Buddy listens while you hold ⌃⌥Space so you can talk to ox instead of typing.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>OX Buddy turns what you say into a question for ox, on this Mac when possible.</string>
 </dict>

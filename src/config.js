@@ -293,7 +293,8 @@ export function loadConfig(overrides = {}) {
   try {
     fromPlugins = pluginMcpServers(path.dirname(CONFIG_DIR));
   } catch { /* a broken plugin registry must never break config */ }
-  const mcpServers = expandVars({ ...fromPlugins, ...obj(file.mcpServers), ...obj(project.mcpServers) });
+  // OX_MCP=0: no MCP servers this run (the island's voice runs: its own tools, no 10 s wait on a slow server).
+  const mcpServers = process.env.OX_MCP === '0' ? {} : expandVars({ ...fromPlugins, ...obj(file.mcpServers), ...obj(project.mcpServers) });
 
   const apiKeys = {};
   for (const key of API_KEY_ENV_VARS) {

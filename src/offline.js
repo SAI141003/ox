@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { osCmd } from './tools/operator.js';
+import { codeChanges as codeChangesSync } from './usage-log.js';
 
 // ---- arithmetic without eval: + - * / ^ % ( ) and "x% of y" ----
 
@@ -142,6 +143,21 @@ export function parseIntent(text) {
   if ((m = /^(?:send |write |draft )?(?:an? )?(?:e-?mail|mail)(?: to)?\s+([^\s@]+@[^\s@]+\.[a-z]{2,})(?:\s+(?:about|subject|re|regarding)[:\s]+(.+?))?(?:\s+(?:saying|that says|telling (?:him|her|them)|body|:)\s+(.+))?$/i.exec(t))) {
     return { intent: 'email', to: m[1], subject: (m[2] ?? '').trim(), body: (m[3] ?? '').trim() };
   }
+  // "Write an email to Camille, tell her it's done" (no address): a draft with
+  // the greeting and the message; you add who it goes to and press Send.
+  if ((m = /^(?:send |write |draft )?(?:an? )?(?:e-?mail|mail)\s+to\s+([A-Za-z][\w.'-]*(?:\s(?!and\b|then\b|tell\b|let\b|say\b)[A-Za-z][\w.'-]*)?)\s*[,:]?\s+(?:and\s+)?(?:tell|telling|say|saying|let)\s+(?:him|her|them\s+)?\s*(?:know\s+)?(?:that\s+)?(.+)$/i.exec(t)) && !/@/.test(m[1])) {
+    const msg = m[2].trim().replace(/^./, (c) => c.toUpperCase()).replace(/[^.!?]$/, '$&.');
+    return { intent: 'email', to: '', name: m[1], subject: '', body: `Hi ${m[1]},\n\n${msg}\n` };
+  }
+  // Vovy's "I want to build a pumpkin carver game with Claude, can you get it going?":
+  // a new project, Claude Code (or Codex) in a new Terminal tab with a full brief (ox make).
+  if ((m = /^(?:hey,?\s+)?(?:i (?:want|would like|'d like) to |can you |could you |please |let's |lets )?(?:build|make|create|code)\s+(?:me\s+|us\s+)?((?:a|an|the)\s+.+?)\s+(?:with|using|in)\s+(claude(?: code)?|codex)(?:[,.]?\s*(?:can you |could you )?(?:get it going|start it|kick it off|go)(?: for me)?)?\??$/i.exec(t))) {
+    return { intent: 'make', idea: m[1].trim(), builder: /codex/i.test(m[2]) ? 'codex' : 'claude' };
+  }
+  // Coucou's "am I a good developer?" ("Claude wrote 90% of your code. Rude."): from git, this week.
+  if (/^am i (?:a )?(?:good|great|bad|real) (?:developer|dev|programmer|coder|engineer)\??$|^how much of (?:my|the) code (?:did|does|has) (?:ai|claude|codex|copilot|cursor|the ai|an ai) (?:write|written)\??$|^who (?:wrote|writes) (?:my|the) code\??$/i.test(low)) {
+    return { intent: 'devcheck' };
+  }
   if (/^(?:check|read)?\s*(?:my )?(?:e-?mails?|mail|inbox)(?: for me)?$|^(?:do i have |any )?(?:new |unread )(?:e-?mails?|mail)\??$|^how many (?:unread |new )?(?:e-?mails?|mails?)(?: do i have)?\??$/i.test(low)) {
     return { intent: 'unread' };
   }
@@ -154,15 +170,16 @@ export function parseIntent(text) {
   if (/^(?:play|resume)(?: the)? (?:music|song|spotify)$|^resume$/i.test(low)) return { intent: 'music', command: 'play' };
   if (/^(?:next|skip)(?: the)?(?: song| track)?$/i.test(low)) return { intent: 'music', command: 'next track' };
   // "lower the music", "turn the music down", "make it quieter": the Mac's volume.
-  if (/^(?:lower|reduce|turn down|quieten)(?: the)? (?:music|volume|sound|song)(?: a bit| a little)?$|^turn(?: the)? (?:music|volume|sound) down$|^(?:make it |a bit )?quieter$/i.test(low)) return { intent: 'volume', delta: -15 };
-  if (/^(?:raise|turn up|increase)(?: the)? (?:music|volume|sound|song)(?: a bit| a little)?$|^turn(?: the)? (?:music|volume|sound) up$|^(?:make it |a bit )?louder$/i.test(low)) return { intent: 'volume', delta: 15 };
+  if (/^(?:lower|reduce|turn down|quieten)(?: the)? (?:music|volume|sound|song)(?: (?:just )?(?:a (?:little )?bit|a little|slightly|a touch))?$|^turn(?: the)? (?:music|volume|sound) down$|^(?:make it |a bit )?quieter$/i.test(low)) return { intent: 'volume', delta: -15 };
+  if (/^(?:raise|turn up|increase)(?: the)? (?:music|volume|sound|song)(?: (?:just )?(?:a (?:little )?bit|a little|slightly|a touch))?$|^turn(?: the)? (?:music|volume|sound) up$|^(?:make it |a bit )?louder$/i.test(low)) return { intent: 'volume', delta: 15 };
   // "play Billie Jean by Michael Jackson": a song, by name.
   if ((m = /^(?:can you |please )?play (?:me )?(?:the song |some )?(.+?)(?:\s+by\s+(.+?))?(?:\s+on\s+(spotify|apple music|music))?$/i.exec(t))
     && !/^(?:the )?(?:music|song|spotify|it)$/i.test(m[1])) {
     return { intent: 'play', song: m[1].trim(), artist: (m[2] ?? '').trim(), app: /spotify/i.test(m[3] ?? '') ? 'Spotify' : m[3] ? 'Music' : '' };
   }
   // "what's on my to-do list today", "read my reminders", "what do I have today".
-  if (/^(?:can you |please )?(?:open |read |show |check )?(?:me )?(?:what(?:'s| is) on )?(?:my )?(?:to-?do(?: list)?|todos|tasks|task list|reminders)(?: (?:for )?today)?(?: and tell me.*)?\??$|^what (?:do i have|have i got|is on|'s on)(?: to do)?(?: for)? today\??$/i.test(low)) {
+  // "read my to-dos for today", "today's to-dos", "what are my to-dos", "tell me my tasks"…
+  if (/^(?:can you |could you |please )?(?:open |read |show |check |tell me |list |go through )?(?:me )?(?:what(?:'s| is| are) (?:on )?)?(?:my |today'?s )?(?:to-?dos?(?: list)?|todo list|tasks|task list|reminders)(?: (?:for |due )?today)?(?: and tell me.*)?\??$|^what (?:do i have|have i got|is on|'s on|are my (?:to-?dos?|tasks))(?: to do)?(?: for)?(?: today)?\??$/i.test(low)) {
     return { intent: 'todos' };
   }
   if (/^(?:previous|last|go back)(?: the)?(?: song| track)$/i.test(low)) return { intent: 'music', command: 'previous track' };
@@ -255,10 +272,34 @@ function music(command) {
 function appInstalled(name) {
   return ['/Applications', '/System/Applications', path.join(os.homedir(), 'Applications')].some((d) => fs.existsSync(path.join(d, `${name}.app`)));
 }
+// The best-known recording of a song when no artist was said ("Billie Jean" →
+// Michael Jackson), from Apple's free iTunes search (no key; under a second).
+// Offline or no answer: the song name alone.
+export function knownArtist(song, { fetchSync = null } = {}) {
+  const get = fetchSync ?? ((url) => { const r = spawnSync('curl', ['-s', '--max-time', '2.5', url], { encoding: 'utf8', timeout: 4000 }); return r.status === 0 ? r.stdout : ''; });
+  try {
+    const j = JSON.parse(get(`https://itunes.apple.com/search?media=music&entity=song&limit=25&term=${encodeURIComponent(song)}`) || '{}');
+    const norm = (t) => String(t ?? '').toLowerCase().replace(/\s*[([].*?[)\]]\s*/g, ' ').replace(/\s+-\s+.*$/, '').trim();
+    const want = norm(song);
+    const exact = (j.results ?? []).filter((x) => norm(x.trackName) === want);
+    // The original is the one released most (single, album, deluxe…); a cover appears once.
+    const count = new Map();
+    for (const x of exact) count.set(x.artistName, (count.get(x.artistName) ?? 0) + 1);
+    const best = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    return best ?? (j.results ?? [])[0]?.artistName ?? '';
+  } catch { return ''; }
+}
+
+const running = (name) => spawnSync('pgrep', ['-x', name], { encoding: 'utf8' }).status === 0;
+
 function playSong({ song, artist = '', app = '' }) {
   if (process.platform !== 'darwin') return { ok: false, err: 'playing a song by name is macOS only for now' };
+  // Which player: the one you asked for; else Spotify when it is open (or Music is not):
+  // searching the Music library first launched Music and took 20 s before Spotify was even tried.
+  const spotifyFirst = app === 'Spotify' || (app !== 'Music' && appInstalled('Spotify') && (running('Spotify') || !running('Music')));
+  if (!artist && spotifyFirst) artist = knownArtist(song);
   const label = artist ? `${song} by ${artist}` : song;
-  if (app !== 'Spotify') {
+  if (!spotifyFirst && app !== 'Spotify') {
     const script = [
       'on run argv',
       'set s to item 1 of argv',
@@ -285,7 +326,7 @@ function playSong({ song, artist = '', app = '' }) {
     // "play" to start (checked on this Mac: Billie Jean, playing).
     const script = ['on run argv', 'tell application "Spotify"', 'play track (item 1 of argv)', 'delay 1.5', 'play', 'delay 0.5',
       'return (player state as text) & tab & (name of current track) & tab & (artist of current track)', 'end tell', 'end run'];
-    const r = spawnSync('osascript', [...script.flatMap((l) => ['-e', l]), `spotify:search:${encodeURIComponent(label)}`], { encoding: 'utf8', timeout: 30000 });
+    const r = spawnSync('osascript', [...script.flatMap((l) => ['-e', l]), `spotify:search:${encodeURIComponent(artist ? `${song} ${artist}` : song)}`], { encoding: 'utf8', timeout: 30000 });
     const [state, name, by] = String(r.stdout ?? '').trim().split('\t');
     if (r.status === 0 && state === 'playing' && name) return { ok: true, message: `playing ${name} by ${by} on Spotify` };
     return { ok: false, err: r.status === 0 ? `Spotify found ${name || 'nothing'} but did not start playing` : `Spotify did not answer: ${String(r.stderr).trim().slice(0, 120)}` };
@@ -308,12 +349,10 @@ export function speakTodos(items) {
   const say = rest.map((x) => x.name);
   return `you have ${items.length === 1 ? 'one thing' : `${items.length} things`}: ${say.length > 1 ? `${say.slice(0, -1).join(', ')} and ${say.at(-1)}` : say[0]}`;
 }
-function readTodos(now = new Date()) {
-  if (process.platform === 'darwin') {
-    // Names and due dates in two bulk reads (one Apple event each: reading
-    // reminder by reminder took 38 s for 7 of them); dates as y-m-d-h-m, since
-    // big numbers come back from AppleScript rounded.
-    const script = [
+// Names and due dates in two bulk reads (one Apple event each: reading
+// reminder by reminder took 38 s for 7 of them); dates as y-m-d-h-m, since
+// big numbers come back from AppleScript rounded.
+const REMINDERS_SCRIPT = [
       'tell application "Reminders"',
       'set ns to name of every reminder whose completed is false',
       'set ds to due date of every reminder whose completed is false',
@@ -326,15 +365,44 @@ function readTodos(now = new Date()) {
       'set out to out & (item i of ns) & tab & d & linefeed',
       'end repeat',
       'return out',
-    ];
-    const r = spawnSync('osascript', script.flatMap((l) => ['-e', l]), { encoding: 'utf8', timeout: 45000 });
+];
+const parseReminders = (out) => String(out).split('\n').filter((l) => l.trim()).map((l) => {
+  const [name, when = ''] = l.split('\t');
+  const p = when.trim() ? when.trim().split('-').map(Number) : null;
+  const short = name.trim().length > 70 ? `${name.trim().slice(0, 67)}…` : name.trim();
+  return { name: short, due: p ? new Date(p[0], p[1] - 1, p[2], p[3], p[4]) : null };
+});
+
+// Reminders answers a script in 5–8 s however it is asked, too slow to wait for
+// by voice: the running ox server keeps a cache fresh in the background
+// (refreshTodos, every 3 minutes) and asking reads it at once.
+const TODOS_CACHE = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'todos-cache.json');
+export function refreshTodos() {
+  return new Promise((resolve) => {
+    if (process.platform !== 'darwin') return resolve(false);
+    const p = spawn('osascript', REMINDERS_SCRIPT.flatMap((l) => ['-e', l]), { stdio: ['ignore', 'pipe', 'ignore'] });
+    let out = '';
+    p.stdout.on('data', (d) => { out += d; });
+    const t = setTimeout(() => p.kill(), 45000);
+    p.on('close', (code) => {
+      clearTimeout(t);
+      if (code !== 0) return resolve(false);
+      try { fs.mkdirSync(path.dirname(TODOS_CACHE()), { recursive: true }); fs.writeFileSync(TODOS_CACHE(), JSON.stringify({ at: Date.now(), out })); } catch {}
+      resolve(true);
+    });
+  });
+}
+
+function readTodos(now = new Date()) {
+  if (process.platform === 'darwin') {
+    try {
+      const c = JSON.parse(fs.readFileSync(TODOS_CACHE(), 'utf8'));
+      if (Date.now() - c.at < 3.5 * 60_000) { const items = pickToday(parseReminders(c.out), now); return { ok: true, message: speakTodos(items), items }; }
+    } catch {}
+    const r = spawnSync('osascript', REMINDERS_SCRIPT.flatMap((l) => ['-e', l]), { encoding: 'utf8', timeout: 45000 });
     if (r.status === 0) {
-      const all = String(r.stdout).split('\n').filter((l) => l.trim()).map((l) => {
-        const [name, when = ''] = l.split('\t');
-        const p = when.trim() ? when.trim().split('-').map(Number) : null;
-        const short = name.trim().length > 70 ? `${name.trim().slice(0, 67)}…` : name.trim();
-        return { name: short, due: p ? new Date(p[0], p[1] - 1, p[2], p[3], p[4]) : null };
-      });
+      try { fs.mkdirSync(path.dirname(TODOS_CACHE()), { recursive: true }); fs.writeFileSync(TODOS_CACHE(), JSON.stringify({ at: Date.now(), out: r.stdout })); } catch {}
+      const all = parseReminders(r.stdout);
       const items = pickToday(all, now);
       return { ok: true, message: speakTodos(items), items };
     }
@@ -370,6 +438,20 @@ function setVolume({ level, delta }) {
 const fmt = (n) => (Number.isInteger(n) ? n.toLocaleString() : String(n));
 
 // Carry out one parsed intent. Returns { ok, message }.
+const devCache = { at: 0, v: null };
+
+// The answer, with the real numbers and a little cheek.
+export function devCheck(code) {
+  if (!code || !code.commits) return "I can't tell yet: no commits this week in the folders ox worked in. Ship something and ask me again.";
+  const top = Object.entries(code.aiBy ?? {}).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'AI';
+  const share = code.aiShare ?? Math.round((code.aiCommits / code.commits) * 100);
+  const facts = `${code.aiCommits} of your ${code.commits} commits this week name ${top}`;
+  if (share >= 80) return `Hmm… ${top} wrote ${share}% of your code. ${facts}. You're an excellent reviewer, though.`;
+  if (share >= 40) return `A real team effort: ${share}% of your code came from ${top}. ${facts}.`;
+  if (share > 0) return `Yes. ${100 - share}% of this week's code is yours; ${top} helped with ${share}%. ${facts}.`;
+  return `All you: ${code.commits} commits this week and none of them name an AI.`;
+}
+
 export function perform(it) {
   switch (it.intent) {
     case 'calc': return { ok: true, message: `${it.expr} = ${fmt(it.value)}` };
@@ -381,10 +463,23 @@ export function perform(it) {
       return { ok: true, message: `timer set: ${mins} — "${it.label}"` };
     }
     case 'note': { const r = addNote(it.text); return { ok: r.ok, message: `noted in ${r.where}` }; }
+    case 'make': {
+      // Runs on its own (it waits for the agent to finish), narrated in the notch.
+      const bin = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+      const child = spawn(process.execPath, [bin, 'make', it.idea, '--with', it.builder], { detached: true, stdio: 'ignore', cwd: os.homedir() });
+      child.on('error', () => {});
+      child.unref();
+      return { ok: true, message: `Sure. Setting up the project and opening ${it.builder === 'codex' ? 'Codex' : 'Claude Code'} in a new tab to build ${it.idea}.` };
+    }
+    case 'devcheck': {
+      // git log over a week takes seconds: kept 10 minutes, like the recap's.
+      if (!devCache.v || Date.now() - devCache.at > 600_000) devCache.v = codeChangesSync({ days: 7 }), devCache.at = Date.now();
+      return { ok: true, message: devCheck(devCache.v) };
+    }
     case 'task': { const r = addTask(it.text); return { ok: r.ok, message: `added to ${r.where}: ${it.text}` }; }
     case 'email': {
       const r = openWith(mailtoUrl(it));
-      return r.ok ? { ok: true, message: `draft to ${it.to} is open in your mail app: check it and press Send (ox never sends it)` } : { ok: false, message: r.err };
+      return r.ok ? { ok: true, message: it.to ? `draft to ${it.to} is open in your mail app: check it and press Send (ox never sends it)` : `draft to ${it.name} is open in your mail app: add their address and press Send (ox never sends it)` } : { ok: false, message: r.err };
     }
     case 'unread': {
       if (process.platform !== 'darwin') return { ok: false, message: 'reading Mail is macOS only for now' };

@@ -127,3 +127,13 @@ test('chains and sites: "open chrome and open youtube" is done without a model',
   assert.equal(doOffline('open whatsapp and all my friends', { dryRun: true }).handled, false);
   assert.equal(parseIntent('add milk and eggs to my list').text, 'milk and eggs');
 });
+
+test('devcheck: "am I a good developer?" answers from git, with the real share', async () => {
+  const { parseIntent, devCheck } = await import('../src/offline.js');
+  for (const q of ['Am I a good developer?', 'how much of my code did Claude write', 'who wrote my code']) assert.equal(parseIntent(q)?.intent, 'devcheck', q);
+  assert.notEqual(parseIntent('am I late for the developer meeting')?.intent, 'devcheck');
+  assert.match(devCheck({ commits: 10, aiCommits: 9, aiShare: 90, aiBy: { Claude: 9 } }), /Claude wrote 90% of your code\. 9 of your 10 commits/);
+  assert.match(devCheck({ commits: 4, aiCommits: 1, aiShare: 25, aiBy: { Codex: 1 } }), /75% of this week's code is yours; Codex helped with 25%/);
+  assert.match(devCheck({ commits: 3, aiCommits: 0, aiShare: 0, aiBy: {} }), /All you: 3 commits/);
+  assert.match(devCheck({ commits: 0 }), /no commits this week/);
+});

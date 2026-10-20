@@ -41,6 +41,7 @@ after(() => {
 
 const {
   createAgentTeams,
+  teamsFile,
   makeAgentTeamsHandler,
   agentMailboxIdentity,
   sanitizeMailboxId,
@@ -82,7 +83,7 @@ const observe = (ctx, args = {}) => dispatchTool('agent_observe', args, ctx);
 // A missing teams.json is the strongest possible statement that nothing was
 // stored, so it reads as "no teams" rather than throwing.
 const teamsJson = (dir) => {
-  try { return JSON.parse(fs.readFileSync(path.join(dir, 'teams.json'), 'utf8')); } catch { return { teams: {} }; }
+  try { return JSON.parse(fs.readFileSync(teamsFile(dir), 'utf8')); } catch { return { teams: {} }; }
 };
 const teamOf = (dir) => teamsJson(dir).teams[mailboxTeamId(PARENT)];
 
@@ -358,7 +359,7 @@ test('15. READ-SIDE screen: a hand-planted credential in teams.json is withheld,
   // on disk and still about to be replayed into a prompt. It must be withheld
   // from the RESULT and never echoed — the same contract as the memory read paths.
   await send(parentCtx(dir), { to: WORKER, message: 'benign note' });
-  const file = path.join(dir, 'teams.json');
+  const file = teamsFile(dir);
   const data = JSON.parse(fs.readFileSync(file, 'utf8'));
   const team = data.teams[mailboxTeamId(PARENT)];
   team.messages.push({
@@ -590,7 +591,7 @@ test('19. a run with NO session record still gets one shared mailbox (plain `ox 
   const got = await observe(worker);
   assert.match(got.content, /from lead_[0-9a-f]{12}: no session record here/, 'lead mail reached the worker');
   // One team record, and it is the implicit lead's — not one per agent.
-  const stored = JSON.parse(fs.readFileSync(path.join(dir, 'teams.json'), 'utf8')).teams;
+  const stored = JSON.parse(fs.readFileSync(teamsFile(dir), 'utf8')).teams;
   assert.deepEqual(Object.keys(stored), [mailboxTeamId(handler.leadId)], 'exactly one mailbox team exists');
   assert.equal(stored[mailboxTeamId(handler.leadId)].messages[0].to, WORKER);
   assert.equal(stored[mailboxTeamId(handler.leadId)].lead, handler.leadId, 'led by the lead, not the worker');

@@ -12,6 +12,33 @@
 const npx = (pkg, ...args) => ({ command: 'npx', args: ['-y', pkg, ...args] });
 
 export const MCP_TEMPLATES = {
+  pinchtab: {
+    name: 'pinchtab',
+    title: 'PinchTab browser control',
+    risk: 'write',
+    desc: 'pinchtab/pinchtab (MIT): a small Go daemon that gives agents Chrome control over HTTP/MCP, reused across runs, compact page snapshots (fewer tokens than screenshots).',
+    requires: [],
+    entry: () => ({ command: 'pinchtab', args: ['mcp'] }),
+    setup: [
+      'Install the binary first: brew install pinchtab/tap/pinchtab',
+      'It drives its own Chrome profile, not your everyday one; keep it on localhost (its own security guide).',
+    ].join('\n'),
+  },
+  rea: {
+    name: 'rea',
+    title: 'REA: Reverse Engineer Anything',
+    risk: 'write',
+    desc: 'morluto/rea (MIT): analyze apps, web bundles and native binaries from the agent; uses Ghidra, Hopper, Rizin or GDB when they are installed.',
+    requires: [],
+    entry: () => npx('rea-agents@6.7.0', '--mcp'),
+    setup: [
+      'Lawful use only (REA DISCLAIMER.md): software you own or may examine, security research,',
+      'malware analysis, interoperability, CTFs. It refuses DRM, licence-check and anti-cheat bypass.',
+      'Static JavaScript analysis needs nothing else; native analysis uses an installed Ghidra/Hopper/IDA.',
+      'Check readiness: npx rea-agents doctor',
+    ].join('\n'),
+  },
+
   browser: {
     name: 'browser',
     title: 'Playwright browser automation',

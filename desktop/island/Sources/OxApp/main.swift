@@ -38,8 +38,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     /// The page to show: given by `ox app`, or asked of `ox` when opened from the Dock.
+    /// The server went away (stopped, updated, crashed): ask ox again, which
+    /// starts a new one, at most once every 10 s.
+    private var lastRecover = Date.distantPast
+    private var usedEnvURL = false
+    func recover() {
+        guard Date().timeIntervalSince(lastRecover) > 10 else { return }
+        lastRecover = Date()
+        usedEnvURL = true
+        load()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        let host = webView.url?.host ?? (error as NSError).userInfo[NSURLErrorFailingURLStringErrorKey].flatMap { URL(string: "\($0)")?.host }
+        if host == "127.0.0.1" || host == "localhost" { recover() }
+    }
+
+    /// Opened again from the Dock or by `ox app`: if the server is gone, bring it back.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        checkServer()
+        return true
+    }
+    func applicationDidBecomeActive(_ notification: Notification) { checkServer() }
+
+    private func checkServer() {
+        guard let u = web.url, u.host == "127.0.0.1" || u.host == "localhost" else { return }
+        var req = URLRequest(url: u.appendingPathComponent("health"))
+        req.timeoutInterval = 1.5
+        URLSession.shared.dataTask(with: req) { [weak self] _, resp, _ in
+            if resp == nil { DispatchQueue.main.async { self?.recover() } }
+        }.resume()
+    }
+
     func load() {
-        if let s = ProcessInfo.processInfo.environment["OX_APP_URL"], let u = URL(string: s) {
+        if !usedEnvURL, let s = ProcessInfo.processInfo.environment["OX_APP_URL"], let u = URL(string: s) {
             web.load(URLRequest(url: u))
             return
         }

@@ -47,7 +47,7 @@ const OX_BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 
 export const AGENTS = Object.freeze({
   claude: {
     label: 'Claude Code', settings: () => path.join(os.homedir(), '.claude', 'settings.json'), format: 'groups', matcher: true, decision: 'claude',
-    events: { PreToolUse: 5, PostToolUse: 5, PostToolUseFailure: 5, PermissionRequest: 120, UserPromptSubmit: 5, Stop: 5, SubagentStart: 5, SubagentStop: 5, SessionEnd: 5 },
+    events: { PreToolUse: 120, PostToolUse: 5, PostToolUseFailure: 5, PermissionRequest: 120, UserPromptSubmit: 5, Stop: 5, SubagentStart: 5, SubagentStop: 5, SessionEnd: 5 },
   },
   codex: {
     label: 'Codex', settings: () => path.join(os.homedir(), '.codex', 'hooks.json'), format: 'groups', matcher: false, decision: 'claude',
@@ -132,11 +132,78 @@ export function preview(input = {}) {
     if (f) return f[1].trim();
   }
   const cmd = Array.isArray(i.command) ? i.command.join(' ') : i.command;
-  const s = cmd ?? i.file_path ?? i.notebook_path ?? i.path ?? i.pattern ?? i.url ?? i.query ?? i.description ?? i.prompt ?? '';
+  const s = cmd ?? i.file_path ?? i.notebook_path ?? i.path ?? i.pattern ?? i.url ?? i.query ?? i.description ?? i.prompt ?? i.label ?? i.shape ?? '';
   return String(s).replace(/\s+/g, ' ').slice(0, 300);
 }
 
 export const sessionKey = (agent, sessionId) => `${agent}-${String(sessionId ?? 'default').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40) || 'default'}`;
+
+const lineCount = (t) => (typeof t === 'string' && t.length ? t.replace(/\n$/, '').split('\n').length : 0);
+
+/** Lines added and removed by an edit, from the tool's own input (Coucou's live diff ticker). */
+export function diffStat(toolName, input = {}) {
+  const i = input ?? {};
+  const base = (f) => String(f ?? '').split('/').pop();
+  if (Array.isArray(i.edits)) {
+    let plus = 0, minus = 0;
+    for (const e of i.edits) { plus += lineCount(e.new_string); minus += lineCount(e.old_string); }
+    return { file: base(i.file_path), plus, minus };
+  }
+  if (typeof i.old_string === 'string' || typeof i.new_string === 'string') return { file: base(i.file_path), plus: lineCount(i.new_string), minus: lineCount(i.old_string) };
+  if (typeof i.content === 'string' && (i.file_path || i.path)) return { file: base(i.file_path ?? i.path), plus: lineCount(i.content), minus: 0 };
+  const cmd = Array.isArray(i.command) ? i.command.join('\n') : i.command;
+  if (typeof cmd === 'string' && cmd.includes('*** Begin Patch')) {
+    const f = /^\*\*\* (?:Update|Add|Delete) File: (.+)$/m.exec(cmd);
+    const lines = cmd.split('\n');
+    return { file: base(f?.[1]), plus: lines.filter((l) => l.startsWith('+') && !l.startsWith('+++')).length, minus: lines.filter((l) => l.startsWith('-') && !l.startsWith('---')).length };
+  }
+  return null;
+}
+
+// ---- risk in plain words (Pushary's approval cards) and safe commands allowed on their own
+
+const READ_ONLY_TOOLS = new Set(['read_file', 'grep', 'glob', 'list_dir', 'web_search', 'web_fetch', 'notebook_read', 'todo_write']);
+const DANGER = [
+  [/\brm\s+(-[a-z]*r[a-z]*f?|-[a-z]*f[a-z]*r)\b|\brm\s+-r\b/i, 'deletes files and folders recursively'],
+  [/\bgit\s+push\b[^|;&]*(--force|-f\b)/i, 'force-pushes, rewriting the remote history'],
+  [/\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f)/i, 'throws away uncommitted work'],
+  [/\b(drop|truncate)\s+(table|database|schema)\b/i, 'deletes database tables'],
+  [/\b(prod|production)\b/i, 'touches production'],
+  [/\b(kubectl\s+delete|terraform\s+(apply|destroy)|helm\s+uninstall)\b/i, 'changes live infrastructure'],
+  [/\b(curl|wget)\b[^|]*\|\s*(sh|bash|zsh)\b/i, 'runs a script straight from the internet'],
+  [/\bsudo\b/, 'runs as administrator'],
+  [/\b(npm|pnpm|yarn)\s+publish\b|\bgh\s+release\s+create\b/i, 'publishes a release'],
+  [/\bchmod\s+-R\b|\bchown\s+-R\b/i, 'changes permissions on a whole tree'],
+];
+const CAUTION = [
+  [/\bgit\s+push\b/i, 'pushes to the remote'],
+  [/\b(migrate|migration)\b/i, 'changes the database schema'],
+  [/\b(npm|pnpm|yarn|pip|brew|cargo)\s+(install|add|i)\b/i, 'installs packages'],
+  [/\bcurl\b.*-X\s*(POST|PUT|DELETE|PATCH)\b/i, 'sends a request that changes something online'],
+  [/\bmv\b|\bcp\s+-r\b/i, 'moves or copies files'],
+];
+const SAFE_CMD = /^\s*(ls|ll|pwd|cat|head|tail|wc|echo|which|whoami|date|tree|file|stat|du|df|env|printenv|rg|grep|ag|fd|find(?![^|;&]*(-delete|-exec))|git\s+(status|log|diff|show|branch|remote|rev-parse|blame|ls-files)|node\s+(-v|--version)|npm\s+(ls|view|-v)|python3?\s+(-V|--version))\b[^;&|<>`$]*$/;
+
+/** { level: 'safe' | 'caution' | 'danger', why } for a tool call, from its own input. */
+export function riskOf(tool, input = {}) {
+  const t = toolName(tool);
+  if (READ_ONLY_TOOLS.has(t)) return { level: 'safe', why: 'only reads' };
+  const cmd = String(Array.isArray(input?.command) ? input.command.join(' ') : input?.command ?? '');
+  if (cmd) {
+    for (const [re, why] of DANGER) if (re.test(cmd)) return { level: 'danger', why: `This ${why}` };
+    for (const [re, why] of CAUTION) if (re.test(cmd)) return { level: 'caution', why: `This ${why}` };
+    if (SAFE_CMD.test(cmd) && !/[>]/.test(cmd)) return { level: 'safe', why: 'only reads' };
+    return { level: 'caution', why: 'This runs a command' };
+  }
+  const file = input?.file_path ?? input?.path ?? input?.notebook_path;
+  if (file) return /(^|\/)\.(env|ssh|aws)|secrets?|credentials?/i.test(String(file)) ? { level: 'danger', why: `This changes ${String(file).split('/').pop()}, which may hold secrets` } : { level: 'caution', why: `This changes ${String(file).split('/').pop()}` };
+  return { level: 'caution', why: '' };
+}
+
+const approvalsFile = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'island-approvals.json');
+/** Read-only calls allowed without asking (on unless turned off: ox hooks safe off). */
+export function autoSafe() { try { return JSON.parse(fs.readFileSync(approvalsFile(), 'utf8')).autoSafe !== false; } catch { return true; } }
+export function setAutoSafe(on) { fs.mkdirSync(path.dirname(approvalsFile()), { recursive: true }); fs.writeFileSync(approvalsFile(), `${JSON.stringify({ autoSafe: !!on }, null, 2)}\n`); return !!on; }
 
 // One hook payload -> the ox events the island draws (none for some).
 export function toEvents(p = {}) {
@@ -145,7 +212,7 @@ export function toEvents(p = {}) {
   switch (ev) {
     case 'UserPromptSubmit': return [{ type: 'text-delta', text: '' }];
     case 'PreToolUse': return [{ type: 'tool-start', id, name: toolName(p.tool_name), argsPreview: preview(p.tool_input) }];
-    case 'PostToolUse': return [{ type: 'tool-end', id, name: toolName(p.tool_name), isError: false }];
+    case 'PostToolUse': { const d = diffStat(p.tool_name, p.tool_input); return [{ type: 'tool-end', id, name: toolName(p.tool_name), isError: false, ...(d && (d.plus || d.minus) ? { diff: d } : {}) }]; }
     case 'PostToolUseFailure': return [{ type: 'tool-end', id, name: toolName(p.tool_name), isError: true }];
     case 'SubagentStart': return [{ type: 'subagent-start', id: String(p.agent_id ?? id), task: String(p.agent_type ?? 'subagent') }];
     case 'SubagentStop': return [{ type: 'subagent-end', id: String(p.agent_id ?? id), status: 'done' }];
@@ -167,9 +234,21 @@ export function decisionOutput(decision, style = 'claude') {
   return '';
 }
 
+/** "Which search engine? (Postgres full-text / Meilisearch / Algolia)": one line for the notch. */
+export function questionPreview(input = {}) {
+  const q = (input.questions ?? [])[0] ?? {};
+  const opts = (q.options ?? []).map((o) => (typeof o === 'string' ? o : o?.label)).filter(Boolean);
+  return `${q.question ?? 'A question'}${opts.length ? ` (${opts.join(' / ')})` : ''}`.slice(0, 300);
+}
+
+/** What Claude Code reads back when the question was answered in the notch. */
+export function answerOutput(answer) {
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `The user already answered this in OX Island: ${answer}. Continue with that answer; do not ask again.` } });
+}
+
 // ---- the relay: one ox IPC server per agent session ----------------------------------
 
-export function runRelay({ agent = 'claude', sessionId, cwd = process.cwd(), socketDir, idleMs = IDLE_MS, waitForIslandMs = 2500 } = {}) {
+export function runRelay({ agent = 'claude', sessionId, cwd = process.cwd(), socketDir, idleMs = IDLE_MS, waitForIslandMs = 4000 } = {}) {
   const key = sessionKey(agent, sessionId);
   const socketPath = socketPathFor(key, socketDir);
   const always = new Set();
@@ -189,11 +268,22 @@ export function runRelay({ agent = 'claude', sessionId, cwd = process.cwd(), soc
       if (msg?.type !== 'hook') return undefined;
       bump();
       const p = msg.payload ?? {};
+      // Claude Code's multiple-choice question: answered in the notch (Coucou's feature).
+      if (p.hook_event_name === 'PreToolUse' && p.tool_name === 'AskUserQuestion') {
+        for (const e of toEvents(p)) server.broadcast(e);
+        if (!(await waitIsland())) return { type: 'hook-decision', decision: 'ask' };
+        const decision = await server.requestApproval({ tool: 'AskUserQuestion', args: sanitizeForWire(p.tool_input ?? {}), cwd: p.cwd ?? cwd, preview: questionPreview(p.tool_input) });
+        if (String(decision).startsWith('answer:')) return { type: 'hook-decision', decision: 'answer', answer: String(decision).slice(7) };
+        return { type: 'hook-decision', decision: 'ask' };
+      }
       if (p.hook_event_name === 'PermissionRequest') {
         const tool = toolName(p.tool_name);
         if (always.has(tool)) return { type: 'hook-decision', decision: 'allow' };
+        const risk = riskOf(p.tool_name, p.tool_input);
+        // Safe commands run on their own (only reading); risky ones wait for you.
+        if (risk.level === 'safe' && autoSafe()) { server.broadcast({ type: 'text-delta', text: '' }); return { type: 'hook-decision', decision: 'allow' }; }
         if (!(await waitIsland())) return { type: 'hook-decision', decision: 'ask' };
-        const decision = await server.requestApproval({ tool, args: sanitizeForWire(p.tool_input ?? {}), cwd: p.cwd ?? cwd, preview: preview(p.tool_input) });
+        const decision = await server.requestApproval({ tool, args: sanitizeForWire(p.tool_input ?? {}), cwd: p.cwd ?? cwd, preview: preview(p.tool_input), risk });
         if (decision === 'always') always.add(tool);
         return { type: 'hook-decision', decision };
       }
@@ -234,12 +324,15 @@ function talk(socketPath, frame, { timeoutMs }) {
 
 const exists = (p) => { try { fs.statSync(p); return true; } catch { return false; } };
 
-async function ensureRelay(agent, payload, { socketDir, spawnRelay }) {
+// A new session's relay can take over 2 s to start cold (just after a restart),
+// and then its first approval went to the agent's own prompt instead of the
+// notch. Someone waits on an approval anyway, so it gets longer.
+async function ensureRelay(agent, payload, { socketDir, spawnRelay, waitMs = 2000 }) {
   const key = sessionKey(agent, payload.session_id);
   const sp = socketPathFor(key, socketDir);
   if (exists(sp)) return sp;
   spawnRelay({ agent, sessionId: payload.session_id, cwd: payload.cwd ?? process.cwd() });
-  const until = Date.now() + 2000;
+  const until = Date.now() + waitMs;
   while (!exists(sp) && Date.now() < until) await new Promise((r) => setTimeout(r, 40));
   return exists(sp) ? sp : null;
 }
@@ -259,14 +352,16 @@ export async function handleHook(agent, raw, { event = null, socketDir, spawnRel
   try { parsed = JSON.parse(String(raw || '{}')); } catch { return spec.decision === 'bare' && /permission/i.test(String(event)) ? decisionOutput('ask', 'bare') : ''; }
   const payload = normalize(parsed, event, env);
   if (!payload.hook_event_name) return '';
+  const isQuestion = payload.hook_event_name === 'PreToolUse' && payload.tool_name === 'AskUserQuestion' && spec.decision === 'claude';
   const isAsk = payload.hook_event_name === 'PermissionRequest';
   const answer = (d) => (isAsk ? decisionOutput(d, spec.decision) : '');
   if (isAsk && spec.decision === 'none') return '';
   // A session ending with no relay alive has nothing to tell anyone.
   if (payload.hook_event_name === 'SessionEnd' && !exists(socketPathFor(sessionKey(agent, payload.session_id), socketDir))) return '';
-  const sp = await ensureRelay(agent, payload, { socketDir, spawnRelay });
+  const sp = await ensureRelay(agent, payload, { socketDir, spawnRelay, waitMs: isAsk || isQuestion ? 6000 : 2000 });
   if (!sp) return answer('ask');
-  const reply = await talk(sp, { type: 'hook', payload }, { timeoutMs: isAsk ? approvalTimeoutMs : 800 });
+  const reply = await talk(sp, { type: 'hook', payload }, { timeoutMs: isAsk || isQuestion ? approvalTimeoutMs : 800 });
+  if (isQuestion) return reply?.decision === 'answer' && reply.answer ? answerOutput(reply.answer) : '';
   return answer(reply?.decision ?? 'ask');
 }
 
@@ -306,10 +401,22 @@ function ourEntry(spec, agent, event, timeout) {
 
 // The settings document with ox's hooks added (or removed), without touching
 // anything else in it — other tools' hooks and your own stay exactly as they are.
-export function withHooks(doc = {}, { remove = false, agent = 'claude' } = {}) {
+// Claude Code shares your plan limits only with its status-line command, so
+// connecting Claude also routes the status line through `ox statusline`
+// (src/statusline.js), which records the limits and then runs the status line
+// you had before: what you see in Claude Code does not change.
+export const statuslineCommand = () => { const q = (s) => (/[\s"'$`\\]/.test(s) ? `'${s.replace(/'/g, "'\\''")}'` : s); return `${q(process.execPath)} ${q(OX_BIN)} statusline`; };
+const isOurStatusline = (sl) => typeof sl?.command === 'string' && / statusline$/.test(sl.command.trim()) && sl.command.includes('ox');
+
+export function withHooks(doc = {}, { remove = false, agent = 'claude', restoreStatusline = null } = {}) {
   const spec = AGENTS[agent];
   const M = mark(agent);
   const next = JSON.parse(JSON.stringify(doc ?? {}));
+  if (agent === 'claude') {
+    if (!remove) next.statusLine = { ...(next.statusLine && !isOurStatusline(next.statusLine) && typeof next.statusLine === 'object' ? { padding: next.statusLine.padding } : {}), type: 'command', command: statuslineCommand() };
+    else if (isOurStatusline(next.statusLine)) { if (restoreStatusline) next.statusLine = restoreStatusline; else delete next.statusLine; }
+    if (next.statusLine && next.statusLine.padding === undefined) delete next.statusLine.padding;
+  }
   next.hooks = next.hooks && typeof next.hooks === 'object' && !Array.isArray(next.hooks) ? next.hooks : {};
   const events = new Set([...Object.keys(spec.events), ...Object.keys(next.hooks)]);
   for (const event of events) {
@@ -338,9 +445,15 @@ export function planInstall(agent = 'claude', { remove = false, file = AGENTS[ag
   if (text.trim()) {
     try { doc = JSON.parse(text); } catch { throw new Error(`${file} is not valid JSON — fix it first; ox will not rewrite a file it cannot read`); }
   }
-  const after = withHooks(doc, { remove, agent });
+  // The status line you had, kept so `ox statusline` can still show it and an
+  // uninstall can put it back.
+  const prevFile = path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'statusline-previous.json');
+  let restoreStatusline = null;
+  if (agent === 'claude' && remove) { try { restoreStatusline = JSON.parse(fs.readFileSync(prevFile, 'utf8'))?.statusLine ?? null; } catch {} }
+  const previousStatusline = agent === 'claude' && !remove && doc.statusLine && !isOurStatusline(doc.statusLine) ? doc.statusLine : null;
+  const after = withHooks(doc, { remove, agent, restoreStatusline });
   const afterText = `${JSON.stringify(after, null, 2)}\n`;
-  return { file, beforeText: text, afterText, changed: afterText.trim() !== text.trim(), mtimeMs: text ? fs.statSync(file).mtimeMs : null };
+  return { file, beforeText: text, afterText, changed: afterText.trim() !== text.trim(), mtimeMs: text ? fs.statSync(file).mtimeMs : null, previousStatusline, prevFile: agent === 'claude' ? prevFile : null, remove };
 }
 
 export function applyInstall(plan) {
@@ -354,5 +467,11 @@ export function applyInstall(plan) {
   }
   fs.mkdirSync(path.dirname(plan.file), { recursive: true });
   fs.writeFileSync(plan.file, plan.afterText);
+  if (plan.prevFile) {
+    try {
+      if (plan.previousStatusline) { fs.mkdirSync(path.dirname(plan.prevFile), { recursive: true }); fs.writeFileSync(plan.prevFile, `${JSON.stringify({ statusLine: plan.previousStatusline, command: plan.previousStatusline.command ?? null }, null, 2)}\n`, { mode: 0o600 }); }
+      else if (plan.remove) fs.rmSync(plan.prevFile, { force: true });
+    } catch {}
+  }
   return backup;
 }

@@ -157,7 +157,7 @@
   .thread { flex: 1; overflow-y: auto; padding: 28px 22px 40px; }
   .inner { max-width: var(--tw); margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
   .msg.user { align-self: flex-end; max-width: 80%; background: var(--raise); border: 1px solid var(--line); padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .msg.assistant { display: grid; grid-template-columns: 26px 1fr; gap: 12px; }
+  .msg.assistant { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 12px; }
   .msg.assistant .who { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(180deg, #3A3A3C 0%, #1C1C1E 42%, #0B0B0C 100%); color: #FFFFFF; box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 0 0 1px rgba(255,255,255,.06); display: grid; place-items: center; }
 
   .msg.assistant .who svg { width: 18px; height: 18px; }
@@ -304,6 +304,15 @@
   .wl.completed span:last-child { color: var(--dim); text-decoration: line-through; }
   .wl.in_progress { color: var(--text); }
   .steps { display: flex; flex-direction: column; gap: 2px; margin: 0 0 10px; }
+  .steps.detailed .step span { white-space: normal; word-break: break-all; font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; }
+  .steps-fold summary { cursor: pointer; color: var(--muted); font-size: 12.5px; list-style: none; padding: 2px 0; }
+  .steps-fold summary::before { content: '\25B8  '; } .steps-fold[open] summary::before { content: '\25BE  '; }
+  .changed { margin: 10px 0 0; padding: 8px 10px; border: 1px solid var(--line2); border-radius: 10px; display: flex; flex-direction: column; gap: 2px; }
+  .changed .cap { margin-bottom: 4px; }
+  .ask-card { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--accent, var(--line2)); border-radius: 10px; display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 100%; box-sizing: border-box; }
+  .ask-card .mono, .ask-done .mono { overflow-wrap: anywhere; }
+  .ask-btns { display: flex; gap: 8px; }
+  .ask-done { margin: 6px 0; }
   .step { display: flex; align-items: center; gap: 8px; font: 12.5px var(--mono); color: var(--muted); padding: 3px 0; min-width: 0; }
   .step b { color: var(--text); font-weight: 600; }
   .step span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -358,6 +367,35 @@
   #optimize.busy { animation: pulse 1s infinite; }
   .attached .ph { padding: 0; overflow: hidden; } .attached .ph img { width: 44px; height: 44px; object-fit: cover; display: block; border-radius: 8px; }
   .u-photos { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; } .u-photos img { width: 120px; height: 90px; object-fit: cover; border-radius: 10px; display: block; }
+  .os-box { display: flex; flex-direction: column; gap: 12px; }
+  .os-modes { display: flex; gap: 6px; flex-wrap: wrap; }
+  .os-mac { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line2); margin-bottom: 12px; font-size: 13px; }
+  .os-mac b { font-weight: 600; } .os-mac .can { display: inline-flex; gap: 6px; flex-wrap: wrap; } .os-mac .can span { font-size: 11.5px; padding: 2px 8px; border-radius: 99px; background: var(--hover); color: var(--muted); } .os-mac .can span.on { color: var(--green); }
+  .os-modes button, .os-row button { border: 1px solid var(--line2); border-radius: 99px; padding: 6px 12px; font-size: 13px; color: var(--muted); background: var(--bg); }
+  .os-modes button.on, .os-row button.on { color: var(--btn-ink); background: var(--btn); border-color: var(--btn); }
+  .os-prompt { resize: vertical; font-size: 15px; line-height: 1.5; }
+  .os-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .os-row .lbl { font-size: 12px; color: var(--dim); margin-right: 4px; }
+  .os-models { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+  .os-model { text-align: left; border: 1px solid var(--line2); border-radius: 12px; padding: 10px 12px; background: var(--bg); display: flex; flex-direction: column; gap: 3px; }
+  .os-model.on { border-color: var(--text); box-shadow: inset 0 0 0 1px var(--text); }
+  .os-model b { font-size: 13.5px; } .os-model .g { font-size: 12px; color: var(--muted); } .os-model .l { font-size: 11px; color: var(--dim); }
+  .os-model .ready { font-size: 11px; } .os-model .ready.no { color: var(--amber); }
+  .os-go { display: flex; align-items: center; gap: 10px; }
+  .os-h { font-weight: 600; margin: 20px 0 8px; }
+  .os-recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+  .os-recipe { text-align: left; border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--panel); font-size: 13.5px; }
+  .os-recipe .s { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .os-recipe ol.s { padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+  .os-more { margin-top: 18px; } .os-more summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+  .slash-menu { position: absolute; bottom: calc(100% - 6px); left: 50%; transform: translateX(-50%); width: min(var(--tw), calc(100% - 44px)); max-height: 320px; overflow-y: auto; background: var(--panel); border: 1px solid var(--line2); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.28); padding: 6px; z-index: 30; display: none; }
+  .slash-menu.on { display: block; }
+  .slash-menu .grp { font-size: 11px; color: var(--dim); padding: 6px 10px 2px; letter-spacing: .02em; }
+  .slash-menu button { display: flex; align-items: baseline; gap: 12px; width: 100%; text-align: left; padding: 7px 10px; border-radius: 8px; color: var(--text); font-size: 13.5px; }
+  .slash-menu button .n { font: 13px var(--mono); min-width: 96px; }
+  .slash-menu button .w { color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .slash-menu button .s { color: var(--dim); font-size: 11.5px; }
+  .slash-menu button.on, .slash-menu button:hover { background: var(--sel); }
   .cbox { max-width: var(--tw); margin: 0 auto; border: 1px solid var(--line2); border-radius: 16px; background: var(--panel); overflow: hidden; }
   .cbox:focus-within { border-color: var(--muted); }
   .cfoot { display: flex; align-items: center; gap: 12px; max-width: var(--tw); margin: 7px auto 0; padding: 0 6px; font-size: 11.5px; color: var(--dim); min-width: 0; }
@@ -426,6 +464,39 @@
   .tk-col { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px; min-height: 120px; display: flex; flex-direction: column; gap: 8px; }
   .tk-head { display: flex; justify-content: space-between; font-weight: 600; font-size: 13px; padding: 2px 4px 6px; }
   .tk-card { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  /* Agent gallery (Little Agent Club): every agent as a character card. */
+  .gal-tabs { display: flex; gap: 6px; margin: 4px 0 14px; }
+  .gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .gal-card { background: var(--bg); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .gal-face { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 18px; color: #fff; }
+  .gal-top { display: flex; gap: 10px; align-items: center; }
+  .gal-state { font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--line); }
+  .gal-state.live { background: rgba(52,211,153,.18); color: #34D399; }
+  .gal-acts { display: flex; gap: 6px; margin-top: auto; }
+  .gal-acts .on { border-color: #F5A524; color: #F5A524; }
+  /* Library (after Gloss): a shelf of saved reading, a reader, select a line to ask. */
+  .lib-shelf { display: flex; align-items: flex-end; gap: 6px; flex-wrap: wrap; padding: 18px 14px 0; border-bottom: 10px solid var(--line); border-radius: 4px; min-height: 150px; }
+  .lib-book { width: 34px; border-radius: 3px 3px 1px 1px; cursor: pointer; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; box-shadow: inset -3px 0 0 rgba(0,0,0,.18); transition: transform .15s; }
+  .lib-book:hover { transform: translateY(-6px); }
+  .lib-book span { writing-mode: vertical-rl; transform: rotate(180deg); color: #fff; font-size: 11px; font-weight: 600; max-height: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lib-reader { font-size: 15px; line-height: 1.7; white-space: pre-wrap; max-width: 720px; }
+  .lib-pop { position: fixed; z-index: 50; display: none; gap: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 4px; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+  .lib-hl { background: rgba(250,204,21,.28); border-radius: 3px; }
+  /* Sessions canvas (luciomakes): every agent session as a tile you place anywhere. */
+  .sc-board { position: relative; min-height: 640px; border: 1px dashed var(--line); border-radius: 14px; overflow: hidden; background-image: radial-gradient(var(--line) 1px, transparent 1px); background-size: 22px 22px; }
+  .sc-tile { position: absolute; width: 320px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 6px 22px rgba(0,0,0,.18); display: flex; flex-direction: column; }
+  .sc-head { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: grab; user-select: none; }
+  .sc-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .sc-body { padding: 8px 10px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 190px; overflow: auto; white-space: pre-wrap; }
+  .sc-send { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line); }
+  /* Mission map: the goal tree of tasks and who owns each. */
+  .mm-tree, .mm-tree ul { list-style: none; margin: 0; padding-left: 22px; position: relative; }
+  .mm-tree { padding-left: 0; }
+  .mm-tree ul::before { content: ''; position: absolute; left: 8px; top: 0; bottom: 12px; border-left: 1px solid var(--line); }
+  .mm-tree li { position: relative; margin: 6px 0; }
+  .mm-tree ul > li::before { content: ''; position: absolute; left: -14px; top: 15px; width: 12px; border-top: 1px solid var(--line); }
+  .mm-node { display: inline-flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+  .mm-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   .tk-card b { font-weight: 600; font-size: 13.5px; line-height: 1.35; }
   .tk-desc { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
   .tk-meta { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -449,6 +520,14 @@
   .fl-problems { color: var(--red); font-size: 12.5px; margin: 6px 0; } .fl-ok { color: var(--muted); font-size: 12.5px; margin: 6px 0; }
   .fl-runs .card .d span { white-space: nowrap; }
   .office-head { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
+  .floor { position: relative; border-radius: 16px; overflow: hidden; border: 1px solid var(--line2); margin-bottom: 4px; background: #2a2622; }
+  .floor canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  .floor .tag { position: absolute; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; gap: 2px; pointer-events: auto; max-width: 17%; }
+  .floor .tag .say { background: rgba(255,255,255,.94); color: #111; font: 11px/1.3 var(--mono); padding: 3px 7px; border-radius: 8px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
+  .floor .tag .who { font: 600 11px var(--sans); color: #fff; background: rgba(0,0,0,.55); padding: 1px 7px; border-radius: 99px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .floor .tag.idle .say { opacity: .7; }
+  .floor .tag.yours .say { background: #F5A524; color: #111; font-weight: 600; }
+  .floor .zone { position: absolute; font: 600 10px var(--sans); letter-spacing: .06em; color: rgba(255,255,255,.55); text-transform: uppercase; }
   .room { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; padding: 14px; border-radius: 16px; border: 1px solid var(--line); min-height: 150px;
     background: repeating-conic-gradient(var(--raise) 0 25%, var(--panel) 0 50%) 0 0 / 28px 28px; }
   .room.lounge { min-height: 0; background: var(--side); } .room:empty { display: block; }
@@ -577,6 +656,10 @@
         <button data-view="flows"><span data-i="flow"></span><span class="grow">Automations</span></button>
         <button data-view="tasks"><span data-i="list"></span><span class="grow">Task board</span></button>
         <button data-view="office"><span data-i="office"></span><span class="grow">Office</span><span class="office-count" id="office-count" hidden></span></button>
+        <button data-view="gallery"><span data-i="office"></span><span class="grow">Agents</span></button>
+        <button data-view="mission"><span data-i="list"></span><span class="grow">Mission map</span></button>
+        <button data-view="library"><span data-i="list"></span><span class="grow">Library</span></button>
+        <button data-view="canvas"><span data-i="office"></span><span class="grow">Sessions canvas</span></button>
       </div>
       <label class="search"><span data-i="search"></span><input id="q" placeholder="Search sessions…" aria-label="Search sessions"><span class="kbd">⌘K</span></label>
     </div>
@@ -596,18 +679,20 @@
       <button class="iconbtn" id="menu" title="Sessions" aria-label="Sessions" data-i="sidebar"></button>
       <div class="title" id="title">New session</div>
       <span class="usage" id="usage"></span>
+      <button class="btn ghost small" id="open-pr" title="Your changes in this folder as a pull request: a branch, the checks, a commit, a push and the PR. Merging stays yours.">Open a PR</button>
     </div>
 
     <section class="view on" id="v-chat">
       <div class="thread" id="thread"><div class="inner" id="inner"></div></div>
       <div class="composer">
+        <div class="slash-menu" id="slash-menu" role="listbox" aria-label="ox commands"></div>
         <div class="cbox">
           <div class="attached" id="attached"></div>
           <textarea id="input" rows="1" placeholder="Describe what you need" aria-label="Message"></textarea>
           <div class="crow">
             <button class="round" id="attach" title="Add photos, files and tools" aria-label="Add photos, files and tools" aria-haspopup="menu" aria-expanded="false" data-i="plus"></button>
             <input type="file" id="file" multiple hidden>
-            <input type="file" id="photo" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
+            <input type="file" id="photo" accept="image/png,image/jpeg,image/gif,image/webp,video/*" multiple hidden>
             <input type="file" id="camera" accept="image/*" capture="environment" hidden>
             <button class="pill" id="mode-btn" aria-haspopup="listbox" aria-expanded="false" title="Mode, enforced (⌘. next mode)"><span data-i="mode"></span><span id="mode-name">Auto</span></button>
             <select id="mode" aria-label="Mode" hidden>
@@ -671,8 +756,22 @@
     </div></div></section>
 
     <section class="view" id="v-studio"><div class="page"><div class="page-inner" style="max-width:1100px">
-      <div class="shead" style="font-size:18px">Studio</div>
-      <p class="sdesc">Images and video from one prompt. Pick where it runs: Higgsfield's 38 models, any fal.ai model, OpenAI's image models, or a Stable Diffusion server on this machine with no account at all. Every result is saved to ~/.ox/media with its full recipe.</p>
+      <div class="shead" style="font-size:20px">Studio</div>
+      <p class="sdesc">Make images, video and sound with open models, on this Mac's own chip with no key, or on a host where you have one. Every result is saved to ~/.ox/media with its recipe, and any agent can use the same Studio (ox studio connect).</p>
+      <div class="box os-box">
+        <div class="os-mac" id="os-mac"></div>
+        <div class="os-modes" id="os-modes" role="tablist" aria-label="What to make"></div>
+        <textarea class="field os-prompt" id="os-prompt" rows="3" placeholder="Describe it: subject, setting, light, style, mood. ⌘/Ctrl+Enter to make it"></textarea>
+        <input class="field" id="os-video" placeholder="The clip: a link to the video (4-10 s works best)" hidden>
+        <input class="field" id="os-image" placeholder="Image to start from: a path on this Mac or a link" hidden>
+        <div class="small muted" id="os-hint" hidden></div>
+        <div class="os-row" id="os-chips"></div>
+        <div class="os-models" id="os-models"></div>
+        <div class="os-go"><button class="btn primary" id="os-go">Make it</button><span class="small muted" id="os-state"></span></div>
+      </div>
+      <div class="os-h">Recipes</div>
+      <div class="os-recipes" id="os-recipes"></div>
+      <details class="os-more"><summary>Other providers: Higgsfield, OpenAI, OpenRouter, a Stable Diffusion server on this Mac</summary>
       <div class="box" id="st-composer">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
           <select class="field" id="st-provider" style="width:auto" aria-label="Provider"></select>
@@ -684,6 +783,7 @@
         <div id="st-media" style="display:flex;flex-direction:column;gap:6px;margin-top:10px"></div>
         <div style="display:flex;align-items:center;gap:10px;margin-top:12px"><button class="btn primary" id="st-go">Generate</button><span class="small muted" id="st-state"></span></div>
       </div>
+      </details>
       <div class="subtabs" id="st-tabs" style="padding-left:0;margin-top:18px"></div>
       <div id="st-gallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px"></div>
     </div></div></section>
@@ -692,6 +792,8 @@
 
     <section class="view" id="v-office"><div class="page"><div class="page-inner" style="max-width:1100px">
       <div class="office-head"><div><h2 style="margin:0">Office</h2><div class="small dim">Who is working on what, live: every chat, bot and helper agent this app started.</div></div><span class="grow"></span><span class="small dim" id="office-sum"></span></div>
+      <div class="floor" id="floor"><canvas id="floor-cv" width="320" height="150" aria-label="The office: who sits at which desk and what they are doing"></canvas><div id="floor-tags"></div></div>
+      <div class="lounge-h small dim" style="margin-top:16px">Desks in detail</div>
       <div class="room" id="room"></div>
       <div class="lounge-h small dim" id="lounge-h">Lounge: your bots, free</div>
       <div class="room lounge" id="lounge"></div>
@@ -700,6 +802,11 @@
     <section class="view" id="v-bots"><div class="page"><div class="page-inner" style="max-width:1100px" id="bots"></div></div></section>
     <section class="view" id="v-flows"><div class="page"><div class="page-inner" id="flows"></div></div></section>
     <section class="view" id="v-tasks"><div class="page"><div class="page-inner wide" id="tasks"></div></div></section>
+    <section class="view" id="v-gallery"><div class="page"><div class="page-inner wide" id="gallery"></div></div></section>
+    <section class="view" id="v-mission"><div class="page"><div class="page-inner wide" id="mission"></div></div></section>
+    <section class="view" id="v-library"><div class="page"><div class="page-inner wide" id="library"></div></div></section>
+    <section class="view" id="v-canvas"><div class="page"><div class="page-inner wide" id="scanvas"></div></div></section>
+    <div class="lib-pop" id="lib-pop"><button class="btn primary small" id="lib-pop-ask">Ask</button><button class="btn ghost small" id="lib-pop-hl">Highlight</button></div>
     <section class="view" id="v-sched"><div class="page"><div class="page-inner" id="sched"></div></div></section>
   </main>
   <div class="sizer" id="sizer-pane" role="separator" aria-orientation="vertical" aria-label="Resize the side panel" tabindex="0" title="Drag to resize · double-click to reset" hidden></div>
@@ -743,7 +850,7 @@
   const P = {
     plus: 'M12 5v14M5 12h14', search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM20 20l-4-4', gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z',
     contrast: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 3v18', keyboard: 'M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M7 14h10', sidebar: 'M3 4h18v16H3zM9 4v16',
-    blocks: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z', chat: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12Z', clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 7v5l3 2',
+    blocks: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z', bell: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0', branch: 'M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM18 9a9 9 0 0 1-9 9', server: 'M3 4h18v6H3zM3 14h18v6H3zM7 7h.01M7 17h.01', chat: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12Z', clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 7v5l3 2',
     folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z', mic: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5 11a7 7 0 0 0 14 0M12 18v3',
     up: 'M12 19V5M5 12l7-7 7 7', stop: 'M7 7h10v10H7z', x: 'M6 6l12 12M18 6 6 18', pin: 'M12 17v5M9 3h6l-1 6 4 4H6l4-4Z', archive: 'M3 4h18v4H3zM5 8v12h14V8M10 12h4',
     trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13', copy: 'M9 9h11v11H9zM5 15H4V4h11v1', mode: 'M4 6h10M4 12h16M4 18h7M17 4v4M13 16h6M16 13v6',
@@ -811,7 +918,7 @@
   }
 
   // ---------- preferences (this browser only)
-  const prefs = Object.assign({ theme: null, size: 'medium', width: 'medium', motion: 'system', sendKey: 'enter', speakReplies: false, lang: '', voice: '' }, store.get('ox.prefs', {}));
+  const prefs = Object.assign({ theme: null, size: 'medium', width: 'medium', motion: 'system', sendKey: 'enter', speakReplies: false, lang: '', voice: '', activity: 'normal', changedFiles: true, whatsNew: true, notifyDone: false, notifyFail: false, notifySound: false, hiddenModels: [] }, store.get('ox.prefs', {}));
   const savePrefs = () => { store.set('ox.prefs', prefs); applyPrefs(); };
   function applyPrefs() {
     const r = document.documentElement;
@@ -838,6 +945,45 @@
     }
     return res;
   }
+  // A theme made by you or an agent (`ox theme "<look>"`, src/ui-theme.js): applied live, checked every few seconds.
+  let skinVersion = null;
+  async function loadSkin() {
+    try {
+      const j = await (await api('/ox/theme')).json();
+      const v = j?.theme?.version ?? null;
+      if (v === skinVersion) return;
+      skinVersion = v;
+      let el = document.getElementById('ox-skin');
+      if (!el) { el = document.createElement('style'); el.id = 'ox-skin'; document.head.appendChild(el); }
+      el.textContent = j?.css ?? '';
+      if (v) document.documentElement.dataset.oxSkin = j.theme.name; else delete document.documentElement.dataset.oxSkin;
+    } catch {}
+  }
+  setTimeout(loadSkin, 300);
+  // When ox is updated its server steps aside; reload so the app comes back on the new one.
+  let healthMiss = 0;
+  setInterval(async () => {
+    if (busy) return;
+    const ok = await fetch('/health', { cache: 'no-store' }).then((r) => r.ok).catch(() => false);
+    healthMiss = ok ? 0 : healthMiss + 1;
+    if (healthMiss === 2) { try { toast('Updating ox…'); } catch {} setTimeout(() => location.reload(), 1500); }
+  }, 10_000);
+  setInterval(() => { if (!document.hidden) loadSkin(); }, 4000);
+  // One click from a change to a pull request (src/dev-flow.js openPr). It pushes, so it asks first.
+  $('open-pr').onclick = async () => {
+    const b = $('open-pr');
+    if (b.disabled) return;
+    if (!confirm('Open a pull request for the changes in this folder? ox makes a branch, runs the checks, commits, pushes and opens the PR. Merging stays yours.')) return;
+    b.disabled = true; b.textContent = 'Opening…';
+    try {
+      const r = await api('/ox/pr/open', { method: 'POST', body: JSON.stringify({ cwd: convo()?.cwd || undefined }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(plainDash(j?.error?.message || `HTTP ${r.status}`));
+      const failed = (j.checks?.results ?? []).filter((x) => x && !x.ok).map((x) => x.step ?? x.command).filter(Boolean);
+      toastAction(`${j.created === false ? 'Pull request updated' : 'Pull request opened'}${failed.length ? ` · checks failed: ${failed.join(', ')}` : ''}`, 'Open', () => window.open(j.url, '_blank'));
+    } catch (e) { toast(String(e?.message ?? e)); }
+    finally { b.disabled = false; b.textContent = 'Open a PR'; }
+  };
   async function getJson(path) {
     const r = await api(path);
     const j = await r.json().catch(() => ({}));
@@ -902,7 +1048,7 @@
     view = v;
     document.querySelectorAll('.view').forEach((el) => el.classList.toggle('on', el.id === `v-${v}`));
     document.querySelectorAll('.nav [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
-    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : v === 'flows' ? 'Automations' : v === 'tasks' ? 'Task board' : (readonly ? readonly.title : convo()?.title || 'New session');
+    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : v === 'flows' ? 'Automations' : v === 'tasks' ? 'Task board' : v === 'gallery' ? 'Agents' : v === 'mission' ? 'Mission map' : v === 'library' ? 'Library' : v === 'canvas' ? 'Sessions canvas' : (readonly ? readonly.title : convo()?.title || 'New session');
     document.body.classList.remove('nav');
     if (v === 'caps') loadCaps();
     if (v === 'msg') loadMessaging();
@@ -913,6 +1059,10 @@
     if (v === 'office') pollOffice();
     if (v === 'flows') loadFlows();
     if (v === 'tasks') loadTasks();
+    if (v === 'gallery') loadGallery();
+    if (v === 'mission') loadMission();
+    if (v === 'library') loadLibrary();
+    if (v === 'canvas') loadSessionsCanvas(); else clearInterval(scTimer);
     if (v === 'map') loadMap();
     renderLists();
   }
@@ -1349,7 +1499,15 @@
       if (th.length) body.insertAdjacentHTML('afterbegin', `<div class="u-photos">${th.map((t) => `<img src="${t}" alt="photo">`).join('')}</div>`);
       return;
     }
-    const steps = (msg.tools || []).map((t) => `<div class="step"><span class="dot ${t.state === 'ok' ? 'ok' : t.state === 'err' ? 'err' : 'run'}"></span><b>${esc(t.name)}</b><span>${esc(t.preview || '')}</span></div>`).join('');
+    const tools = msg.tools || [];
+    let steps = tools.map((t) => `<div class="step"><span class="dot ${t.state === 'ok' ? 'ok' : t.state === 'err' ? 'err' : 'run'}"></span><b>${esc(t.name)}</b><span>${esc(prefs.activity === 'detailed' ? t.preview || '' : (t.file || t.preview || ''))}</span></div>`).join('');
+    // Activity detail (Settings › General): compact folds every step into one line.
+    if (steps && prefs.activity === 'compact') {
+      const okN = tools.filter((t) => t.state === 'ok').length, errN = tools.filter((t) => t.state === 'err').length, runN = tools.length - okN - errN;
+      steps = `<details class="steps-fold"><summary>${tools.length} step${tools.length === 1 ? '' : 's'}${okN ? ` · ${okN} done` : ''}${errN ? ` · ${errN} failed` : ''}${runN ? ' · working…' : ''}</summary>${steps}</details>`;
+    }
+    const changed = prefs.changedFiles !== false && !msg.pending ? [...new Set(tools.filter((t) => t.state === 'ok').flatMap((t) => [...(t.file ? [t.file] : []), ...(t.files ?? [])]))] : [];
+    const changedHtml = changed.length ? `<div class="changed"><div class="cap">Changed ${changed.length} file${changed.length === 1 ? '' : 's'}</div>${changed.map((f) => `<div class="mono small">${esc(f)}</div>`).join('')}</div>` : '';
     msg.key ??= `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     const text = msg.content ? md(msg.content, msg.key) : (msg.pending ? '<span class="typing"><i></i><i></i><i></i></span>' : '');
     const routed = (msg.compare ? `<span class="botname">${esc(msg.compare)}</span>` : '') + (msg.bot ? `<span class="botname">${esc(msg.bot)}</span>` : '') + (msg.routed ? `<span class="routed">${icon('mode')}${esc(msg.routed)}</span>` : '');
@@ -1359,7 +1517,20 @@
       ? `<div class="worklog"><div class="cap" style="margin-bottom:6px">Plan · ${msg.plan.filter((t) => t.status === 'completed').length}/${msg.plan.length} done</div>${msg.plan.map((t) => `<div class="wl ${t.status}"><span class="dot ${PI[t.status]?.[0] ?? ''}"></span><span>${esc(t.content)}</span></div>`).join('')}</div>`
       : '';
     const canv = (msg.canvases || []).map((c) => `<div class="ui cv">${canvasNode(c.tree)}</div>`).join('');
-    body.innerHTML = routed + plan + (steps ? `<div class="steps">${steps}</div>` : '') + canv + text + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : '');
+    // "Write: /path" is shown as Write and the path.
+    const askWhat = (a) => { const p = String(a.preview || ''), t = `${a.tool}: `; return p.startsWith(t) ? p.slice(t.length) : p; };
+    const asks = (msg.asks || []).map((a) => a.state
+      ? `<div class="ask-done small dim">${a.state === 'allow' ? 'Allowed' : 'Denied'} · <b>${esc(a.tool)}</b> <span class="mono">${esc(askWhat(a))}</span></div>`
+      : `<div class="ask-card" data-ask-id="${esc(a.id)}"><div class="cap">Waiting for your OK</div><div><b>${esc(a.tool)}</b> <span class="mono small">${esc(askWhat(a))}</span></div><div class="ask-btns"><button class="btn primary small" data-ask-answer="allow">Allow</button><button class="btn ghost small" data-ask-answer="deny">Deny</button></div></div>`).join('');
+    body.innerHTML = routed + plan + (steps ? `<div class="steps${prefs.activity === 'detailed' ? ' detailed' : ''}">${steps}</div>` : '') + asks + canv + text + changedHtml + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : '');
+    body.querySelectorAll('[data-ask-answer]').forEach((b) => (b.onclick = () => {
+      const card = b.closest('[data-ask-id]');
+      const a = (msg.asks || []).find((x) => x.id === card.dataset.askId);
+      card.querySelectorAll('button').forEach((x) => (x.disabled = true));
+      postJson('/ox/approval', { id: card.dataset.askId, decision: b.dataset.askAnswer })
+        .then(() => { if (a) { a.state = b.dataset.askAnswer; paint(body, msg); } })
+        .catch((e) => { if (a) a.state = 'deny'; paint(body, msg); toast(plainDash(e.message)); });
+    }));
     mountLive(body); bindUi(body); bindOpenUI(body);
     const m = body.closest('.msg');
     m.dataset.text = msg.content || '';
@@ -1438,6 +1609,7 @@
     if (readonly) return;
     const files = takeAttachments();
     const pics = takePhotos();
+    if (!files && !pics.length && /^\/[\w-]+/.test(input.value.trim()) && await runSlash(input.value.trim())) return;
     const text = (input.value.trim() || (files ? 'Here are the files:' : pics.length ? 'What is in this photo?' : '')) + files;
     if (!text) return;
     if (!convo()) newConvo();
@@ -1520,8 +1692,13 @@
           const ox = ev.ox;
           if (ox?.type === 'mode') reply.routed = `${ox.routed ? 'auto → ' : ''}${ox.mode}${ox.reason ? ` · ${ox.reason}` : ''}${ox.model ? ` · ${ox.model} (${ox.modelWhy})` : ''}`;
           if (ox?.type === 'tool-start' && Array.isArray(ox.plan)) reply.plan = ox.plan;
-          else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '' });
+          else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '', ...(ox.file ? { file: ox.file } : {}), ...(ox.files ? { files: ox.files } : {}) });
           if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; if (ox.canvas) { reply.canvases = (reply.canvases || []).filter((x) => x.id !== ox.id); reply.canvases.push({ id: ox.id, tree: ox.canvas }); } }
+          // A step waiting on your yes (a plan's write, a command): Allow / Deny here.
+          if (ox?.type === 'approval') (reply.asks ??= []).push({ id: ox.id, tool: ox.tool, preview: ox.preview, state: '' });
+          if (ox?.type === 'approval-resolved') { const a = (reply.asks || []).find((x) => x.id === ox.id); if (a) a.state = ox.decision === 'allow' ? 'allow' : 'deny'; }
+          // The server redrew an interactive answer that did not load.
+          if (ox?.type === 'replace' && typeof ox.content === 'string') reply.content = ox.content;
           const delta = ev.choices?.[0]?.delta?.content;
           if (delta) reply.content += delta;
           if (ev.usage) { reply.tokens = (ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0); $('usage').textContent = `${reply.tokens.toLocaleString()} tokens`; }
@@ -1534,6 +1711,7 @@
       ok = false;
     } finally {
       reply.pending = false; c.updated = Date.now();
+      for (const a of reply.asks || []) if (!a.state) a.state = 'deny';
       reply.ms = Math.round(performance.now() - t0);
       if (own) { c.running = false; busy = null; setBusy(false); resize(); }
       paint(body, reply); saveConvos(); renderLists();
@@ -1544,9 +1722,41 @@
           .catch(() => {});
       }
       if (prefs.speakReplies && reply.content && !talk) speakText(reply.content);
+      notifyRun(c, reply, ok);
     }
     return ok;
   }
+  // Settings › Notifications: tell you when a run ends while you are looking elsewhere.
+  function ding() {
+    try { const a = new (window.AudioContext || window.webkitAudioContext)(); const o = a.createOscillator(), g = a.createGain(); o.frequency.value = 880; o.frequency.exponentialRampToValueAtTime(1320, a.currentTime + 0.12); g.gain.setValueAtTime(0.12, a.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + 0.35); o.connect(g).connect(a.destination); o.start(); o.stop(a.currentTime + 0.36); } catch {}
+  }
+  function notifyRun(c, reply, ok) {
+    const failed = !ok || !!reply.error;
+    if (failed ? !prefs.notifyFail : !prefs.notifyDone) return;
+    if (document.visibilityState === 'visible' && document.hasFocus()) return;
+    if (prefs.notifySound) ding();
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    try {
+      const n = new Notification(failed ? `${botName} stopped` : `${botName} finished`, { body: `${c.title || 'Session'}: ${(reply.error || reply.content || '').replace(/\s+/g, ' ').slice(0, 140)}`, tag: `ox-${c.id}`, silent: true });
+      n.onclick = () => { window.focus(); n.close(); };
+    } catch {}
+  }
+  // What's new: after ox updates, the changes since the version you last saw (Settings › General).
+  async function showWhatsNew() {
+    if (prefs.whatsNew === false) return;
+    let w;
+    try { w = (await getJson(`/ox/workspace?since=${encodeURIComponent(store.get('ox.seenHead', ''))}`)).whatsNew; } catch { return; }
+    if (!w?.head) return;
+    const first = !store.get('ox.seenHead', '');
+    store.set('ox.seenHead', w.head);
+    if (first || !w.changes.length) return;
+    const d = document.createElement('div');
+    d.className = 'ask-ovl';
+    d.innerHTML = `<div class="ask-box" role="dialog" aria-modal="true" aria-label="What's new" style="max-width:560px"><div class="shead" style="margin:0 0 6px">What\u2019s new in ${esc(botName)}</div><div class="small muted" style="margin-bottom:10px">${w.changes.length} change${w.changes.length === 1 ? '' : 's'} since you last opened it</div><div style="max-height:50vh;overflow:auto;display:flex;flex-direction:column;gap:8px">${w.changes.map((x) => `<div><span class="dim small mono">${esc(x.date)}</span> ${esc(x.subject)}</div>`).join('')}</div><div class="ask-row"><button class="btn" data-a="off">Don\u2019t show these</button><button class="btn primary" data-a="ok">Got it</button></div></div>`;
+    d.onclick = (e) => { const a = e.target.closest('[data-a]')?.dataset.a; if (!a && e.target !== d) return; if (a === 'off') { prefs.whatsNew = false; savePrefs(); } d.remove(); };
+    document.body.append(d);
+  }
+  setTimeout(showWhatsNew, 1500);
   function setBusy(on) {
     const b = $('send');
     if (on) { b.hidden = false; $('speak').hidden = true; }
@@ -1563,8 +1773,68 @@
     if (!busy) $('send').disabled = !t.value.trim() && !attachments.length;
   }
   $('input').addEventListener('input', resize);
+  // "/" opens ox's commands (src/slash-catalog.js): type to filter, ↑↓ to pick, Tab or Enter to take one.
+  let slashCmds = null, slashPick = 0, slashShown = [];
+  async function slashList() {
+    if (!slashCmds) { try { slashCmds = (await getJson('/ox/commands')).commands ?? []; } catch { slashCmds = []; } }
+    return slashCmds;
+  }
+  async function slashUpdate() {
+    const v = $('input').value, menu = $('slash-menu');
+    const m = /^\/([\w-]*)$/.exec(v);
+    if (!m) { menu.classList.remove('on'); slashShown = []; return; }
+    const q = m[1].toLowerCase(), all = await slashList();
+    slashShown = [...all.filter((c) => c.name.startsWith(q)), ...all.filter((c) => !c.name.startsWith(q) && (c.name.includes(q) || (q.length >= 3 && new RegExp(`\\b${q}`).test(c.what.toLowerCase()))))];
+    if (!slashShown.length) { menu.classList.remove('on'); return; }
+    slashPick = Math.min(slashPick, slashShown.length - 1);
+    let grp = '';
+    menu.innerHTML = slashShown.map((c, i) => `${!q && c.group !== grp ? `<div class="grp">${esc(grp = c.group)}</div>` : ''}<button type="button" role="option" data-i="${i}" class="${i === slashPick ? 'on' : ''}" aria-selected="${i === slashPick}"><span class="n">/${esc(c.name)}</span><span class="w">${esc(c.what)}</span>${c.app ? '' : '<span class="s">in a session</span>'}</button>`).join('');
+    menu.classList.add('on');
+    menu.querySelector('button.on')?.scrollIntoView({ block: 'nearest' });
+    menu.querySelectorAll('button').forEach((b) => { b.onmousedown = (e) => { e.preventDefault(); slashTake(+b.dataset.i); }; });
+  }
+  function slashTake(i) {
+    const c = slashShown[i];
+    if (!c) return;
+    $('input').value = `/${c.name} `;
+    $('slash-menu').classList.remove('on');
+    $('input').focus(); resize();
+    const hint = c.usage.replace(/^\/\S+\s*/, '');
+    if (hint) $('input').placeholder = hint;
+  }
+  $('input').addEventListener('input', () => { slashPick = 0; slashUpdate(); if (!$('input').value) $('input').placeholder = 'Describe what you need'; });
+  $('input').addEventListener('blur', () => setTimeout(() => $('slash-menu').classList.remove('on'), 120));
+  // A typed ox command: the quick ones run here and show their output; the rest go to ox as a request.
+  async function runSlash(text) {
+    const cmds = await slashList();
+    const m = /^\/([\w-]+)/.exec(text);
+    const cmd = m && cmds.find((c) => c.name === m[1].toLowerCase());
+    if (!cmd) return false;
+    if (!cmd.app) { $('input').value = `Use the ox command for this: ox ${text.slice(1)}`; return false; }
+    if (!convo()) newConvo();
+    const c = convo();
+    if (!c.messages.length) c.title = text.slice(0, 60);
+    c.messages.push({ role: 'user', content: text });
+    const reply = { role: 'assistant', content: `Running \`ox ${cmd.name}\`…`, tools: [] };
+    c.messages.push(reply);
+    $('input').value = ''; $('input').placeholder = 'Describe what you need'; resize();
+    saveConvos(); renderChat(); renderLists();
+    try {
+      const r = await api('/ox/commands/run', { method: 'POST', body: JSON.stringify({ line: text, cwd: c.cwd || undefined }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) reply.content = plainDash(j?.error?.message || `HTTP ${r.status}`);
+      else reply.content = `\`ox ${cmd.name}\`${j.code ? ` stopped (exit ${j.code})` : ''}\n\n\`\`\`\n${(j.out || '(nothing printed)').slice(0, 20000)}\n\`\`\``;
+    } catch (e) { reply.content = String(e?.message ?? e); }
+    c.updated = Date.now(); saveConvos(); renderChat(); renderLists();
+    return true;
+  }
   $('input').addEventListener('keydown', (e) => {
     if (e.isComposing) return;
+    if ($('slash-menu').classList.contains('on')) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); slashPick = (slashPick + (e.key === 'ArrowDown' ? 1 : -1) + slashShown.length) % slashShown.length; slashUpdate(); return; }
+      if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); slashTake(slashPick); return; }
+      if (e.key === 'Escape') { e.preventDefault(); $('slash-menu').classList.remove('on'); return; }
+    }
     const mod = e.metaKey || e.ctrlKey;
     if (e.key === 'Enter' && ((prefs.sendKey === 'enter' && !e.shiftKey && !mod) || (prefs.sendKey === 'mod' && mod))) { e.preventDefault(); send(); return; }
     if (e.key === 'ArrowUp' && !$('input').value) {
@@ -1587,6 +1857,7 @@
         if (!list.length) continue;
         const g = document.createElement('optgroup'); g.label = label;
         for (const m of list) {
+          if ((prefs.hiddenModels || []).includes(m.id) && store.get('ox.model', null) !== m.id) continue;
           const o = document.createElement('option'); o.value = m.id;
           o.textContent = m.ox?.agent ? `${m.id.slice(6)} · ${m.ox.mode}` : m.ox?.plan ? `${m.id} · ${m.ox.desc.split(' via ')[0]}` : m.id;
           if (off) o.disabled = true;
@@ -1648,12 +1919,36 @@
     $('attached').querySelectorAll('button[data-p]').forEach((b) => (b.onclick = () => { photos.splice(Number(b.dataset.p), 1); showAttachments(); }));
     if (!busy) $('send').disabled = !$('input').value.trim() && !attachments.length && !(typeof photos !== 'undefined' && photos.length);
   }
+  // Any file: a small text file goes straight into the message; anything else
+  // (a video, a PDF, audio, a spreadsheet, a zip) is uploaded to ox, which
+  // keeps it on this machine and describes it: a video's frames come back as
+  // photos the model can look at, a PDF's text as text, every file's path.
+  async function uploadFile(f) {
+    const res = await fetch('/ox/upload', { method: 'POST', headers: { 'x-ox-filename': encodeURIComponent(f.name), 'content-type': f.type || 'application/octet-stream', ...(key ? { Authorization: `Bearer ${key}` } : {}) }, body: f });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j?.error?.message || `HTTP ${res.status}`);
+    return j;
+  }
   async function addFiles(list) {
     for (const f of list) {
-      if (f.size > 200_000) { toast(`${f.name} is over 200 KB. Point ox at it by path instead`); continue; }
-      const text = await f.text();
-      if (/\u0000/.test(text)) { toast(`${f.name} is not a text file`); continue; }
-      attachments.push({ name: f.name, text });
+      if (/^image\//.test(f.type)) { await addPhotos([f]); continue; }
+      if (f.size <= 200_000) {
+        const text = await f.text();
+        if (!/\u0000/.test(text)) { attachments.push({ name: f.name, text }); continue; }
+      }
+      const chip = { name: `${f.name} (uploading…)`, text: '' };
+      attachments.push(chip); showAttachments();
+      try {
+        const u = await uploadFile(f);
+        chip.name = f.name;
+        chip.text = u.text ? `${u.note}\n${u.text}` : u.note;
+        for (const fr of u.frames ?? []) photos.push({ name: `${f.name} @ ${fr.t} s`, mediaType: 'image/jpeg', data: fr.data, thumb: fr.thumb || `data:image/jpeg;base64,${fr.data}` });
+        toast(u.kind === 'video' ? `${f.name}: ${u.frames?.length ?? 0} frames${u.duration ? ` from ${Math.round(u.duration)} s` : ''}, ready` : `${f.name} ready`);
+      } catch (e) {
+        attachments.splice(attachments.indexOf(chip), 1);
+        toast(`${f.name}: ${e.message}`);
+      }
+      showAttachments();
     }
     showAttachments();
   }
@@ -1865,7 +2160,7 @@
     showAttachments();
   }
   function takePhotos() { const p = photos; photos = []; showAttachments(); return p; }
-  $('photo').onchange = async () => { await addPhotos($('photo').files); $('photo').value = ''; };
+  $('photo').onchange = async () => { const fl = [...$('photo').files]; await addPhotos(fl.filter((f) => /^image\//.test(f.type))); const rest = fl.filter((f) => !/^image\//.test(f.type)); if (rest.length) await addFiles(rest); $('photo').value = ''; };
   $('camera').onchange = async () => { await addPhotos($('camera').files); $('camera').value = ''; };
 
   // The wand: a rough message becomes a clear prompt, in the box, before sending.
@@ -1924,6 +2219,8 @@
   }
   const DOING = { thinking: 'thinking', writing: 'writing the answer', done: 'done', failed: 'stopped' };
   function doingText(r) {
+    // Claude Code / Codex on this Mac (src/agents-live.js): their own words for what they do.
+    if (r.ext) return r.state === 'idle' ? (r.idleSec < 60 ? 'idle, your turn' : `idle for ${Math.floor(r.idleSec / 60)} m`) : r.detail || 'thinking';
     if (r.state === 'tool') return `${r.tool}${r.detail ? `  ${r.detail}` : ''}`;
     if (r.state === 'failed' && r.detail) return `stopped: ${r.detail}`;
     return DOING[r.state] ?? r.state;
@@ -1940,17 +2237,102 @@
         <div class="nm"><span class="dot" style="background:${workerColor(r.who)}"></span><span>${esc(r.who)}</span></div>
         <div class="doing" title="${esc(doingText(r))}">${esc(doingText(r))}</div>
         <div class="task" title="${esc(r.title)}">${esc(r.title)}</div>
-        <div class="meta">${r.parent ? `helping ${esc(lead?.who ?? 'a run')} · ` : ''}${ago2(r.seconds)}${r.steps ? ` · ${r.steps} step${r.steps === 1 ? '' : 's'}` : ''}</div></div>`;
+        <div class="meta">${r.ext ? `${esc(r.model ?? '')} · on this Mac` : `${r.parent ? `helping ${esc(lead?.who ?? 'a run')} · ` : ''}${ago2(r.seconds)}${r.steps ? ` · ${r.steps} step${r.steps === 1 ? '' : 's'}` : ''}`}</div></div>`;
     }).join('') : '<div class="empty">Nobody is working right now. Start a chat, a bot or a group chat and it takes a desk here.</div>';
-    const busyNames = new Set(runs.filter((r) => !r.ended).map((r) => r.who));
+    const busyNames = new Set(runs.filter((r) => !r.ended && !r.ext).map((r) => r.who));
     const free = [...new Set([...Object.keys(botShapes), ...Object.keys(botColors)])].filter((n) => !busyNames.has(n));
     $('lounge').innerHTML = free.map((n) => `<div class="desk" data-free="${esc(n)}"><canvas width="24" height="24"></canvas><div class="nm"><span class="dot" style="background:${workerColor(n)}"></span><span>${esc(n)}</span></div><div class="meta">free</div></div>`).join('');
     $('lounge-h').hidden = $('lounge').hidden = !free.length;
-    const working = runs.filter((r) => !r.ended).length;
+    const working = runs.filter((r) => !r.ended && r.state !== 'idle').length;
     $('office-sum').textContent = working ? `${working} working` : 'quiet';
     paintOffice();
   }
+  // The office as a room (not a table): desks in rows under the windows, a whiteboard and plants,
+  // a coffee corner where free bots sit; drawn in pixels, names and what each is doing as real text on top.
+  const FLOOR = { w: 320, h: 150, desks: [[40, 70], [98, 70], [156, 70], [214, 70], [40, 118], [98, 118], [156, 118], [214, 118]], sofa: [[268, 104], [290, 104], [268, 132], [290, 132]] };
+  function skyAt(hour) { return hour < 6 || hour >= 21 ? ['#0b1430', '#16224a'] : hour < 8 ? ['#f4a87a', '#f7d6a8'] : hour < 18 ? ['#7fc4ff', '#bfe3ff'] : ['#f08a5d', '#6b4a8a']; }
+  function drawFloor() {
+    const cv = $('floor-cv'); if (!cv) return;
+    const g = cv.getContext('2d'), px = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
+    g.imageSmoothingEnabled = false;
+    // floor: warm boards
+    px(0, 40, FLOOR.w, FLOOR.h - 40, '#6b5240');
+    for (let y = 40, row = 0; y < FLOOR.h; y += 7, row++) {
+      px(0, y, FLOOR.w, 1, '#5d4636');                                   // seam between boards
+      for (let x = (row % 3) * 26; x < FLOOR.w; x += 78) px(x, y + 1, 1, 6, '#5d4636');   // board ends, staggered
+      if (row % 2) px(0, y + 3, FLOOR.w, 1, '#705644');                 // a little grain
+    }
+    // back wall, skirting, windows with the sky outside
+    px(0, 0, FLOOR.w, 40, '#3b3f47'); px(0, 38, FLOOR.w, 3, '#2a2d33');
+    const [s1, s2] = skyAt(new Date().getHours());
+    for (const wx of [18, 76, 134, 192]) { px(wx, 7, 40, 24, '#2a2d33'); px(wx + 2, 9, 36, 20, s1); px(wx + 2, 19, 36, 10, s2); px(wx + 19, 9, 2, 20, '#2a2d33'); px(wx + 2, 18, 36, 2, '#2a2d33'); }
+    // whiteboard with a little chart, a clock
+    px(246, 8, 40, 22, '#e8e8ea'); px(246, 8, 40, 2, '#9aa0a8'); px(250, 24, 4, 3, '#5AA9F0'); px(256, 20, 4, 7, '#16C47F'); px(262, 15, 4, 12, '#F5A524'); px(268, 18, 4, 9, '#A78BFA');
+    px(296, 10, 12, 12, '#e8e8ea'); px(301, 12, 2, 5, '#111'); px(302, 16, 4, 1, '#111');
+    // the door, where people come in
+    px(0, 84, 4, 30, '#3b3f47'); px(1, 86, 3, 26, '#8a5a3c'); px(2, 99, 1, 2, '#e8c06a');
+    // plants by the wall
+    for (const [x, y] of [[4, 46], [234, 46]]) { px(x + 2, y + 10, 8, 8, '#8a5a3c'); px(x, y, 12, 10, '#2f8f4e'); px(x + 3, y - 4, 6, 6, '#3fae63'); }
+    // coffee corner: rug, sofa, coffee machine
+    px(254, 88, 62, 58, '#4a3b5c'); px(256, 90, 58, 54, '#54456a');
+    for (const sy of [92, 120]) { px(260, sy, 52, 12, '#3f6f8f'); px(260, sy, 52, 4, '#4f87ab'); px(258, sy + 2, 4, 10, '#355f7a'); px(310, sy + 2, 4, 10, '#355f7a'); px(285, sy + 4, 1, 8, '#355f7a'); }
+    px(300, 44, 14, 20, '#2c2c2e'); px(303, 48, 8, 6, '#c8c8cc'); px(305, 58, 4, 4, '#e8e8ea');
+    // desks and who sits at them
+    const tmp = drawFloor.tmp ??= Object.assign(document.createElement('canvas'), { width: 24, height: 24 });
+    // Leads with their helpers right after them (a helper sits at the next desk), as Pixel Agents links sub-agents.
+    const all = officeRuns.filter((r) => !r.ended || r.state === 'done' || r.state === 'failed');
+    const runs = [];
+    for (const r of all.filter((x) => !x.parent)) { runs.push(r); runs.push(...all.filter((x) => x.parent === r.id)); }
+    runs.splice(FLOOR.desks.length);
+    // Everyone walks: in from the door to a desk, or to the sofa when free (one step per tick, not a jump).
+    const walk = drawFloor.walk ??= {};
+    const DOOR = [8, 100];
+    const stepTo = (key, tx, ty) => {
+      const p = walk[key] ??= { x: DOOR[0], y: DOOR[1] };
+      const dx = tx - p.x, dy = ty - p.y, d = Math.hypot(dx, dy);
+      if (d <= 9) { p.x = tx; p.y = ty; return true; }
+      p.x += (dx / d) * 9; p.y += (dy / d) * 9; p.right = dx > 0;
+      return false;
+    };
+    const walker = (x, y, who, right) => {
+      const h = hash(who), skin = SKIN[h % SKIN.length], hair = HAIR[(h >> 3) % HAIR.length], shirt = workerColor(who), st = officeFrame % 2;
+      px(x - 4, y - 22, 8, 7, skin); px(x - 4, y - 23, 8, 2, hair); px(x + (right ? 1 : -3), y - 19, 1, 1, '#111');
+      px(x - 5, y - 15, 10, 9, shirt); px(x - 4, y - 6, 3, 6 - st * 2, '#2f3542'); px(x + 1, y - 6, 3, 4 + st * 2, '#2f3542');
+    };
+    const seen = new Set();
+    const pos = [];
+    FLOOR.desks.forEach(([x, y], i) => {
+      const r = runs[i];
+      const empty = () => { px(x - 15, y - 5, 30, 3, '#8A8F98'); px(x - 13, y - 2, 2, 7, '#6B6F76'); px(x + 11, y - 2, 2, 7, '#6B6F76'); px(x + 2, y - 15, 9, 9, '#2C2C2E'); px(x + 3, y - 14, 7, 7, '#48484A'); };
+      if (!r) { empty(); return; }
+      seen.add(r.id);
+      if (stepTo(r.id, x, y)) { drawWorker(tmp, r.who, r.state, officeFrame); g.drawImage(tmp, x - 18, y - 30, 36, 36); pos.push([r, x, y - 30]); }
+      else { empty(); const p = walk[r.id]; walker(p.x, p.y, r.who, p.right); pos.push([r, p.x, p.y - 24]); }
+    });
+    // free bots walk to the sofa
+    const busy = new Set(runs.filter((r) => !r.ended && !r.ext).map((r) => r.who));
+    const free = [...new Set([...Object.keys(botShapes), ...Object.keys(botColors)])].filter((n) => !busy.has(n)).slice(0, FLOOR.sofa.length);
+    const freePos = free.map((n, i) => {
+      const [x, y] = FLOOR.sofa[i], key = `free:${n}`;
+      seen.add(key);
+      if (stepTo(key, x, y)) { drawWorker(tmp, n, 'idle', officeFrame, false); g.drawImage(tmp, x - 12, y - 22, 24, 24); return [n, x, y - 22]; }
+      const p = walk[key]; walker(p.x, p.y, n, p.right); return [n, p.x, p.y - 24];
+    });
+    for (const k of Object.keys(walk)) if (!seen.has(k)) delete walk[k];
+    // tags: names and what each is doing, as text over the picture; amber when a session waits on you
+    const tags = pos.map(([r, x, y]) => {
+      const yours = r.ext && r.state === 'idle' && r.idleSec < 60;
+      return `<div class="tag ${r.state === 'idle' && !yours ? 'idle' : ''} ${yours ? 'yours' : ''}" style="left:${(x / FLOOR.w) * 100}%;top:${(y / FLOOR.h) * 100}%" title="${esc(r.who)}: ${esc(doingText(r))}${r.title ? ` · ${esc(r.title)}` : ''}"><span class="say">${esc(yours ? 'your turn' : doingText(r))}</span><span class="who">${esc(r.who)}${r.project ? ` · ${esc(r.project)}` : ''}${r.parent ? ' · helper' : ''}</span></div>`;
+    });
+    freePos.forEach(([n, x, y]) => tags.push(`<div class="tag idle" style="left:${(x / FLOOR.w) * 100}%;top:${(y / FLOOR.h) * 100}%"><span class="who">${esc(n)}</span></div>`));
+    tags.push(`<div class="zone" style="left:1%;top:${(78 / FLOOR.h) * 100}%">door</div>`);
+    tags.push(`<div class="zone" style="right:2%;top:${(84 / FLOOR.h) * 100}%">coffee corner</div>`);
+    if (!runs.length) tags.push(`<div class="zone" style="left:4%;top:${(88 / FLOOR.h) * 100}%">nobody at their desk: start a chat or a bot</div>`);
+    const html = tags.join('');
+    if ($('floor-tags').dataset.html !== html) { $('floor-tags').innerHTML = html; $('floor-tags').dataset.html = html; }
+  }
   function paintOffice() {
+    drawFloor();
     $('room').querySelectorAll('.desk').forEach((d) => { const r = officeRuns.find((x) => x.id === d.dataset.id); if (r) drawWorker(d.querySelector('canvas'), r.who, r.state, officeFrame); });
     $('lounge').querySelectorAll('.desk').forEach((d) => drawWorker(d.querySelector('canvas'), d.dataset.free, 'idle', officeFrame, false));
   }
@@ -1960,7 +2342,7 @@
       if (!Object.keys(botShapes).length) { try { const B = await getJson('/ox/bots'); for (const b of B.mine ?? []) { botShapes[b.name] = b.shape ?? null; botColors[b.name] = b.color ?? null; } } catch {} }
       const live = await getJson('/ox/live');
       officeRuns = live.runs ?? [];
-      const n = officeRuns.filter((r) => !r.ended).length;
+      const n = officeRuns.filter((r) => !r.ended && r.state !== 'idle').length;
       $('office-count').hidden = !n; $('office-count').textContent = n;
       if (officeShown()) renderOffice();
     } catch {}
@@ -2210,9 +2592,118 @@ files: [src/billing/**]
     $('map-refresh').onclick = (e) => { e.preventDefault(); loadMap(); };
   }
 
+  // ---------- studio: open models (src/studio-catalog.js) through the same engine agents use
+  const OS_MODES = [
+    { k: 'image', label: 'Image', kind: 'image', tool: 'generate_image' },
+    { k: 'video', label: 'Video', kind: 'video', tool: 'generate_video' },
+    { k: 'edit', label: 'Edit an image', kind: 'edit', tool: 'edit_image', image: true },
+    { k: 'upscale', label: 'Upscale', kind: 'upscale', tool: 'upscale', image: true, noPrompt: true },
+    { k: 'cutout', label: 'Cut out', kind: 'cutout', tool: 'remove_background', image: true, noPrompt: true },
+    { k: 'audio', label: 'Sound', kind: 'audio', tool: 'generate_audio' },
+    { k: 'animate', label: 'Animate a script', kind: null, tool: 'animate_script', hint: 'Paste a script, or the path to a video or transcript on this Mac. Each idea becomes its own animated scene (headlines, counting numbers, lists, vs, quotes, steps, captions) with sound effects. Runs here, no key.' },
+    { k: 'restyle', label: 'Restyle a video', kind: 'restyle', tool: 'restyle_video', hint: 'Keeps the clip\u2019s motion. Pick Move (your picture does what the video shows), Replace (the person becomes your picture) or VACE (a new look from words).' },
+  ];
+  let osCat = null, osMode = store.get('ox.os.mode', 'image'), osPick = {}, osAspect = '1:1', osN = 1, osCam = '', osAnimAspect = '9:16', osAccent = '#ffb020', osUpMode = 'detail', osFast = false;
+  async function loadOpenStudio() {
+    try { osCat = await getJson('/ox/studio/catalog'); } catch (e) { $('os-models').innerHTML = `<div class="alert">${esc(e.message)}</div>`; return; }
+    renderMac();
+    renderOpenStudio();
+    // Recipes in plain words: the tool names agents use read as actions here.
+    const plain = (t) => t.replace(/\bgenerate_image\b/g, 'make an image').replace(/\bgenerate_video\b/g, 'make a clip').replace(/\bedit_image\b/g, 'edit the image').replace(/\bremove_background\b/g, 'cut out').replace(/\bupscale\b/g, 'upscale').replace(/\bvideo_edit\b/g, 'video tools').replace(/\bexplainer_video\b/g, 'the explainer maker').replace(/\banimate_script\b/g, 'Animate a script').replace(/\brestyle_video\b/g, 'Restyle a video').replace(/\bjobs_wait\b/g, 'wait for it').replace(/\bop (\w+)/g, '$1').replace(/\b(qwen-image-edit|qwen-image|flux-kontext-dev|wan-2\.2)\b/g, (m) => osCat.models.find((x) => x.id === m)?.name ?? m);
+    $('os-recipes').innerHTML = Object.entries(osCat.workflows).map(([k, w]) => `<button class="os-recipe" data-rec="${k}" aria-expanded="false"><b>${esc(w.title)}</b><div class="s">${esc(plain(w.steps[0]).slice(0, 90))}…</div><ol class="s" hidden>${w.steps.map((x) => `<li>${esc(plain(x))}</li>`).join('')}</ol></button>`).join('');
+    $('os-recipes').querySelectorAll('[data-rec]').forEach((b) => (b.onclick = () => { const ol = b.querySelector('ol'), open = ol.hidden; ol.hidden = !open; b.querySelector('div').hidden = open; b.setAttribute('aria-expanded', String(open)); }));
+  }
+  // This Mac's own chip: what it can make with no key, and the one-time setup.
+  let macPoll = null;
+  async function renderMac() {
+    let st;
+    try { st = await getJson('/ox/studio/local'); } catch { $('os-mac').hidden = true; return; }
+    const names = { image: 'Images', edit: 'Edits', video: 'Clips', upscale: 'Upscale', cutout: 'Cut out' };
+    const busy = st.setup?.running;
+    const ready = st.can.image;
+    $('os-mac').hidden = !st.supported && !ready;
+    $('os-mac').innerHTML = `${icon('cpu')}<span><b>This Mac</b> <span class="muted">\u00b7 ${esc(st.chip)} \u00b7 ${st.ramGB} GB \u00b7 ${st.freeGB} GB free</span></span><span class="can">${Object.entries(st.can).map(([k, v]) => `<span class="${v ? 'on' : ''}">${v ? '\u2713 ' : ''}${names[k] ?? k}</span>`).join('')}</span><span style="flex:1"></span>${busy ? `<span class="small muted">Setting up: ${esc(st.setup.step || '')}</span>` : ready ? '<span class="small muted">Your own chip, no key, nothing leaves this Mac</span>' : `<button class="btn primary" id="os-mac-setup">Set up this Mac (about 2 GB, once)</button>${st.setup?.error ? `<span class="small err">${esc(st.setup.error)}</span>` : ''}`}`;
+    paintIcons($('os-mac'));
+    if ($('os-mac-setup')) $('os-mac-setup').onclick = async () => { try { await postJson('/ox/studio/local', { action: 'install' }); renderMac(); } catch (e) { toast(e.message); } };
+    clearTimeout(macPoll);
+    if (busy) macPoll = setTimeout(async () => { await renderMac(); if (!(await getJson('/ox/studio/local')).setup?.running) { osCat = await getJson('/ox/studio/catalog'); renderOpenStudio(); } }, 1500);
+  }
+  function renderOpenStudio() {
+    const mode = OS_MODES.find((m) => m.k === osMode) ?? OS_MODES[0];
+    $('os-modes').innerHTML = OS_MODES.map((m) => `<button role="tab" aria-selected="${m.k === mode.k}" class="${m.k === mode.k ? 'on' : ''}" data-mode="${m.k}">${m.label}</button>`).join('');
+    $('os-modes').querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => { osMode = b.dataset.mode; store.set('ox.os.mode', osMode); renderOpenStudio(); }));
+    if (mode.k === 'restyle' && !osPick.restyle) osPick.restyle = osCat.defaults.restyle;
+    $('os-prompt').hidden = !!mode.noPrompt || (mode.k === 'restyle' && osPick.restyle !== 'wan-vace');
+    $('os-prompt').placeholder = mode.k === 'animate' ? 'Your script (or /path/to/video.mp4). \u2318/Ctrl+Enter to animate' : mode.k === 'restyle' ? 'The new look: \u201cclaymation, warm studio light\u201d' : 'Describe it: subject, setting, light, style, mood. \u2318/Ctrl+Enter to make it';
+    $('os-image').hidden = !mode.image && mode.k !== 'video' && !(mode.k === 'restyle' && osPick.restyle !== 'wan-vace');
+    $('os-image').placeholder = mode.k === 'video' ? 'Optional first frame: a path on this Mac or a link' : mode.k === 'restyle' ? 'The person or character: a link to the picture' : 'The image: a path on this Mac or a link';
+    $('os-video').hidden = mode.k !== 'restyle';
+    $('os-hint').hidden = !mode.hint; $('os-hint').textContent = mode.hint ?? '';
+    $('os-go').textContent = mode.k === 'animate' ? 'Animate it' : 'Make it';
+    const chips = [];
+    if (mode.k === 'upscale' && osPick.upscale === 'mac-upscale') chips.push(`<span class="lbl">How</span>${[['detail', 'Detail (a few min)'], ['quick', 'Quick']].map(([v, l]) => `<button class="${v === osUpMode ? 'on' : ''}" data-upmode="${v}">${l}</button>`).join('')}`);
+    if (mode.k === 'image' && osPick.image === 'mac-image') chips.push(`<span class="lbl" style="margin-left:10px">Quality</span>${[[false, 'Best'], [true, 'Fast']].map(([v, l]) => `<button class="${v === osFast ? 'on' : ''}" data-fast="${v}">${l}</button>`).join('')}`);
+    if (mode.k === 'animate') chips.push(`<span class="lbl">Shape</span>${['9:16', '16:9', '1:1', '4:5'].map((a) => `<button class="${a === osAnimAspect ? 'on' : ''}" data-aaspect="${a}">${a}</button>`).join('')}<span class="lbl" style="margin-left:10px">Accent</span><input type="color" id="os-accent" value="${osAccent}" aria-label="Accent colour" style="width:34px;height:26px;border:0;background:none;padding:0">`);
+    if (mode.k === 'image' || mode.k === 'video') chips.push(`<span class="lbl">Shape</span>${['1:1', '16:9', '9:16', '4:3', '3:4'].map((a) => `<button class="${a === osAspect ? 'on' : ''}" data-aspect="${a}">${a}</button>`).join('')}`);
+    if (mode.k === 'image') chips.push(`<span class="lbl" style="margin-left:10px">How many</span>${[1, 2, 3, 4].map((n) => `<button class="${n === osN ? 'on' : ''}" data-n="${n}">${n}</button>`).join('')}`);
+    if (mode.k === 'video') chips.push(`<span class="lbl" style="margin-left:10px">Camera</span>${['', ...Object.keys(osCat.camera)].map((c) => `<button class="${c === osCam ? 'on' : ''}" data-cam="${c}">${c || 'none'}</button>`).join('')}`);
+    $('os-chips').innerHTML = chips.join('');
+    $('os-chips').querySelectorAll('[data-aspect]').forEach((b) => (b.onclick = () => { osAspect = b.dataset.aspect; renderOpenStudio(); }));
+    $('os-chips').querySelectorAll('[data-n]').forEach((b) => (b.onclick = () => { osN = Number(b.dataset.n); renderOpenStudio(); }));
+    $('os-chips').querySelectorAll('[data-cam]').forEach((b) => (b.onclick = () => { osCam = b.dataset.cam; renderOpenStudio(); }));
+    $('os-chips').querySelectorAll('[data-upmode]').forEach((b) => (b.onclick = () => { osUpMode = b.dataset.upmode; renderOpenStudio(); }));
+    $('os-chips').querySelectorAll('[data-fast]').forEach((b) => (b.onclick = () => { osFast = b.dataset.fast === 'true'; renderOpenStudio(); }));
+    $('os-chips').querySelectorAll('[data-aaspect]').forEach((b) => (b.onclick = () => { osAnimAspect = b.dataset.aaspect; renderOpenStudio(); }));
+    if ($('os-accent')) $('os-accent').oninput = (e) => { osAccent = e.target.value; };
+    const models = mode.kind ? osCat.models.filter((m) => m.kind === mode.kind) : [];
+    if (!osPick[mode.k] || !models.some((m) => m.id === osPick[mode.k])) osPick[mode.k] = osCat.defaults[mode.kind] ?? models[0]?.id;
+    $('os-models').innerHTML = models.map((m) => `<button class="os-model ${m.id === osPick[mode.k] ? 'on' : ''}" data-model="${m.id}"><b>${esc(m.name)}</b><span class="g">${esc(m.good)}</span><span class="l">${esc(m.license)}</span><span class="ready ${m.ready ? '' : 'no'}">${m.ready ? (m.ready === 'device' ? 'runs on this Mac \u00b7 no key' : `runs on ${m.ready === 'hf' ? 'Hugging Face' : m.ready}`) : m.device ? 'set up this Mac above (once)' : 'needs a fal key or Hugging Face token (Settings \u203a API keys)'}</span></button>`).join('');
+    $('os-models').querySelectorAll('[data-model]').forEach((b) => (b.onclick = () => { osPick[mode.k] = b.dataset.model; renderOpenStudio(); }));
+  }
+  async function openStudioGo() {
+    const mode = OS_MODES.find((m) => m.k === osMode);
+    const prompt = $('os-prompt').value.trim(), image = $('os-image').value.trim(), video = $('os-video').value.trim();
+    if (mode.k === 'animate') {
+      if (!prompt) { toast('Paste the script, or a path to a video or transcript'); return; }
+      $('os-go').disabled = true; $('os-state').textContent = 'Planning the scenes and drawing every frame: about a minute\u2026';
+      try { const r = await postJson('/ox/studio/open', { tool: 'animate_script', args: { source: prompt, aspect: osAnimAspect, accent: osAccent } }); toast(r.text); loadStudio(); } catch (e) { toast(e.message); }
+      $('os-go').disabled = false; $('os-state').textContent = '';
+      return;
+    }
+    if (mode.k === 'restyle') {
+      const m = osPick.restyle, kind = { 'wan-animate-move': 'move', 'wan-animate-replace': 'swap', 'wan-vace': 'restyle' }[m] ?? 'move';
+      if (!/^https?:/.test(video)) { toast('Add the clip as a link'); return; }
+      if (kind !== 'restyle' && !image) { toast('Add the person or character picture'); return; }
+      if (kind === 'restyle' && !prompt) { toast('Describe the new look'); return; }
+      $('os-go').disabled = true; $('os-state').textContent = 'Restyling the clip: a few minutes\u2026';
+      try { const r = await postJson('/ox/studio/open', { tool: 'restyle_video', args: { mode: kind, video, ...(image ? { image } : {}), ...(prompt ? { prompt } : {}) } }); toast(r.text); loadStudio(); } catch (e) { toast(e.message); }
+      $('os-go').disabled = false; $('os-state').textContent = '';
+      return;
+    }
+    if (!mode.noPrompt && !prompt) { toast('Describe what to make first'); return; }
+    if (mode.image && !image) { toast('Add the image: a path on this Mac or a link'); return; }
+    const args = { model: osPick[mode.k] };
+    if (!mode.noPrompt) args.prompt = prompt;
+    if (image) args.image = image;
+    if (mode.k === 'image' || mode.k === 'video') args.aspect = osAspect;
+    if (mode.k === 'image') args.n = osN;
+    if (mode.k === 'video' && osCam) args.camera = osCam;
+    if (mode.k === 'upscale' && args.model === 'mac-upscale') args.mode = osUpMode;
+    if (mode.k === 'image' && args.model === 'mac-image' && osFast) args.fast = true;
+    $('os-go').disabled = true; $('os-state').textContent = args.model?.startsWith('mac-') ? ({ video: 'Making the clip on this Mac: about 3 minutes\u2026', upscale: osUpMode === 'detail' ? 'Redrawing at 2x on this Mac: a few minutes\u2026' : 'Resizing\u2026', image: osFast ? 'Making it on this Mac: about 12 s\u2026' : 'Making it on this Mac: about 30 s\u2026' }[mode.k] ?? 'Making it on this Mac\u2026') : mode.k === 'video' ? 'Making the clip: a few minutes\u2026' : 'Making it\u2026';
+    try {
+      const r = await postJson('/ox/studio/open', { tool: mode.tool, args });
+      toast(r.text);
+      loadStudio();
+    } catch (e) { toast(e.message); }
+    $('os-go').disabled = false; $('os-state').textContent = '';
+  }
+  $('os-go').onclick = openStudioGo;
+  $('os-prompt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); openStudioGo(); } });
   // ---------- studio
   let stData = null, stTab = 'all', stBusy = 0;
   async function loadStudio() {
+    if (!osCat) loadOpenStudio();
     try { stData = await getJson('/ox/studio'); } catch (e) { $('st-gallery').innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; return; }
     const prov = $('st-provider');
     const keep = prov.value || store.get('ox.studio.provider', 'higgsfield');
@@ -2487,6 +2978,170 @@ files: [src/billing/**]
     ['Done', (t) => t.status === 'done' || t.status === 'cancelled'],
   ];
   let tasksTimer = null;
+  // ---------- Agents: a gallery of character cards (Little Agent Club)
+  let galTab = 'all';
+  async function loadGallery() {
+    const el = $('gallery');
+    const [org, live, tools] = await Promise.all([getJson('/ox/org').catch(() => ({ agents: [] })), getJson('/ox/agents').catch(() => ({ sessions: [] })), getJson('/ox/connected').catch(() => ({ tools: [] }))]);
+    const fav = new Set(store.get('ox.gal.fav', [])), use = new Set(store.get('ox.gal.use', []));
+    const hue = (s) => [...String(s)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 360, 7);
+    const cards = [
+      ...(org.agents || []).map((a) => ({ id: `org:${a.id}`, name: a.name, what: `${a.title}${a.role && a.role !== a.title ? ` · ${a.role}` : ''}`, price: a.budget != null ? `$${Number(a.spent || 0).toFixed(2)} of $${a.budget}/mo` : 'no budget set', runs: a.runtime, state: a.status, live: a.status === 'active', kind: 'Your company' })),
+      ...(live.sessions || []).map((x) => ({ id: `live:${x.id}`, name: x.project, what: x.doing || `${x.tool} session`, price: x.model || x.tool, runs: x.tool, state: x.state === 'idle' ? 'idle' : 'working', live: x.state !== 'idle', kind: 'Running now' })),
+      ...(tools.tools || []).map((t) => ({ id: `tool:${t.id}`, name: t.name, what: t.via ? `via ${t.via}` : 'agent tool', price: t.plan || (t.state === 'ready' ? 'ready' : t.state), runs: t.id, state: t.state, live: t.state === 'ready', kind: 'On this Mac' })),
+    ];
+    const shown = cards.filter((c) => galTab === 'all' || (galTab === 'fav' ? fav.has(c.id) : use.has(c.id)));
+    el.innerHTML = `<div class="shead">${icon('office')}Agents</div>
+      <p class="sdesc">Every agent you have, as a card: your company's agents, the sessions running now in any tool, and the agent tools on this Mac. Star the ones you like; mark the ones you use.</p>
+      <div class="box tk-new"><input class="field" id="gal-hire" placeholder="Hire in a sentence: someone who reviews my pull requests every morning, $15 a month" style="flex:1"><button class="btn primary" id="gal-hire-go">Draft</button></div>
+      <div id="gal-draft"></div>
+      <div class="gal-tabs">${[['all', `All ${cards.length}`], ['fav', `Favorites ${cards.filter((c) => fav.has(c.id)).length}`], ['use', `I use this ${cards.filter((c) => use.has(c.id)).length}`]].map(([k, l]) => `<button class="btn ${galTab === k ? 'primary' : 'ghost'} small" data-galtab="${k}">${l}</button>`).join('')}</div>
+      <div class="gal-grid">${shown.map((c) => `<div class="gal-card"><div class="gal-top"><div class="gal-face" style="background:hsl(${hue(c.name)} 55% 45%)">${esc(c.name.slice(0, 1).toUpperCase())}</div>
+        <div style="min-width:0"><b>${esc(c.name)}</b><div class="dim small">${esc(c.kind)}</div></div></div>
+        <div class="small">${esc(c.what)}</div>
+        <div class="dim small">${esc(c.price || '')}${c.runs ? ` · ${esc(c.runs)}` : ''} <span class="gal-state ${c.live ? 'live' : ''}">${esc(c.state || '')}</span></div>
+        <div class="gal-acts"><button class="btn ghost small ${fav.has(c.id) ? 'on' : ''}" data-galfav="${esc(c.id)}">★ Favorite</button><button class="btn ghost small ${use.has(c.id) ? 'on' : ''}" data-galuse="${esc(c.id)}">I use this</button></div></div>`).join('') || '<div class="dim small">Nothing here yet.</div>'}</div>`;
+    el.querySelectorAll('[data-galtab]').forEach((b) => (b.onclick = () => { galTab = b.dataset.galtab; loadGallery(); }));
+    const flip = (key, set, id) => { set.has(id) ? set.delete(id) : set.add(id); store.set(key, [...set]); loadGallery(); };
+    el.querySelectorAll('[data-galfav]').forEach((b) => (b.onclick = () => flip('ox.gal.fav', fav, b.dataset.galfav)));
+    el.querySelectorAll('[data-galuse]').forEach((b) => (b.onclick = () => flip('ox.gal.use', use, b.dataset.galuse)));
+    $('gal-hire-go').onclick = async () => {
+      const sentence = $('gal-hire').value.trim();
+      if (!sentence) return;
+      $('gal-draft').innerHTML = '<div class="dim small">Drafting…</div>';
+      try {
+        const { draft } = await postJson('/ox/org/hire', { sentence });
+        $('gal-draft').innerHTML = `<div class="box"><b>${esc(draft.name)}</b> · ${esc(draft.title)}<div class="dim small">${esc(draft.runtime || 'ox')}${draft.heartbeatMin ? ` · every ${draft.heartbeatMin} min` : ''}${draft.budgetUsd != null ? ` · $${draft.budgetUsd}/month` : ''} · may ${esc(draft.approval || 'edit')}</div><div class="small" style="white-space:pre-wrap;margin:6px 0">${esc(draft.instructions)}</div><button class="btn primary small" id="gal-hire-ok">Hire</button></div>`;
+        $('gal-hire-ok').onclick = async () => { await postJson('/ox/org/hire', { sentence, draft, confirm: true }); toast(`${draft.name} hired`); loadGallery(); };
+      } catch (e) { $('gal-draft').innerHTML = `<div class="dim small">${esc(e.message)}</div>`; }
+    };
+  }
+
+  // ---------- Sessions canvas: every agent session as a tile, placed anywhere, live
+  let scTimer = null;
+  async function loadSessionsCanvas() {
+    const el = $('scanvas');
+    if (!el.querySelector('.sc-board')) {
+      el.innerHTML = `<div class="shead">${icon('office')}Sessions canvas</div>
+        <p class="sdesc">Every agent session on this Mac (Claude Code, Codex, Copilot, Hermes, OpenCode, ox…) as a tile: what it is doing now, its last messages, and a box to message it. Drag tiles where you like; they stay there.</p>
+        <div class="sc-board" id="sc-board"></div>`;
+    }
+    const pos = store.get('ox.sc.pos', {});
+    const board = $('sc-board');
+    const { sessions = [] } = await getJson('/ox/agents').catch(() => ({ sessions: [] }));
+    const color = { tool: '#3B9EFF', thinking: '#A78BFA', idle: '#9CA3AF' };
+    const keep = new Set(sessions.map((x) => x.id));
+    board.querySelectorAll('.sc-tile').forEach((t) => { if (!keep.has(t.dataset.id)) t.remove(); });
+    sessions.forEach((x, i) => {
+      let t = board.querySelector(`.sc-tile[data-id="${CSS.escape(x.id)}"]`);
+      if (!t) {
+        t = document.createElement('div');
+        t.className = 'sc-tile'; t.dataset.id = x.id;
+        const p = pos[x.id] ?? { x: 16 + (i % 3) * 340, y: 16 + Math.floor(i / 3) * 300 };
+        Object.assign(t.style, { left: `${p.x}px`, top: `${p.y}px` });
+        t.innerHTML = `<div class="sc-head"><span class="sc-dot"></span><b class="sc-name"></b><span class="dim small sc-tool"></span><span class="grow"></span><span class="dim small sc-state"></span></div>
+          <div class="sc-body">…</div>
+          <div class="sc-send"><input class="field sc-in" placeholder="Message this session" style="flex:1"><button class="btn primary small sc-go">Send</button></div>`;
+        board.appendChild(t);
+        // Drag by the header; the place is remembered.
+        const head = t.querySelector('.sc-head');
+        head.onpointerdown = (e) => {
+          const sx = e.clientX - t.offsetLeft, sy = e.clientY - t.offsetTop;
+          head.setPointerCapture(e.pointerId);
+          head.onpointermove = (m) => { t.style.left = `${Math.max(0, m.clientX - sx)}px`; t.style.top = `${Math.max(0, m.clientY - sy)}px`; };
+          head.onpointerup = () => { head.onpointermove = null; const all = store.get('ox.sc.pos', {}); all[x.id] = { x: t.offsetLeft, y: t.offsetTop }; store.set('ox.sc.pos', all); };
+        };
+        t.querySelector('.sc-go').onclick = async () => {
+          const inp = t.querySelector('.sc-in'); const text = inp.value.trim(); if (!text) return;
+          inp.value = ''; toast('Sent');
+          try { await postJson('/ox/agents/send', { id: x.id, text }); } catch (e) { toast(e.message); }
+        };
+      }
+      t.querySelector('.sc-dot').style.background = color[x.state] ?? '#9CA3AF';
+      t.querySelector('.sc-name').textContent = x.project;
+      t.querySelector('.sc-tool').textContent = x.tool;
+      t.querySelector('.sc-state').textContent = x.state === 'idle' ? `idle ${Math.round((x.idleSec || 0) / 60)} min` : x.state;
+      postJson('/ox/agents/session', { id: x.id }).then((r) => {
+        const body = t.querySelector('.sc-body');
+        const lines = (r.messages || []).slice(-4).map((m) => `${m.role === 'user' ? '› ' : ''}${String(m.text || '').slice(0, 280)}`);
+        body.textContent = [x.doing ? `▶ ${x.doing}` : '', ...lines].filter(Boolean).join('\n\n') || '(nothing yet)';
+      }).catch(() => {});
+    });
+    if (!sessions.length) board.innerHTML = '<div class="dim small" style="padding:18px">No agent sessions right now. Start Claude Code, Codex or ox anywhere: they appear here.</div>';
+    clearInterval(scTimer);
+    scTimer = setInterval(() => { if (view === 'canvas') loadSessionsCanvas(); else clearInterval(scTimer); }, 4000);
+  }
+
+  // ---------- Library: saved articles and PDFs; highlight any line and ask
+  let libOpen = null;
+  async function loadLibrary(openId = libOpen) {
+    const el = $('library');
+    const { items } = await getJson('/ox/library').catch(() => ({ items: [] }));
+    const hue = (s) => [...String(s)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 360, 11);
+    let reader = '';
+    if (openId) {
+      const it = await getJson(`/ox/library/${openId}`).catch(() => null);
+      if (it) {
+        let body = esc(it.text);
+        for (const h of it.highlights || []) { const q = esc(h.quote); if (q && body.includes(q)) body = body.replace(q, `<mark class="lib-hl">${q}</mark>`); }
+        reader = `<div class="box" style="margin-top:18px"><div style="display:flex;gap:8px;align-items:center"><b style="font-size:17px">${esc(it.title)}</b><span class="grow"></span><a class="dim small" href="${esc(/^https?:/.test(it.source) ? it.source : '#')}" target="_blank">${esc(it.kind)} · ${it.words.toLocaleString()} words</a><button class="btn ghost small" id="lib-close">Close</button></div>
+          <div class="tk-new" style="margin:10px 0"><input class="field" id="lib-q" placeholder="Ask about this ${esc(it.kind)}…" style="flex:1"><button class="btn primary small" id="lib-q-go">Ask</button></div>
+          <div id="lib-a" class="small" style="white-space:pre-wrap;margin-bottom:12px"></div>
+          <div class="lib-reader" id="lib-text">${body}</div></div>`;
+      }
+    }
+    el.innerHTML = `<div class="shead">${icon('list')}Library</div>
+      <p class="sdesc">Your saved reading on one shelf: articles and PDFs. ox can add to it too ("save this article"). Open one, select any line, and ask about it.</p>
+      <div class="box tk-new"><input class="field" id="lib-add" placeholder="Paste a link or a PDF path to save" style="flex:1"><button class="btn primary" id="lib-add-go">Save</button></div>
+      <div class="box"><div class="lib-shelf">${items.map((it) => `<div class="lib-book" data-lib="${esc(it.id)}" title="${esc(it.title)}" style="height:${90 + Math.min(60, Math.round(Math.log2(it.words + 1) * 4))}px;background:hsl(${hue(it.title)} 42% 38%)"><span>${esc(it.title)}</span></div>`).join('') || '<div class="dim small" style="padding-bottom:20px">Empty shelf. Save a link above.</div>'}</div></div>
+      ${reader}`;
+    libOpen = openId;
+    el.querySelectorAll('[data-lib]').forEach((b) => (b.onclick = () => loadLibrary(b.dataset.lib)));
+    $('lib-add-go').onclick = async () => { const ref = $('lib-add').value.trim(); if (!ref) return; toast('Saving…'); try { const { item } = await postJson('/ox/library/add', { ref }); toast(`${item.title} is on the shelf`); loadLibrary(item.id); } catch (e) { toast(e.message); } };
+    if (!libOpen || !$('lib-text')) return;
+    $('lib-close').onclick = () => loadLibrary(null);
+    const askIt = async (question, quote = null) => {
+      $('lib-a').textContent = 'Reading…';
+      try { const r = await postJson('/ox/library/ask', { id: libOpen, question, quote }); $('lib-a').textContent = r.answer; } catch (e) { $('lib-a').textContent = e.message; }
+    };
+    $('lib-q-go').onclick = () => { const q = $('lib-q').value.trim(); if (q) askIt(q); };
+    // Select a line: Ask or Highlight appears beside it.
+    const pop = $('lib-pop');
+    $('lib-text').onmouseup = () => {
+      const sel = String(window.getSelection() || '').trim();
+      if (sel.length < 3) { pop.style.display = 'none'; return; }
+      const r = window.getSelection().getRangeAt(0).getBoundingClientRect();
+      Object.assign(pop.style, { display: 'flex', left: `${r.left}px`, top: `${r.bottom + 6}px` });
+      $('lib-pop-ask').onclick = () => { pop.style.display = 'none'; const q = prompt('Ask about this line', 'What does this mean?'); if (q) askIt(q, sel); };
+      $('lib-pop-hl').onclick = async () => { pop.style.display = 'none'; try { await postJson('/ox/library/highlight', { id: libOpen, quote: sel }); loadLibrary(libOpen); } catch (e) { toast(e.message); } };
+    };
+  }
+
+  // ---------- Mission map: the goal tree of tasks and agents
+  async function loadMission() {
+    const el = $('mission');
+    let T;
+    try { T = await getJson('/ox/tasks'); } catch (e) { el.innerHTML = `<div class="empty-note">${esc(e.message)}</div>`; return; }
+    const byId = Object.fromEntries(T.tasks.map((t) => [t.id, t]));
+    const kids = {};
+    for (const t of T.tasks) { const p = t.parentId && byId[t.parentId] ? t.parentId : '_root'; (kids[p] ||= []).push(t); }
+    const color = { done: '#34D399', running: '#3B9EFF', in_review: '#A78BFA', blocked: '#F5A524', failed: '#F4505E', pending: '#9CA3AF', cancelled: '#6B7280' };
+    const node = (t) => {
+      const waits = (t.blockedBy || []).filter((b) => byId[b]?.status !== 'done').map((b) => byId[b]?.title || b);
+      const ch = kids[t.id] || [];
+      const done = ch.filter((c) => c.status === 'done').length;
+      return `<li><span class="mm-node"><span class="mm-dot" style="background:${color[t.status] || '#9CA3AF'}"></span><b>${esc(t.title)}</b>
+        ${t.owner || t.assignee ? `<span class="tk-tag live">${esc(t.owner || t.assignee)}</span>` : ''}
+        ${ch.length ? `<span class="dim small">${done}/${ch.length}</span>` : ''}${waits.length ? `<span class="tk-tag warn">waits for ${waits.map(esc).join(', ')}</span>` : ''}
+        ${t.pr ? `<a class="tk-tag" href="${esc(t.pr)}" target="_blank">PR</a>` : ''}</span>${ch.length ? `<ul>${ch.map(node).join('')}</ul>` : ''}</li>`;
+    };
+    const roots = kids._root || [];
+    el.innerHTML = `<div class="shead">${icon('list')}Mission map</div>
+      <p class="sdesc">Your goals as a tree: each task under the goal it serves, who owns it, how many of its parts are done, what it waits for, and its pull request. Add parts on the Task board (a task with a parent).</p>
+      <div class="box">${roots.length ? `<ul class="mm-tree">${roots.map(node).join('')}</ul>` : '<div class="dim small">No tasks yet. Add one on the Task board.</div>'}</div>
+      <div class="dim small" style="margin-top:10px">${Object.entries(color).map(([k, c]) => `<span style="margin-right:12px"><span class="mm-dot" style="display:inline-block;background:${c}"></span> ${k.replace('_', ' ')}</span>`).join('')}</div>`;
+  }
+
   async function loadTasks() {
     const el = $('tasks');
     let T;
@@ -2608,22 +3263,28 @@ files: [src/billing/**]
     ['general', 'General', 'gear', 'name rename call it default model mode send enter agents'],
     ['instructions', 'Instructions', 'wand', 'custom instructions personal preferences how to respond style tone about me rules system prompt'],
     ['appearance', 'Appearance', 'palette', 'theme dark light text size width motion'],
+    ['notifications', 'Notifications', 'bell', 'notify alert sound finished done failed background'],
     ['desktop', 'OX Island & desktop', 'monitor', 'island notch awake sleep buddy restart'],
     ['voice', 'Voice', 'mic', 'speech language read aloud'],
     ['memory', 'Memory', 'brain', 'remember forget profile facts preferences'],
     ['usage', 'Usage', 'chart', 'tokens cost spend models agents billing'],
     ['gap'],
-    ['providers', 'Providers', 'bolt', 'models'],
+    ['projects', 'Projects', 'folder', 'folders repos workspaces recent'],
+    ['worktrees', 'Worktrees', 'branch', 'git worktree branches parallel race remove'],
+    ['gap'],
+    ['providers', 'Providers', 'bolt', 'models connect popular'],
     ['accounts', 'Accounts', 'user', 'subscription claude chatgpt plan', true],
     ['keys', 'API keys', 'key', 'api key keys token secret provider add connect anthropic openai xai gemini openrouter search web tavily brave serper images video fal', true],
     ['endpoints', 'Custom endpoints', 'globe', 'openai compatible vllm llama.cpp gateway url server azure bedrock proxy base url self-hosted', true],
     ['local', 'Local models', 'cpu', 'ollama lm studio offline ram hugging face', true],
-    ['connectors', 'Connectors', 'blocks', 'mcp servers tools connectors plugins integrations github slack notion database'],
+    ['models', 'Models', 'mode', 'model picker show hide list enable disable'],
+    ['connectors', 'Extensions', 'blocks', 'mcp servers tools connectors plugins skills extensions integrations github slack notion database'],
     ['messaging', 'Messaging', 'chat', 'telegram discord slack phone'],
     ['shortcuts', 'Keyboard shortcuts', 'keyboard', 'keys hotkeys'],
     ['archived', 'Archived chats', 'archive', 'archive restore'],
     ['data', 'Data & privacy', 'shield', 'export download delete all chats privacy telemetry data where stored'],
     ['gap'],
+    ['server', 'Server', 'server', 'port pid address url uptime restart local server'],
     ['about', 'About', 'info', 'version'],
   ];
   let sec = 'general';
@@ -2707,11 +3368,15 @@ files: [src/billing/**]
             const list = st.model.bots.some((b) => b.id === chosen) || !chosen ? st.model.bots : [{ id: chosen, ready: !st.model.configured }, ...st.model.bots];
             if (!list.length) return '<span class="dim small">None yet</span>';
             return `<select id="s-model">${list.map((b) => `<option value="${esc(b.id)}"${b.id === chosen ? ' selected' : ''}>${esc(b.id)}${b.ready ? '' : ' (no key)'}</option>`).join('')}</select>`;
-          })())}</div>
+          })())}
+          ${row('Backup model', 'Used when the chosen model fails: a revoked key, a provider down, a rate limit. ox says when it switches, and to what.', st.model.bots.length ? `<select id="s-fallback"><option value="">None</option>${st.model.bots.map((b) => `<option value="${esc(b.id)}"${b.id === st.model.fallback ? ' selected' : ''}>${esc(b.id)}${b.ready ? '' : ' (no key)'}</option>`).join('')}</select>` : '<span class="dim small">None yet</span>')}</div>
           <div class="sblock"><div class="shead">${icon('chat')}Chat</div><p class="sdesc">How this app behaves. Kept in this browser.</p>
           ${row('Default mode', 'What new chats start in. Auto picks per message.', `<select id="s-mode">${['auto', 'code', 'ask', 'plan', 'debug', 'data', 'orchestrate'].map((m) => `<option value="${m}">${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}</select>`)}
           ${row('Send with', 'The other key adds a new line.', seg('sendKey', [['enter', 'Enter'], ['mod', `${MOD}+Enter`]], prefs.sendKey))}
-          ${row('Suggest follow-ups', 'Three questions to ask next under each answer. Costs one small extra model call per answer (about 250 tokens).', sw('s-follow', prefs.followups === true))}</div>`;
+          ${row('Suggest follow-ups', 'Three questions to ask next under each answer. Costs one small extra model call per answer (about 250 tokens).', sw('s-follow', prefs.followups === true))}
+          ${row('Activity detail', prefs.activity === 'compact' ? 'Compact: every step folded into one line you can open' : prefs.activity === 'detailed' ? 'Detailed: every step with its full arguments' : 'Normal: each step with the file or a short preview', seg('activity', [['compact', 'Compact'], ['normal', 'Normal'], ['detailed', 'Detailed']], prefs.activity || 'normal'))}
+          ${row('Changed files', 'List the files each turn changed when it finishes.', sw('s-changed', prefs.changedFiles !== false))}
+          ${row('What\u2019s new', 'Show what changed after ox updates.', sw('s-whatsnew', prefs.whatsNew !== false))}</div>`;
         bindIsland(el);
         $('s-name').value = st.name === 'ox' ? '' : st.name;
         $('s-name-save').onclick = async () => { try { const r = await postJson('/ox/settings', { name: $('s-name').value }); applyName(r.name); toast(`Name: ${r.name}`); renderSection(); } catch (e) { toast(e.message); } };
@@ -2722,10 +3387,59 @@ files: [src/billing/**]
         }));
         $('s-model').value = st.model.defaultBot;
         if ($('s-model')) $('s-model').onchange = async () => { try { await postJson('/ox/settings', { defaultBot: $('s-model').value }); toast('Default model saved'); } catch (e) { toast(e.message); } };
+        if ($('s-fallback')) $('s-fallback').onchange = async () => { try { await postJson('/ox/settings', { fallbackBot: $('s-fallback').value }); toast($('s-fallback').value ? `Backup model: ${$('s-fallback').value}` : 'No backup model'); } catch (e) { toast(e.message); } };
         $('s-mode').value = store.get('ox.prefs', {}).defaultMode || 'auto';
         $('s-mode').onchange = () => { prefs.defaultMode = $('s-mode').value; savePrefs(); };
         $('s-follow').onchange = () => { prefs.followups = $('s-follow').checked; savePrefs(); };
-        bindSegs(el, (k, v) => { prefs[k] = v; savePrefs(); });
+        $('s-changed').onchange = () => { prefs.changedFiles = $('s-changed').checked; savePrefs(); renderChat(); };
+        $('s-whatsnew').onchange = () => { prefs.whatsNew = $('s-whatsnew').checked; savePrefs(); };
+        bindSegs(el, (k, v) => { prefs[k] = v; savePrefs(); if (k === 'activity') { renderChat(); renderSection(); } });
+      } else if (sec === 'notifications') {
+        const perm = 'Notification' in window ? Notification.permission : 'unsupported';
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('bell')}Notifications</div><p class="sdesc">Only while you are in another tab or app. Kept in this browser.</p>
+          ${row('System notifications', perm === 'granted' ? 'Allowed' : perm === 'denied' ? 'Blocked: allow them for this page in your browser\u2019s site settings' : perm === 'unsupported' ? 'This browser cannot show them' : 'Not allowed yet', perm === 'default' ? '<button class="btn" id="n-allow">Allow</button>' : `<span class="small ${perm === 'granted' ? 'ok' : 'muted'}">${perm === 'granted' ? 'On' : '\u2014'}</span>`)}
+          ${row('When a run finishes', 'A notification with the start of the answer.', sw('n-done', !!prefs.notifyDone))}
+          ${row('When a run stops with an error', 'So a failed run does not wait unseen.', sw('n-fail', !!prefs.notifyFail))}
+          ${row('Sound', 'A short chime with each one.', `<span style="display:flex;gap:8px;align-items:center"><button class="btn ghost" id="n-test">Test</button>${sw('n-sound', !!prefs.notifySound)}</span>`)}`;
+        if ($('n-allow')) $('n-allow').onclick = async () => { await Notification.requestPermission(); renderSection(); };
+        for (const [id, k] of [['n-done', 'notifyDone'], ['n-fail', 'notifyFail'], ['n-sound', 'notifySound']]) $(id).onchange = () => { prefs[k] = $(id).checked; savePrefs(); if (k !== 'notifySound' && prefs[k] && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission().then(renderSection); };
+        $('n-test').onclick = () => { ding(); if ('Notification' in window && Notification.permission === 'granted') new Notification(`${botName} finished`, { body: 'This is how a finished run looks.', silent: true }); };
+      } else if (sec === 'projects') {
+        const W = await getJson('/ox/workspace');
+        const ago = (t) => { const s = (Date.now() - t) / 1000; return s < 3600 ? `${Math.max(1, Math.round(s / 60))} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} days ago`; };
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('folder')}Projects</div><p class="sdesc">The folders ox has worked in, newest first. This app works in the folder its server started in; open another with <code>ox app</code> from that folder.</p>
+          <div class="cards">${W.projects.map((p) => `<div class="card"><span class="dot ${p.current ? 'ok' : ''}"></span><span class="t"><div class="n">${esc(p.name)} ${p.current ? '<span class="badge ok">This app</span>' : ''}</div><div class="d mono"><span>${esc(p.path)}</span>${p.branch ? `<span>${esc(p.branch)}</span>` : ''}<span>${p.sessions} terminal session${p.sessions === 1 ? '' : 's'}</span><span>${ago(p.last)}</span></div></span>${p.current ? '' : `<button class="btn ghost" data-copy-cmd="cd ${esc(p.path.replace(/(["\s'$`\\])/g, '\\$1'))} && ox app">${icon('copy')}Open command</button>`}</div>`).join('') || '<div class="box muted small">No projects yet.</div>'}</div>`;
+      } else if (sec === 'worktrees') {
+        const W = await getJson('/ox/workspace');
+        const extra = W.worktrees.filter((t) => !t.main);
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('branch')}Worktrees</div><p class="sdesc">Extra checkouts of your repos, each on its own branch, so several agents (or a race) can work at once without touching your main folder. Removing one deletes that folder, never the branch; git refuses if it has changes that are not committed.</p>
+          ${W.worktrees.filter((t) => t.main).map((r) => {
+            const mine = extra.filter((t) => t.repo === r.repo);
+            return `<div class="section-cap cap">${esc(r.repo)} <span class="dim">\u00b7 ${esc(r.branch)}</span></div><div class="cards">${mine.map((t) => `<div class="card"><span class="dot ${t.missing ? 'err' : t.dirty ? 'run' : 'ok'}"></span><span class="t"><div class="n">${esc(t.branch || t.head)} ${t.missing ? '<span class="badge err">Folder gone</span>' : t.dirty ? '<span class="badge">Uncommitted changes</span>' : ''}</div><div class="d mono"><span>${esc(t.path)}</span><span>${esc(t.head)}</span></div></span><button class="btn ghost danger" data-wt-rm="${esc(t.path)}" data-wt-repo="${esc(t.repo)}" ${t.dirty ? 'disabled title="Commit or discard its changes first"' : ''}>${t.missing ? 'Clean up' : 'Remove'}</button></div>`).join('') || '<div class="box muted small">No extra worktrees.</div>'}</div>`;
+          }).join('')}`;
+        el.querySelectorAll('[data-wt-rm]').forEach((b) => (b.onclick = async () => {
+          if (!(await askSure(`Remove the worktree at ${b.dataset.wtRm}? The folder goes; its branch stays.`, 'Remove'))) return;
+          try { await postJson('/ox/workspace', { action: 'remove-worktree', repo: b.dataset.wtRepo, path: b.dataset.wtRm }); toast('Worktree removed'); } catch (e) { toast(e.message); }
+          renderSection();
+        }));
+      } else if (sec === 'models') {
+        const { data = [] } = await getJson('/v1/models');
+        const hidden = new Set(prefs.hiddenModels || []);
+        const groups = [['Plans you pay for', data.filter((m) => m.ox?.plan)], ['Your agents', data.filter((m) => m.ox?.agent)], ['Your endpoints', data.filter((m) => m.ox?.endpoint)], ['Ready to use', data.filter((m) => !m.ox?.agent && !m.ox?.endpoint && !m.ox?.plan && m.ox?.available !== false)], ['Needs a key', data.filter((m) => !m.ox?.agent && !m.ox?.endpoint && !m.ox?.plan && m.ox?.available === false)]];
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('mode')}Models</div><p class="sdesc">Which models the picker shows. Hidden ones still work by name and for Auto. Kept in this browser.</p>
+          <label class="search" style="margin:0 0 10px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:9px 12px"><span data-i="search"></span><input id="md-q" placeholder="Search models" aria-label="Search models"></label>
+          <div style="display:flex;gap:8px;margin-bottom:6px"><button class="btn ghost" id="md-all">Show all</button><span class="small muted" style="align-self:center">${data.length - [...hidden].filter((h) => data.some((m) => m.id === h)).length} of ${data.length} shown</span></div>
+          ${groups.filter(([, l]) => l.length).map(([label, l]) => `<div class="section-cap cap">${label}</div>${l.map((m) => `<div class="srow" data-md="${esc(m.id.toLowerCase())}"><div class="l"><b class="mono">${esc(m.id)}</b>${m.ox?.desc ? `<span>${esc(m.ox.desc)}</span>` : ''}</div>${sw(`md-${btoa(unescape(encodeURIComponent(m.id))).replace(/[^A-Za-z0-9]/g, '')}`, !hidden.has(m.id)).replace('<input', `<input data-model-id="${esc(m.id)}"`)}</div>`).join('')}`).join('')}`;
+        el.querySelectorAll('[data-model-id]').forEach((i) => (i.onchange = () => { const h = new Set(prefs.hiddenModels || []); if (i.checked) h.delete(i.dataset.modelId); else h.add(i.dataset.modelId); prefs.hiddenModels = [...h]; savePrefs(); loadModels(); }));
+        $('md-all').onclick = () => { prefs.hiddenModels = []; savePrefs(); loadModels(); renderSection(); };
+        $('md-q').oninput = () => { const q = $('md-q').value.toLowerCase().trim(); el.querySelectorAll('[data-md]').forEach((r) => (r.style.display = !q || r.dataset.md.includes(q) ? '' : 'none')); };
+      } else if (sec === 'server') {
+        const W = await getJson('/ox/workspace');
+        const S = W.server;
+        const up = S.uptime < 3600 ? `${Math.round(S.uptime / 60)} min` : `${(S.uptime / 3600).toFixed(1)} h`;
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('server')}Server</div><p class="sdesc">This app talks to an ox server on this machine. It only listens on this computer (127.0.0.1); nothing reaches it from the network.</p>
+          <dl class="kv"><dt>address</dt><dd class="mono">${esc(location.origin)}/</dd><dt>process</dt><dd>pid ${S.pid} \u00b7 Node ${esc(S.node)} \u00b7 up ${up}</dd><dt>started</dt><dd>${esc(new Date(S.startedAt).toLocaleString())}</dd><dt>started by</dt><dd>${S.island ? 'OX Island' : S.app ? 'the OX app' : 'a terminal (ox serve)'}</dd><dt>code</dt><dd class="mono">${esc(S.code)}${S.commit ? ` \u00b7 ${esc(S.commit)}` : ''}</dd><dt>folder</dt><dd class="mono">${esc(S.cwd)}</dd></dl>
+          <p class="small muted">When ox\u2019s code changes, the app restarts its server by itself within a minute. From a terminal: <code>ox app</code>.</p>`;
       } else if (sec === 'appearance') {
         el.innerHTML = `${mobileBack}<div class="shead">${icon('palette')}Appearance</div><p class="sdesc">Kept in this browser.</p>
           ${row('Theme', '', seg('theme', [['', 'System'], ['light', 'Light'], ['dark', 'Dark']], prefs.theme || ''))}
@@ -2796,11 +3510,34 @@ files: [src/billing/**]
             <button class="card" data-go="keys" style="text-align:left">${icon('key')}<span class="t"><div class="n">API keys</div><div class="d">${n ? `${n} connected` : 'None yet'} · ${keys.length} providers</div></span></button>
             <button class="card" data-go="local" style="text-align:left">${icon('cpu')}<span class="t"><div class="n">Local models</div><div class="d">Run models on this machine. No account, works offline</div></span></button>
           </div>
+          <div class="section-cap cap">Connected providers</div>
+          <div class="cards">${keys.filter((k) => k.set).map((k) => `<div class="card"><span class="dot ok"></span><span class="t"><div class="n">${esc(k.label)}</div><div class="d">API key · <span class="mono">${esc(k.env)}</span></div></span><button class="btn ghost" data-prov-key="${esc(k.label)}">Manage</button></div>`).join('') || '<div class="box muted small">No connected providers.</div>'}</div>
+          <div class="section-cap cap" style="display:flex;align-items:center">Popular providers<span style="flex:1"></span><button class="btn ghost" id="prov-more">${icon('plus')}All providers</button></div>
+          <div class="cards">${[['anthropic', 'Claude models by API key'], ['openai', 'GPT models for fast, capable general tasks'], ['gemini', 'Gemini models for fast, structured answers'], ['openrouter', 'One key for hundreds of models'], ['groq', 'Very fast open models'], ['xai', 'Grok models']].map(([id, d]) => keys.find((k) => k.id === id)).filter((k) => k && !k.set).map((k) => `<div class="card"><span class="dot"></span><span class="t"><div class="n">${esc(k.label)}</div><div class="d">${esc({ anthropic: 'Claude models by API key', openai: 'GPT models for fast, capable general tasks', gemini: 'Gemini models for fast, structured answers', openrouter: 'One key for hundreds of models', groq: 'Very fast open models', xai: 'Grok models' }[k.id])}</div></span><button class="btn" data-prov-key="${esc(k.label)}">${icon('plus')}Connect</button></div>`).join('')}</div>
           <div class="section-cap cap">Find a model on Hugging Face</div>
           <label class="search" style="margin:0 0 8px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:9px 12px"><span data-i="search"></span><input id="prov-hf" placeholder="qwen coder, llama, gemma, deepseek, bitnet…" aria-label="Search Hugging Face models"></label>
           <p class="small muted" style="margin:0 0 16px">Every GGUF model on Hugging Face, most downloaded first, with its real size and whether it fits this machine. Downloads through Ollama.</p>
           <div class="section-cap cap">In use</div><div class="box">${esc(st.model.defaultBot)} <span class="dim small">· ${esc(st.model.source)}</span></div>`;
         paintIcons();
+        el.querySelectorAll('[data-prov-key]').forEach((b) => (b.onclick = () => { sec = 'keys'; pendingKeyQuery = b.dataset.provKey; renderSnav(); renderSection(); }));
+        // "Connect provider": every provider ox knows, searchable, plus plans and custom endpoints.
+        $('prov-more').onclick = () => {
+          const d = document.createElement('div');
+          d.className = 'ask-ovl';
+          d.innerHTML = `<div class="ask-box" role="dialog" aria-modal="true" aria-label="Connect provider" style="max-width:520px;width:92vw"><div style="display:flex;align-items:center;margin-bottom:8px"><b style="flex:1">Connect provider</b><button class="btn ghost" data-x aria-label="Close">\u2715</button></div><label class="search" style="margin:0 0 8px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:8px 10px"><span data-i="search"></span><input id="cp-q" placeholder="Search providers" aria-label="Search providers"></label><div id="cp-list" style="max-height:52vh;overflow:auto;display:flex;flex-direction:column"></div></div>`;
+          document.body.append(d); paintIcons(d);
+          const extra = [{ label: 'A plan you pay for (Claude, ChatGPT…)', go: 'accounts' }, { label: 'Custom endpoint (OpenAI-compatible URL)', go: 'endpoints' }, { label: 'A model on this machine (Ollama, LM Studio)', go: 'local' }];
+          const draw = () => {
+            const q = d.querySelector('#cp-q').value.toLowerCase().trim();
+            const hit = (t) => !q || t.toLowerCase().includes(q);
+            d.querySelector('#cp-list').innerHTML = keys.filter((k) => hit(`${k.label} ${k.id} ${k.aliases ?? ''}`)).map((k) => `<button class="mi" data-cp="${esc(k.label)}" style="text-align:left;padding:9px 8px;border-radius:8px;display:flex;gap:8px;align-items:center"><span class="dot ${k.set ? 'ok' : ''}"></span><span style="flex:1">${esc(k.label)}</span><span class="small muted">${k.set ? 'connected' : ''}</span></button>`).join('') + extra.filter((x) => hit(x.label)).map((x) => `<button class="mi" data-cp-go="${x.go}" style="text-align:left;padding:9px 8px;border-radius:8px;color:var(--muted)">${esc(x.label)} \u203a</button>`).join('');
+            d.querySelectorAll('[data-cp]').forEach((b) => (b.onclick = () => { d.remove(); sec = 'keys'; pendingKeyQuery = b.dataset.cp; renderSnav(); renderSection(); }));
+            d.querySelectorAll('[data-cp-go]').forEach((b) => (b.onclick = () => { d.remove(); sec = b.dataset.cpGo; renderSnav(); renderSection(); }));
+          };
+          d.querySelector('#cp-q').oninput = draw; draw(); d.querySelector('#cp-q').focus();
+          d.onclick = (e) => { if (e.target === d || e.target.closest('[data-x]')) d.remove(); };
+          d.onkeydown = (e) => { if (e.key === 'Escape') d.remove(); };
+        };
         $('prov-hf').onkeydown = (e) => { if (e.key === 'Enter' && $('prov-hf').value.trim()) { pendingHf = $('prov-hf').value.trim(); sec = 'local'; renderSnav(); renderSection(); } };
         el.querySelectorAll('[data-go]').forEach((b) => (b.onclick = () => { sec = b.dataset.go; renderSnav(); renderSection(); }));
         el.querySelectorAll('.card svg:last-child').forEach((s) => (s.style.transform = 'rotate(180deg)'));
@@ -2808,7 +3545,7 @@ files: [src/billing/**]
         el.innerHTML = `${mobileBack}<div class="shead">${icon('user')}Connect an account</div><p class="sdesc">Sign in with a subscription. No API key to copy. ox runs the official app for that plan on your machine and works through it. Checking what is installed…</p><div class="skeleton"></div><div class="skeleton"></div>`;
         const acc = await getJson('/ox/accounts');
         const ready = acc.filter((a) => a.works), rest = acc.filter((a) => !a.works);
-        const card = (a) => `<div class="card"><span class="dot ${a.works ? 'ok' : a.installed ? 'err' : ''}"></span><span class="t"><div class="n">${esc(a.label)} ${a.works ? '<span class="badge ok">Ready</span>' : a.installed ? '<span class="badge err">Broken install</span>' : ''}</div><div class="d">${a.works ? `${esc(a.version || '')} · use the <span class="mono">${esc(a.bot)}</span> model · ${esc(a.login || '')}` : esc(a.problem || a.fix || '')}</div></span>${a.fix && !a.works ? `<button class="btn" data-copy-cmd="${esc(a.fix.replace(/^reinstall: /, ''))}">${icon('copy')}Copy install</button>` : ''}</div>`;
+        const card = (a) => `<div class="card"><span class="dot ${a.works ? 'ok' : a.installed ? 'err' : ''}"></span><span class="t"><div class="n">${esc(a.label)} ${a.works ? '<span class="badge ok">Ready</span>' : a.installed ? '<span class="badge err">Broken install</span>' : ''}</div><div class="d">${a.works ? `Signed in · ${esc(a.version || '')} · pick <span class="mono">${esc(a.bot)}</span>${a.model ? ` (runs <span class="mono">${esc(a.model)}</span> on your account)` : ''}` : `${esc(a.problem || (a.installed ? '' : `Install: ${a.fix}`))}${a.login ? `<br>Then sign in: ${esc(a.login)}` : ''}`}</div></span>${a.fix && !a.works ? `<button class="btn" data-copy-cmd="${esc(a.fix.replace(/^reinstall: /, ''))}">${icon('copy')}Copy install</button>` : ''}</div>`;
         el.innerHTML = `${mobileBack}<div class="shead">${icon('user')}Connect an account</div><p class="sdesc">Sign in with a subscription. No API key to copy. ox runs the official app for that plan on your machine and works through it. <a href="#" id="to-keys" style="color:var(--gold)">Have an API key instead?</a></p>
           ${ready.length ? `<div class="section-cap cap">Connected</div><div class="cards">${ready.map(card).join('')}</div>` : ''}
           <div class="section-cap cap">${ready.length ? 'Connect another' : 'Available'}</div><div class="cards">${rest.map(card).join('')}</div>`;
@@ -2994,8 +3731,21 @@ files: [src/billing/**]
         $('ins-text').oninput = count; count();
         $('ins-save').onclick = async () => { try { await postJson('/ox/instructions', { text: $('ins-text').value }); toast($('ins-text').value.trim() ? 'Instructions saved: used from the next message' : 'Instructions cleared'); } catch (e) { toast(e.message); } };
       } else if (sec === 'connectors') {
+        const extTab = store.get('ox.extTab', 'mcp');
+        const tabs = `<div class="seg" id="ext-tabs" style="margin:0 0 14px">${[['mcp', 'MCPs'], ['plugins', 'Plugins'], ['skills', 'Skills']].map(([k, l]) => `<button data-ext="${k}" class="${extTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+        const bindTabs = () => el.querySelectorAll('[data-ext]').forEach((b) => (b.onclick = () => { store.set('ox.extTab', b.dataset.ext); renderSection(); }));
+        if (extTab !== 'mcp') {
+          if (!caps) await loadCaps().catch(() => {});
+          const list = extTab === 'skills' ? (caps?.skills ?? []) : (caps?.plugins ?? []);
+          el.innerHTML = `${mobileBack}<div class="shead">${icon('blocks')}Extensions</div>${tabs}<p class="sdesc">${extTab === 'skills' ? 'Skills: instructions ox reads when a task matches. Available to every project; your own live in ~/.ox/skills.' : 'Plugins: bundles of skills, commands and MCP servers from a marketplace. Kept in ~/.ox/plugins.json.'} <a href="#" id="ext-market" style="color:var(--gold)">Find more in the Marketplace</a></p>
+            <div class="cards">${list.map((x) => `<div class="card"><span class="dot ${x.enabled === false ? '' : 'ok'}"></span><span class="t"><div class="n">${esc(x.name ?? x.id)}</div><div class="d">${esc(String(x.desc ?? x.description ?? x.source ?? '').slice(0, 160))}</div></span></div>`).join('') || `<div class="box muted small">No ${extTab} yet.</div>`}</div>`;
+          bindTabs();
+          $('ext-market').onclick = (e) => { e.preventDefault(); closeSettings(); document.querySelector('[data-view="market"],[data-go-view="market"]')?.click(); };
+          paintIcons(el);
+          return;
+        }
         const C = await getJson('/ox/connectors');
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('blocks')}Connectors</div><p class="sdesc">MCP servers give ox more tools: GitHub, a database, Notion, your own. Every run can use them; each call asks first unless you allow that server. Ready-made ones are in the Marketplace.</p>
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('blocks')}Extensions</div>${tabs}<p class="sdesc">MCP servers give ox more tools: GitHub, a database, Notion, your own. Every run can use them; each call asks first unless you allow that server. Ready-made ones are in the Marketplace.</p>
           <div class="cards">${C.map((c) => `<div class="card"><span class="dot ok"></span><span class="t"><div class="n">${esc(c.name)}</div><div class="d mono"><span>${esc(c.kind)}</span><span>${esc(c.target)}</span></div></span><button class="btn ghost danger" data-con-rm="${esc(c.name)}">Remove</button></div>`).join('') || '<div class="box muted small">None yet.</div>'}</div>
           <div class="section-cap cap">Add one</div>
           <div class="box" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -3005,6 +3755,7 @@ files: [src/billing/**]
             <label class="small muted">or a URL (a remote server)<input class="field" id="con-url" placeholder="https://example.com/mcp"></label>
             <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center"><button class="btn primary" id="con-add">Add</button><span class="small muted" id="con-state"></span></div>
           </div>`;
+        bindTabs();
         $('con-add').onclick = async () => { try { await postJson('/ox/connectors', { name: $('con-name').value.trim(), command: $('con-cmd').value.trim(), args: $('con-args').value.trim(), url: $('con-url').value.trim() }); toast('Connector added: used from the next run'); renderSection(); } catch (e) { $('con-state').textContent = e.message; } };
         el.querySelectorAll('[data-con-rm]').forEach((b) => (b.onclick = async () => { try { await postJson('/ox/connectors', { action: 'remove', name: b.dataset.conRm }); toast('Connector removed'); renderSection(); } catch (e) { toast(e.message); } }));
       } else if (sec === 'data') {
@@ -3036,8 +3787,11 @@ files: [src/billing/**]
       }
       paintIcons(el);
     } catch (e) {
+      // A section left for another before it loaded: its late failure is not shown (and its buttons were never drawn).
+      if (mine !== renderSeq) return;
       el.innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div><button class="btn" style="margin-top:12px" id="retry">${icon('refresh')}Retry</button>`;
-      $('retry').onclick = renderSection;
+      const retry = pane.querySelector('#retry');
+      if (retry) retry.onclick = renderSection;
     }
   }
 

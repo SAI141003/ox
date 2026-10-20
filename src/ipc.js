@@ -243,8 +243,18 @@ export function sanitizeForWire(value, opts = {}) {
 function attachFraming(socket, onLine, onDrop = null) {
   const drop = (reason, detail) => { if (onDrop) onDrop(reason, detail); };
   let buf = '';
+  // After an oversize partial is discarded, the rest of that frame is still
+  // on its way: skip to its newline instead of parsing the tail as a frame.
+  // (Small pipe reads on Windows make this the common case, not the rare one.)
+  let skipping = false;
   socket.setEncoding('utf8');
   socket.on('data', (chunk) => {
+    if (skipping) {
+      const end = chunk.indexOf('\n');
+      if (end === -1) return;
+      skipping = false;
+      chunk = chunk.slice(end + 1);
+    }
     buf += chunk;
     let idx;
     while ((idx = buf.indexOf('\n')) !== -1) {
@@ -261,6 +271,7 @@ function attachFraming(socket, onLine, onDrop = null) {
     if (buf.length > MAX_FRAME_BYTES) {
       drop('oversize-partial', buf.length);
       buf = '';
+      skipping = true;
     }
   });
 }
@@ -347,7 +358,8 @@ export function createIpcServer(opts = {}) {
     clearTimeout(p.timer);
     // Last line of defense for rules 2 and 5: whatever reached this point, a
     // decision outside the allowed set becomes the safe verdict.
-    const verdict = APPROVAL_DECISIONS.includes(decision) ? decision : DECLINE;
+    // An agent's multiple-choice question (AskUserQuestion) is answered, not allowed.
+    const verdict = APPROVAL_DECISIONS.includes(decision) || (String(decision).startsWith('answer:') && p.tool === 'AskUserQuestion') ? decision : DECLINE;
     try { p.resolve(verdict, reason); } catch { /* consumer threw: still cleared */ }
     emitter.emit('approval-resolved', { id: p.id, tool: p.tool, decision: verdict, reason });
     // Tell ready clients the request is gone, so a GUI never shows a stale
@@ -364,7 +376,7 @@ export function createIpcServer(opts = {}) {
     resolvePending(DECLINE, reason);
   }
 
-  function requestApproval({ tool, args = {}, cwd = process.cwd(), preview } = {}) {
+  function requestApproval({ tool, args = {}, cwd = process.cwd(), preview, risk = null } = {}) {
     // Rule 4: a second approval supersedes the first. Resolve the old one as
     // 'ask' BEFORE installing the new one, so the stale request can never be
     // left blocking and the newest intent always wins.
@@ -393,6 +405,7 @@ export function createIpcServer(opts = {}) {
       tool: toolName,
       argsPreview: preview ?? previewOf(safeArgs),
       args: safeArgs,
+      ...(risk && risk.level ? { risk: { level: String(risk.level), why: String(risk.why ?? '').slice(0, 160) } } : {}),
       cwd: String(cwd ?? ''),
       at,
       deadlineAt,
@@ -449,7 +462,11 @@ export function createIpcServer(opts = {}) {
   }
 
   // net.Socket is a Duplex stream, so it emits 'drain' once its internal
-  // buffer empties after write() returned false.
+  // buffer empties after write() returned false. That alone is not enough: on
+  // a Windows named pipe every write completes asynchronously, so a small
+  // write returns true yet leaves writableLength > 0, and no 'drain' follows.
+  // Each write therefore re-runs the pump when it completes, or the queue
+  // would sit until the next send happened to come along.
   function makePump(client) {
     return () => {
       while (client.queue.length) {
@@ -457,7 +474,7 @@ export function createIpcServer(opts = {}) {
         if (client.socket.writableLength > 0) return; // still congested
         const line = client.queue.shift();
         client.queueBytes -= line.length;
-        client.socket.write(line);
+        client.socket.write(line, client.repump);
       }
       client.queueBytes = 0;
     };
@@ -475,7 +492,7 @@ export function createIpcServer(opts = {}) {
       if (client.queue.length === 0 && client.socket.writable && client.socket.writableLength === 0) {
         // write() returning false still means "accepted and buffered", so this
         // counts as delivered, not as backpressure.
-        client.socket.write(line);
+        client.socket.write(line, client.repump);
         return true;
       }
       enqueue(client, line);
@@ -516,6 +533,10 @@ export function createIpcServer(opts = {}) {
       }
       case 'approval-answer': {
         const decision = String(msg.decision ?? '');
+        if (decision === 'answer' && pending && msg.id === pending.id && pending.tool === 'AskUserQuestion' && typeof msg.answer === 'string' && msg.answer.trim()) {
+          resolvePending(`answer:${msg.answer.trim().slice(0, 2000)}`, 'client-answer');
+          return;
+        }
         if (!APPROVAL_DECISIONS.includes(decision)) {
           // Rule 5: an invalid decision is IGNORED and logged, never coerced
           // into a vote. The approval simply stays pending.
@@ -592,6 +613,7 @@ export function createIpcServer(opts = {}) {
       dropped: 0,
     };
     client.pump = makePump(client);
+    client.repump = () => { if (client.queue.length) client.pump(); };
     client.send = makeSend(client);
     clients.add(client);
 

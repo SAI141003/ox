@@ -524,6 +524,41 @@ ox task log                   # who did what, when
 - **Review gates.** With `--review`, finishing a task sends it for review;
   only an approval marks it done.
 
+## A company of agents: `ox org`
+
+On top of the board, `ox org` runs agents the way Paperclip (MIT) runs a
+company: who works here, who reports to whom, what each may spend, and how
+each one picks up work.
+
+```bash
+ox org hire Ada --title CTO --runtime claude-plan --budget 40      # $40 a month, runs Claude Code
+ox org hire Bo --title Engineer --reports-to ada --every 15 --cwd ~/app
+ox task add "Fix the login bug" && ox task assign <id> bo
+ox org                       # the chart: managers above reports, runtime, spend/budget, state
+ox org beat bo               # wake Bo now: takes his next ready task, runs it, records result and cost
+ox org beat --due            # wake everyone whose interval has passed
+ox org pause bo | resume bo | fire bo
+ox org log                   # hires, approvals, pauses, budget warnings and stops
+```
+
+- **Runtimes.** Any ox bot: `ox` (your default model), `claude-plan` (Claude
+  Code), `chatgpt-plan` (Codex), `gemini-plan`, or a provider model such as
+  `ox-ollama:qwen2.5:3b`. The run is `ox -p --bot <runtime>` in the agent's
+  `--cwd`, so sign-in, approvals and usage are ox's own.
+- **What it may do unattended.** `--approval edits` (the default) changes
+  files in its folder, and shell commands are declined because nobody is
+  there to approve them. `read` only looks; `all` skips approvals.
+- **Heartbeats.** With `--every <minutes>`, the daemon wakes the agent on that
+  interval once you have run `ox schedule opt-in`. An agent works only on tasks
+  assigned to it, and another agent's `ox task next` leaves them alone.
+- **Budgets per agent, per month.** A warning at 80 % (`--warn-at`). At the
+  budget the agent is paused with the reason, and it can't be resumed until the
+  budget is raised. Cost is read from `~/.ox/usage.jsonl` for that agent's
+  runs. A local or plan model has no price, so it is never counted as $0.
+- **Governance.** You hire directly. An agent that hires (a lead building its
+  team) only proposes, and the hire waits for `ox org approve`. Agents can't
+  approve hires; their runs carry `OX_ORG_AGENT`, which the approval refuses.
+
 ## Library docs for agents: `@llms:`
 
 Many UI and API libraries publish `/llms.txt`, docs written for agents. Mention

@@ -1,0 +1,148 @@
+// From change to mergeable PR (src/dev-flow.js): the environment recipe, ox pr
+// open / status / fix against a local remote and a stand-in gh, task worktrees.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import * as D from '../src/dev-flow.js';
+
+const run = (cwd, ...a) => spawnSync(a[0], a.slice(1), { cwd, encoding: 'utf8' });
+function repo({ testCmd = 'node -e "process.exit(0)"' } = {}) {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-dev-'));
+  const remote = path.join(d, 'remote.git'), work = path.join(d, 'work');
+  run(d, 'git', 'init', '-q', '--bare', '-b', 'main', remote);
+  run(d, 'git', 'clone', '-q', remote, work);
+  for (const [k, v] of [['user.email', 't@t'], ['user.name', 't'], ['commit.gpgsign', 'false']]) run(work, 'git', 'config', k, v);
+  fs.writeFileSync(path.join(work, 'package.json'), JSON.stringify({ name: 'x', scripts: { test: testCmd, lint: 'node -e "0"' } }));
+  fs.writeFileSync(path.join(work, 'package-lock.json'), '{}');
+  run(work, 'git', 'add', '-A'); run(work, 'git', 'commit', '-qm', 'init'); run(work, 'git', 'push', '-q', 'origin', 'main');
+  // A stand-in gh: logs its arguments, answers pr create / view from files.
+  const bin = path.join(d, 'gh');
+  fs.writeFileSync(bin, `#!/bin/sh
+echo "$@" >> "${d}/gh.log"
+case "$1 $2" in
+  "pr create") echo "https://github.com/me/x/pull/7"; exit 0;;
+  "pr view") if [ -f "${d}/view.json" ]; then cat "${d}/view.json"; exit 0; else echo "no pull requests found" >&2; exit 1; fi;;
+  "repo view") echo "me/x"; exit 0;;
+  "api "*) echo "[]"; exit 0;;
+esac
+exit 1
+`, { mode: 0o755 });
+  process.env.OX_GH_BIN = bin;
+  return { d, work, log: () => fs.readFileSync(path.join(d, 'gh.log'), 'utf8') };
+}
+
+test('recipe: detected from package.json, saved once, edits respected', () => {
+  const { work } = repo();
+  const r = D.recipe(work);
+  assert.equal(r.saved, true);
+  assert.deepEqual(r.recipe, { install: 'npm ci', lint: 'npm run lint', test: 'npm test' });
+  fs.writeFileSync(path.join(work, '.ox', 'environment.yml'), '# mine\ntest: node -e "1"\n');
+  assert.deepEqual(D.recipe(work).recipe, { test: 'node -e "1"' });
+  assert.equal(D.recipe(work).saved, false);
+});
+
+test('pr open: branch off main, commit, checks, push, PR with what was checked', async () => {
+  const { work, log } = repo();
+  fs.writeFileSync(path.join(work, 'a.txt'), 'hello');
+  const pr = await D.openPr(work, { title: 'Add a greeting' });
+  assert.equal(pr.url, 'https://github.com/me/x/pull/7');
+  assert.match(pr.branch, /^ox\/add-a-greeting-/);
+  assert.equal(pr.checks.ok, true);
+  assert.deepEqual(pr.checks.results.map((r) => r.step), ['lint', 'test']);
+  assert.equal(run(work, 'git', 'ls-remote', '--heads', 'origin', pr.branch).stdout.includes(pr.branch), true, 'pushed');
+  const l = log();
+  assert.match(l, /pr create --base main --head ox\/add-a-greeting/);
+  assert.match(l, /Checked by ox before opening/);
+  run(work, 'git', 'switch', '-q', 'main');
+  await assert.rejects(D.openPr(work), /nothing changed/);
+});
+
+test('pr open still opens when a check fails, and says so in the body', async () => {
+  const { work, log } = repo({ testCmd: 'node -e "process.exit(1)"' });
+  fs.writeFileSync(path.join(work, 'b.txt'), 'x');
+  const pr = await D.openPr(work, { title: 'Broken' });
+  assert.equal(pr.checks.ok, false);
+  assert.match(log(), /❌ `npm test`/);
+});
+
+test('pr status and fix: failing CI and a review comment become one ox task, then a push', async () => {
+  const { d, work } = repo();
+  fs.writeFileSync(path.join(work, 'c.txt'), 'x');
+  const pr = await D.openPr(work, { title: 'Feature', checks: false });
+  fs.writeFileSync(path.join(d, 'view.json'), JSON.stringify({ number: 7, url: 'u', title: 'Feature', state: 'OPEN', mergeable: 'MERGEABLE', reviewDecision: 'CHANGES_REQUESTED', headRefName: pr.branch,
+    statusCheckRollup: [{ name: 'test', conclusion: 'FAILURE', detailsUrl: 'https://github.com/me/x/actions/runs/1/job/2' }],
+    reviews: [{ author: { login: 'ana' }, body: 'Please rename c.txt to greeting.txt', state: 'CHANGES_REQUESTED' }], comments: [] }));
+  const st = D.prStatus(work);
+  assert.equal(st.canMerge, false);
+  assert.equal(st.failing[0].name, 'test');
+  let asked = null;
+  const r = await D.fixPr(work, { runOx: async (cwd, prompt) => { asked = prompt; fs.renameSync(path.join(cwd, 'c.txt'), path.join(cwd, 'greeting.txt')); return { ok: true }; } });
+  assert.match(asked, /Failing checks: test/);
+  assert.match(asked, /ana: Please rename c.txt/);
+  assert.equal(r.pushed, true);
+  assert.match(run(work, 'git', 'log', '-1', '--format=%s').stdout, /Address review on #7/);
+  // Green and approved: done, nothing run.
+  fs.writeFileSync(path.join(d, 'view.json'), JSON.stringify({ number: 7, url: 'u', title: 'Feature', state: 'OPEN', mergeable: 'MERGEABLE', reviewDecision: 'APPROVED', headRefName: pr.branch, statusCheckRollup: [{ name: 'test', conclusion: 'SUCCESS' }], reviews: [], comments: [] }));
+  const done = await D.fixPr(work, { runOx: async () => { throw new Error('should not run'); } });
+  assert.equal(done.done, true);
+  assert.match(done.why, /can merge/);
+});
+
+test('task worktree: its own checkout and branch, kept out of git status', () => {
+  const { work } = repo();
+  const w = D.taskWorktree(work, 'T-12 fix login');
+  assert.equal(w.branch, 'ox/task-t-12-fix-login');
+  assert.ok(fs.existsSync(path.join(w.dir, 'package.json')));
+  assert.equal(D.taskWorktree(work, 'T-12 fix login').created, false);
+  assert.equal(run(work, 'git', 'status', '--porcelain').stdout.trim(), '', 'the worktree folder does not show as a change');
+  assert.equal(D.removeWorktree(work, 'T-12 fix login'), true);
+});
+
+test('race: each agent in its own worktree, checked, compared; keep one merges it and cleans up', async () => {
+  const { work } = repo();
+  const r = await D.race(work, 'add a greeting', ['ox', 'other-model'], {
+    runOx: async (dir, prompt, args) => { const who = args.includes('other-model') ? 'b' : 'a'; fs.writeFileSync(path.join(dir, `${who}.txt`), who === 'a' ? 'hi\n' : 'hello\nthere\n'); return { ok: true, output: 'done' }; },
+  });
+  assert.equal(r.results.length, 2);
+  const [a, b] = r.results;
+  assert.notEqual(a.dir, b.dir);
+  assert.equal(a.files, 1);
+  assert.equal(b.plus, 2);
+  assert.equal(a.checksOk, true);
+  const k = D.keep(work, r.id, 'other-model');
+  assert.equal(k.removed, 2);
+  assert.ok(fs.existsSync(path.join(work, 'b.txt')), 'the kept take is merged');
+  assert.ok(!fs.existsSync(path.join(work, 'a.txt')));
+});
+
+test('git mirror: the second clone downloads nothing new and stands alone', () => {
+  const { d } = repo();
+  process.env.OX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-mirror-'));
+  const remote = path.join(d, 'remote.git');
+  const a = D.mirrorClone(remote, path.join(d, 'c1'));
+  assert.equal(a.mirrorCreated, true);
+  const b = D.mirrorClone(remote, path.join(d, 'c2'));
+  assert.equal(b.mirrorCreated, false);
+  assert.ok(fs.existsSync(path.join(d, 'c2', 'package.json')));
+  assert.ok(!fs.existsSync(path.join(d, 'c2', '.git', 'objects', 'info', 'alternates')), 'dissociated: no link back to the mirror');
+  assert.match(D.mirrorPath('https://github.com/me/x.git'), /git-mirrors\/github\.com\/me\/x\.git$/);
+  assert.throws(() => D.mirrorPath('https://github.com/../../etc'), /not a git remote/);
+});
+
+test('the app seen working: started from the recipe, pages captured in headless Chrome, a GIF made, the app stopped', { skip: !D.chromePath() && 'needs Chrome' }, async () => {
+  const { work } = repo();
+  fs.writeFileSync(path.join(work, 'server.js'), `require('http').createServer((q, s) => { s.writeHead(200, {'content-type': 'text/html'}); s.end('<h1 style="font:48px sans-serif">Hello from ' + q.url + '</h1>'); }).listen(0, function () { console.log('ready on http://localhost:' + this.address().port); });`);
+  fs.mkdirSync(path.join(work, '.ox'), { recursive: true });
+  fs.writeFileSync(path.join(work, '.ox', 'environment.yml'), 'start: node server.js\n');
+  const r = await D.captureApp(work, { routes: ['/', '/pricing'] });
+  assert.equal(r.shots.length, 2);
+  for (const f of r.shots) assert.ok(fs.statSync(f).size > 1000, f);
+  assert.match(r.base, /^http:\/\/localhost:\d+$/);
+  if (r.gif) assert.ok(fs.statSync(r.gif).size > 1000);
+  let up = true;
+  try { await fetch(r.base, { signal: AbortSignal.timeout(1500) }); } catch { up = false; }
+  assert.equal(up, false, 'the app was stopped afterwards');
+});

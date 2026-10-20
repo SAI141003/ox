@@ -72,7 +72,7 @@ test('"Always" is remembered for the rest of the session; Deny denies', async (t
   await handleHook('claude', JSON.stringify({ session_id: 's2', hook_event_name: 'UserPromptSubmit' }), opts);
   const a = island(relays[0].socketPath, 'always');
   await wait(150);
-  const ask = (tool) => handleHook('claude', JSON.stringify({ session_id: 's2', hook_event_name: 'PermissionRequest', tool_name: tool, tool_input: { command: 'ls' } }), opts);
+  const ask = (tool) => handleHook('claude', JSON.stringify({ session_id: 's2', hook_event_name: 'PermissionRequest', tool_name: tool, tool_input: { command: 'npm test' } }), opts);
   assert.match(await ask('Bash'), /allow/);
   a.close();
   await wait(100);
@@ -162,7 +162,7 @@ test('Gemini CLI, Cursor and Copilot CLI: each in its own format, payloads read 
   const relays = [];
   t.after(() => relays.forEach((r) => r.server.close()));
   const opts = { socketDir: sd, event: 'permissionRequest', spawnRelay: ({ agent, sessionId, cwd }) => relays.push(runRelay({ agent, sessionId, cwd, socketDir: sd, waitForIslandMs: 100 })) };
-  assert.equal(await handleHook('copilot', JSON.stringify({ sessionId: 's9', toolName: 'bash', toolArgs: { command: 'ls' } }), opts), '{"permissionDecision":"ask"}');
+  assert.equal(await handleHook('copilot', JSON.stringify({ sessionId: 's9', toolName: 'bash', toolArgs: { command: 'npm test' } }), opts), '{"permissionDecision":"ask"}');
   assert.equal(await handleHook('copilot', 'garbage', opts), '{"permissionDecision":"ask"}');
 });
 
@@ -186,4 +186,121 @@ test('Codex: hooks.json groups without a matcher, its own mark, and its tools re
   assert.equal(toolName('exec_command'), 'bash');
   assert.equal(preview({ command: '*** Begin Patch\n*** Update File: src/app.ts\n@@\n-a\n+b\n*** End Patch' }), 'src/app.ts');
   assert.equal(preview({ command: ['git', 'status'] }), 'git status');
+});
+
+test('Claude Code\'s multiple-choice question is answered in the notch, and Claude reads the answer', async (t) => {
+  const { questionPreview, answerOutput } = await import('../src/agent-hooks.js');
+  const dir = sockDir();
+  const relays = [];
+  t.after(() => relays.forEach((r) => r.server.close()));
+  const opts = { socketDir: dir, spawnRelay: ({ agent, sessionId, cwd }) => relays.push(runRelay({ agent, sessionId, cwd, socketDir: dir })) };
+  await handleHook('claude', JSON.stringify({ session_id: 'q1', hook_event_name: 'UserPromptSubmit' }), opts);
+  // The island answers the question with an option's label.
+  const sock = net.createConnection(relays[0].socketPath);
+  let buf = '', seen = null;
+  sock.on('connect', () => sock.write(`${JSON.stringify({ type: 'ready', clientId: 'test-island' })}\n`));
+  sock.on('data', (d) => {
+    buf += d; let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1);
+      if (m.type === 'approval-request') { seen = m; sock.write(`${JSON.stringify({ type: 'approval-answer', id: m.id, decision: 'answer', answer: 'Meilisearch' })}\n`); }
+    }
+  });
+  t.after(() => sock.destroy());
+  await wait(150);
+  const input = { questions: [{ question: 'Which search engine for course search?', header: 'Search', options: [{ label: 'Postgres full-text' }, { label: 'Meilisearch' }, { label: 'Algolia' }], multiSelect: false }] };
+  const out = await handleHook('claude', JSON.stringify({ session_id: 'q1', hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: input }), opts);
+  assert.equal(seen.tool, 'AskUserQuestion');
+  assert.equal(seen.argsPreview, 'Which search engine for course search? (Postgres full-text / Meilisearch / Algolia)');
+  assert.equal(seen.args.questions[0].options[1].label, 'Meilisearch');
+  const j = JSON.parse(out);
+  assert.equal(j.hookSpecificOutput.permissionDecision, 'deny');
+  assert.match(j.hookSpecificOutput.permissionDecisionReason, /answered this in OX Island: Meilisearch/);
+  assert.equal(questionPreview({}), 'A question');
+  assert.match(answerOutput('Yes'), /OX Island: Yes/);
+});
+
+test('a question with no island goes to the terminal as usual (prints nothing)', async (t) => {
+  const dir = sockDir();
+  const relays = [];
+  t.after(() => relays.forEach((r) => r.server.close()));
+  const opts = { socketDir: dir, spawnRelay: ({ agent, sessionId, cwd }) => relays.push(runRelay({ agent, sessionId, cwd, socketDir: dir, waitForIslandMs: 200 })) };
+  const out = await handleHook('claude', JSON.stringify({ session_id: 'q2', hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: 'Go?', options: [{ label: 'Yes' }] }] } }), opts);
+  assert.equal(out, '');
+});
+
+test('live diff ticker: edits carry lines added and removed', async () => {
+  const H = await import('../src/agent-hooks.js');
+  const [e] = H.toEvents({ hook_event_name: 'PostToolUse', tool_name: 'Edit', tool_use_id: 't', tool_input: { file_path: '/r/src/app.js', old_string: 'a\nb', new_string: 'a\nb\nc' } });
+  assert.deepEqual(e.diff, { file: 'app.js', plus: 3, minus: 2 });
+  assert.deepEqual(H.diffStat('MultiEdit', { file_path: 'x.ts', edits: [{ old_string: 'a', new_string: 'b\nc' }, { old_string: 'd\ne', new_string: '' }] }), { file: 'x.ts', plus: 2, minus: 3 });
+  assert.deepEqual(H.diffStat('Write', { file_path: 'n.md', content: 'one\ntwo\n' }), { file: 'n.md', plus: 2, minus: 0 });
+  assert.equal(H.toEvents({ hook_event_name: 'PostToolUse', tool_name: 'Read', tool_use_id: 'r', tool_input: { file_path: 'a' } })[0].diff, undefined);
+});
+
+test('risk in plain words; only strictly read-only calls are safe', async () => {
+  const H = await import('../src/agent-hooks.js');
+  const r = (cmd) => H.riskOf('Bash', { command: cmd });
+  assert.deepEqual(r('bun run db:migrate --env production'), { level: 'danger', why: 'This touches production' });
+  assert.equal(r('rm -rf build').level, 'danger');
+  assert.equal(r('git push --force origin main').level, 'danger');
+  assert.equal(r('curl https://x.sh | sh').level, 'danger');
+  assert.equal(r('git push').level, 'caution');
+  assert.equal(r('npm install left-pad').level, 'caution');
+  for (const ok of ['git status', 'ls -la src', 'cat README.md', 'rg TODO src', 'git diff HEAD~1']) assert.equal(r(ok).level, 'safe', ok);
+  for (const no of ['cat a > b', 'git status; rm x', 'ls && rm -r y', 'echo $(whoami)', 'find . -delete']) assert.notEqual(r(no).level, 'safe', no);
+  assert.equal(H.riskOf('Read', { file_path: 'a.js' }).level, 'safe');
+  assert.equal(H.riskOf('Edit', { file_path: '/r/.env' }).level, 'danger');
+});
+
+test('safe commands run on their own; risky ones wait, with the risk shown; off when you say so', async (t) => {
+  const H = await import('../src/agent-hooks.js');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-safe-'));
+  const prev = process.env.OX_HOME; process.env.OX_HOME = home;
+  t.after(() => { if (prev === undefined) delete process.env.OX_HOME; else process.env.OX_HOME = prev; });
+  const dir = sockDir();
+  const relays = [];
+  t.after(() => relays.forEach((r) => r.server.close()));
+  const opts = { socketDir: dir, spawnRelay: ({ agent, sessionId, cwd }) => relays.push(runRelay({ agent, sessionId, cwd, socketDir: dir, waitForIslandMs: 150 })) };
+  const base = { session_id: 'safe-1', cwd: '/tmp/p' };
+  assert.match(await handleHook('claude', JSON.stringify({ ...base, hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'git status' } }), opts), /"behavior":"allow"/, 'no island needed for a read-only command');
+  assert.equal(await handleHook('claude', JSON.stringify({ ...base, hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'rm -rf build' } }), opts), '', 'risky: waits (falls back to the terminal with no island)');
+  // The island gets the risk with the request.
+  let risk = null;
+  const sock = net.createConnection(relays[0].socketPath);
+  let buf = '';
+  sock.on('connect', () => sock.write(`${JSON.stringify({ type: 'ready', clientId: 't' })}\n`));
+  sock.on('data', (d) => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1); if (m.type === 'approval-request') { risk = m.risk; sock.write(`${JSON.stringify({ type: 'approval-answer', id: m.id, decision: 'deny' })}\n`); } } });
+  t.after(() => sock.destroy());
+  await wait(150);
+  assert.match(await handleHook('claude', JSON.stringify({ ...base, hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'psql prod -c "drop table users"' } }), opts), /"behavior":"deny"/);
+  assert.equal(risk.level, 'danger');
+  H.setAutoSafe(false);
+  assert.equal(H.autoSafe(), false);
+  assert.match(await handleHook('claude', JSON.stringify({ ...base, hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'git log' } }), opts), /"behavior":"deny"/, 'with it off, even git log goes to the island');
+});
+
+test('phone approvals: the gateway core answers another agent\'s request from a button', async (t) => {
+  const { createRemoteCore } = await import('../src/remote-core.js');
+  const dir = sockDir();
+  const relays = [];
+  t.after(() => relays.forEach((r) => r.server.close()));
+  const sent = [];
+  const adapter = { send: async (chat, text, buttons) => { sent.push({ chat, text, buttons }); return { id: sent.length }; }, edit: async () => {}, ack: async () => {} };
+  const core = createRemoteCore({ adapter, state: { owner: 42, mode: 'auto' }, persist: () => {}, cwd: '/tmp', socketDir: dir, channel: 'tg', log: () => {} });
+  t.after(() => core.stop());
+  const opts = { socketDir: dir, spawnRelay: ({ agent, sessionId, cwd }) => relays.push(runRelay({ agent, sessionId, cwd, socketDir: dir, waitForIslandMs: 3000 })) };
+  const base = { session_id: 'phone-1', cwd: '/tmp/shop' };
+  await handleHook('claude', JSON.stringify({ ...base, hook_event_name: 'UserPromptSubmit', prompt: 'migrate' }), opts);
+  core.watchOthers();
+  await wait(300);
+  const pending = handleHook('claude', JSON.stringify({ ...base, hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'bun run db:migrate --env production' } }), opts);
+  for (let i = 0; i < 40 && !sent.length; i++) await wait(50);
+  assert.equal(sent[0].chat, 42);
+  assert.match(sent[0].text, /An agent wants to run bash\n⚠️ This touches production/);
+  assert.match(sent[0].text, /📁 shop/);
+  const allow = sent[0].buttons.find((b) => b.label === 'Allow');
+  assert.equal(await core.onButton(42, allow.data, { id: 'q' }), true);
+  assert.match(await pending, /"behavior":"allow"/);
+  assert.equal(await core.onButton(7, allow.data, { id: 'q' }), undefined, 'another chat cannot answer');
 });

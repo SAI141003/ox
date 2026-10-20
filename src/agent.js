@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { withTrace } from './trace.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { breakdownContext, buildContext, estimateTokens, instructionScopesFromText, pureCompact, staleToolOutputTrim } from './context.js';
@@ -658,6 +659,8 @@ function needsApproval(name, ctx) {
   if (name === 'bash') return true;
   // Making an image or video spends money (or GPU time): always asked.
   if (name === 'create_media' || name === 'install_skill') return true;
+  // edit_video only writes new files beside the source: asked like a file write.
+  if (name === 'edit_video') return (ctx?.approval ?? 'default') === 'default';
   if (name.startsWith('mcp__')) return true;
   if (name === 'write_file' || name === 'edit_file') {
     return (ctx?.approval ?? 'default') === 'default';
@@ -970,6 +973,8 @@ async function* runAgentLoop(opts = {}) {
   let history;
   const cwd = resolveRunCwd(opts);
   const toolCtx = ctx && typeof ctx === 'object' ? { ...ctx, signal } : { signal };
+  // What was asked, for tools that trim long output to what matters (src/trim-output.js).
+  { const u = [...messages].reverse().find((m) => m?.role === 'user'); toolCtx.query = typeof u?.content === 'string' ? u.content.slice(0, 2000) : Array.isArray(u?.content) ? u.content.map((p) => p?.text ?? '').join(' ').slice(0, 2000) : ''; }
   // `toolCtx` is a SHALLOW copy, so a sessionState that does not exist yet would
   // be created on the copy by todo_write and the caller's checklist would stay
   // permanently empty -- the goal would then never see the model's progress.
@@ -1087,6 +1092,8 @@ async function* runAgentLoop(opts = {}) {
   // Path-scoped rules (globs:) are resolved against the paths this turn is
   // about. Explicit ctx.scopedPaths wins; otherwise the @path refs in the
   // user's own words are the real signal ox has before the model speaks.
+  // What the run is about: long tool output keeps the lines that match it.
+  toolCtx.taskText = String(originalUserText).slice(0, 2000);
   const scopedPaths =
     Array.isArray(ctx.scopedPaths) && ctx.scopedPaths.length
       ? ctx.scopedPaths
@@ -2012,7 +2019,9 @@ async function* runAgentLoop(opts = {}) {
       const plan = name === 'todo_write' && Array.isArray(args.todos)
         ? args.todos.filter((t) => t && typeof t.content === 'string').slice(0, 40).map((t) => ({ content: String(t.content).slice(0, 200), status: String(t.status ?? 'pending') }))
         : null;
-      yield { type: 'tool-start', id: call.id, name, argsPreview: truncate(JSON.stringify(args), 120), ...(plan ? { plan } : {}) };
+      // The file a write or edit touches, so "changed files" can be listed when the turn ends.
+      const file = /^(write_file|edit_file|multi_edit|apply_patch|create_file)$/.test(name) && typeof (args?.path ?? args?.file_path) === 'string' ? (args.path ?? args.file_path) : null;
+      yield { type: 'tool-start', id: call.id, name, argsPreview: truncate(JSON.stringify(args), 120), ...(plan ? { plan } : {}), ...(file ? { file } : {}) };
       const started = Date.now();
       let result;
       let neutral = false;
@@ -2827,9 +2836,10 @@ export function runAgent(opts = {}) {
   resolveRunCwd(opts);
   // Every run's tokens are kept by model, agent and surface (src/usage-log.js).
   if (opts?.target?.provider === 'subscription') {
-    return withUsageLog(opts, withIpcBroadcast(opts, runSubscriptionTurn({ ...opts, ctx: { ...(opts.ctx ?? {}), cwd: resolveRunCwd(opts) } })));
+    return withUsageLog(opts, withTrace(opts, withIpcBroadcast(opts, runSubscriptionTurn({ ...opts, ctx: { ...(opts.ctx ?? {}), cwd: resolveRunCwd(opts) } }))));
   }
-  return withUsageLog(opts, withIpcBroadcast(opts, runAgentLoop(opts)));
+  // Each run is traced and watched for being stuck (src/trace.js).
+  return withUsageLog(opts, withTrace(opts, withIpcBroadcast(opts, runAgentLoop(opts))));
 }
 
 export async function runAgentCollect(opts) {

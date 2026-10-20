@@ -92,3 +92,31 @@ export function claudeUsage({ now = Date.now() } = {}) {
 export function planUsage(opts = {}) {
   return [codexUsage(opts), claudeUsage(opts)];
 }
+
+// Claudex's warning: say so BEFORE a plan limit is hit, not when a run stops
+// with "usage limit reached". Each window warns once at 80 % and once at 95 %
+// per reset period (the reset time identifies the period), remembered in
+// ~/.ox/plan-usage/alerts.json so a restart does not repeat it.
+export const ALERT_LEVELS = Object.freeze([80, 95]);
+export function limitAlerts(plans = [], { now = Date.now(), file = path.join(HOME(), '.ox', 'plan-usage', 'alerts.json') } = {}) {
+  let seen = {};
+  try { seen = JSON.parse(fs.readFileSync(file, 'utf8')) ?? {}; } catch {}
+  const out = [];
+  for (const p of plans) {
+    for (const w of p?.windows ?? []) {
+      if (!Number.isFinite(w?.usedPercent) || !w.resetsAt || w.resetsAt <= now) continue;
+      const level = [...ALERT_LEVELS].reverse().find((l) => w.usedPercent >= l);
+      if (!level) continue;
+      const key = `${p.id}:${w.name}:${w.resetsAt}`;
+      if ((seen[key] ?? 0) >= level) continue;
+      seen[key] = level;
+      const mins = Math.max(1, Math.round((w.resetsAt - now) / 60000));
+      const left = mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`;
+      out.push({ plan: p.id, window: w.name, level, text: `${p.id === 'codex' ? 'ChatGPT' : 'Claude'} ${w.name} limit at ${Math.round(w.usedPercent)}%: resets in ${left}` });
+    }
+  }
+  // Forget periods that have ended.
+  for (const k of Object.keys(seen)) { const t = Number(k.split(':').pop()); if (!(t > now)) delete seen[k]; }
+  if (out.length) { try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(seen)); } catch {} }
+  return out;
+}

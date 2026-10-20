@@ -1,11 +1,13 @@
 import AppKit
 import SwiftUI
+import Speech
 
 // Accessory app: no Dock icon, no menu bar takeover. The notch panel is the UI.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: IslandPanel?
     private let bridge = OxBridge()
 
+    @MainActor let pill = DictationPillController()
     func applicationDidFinishLaunching(_ notification: Notification) {
         // `ox island off` (or the island's own menu) keeps it off until `ox island on`.
         guard IslandSwitch.enabled || CommandLine.arguments.contains("--force") else {
@@ -20,11 +22,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             release: { buddy.stopListening(); DispatchQueue.main.asyncAfter(deadline: .now() + 6) { MainActor.assumeIsolated { wake.start() } } })
         FnKey.install(press: { MainActor.assumeIsolated { wake.stop() }; buddy.startListening() },
                       release: { buddy.stopListening(); DispatchQueue.main.asyncAfter(deadline: .now() + 6) { MainActor.assumeIsolated { wake.start() } } })
-        MainActor.assumeIsolated { bridge.dictation.install() }
+        MainActor.assumeIsolated { bridge.dictation.install(); Capture.install(bridge); pill.attach(bridge.dictation) }
         let panel = IslandPanel(bridge: bridge)
         panel.orderFrontRegardless()
         self.panel = panel
         bridge.start()
+        // Check without touching the mouse: OX_ISLAND_DEMO=card opens the island
+        // and the first session's card a few seconds after launch (screenshots).
+        // OX_ISLAND_DEMO=herd: the island open with nothing running, for pasture screenshots.
+        if ProcessInfo.processInfo.environment["OX_ISLAND_DEMO"] == "herd" {
+            HerdScene.demo = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [bridge] in bridge.pinnedOpen = true }
+        }
+        if ProcessInfo.processInfo.environment["OX_ISLAND_DEMO"] == "open" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [bridge] in bridge.pinnedOpen = true }
+        }
+        if ProcessInfo.processInfo.environment["OX_ISLAND_DEMO"] == "card" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [bridge] in
+                bridge.pinnedOpen = true
+                if let s = bridge.sessions.first(where: { OxBridge.externalId($0.id) != nil && $0.mood == .idle }) ?? bridge.sessions.first { bridge.openCard(s) }
+            }
+        }
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -63,6 +81,173 @@ for sig in [SIGINT, SIGTERM] {
         unlink(Presence.file.path)
         exit(0)
     }
+}
+
+// Check: `open -n "OX Island.app" --args --check-speech <audio>` transcribes a
+// recording with the island's own recognizer settings (on-device, dictation,
+// punctuation) and writes ~/.ox/island/speech-check.txt: proof that speech to
+// text works, without anyone talking.
+if let i = CommandLine.arguments.firstIndex(of: "--check-speech"), i + 1 < CommandLine.arguments.count {
+    let out = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/island/speech-check.txt")
+    func finish(_ text: String) -> Never { try? text.write(to: out, atomically: true, encoding: .utf8); exit(0) }
+    guard VoicePermission.described else { finish("FAIL: \(VoicePermission.howToFix)") }
+    let url = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    SFSpeechRecognizer.requestAuthorization { status in
+        guard status == .authorized else { finish("FAIL: speech recognition not allowed (\(status.rawValue)). Allow OX Island in System Settings › Privacy & Security › Speech Recognition.") }
+        guard let rec = SFSpeechRecognizer(locale: Locale(identifier: "en-US")), rec.isAvailable else { finish("FAIL: recognizer not available") }
+        let req = SFSpeechURLRecognitionRequest(url: url)
+        req.addsPunctuation = true
+        req.taskHint = .dictation
+        let onDevice = rec.supportsOnDeviceRecognition
+        if onDevice { req.requiresOnDeviceRecognition = true }
+        let started = Date()
+        _ = rec.recognitionTask(with: req) { result, error in
+            if let error { finish("FAIL: \(error.localizedDescription)") }
+            if let result, result.isFinal {
+                finish("OK on-device=\(onDevice) \(Int(Date().timeIntervalSince(started) * 1000)) ms: \(result.bestTranscription.formattedString)")
+            }
+        }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 60) { finish("FAIL: timed out") }
+    RunLoop.main.run()
+}
+
+// Check: `OxIsland --check-commands` runs the island's own command matching on
+// real phrases (the ones in the owner's videos included) and exits 1 on any miss.
+// Check: `OxIsland --render-browse <live.json> <out.png>` draws the fast browser's card for a run, offscreen.
+if let i = CommandLine.arguments.firstIndex(of: "--render-browse"), CommandLine.arguments.count > i + 2 {
+    let args = CommandLine.arguments
+    guard let data = FileManager.default.contents(atPath: args[i + 1]), let run = OxBridge.parseBrowse(data) else { print("no run in \(args[i + 1])"); exit(1) }
+    MainActor.assumeIsolated {
+        let r = ImageRenderer(content: BrowseCard(run: run).frame(width: 300).padding(10).background(Color.black).environment(\.colorScheme, .dark))
+        r.scale = 2
+        guard let img = r.nsImage, let tiff = img.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { print("render failed"); exit(1) }
+        try? png.write(to: URL(fileURLWithPath: args[i + 2]))
+        print("wrote \(args[i + 2]) · \(run.status) · \(run.steps.count) steps")
+    }
+    exit(0)
+}
+
+// Check: `OxIsland --check-herd` runs the meadow through the script (docs/HERD_SCRIPT.md) on a fake clock.
+if CommandLine.arguments.contains("--check-herd") {
+    let herd = Herd.shared
+    var t = 1000.0
+    var fails = 0
+    func run(_ secs: Double, _ w: Herd.World) { for _ in 0..<Int(secs * 12) { t += 1.0 / 12; herd.react(w, now: t, away: []); herd.step(now: t, away: []) } }
+    func expect(_ ok: Bool, _ what: String) { print("\(ok ? "✓" : "✗") \(what)"); if !ok { fails += 1 } }
+    run(30, .init())
+    expect(herd.members.allSatisfy { $0.x >= 0.03 && $0.x <= 0.97 }, "a quiet half minute: everyone stays in the meadow")
+    run(0.2, .init(done: true))
+    expect(herd.members.filter { $0.act == .hop }.count >= 5, "a run finishes: everyone hops")
+    run(5, .init())
+    run(0.2, .init(news: "2 unread mail"))
+    let maple = { herd.members.first { $0.id == "maple" }! }
+    expect(maple().act == .deliver && maple().x < 0.1, "news: Maple gallops in from the left")
+    run(4, .init(news: "2 unread mail"))
+    expect(maple().act == .stand && abs(maple().x - 0.45) < 0.05 && maple().bubble == "2 unread mail", "Maple stops at the front with the note\(maple().act == .stand && abs(maple().x - 0.45) < 0.05 ? "" : " (now \(maple().act) at \(String(format: "%.2f", maple().x)))")")
+    run(1, .init())
+    run(0.2, .init(waiting: true))
+    expect(herd.members.filter { $0.act == .look }.count >= 5, "a question waits: the herd looks toward you")
+    run(6, .init())
+    run(0.2, .init(rain: true))
+    run(15, .init(rain: true))
+    let sheltered = herd.members.filter { m in Herd.shelter.contains { abs($0 - m.x) < 0.12 } }.count
+    expect(sheltered >= 4, "rain: they gather under the trees (\(sheltered) of \(herd.members.count))")
+    if sheltered < 4 { print("   " + herd.members.map { "\($0.id) x=\(String(format: "%.2f", $0.x)) \($0.act)" }.joined(separator: ", ")) }
+    run(1, .init())
+    run(0.2, .init(night: true))
+    run(5, .init(night: true))
+    expect(herd.members.allSatisfy { $0.act == .nap }, "night: everyone dozes")
+    run(25, .init(music: true))
+    var bobbed = 0
+    for _ in 0..<60 { run(1.0 / 12, .init(music: true)); bobbed = max(bobbed, herd.members.filter { $0.act == .stand || $0.act == .hop }.count) }
+    expect(bobbed >= 3, "music: they bob and hop (\(bobbed) at once)")
+    print(fails == 0 ? "the meadow follows the script" : "\(fails) scene(s) off script")
+    exit(fails == 0 ? 0 : 1)
+}
+// Check: `OxIsland --check-l10n` prints the island's words in every language and any gaps.
+if CommandLine.arguments.contains("--check-l10n") {
+    var gaps = 0
+    for (i, lang) in L10n.languages.enumerated() where i > 0 {
+        L10n.lang = lang
+        let missing = L10n.table.filter { $0.value.count < 9 || $0.value[i - 1].isEmpty }.count
+        gaps += missing
+        print("\(lang): \(T("All quiet")) · \(T("Allow")) / \(T("Deny")) · \(T("Type your answer")) · \(T("Go to Terminal"))\(missing > 0 ? "  (\(missing) missing)" : "")")
+    }
+    print("\(L10n.table.count) strings × \(L10n.languages.count) languages, \(gaps) missing")
+    exit(gaps == 0 ? 0 : 1)
+}
+if CommandLine.arguments.contains("--check-commands") {
+    let keys = ["island.size", "island.autoClose", "ox.name"]
+    let saved = keys.map { UserDefaults.standard.object(forKey: $0) }
+    var fails = 0
+    MainActor.assumeIsolated {
+        let b = OxBridge()
+        // `--check-commands <file>`: the shared evals (evals/island/commands.json), learned cases included.
+        var fromFile: [String: Any]?
+        if let i = CommandLine.arguments.firstIndex(of: "--check-commands"), i + 1 < CommandLine.arguments.count,
+           let d = FileManager.default.contents(atPath: CommandLine.arguments[i + 1]) {
+            fromFile = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
+        }
+        var island: [(String, Bool)] = [
+            ("make the island smaller", true), ("make yourself smaller", true), ("Make the island a bit smaller.", true),
+            ("smaller", true), ("make the island bigger", true), ("close", true), ("hide", true), ("close the island", true),
+            ("stay open", true), ("keep the island open", true),
+            ("make the text smaller", false), ("can you close the tab", false), ("hide the dock", false),
+            ("close all my chrome windows", false), ("make the font bigger", false), ("open chrome", false),
+            ("play Billie Jean", false), ("what is the time", false), ("keep the door open", false),
+        ]
+        for (phrase, want) in island {
+            let got = b.islandCommand(phrase) != nil
+            if got != want { fails += 1; print("FAIL island \(want ? "should" : "should not") take: \(phrase)") } else { print("ok   \(want ? "island " : "ox     ") \(phrase)") }
+        }
+        if let f = fromFile {
+            island = ((f["island"] as? [String]) ?? []).map { ($0, true) } + ((f["ox"] as? [String]) ?? []).map { ($0, false) }
+        }
+        var split: [(String, String?)] = [
+            ("make yourself smaller and turn down the volume just a little bit", "turn down the volume just a little bit"),
+            ("make the island smaller, then open spotify", "open spotify"),
+            ("close", nil),
+        ]
+        if let f = fromFile, let rows = f["split"] as? [[String: Any]] {
+            split = rows.compactMap { r in (r["text"] as? String).map { ($0, r["rest"] as? String) } }.filter { $0.1 != "(all to ox)" }
+        }
+        for (phrase, rest) in split {
+            let p = b.islandPart(phrase)
+            if p == nil || p?.rest != rest { fails += 1; print("FAIL split: \(phrase) → \(String(describing: p))") } else { print("ok   split  \(phrase) → rest: \(rest ?? "(none)")") }
+        }
+        for (phrase, want) in [("write a reply saying I'll be there at 6", OxBridge.WriteKind.text), ("draft a short post about our launch", .text),
+                               ("type a good follow-up prompt in the terminal", .prompt), ("can you write a better prompt", .prompt),
+                               ("write the one-liner for my pitch deck", .text)] {
+            if OxBridge.writeIntent(phrase) != want { fails += 1; print("FAIL write: \(phrase)") } else { print("ok   write  \(phrase)") }
+        }
+        for phrase in ["write an email to Camille, tell her it's done", "draft an email to Sam about Friday", "play Billie Jean", "what did I write yesterday", "open my messages"] {
+            if OxBridge.writeIntent(phrase) != nil { fails += 1; print("FAIL write took: \(phrase)") } else { print("ok   write  leaves: \(phrase)") }
+        }
+        if b.islandPart("open chrome and youtube") != nil { fails += 1; print("FAIL split took a non-island request") } else { print("ok   split  open chrome and youtube → all to ox") }
+        for (id, want) in [("codex", "ChatGPT"), ("claude", "Claude"), ("gemini", "Gemini"), ("cursor", "Cursor")] {
+            if OxBridge.planLabel(id) != want { fails += 1; print("FAIL plan label \(id)") } else { print("ok   plan   \(id) → \(want)") }
+        }
+    }
+    for (k, v) in zip(keys, saved) { UserDefaults.standard.set(v, forKey: k) }
+    print(fails == 0 ? "all island commands right" : "\(fails) wrong")
+    exit(fails == 0 ? 0 : 1)
+}
+
+// Dev aid: `OxIsland --render-marks <file.png>` draws sample screen marks (the
+// Pixie physics example) over a dark frame, to review how they look.
+if let i = CommandLine.arguments.firstIndex(of: "--render-marks"), i + 1 < CommandLine.arguments.count {
+    MainActor.assumeIsolated {
+        let (say, marks) = Buddy.parseMarks("A pushes B [CIRCLE:300,320,70:A] [CIRCLE:760,330,55:B] [ARROW:380,300,690,310:push] [ARROW:690,370,380,370:reaction] [BOX:180,120,700,90:F_A = -F_B]")
+        let view = ZStack { Color(hex: "#1B1D22"); MarksView(marks: marks, scale: 1).onAppear {} }.frame(width: 1000, height: 560)
+        let r = ImageRenderer(content: view.environment(\.self, EnvironmentValues()))
+        r.scale = 1
+        if let img = r.nsImage, let tiff = img.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
+        }
+        print("said: \(say) · \(marks.count) marks")
+    }
+    exit(0)
 }
 
 // Dev aid: `OxIsland --render-mascot <dir>` writes one PNG per mood and exits,
@@ -180,6 +365,52 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-office"), i + 1 < Comm
     exit(0)
 }
 
+// Dev aid: `OxIsland --render-runs <board.json> <file.png>` draws the open
+// island's run list from an /ox/live answer (other agents' sessions included).
+if let i = CommandLine.arguments.firstIndex(of: "--render-runs"), i + 2 < CommandLine.arguments.count {
+    MainActor.assumeIsolated {
+        let b = OxBridge()
+        if let d = FileManager.default.contents(atPath: CommandLine.arguments[i + 1]),
+           let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any], let runs = j["runs"] as? [[String: Any]] {
+            b.previewBoard(runs)
+        }
+        let view = Card(wash: Color.white.opacity(0.18)) {
+            VStack(alignment: .leading, spacing: 7) { ForEach(b.sessions.prefix(4)) { s in RunRow(bridge: b, session: s) } }
+        }.frame(width: 600, height: 120).padding(10).background(Color.black)
+        let r = ImageRenderer(content: view)
+        r.scale = 2
+        if let img = r.nsImage, let tiff = img.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 2]))
+        }
+        print("\(b.sessions.count) runs")
+    }
+    exit(0)
+}
+
+// Dev aid: `OxIsland --render-card <board.json> <file.png>`: the first session's card.
+if let i = CommandLine.arguments.firstIndex(of: "--render-card"), i + 2 < CommandLine.arguments.count {
+    MainActor.assumeIsolated {
+        let b = OxBridge()
+        if let d = FileManager.default.contents(atPath: CommandLine.arguments[i + 1]),
+           let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any], let runs = j["runs"] as? [[String: Any]] {
+            b.previewBoard(runs)
+        }
+        guard let s = b.sessions.last else { print("no sessions"); return }
+        var c = OxBridge.SessionCard(id: s.id)
+        c.lines = [.init(mine: true, text: "Restart the Windows hanging-test session where it stopped."),
+                   .init(mine: false, text: "PR SAI141003/ox#1 is open: the Windows unit suite no longer hangs. It finishes in 6.1 min (1705 pass / 172 fail)."),
+                   .init(mine: true, text: "now fix the 172 Windows failures")]
+        c.note = "Claude Code is working on this session now; your message goes in as soon as it is idle"
+        let view = SessionCardView(bridge: b, session: s, card: c).frame(width: 600, height: 172).padding(10).background(Color.black)
+        let r = ImageRenderer(content: view)
+        r.scale = 2
+        if let img = r.nsImage, let tiff = img.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 2]))
+        }
+    }
+    exit(0)
+}
+
 // Dev aid: `OxIsland --render-meter <dir>` draws the idle card with today's usage meter.
 if let i = CommandLine.arguments.firstIndex(of: "--render-meter"), i + 1 < CommandLine.arguments.count {
     let dir = URL(fileURLWithPath: CommandLine.arguments[i + 1])
@@ -188,7 +419,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-meter"), i + 1 < Comma
         let view = Card(wash: nil) {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
-                    Text("Nothing running").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Ink.text)
+                    Text(T("Nothing running")).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Ink.text)
                     Text("· type or talk to ox, or start it in a terminal").font(.system(size: 12)).foregroundStyle(Ink.muted).lineLimit(1)
                 }
                 TodayMeter(today: .init(tokens: 40368, runs: 16, cost: nil, topModel: "qwen2.5:1.5b"))

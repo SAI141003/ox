@@ -15,7 +15,7 @@ import UniformTypeIdentifiers
 // (memory only, and never anything a password manager marks as secret).
 
 enum TrayTab: String, CaseIterable, Identifiable {
-    case chat, shelf, focus, clips
+    case chat, shelf, focus, clips, mail, recap, office
     var id: String { rawValue }
     var icon: String {
         switch self {
@@ -23,9 +23,12 @@ enum TrayTab: String, CaseIterable, Identifiable {
         case .shelf: return "tray.and.arrow.down"
         case .focus: return "timer"
         case .clips: return "doc.on.clipboard"
+        case .mail: return "envelope"
+        case .recap: return "chart.bar"
+        case .office: return "building.2"
         }
     }
-    var title: String { rawValue.capitalized }
+    var title: String { T(rawValue.capitalized) }
 }
 
 // MARK: - Running ox
@@ -68,12 +71,14 @@ enum VoiceServer {
         return nil
     }
 
-    static func ask(_ text: String, done: @escaping (Result?) -> Void) {
+    /// offlineOnly: only ox's no-AI router answers (an errand done in ~0.1 s);
+    /// anything else comes back unhandled, for the live run to take.
+    static func ask(_ text: String, offlineOnly: Bool = false, done: @escaping (Result?) -> Void) {
         guard let u = url() else { done(nil); return }
-        var req = URLRequest(url: u, timeoutInterval: 75)
+        var req = URLRequest(url: u, timeoutInterval: offlineOnly ? 5 : 75)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "content-type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text])
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text, "offlineOnly": offlineOnly])
         URLSession.shared.dataTask(with: req) { data, resp, _ in
             let ok = (resp as? HTTPURLResponse)?.statusCode == 200
             let r = ok ? data.flatMap { try? JSONDecoder().decode(Result.self, from: $0) } : nil
@@ -119,7 +124,8 @@ enum OxRunner {
         return nil
     }
 
-    static func run(_ args: [String], cwd: URL, env extra: [String: String] = [:], completion: @escaping (Int32, String) -> Void) {
+    /// timeout: a run that hangs is stopped, so the chat never stays "busy" for good.
+    static func run(_ args: [String], cwd: URL, env extra: [String: String] = [:], timeout: TimeInterval = 20 * 60, completion: @escaping (Int32, String) -> Void) {
         let env = ProcessInfo.processInfo.environment
         guard let (node, cli) = paths() else {
             completion(127, "ox is not installed where the island can find it. Open OX once, or run  ox island start .")
@@ -153,7 +159,12 @@ enum OxRunner {
             let text = String(decoding: all, as: UTF8.self)
             DispatchQueue.main.async { completion(proc.terminationStatus, text) }
         }
-        do { try p.run() } catch { completion(127, error.localizedDescription) }
+        do { try p.run() } catch { completion(127, error.localizedDescription); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak p] in
+            guard let p, p.isRunning else { return }
+            IslandLog.write("stopped a run after \(Int(timeout / 60)) min: ox \(args.prefix(3).joined(separator: " "))")
+            p.terminate()
+        }
     }
 }
 
@@ -267,9 +278,12 @@ final class Shelf: ObservableObject {
 
     /// ox's own progress lines start with a dot or a bullet; the answer is the rest.
     static func clean(_ s: String) -> String {
-        s.split(separator: "\n", omittingEmptySubsequences: false)
+        // A tool mark glued to the end of a sentence ("…to-dos.● mcp__x ✗ 4265ms · 112b") goes too, not only whole lines.
+        let s = s.replacingOccurrences(of: #"[●✓]\s*\S+\s+[✓✗]\s+[\d.]+\s*m?s(?:\s+·\s+[\d.]+\s*[kKmM]?b)?"#, with: " ", options: .regularExpression)
+        return s.split(separator: "\n", omittingEmptySubsequences: false)
             .map(String.init)
-            .filter { l in !(l.hasPrefix("· ") || l.hasPrefix("● ") || l.hasPrefix("✓ ")) }
+            // Progress marks and ox's own warnings ("ox: MCP server … killing it") are never read aloud.
+            .filter { l in !(l.hasPrefix("· ") || l.hasPrefix("● ") || l.hasPrefix("✓ ") || l.hasPrefix("ox: ") || l.hasPrefix("Shell cwd was reset")) }
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -321,7 +335,7 @@ final class FocusTimer: ObservableObject {
         guard let e = endsAt, e <= Date() else { return }
         reset()
         finishedAt = Date()
-        NSSound(named: "Glass")?.play()
+        IslandSound.play("glass")
     }
 
     static func clock(_ t: TimeInterval) -> String {
@@ -409,6 +423,9 @@ struct TrayPanel: View {
             case .shelf: ShelfView(shelf: bridge.shelf)
             case .focus: FocusView(timer: bridge.focus)
             case .clips: ClipsView(history: bridge.clips)
+            case .mail: MailView(mail: bridge.mail)
+            case .recap: RecapView(bridge: bridge)
+            case .office: OfficeWeb(port: bridge.appPort)
             case nil: EmptyView()
             }
         }
@@ -440,7 +457,7 @@ struct ShelfView: View {
     var body: some View {
         if shelf.items.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Drop files on the notch").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.text)
+                Text(T("Drop files on the notch")).font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.text)
                 Text("They wait here. Ask ox about one, or start an email with it attached, from the account you pick.")
                     .font(.system(size: 12)).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
             }
@@ -473,7 +490,7 @@ struct ShelfView: View {
                                 .modifier(FieldStyle())
                                 .onSubmit { shelf.ask(question) }
                             PillButton(title: shelf.busy ? "…" : "Ask", primary: true) { shelf.ask(question) }
-                            PillButton(title: "Email", primary: false) { mailing = true; shelf.loadAccounts() }
+                            PillButton(title: T("Email"), primary: false) { mailing = true; shelf.loadAccounts() }
                         }
                         ScrollView {
                             Text(shelf.busy ? "\(OxName.current) is reading it…" : shelf.answer)
@@ -500,11 +517,11 @@ struct ShelfView: View {
         HStack(spacing: 8) {
             // From is never preselected: with several accounts signed in, the
             // sender is the one thing that must be chosen on purpose.
-            PillButton(title: "Draft in Mail", primary: true) {
+            PillButton(title: T("Draft in Mail"), primary: true) {
                 guard !from.isEmpty, !to.isEmpty else { shelf.mailNote = from.isEmpty ? "Pick which account it is from." : "Who is it to?"; return }
                 shelf.draft(from: from, to: to, subject: "")
             }
-            PillButton(title: "Back", primary: false) { mailing = false }
+            PillButton(title: T("Back"), primary: false) { mailing = false }
             Text(shelf.mailNote).font(.system(size: 11)).foregroundStyle(Ink.muted).lineLimit(2)
         }
     }
@@ -531,9 +548,9 @@ struct FocusView: View {
                     PillButton(title: timer.running ? "Pause" : (timer.active ? "Resume" : "Start"), primary: true) {
                         timer.running ? timer.pause() : timer.start()
                     }
-                    if timer.active { PillButton(title: "Reset", primary: false) { timer.reset() } }
+                    if timer.active { PillButton(title: T("Reset"), primary: false) { timer.reset() } }
                     if let f = timer.finishedAt, Date().timeIntervalSince(f) < 600 {
-                        Text("Done. Take a break.").font(.system(size: 11)).foregroundStyle(Ink.green)
+                        Text(T("Done. Take a break.")).font(.system(size: 11)).foregroundStyle(Ink.green)
                     }
                 }
             }
@@ -546,7 +563,7 @@ struct ClipsView: View {
     var body: some View {
         if history.clips.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Nothing copied yet").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.text)
+                Text(T("Nothing copied yet")).font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.text)
                 Text("Copy text anywhere and it shows up here. Kept in memory only; passwords are never kept.")
                     .font(.system(size: 12)).foregroundStyle(Ink.muted)
             }
@@ -570,7 +587,7 @@ struct ClipsView: View {
                 HStack {
                     Text("click to copy again").font(.system(size: 10.5)).foregroundStyle(Ink.dim)
                     Spacer()
-                    Button("Clear") { history.clear() }.buttonStyle(.plain).font(.system(size: 10.5)).foregroundStyle(Ink.dim)
+                    Button(T("Clear")) { history.clear() }.buttonStyle(.plain).font(.system(size: 10.5)).foregroundStyle(Ink.dim)
                 }
             }
         }
@@ -653,13 +670,29 @@ final class IslandChat: ObservableObject {
         self.onReply = onReply
         if echo { lines.append(Line(mine: true, text: text)) }
         IslandLog.write("heard: \(text)")
-        if let said = bridge.islandCommand(text) { IslandLog.write("island command: \(said)"); reply(said, who: nil); return }
+        var text = text
+        if let part = bridge.islandPart(text) {
+            IslandLog.write("island command: \(part.said)")
+            guard let rest = part.rest else { reply(part.said, who: nil); return }
+            lines.append(Line(mine: false, text: part.said))
+            text = rest
+        }
         if let name = agent {
             run(text, extra: ["--agent", name], key: name, who: name)
             return
         }
-        if bridge.ask(text, imagePaths: [], audioPath: nil, voice: false) {
-            lines.append(Line(mine: false, text: "Sent to your ox run. Its answer shows in the island."))
+        // A coding run is open: errands are still done offline first, the rest goes to that run.
+        if bridge.hasLiveRun {
+            busy = true
+            VoiceServer.ask(text, offlineOnly: true) { [weak self] r in
+                guard let self else { return }
+                self.busy = false
+                if let r, r.handled { IslandLog.write("offline (live run open): \(r.say ?? "")"); self.reply(r.say ?? "Done.", who: nil); return }
+                if bridge.ask(text, imagePaths: [], audioPath: nil, voice: false) {
+                    self.lines.append(Line(mine: false, text: "Sent to your ox run. Its answer shows in the island."))
+                    self.onReply = nil
+                } else { self.start(text, bridge: bridge, onReply: self.onReply, echo: false) }
+            }
             return
         }
         busy = true
@@ -674,6 +707,21 @@ final class IslandChat: ObservableObject {
                 IslandLog.write("\(r.route) in \(ms) ms\(r.model.map { " (\($0))" } ?? ""): \(r.say ?? "")")
                 self.busy = false
                 self.reply(r.say ?? "Done.", who: nil)
+                return
+            }
+            if let r, r.route == "screen" {
+                // A question about the screen: answered from a picture of it, read-only.
+                guard let shot = MainActor.assumeIsolated({ Buddy.captureScreen() }) else {
+                    // You asked about the screen: ask macOS once, which adds this OX Island (its current signature) to the list.
+                    let asked = CGRequestScreenCaptureAccess()
+                    IslandLog.write("screen question, but Screen Recording is off for OX Island (asked macOS: \(asked))")
+                    self.busy = false
+                    self.reply("I need to see your screen for that: turn on Screen Recording for OX Island in System Settings, Privacy and Security.", who: nil)
+                    return
+                }
+                IslandLog.write("screen question: looking at the screen after \(ms) ms")
+                self.lines.append(Line(mine: false, text: "Looking…"))
+                self.run(text, extra: ["--mode", "ask", "--buddy", "--image", shot], key: "ox-screen", who: nil)
                 return
             }
             if let r, r.route == "agent" {
@@ -712,7 +760,7 @@ final class IslandChat: ObservableObject {
         // Allow / Deny instead of being declined for want of a terminal.
         let sock = (NSTemporaryDirectory() as NSString).appendingPathComponent("ox-ipc-island-\(UUID().uuidString.prefix(8)).sock")
         let args = extra + ["--ipc=\(sock)", "-p", text] + (startedFor.contains(key) ? ["-c"] : [])
-        OxRunner.run(args, cwd: URL(fileURLWithPath: folder), env: ["OX_IPC_WAIT_CLIENT_MS": "4000"]) { [weak self] code, out in
+        OxRunner.run(args, cwd: URL(fileURLWithPath: folder), env: ["OX_IPC_WAIT_CLIENT_MS": "4000", "OX_MCP": "0"]) { [weak self] code, out in
             guard let self else { return }
             self.busy = false
             self.startedFor.insert(key)
@@ -722,7 +770,9 @@ final class IslandChat: ObservableObject {
     }
 
     private func reply(_ text: String, who: String?) {
-        lines.append(Line(mine: false, text: text, who: who))
+        // Circles and arrows are drawn over the screen (Buddy.speak), not shown as tags here.
+        let shown = Buddy.parseMarks(text).0.trimmingCharacters(in: .whitespacesAndNewlines)
+        lines.append(Line(mine: false, text: shown.isEmpty ? text : shown, who: who))
         IslandLog.write("replied: \(text.prefix(200))")
         onReply?(text)
         onReply = nil
@@ -778,6 +828,9 @@ struct ChatView: View {
                                  ? "Type to your ox run, or hold ⌃⌥Space to talk."
                                  : "Ask anything. Small things (open an app, a timer, math) work offline; bigger ones run ox in \(chat.folderName).")
                                 .font(.system(size: 11.5)).foregroundStyle(Ink.muted)
+                            // Everyday errands (Wajo): a tap writes the start of the request; you finish it and send.
+                            // ox finds and drafts; it never pays, books or sends on its own.
+                            FlowChips(items: ["Track my package ", "Cancel my subscription to ", "Find a table for 2 tonight near ", "Remind me at 5pm to ", "Cheapest flight to ", "Summarize my unread mail"].map(T)) { draft = $0 }
                         }
                         ForEach(chat.lines) { l in
                             Text(l.who.map { "\($0): \(l.text)" } ?? l.text)
@@ -804,7 +857,7 @@ struct ChatView: View {
                 .buttonStyle(.plain)
                 .frame(maxWidth: 110, alignment: .leading)
                 .help("The folder ox works in when no run is open")
-                TextField("Message ox…", text: $draft)
+                TextField(T("Message ox…"), text: $draft)
                     .modifier(FieldStyle())
                     .focused($focused)
                     .onSubmit { chat.send(draft, bridge: bridge); draft = "" }
@@ -826,5 +879,28 @@ struct ChatView: View {
         }
         .buttonStyle(.plain)
         .help(help)
+    }
+}
+
+
+/// Small tappable suggestions in rows that wrap.
+struct FlowChips: View {
+    let items: [String]
+    let pick: (String) -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(Array(stride(from: 0, to: items.count, by: 3)), id: \.self) { i in
+                HStack(spacing: 5) {
+                    ForEach(items[i..<min(i + 3, items.count)], id: \.self) { t in
+                        Button { pick(t) } label: {
+                            Text(t.trimmingCharacters(in: .whitespaces)).font(.system(size: 10.5)).foregroundStyle(Ink.text.opacity(0.85))
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                .background(Capsule().fill(Color.white.opacity(0.07)))
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(.top, 4)
     }
 }

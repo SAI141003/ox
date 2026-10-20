@@ -15,6 +15,30 @@ if (process.argv.length === 3 && (process.argv[2] === '--version' || process.arg
   process.exit(0);
 }
 
+// Fast paths for what agents run on every step: Claude Code calls `ox hook` on
+// each tool call and `ox statusline` on each redraw, so they load only their
+// own module, never the whole CLI (that cost ~150-300 ms per call).
+const [cmd, a1, a2] = process.argv.slice(2);
+if (cmd === 'hook') {
+  try {
+    const ah = await import('../src/agent-hooks.js');
+    let raw = '';
+    for await (const chunk of process.stdin) raw += chunk;
+    const out = await ah.handleHook(a1 ?? 'claude', raw, { event: a2 ?? null });
+    if (out) process.stdout.write(`${out}\n`);
+  } catch {}
+  process.exit(0);
+}
+if (cmd === 'statusline') {
+  try {
+    const { runStatusline } = await import('../src/statusline.js');
+    const chunks = [];
+    for await (const c of process.stdin) chunks.push(c);
+    process.stdout.write(runStatusline(Buffer.concat(chunks).toString('utf8')));
+  } catch {}
+  process.exit(0);
+}
+
 async function main() {
   // Keys pasted into the app (~/.ox/keys.json) fill in what the shell did not set.
   try { (await import('../src/keystore.js')).loadKeysIntoEnv(); } catch {}

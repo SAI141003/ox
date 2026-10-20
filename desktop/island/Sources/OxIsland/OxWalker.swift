@@ -8,14 +8,19 @@ import SwiftUI
 // around, gets the zoomies, and now and then a farmer walks by and waves.
 
 enum OxCycle: String, CaseIterable {
-    case walk, graze, alert, idle, look, gallop, kick, doze
+    case walk, graze, alert, idle, look, gallop, kick, doze, happy, think, worried, dizzy
 
-    /// The cycle a work mood demands, or nil when the pasture decides.
+    /// The cycle a work mood demands, or nil when the pasture decides
+    /// (art/ox_cute_render.py renders each with its face: focused while it
+    /// works, eyes up while it thinks, a hop when it needs you, closed smiling
+    /// eyes when it is done, x-eyes when something failed).
     static func forMood(_ m: Mood) -> OxCycle? {
         switch m {
-        case .working, .thinking: return .walk
-        case .needsYou, .error: return .alert
-        case .done: return .graze
+        case .working: return OxFrames.has(.gallop) ? .gallop : .walk
+        case .thinking: return OxFrames.has(.think) ? .think : .walk
+        case .needsYou: return .alert
+        case .error: return OxFrames.has(.dizzy) ? .dizzy : .alert
+        case .done: return OxFrames.has(.happy) ? .happy : .graze
         case .idle, .sleeping: return nil
         }
     }
@@ -55,6 +60,8 @@ enum OxFrames {
         return f
     }
     static var available: Bool { !frames(.walk).isEmpty }
+    /// Whether this bundle has that cycle's own frames (older bundles fall back).
+    static func has(_ c: OxCycle) -> Bool { !Frames.load("ox/\(c.rawValue)").isEmpty }
 }
 
 /// The pasture routine: a small state machine advanced by the frame clock.
@@ -207,6 +214,10 @@ final class Pasture {
             run([Beat(cycle: .kick, seconds: 1.0, bubble: ("MOO!!", .angry)),
                  Beat(cycle: .alert, seconds: 1.0, bubble: nil),
                  Beat(cycle: .idle, seconds: 1.6, bubble: ("zzz… rude", .sleepy))], t, then: .wander)
+        } else if OxFrames.has(.doze), pokes.count < 3 {
+            // A blink first (page-mascot): eyes shut for a moment, then the reaction.
+            run([Beat(cycle: .doze, seconds: 0.18, bubble: nil),
+                 Beat(cycle: .kick, seconds: 1.0, bubble: ("Moo?", .plain))], t, then: .look)
         } else if pokes.count >= 3 {
             pokes = []
             run([Beat(cycle: .alert, seconds: 1.0, bubble: ("MOO! 💢", .angry)),
@@ -413,6 +424,8 @@ struct OxWalker: View {
     var height: CGFloat
     /// Use the whole width: walk the lane while working, live on the pasture otherwise.
     var roam = false
+    /// Past 80 % of a plan window: worried instead of on alert, when rendered.
+    var stressed = false
     /// Called when the bull is poked (the notch uses it to open the island).
     var onPoke: (() -> Void)? = nil
     /// Draw the barn at the right end (the expanded island). Without it, the
@@ -422,6 +435,9 @@ struct OxWalker: View {
     /// this view's left edge in panel coordinates.
     var follow = false
     var origin: CGFloat = 0
+    /// Turn to face the cursor while it moves over the island (Coucou's character
+    /// follows the cursor), in every mood: the opened island's ox, standing in place.
+    var facesPointer = false
     @State private var start = Date()
     @State private var seenClick: Double = 0
     private var pasture: Pasture { .shared }
@@ -430,7 +446,7 @@ struct OxWalker: View {
         if OxFrames.available {
             GeometryReader { geo in
                 TimelineView(.animation(minimumInterval: 1.0 / 24.0)) { ctx in
-                    scene(t: ctx.date.timeIntervalSince(start), now: ctx.date.timeIntervalSinceReferenceDate, size: geo.size)
+                    scene(t: ctx.date.timeIntervalSince(start), now: ctx.date.timeIntervalSinceReferenceDate, size: geo.size, left: geo.frame(in: .global).minX)
                 }
             }
             .frame(height: height)
@@ -455,7 +471,7 @@ struct OxWalker: View {
     }
 
     @ViewBuilder
-    private func scene(t: Double, now: Double, size: CGSize) -> some View {
+    private func scene(t: Double, now: Double, size: CGSize, left: CGFloat = 0) -> some View {
         let width = height * 4 / 3
         let lane = max(0, size.width - width)
         let farmerH = height * 0.62
@@ -463,7 +479,7 @@ struct OxWalker: View {
         let barnW = barn ? height * 1.15 : 0
         let _ = trackPointer(now: now, width: width, size: size)
         // Following the cursor wins over a run's forced walk: you are right there.
-        let forced = follow ? nil : OxCycle.forMood(mood)
+        let forced = follow ? nil : (stressed && mood == .needsYou && OxFrames.has(.worried) ? .worried : OxCycle.forMood(mood))
         let (cycle, x, right): (OxCycle, CGFloat, Bool) = {
             if let forced {
                 // Work: walk the lane ping-pong; other moods stand where the pasture left it.
@@ -487,7 +503,11 @@ struct OxWalker: View {
         let turnFrames = Frames.load("ox/turn")
         let frames = turn != nil && turnFrames.count == 16 ? turnFrames : OxFrames.frames(cycle)
         let idx = frames.isEmpty ? 0 : (turn != nil && turnFrames.count == 16 ? turn! : Int(t * 24) % frames.count)
-        let flip = turn == nil && !right
+        // Facing the cursor: which side of the ox it is on, while it is moving over the island.
+        let p = Pointer.shared
+        let faceRight: Bool? = facesPointer && now - p.movedAt < 4 && p.local.y <= IslandLayout.panel.height
+            ? p.local.x > left + x + width / 2 : nil
+        let flip = turn == nil && !(faceRight ?? right)
         let hidden = forced == nil && roam && pasture.home
 
         ZStack(alignment: .bottomLeading) {

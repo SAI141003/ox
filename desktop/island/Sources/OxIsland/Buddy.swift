@@ -81,11 +81,58 @@ final class Buddy: NSObject, ObservableObject {
 
     // MARK: listening
 
-    func toggle() { phase == .listening ? stopListening() : startListening() }
+    func toggle() {
+        if phase == .listening { stopListening(); return }
+        // A second tap while the mic is still starting (permissions, audio) cancels it.
+        if starting { starting = false; IslandLog.write("voice: start cancelled by a tap"); return }
+        // Clicked (not held): the island ends by itself when you stop talking, as Pixie does.
+        handsFree = true
+        startListening()
+    }
+
+    /// One tap on the listening card, the pill or the mic: stop now.
+    func stopIfListening() {
+        if phase == .listening { stopListening() } else if starting { starting = false }
+    }
+    var isListeningOrStarting: Bool { phase == .listening || starting }
+    /// Between the tap and the microphone being on (permission prompts, audio start).
+    @Published private(set) var starting = false
+
+    /// Started by a click, not a held key: listening ends on its own at the end of speech.
+    @Published private(set) var handsFree = false
+    private var lastHeardChange = Date()
+    private var listenStarted = Date()
+    private var endWatch: Timer?
+
+    private func watchForEndOfSpeech() {
+        endWatch?.invalidate()
+        listenStarted = Date(); lastHeardChange = Date()
+        let byClick = handsFree
+        endWatch = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] t in
+            MainActor.assumeIsolated {
+                guard let self, self.phase == .listening else { t.invalidate(); return }
+                let quiet = Date().timeIntervalSince(self.lastHeardChange)
+                let total = Date().timeIntervalSince(self.listenStarted)
+                let said = !self.heard.trimmingCharacters(in: .whitespaces).isEmpty
+                // Clicked: words, then a pause; the recognizer's own end of sentence; nothing at all for 8 s.
+                // Held key: until it is let go. Either way 45 s at most, so a lost key-up never leaves the mic on.
+                if (byClick && ((said && (quiet > 1.3 || self.finalHeard)) || (!said && total > 8))) || total > 45 {
+                    t.invalidate()
+                    IslandLog.write("voice: end of speech (\(said ? "after a pause" : "nothing said"), \(String(format: "%.1f", total)) s)")
+                    self.stopListening()
+                }
+            }
+        }
+    }
 
     func startListening() {
         guard phase != .listening else { return }
+        // Its own voice must not be recorded: the natural voice stops too, not only the system one.
+        if phase == .speaking { stopSpeaking() }
         synth.stopSpeaking(at: .immediate)
+        Self.sweepTemp()
+        guard VoicePermission.described else { show(VoicePermission.howToFix); return }
+        starting = true
         heard = ""
         saying = ""
         shot = Self.captureScreen()
@@ -105,6 +152,9 @@ final class Buddy: NSObject, ObservableObject {
     }
 
     private func beginAudio() {
+        // Tapped again while it was starting: do not turn the mic on.
+        guard starting else { return }
+        starting = false
         guard let recognizer, recognizer.isAvailable else { show("Speech recognition is not available right now."); return }
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
@@ -137,6 +187,7 @@ final class Buddy: NSObject, ObservableObject {
             let text = result.bestTranscription.formattedString
             let final = result.isFinal
             DispatchQueue.main.async {
+                if self?.heard != text { self?.lastHeardChange = Date() }
                 self?.heard = text
                 if final { self?.finalHeard = true }
             }
@@ -146,12 +197,15 @@ final class Buddy: NSObject, ObservableObject {
             try audio.start()
             phase = .listening
             gesture = .rest
+            watchForEndOfSpeech()
         } catch {
             show("The microphone could not start: \(error.localizedDescription)")
         }
     }
 
     func stopListening() {
+        endWatch?.invalidate(); endWatch = nil
+        handsFree = false
         guard phase == .listening else { return }
         audio.stop()
         audio.inputNode.removeTap(onBus: 0)
@@ -166,10 +220,31 @@ final class Buddy: NSObject, ObservableObject {
             self.task = nil
             self.request = nil
             let text = self.heard.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Nothing heard live, but there is audio: whisper may still hear it.
-            guard !text.isEmpty || audioPath != nil else { self.show("I didn't catch that. Hold ⌃⌥Space and talk."); return }
+            IslandLog.write("voice heard: \"\(text)\" (final: \(self.finalHeard), recording: \(audioPath != nil))")
+            // Nothing heard live but there is a recording: whisper on this Mac listens to it again.
+            if text.isEmpty, let audioPath, let port = Dictation.serverPort, let u = URL(string: "http://127.0.0.1:\(port)/ox/voice/transcribe") {
+                var req = URLRequest(url: u, timeoutInterval: 30)
+                req.httpMethod = "POST"
+                req.setValue("application/json", forHTTPHeaderField: "content-type")
+                req.httpBody = try? JSONSerialization.data(withJSONObject: ["path": audioPath])
+                self.phase = .thinking
+                URLSession.shared.dataTask(with: req) { data, _, _ in
+                    let again = ((data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] })?["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    DispatchQueue.main.async {
+                        IslandLog.write("voice heard again from the recording: \"\(again)\"")
+                        guard !again.isEmpty, !again.hasPrefix("[") else { self.phase = .idle; self.show("I didn't catch that. Hold ⌃⌥Space, or click the mic, and talk."); return }
+                        self.heard = again
+                        guard self.send?(again, self.shot.map { [$0] } ?? [], audioPath) == true else { self.show("I can't find ox on this Mac. Open the OX app once, then ask me again."); return }
+                        self.gesture = .think
+                    }
+                }.resume()
+                return
+            }
+            // Nothing heard at all: say so (an empty request used to end as "can't find ox").
+            guard !text.isEmpty else { self.show("I didn't catch that. Hold ⌃⌥Space, or click the mic, and talk."); return }
             guard self.send?(text, self.shot.map { [$0] } ?? [], audioPath) == true else {
-                self.show("Start ox in a terminal, then ask me again.")
+                IslandLog.write("voice: nobody took it (ox not found)")
+                self.show("I can't find ox on this Mac. Open the OX app once, then ask me again.")
                 return
             }
             self.phase = .thinking
@@ -188,8 +263,10 @@ final class Buddy: NSObject, ObservableObject {
     /// The voice is ox's natural one (Kokoro, through `ox speak`); the system
     /// voice is only the fallback when ox cannot make the recording.
     func speak(_ reply: String) {
-        let (say, point) = Self.parsePoint(reply)
+        let (marked, marks) = Self.parseMarks(reply)
+        let (say, point) = Self.parsePoint(marked)
         let text = say.isEmpty ? "Done." : say
+        if !marks.isEmpty { IslandLog.write("marks drawn: \(marks.map { "\($0.kind.lowercased()) \($0.label)" }.joined(separator: ", "))"); showMarks(marks) }
         saying = text
         pendingPoint = point
         wordCount = 0
@@ -293,6 +370,7 @@ final class Buddy: NSObject, ObservableObject {
     }
 
     private func show(_ message: String) {
+        starting = false
         phase = .message(message)
         gesture = .rest
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
@@ -315,6 +393,47 @@ final class Buddy: NSObject, ObservableObject {
             o?.close()
             if self?.pointer === o { self?.pointer = nil }
         }
+    }
+
+    // MARK: marks drawn over the screen (circles, arrows, boxes)
+
+    private var marksOverlay: MarksOverlay?
+
+    private func showMarks(_ marks: [ScreenMark]) {
+        guard let screen = NSScreen.main else { return }
+        marksOverlay?.close()
+        let o = MarksOverlay(screen: screen, marks: marks)
+        o.orderFrontRegardless()
+        marksOverlay = o
+        // Up while the answer is spoken, then a few seconds to look at them.
+        let words = Double(saying.split(separator: " ").count)
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(8, words * 0.45 + 5)) { [weak self, weak o] in
+            o?.close()
+            if self?.marksOverlay === o { self?.marksOverlay = nil }
+        }
+    }
+
+    struct ScreenMark: Equatable { let kind: String; let n: [Double]; let label: String }
+
+    /// [CIRCLE:x,y,r:label] [ARROW:x1,y1,x2,y2:label] [BOX:x,y,w,h:label], in
+    /// screenshot pixels (the same rules as src/buddy.js parseMarks).
+    nonisolated static func parseMarks(_ reply: String) -> (String, [ScreenMark]) {
+        let pattern = #"\[(CIRCLE|ARROW|BOX):\s*([\d.\s,]+?)\s*(?::\s*([^\]]*))?\]"#
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return (reply, []) }
+        let ns = reply as NSString
+        let want = ["circle": 3, "arrow": 4, "box": 4]
+        var marks: [ScreenMark] = []
+        for m in re.matches(in: reply, range: NSRange(location: 0, length: ns.length)) {
+            let kind = ns.substring(with: m.range(at: 1)).lowercased()
+            let n = ns.substring(with: m.range(at: 2)).split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard n.count == want[kind], n.allSatisfy({ $0 >= 0 }) else { continue }
+            let label = m.range(at: 3).location != NSNotFound ? String(ns.substring(with: m.range(at: 3)).trimmingCharacters(in: .whitespaces).prefix(24)) : ""
+            marks.append(ScreenMark(kind: kind, n: n, label: label))
+            if marks.count >= 6 { break }
+        }
+        let say = re.stringByReplacingMatches(in: reply, range: NSRange(location: 0, length: ns.length), withTemplate: "")
+            .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (say, marks)
     }
 
     // MARK: helpers
@@ -347,6 +466,19 @@ final class Buddy: NSObject, ObservableObject {
         let en = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
         return en.max { $0.quality.rawValue < $1.quality.rawValue } ?? AVSpeechSynthesisVoice(language: "en-US")
     }()
+
+    /// Screenshots of your screen and voice recordings are working files, not
+    /// keepsakes: anything of ours older than ten minutes is deleted.
+    static func sweepTemp(olderThan age: TimeInterval = 600) {
+        let dir = NSTemporaryDirectory()
+        let fm = FileManager.default
+        for name in (try? fm.contentsOfDirectory(atPath: dir)) ?? [] where name.hasPrefix("ox-buddy-") || name.hasPrefix("ox-voice-") {
+            let path = (dir as NSString).appendingPathComponent(name)
+            if let m = (try? fm.attributesOfItem(atPath: path))?[.modificationDate] as? Date, Date().timeIntervalSince(m) > age {
+                try? fm.removeItem(atPath: path)
+            }
+        }
+    }
 
     /// Silent full-screen capture of the main display, for ox to look at.
     /// Only when screen recording is already allowed: asking macOS on every
@@ -526,5 +658,83 @@ struct PointerView: View {
             withAnimation(.spring(response: 0.75, dampingFraction: 0.72)) { arrived = true }
             withAnimation(.easeOut(duration: 1.1).repeatForever(autoreverses: false).delay(0.6)) { pulse = true }
         }
+    }
+}
+
+
+// MARK: - marks over the screen (Pixie-style: explain by drawing on it)
+
+final class MarksOverlay: NSPanel {
+    init(screen: NSScreen, marks: [Buddy.ScreenMark]) {
+        super.init(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        level = .screenSaver
+        backgroundColor = .clear
+        isOpaque = false
+        hasShadow = false
+        ignoresMouseEvents = true
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        contentView = NSHostingView(rootView: MarksView(marks: marks, scale: screen.backingScaleFactor))
+    }
+}
+
+struct MarksView: View {
+    let marks: [Buddy.ScreenMark]
+    /// Screenshot pixels per screen point.
+    let scale: CGFloat
+    @State private var drawn: CGFloat = 0
+    static let tints: [Color] = [Color(hex: "#FFD60A"), Color(hex: "#30D158"), Color(hex: "#64D2FF"), Color(hex: "#FF9F0A"), Color(hex: "#BF5AF2"), Color(hex: "#FF453A")]
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Color.clear
+            ForEach(Array(marks.enumerated()), id: \.offset) { i, m in
+                let tint = Self.tints[i % Self.tints.count]
+                let p = m.n.map { CGFloat($0) / scale }
+                // Each mark draws on after the one before it, like a pen.
+                let t = min(1, max(0, drawn * CGFloat(marks.count) - CGFloat(i)))
+                switch m.kind {
+                case "circle":
+                    Circle().trim(from: 0, to: t).stroke(tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .frame(width: p[2] * 2, height: p[2] * 2).position(x: p[0], y: p[1])
+                    label(m.label, tint).position(x: p[0], y: p[1] - p[2] - 16).opacity(t)
+                case "box":
+                    RoundedRectangle(cornerRadius: 6).trim(from: 0, to: t).stroke(tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .frame(width: p[2], height: p[3]).position(x: p[0] + p[2] / 2, y: p[1] + p[3] / 2)
+                    label(m.label, tint).position(x: p[0] + p[2] / 2, y: p[1] - 16).opacity(t)
+                default:
+                    Arrow(from: CGPoint(x: p[0], y: p[1]), to: CGPoint(x: p[2], y: p[3])).trim(from: 0, to: t)
+                        .stroke(tint, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                    label(m.label, tint).position(x: (p[0] + p[2]) / 2, y: (p[1] + p[3]) / 2 - 18).opacity(t)
+                }
+            }
+        }
+        .shadow(color: .black.opacity(0.45), radius: 3)
+        .ignoresSafeArea()
+        .onAppear { withAnimation(.easeInOut(duration: 0.5 * Double(max(1, marks.count)))) { drawn = 1 } }
+    }
+
+    @ViewBuilder private func label(_ text: String, _ tint: Color) -> some View {
+        if !text.isEmpty {
+            Text(text).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.black)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(Capsule().fill(tint)).fixedSize()
+        }
+    }
+}
+
+/// A line with an arrowhead at its end.
+struct Arrow: Shape {
+    let from: CGPoint
+    let to: CGPoint
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: from)
+        p.addLine(to: to)
+        let a = atan2(to.y - from.y, to.x - from.x), head: CGFloat = 16
+        for d in [CGFloat.pi * 0.82, -CGFloat.pi * 0.82] {
+            p.move(to: to)
+            p.addLine(to: CGPoint(x: to.x + head * cos(a + d), y: to.y + head * sin(a + d)))
+        }
+        return p
     }
 }

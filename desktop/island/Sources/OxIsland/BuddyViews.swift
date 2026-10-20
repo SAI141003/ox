@@ -45,7 +45,7 @@ struct BuddyBody: View {
                     Text("Listening").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.text)
                     LevelBars(level: buddy.level)
                 }
-                Text(buddy.heard.isEmpty ? "Ask about anything on your screen. Release ⌃⌥Space to send." : buddy.heard)
+                Text(buddy.heard.isEmpty ? (buddy.handsFree ? "Ask about anything on your screen. Pause when you are done, or tap stop." : "Ask about anything on your screen. Release ⌃⌥Space to send.") : buddy.heard)
                     .font(.system(size: 12)).foregroundStyle(buddy.heard.isEmpty ? Ink.muted : Ink.text.opacity(0.9))
                     .lineLimit(3).truncationMode(.head)
             case .thinking:
@@ -54,7 +54,7 @@ struct BuddyBody: View {
             case .speaking:
                 Text(buddy.saying).font(.system(size: 12.5)).foregroundStyle(Ink.text.opacity(0.92))
                     .lineLimit(4).fixedSize(horizontal: false, vertical: true)
-                Button("Stop") { buddy.stopSpeaking() }
+                Button(T("Stop")) { buddy.stopSpeaking() }
                     .buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundStyle(Ink.muted)
             case .message(let m):
                 Text(m).font(.system(size: 12)).foregroundStyle(Ink.text.opacity(0.9)).fixedSize(horizontal: false, vertical: true)
@@ -86,14 +86,14 @@ struct MicButton: View {
     @ObservedObject var buddy: Buddy
     var body: some View {
         Button(action: { buddy.toggle() }) {
-            Image(systemName: buddy.phase == .listening ? "waveform" : "mic.fill")
+            Image(systemName: buddy.phase == .listening ? "stop.fill" : "mic.fill")
                 .font(.system(size: 11, weight: .semibold))
                 .frame(width: 24, height: 24)
                 .background(Circle().fill(buddy.phase == .listening ? Ink.gold : Color.white.opacity(0.1)))
                 .foregroundStyle(buddy.phase == .listening ? Color.black : Ink.text)
         }
         .buttonStyle(.plain)
-        .help("Talk to ox (or hold ⌃⌥Space anywhere)")
+        .help(buddy.phase == .listening ? "Tap to stop listening" : "Talk to ox (or hold ⌃⌥Space anywhere)")
         .accessibilityLabel(buddy.phase == .listening ? "Stop listening" : "Talk to ox")
     }
 }
@@ -141,7 +141,7 @@ struct IslandMenu: View {
             Text("Never").tag(0.0)
         }
         Divider()
-        Button("Turn off OX Island") { IslandSwitch.turnOff() }
+        Button(T("Turn off OX Island")) { IslandSwitch.turnOff() }
     }
 }
 
