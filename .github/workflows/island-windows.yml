@@ -4,7 +4,7 @@ name: island-windows
 
 on:
   push:
-    paths: ['desktop/island-win/**', 'src/web/island.html', 'src/island-web.js', '.github/workflows/island-windows.yml']
+    paths: ['desktop/island-win/**', 'src/web/island.html', 'src/island-web.js', 'test/island-web.test.js', '.github/workflows/island-windows.yml']
   workflow_dispatch:
 
 jobs:
