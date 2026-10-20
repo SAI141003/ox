@@ -474,7 +474,26 @@ function capsHint(lines, bytes) {
 // reaches the model on every single turn. Read-time screening closes the gap
 // for memories written before the write screen existed: a failing line is
 // withheld from the model, counted, and reported -- but the file is left alone.
+// ox brain (src/brain.js): the titles of your current notes, so the agent knows
+// what it can look up with the brain tool. Part of the memory block, which the
+// system prompt carries, so it is back after every compaction. At most 40 lines.
+function brainBlock() {
+  if (process.env.OX_BRAIN === '0' || process.env.OX_INCOGNITO === '1') return '';
+  const dir = process.env.OX_BRAIN_DIR || path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'brain');
+  let lines;
+  try { lines = fs.readFileSync(path.join(dir, 'INDEX.md'), 'utf8').split('\n').filter((l) => l.startsWith('- ')); } catch { return ''; }
+  if (!lines.length) return '';
+  const shown = lines.slice(0, 40);
+  return `# ox brain (your notes; read one with the brain tool, action search)\n${shown.join('\n')}${lines.length > 40 ? `\n- … ${lines.length - 40} more` : ''}`;
+}
+
 export function loadMemoryBlock(cwd) {
+  const brain = brainBlock();
+  const project = loadProjectMemoryBlock(cwd);
+  return [project, brain].filter(Boolean).join('\n\n');
+}
+
+function loadProjectMemoryBlock(cwd) {
   let text;
   try {
     text = fs.readFileSync(indexPath(cwd), 'utf8').replace(/\s+$/, '');

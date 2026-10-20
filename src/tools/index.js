@@ -79,6 +79,19 @@ export const TOOL_IMPLS = {
   load_tools: loadToolsTool,
   install_skill: installSkillTool,
   code_graph: codeGraphTool,
+  // ox brain (src/brain.js): your notes, as markdown that opens in Obsidian.
+  brain: async (args = {}) => {
+    const B = await import('../brain.js');
+    try {
+      if (args.action === 'note') {
+        const r = B.remember({ title: String(args.title ?? ''), body: String(args.body ?? ''), tags: Array.isArray(args.tags) ? args.tags.map(String) : [], supersedes: Array.isArray(args.supersedes) ? args.supersedes.map(String) : [], project: args.project ? String(args.project) : null });
+        await B.index();
+        return { content: `brain: saved "${r.title}"${args.supersedes?.length ? ` (replaces ${args.supersedes.join(', ')}; kept as history)` : ''}`, isError: false };
+      }
+      const hits = await B.search(String(args.query ?? ''), { embed: await B.localEmbedder() });
+      return { content: B.formatHits(hits), isError: false };
+    } catch (e) { return { content: `brain: ${e.message}`, isError: true }; }
+  },
 };
 
 const PLAN_READ_ONLY = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'show_ui', 'agent_status', 'code_graph'];
@@ -94,6 +107,23 @@ export const BUILTIN_SCHEMAS = [
   ...VIDEO_TOOL_SCHEMAS,
   ...INSTALL_SKILL_SCHEMAS,
   ...CODE_GRAPH_TOOL_SCHEMAS,
+  {
+    name: 'brain',
+    description: "Your long-term notes (ox brain, markdown that opens in Obsidian). action \"search\": what is known about something (decisions, facts about the user and projects, past research), current facts first, at most ~1,500 tokens. action \"note\": save something worth keeping; when it replaces an older note, name it in supersedes (the old one is kept as history).",
+    input_schema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['search', 'note'] },
+        query: { type: 'string', description: 'search: what to look up' },
+        title: { type: 'string', description: 'note: a short, specific title' },
+        body: { type: 'string', description: 'note: the fact, decision or finding; link related notes as [[Title]]' },
+        tags: { type: 'array', items: { type: 'string' } },
+        supersedes: { type: 'array', items: { type: 'string' }, description: 'note: titles of notes this replaces' },
+        project: { type: 'string' },
+      },
+      required: ['action'],
+    },
+  },
   {
     name: 'read_file',
     description:
@@ -667,7 +697,7 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
   for (const t of skillNames) keep.add(t);
   for (const t of TASK_BOARD_TOOLS) if (names.includes(t)) keep.add(t);
   for (const n of names) {
-    if (memoryOn && n.startsWith('memory_')) keep.add(n);
+    if (memoryOn && (n.startsWith('memory_') || n === 'brain')) keep.add(n);
     if (operatorOn && OPERATOR_TOOLS.includes(n)) keep.add(n);
     if (webOn && WEB_TOOLS.includes(n)) keep.add(n);
     if (YOUTUBE_SIGNAL.test(String(message)) && YOUTUBE_TOOLS.includes(n)) keep.add(n);

@@ -32,7 +32,7 @@ import { BOTS, KEY_ENV, resolveBot, defaultBotSpec } from './bots.js';
 import { readFile } from 'fs/promises';
 import { join, resolve, extname, dirname } from 'path';
 import { homedir } from 'os';
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync } from 'fs';
+import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, statSync } from 'fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { createReadStream } from 'fs';
 import { stat, unlink } from 'fs/promises';
@@ -2348,6 +2348,16 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
     // The island's local voice model stays loaded (renewed before its 30 min run out).
     warmVoiceModel();
     setInterval(() => { if (!onBattery()) warmVoiceModel(); }, 20 * 60_000).unref();
+    // ox brain's tidy-up (duplicates merged, nothing deleted), at most once a day.
+    const tidyBrain = () => import('./brain.js').then(async (B) => {
+      const stamp = join(B.brainDir(), '.consolidated');
+      if (!existsSync(B.brainDir())) return;
+      try { if (Date.now() - statSync(stamp).mtimeMs < 24 * 3600_000) return; } catch {}
+      await B.consolidate();
+      writeFileSync(stamp, new Date().toISOString());
+    }).catch(() => {});
+    setTimeout(tidyBrain, 60_000).unref();
+    setInterval(tidyBrain, 6 * 3600_000).unref();
   }
   if (!process.env.NODE_TEST_CONTEXT && process.env.OX_MESH !== '0'
     && existsSync(join(process.env.OX_HOME || join(homedir(), '.ox'), 'mesh', 'identity.json'))) {

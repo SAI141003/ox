@@ -4950,6 +4950,44 @@ async function runSubcommand(cmd, args) {
     case 'race':
       await cmdRace(args);
       return;
+    case 'brain': {
+      // ox brain: notes as markdown (opens in Obsidian) + a rebuildable search index (src/brain.js).
+      const B = await import('./brain.js');
+      const sub = args[0] ?? 'where';
+      const rest = args.slice(1);
+      const val = (f) => { const i = rest.indexOf(f); return i >= 0 ? rest[i + 1] : null; };
+      try {
+        if (sub === 'search' || sub === 'find') {
+          const q = rest.filter((a, i) => !a.startsWith('--') && rest[i - 1] !== '--limit').join(' ');
+          const hits = await B.search(q, { embed: await B.localEmbedder(), includeOld: rest.includes('--old') });
+          if (!hits.length) { console.log(c.dim('nothing in the brain matches')); return; }
+          for (const h of hits) console.log(`${c.bold(h.title)}${h.current ? '' : c.yellow(' (no longer current)')} ${c.dim(`${h.path} · ${h.why}`)}\n${h.text.trim().split('\n').slice(0, 6).join('\n')}\n`);
+          return;
+        }
+        if (sub === 'add' || sub === 'note') {
+          const title = rest.filter((a, i) => !a.startsWith('--') && !['--body', '--tags', '--replaces', '--project'].includes(rest[i - 1])).join(' ');
+          const r = B.remember({ title, body: val('--body') ?? '', tags: (val('--tags') ?? '').split(',').map((x) => x.trim()).filter(Boolean), supersedes: (val('--replaces') ?? '').split(',').map((x) => x.trim()).filter(Boolean), project: val('--project') });
+          await B.index();
+          console.log(`${c.green('✓')} ${r.title} ${c.dim(r.path)}`);
+          return;
+        }
+        if (sub === 'index') { const t = Date.now(); const r = await B.index({ embed: rest.includes('--vectors') ? await B.localEmbedder() : null }); console.log(`${c.green('✓')} ${r.total} notes (${r.indexed} read, ${r.removed} gone) in ${Date.now() - t} ms${r.noIndex ? c.dim(`  ${r.noIndex}`) : ''}`); return; }
+        if (sub === 'consolidate') { const r = await B.consolidate(); console.log(`${c.green('✓')} ${r.merged.length} duplicate${r.merged.length === 1 ? '' : 's'} merged${r.merged.length ? `: ${r.merged.map((m) => `${m.from} → ${m.into}`).join('; ')}` : ''}; ${r.total} notes`); return; }
+        if (sub === 'import') { const n = B.importOld({ cwd: process.cwd() }); await B.index(); console.log(`${c.green('✓')} ${n} older memories brought in`); return; }
+        if (sub === 'wiki') {
+          // The project's code wiki (src/wiki.js) inside the vault: code pages and notes in one link space.
+          const W = await import('./wiki.js');
+          const proj = path.basename(process.cwd());
+          const r = W.buildWiki(process.cwd(), { out: path.join(B.brainDir(), 'wiki', proj) });
+          const idx = await B.index();
+          console.log(`${c.green('✓')} ${r.pages} wiki pages for ${proj} in the brain (${idx.total} notes)`);
+          return;
+        }
+        if (sub === 'where') { console.log(`${B.brainDir()}${c.dim('\n  open it as a vault in Obsidian; set OX_BRAIN_DIR to use a vault you already have')}`); return; }
+        console.error('usage: ox brain where | search <words> [--old] | add <title> --body <text> [--tags a,b] [--replaces <title>] | index [--vectors] | consolidate | import | wiki'); process.exitCode = 3;
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+      return;
+    }
     case 'wiki': {
       // ox wiki [--out <dir>] [--top N]: the project's wiki from its code graph (Devin's Wiki, no model).
       const W = await import('./wiki.js');
