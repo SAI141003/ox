@@ -487,7 +487,12 @@
   .sc-tile { position: absolute; width: 320px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 6px 22px rgba(0,0,0,.18); display: flex; flex-direction: column; }
   .sc-head { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: grab; user-select: none; }
   .sc-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-  .sc-body { padding: 8px 10px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 190px; overflow: auto; white-space: pre-wrap; }
+  .sc-body { padding: 8px 10px; font-size: 12.5px; line-height: 1.45; max-height: 170px; overflow: auto; white-space: pre-wrap; color: var(--muted); }
+  .sc-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .sc-tool { font-size: 11px; border: 1px solid var(--line); border-radius: 99px; padding: 0 7px; white-space: nowrap; flex: none; }
+  .sc-state { white-space: nowrap; flex: none; } .sc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .sc-where { padding: 4px 10px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sc-now { padding: 6px 10px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; border-bottom: 1px solid var(--line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sc-send { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line); }
   /* Mission map: the goal tree of tasks and who owns each. */
   .mm-tree, .mm-tree ul { list-style: none; margin: 0; padding-left: 22px; position: relative; }
@@ -769,8 +774,9 @@
         <div class="os-models" id="os-models"></div>
         <div class="os-go"><button class="btn primary" id="os-go">Make it</button><span class="small muted" id="os-state"></span></div>
       </div>
-      <div class="os-h">Recipes</div>
+      <details class="os-more os-how"><summary>How to use Studio: step-by-step recipes (product photos, thumbnails, explainer and short videos…)</summary>
       <div class="os-recipes" id="os-recipes"></div>
+      </details>
       <details class="os-more"><summary>Other providers: Higgsfield, OpenAI, OpenRouter, a Stable Diffusion server on this Mac</summary>
       <div class="box" id="st-composer">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
@@ -792,7 +798,8 @@
 
     <section class="view" id="v-office"><div class="page"><div class="page-inner" style="max-width:1100px">
       <div class="office-head"><div><h2 style="margin:0">Office</h2><div class="small dim">Who is working on what, live: every chat, bot and helper agent this app started.</div></div><span class="grow"></span><span class="small dim" id="office-sum"></span></div>
-      <div class="floor" id="floor"><canvas id="floor-cv" width="320" height="150" aria-label="The office: who sits at which desk and what they are doing"></canvas><div id="floor-tags"></div></div>
+      <div class="floor" id="floor"><iframe id="floor-frame" title="The office: every AI tool at its desk, on each floor (machine), and what it is doing" loading="lazy" style="display:block;width:100%;aspect-ratio:4/3;max-height:72vh;border:0;background:#0b0b0c"></iframe></div>
+      <div class="small dim" style="margin-top:6px">Each person is one session; its colour is the tool (the legend at the bottom names them; click one to light it up). Each connected machine is a floor. <a href="/office" target="_blank" rel="noopener">Open full screen</a></div>
       <div class="lounge-h small dim" style="margin-top:16px">Desks in detail</div>
       <div class="room" id="room"></div>
       <div class="lounge-h small dim" id="lounge-h">Lounge: your bots, free</div>
@@ -2338,6 +2345,7 @@
   }
   async function pollOffice() {
     clearTimeout(officeTimer);
+    const ff = $('floor-frame'); if (ff && officeShown() && !ff.src) ff.src = '/office?app=1';
     try {
       if (!Object.keys(botShapes).length) { try { const B = await getJson('/ox/bots'); for (const b of B.mine ?? []) { botShapes[b.name] = b.shape ?? null; botColors[b.name] = b.color ?? null; } } catch {} }
       const live = await getJson('/ox/live');
@@ -2771,7 +2779,7 @@ files: [src/billing/**]
     const list = h.filter((r) => stTab === 'all' || (stTab === 'favorites' ? r.favorite : r.surface === stTab));
     $('st-gallery').innerHTML = list.length ? list.map((r) => {
       const f = r.files?.[0];
-      const media = f ? (/\.(mp4|mov|webm)$/i.test(f) ? `<video src="${esc(f)}" controls muted style="width:100%;border-radius:8px;background:#000"></video>` : `<a href="${esc(f)}" target="_blank" rel="noopener"><img src="${esc(f)}" alt="${esc(r.prompt)}" style="width:100%;border-radius:8px;display:block"></a>`)
+      const media = f ? (/\.(mp4|mov|webm)$/i.test(f) ? `<video src="${esc(f)}#t=0.5" preload="metadata" controls muted style="width:100%;border-radius:8px;background:#000"></video>` : `<a href="${esc(f)}" target="_blank" rel="noopener"><img src="${esc(f)}" alt="${esc(r.prompt)}" style="width:100%;border-radius:8px;display:block"></a>`)
         : `<div class="box small ${r.status === 'failed' || r.status === 'nsfw' ? 'err' : 'muted'}" style="min-height:90px">${esc(r.status === 'queued' ? 'still running, or stopped before it finished' : `${r.status}${r.error ? `: ${r.error}` : ''}`)}</div>`;
       return `<div class="box" style="padding:8px">${media}<div class="small" style="margin:6px 2px 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.prompt)}">${esc(r.prompt || '(no prompt)')}</div><div class="d small dim" style="display:flex;gap:6px;align-items:center;margin:0 2px"><span>${esc(r.label || r.model)}</span><span class="grow" style="flex:1"></span>${(r.files?.length ?? 0) > 1 ? `<span>+${r.files.length - 1}</span>` : ''}<button class="btn ghost" data-reuse="${esc(r.id)}" title="Reuse prompt, model and settings">Reuse</button><button class="btn ghost" data-fav="${esc(r.id)}" title="Favorite">${r.favorite ? '★' : '☆'}</button><button class="btn ghost danger" data-del="${esc(r.id)}" title="Remove from the gallery">✕</button></div></div>`;
     }).join('') : '<div class="box muted small">Nothing yet. Try: “a lighthouse at dusk, cinematic, 35mm”.</div>';
@@ -3023,13 +3031,20 @@ files: [src/billing/**]
     const el = $('scanvas');
     if (!el.querySelector('.sc-board')) {
       el.innerHTML = `<div class="shead">${icon('office')}Sessions canvas</div>
-        <p class="sdesc">Every agent session on this Mac (Claude Code, Codex, Copilot, Hermes, OpenCode, ox…) as a tile: what it is doing now, its last messages, and a box to message it. Drag tiles where you like; they stay there.</p>
+        <p class="sdesc">One tile per AI coding session running on this Mac right now (Claude Code, Codex, Copilot, Cursor, Gemini, Hermes, OpenCode, ox…). Each tile says which project and tool it is, whether it is working or waiting for you, what it is doing this second, and the last things said; type in its box to message it. Drag a tile by its top bar to place it.</p>
+        <div class="sc-bar"><span class="small" id="sc-sum"></span><span class="grow"></span><span class="dim small"><span class="sc-dot" style="display:inline-block;background:#3B9EFF"></span> working <span class="sc-dot" style="display:inline-block;background:#A78BFA;margin-left:10px"></span> thinking <span class="sc-dot" style="display:inline-block;background:#F5A524;margin-left:10px"></span> waiting for you <span class="sc-dot" style="display:inline-block;background:#9CA3AF;margin-left:10px"></span> resting</span><button class="btn ghost small" id="sc-tidy" style="margin-left:12px">Tidy up</button></div>
         <div class="sc-board" id="sc-board"></div>`;
+      $('sc-tidy').onclick = () => { store.set('ox.sc.pos', {}); $('sc-board').innerHTML = ''; loadSessionsCanvas(); };
     }
     const pos = store.get('ox.sc.pos', {});
     const board = $('sc-board');
     const { sessions = [] } = await getJson('/ox/agents').catch(() => ({ sessions: [] }));
-    const color = { tool: '#3B9EFF', thinking: '#A78BFA', idle: '#9CA3AF' };
+    const color = { tool: '#3B9EFF', thinking: '#A78BFA', idle: '#9CA3AF', yours: '#F5A524' };
+    const TOOL_COLOR = { 'Claude Code': '#D97757', Codex: '#F4F4F5', Copilot: '#8B5CF6', Cursor: '#64748B', 'Gemini CLI': '#3B82F6', Antigravity: '#A3E635', Hermes: '#EAB308', OpenCode: '#10B981', Continue: '#EC4899', ox: '#14B8A6' };
+    const mood = (x) => x.state === 'idle' ? ((x.idleSec || 0) < 600 ? 'yours' : 'idle') : x.state;
+    const cols = Math.max(1, Math.floor((board.clientWidth || 1000) / 340));
+    const working = sessions.filter((x) => x.state !== 'idle').length, waiting = sessions.filter((x) => mood(x) === 'yours').length;
+    $('sc-sum').textContent = sessions.length ? `${sessions.length} session${sessions.length === 1 ? '' : 's'}: ${working} working, ${waiting} waiting for you, ${sessions.length - working - waiting} resting` : '';
     const keep = new Set(sessions.map((x) => x.id));
     board.querySelectorAll('.sc-tile').forEach((t) => { if (!keep.has(t.dataset.id)) t.remove(); });
     sessions.forEach((x, i) => {
@@ -3037,9 +3052,11 @@ files: [src/billing/**]
       if (!t) {
         t = document.createElement('div');
         t.className = 'sc-tile'; t.dataset.id = x.id;
-        const p = pos[x.id] ?? { x: 16 + (i % 3) * 340, y: 16 + Math.floor(i / 3) * 300 };
-        Object.assign(t.style, { left: `${p.x}px`, top: `${p.y}px` });
-        t.innerHTML = `<div class="sc-head"><span class="sc-dot"></span><b class="sc-name"></b><span class="dim small sc-tool"></span><span class="grow"></span><span class="dim small sc-state"></span></div>
+        const p = pos[x.id];
+        if (p) Object.assign(t.style, { left: `${p.x}px`, top: `${p.y}px` }); else t.dataset.flow = '1';
+        t.innerHTML = `<div class="sc-head"><span class="sc-dot"></span><b class="sc-name"></b><span class="sc-tool"></span><span class="grow"></span><span class="small sc-state"></span></div>
+          <div class="sc-where dim small"></div>
+          <div class="sc-now"></div>
           <div class="sc-body">…</div>
           <div class="sc-send"><input class="field sc-in" placeholder="Message this session" style="flex:1"><button class="btn primary small sc-go">Send</button></div>`;
         board.appendChild(t);
@@ -3049,7 +3066,7 @@ files: [src/billing/**]
           const sx = e.clientX - t.offsetLeft, sy = e.clientY - t.offsetTop;
           head.setPointerCapture(e.pointerId);
           head.onpointermove = (m) => { t.style.left = `${Math.max(0, m.clientX - sx)}px`; t.style.top = `${Math.max(0, m.clientY - sy)}px`; };
-          head.onpointerup = () => { head.onpointermove = null; const all = store.get('ox.sc.pos', {}); all[x.id] = { x: t.offsetLeft, y: t.offsetTop }; store.set('ox.sc.pos', all); };
+          head.onpointerup = () => { head.onpointermove = null; delete t.dataset.flow; const all = store.get('ox.sc.pos', {}); all[x.id] = { x: t.offsetLeft, y: t.offsetTop }; store.set('ox.sc.pos', all); };
         };
         t.querySelector('.sc-go').onclick = async () => {
           const inp = t.querySelector('.sc-in'); const text = inp.value.trim(); if (!text) return;
@@ -3057,16 +3074,31 @@ files: [src/billing/**]
           try { await postJson('/ox/agents/send', { id: x.id, text }); } catch (e) { toast(e.message); }
         };
       }
-      t.querySelector('.sc-dot').style.background = color[x.state] ?? '#9CA3AF';
+      const m = mood(x), mins = Math.round((x.idleSec || 0) / 60);
+      t.querySelector('.sc-dot').style.background = color[m] ?? '#9CA3AF';
       t.querySelector('.sc-name').textContent = x.project;
-      t.querySelector('.sc-tool').textContent = x.tool;
-      t.querySelector('.sc-state').textContent = x.state === 'idle' ? `idle ${Math.round((x.idleSec || 0) / 60)} min` : x.state;
+      const tl = t.querySelector('.sc-tool'); tl.textContent = x.tool; tl.style.borderColor = TOOL_COLOR[x.tool] ?? 'var(--line)'; tl.style.color = TOOL_COLOR[x.tool] ?? 'var(--muted)';
+      t.querySelector('.sc-state').textContent = m === 'tool' ? 'working' : m === 'thinking' ? 'thinking' : m === 'yours' ? 'waiting for you' : `resting · ${mins < 60 ? `${mins} min` : `${Math.round(mins / 60)} h`}`;
+      t.querySelector('.sc-where').textContent = [x.cwd ? x.cwd.replace(/^\/Users\/[^/]+/, '~') : '', x.model].filter(Boolean).join(' · ');
+      t.querySelector('.sc-now').innerHTML = x.doing && x.state !== 'idle' ? `<span class="dim small">Doing now</span> ${esc(x.doing)}` : `<span class="dim small">${m === 'yours' ? 'Finished its turn: your reply is next' : 'Not doing anything right now'}</span>`;
       postJson('/ox/agents/session', { id: x.id }).then((r) => {
         const body = t.querySelector('.sc-body');
-        const lines = (r.messages || []).slice(-4).map((m) => `${m.role === 'user' ? '› ' : ''}${String(m.text || '').slice(0, 280)}`);
-        body.textContent = [x.doing ? `▶ ${x.doing}` : '', ...lines].filter(Boolean).join('\n\n') || '(nothing yet)';
+        const lines = (r.messages || []).filter((m) => String(m.text || '').trim()).slice(-3).map((m) => `${m.role === 'user' ? 'You' : x.tool}: ${String(m.text).trim().slice(0, 240)}`);
+        body.textContent = lines.join('\n\n') || '(no messages yet)';
+        flow();
       }).catch(() => {});
     });
+    // Tiles nobody has moved sit in columns, each under the one above it, never on top of it.
+    function flow() {
+      const ys = Array(cols).fill(16);
+      board.querySelectorAll('.sc-tile[data-flow]').forEach((t) => {
+        const c = ys.indexOf(Math.min(...ys));
+        Object.assign(t.style, { left: `${16 + c * 336}px`, top: `${ys[c]}px` });
+        ys[c] += t.offsetHeight + 16;
+      });
+      board.style.minHeight = `${Math.max(640, ...[...board.querySelectorAll('.sc-tile')].map((t) => t.offsetTop + t.offsetHeight + 16))}px`;
+    }
+    flow();
     if (!sessions.length) board.innerHTML = '<div class="dim small" style="padding:18px">No agent sessions right now. Start Claude Code, Codex or ox anywhere: they appear here.</div>';
     clearInterval(scTimer);
     scTimer = setInterval(() => { if (view === 'canvas') loadSessionsCanvas(); else clearInterval(scTimer); }, 4000);
@@ -3136,10 +3168,23 @@ files: [src/billing/**]
         ${t.pr ? `<a class="tk-tag" href="${esc(t.pr)}" target="_blank">PR</a>` : ''}</span>${ch.length ? `<ul>${ch.map(node).join('')}</ul>` : ''}</li>`;
     };
     const roots = kids._root || [];
+    const legend = Object.entries(color).map(([k, c]) => `<span style="margin-right:12px;white-space:nowrap"><span class="mm-dot" style="display:inline-block;background:${c}"></span> ${k.replace('_', ' ')}</span>`).join('');
+    const sample = `<ul class="mm-tree" style="opacity:.55"><li><span class="mm-node"><span class="mm-dot" style="background:${color.running}"></span><b>Launch the website</b><span class="dim small">1/3</span></span><ul>
+      <li><span class="mm-node"><span class="mm-dot" style="background:${color.done}"></span><b>Design the home page</b><span class="tk-tag live">Claude Code</span></span></li>
+      <li><span class="mm-node"><span class="mm-dot" style="background:${color.running}"></span><b>Build the sign-up form</b><span class="tk-tag live">Codex</span></span></li>
+      <li><span class="mm-node"><span class="mm-dot" style="background:${color.pending}"></span><b>Deploy</b><span class="tk-tag warn">waits for Build the sign-up form</span></span></li></ul></li></ul>`;
     el.innerHTML = `<div class="shead">${icon('list')}Mission map</div>
-      <p class="sdesc">Your goals as a tree: each task under the goal it serves, who owns it, how many of its parts are done, what it waits for, and its pull request. Add parts on the Task board (a task with a parent).</p>
-      <div class="box">${roots.length ? `<ul class="mm-tree">${roots.map(node).join('')}</ul>` : '<div class="dim small">No tasks yet. Add one on the Task board.</div>'}</div>
-      <div class="dim small" style="margin-top:10px">${Object.entries(color).map(([k, c]) => `<span style="margin-right:12px"><span class="mm-dot" style="display:inline-block;background:${c}"></span> ${k.replace('_', ' ')}</span>`).join('')}</div>`;
+      <p class="sdesc">Your <b>goals</b> and the <b>tasks</b> that make them up, as a tree. A goal sits at the top; its parts sit under it. Each line shows its state (the dot), who is working on it, how many parts are done, what it waits for, and its pull request. It shows tasks, not chats: the chats and agent sessions running now are on Sessions canvas and Office.</p>
+      <div class="box tk-new" style="margin-bottom:12px"><input class="field" id="mm-title" placeholder="${roots.length ? 'A new goal, or a part of the goal picked on the right' : 'Your first goal, e.g. Launch the website'}" style="flex:2">
+        <select class="field" id="mm-parent" style="width:auto;max-width:260px" aria-label="Goal it belongs to"><option value="">a new goal</option>${T.tasks.map((t) => `<option value="${esc(t.id)}">part of: ${esc(t.title.slice(0, 40))}</option>`).join('')}</select>
+        <button class="btn primary" id="mm-add">Add</button></div>
+      <div class="box">${roots.length ? `<ul class="mm-tree">${roots.map(node).join('')}</ul>` : `<div class="small" style="margin-bottom:10px">Nothing here yet. Add a goal above, then its parts. This is what it will look like:</div>${sample}`}</div>
+      <div class="dim small" style="margin-top:10px">${legend}</div>`;
+    $('mm-add').onclick = async () => {
+      const title = $('mm-title').value.trim(); if (!title) return;
+      try { await postJson('/ox/tasks', { action: 'add', title, parentId: $('mm-parent').value || null }); toast($('mm-parent').value ? 'Part added' : 'Goal added'); loadMission(); } catch (e) { toast(e.message); }
+    };
+    $('mm-title').onkeydown = (e) => { if (e.key === 'Enter') $('mm-add').click(); };
   }
 
   async function loadTasks() {
