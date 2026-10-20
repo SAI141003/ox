@@ -1049,6 +1049,23 @@ const SEARCH_BACKEND_DEFS = [
     },
   },
   {
+    // Your own SearXNG (free, self-hosted, open source): OX_SEARXNG_URL=http://localhost:8888
+    name: 'searxng',
+    envVar: 'OX_SEARXNG_URL',
+    keyless: false,
+    defaultEligible: false,
+    note: 'Your own SearXNG instance (its JSON output must be enabled: search.formats: [html, json]).',
+    async search(query, { signal, cap, snippetCap } = {}) {
+      const base = String(process.env.OX_SEARXNG_URL ?? '').replace(/\/+$/, '');
+      const res = await fetch(`${base}/search?q=${encodeURIComponent(query)}&format=json`, { headers: { accept: 'application/json' }, signal: signal ?? undefined });
+      const read = await readCapped(res, 512 * 1024);
+      const text = decodeBuffer(read.buffer, res.headers.get('content-type'));
+      if (!res.ok) throw new Error(`searxng: HTTP ${res.status}: ${text.slice(0, 160)}`);
+      const json = JSON.parse(text);
+      return normalizeRows((json?.results ?? []).map((r) => ({ title: r?.title, url: r?.url, snippet: r?.content })), cap, snippetCap);
+    },
+  },
+  {
     name: 'brave',
     envVar: 'BRAVE_SEARCH_API_KEY',
     keyless: false,
@@ -1136,6 +1153,27 @@ const SEARCH_BACKEND_DEFS = [
     },
   },
   {
+    // Wikipedia's open search API: keyless and steady from a script. Encyclopedia
+    // pages only, so it is the last route, for factual questions when nothing
+    // else answers (deep research on a Mac with no search key).
+    name: 'wikipedia',
+    envVar: null,
+    keyless: true,
+    defaultEligible: false,
+    note: 'Wikipedia search (keyless, encyclopedia pages only); OX_WIKIPEDIA_LANG picks the language (default en).',
+    async search(query, { signal, cap, snippetCap } = {}) {
+      const lang = /^[a-z-]{2,12}$/.test(String(process.env.OX_WIKIPEDIA_LANG ?? '')) ? process.env.OX_WIKIPEDIA_LANG : 'en';
+      const url = `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=${Math.min(cap, 10)}&srsearch=${encodeURIComponent(query)}`;
+      const res = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'ox-agent (https://github.com/SAI141003/ox)' }, signal: signal ?? undefined });
+      const read = await readCapped(res, 256 * 1024);
+      const text = decodeBuffer(read.buffer, res.headers.get('content-type'));
+      if (!res.ok) throw new Error(`wikipedia: HTTP ${res.status}: ${text.slice(0, 160)}`);
+      const rows = (JSON.parse(text)?.query?.search ?? []).map((r) => ({ title: r?.title, url: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(String(r?.title ?? '').replace(/ /g, '_'))}`, snippet: String(r?.snippet ?? '').replace(/<[^>]+>/g, '') }));
+      if (!rows.length) throw new Error('wikipedia: no results');
+      return normalizeRows(rows, cap, snippetCap);
+    },
+  },
+  {
     name: 'ddg-html',
     envVar: null,
     keyless: true,
@@ -1200,7 +1238,7 @@ for (const def of SEARCH_BACKEND_DEFS) {
 // measured alive on 2026-10-03, then any configured MCP search tool. Reorder
 // with setBackendOrder("web_search", [...]) -- including at runtime from a
 // plugin, which is the entire mechanism for changing routes.
-export const SEARCH_CHAIN_ORDER = ['tavily', 'brave', 'serper', 'ddg-html', 'marginalia'];
+export const SEARCH_CHAIN_ORDER = ['searxng', 'tavily', 'brave', 'serper', 'ddg-html', 'marginalia', 'wikipedia'];
 
 // web_fetch: the direct HTTP path is preferred (it is the only one that
 // returns the page as served), and the open Jina reader is the fallback for the
@@ -1557,7 +1595,10 @@ async function serveSearch({ query, cap, snippetCap, timeoutMs, signal, env, pin
       continue;
     }
     try {
-      const rows = await backend.search(query, { timeoutMs, signal, cap, snippetCap });
+      // Each route gets its own limit (at most 10 s), so one that hangs leaves
+      // time for the next instead of spending the whole call.
+      const each = Math.min(timeoutMs, 10_000);
+      const rows = await backend.search(query, { timeoutMs: each, signal: combineSignals(signal, AbortSignal.timeout(each)), cap, snippetCap });
       if (Array.isArray(rows) && rows.length) {
         if (i > from) invalidateVerdict('web_search');
         return { ok: true, backend, rows, records, verdict };
@@ -1592,6 +1633,29 @@ function runtimeRecord(backend, env, ok, code, detail) {
   };
   record.fix = fixForBackend(backend, code, { detail, configState, env });
   return record;
+}
+
+/** A page as screened text, for research workers: { ok, url, title, text } (third-party data, never instructions). */
+export async function fetchText(url, { timeoutMs = 15_000, maxChars = 40_000 } = {}) {
+  // A Wikipedia article as its plain text (its HTML starts with thousands of characters of menus).
+  const wiki = /^https:\/\/([a-z-]{2,12})\.wikipedia\.org\/wiki\/([^?#]+)/.exec(String(url));
+  if (wiki) {
+    const api = `https://${wiki[1]}.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&format=json&titles=${wiki[2]}`;
+    const doc = await fetchDocument(api, { timeoutMs, accept: 'application/json' });
+    if (doc.ok) {
+      try {
+        const page = Object.values(JSON.parse(doc.body)?.query?.pages ?? {})[0];
+        const screen = screenUntrustedText(String(page?.extract ?? ''), url, 'research');
+        if (screen.text.trim()) return { ok: true, url, title: page?.title ?? '', text: screen.text.slice(0, maxChars) };
+      } catch {}
+    }
+  }
+  const doc = await fetchDocument(url, { timeoutMs });
+  if (!doc.ok) return { ok: false, url, why: doc.message ?? doc.kind };
+  const html = /html|xml/i.test(doc.contentType ?? '') || /^\s*</.test(String(doc.body ?? ''));
+  const { title = '', text = '' } = html ? htmlToText(doc.body) : { text: collapseWhitespace(String(doc.body ?? '')) };
+  const screen = screenUntrustedText(text, doc.url, 'research');
+  return { ok: !!screen.text.trim(), url: doc.url, title, text: screen.text.slice(0, maxChars) };
 }
 
 // ---- web_search tool ---------------------------------------------------------

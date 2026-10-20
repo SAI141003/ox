@@ -534,7 +534,7 @@ describe('web_search: no backend configured', () => {
     }
     assert.deepEqual(
       listSearchBackends().map((b) => b.name).sort(),
-      ['brave', 'ddg-html', 'marginalia', 'serper', 'tavily']
+      ['brave', 'ddg-html', 'marginalia', 'searxng', 'serper', 'tavily', 'wikipedia']
     );
   });
 });

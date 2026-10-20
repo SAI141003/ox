@@ -4897,6 +4897,26 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'research': {
+      if (args.includes('--deep')) {
+        // ox research --deep "<question>": lead + 1-5 parallel researchers, every claim with a source, saved into ox brain (src/deep-research.js).
+        const R = await import('./deep-research.js');
+        const W = await import('./tools/web.js');
+        const Br = await import('./brain.js');
+        const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
+        const q = args.filter((a, i) => !a.startsWith('--') && !['--bot', '--model', '--workers-model'].includes(args[i - 1])).join(' ');
+        const config = loadConfig({ cwd: process.cwd() });
+        const lead = await proofAsk(config, val('--bot') ?? val('--model'));
+        if (!lead) { console.error(c.red('ox research --deep: no model is connected (ox connect, or an API key)')); process.exitCode = 2; return; }
+        const worker = val('--workers-model') ? (await proofAsk(config, val('--workers-model'))) ?? lead : lead;
+        const t0 = Date.now();
+        try {
+          const r = await R.deepResearch(q, { lead, worker, searchRows: (x) => W.searchRows(x, { cap: 6, timeoutMs: 40_000 }), fetchText: (u) => W.fetchText(u), say: (s) => process.stderr.write(c.dim(`· ${s}\n`)), brain: args.includes('--no-save') ? null : Br });
+          console.log(`\n${r.report}\n`);
+          if (r.sources.length) console.log(`${c.bold('Sources')}\n${r.sources.map((s) => `  [${s.n}] ${s.title ? `${s.title} ` : ''}${c.dim(s.url)}`).join('\n')}`);
+          console.log(c.dim(`\n${r.workers} researchers · ${r.claims.length} claims kept, ${r.dropped.length} without a source dropped · ${Math.round((Date.now() - t0) / 1000)} s${r.saved ? ` · saved to ox brain: ${r.saved.title}` : ''}`));
+        } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+        return;
+      }
       // ox research "<topic>" [--on reddit,hn,youtube,x,linkedin]: what people say.
       const S = await import('./social-research.js');
       const oi = args.indexOf('--on');
