@@ -25,7 +25,8 @@ const model = http.createServer((req, res) => {
 await new Promise((r) => model.listen(0, '127.0.0.1', r));
 const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-servemode-'));
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/_API_KEY$|^OX_/.test(k)));
-Object.assign(env, { HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'ox-servemode-h-')), OX_ISLAND: '0', OX_NO_PLUGINS: '1', OX_NO_AWAKE: '1', OX_BASE_URL: `http://127.0.0.1:${model.address().port}/v1`, OX_API_KEY: 'x' });
+Object.assign(env, { HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'ox-servemode-h-')), OX_ISLAND: '0', OX_NO_PLUGINS: '1', OX_NO_AWAKE: '1', OX_BASE_URL: `http://127.0.0.1:${model.address().port}/v1`, OX_API_KEY: 'x', OX_APP_APPROVAL_MS: '3000' });
+// An app write waits on Allow / Deny; unanswered, it is a no after OX_APP_APPROVAL_MS.
 const port = 40000 + Math.floor(Math.random() * 20000);
 const srv = spawn(process.execPath, [OX, 'serve', '--port', String(port)], { cwd, env, stdio: 'ignore' });
 after(() => { srv.kill(); model.close(); });
@@ -68,4 +69,28 @@ test('Auto names its pick; a plain OpenAI client gets no ox fields', async () =>
   assert.equal(m.mode, 'debug');
   const plain = await chat({ messages: [{ role: 'user', content: 'write web.txt' }] });
   assert.ok(!plain.frames.some((f) => f.ox?.type === 'mode'));
+});
+
+test('an app chat on an API model asks Allow / Deny for a write, and Allow writes it', async () => {
+  const r = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'custom:m', stream: true, ox_mode: 'code', messages: [{ role: 'user', content: 'write web.txt' }] }) });
+  const dec = new TextDecoder();
+  let buf = '', asked = null, resolved = null;
+  for await (const part of r.body) {
+    buf += dec.decode(part, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const f = buf.slice(0, i).replace(/^data: /, ''); buf = buf.slice(i + 2);
+      if (!f || f === '[DONE]') continue;
+      const ox = JSON.parse(f).ox;
+      if (ox?.type === 'approval' && !asked) {
+        asked = ox;
+        const a = await fetch(`http://127.0.0.1:${port}/ox/approval`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: ox.id, decision: 'allow' }) });
+        assert.equal(a.status, 200);
+      }
+      if (ox?.type === 'approval-resolved') resolved = ox;
+    }
+  }
+  assert.equal(asked?.tool, 'write_file');
+  assert.equal(resolved?.decision, 'allow');
+  assert.equal(fs.readFileSync(path.join(cwd, 'web.txt'), 'utf8'), 'x');
 });

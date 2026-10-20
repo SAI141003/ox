@@ -157,7 +157,7 @@
   .thread { flex: 1; overflow-y: auto; padding: 28px 22px 40px; }
   .inner { max-width: var(--tw); margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
   .msg.user { align-self: flex-end; max-width: 80%; background: var(--raise); border: 1px solid var(--line); padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .msg.assistant { display: grid; grid-template-columns: 26px 1fr; gap: 12px; }
+  .msg.assistant { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 12px; }
   .msg.assistant .who { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(180deg, #3A3A3C 0%, #1C1C1E 42%, #0B0B0C 100%); color: #FFFFFF; box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 0 0 1px rgba(255,255,255,.06); display: grid; place-items: center; }
 
   .msg.assistant .who svg { width: 18px; height: 18px; }

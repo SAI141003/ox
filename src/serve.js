@@ -91,11 +91,11 @@ function sendSSE(res, data) {
 
 // Approvals asked in the app: a run that needs a yes (a Claude plan's write, a
 // command) sends an `ox: { type: 'approval' }` chunk and waits here until the
-// page answers through POST /ox/approval, the chat is closed, or 10 minutes pass.
-// Only a literal allow says yes.
+// page answers through POST /ox/approval, the chat is closed, or 10 minutes pass
+// (OX_APP_APPROVAL_MS overrides that, for tests). Only a literal allow says yes.
 const appApprovals = new Map();
 let appApprovalSeq = 0;
-export function appApprover(res, model, { timeoutMs = 10 * 60_000 } = {}) {
+export function appApprover(res, model, { timeoutMs = Number(process.env.OX_APP_APPROVAL_MS) || 10 * 60_000 } = {}) {
   const mine = new Set();
   res.on?.('close', () => { for (const id of mine) answerAppApproval(id, 'deny'); });
   return (tool, args = {}, detail = '') => new Promise((resolve) => {
@@ -899,12 +899,13 @@ async function handleChatCompletions(req, res) {
   }
 
   if (stream) {
-    // A plan's step that needs your yes (Claude Code's write or command) is
-    // asked here, in the chat that started it, instead of stopping the run.
-    if (target?.provider === 'subscription') {
-      ctx.requestApproval = appApprover(res, targetModel);
-      ctx.planApprovals = true;
-    }
+    // A step that needs your yes (a write, a command, a Claude plan's step) is
+    // asked here, in the chat that started it, instead of being declined. Only
+    // the app can answer the card (it sends ox_mode); a plain OpenAI client
+    // keeps the old answer, no, rather than waiting on a card it never shows.
+    const fromApp = Boolean(body.ox_mode || body.ox_ui);
+    if (fromApp || target?.provider === 'subscription') ctx.requestApproval = appApprover(res, targetModel);
+    if (target?.provider === 'subscription') ctx.planApprovals = true;
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
