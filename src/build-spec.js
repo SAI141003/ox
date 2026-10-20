@@ -103,7 +103,7 @@ export function saveSpec(cwd, spec) {
 export function loadSpec(cwd, id = null) {
   const dir = path.join(cwd, SPEC_DIR);
   let names = [];
-  try { names = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch { return null; }
+  try { names = fs.readdirSync(dir).filter((f) => f.endsWith('.json') && !/\.(?:lock|proof)\.json$/.test(f)); } catch { return null; }
   if (!names.length) return null;
   const pick = id ? names.find((n) => n.startsWith(id)) : names.map((n) => ({ n, t: fs.statSync(path.join(dir, n)).mtimeMs })).sort((a, b) => b.t - a.t)[0].n;
   if (!pick) return null;
@@ -129,8 +129,28 @@ Steps, in order:
   return { brief, contract: { outcome: spec.summary || spec.title, verification: `gate: ${tests.cmd}` } };
 }
 
+/**
+ * The same work in two runs, so the tests can be locked in between
+ * (src/build-proof.js): first the tests only, then the code with the tests locked.
+ */
+export function buildBriefs(spec, tests) {
+  const ac = spec.acceptance.map((a) => `${a.id}: Given ${a.given || '…'}, when ${a.when || '…'}, then ${a.then}`).join('\n');
+  const head = `The spec is .agent/specs/${spec.id}.md.\n\n${spec.title}: ${spec.summary}\n\nAcceptance criteria:\n${ac}\n${spec.constraints.length ? `\nConstraints:\n${spec.constraints.map((c) => `- ${c}`).join('\n')}\n` : ''}${spec.outOfScope.length ? `\nOut of scope (do not build):\n${spec.outOfScope.map((c) => `- ${c}`).join('\n')}\n` : ''}${spec.files.length ? `\nLikely files: ${spec.files.join(', ')}\n` : ''}`;
+  const testsFirst = `Step 1 of 2: write the TESTS only. ${head}
+1. Read the files involved.
+2. With ${tests.framework}, write at least one test per criterion, with the criterion's id in the test's name (for example "${spec.acceptance[0].id}: ${spec.acceptance[0].then.slice(0, 40)}"). Test real behaviour through the public interface, including the error and edge cases the criteria imply.
+3. Do NOT implement the feature and do not change non-test files, except the smallest stubs the tests need to load (an exported function that throws "not implemented").
+4. Run ${tests.cmd} and check the new tests fail for the right reason. Then stop.`;
+  const code = `Step 2 of 2: implement. ${head}
+The tests for these criteria are written and LOCKED: ox hashed them. Editing or deleting a locked test, adding skip / only / xfail, removing an assertion or changing the test command makes the build fail its proof. If a test is truly wrong, stop and say which and why instead of changing it.
+1. Read the tests and the files involved.
+2. Implement in the project's existing style until ${tests.cmd} passes. You may add new tests.
+3. Run ${tests.cmd} once more and say which criteria pass. ox will then run held-out tests you have not seen and try small breaks in your code to check the tests catch them.`;
+  return { testsFirst, code, contract: { outcome: spec.summary || spec.title, verification: `gate: ${tests.cmd}` } };
+}
+
 // ---------------------------------------------------------------- the trace
-function testFiles(cwd) {
+export function testFiles(cwd) {
   const out = [];
   const walk = (dir) => {
     let ents = [];

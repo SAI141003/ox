@@ -5542,6 +5542,9 @@ async function runSubcommand(cmd, args) {
         console.log(c.dim('  1. a spec: acceptance criteria AC-1… (Given/When/Then), constraints, out of scope, open questions → .agent/specs/'));
         console.log(c.dim('  2. tests first, one per criterion, named with its id   3. code until the test command passes'));
         console.log(c.dim('  4. a trace: each criterion\'s tests run on their own: passes, fails, or no test'));
+        console.log(c.dim('  5. a proof the coder cannot fake: tests locked after step 2 (edits, skips, lost assertions fail it),'));
+        console.log(c.dim('     held-out tests it never saw, small breaks the tests must catch, a fresh-context review'));
+        console.log(c.dim('  --accept-test-changes   you approve test edits made after the lock.   ox spec proof [id]: prove again'));
         console.log(c.dim('  --spec-only   stop after the spec (review it, then: ox build --from-spec <id>)'));
         console.log(c.dim('  --bot <model> -y   as for any run.   ox spec trace [id]: the trace again, any time'));
         return;
@@ -5576,11 +5579,37 @@ async function runSubcommand(cmd, args) {
       console.log(B.specMarkdown(spec));
       console.log(c.dim(`spec saved: .agent/specs/${spec.id}.md`));
       if (args.includes('--spec-only')) return;
-      const { brief, contract } = B.buildBrief(spec, tests);
-      await runPrint(brief, config, { yolo, verify: true, bot, goalContract: contract });
+      // Two runs with the tests locked in between, then a proof the coder cannot fake (src/build-proof.js).
+      const PR = await import('./build-proof.js');
+      const { spawnSync } = await import('node:child_process');
+      // The diff (for the held-out tests and the mutation check) is measured from
+      // the tree as it is now: `git stash create` records it without touching your branch.
+      const gitOut = (a) => { const r = spawnSync('git', a, { cwd, encoding: 'utf8' }); return r.status === 0 ? r.stdout.trim() : ''; };
+      const base = PR.loadLock(cwd, spec.id)?.base ?? (gitOut(['stash', 'create']) || gitOut(['rev-parse', 'HEAD']) || null);
+      const { testsFirst, code, contract } = B.buildBriefs(spec, tests);
+      if (!PR.loadLock(cwd, spec.id)) {
+        console.log(c.bold('\n1/3 tests first'));
+        await runPrint(testsFirst, config, { yolo, bot });
+        const red = B.traceSpec(cwd, spec, { tests });
+        const early = red.rows.filter((r) => r.status === 'passes').map((r) => r.id);
+        if (early.length) console.log(c.yellow(`  ${early.join(', ')} already pass before any code: those tests may not test the new behaviour`));
+        if (red.missing) console.log(c.yellow(`  ${red.missing} criteria have no test yet`));
+        PR.lockTests(cwd, spec.id, { base });
+        console.log(c.dim(`  tests locked: .agent/specs/${spec.id}.lock.json (${Object.keys(PR.loadLock(cwd, spec.id).files).length} test files)`));
+      } else console.log(c.dim('tests already locked for this spec; going on to the code'));
+      console.log(c.bold('\n2/3 code'));
+      await runPrint(code, config, { yolo, verify: true, bot, goalContract: contract });
+      console.log(c.bold('\n3/3 proof'));
       const t = B.traceSpec(cwd, spec, { tests });
+      const proof = await PR.prove(cwd, spec, { tests, trace: t, ask: await proofAsk(config, bot), acceptTestChanges: args.includes('--accept-test-changes') });
+      const where = PR.saveProof(cwd, spec, proof);
       console.log(`\n${B.formatTrace(spec, t)}`);
-      if (t.passed < t.rows.length) process.exitCode = 1;
+      console.log(`${proof.verdict === 'proven' ? c.green('✓ proven') : c.red('✗ not proven')}${proof.reasons.length ? `: ${proof.reasons.join('; ')}` : ''}`);
+      for (const x of proof.integrity.problems) console.log(c.red(`  ${x.file}: ${x.detail}`));
+      if (proof.mutation.total) console.log(c.dim(`  mutation check: ${proof.mutation.killed}/${proof.mutation.total} small breaks caught`));
+      if (proof.heldOut.skipped) console.log(c.dim(`  held-out tests: ${proof.heldOut.skipped}`)); else console.log(c.dim(`  held-out tests: ${proof.heldOut.ok ? 'pass' : 'fail'}`));
+      console.log(c.dim(`  proof: ${where} (every command and its exit code)`));
+      if (proof.verdict !== 'proven') process.exitCode = 1;
       return;
     }
     case 'port': {
@@ -6732,7 +6761,7 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'verify': { const v = createVerifier(process.cwd()); const report = await v.verify('project verification', null, {}); console.log(formatVerificationReport(report)); return; }
-    case 'spec': { const action = String(args[0] ?? '').trim().toLowerCase(); const restArgs = args.slice(1); const st = createSpecTracker(process.cwd()); if (action === 'create') { const title = restArgs.join(' '); if (!title) { console.log(c.red('usage: ox spec create <title>')); return; } const spec = st.createSpec(title, []); console.log(c.green('created spec ' + spec.id + ': ' + spec.title)); return; } if (action === 'list') { const specs = st.listSpecs(); if (!specs.length) { console.log(c.dim('no specs')); return; } for (const s of specs) console.log('  ' + s.id + ' ' + s.title); return; } if (action === 'trace' || action === 'show') { const B = await import('./build-spec.js'); const spec = B.loadSpec(process.cwd(), restArgs[0] ?? null); if (!spec) { console.log(c.dim('no spec in .agent/specs (ox build "<requirement>" writes one)')); return; } if (action === 'show') { console.log(B.specMarkdown(spec)); return; } const t = B.traceSpec(process.cwd(), spec); console.log(B.formatTrace(spec, t)); if (t.passed < t.rows.length) process.exitCode = 1; return; } console.log(c.dim('usage: ox spec create <title> | ox spec list | ox spec show [id] | ox spec trace [id]')); return; }
+    case 'spec': { const action = String(args[0] ?? '').trim().toLowerCase(); const restArgs = args.slice(1); const st = createSpecTracker(process.cwd()); if (action === 'create') { const title = restArgs.join(' '); if (!title) { console.log(c.red('usage: ox spec create <title>')); return; } const spec = st.createSpec(title, []); console.log(c.green('created spec ' + spec.id + ': ' + spec.title)); return; } if (action === 'list') { const specs = st.listSpecs(); if (!specs.length) { console.log(c.dim('no specs')); return; } for (const s of specs) console.log('  ' + s.id + ' ' + s.title); return; } if (action === 'proof') { const B = await import('./build-spec.js'); const PR = await import('./build-proof.js'); const cwd = process.cwd(); const spec = B.loadSpec(cwd, restArgs.find((a) => !a.startsWith('-')) ?? null); if (!spec) { console.log(c.dim('no spec in .agent/specs (ox build "<requirement>" writes one)')); return; } const tests = B.detectTests(cwd); const config = loadConfig({ cwd }); const p = await PR.prove(cwd, spec, { tests, trace: B.traceSpec(cwd, spec, { tests }), ask: restArgs.includes('--no-model') ? null : await proofAsk(config, null), acceptTestChanges: restArgs.includes('--accept-test-changes') }); const where = PR.saveProof(cwd, spec, p); console.log(PR.proofMarkdown(spec, p)); console.log(c.dim(`saved: ${where}`)); if (p.verdict !== 'proven') process.exitCode = 1; return; } if (action === 'trace' || action === 'show') { const B = await import('./build-spec.js'); const spec = B.loadSpec(process.cwd(), restArgs[0] ?? null); if (!spec) { console.log(c.dim('no spec in .agent/specs (ox build "<requirement>" writes one)')); return; } if (action === 'show') { console.log(B.specMarkdown(spec)); return; } const t = B.traceSpec(process.cwd(), spec); console.log(B.formatTrace(spec, t)); if (t.passed < t.rows.length) process.exitCode = 1; return; } console.log(c.dim('usage: ox spec create <title> | ox spec list | ox spec show [id] | ox spec trace [id] | ox spec proof [id] [--no-model] [--accept-test-changes]')); return; }
     case 'arch': {
       const action = String(args[0] ?? '').trim().toLowerCase();
       const restArgs = args.slice(1);
@@ -6855,6 +6884,16 @@ async function runSubcommand(cmd, args) {
       return;
     }
   }
+}
+
+/** A fresh model call for the proof's held-out tests and review: no history, no tools. */
+async function proofAsk(config, bot) {
+  try {
+    const { workingModelSpec } = await import('./working-model.js');
+    const { quickText } = await import('./quick-text.js');
+    const target = resolveBot(await workingModelSpec(config, { explicit: bot }), config);
+    return async ({ system, user }) => (await quickText(target, { system, user, maxTokens: 4000 })).text;
+  } catch { return null; }
 }
 
 async function runPrint(prompt, config, opts, initialMessages = []) {
@@ -7295,6 +7334,9 @@ async function replWithBudget(config, opts, flags, budget) {
             break;
           case 'tool-narrowing':
             process.stdout.write(`${c.dim(`· tool offer narrowed to ${ev.offered} of ${ev.total} for this turn`)}\n`);
+            break;
+          case 'cache-miss':
+            process.stdout.write(`${c.yellow(`· prompt cache: only ${Math.round(ev.ratio * 100)}% of ${ev.inputTokens} input tokens came from the cache this turn (the prompt's start changed); this turn costs more and starts slower`)}\n`);
             break;
           case 'context-estimate':
             state.contextTokens = ev.tokens ?? null;

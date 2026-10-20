@@ -357,8 +357,14 @@ export function pickWorkingDefault(env = process.env) {
   let configured = null;
   try { configured = readConfigDoc().defaultBot ?? null; } catch {}
   if (configured && runnable(configured, env)) return configured;
-  const plan = workingPlans()[0];
-  if (plan) return plan.bot;
+  // Anthropic's consumer terms (February 2026) keep Claude Free/Pro/Max logins
+  // for Claude Code and Claude.ai, so ox never picks the Claude plan on its own:
+  // a plan whose maker allows partner apps (ChatGPT) first, then an Anthropic
+  // API key, and the Claude plan only when you choose it (docs/PROVIDER_ACCESS.md).
+  const plans = workingPlans();
+  const open = plans.find((p) => p.id !== 'claude');
+  if (open) return open.bot;
+  if (env.ANTHROPIC_API_KEY) return 'ox-claude';
   for (const [id, def] of Object.entries(readConfigDoc().bots ?? {})) if (def?.provider === 'custom' && def.model) return id;
   for (const [id, def] of Object.entries(BOTS)) {
     const k = KEY_ENV[def.provider];

@@ -40,6 +40,8 @@ if (cmd === 'statusline') {
 }
 
 async function main() {
+  // Node keeps the compiled CLI on disk and reuses it (Node 22.1+; ignored before).
+  if (process.env.OX_COMPILE_CACHE !== '0') { try { (await import('node:module')).enableCompileCache?.(); } catch {} }
   // Keys pasted into the app (~/.ox/keys.json) fill in what the shell did not set.
   try { (await import('../src/keystore.js')).loadKeysIntoEnv(); } catch {}
   let cli = null;

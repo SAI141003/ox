@@ -7,6 +7,15 @@ import { buildSystemPrompt, renderContractBlock } from './system-prompt.js';
 import { harvestEvidence, mergeGoalTodos, progressSignature, proveGoalItems, renderGoalBlock } from './goal.js';
 import { listToolSchemas, dispatchTool, pruneToolSchemas, narrowToolSchemas } from './tools/index.js';
 import { LOAD_TOOLS_SCHEMA } from './tools/load-tools.js';
+
+// The tool offer each session settled on (names, in order), so every message
+// of a session sends the same tool list and keeps the prompt cache warm.
+export const SESSION_OFFER = new Map();
+function rememberOffer(sid, names) {
+  SESSION_OFFER.delete(sid);
+  SESSION_OFFER.set(sid, [...new Set(names)]);
+  if (SESSION_OFFER.size > 200) SESSION_OFFER.delete(SESSION_OFFER.keys().next().value);
+}
 import { alreadyLiveBroadcast, noteSubagentBatch, noteSubagentLive } from './subagent-registry.js';
 import { getProvider, streamVia } from './providers/index.js';
 import { batchPlan, resolveSubagentConcurrency } from './resource-class.js';
@@ -15,6 +24,7 @@ import { writeSessionNote } from './memory.js';
 import { riskOf } from './mcp-templates.js';
 import { compactionKnobs, compactionModelChoice, compactionPassKnobs, resolveAuxTarget } from './config.js';
 import { applyContextOptimize } from './context-opt.js';
+import { maskOldOutputs } from './context-mask.js';
 import { LlmFailure, normalizeFailure } from './llm-failure.js';
 import { readOnlyAutoVerdict } from './approval.js';
 import { generateCritique, reflect as reflectSession } from './self-improve.js';
@@ -970,6 +980,9 @@ async function* runAgentLoop(opts = {}) {
   // per-call verification contract. They are different things that both belong at
   // the top of the prompt, so both arrive here and render into one layer.
   const { target, messages = [], ctx = {}, config = {}, maxIterations = 40, signal, verify = false, extraGuidance = '', initialUsage = null, auxTarget, goalContract = null, goal = null } = opts;
+  const cacheMeter = { requests: 0, warned: false, everRead: false, everWrote: false };
+  // Keep provider connections open between turns, and open this one now, while the prompt is built (src/net.js).
+  try { const N = await import('./net.js'); await N.tuneFetch(); N.prewarm(N.originOf(target)); } catch {}
   let history;
   const cwd = resolveRunCwd(opts);
   const toolCtx = ctx && typeof ctx === 'object' ? { ...ctx, signal } : { signal };
@@ -1311,12 +1324,21 @@ async function* runAgentLoop(opts = {}) {
   // index text from ctx drives relevance; the event fires once when narrowing
   // actually shrank the offer.
   if (config?.tools?.narrow !== false) {
-    const narrowed = narrowToolSchemas(tools, {
-      message: originalUserText,
-      relevantSkillTools: skillIndex,
-      strict: strictSchemas,
-      mode: ctx?.mode,
-    });
+    // Cache-stable: the offer is chosen on a session's first message and kept
+    // (with anything loaded since) for the rest of it, in the same order. A tool
+    // list that changes between messages would void the provider's prompt cache
+    // (Anthropic orders the cache tools → system → messages).
+    const sid = toolCtx?.sessionId ?? null;
+    const kept = sid ? SESSION_OFFER.get(sid) : null;
+    let narrowed = kept && kept.every((n) => tools.some((t) => t?.name === n))
+      ? kept.map((n) => tools.find((t) => t?.name === n))
+      : narrowToolSchemas(tools, {
+        message: originalUserText,
+        relevantSkillTools: skillIndex,
+        strict: strictSchemas,
+        mode: ctx?.mode,
+      });
+    if (sid && Array.isArray(narrowed)) rememberOffer(sid, narrowed.map((t) => t?.name).filter(Boolean));
     if (Array.isArray(narrowed) && narrowed.length > 0 && narrowed.length < tools.length) {
       const totalBefore = tools.length;
       withheldTools = tools
@@ -1335,6 +1357,8 @@ async function* runAgentLoop(opts = {}) {
           if (!tools.includes(s)) tools = [...tools.filter((x) => x !== LOAD_TOOLS_SCHEMA), s, LOAD_TOOLS_SCHEMA];
           withheldTools = withheldTools.filter((w) => w !== n);
           loaded.push(n);
+          // Kept for the session's next messages, so the list does not change again.
+          if (sid) rememberOffer(sid, [...(SESSION_OFFER.get(sid) ?? []), n]);
         }
         return { loaded, unknown };
       };
@@ -1656,6 +1680,11 @@ async function* runAgentLoop(opts = {}) {
         if (config.contextOptimize && prevHistoryForAlign) {
           setHistory(applyContextOptimize(history, prevHistoryForAlign, config));
         }
+        // Old, large tool outputs hidden in batches (src/context-mask.js).
+        if (config.maskOutputs !== false) {
+          const masked = maskOldOutputs(history);
+          if (masked !== history) { setHistory(masked); yield { type: 'outputs-hidden', count: masked.filter((m, i) => m !== history[i]).length }; }
+        }
         // PreLLM: fires immediately before every streamVia() request. Payload
         // mirrors the tool events' shape (cwd + sessionId) plus the model and
         // the user prompt, so a hook sees the same env contract either way.
@@ -1688,6 +1717,16 @@ async function* runAgentLoop(opts = {}) {
             attemptUsage.outputTokens += ev.usage.outputTokens;
             addMainUsage(ev.usage, am);
             yield { type: 'usage', ...ev.usage, costUsd: costOf(am, ev.usage, costOverrides), model: am };
+            // The cache meter: from a run's second request on, most of a long
+            // prompt should come from the provider's cache. Said once per run when it does not.
+            cacheMeter.requests++;
+            const cr = Number(ev.usage.cacheReadTokens) || 0, inTok = Number(ev.usage.inputTokens) || 0;
+            if (cacheMeter.requests >= 2 && inTok >= 4096 && !cacheMeter.warned && (cr || cacheMeter.everRead || cacheMeter.everWrote) && cr / inTok < 0.5) {
+              cacheMeter.warned = true;
+              yield { type: 'cache-miss', ratio: Math.round((cr / inTok) * 100) / 100, inputTokens: inTok, cacheReadTokens: cr, model: am };
+            }
+            if (cr) cacheMeter.everRead = true;
+            if (Number(ev.usage.cacheWriteTokens) > 0) cacheMeter.everWrote = true;
           } else if (ev.kind === 'done') {
             sawDone = true;
             stopReason = ev.stopReason ?? stopReason;

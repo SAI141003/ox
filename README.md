@@ -46,9 +46,12 @@ cd ox && npm link
 ox
 ```
 
-Then connect a model: `ox connect` finds the Claude, ChatGPT or Cursor plan you
-are signed in to; or set any API key (Anthropic, OpenAI, Gemini, xAI, Groq,
-DeepSeek, Mistral, OpenRouter… 22 providers); or run a local model with Ollama.
+Then connect a model: set any API key (Anthropic, OpenAI, Gemini, xAI, Groq,
+DeepSeek, Mistral, OpenRouter… 22 providers); or `ox connect` finds a ChatGPT
+plan you are signed in to (OpenAI allows partner apps); or run a local model
+with Ollama. For Claude, use an Anthropic API key: Anthropic keeps Claude
+Pro/Max logins for its own apps, so ox never reads them or picks that plan for
+you ([how ox connects to each provider](docs/PROVIDER_ACCESS.md)).
 
 **Windows**: the same commands in PowerShell, or `ox-windows-x64.zip` from
 [Releases](https://github.com/SAI141003/ox/releases) (`ox.cmd` for the terminal,
