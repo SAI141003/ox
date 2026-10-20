@@ -623,8 +623,12 @@ final class OxBridge: ObservableObject {
     /// A narrated step shown under the closed notch (Vovy's step line): only
     /// events marked `narrate` (ox make's steps), so ordinary tool calls never
     /// scroll past. Cleared a few seconds after its last change.
-    struct Ticker: Equatable { let text: String; let done: Bool; let sessionId: String; let at: Date }
-    @Published var ticker: Ticker? { didSet { IslandLayout.tickerOn = ticker != nil } }
+    struct Ticker: Equatable {
+        let text: String; let done: Bool; let sessionId: String; let at: Date
+        /// A race line ("Claude Code 3m 12s · test fails   |   Codex 3m 05s") is one row per lane.
+        var lanes: [String] { text.components(separatedBy: "   |   ").filter { !$0.isEmpty } }
+    }
+    @Published var ticker: Ticker? { didSet { IslandLayout.tickerOn = ticker != nil; IslandLayout.tickerRows = max(1, ticker?.lanes.count ?? 1) } }
     func showTicker(_ text: String, done: Bool, session: String) {
         let t = Ticker(text: text, done: done, sessionId: session, at: Date())
         ticker = t

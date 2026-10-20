@@ -46,7 +46,7 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | A22 Worried when the Mac is hot or busy | ✓ | code: thermalState and getloadavg (IslandView.swift) |
 | A23 Capture shortcut | ✓ | code: ⌃⌥S (IslandExtras.swift) |
 | A24 10 languages | ✓ | `OxIsland --check-l10n` (earlier round) |
-| A25 Phone app, lock screen, widgets | ✗ | no phone app; phone approvals go through the Telegram gateway (code) |
+| A25 Phone app, lock screen, widgets | ✓ | desktop/ios (SwiftUI + Live Activity) and src/phone-bridge.js: pair with `ox phone pair` (QR), approvals in the app (Allow behind Face ID) and on the lock screen / Dynamic Island with Deny and Allow (Allow asks Face ID first). Proven: the app's Swift crypto against the bridge, and a Claude Code hook denied from the phone code end to end; the iPhone code type-checks against the iOS 26.2 SDK. Not run on a phone or simulator here (Xcode's iOS platform is not installed, low disk). Limit: a NEW approval reaches a locked phone with the app closed only through Apple push (paid developer account) |
 | A26 Chat with any provider | ✓ | code (Tray chat) |
 
 ### B, C. Clicky and Claudex
@@ -73,8 +73,8 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | D5 Video reasoning | ✓ | test: video-image-edit (`understand`: scene frames + transcript) |
 | D6 n8n templates | ✓ | test: n8n-import |
 | D7 Google ADK | ✓ | code: ADK skills featured (src/market.js) |
-| D8 Fish Audio voice | ~ | test: tts-stream (its ideas: sound after the first sentence, emotion tags, on Kokoro); Fish's own voice needs its key |
-| D9 Tesser remote dev servers | ✗ | later |
+| D8 Fish Audio voice | — | Fish's ideas run on Kokoro (open; test: tts-stream); Fish's own voice is a paid API, left out by the owner's open-source rule |
+| D9 Tesser remote dev servers | ✓ | on your own machines (no cloud bill): `ox mesh dev <machine>:<folder>`; the "dev" grant; only ports ox started are reachable (test: mesh, two nodes on this Mac; a real second laptop not tried) |
 | D10 Diagram shapes | ✓ | test: openui-reliability (`Flow`, `Explainer` in src/ui-lang.js) |
 | D11 Polaris / Polsia | — | context |
 
@@ -89,7 +89,7 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | F1.5 Edit videos from chat | ✓ | test: video-image-edit |
 | F1.6 Errand chips | ✓ | code: chips in an empty chat (Tray.swift) |
 | F1.7 Interactive explainers | ✓ | test: openui-reliability |
-| F1.8 Cloud teammate | ✗ | later |
+| F1.8 Cloud teammate | ✓ | an ox org agent with its own computer: `ox org hire … --machine <paired machine>`; its runs happen there through ox mesh (test: org) |
 | F1.9 Devin PR flow, wiki, app on the PR | ✓ | test: dev-flow, wiki |
 | F1.10 Skill from a GitHub link | ✓ | code: src/skill-add.js; commit's live install of AlphaInsider#strategy-creator |
 | F1.11 Voice glow | ✓ | code: VoiceLevel bars |
@@ -115,7 +115,7 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 |---|---|---|
 | F2.1 Mail in the notch | ✓ | test: mail |
 | F2.2 Live feed, approvals, done hop | ✓ | installed (A1); lock screen ✗ (A25) |
-| F2.3 Coucou for Windows | ~ | web island (src/web/island.html, test: island-web) instead of a native Windows one |
+| F2.3 Coucou for Windows | ~ | the web island runs on Windows (src/web/island.html; Windows IPC over named pipes, PR #2); a native Windows app needs a Windows machine to build and test |
 | F2.4 Pixie | ✓ | code; owner (voice) |
 | F2.5 Research on X / Reddit / LinkedIn | ✓ | test: social-research; X and LinkedIn need a search key |
 | F2.6 Clicky | ✓ | code |
@@ -148,6 +148,21 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | "Build me a pumpkin carver game with Claude": `ox make` and the same by voice: a new project, the idea as a full brief, Claude Code in a new Terminal tab, each step narrated in the notch, the app opened when done | live: built in about 3 min and opened; Claude Code's folder-trust question is left to you and said in the notch (test: make-app) |
 | "Carve the smiley face": `draw` takes the cursor and draws shapes or any path (ox's agent with approval; Claude Code and Codex through ox mcp-mac) | live: a face carved into a test canvas, then into the pumpkin game Claude built; moving the mouse stops it; it never draws when the asked app's window is not under the point, and brings back a window parked by Stage Manager (test: mac-control) |
 
+### lumiomac: "Claude Code vs Codex" and its notch office (recording 21:46, photo IMG_9415)
+
+| What it shows | In ox | Proof |
+|---|---|---|
+| The same prompt to Claude Code and Codex, watched from the notch: a timeline per tool with its time, moments pinned ("skills: design + tests", "test fails, on purpose", "bug… fixed", "30 games"), the finish ("Claude Code — 5m 49s") | ✓ `ox vs "<prompt>" --tools claude,codex` (also gemini, opencode, ox): each tool in its own folder and Terminal tab; moments read from each tool's own transcript (skills, a test written, failing, passing, a browser check); the notch shows one row per tool and the winner | tests: race-live (Claude and Codex transcript formats); notch screenshots; a real race not run here: Codex is installed but broken on this Mac (`npm install -g @openai/codex`), Gemini CLI and OpenCode not installed; ox vs says so before opening any tab |
+| A clean top-down pixel office: desks with computers and chairs, windows, bookshelf, a stats board, a clock, coffee, cabinets, servers, a lounge; "Working: 1 · Resting: 1"; "Claude · 5 h 89%"; agents at their desks with tags ("Codex running a command", "Claude ✓"); coffee time when done | ✓ /office, `ox office`, and the Office tab in the notch: ox's own pixel sprites; agents sit and type (monitor shows code), stand with "needs you", rest in the lounge, go for coffee when just finished | live: the notch and the browser with 9 real sessions; demo screenshots |
+| (Owner) Six or seven AI tools on one Mac: which is which | ✓ each tool its own colour (uniform, tag, legend: Claude, Codex, Copilot, Cursor, Gemini, Antigravity, Hermes, OpenCode, Continue, ox); Cursor, Gemini CLI and Continue now detected | test: agents-live |
+| (Owner) Several machines controlled from one laptop | ✓ a floor per machine (this Mac, then every paired machine over ox mesh), each named by you; a machine that does not share its agents says how to allow it | /ox/office/floors live (this Mac); demo with three floors |
+
+### Island design from the references (October 19, evening)
+
+| Item | Proof |
+|---|---|
+| Vovy's step line: with the notch closed, a narrated step hangs under it (spinner, then a green check): ox make's steps and drawing with the cursor ("Drawing the left eye", from ox or Claude Code) | live screenshots |
+
 ### New in this round (October 19)
 
 | Item | Proof |
@@ -158,9 +173,11 @@ at the Mac (speech, mic, Screen Recording, a second laptop, a phone) ·
 | No more "A keychain cannot be found to store Chrome": every Chrome ox starts (browser, PR shots, rendering, web island, app window) uses `--use-mock-keychain` | test: fast-browser, web-render, island-web (15/15) |
 | One tap stops listening: the listening card, the mic (now a stop icon), the dictation chip, the pill; a tap while the mic starts cancels it; held-key listening ends after 45 s at most | live (mic button): start cancelled by a tap, listening stopped by a tap, silence ended it; the pill and chip taps not clicked yet |
 
-**Still open after this audit:** A25 phone app and lock screen (a separate
-iOS project), D9 / F1.8 cloud machines (paid), H2 calls; A13 Parakeet is
-wired but not installed or run here.
+**Still open after this audit (October 19, evening):** F2.3, a native Windows
+app (needs a Windows machine; the web island runs there). Left out by the
+owner: A13 Parakeet (set aside), D8 Fish Audio and Stripe (paid, not open
+source). Not run here: the iPhone app on a device (Xcode's iOS platform is
+not installed), dev servers on a real second laptop.
 
 ## A. From Coucou (latest)
 

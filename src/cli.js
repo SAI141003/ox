@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -5715,6 +5715,32 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'transfer':
+    case 'vs': {
+      // lumiomac's "Claude Code vs Codex": the same prompt to two or more tools,
+      // each in its own folder and Terminal tab; the race is shown in the notch.
+      const R = await import('./race-live.js');
+      const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
+      const prompt = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--tools').join(' ').trim();
+      if (!prompt || prompt === 'help') { console.log(`${c.bold('ox vs')} "<prompt>" [--tools claude,codex]: the same prompt to each tool in its own folder and Terminal tab; the race, its moments and the winner in the notch (tools: ${Object.keys(R.RACERS).join(', ')})`); return; }
+      const I = await import('./ipc.js');
+      const key = `race-${Date.now().toString(36)}`;
+      let server = null;
+      try { server = I.createIpcServer({ socketPath: I.socketPathFor(key), sessionId: key, meta: { cwd: process.cwd(), bot: 'ox vs', model: 'race' } }); } catch {}
+      let n = 0, last = '';
+      const say = (line, done = false) => {
+        if (line === last && !done) return;
+        last = line;
+        if (done) console.log(`${c.green('✓')} ${line}`);
+        try { server?.broadcast({ type: 'tool-start', id: `r${++n}`, name: 'race', argsPreview: line, narrate: true }); if (done) server?.broadcast({ type: 'tool-end', id: `r${n}`, name: 'race', isError: false, narrate: true }); } catch {}
+      };
+      try {
+        const r = await R.race(prompt, { tools: (val('--tools') ?? 'claude,codex').split(',').map((t) => t.trim()).filter(Boolean), say, update: (lanes) => { for (const l of lanes) for (const m of l.moments.slice(-1)) console.log(c.dim(`  ${l.label}: ${m.label}`)); } });
+        console.log(r.winner ? `${c.bold(r.winner.label)} wins. Folders: ${r.dir}` : c.yellow(`no one finished. Folders: ${r.dir}`));
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+      await new Promise((res) => setTimeout(res, 6000));
+      try { server?.broadcast({ type: 'final' }); server?.close?.(); } catch {}
+      return;
+    }
     case 'phone': {
       // OX on your iPhone (src/phone-bridge.js, desktop/ios): pair, list, forget, serve.
       const P = await import('./phone-bridge.js');

@@ -779,9 +779,27 @@ struct TickerLine: View {
                     .frame(width: 10, height: 10).rotationEffect(.degrees(spin ? 360 : 0))
                     .onAppear { withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { spin = true } }
             }
-            Text(ticker.text).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Ink.text).lineLimit(1).truncationMode(.tail)
+            if ticker.lanes.count > 1 {
+                // A race: one row per lane, the tool's name bold, its time and latest moment after.
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(ticker.lanes.enumerated()), id: \.offset) { _, lane in
+                        let parts = lane.components(separatedBy: " · ")
+                        HStack(spacing: 6) {
+                            Text(parts[0]).font(.system(size: 11.5, weight: .semibold).monospacedDigit()).foregroundStyle(lane.contains("✓") ? Color(hex: "#34D399") : Ink.text)
+                            if parts.count > 1 {
+                                Text(parts.dropFirst().joined(separator: " · ")).font(.system(size: 10.5, weight: .medium))
+                                    .foregroundStyle(Color(hex: "#7DD3FC")).padding(.horizontal, 6).padding(.vertical, 1)
+                                    .background(Capsule().fill(Color(hex: "#7DD3FC").opacity(0.14)))
+                            }
+                        }
+                        .lineLimit(1)
+                    }
+                }
+            } else {
+                Text(ticker.text).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Ink.text).lineLimit(1).truncationMode(.tail)
+            }
         }
-        .frame(height: IslandLayout.tickerHeight - 4)
+        .frame(height: IslandLayout.tickerHeight * CGFloat(max(1, ticker.lanes.count)) - 4)
         .padding(.horizontal, 16)
         .id(ticker.text + (ticker.done ? "✓" : ""))
         .accessibilityElement(children: .combine)
