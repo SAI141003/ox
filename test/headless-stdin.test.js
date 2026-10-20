@@ -26,9 +26,9 @@ after(() => server.close());
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/_API_KEY$|^OX_/.test(k)));
 Object.assign(env, { HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'ox-stdin-h-')), OX_ISLAND: '0', NO_COLOR: '1', OX_NO_PLUGINS: '1', OX_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`, OX_API_KEY: 'x' });
 const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-stdin-c-'));
-const run = (cmd, args) => new Promise((resolve) => {
+const run = (cmd, args, { stdin = 'pipe' } = {}) => new Promise((resolve) => {
   const t0 = Date.now();
-  const p = spawn(cmd, args, { cwd, env });
+  const p = spawn(cmd, args, { cwd, env, stdio: [stdin, 'pipe', 'pipe'] });
   let out = '';
   p.stdout.on('data', (d) => (out += d));
   p.stderr.on('data', (d) => (out += d));
@@ -36,9 +36,13 @@ const run = (cmd, args) => new Promise((resolve) => {
 });
 
 test('a silent open stdin does not stall the run', async () => {
+  // Against the same run with stdin closed, not a fixed limit: the stall this
+  // guards against is a 10 s wait, and a slow machine (CI's Intel Mac) takes
+  // over 5 s for either run.
+  const base = await run(process.execPath, [OX, '--bot', 'custom:m', '-p', 'hello'], { stdin: 'ignore' });
   const r = await run(process.execPath, [OX, '--bot', 'custom:m', '-p', 'hello']);
   assert.equal(r.code, 0, r.out);
-  assert.ok(r.ms < 5000, `took ${r.ms}ms`);
+  assert.ok(r.ms < base.ms + 4000, `took ${r.ms}ms with stdin open and silent, ${base.ms}ms with it closed`);
 });
 
 test('a shell pipe is still read into the prompt', async () => {

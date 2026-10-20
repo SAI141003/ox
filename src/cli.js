@@ -4972,6 +4972,8 @@ async function runSubcommand(cmd, args) {
       return;
     case 'brain': {
       // ox brain: notes as markdown (opens in Obsidian) + a rebuildable search index (src/brain.js).
+      // The research reports (ox brain research | gaps | synthesize) live in the older handler.
+      if (['research', 'gaps', 'synthesize', 'reports'].includes(args[0])) return runSubcommand('brain-reports', args[0] === 'reports' ? args.slice(1) : args);
       const B = await import('./brain.js');
       const sub = args[0] ?? 'where';
       const rest = args.slice(1);
@@ -5003,8 +5005,13 @@ async function runSubcommand(cmd, args) {
           console.log(`${c.green('✓')} ${r.pages} wiki pages for ${proj} in the brain (${idx.total} notes)`);
           return;
         }
-        if (sub === 'where') { console.log(`${B.brainDir()}${c.dim('\n  open it as a vault in Obsidian; set OX_BRAIN_DIR to use a vault you already have')}`); return; }
-        console.error('usage: ox brain where | search <words> [--old] | add <title> --body <text> [--tags a,b] [--replaces <title>] | index [--vectors] | consolidate | import | wiki'); process.exitCode = 3;
+        if (sub === 'where') {
+          console.log(`${B.brainDir()}${c.dim('\n  open it as a vault in Obsidian; set OX_BRAIN_DIR to use a vault you already have')}`);
+          // Bare `ox brain`: the research reports too, as it always showed.
+          if (!args.length) return runSubcommand('brain-reports', []);
+          return;
+        }
+        console.error('usage: ox brain where | search <words> [--old] | add <title> --body <text> [--tags a,b] [--replaces <title>] | index [--vectors] | consolidate | import | wiki | research <topic> | gaps | synthesize <topic>'); process.exitCode = 3;
       } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
       return;
     }
@@ -5427,7 +5434,8 @@ async function runSubcommand(cmd, args) {
       return;
     }
 
-    case 'brain': {
+    case 'brain-reports': {
+      // Research reports (.agent/research): reached through `ox brain` (research, gaps, synthesize, the list).
       const action = String(args[0] ?? '').trim().toLowerCase();
       const restArgs = args.slice(1);
       try {

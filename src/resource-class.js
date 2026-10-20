@@ -61,6 +61,8 @@ export function classifyTool(name) {
   if (ACTING_TOOLS.has(toolName)) return 'approval_gated';
   if (NETWORK_READ_TOOLS.has(toolName)) return 'pure_read';
   if (toolName.startsWith('memory_')) return 'memory_write';
+  // ox brain (src/brain.js): searches and saves long-term notes, the same posture as memory_*.
+  if (toolName === 'brain') return 'memory_write';
   if (MAILBOX_TOOLS.has(toolName)) return 'memory_write';
   if (SESSION_STATE_TOOLS.has(toolName)) return 'memory_write';
   if (TERMINAL_TOOLS.has(toolName)) return 'terminal';
