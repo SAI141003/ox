@@ -18,6 +18,7 @@
 //   ox-hands type <text> [--app <app>]
 //   ox-hands key <code> [--mods cmd,shift,option,ctrl] [--times N] [--app <app>]
 import AppKit
+import CoreImage
 import ApplicationServices
 import Foundation
 
@@ -329,6 +330,18 @@ func handle(_ args: [String]) -> [String: Any] {
             }
             post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: last, mouseButton: .left))
             try emit(["done": "drew", "points": pts.count, "ms": ms()])
+
+        case "qr":
+            // A QR code as a PNG (Core Image), for pairing a phone: qr <text> <out.png>
+            guard argv.count > 2, let f = CIFilter(name: "CIQRCodeGenerator") else { try emit(["error": "qr <text> <out.png>"]) }
+            f.setValue(Data(argv[1].utf8), forKey: "inputMessage")
+            f.setValue("M", forKey: "inputCorrectionLevel")
+            guard let img = f.outputImage?.transformed(by: CGAffineTransform(scaleX: 12, y: 12)),
+                  let cg = CIContext().createCGImage(img, from: img.extent) else { try emit(["error": "no QR code"]) }
+            let rep = NSBitmapImageRep(cgImage: cg)
+            guard let png = rep.representation(using: .png, properties: [:]) else { try emit(["error": "no PNG"]) }
+            try png.write(to: URL(fileURLWithPath: argv[2]))
+            try emit(["done": "qr", "file": argv[2], "ms": ms()])
 
         case "move":
             // Only the pointer (hover), no click.

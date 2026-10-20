@@ -2230,6 +2230,13 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
     && existsSync(join(process.env.OX_HOME || join(homedir(), '.ox'), 'mesh', 'identity.json'))) {
     meshUp().catch((e) => console.log(`[mesh] not started: ${e.code === 'EADDRINUSE' ? 'another ox already runs this machine\'s node' : e.message}`));
   }
+  // OX on your iPhone (src/phone-bridge.js): only once a phone is paired.
+  if (!process.env.NODE_TEST_CONTEXT && process.env.OX_PHONE !== '0'
+    && existsSync(join(process.env.OX_HOME || join(homedir(), '.ox'), 'phone.json'))) {
+    import('./phone-bridge.js').then((P) => (P.readDevices().length ? P.startPhoneBridge() : null))
+      .then((b) => { if (b) console.log(`[phone] approvals for your phone on port ${b.port}`); })
+      .catch((e) => console.log(`[phone] not started: ${e.code === 'EADDRINUSE' ? 'another ox already serves your phone' : e.message}`));
+  }
   const exposure = authExposure({ host, key: config.apiKey ?? apiKey() });
   if (exposure.level === 'refuse') {
     return Promise.reject(new Error(exposure.lines.join('\n')));

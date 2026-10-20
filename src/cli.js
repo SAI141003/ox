@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -5692,6 +5692,39 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'transfer':
+    case 'phone': {
+      // OX on your iPhone (src/phone-bridge.js, desktop/ios): pair, list, forget, serve.
+      const P = await import('./phone-bridge.js');
+      const sub = args[0] ?? 'list';
+      if (sub === 'pair') {
+        const p = P.pairDevice(args.slice(1).join(' ') || 'iPhone');
+        console.log(`${c.green('✓')} paired ${c.bold(p.name)}. Open this on the phone (scan the code, or AirDrop / paste the link):`);
+        console.log(`  ${p.link}`);
+        console.log(c.dim('  The link holds the key: show it to nobody else. ox phone forget <name> revokes it.'));
+        try {
+          const { spawnSync } = await import('node:child_process');
+          spawnSync('pbcopy', { input: p.link });
+          const { handsPath } = await import('./mac-control.js');
+          const hb = handsPath();
+          const png = path.join(os.tmpdir(), `ox-phone-${p.id}.png`);
+          if (hb && spawnSync(hb, ['qr', p.link, png]).status === 0) { spawnSync('open', [png]); console.log(c.dim(`  the QR code is open (${png}); the link is on the clipboard`)); }
+          setTimeout(() => { try { fs.rmSync(png, { force: true }); } catch {} }, 120_000).unref?.();
+        } catch {}
+        return;
+      }
+      if (sub === 'forget' || sub === 'rm') { console.log(P.forgetDevice(args[1] ?? '') ? `${c.green('✓')} forgotten: that phone can no longer reach this Mac` : c.yellow('no such phone')); return; }
+      if (sub === 'serve') {
+        const b = await P.startPhoneBridge();
+        console.log(`approvals for your phone on ${P.lanAddress()}:${b.port} (Ctrl-C to stop)`);
+        await new Promise((res) => process.once('SIGINT', res));
+        await b.close();
+        return;
+      }
+      const all = P.readDevices();
+      if (!all.length) console.log(c.dim('no phone paired: ox phone pair "My iPhone"'));
+      for (const d of all) console.log(`${c.bold(d.name)}  ${c.dim(`${d.id} · paired ${d.added.slice(0, 10)}`)}`);
+      return;
+    }
     case 'office': {
       // The 3D office (the-delegation): every live agent at the desk of what it is doing.
       let port = null;
