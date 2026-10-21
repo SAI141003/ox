@@ -413,3 +413,18 @@ Licences are checked before any code is taken. A product's name, mascot and art 
 |---|---|---|---|---|---|
 | H1 | DeepSeek Bot (a plugin for DeepSeek Harness) | A "Chief of Staff" bot: say the team you want; it creates the bots (Writer, Coder) and starts a group chat with them | `ox org team "<sentence>"`: the chief drafts the hires from one sentence, you approve, and the team gets one group thread where they talk and you join | Apache-2.0 (per the screenshot; repo not found to confirm) | ✓ now (audit at the top) — was: → |
 | H2 | CopilotKit/OpenDots | Always-on AI coworkers that move between text, calls and Slack, each with its own computer, web and mobile | ox org agents wake on a schedule (always on), Slack gateway with channel memory, phone through Telegram, each agent in its own worktree or on another machine (mesh). Calls: not built | MIT | ✓ now (audit at the top) — was: ~ |
+
+## October 20, evening: 9 screenshots and 3 recordings
+
+| Seen | In ox | Proof |
+|---|---|---|
+| Coucou updates itself from the notch: asks once, "0.5.3 is out" Update now / What's new / Later, checks the signature, swaps, restarts, "Up to date" | ✓ the island asks once; the server checks ox's GitHub every few hours (its own process); the notch says "N updates for ox" at most once a day; Update now: only from github.com/SAI141003/ox, fast-forward only, new code must load or ox goes back; island rebuilt and restarted; "ox is up to date" | test: self-update (real git repos, a broken update rolled back, your own commits never overwritten); live: the ask card answered in the notch, check on this Mac finds origin/main |
+| ShogunAI: Ask over mail, meetings and notes with sources | ✓ ox brain also searches call notes (~/ox-notes) and the library, read-only, each hit saying where it came from | test: brain |
+| ShogunAI: today's schedule and priorities every morning | ✓ `ox today` (and /ox/today): today's events, what needs you, what changed since yesterday, what is ready; Calendar and Mail read only when open | test: today; live on this Mac |
+| ShogunAI: Write anywhere, Meetings | ✓ already (B1, A14) | |
+| ShogunAI: Visual recall (search what you saw on screen) | ✗ not built: it records your screen all day; needs its own privacy design | |
+| luciomakes: 26 agents on a canvas, tools menu | ✓ already (Sessions canvas, Mission map, Library, Skills); Loops ✗ | |
+| WeKnora, OpenWhispr, OpenProject, Cal.com, ComfyUI, Open Design, gbrain, Agent Reach | ✓ in the marketplace with checked licences, each noting ox's own take | live: GitHub API |
+| ComfyUI's node graph | ✓ Studio provider: your ComfyUI runs the standard graph or your own Save (API) workflow | test: comfyui (stand-in server) |
+| Skills for Real Engineers (mattpocock/skills), Anatomy skill | ✓ in the marketplace (10 + 1 skills, MIT) | live: resolved on GitHub |
+| Four-agent trading team (simulated) | ~ `ox org team "<sentence>"` builds such a team; no ready-made preset; ox never trades real money | |

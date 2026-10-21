@@ -1869,6 +1869,8 @@ const ROUTES = [
       return (await quickText(resolveBot(pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 700 })).text;
     } });
   }) },
+  // Your morning brief (src/today.js).
+  { method: 'GET', pattern: /^\/ox\/today\/?$/, handler: appRoute(async () => (await import('./today.js')).brief()) },
   // ox updates itself from the notch (src/self-update.js): asked once, at most one notice a day.
   { method: 'GET', pattern: /^\/ox\/update\/?$/, handler: appRoute(async () => { const U = await import('./self-update.js'); const st = U.readState(); return { notice: U.notice(), allowed: st.allowed ?? null, available: st.available ?? null, problem: st.problem ?? null, updatedTo: st.updatedTo ?? null, applying: st.applying ?? null }; }) },
   { method: 'POST', pattern: /^\/ox\/update\/?$/, handler: appRoute(async (body) => {
