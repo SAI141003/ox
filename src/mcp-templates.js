@@ -178,48 +178,6 @@ export const MCP_TEMPLATES = {
     ].join('\n'),
   },
 
-  alpaca: {
-    name: 'alpaca',
-    title: 'Alpaca trading',
-    risk: 'money',
-    desc: 'alpaca-mcp-server: market data and order placement against Alpaca (paper trading by default).',
-    requires: ['ALPACA_API_KEY', 'ALPACA_SECRET_KEY'],
-    entry: () => ({
-      command: 'uvx',
-      args: ['alpaca-mcp-server'],
-      env: {
-        ALPACA_API_KEY: '${ALPACA_API_KEY}',
-        ALPACA_SECRET_KEY: '${ALPACA_SECRET_KEY}',
-        ALPACA_PAPER_TRADE: '${ALPACA_PAPER_TRADE:-true}',
-      },
-    }),
-    setup: [
-      'PAPER DEFAULT: ALPACA_PAPER_TRADE expands to "true" unless you explicitly',
-      'export it otherwise — keep paper mode until you have a tested reason.',
-      'Keys live only in env (ALPACA_API_KEY / ALPACA_SECRET_KEY); ox never',
-      'writes them to disk.',
-      'Money-risk class: every order asks for approval first.',
-    ].join('\n'),
-  },
-
-  coinbase: {
-    name: 'coinbase',
-    title: 'Coinbase agent MCP',
-    risk: 'money',
-    desc: 'Coinbase hosted agent MCP: portfolio reads and trades over Streamable HTTP.',
-    requires: [],
-    entry: () => ({
-      type: 'http',
-      url: 'https://agents.coinbase.com/mcp',
-    }),
-    setup: [
-      'Use SCOPED API keys restricted to portfolio-read/trade only.',
-      'NEVER grant withdrawal permissions to an agent key — transfers are out',
-      'of scope by policy.',
-      'Money-risk class: portfolio actions always ask before they execute.',
-    ].join('\n'),
-  },
-
   wechaty: {
     name: 'wechaty',
     title: 'Wechaty (WeChat / WhatsApp)',

@@ -85,15 +85,15 @@ test('policy matrix: money-risk allow downgrades to ask without authorization, w
       return true;
     };
     const warned = new Set();
-    const ctx = pctx({ alpaca: 'allow' }, { alpaca: 'project' });
-    const first = resolveMcpPolicy('mcp__alpaca__place_order', ctx, warned);
+    const ctx = pctx({ opentable: 'allow' }, { opentable: 'project' });
+    const first = resolveMcpPolicy('mcp__opentable__book', ctx, warned);
     assert.equal(first.decision, 'ask', 'project-scope money allow cannot self-authorize');
     assert.equal(first.risk, 'money');
-    const second = resolveMcpPolicy('mcp__alpaca__place_order', ctx, warned);
+    const second = resolveMcpPolicy('mcp__opentable__book', ctx, warned);
     assert.equal(second.decision, 'ask');
     // one-time warning naming both authorization paths
     assert.equal(lines.length, 1, `expected single warning, got ${lines.length}: ${lines.join('|')}`);
-    assert.match(lines[0], /alpaca/);
+    assert.match(lines[0], /opentable/);
     assert.match(lines[0], /--side-effects-ok/);
     assert.match(lines[0], /~\/\.ox\/config\.json|config\.json/);
   } finally {
@@ -109,14 +109,14 @@ test('policy matrix: money-risk allow stands for global source OR --side-effects
     return true;
   };
   try {
-    const globalCtx = pctx({ alpaca: 'allow' }, { alpaca: 'global' });
-    assert.equal(resolveMcpPolicy('mcp__alpaca__place_order', globalCtx, new Set()).decision, 'allow');
-    const flagCtx = pctx({ alpaca: 'allow' }, { alpaca: 'project' }, { sideEffectsOk: true });
-    assert.equal(resolveMcpPolicy('mcp__alpaca__place_order', flagCtx, new Set()).decision, 'allow');
+    const globalCtx = pctx({ opentable: 'allow' }, { opentable: 'global' });
+    assert.equal(resolveMcpPolicy('mcp__opentable__book', globalCtx, new Set()).decision, 'allow');
+    const flagCtx = pctx({ opentable: 'allow' }, { opentable: 'project' }, { sideEffectsOk: true });
+    assert.equal(resolveMcpPolicy('mcp__opentable__book', flagCtx, new Set()).decision, 'allow');
     assert.equal(seen.length, 0, 'authorized allows must not warn');
     // deny on a money server stays deny regardless of flags
-    const denyCtx = pctx({ coinbase: 'deny' }, {}, { sideEffectsOk: true });
-    assert.equal(resolveMcpPolicy('mcp__coinbase__trade', denyCtx).decision, 'deny');
+    const denyCtx = pctx({ opentable: 'deny' }, {}, { sideEffectsOk: true });
+    assert.equal(resolveMcpPolicy('mcp__opentable__book', denyCtx).decision, 'deny');
   } finally {
     process.stderr.write = orig;
   }
@@ -156,12 +156,12 @@ test('malformed project .ox.json throws loudly naming the file', () => {
 
 test('autoPreflight refuses yolo+money-risk without --side-effects-ok', () => {
   const servers = {
-    alpaca: { command: 'uvx', args: ['alpaca-mcp-server'] },
+    opentable: { command: 'npx', args: ['@striderlabs/mcp-opentable'] },
     browser: { command: 'npx', args: ['-y', '@playwright/mcp@latest'] },
   };
   const refused = autoPreflight({ yolo: true, sideEffectsOk: false, mcpServers: servers });
   assert.equal(refused.ok, false);
-  assert.match(refused.reason, /alpaca/);
+  assert.match(refused.reason, /opentable/);
   assert.match(refused.reason, /--side-effects-ok/);
 
   assert.equal(autoPreflight({ yolo: true, sideEffectsOk: true, mcpServers: servers }).ok, true);
@@ -284,11 +284,11 @@ function spawnOxAsync({ args, extraEnv = {}, stdin = '' } = {}) {
 test('ox auto: refuses -y while a money-risk MCP server is active (exit 4, nothing runs)', () => {
   // port 9 refuses instantly on loopback — hub start fails fast, offline
   writeGlobalConfig({
-    mcpServers: { coinbase: { type: 'http', url: 'http://127.0.0.1:9/mcp' } },
+    mcpServers: { opentable: { command: 'npx', args: ['@striderlabs/mcp-opentable'] } },
   });
-  const r = runOx(['auto', 'rebalance my portfolio', '-y']);
+  const r = runOx(['auto', 'book a table', '-y']);
   assert.equal(r.status, 4, `stdout: ${r.stdout}\nstderr: ${r.stderr}`);
-  assert.match(r.stderr, /coinbase/);
+  assert.match(r.stderr, /opentable/);
   assert.match(r.stderr, /--side-effects-ok/);
   // no provider was ever contacted (no keys configured anyway)
   assert.doesNotMatch(r.stderr, /iteration budget|usage-total/);

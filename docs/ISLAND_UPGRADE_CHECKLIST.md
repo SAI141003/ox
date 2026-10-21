@@ -2,8 +2,8 @@
 
 From the owner's videos and screenshots of October 16–17, 2026 and the latest
 Coucou (`Louis-CFM/coucou`, MIT code, main at `434d6a2`, Oct 16), checked
-against the island's own source. Coucou's name, Mochi, art and sounds are
-reserved: its ideas and MIT code may be used, never its character.
+against the island's own source. Coucou's name, mascot, art and sounds are
+reserved: its ideas and MIT code may be used, never its protected assets.
 
 States: ✓ the island has it · ~ partly · ✗ missing · → next to build
 
@@ -386,7 +386,7 @@ the island was rebuilt. "Checked" says how the fix was proven.
 | F4.20 | The open island put the session list above the walking-ox floor, so it grew tall (unlike Coucou / Claudex) | With sessions listed the floor goes; small characters in the rows; up to 4 rows, working ones first | real island screenshot |
 | F4.22 | Messaging a Codex session from the island failed: Codex's config named gpt-5.5, which the ChatGPT account may not use; the raw error JSON was shown | Resume with a model the account allows; errors shown as words | real: "pong" came back from a Codex session |
 | F4.23 | `ox -p … --image f` printed the help (the flag was documented, not parsed); with a plan, the image was dropped | Parsed; plan runs get the image as a file | real: "A screenshot of a dark chat app." |
-| F4.24 | The ox had been taken out of the open island | Back, in the card's left like Mochi; its face is the most urgent state; on alert past 80 % of a plan limit (Claudex) | real island screenshot |
+| F4.24 | The ox had been taken out of the open island | Back, in the card's left; its face is the most urgent state; on alert past 80 % of a plan limit (Claudex) | real island screenshot |
 | F4.21 | No way to open a session from the island, read it, message it or take it over | Click a session's character: its last messages, a message box (one turn through the tool's own resume; waits while the session is busy in its own window), Open in Terminal | test/agents-live.test.js; real island shows the conversation |
 | F4.25 | The ox stood and walked only; no eating, sleeping or reacting | New renders from the Blender rig: graze, doze, gallop (working), think, alert (needs you), happy (done), dizzy (error), worried (past 80 % of a plan) | real island screenshot |
 | F4.26 | Every other agent shared one pixel character | Friends Puff, Pebble (first named Pip) and Dot (white, white with black; never black), same rig, 12 cycles each; each session gets one by its id | real island screenshot |

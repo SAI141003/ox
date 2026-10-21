@@ -4,7 +4,7 @@ October 18, 2026. Built from the owner's recordings (frames and speech, all
 watched) and the island's own source, read line by line. The three are
 different products and are kept apart here:
 
-- **Coucou**: Louis-CFM/coucou, MIT. The notch app with the Mochi character.
+- **Coucou**: Louis-CFM/coucou, MIT. A notch app with its own protected mascot.
   Recordings F2.1, F2.2, F2.3, F3.6 and the October 16–17 batch (section A).
 - **Pixie**: agentmaxxing's "buddy", called by name. Recording F2.4: "Hey Pixie,
   play Billie Jean", "make yourself smaller and turn down the volume", "open my
@@ -13,7 +13,7 @@ different products and are kept apart here:
   "write the reply in my Gmail box in my voice", "type a good follow-up prompt
   into the Claude Code terminal and explain it", skills (a YC skill).
 
-Coucou's name, Mochi, art and sounds are its own; ox takes ideas and MIT code
+Coucou's name, mascot, art and sounds are its own; ox takes ideas and MIT code
 only. Pixie and Clicky: ideas only (no licence seen).
 
 States: ✓ the island has it, checked · ~ partly · ✗ missing · → being built
@@ -23,7 +23,7 @@ States: ✓ the island has it, checked · ~ partly · ✗ missing · → being b
 | Feature | Coucou | Pixie | Hey Clicky | OX Island |
 |---|---|---|---|---|
 | Lives in the notch, opens on hover | ✓ | ✓ | (a cursor buddy, not the notch) | ✓ |
-| A character with moods | Mochi: happy jump when done, sad on errors | Pixie: eyes in the notch | Clicky beside the cursor | ✓ the ox, moods for thinking / working / needs you / done / error; poke reactions |
+| A character with moods | protected mascot: happy jump when done, sad on errors | Pixie: eyes in the notch | Clicky beside the cursor | ✓ the ox, moods for thinking / working / needs you / done / error; poke reactions |
 | Called by name ("Hey …") | "OK Coucou" | "Hey Pixie" | "Hey Clicky" | ✓ "OK ox", or any name you give it ("call yourself Pixie") |
 | Play a song by voice | ✓ | ✓ "play Billie Jean", album-art card | — | ✓ plays it (offline, 0.1 s), album art in the now-playing pill |
 | "Make yourself smaller" | — | ✓ (with "and turn down the volume") | — | ✓ both halves now (F4.2; was only the first) |

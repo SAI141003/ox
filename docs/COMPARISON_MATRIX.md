@@ -73,13 +73,15 @@ The brief asked for a HeyClicky licence/IP row. **There is nothing to describe.*
 
 ### §0.4 HeyClicky: the brief's attribution does not survive checking
 
-The task brief stated HeyClicky's maker is **Louis Raillé**, and that a "Mochi" character/name/icon/sound is © Louis Raillé per a `LICENSE-ASSETS.md`, all-rights-reserved. I checked all of this against first-party sources. **None of it holds.**
+The task brief stated HeyClicky's maker was associated with a named proprietary
+character, icon, and sound set. I checked this against first-party sources.
+**That claim does not hold.**
 
 | Brief's claim | What heyclicky.com and GitHub actually show (fetched 2026-10-02) |
 |---|---|
 | Maker is "Louis Raillé" | Site signs itself **"\|farza, founder"**. The open-source Clicky lineage README says *"Hi there! I'm Farza, the guy that made Clicky."* Founder is **Farza Majeed** (ex-Buildspace; third-party trackers list YC S26). No occurrence of "Louis Raillé" in any first-party source. |
 | Rights held by an individual | Site footer: **"© Humansongs, Inc. 2026"** — a corporation, not a person. |
-| A "Mochi" character exists | The mascot is an **ASCII-art face** (`^ ω ^`, `{ ^-^ }`). No character named Mochi appears in any first-party source. |
+| A named proprietary character exists | The mascot is an **ASCII-art face** (`^ ω ^`, `{ ^-^ }`). No separately named character appears in any first-party source. |
 | A `LICENSE-ASSETS.md` governs it | **It does not exist.** `github.com/heyclicky` is an org with, verbatim, *"This organization has no public repositories."* The product is a closed-source `.dmg` download. |
 
 **Consequences, applied as licence constraints in the tables below:**
@@ -497,7 +499,7 @@ Each ox cell in this document traces to one of these. Nothing in the ox columns 
 | 10.15 | `grep -rn "telemetry\|analytics\|posthog\|segment\|sentry" src/` | one comment (`agent.js:2172`), no code |
 | 10.16 | `node -e "SANDBOX_PRESETS"` + `resolveSandbox({flag})` | `["off","workspace","read-only","strict"]`; default `off`; `strict → restrict_network:true` |
 | 10.17 | `MCP_TEMPLATES` | 21 templates; `mcp.js` implements stdio + http |
-| 10.18 | `webfetch https://www.heyclicky.com/` | founder "farza"; `© Humansongs, Inc. 2026`; macOS-only; pricing; no "Mochi" |
+| 10.18 | `webfetch https://www.heyclicky.com/` | founder "farza"; `© Humansongs, Inc. 2026`; macOS-only; pricing; no separately named hardware controller |
 | 10.19 | `webfetch https://github.com/heyclicky` | *"This organization has no public repositories."* → no `LICENSE-ASSETS.md` exists |
 | 10.20 | `ox --help` (full, re-run 2026-10-03) | `daemon continuity:` block confirmed: `daemon start/status/stop/doctor/log`, `agents [--json] [--limit n]`, `attach <id> [--no-replay]`, `shutdown [--force]`, `-p --detach`, `schedule add/list/enable/disable/run-now/remove/remove-all/opt-in/opt-out`, `heartbeat start`. Also `/goal`, `/refine`, `/schedule`, `/heartbeat`, `/subgoal` |
 | 10.21 | `ox daemon --help` | 5 daemon verbs + `agents`/`attach`/`shutdown`/`--detach` + 8 schedule verbs + `print-crontab`. **Also advertises `ox heartbeat start/list/stop` — which now DO run (10.32); the defect this row recorded on 2026-10-03 is fixed** |

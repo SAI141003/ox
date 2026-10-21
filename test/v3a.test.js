@@ -278,10 +278,6 @@ test('registry integrity: unique names, valid risks, resolvable entry shapes', (
   assert.match(MCP_TEMPLATES.booking.setup, /affiliate/i);
   assert.match(MCP_TEMPLATES.opentable.setup, /confirm/i);
   assert.equal(MCP_TEMPLATES.opentable.risk, 'money');
-  assert.equal(MCP_TEMPLATES.alpaca.entry().env.ALPACA_PAPER_TRADE, '${ALPACA_PAPER_TRADE:-true}');
-  assert.match(MCP_TEMPLATES.alpaca.setup, /paper/i);
-  assert.match(MCP_TEMPLATES.coinbase.setup, /withdraw/i);
-  assert.equal(MCP_TEMPLATES.coinbase.risk, 'money');
 });
 
 // ---------- CLI subcommands (subprocess, sandboxed HOME + workspace) ----------
@@ -290,9 +286,6 @@ const SCRUB = [
   'SLACK_MCP_TOKEN',
   'WHATSAPP_ACCESS_TOKEN',
   'WHATSAPP_PHONE_NUMBER_ID',
-  'ALPACA_API_KEY',
-  'ALPACA_SECRET_KEY',
-  'ALPACA_PAPER_TRADE',
   'OX_V3A_TOKEN',
   'OX_V3A_SUFFIX',
   'OX_BASE_URL',
@@ -364,16 +357,7 @@ test('mcp add: duplicate refused unless --force; --force overwrite keeps file va
   const doc = JSON.parse(fs.readFileSync(path.join(ws, '.mcp.json'), 'utf8'));
   assert.deepEqual(doc.mcpServers.browser.args, ['-y', '@playwright/mcp@latest']);
 
-  const second = runOx(['mcp', 'add', 'alpaca', '--yes'], {
-    home,
-    ws,
-    extraEnv: { ALPACA_API_KEY: 'k', ALPACA_SECRET_KEY: 's' },
-  });
-  assert.equal(second.status, 0, second.stderr);
-  const merged = JSON.parse(fs.readFileSync(path.join(ws, '.mcp.json'), 'utf8'));
-  assert.deepEqual(Object.keys(merged.mcpServers).sort(), ['alpaca', 'browser']);
-  assert.equal(merged.mcpServers.alpaca.env.ALPACA_PAPER_TRADE, '${ALPACA_PAPER_TRADE:-true}');
-  assert.doesNotMatch(second.stdout, /MISSING/);
+  assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(ws, '.mcp.json'), 'utf8')).mcpServers), ['browser']);
 });
 
 test('mcp add without --yes in non-TTY exits 4 and writes nothing', (t) => {
@@ -390,21 +374,21 @@ test('mcp add without --yes in non-TTY exits 4 and writes nothing', (t) => {
 test('mcp remove deletes the project entry (precedence) and preserves siblings; global flag targets config.json', (t) => {
   const { home, ws } = sandbox(t);
   assert.equal(runOx(['mcp', 'remove', 'ghost'], { home, ws }).status, 3);
-  assert.equal(runOx(['mcp', 'add', 'slack', '--yes'], { home, ws }).status, 0);
-  assert.equal(runOx(['mcp', 'add', 'coinbase', '--global', '--yes'], { home, ws }).status, 0);
+  assert.equal(runOx(['mcp', 'add', 'browser', '--yes'], { home, ws }).status, 0);
+  assert.equal(runOx(['mcp', 'add', 'slack', '--global', '--yes'], { home, ws }).status, 0);
   // project precedence: removing without --global removes from project first
-  const rmProject = runOx(['mcp', 'remove', 'slack'], { home, ws });
+  const rmProject = runOx(['mcp', 'remove', 'browser'], { home, ws });
   assert.equal(rmProject.status, 0, rmProject.stderr);
   const projDoc = JSON.parse(fs.readFileSync(path.join(ws, '.mcp.json'), 'utf8'));
-  assert.equal(projDoc.mcpServers.slack, undefined);
+  assert.equal(projDoc.mcpServers.browser, undefined);
   const cfgDoc = JSON.parse(fs.readFileSync(path.join(home, '.ox', 'config.json'), 'utf8'));
-  assert.equal(cfgDoc.mcpServers.coinbase.url, 'https://agents.coinbase.com/mcp');
-  const rmGlobal = runOx(['mcp', 'remove', 'coinbase', '--global'], { home, ws });
+  assert.equal(cfgDoc.mcpServers.slack.url, 'https://mcp.slack.com/mcp');
+  const rmGlobal = runOx(['mcp', 'remove', 'slack', '--global'], { home, ws });
   assert.equal(rmGlobal.status, 0, rmGlobal.stderr);
   const cfgAfter = JSON.parse(fs.readFileSync(path.join(home, '.ox', 'config.json'), 'utf8'));
-  assert.equal(cfgAfter.mcpServers.coinbase, undefined);
+  assert.equal(cfgAfter.mcpServers.slack, undefined);
   // global add never touched the project file's other content
-  assert.equal(JSON.parse(fs.readFileSync(path.join(ws, '.mcp.json'), 'utf8')).mcpServers.slack, undefined);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(ws, '.mcp.json'), 'utf8')).mcpServers.browser, undefined);
 });
 
 test('mcp test initializes a configured stdio server and prints tool names + latency', (t) => {

@@ -267,7 +267,7 @@ failures, baselines), `cache/` (images, market), `laya/` (System 1 model, 680 MB
 | Compact size by voice, auto-close, now-playing pill, connected AI tools, usage meter and plan gauges (Codex real; Claude needs a status-line relay not installed) | ✓ / ~ | |
 | Dictation anywhere (⌃⌥D) with a personal dictionary; "OK ox" wake word (off by default); call notes (mic only) | ✓ build / ~ live | |
 | Draw on the screen to explain (Pixie) | ✗ | next |
-| Coucou cards: question chips, live diff, Mail/GitHub/Stripe/Vercel cards, phone approvals | ✗ | Coucou's code is MIT; its name, Mochi and art are not |
+| Coucou cards: question chips, live diff, Mail/GitHub/Stripe/Vercel cards, phone approvals | ✗ | Coucou's code is MIT; its protected name, mascot and art are not |
 | Approve Claude Code / Codex commands from the notch (hooks) | ✗ | needs hooks in the user's ~/.claude settings: user's OK required |
 
 ### 5.8 Messaging, voice, media
@@ -331,7 +331,7 @@ failures, baselines), `cache/` (images, market), `laya/` (System 1 model, 680 MB
 |---|---|---|---|
 | thesysdev/openui | MIT | the language of interactive answers | ✓ in ox (own parser) |
 | thesysdev/open-intelligent-ui | none (all rights reserved) | ideas only: 28 components (Map, Carousel, Timer, DatePicker, Flashcard, YouTube, Math…) and ~25 functions to rebuild | ✗ to build, from scratch |
-| Louis-CFM/coucou | MIT code; name, Mochi, art, sounds reserved | island: voice brain shape, dictation, call notes, wake word, logging; cards still to port | ~ |
+| Louis-CFM/coucou | MIT code; name, mascot, art, sounds reserved | island: voice brain shape, dictation, call notes, wake word, logging; cards still to port | ~ |
 | NandhaKishorM/laya | Apache-2.0 | System 1 router | ✓ |
 | Paperclip | (studied earlier) | task board model, bots | ✓ |
 | ruvnet/ruflo | MIT | in Marketplace; ideas to take: cost/replay cockpit, missions, permission ladder for agent control | ~ |
@@ -370,10 +370,10 @@ failures, baselines), `cache/` (images, market), `laya/` (System 1 model, 680 MB
 
 | File (~/Downloads) | Length | What it shows | ox |
 |---|---|---|---|
-| ScreenRecording_10-13-2026 21-07-45_1 | 5 s | Coucou: Mochi in the notch with a Mail card (GitHub, Stripe, Vercel rows, unread count) | Mail card ✗ |
+| ScreenRecording_10-13-2026 21-07-45_1 | 5 s | Coucou: a protected mascot in the notch with a Mail card (GitHub, Stripe, Vercel rows, unread count) | Mail card ✗ |
 | ScreenRecording_10-14-2026 18-16-11_1 | 48 s | Coucou promo: live session card, edits as a diff, "Claude wants to run a command" with Allow / Always / Deny in the notch, agent questions as chips, a happy jump when done, approve from the iPhone lock screen, works with Claude Code, Codex, Cursor, Gemini CLI, on macOS/Windows/Linux, MIT, no account | ✗ approvals of other CLIs, chips, diff, phone |
 | ScreenRecording_10-15-2026 12-42-15_1 | 26 s | Reason: agents and developers collaborating; mention teammates, work from Slack, computers in sync, stack your subscriptions, connect your bots, "your Claudes talk to each other" (live graph) | Slack ✓, subscriptions ✓, bots ✓, sync ✗, live graph ✗ |
-| ScreenRecording_10-15-2026 14-33-55_1 | 36 s | Coucou 0.5 for Windows: the Coucou app (flows, notetaker, settings), hold Right Ctrl to talk, dictation typed where you are, "Claude works, Mochi watches", learns your words, notes of every call, "OK Coucou" | dictation ✓, dictionary ✓, call notes ~, wake word ✓, Windows island ✗ |
+| ScreenRecording_10-15-2026 14-33-55_1 | 36 s | Coucou 0.5 for Windows: the Coucou app (flows, notetaker, settings), hold Right Ctrl to talk, dictation typed where you are, learns your words, notes of every call, "OK Coucou" | dictation ✓, dictionary ✓, call notes ~, wake word ✓, Windows island ✗ |
 | ScreenRecording_10-16-2026 3 | 80 s | **Pixie** (the main reference): "Pixie, play Billie Jean" plays it with a card; "lower the music" and it shrinks; "open my to-do list, what do I have today" reads Reminders; "I'm a visual learner, draw and explain" draws boxes, circles, arrows and labels on a YouTube physics video; small talk; two big eyes | all ✓ except drawing on screen ✗ |
 | ScreenRecording_10-16-2026 19-13-41_1 | 26 s | Harness by Autonomous: Claude Code, OpenCode, Pi, Hermes side by side in one window; each agent on its own branch; every machine linked (Mac, home server, office, GPU box); keeps going when you close the laptop | ~ (Compare, Office); per-agent panes ✗; machines ✗ |
 | ScreenRecording_10-16-2026 20 (= 19-14-50_1) | 37 s | AgentReach for Hermes: one free skill to research leads on LinkedIn, pull YouTube transcripts, search X, collect across platforms | YouTube ✓; LinkedIn/X ✗ (signed-in sessions) |
@@ -424,5 +424,5 @@ feature by feature in `docs/FEATURES.md` sections 10–13.
   install large packages, or delete personal files without asking.
 - WhatsApp media stays local. Keep the island on.
 - Commits: end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-- Licences: Coucou's name/Mochi/art, open-intelligent-ui's code (no licence)
+- Licences: Coucou's protected name/mascot/art, open-intelligent-ui's code (no licence)
   and AGPL code are never copied into MIT ox.

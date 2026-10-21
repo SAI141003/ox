@@ -2,7 +2,7 @@
 
 ox v3b turns the agent from a coding loop into a **gated autonomy layer**: the same
 `-p` pipeline, hardened for unattended runs (`ox auto`), pointed at curated MCP
-servers for browser, messaging, calendar and trading domains, and schedulable
+servers for browser, messaging, and calendar domains, and schedulable
 (`ox schedule`) as a daily cron job. Everything here is optional — ox is still a
 zero-dependency terminal agent, and every external surface stays behind an
 approval gate you control.
@@ -36,8 +36,6 @@ runtime and never touch disk. Risk class drives gating (next section).
 | Telegram | `@overpod/mcp-telegram` | `ox mcp add telegram` | none | write | gray-zone MTProto userbot; rate-limit, keep human-initiated |
 | Travel intelligence | Booking.com demand API | `ox mcp add booking` | affiliate status | read-only | affiliate endpoint; search/pricing intel only |
 | Restaurant booking | `@striderlabs/mcp-opentable` | `ox mcp add opentable` | none | **money** | confirms EVERY reservation before booking |
-| Trading | `alpaca-mcp-server` | `ox mcp add alpaca` | `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` | **money** | paper-trading default (`ALPACA_PAPER_TRADE:-true`) |
-| Crypto portfolio | Coinbase agent MCP (HTTP) | `ox mcp add coinbase` | scoped API key | **money** | portfolio-read/trade only; withdrawals out of scope |
 
 Inspect risk live with `ox mcp ls` (RISK column); probe a server with
 `ox mcp test <name>`.
@@ -67,12 +65,8 @@ resolves a decision:
 
 ```jsonc
 // ./.ox.json (project scope)
-{ "mcpPolicy": { "devtools": "allow", "browser": "ask", "coinbase": "deny" } }
+{ "mcpPolicy": { "devtools": "allow", "browser": "ask" } }
 ```
-
-**Paper-trade first.** Alpaca mounts with `ALPACA_PAPER_TRADE=true` unless you
-export otherwise. Keep it there until a tested reason exists; moving to live
-capital should require the full chain below, deliberately, not by accident.
 
 **Spend caps.** `--max-cost <usd>` hard-stops a run past the given spend,
 counting verifier and planning tokens like everything else. Budget-stop events
@@ -86,8 +80,6 @@ A scheduled job's stdout/stderr lands in `~/.ox/auto.log`.
 **What ox will NOT do**, by design:
 
 - bridge personal-account WhatsApp/Instagram/TikTok APIs that violate platform ToS;
-- move money without BOTH an explicit policy allow (or per-call approval) AND
-  `--side-effects-ok` / global-config authorization;
 - auto-install launchd jobs (crontab install is opt-in, idempotent, marked);
 - fall back silently. ox *does* have a fallback chain (`fallback_bots`,
   `aux_bot`) and will use it — what it won't do is switch without telling you:
@@ -130,14 +122,6 @@ the isolated profile.
    `SLACK_MCP_TOKEN`.
 3. `SLACK_MCP_TOKEN=… ox mcp add slack --yes` — the header keeps the literal
    `${SLACK_MCP_TOKEN}` placeholder in config; expansion happens at runtime.
-
-### Alpaca paper trading first-run
-
-1. `export ALPACA_API_KEY=… ALPACA_SECRET_KEY=…` (paper keys from alpaca.markets).
-2. `ox mcp add alpaca` — env expands at runtime; keys never written to disk.
-3. Leave `ALPACA_PAPER_TRADE` unset (defaults true). Probe: `ox mcp test alpaca`.
-4. First goal idea: `ox -y --side-effects-ok "rebalance my PAPER portfolio to
-   60/40 and show the resulting positions"`.
 
 ## Scheduling
 

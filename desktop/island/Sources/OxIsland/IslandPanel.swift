@@ -38,7 +38,7 @@ enum IslandLayout {
     /// Sessions are listed: the island stays slim like Coucou's and Claudex's
     /// (small characters in the rows, no walking-ox floor under them).
     static var busy = false
-    /// The ox lives in the card now (at its left, like Mochi in Coucou's), so
+    /// The ox lives at the card's left, so
     /// there is no separate floor under it: the island stays slim in every state.
     static var floorHeight: CGFloat { 0 }
     /// Coucou's proportions: 640 wide, 160 tall (8 top, 34 header, 98 cards, 10 bottom, 10 spare).

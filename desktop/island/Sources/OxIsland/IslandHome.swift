@@ -1,7 +1,7 @@
 import SwiftUI
 
 // The open island, laid out the way Coucou's notch is (its code is MIT; its
-// name, Mochi, icon and sounds are not used): a 34 pt header of tabs and
+// protected name, mascot, icon and sounds are not used): a 34 pt header of tabs and
 // icons, then a 98 pt row of cards: the left card shows the focused session
 // with the character drawn over its left edge and the steps it is taking;
 // the right card holds the other sessions as pills, two by two. Approvals,

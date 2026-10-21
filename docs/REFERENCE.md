@@ -900,7 +900,7 @@ would just start unrelated work.
 | Command | Effect |
 |---|---|
 | `ox auto "<goal>" [flags]` | autonomous headless run; prints goal/status/files/tools/tokens/cost/session summary |
-| `ox mcp add <template> [--global]` | install from curated registry (browser, gsuite, slack, alpaca, …) |
+| `ox mcp add <template> [--global]` | install from curated registry (browser, gsuite, slack, …) |
 | `ox mcp ls · test <name> · remove <name>` | inspect risk/status, probe tools, delete entries |
 | `ox schedule "<goal>" [--at HH:MM] [--max-cost N] [--install]` | print a system-crontab + launchd block; `--install` appends it to the crontab, marker-hash idempotent, and needs a TTY confirm (or `--yes` **and** `OX_INSTALL_YES=1` when there is no TTY) |
 | `ox schedule add [<30s\|5m\|2h\|1d>] "<prompt>" [--every N] [--at HH:MM] [--max-cost N] [--enable]` | a schedule that runs INSIDE the daemon — append-only store, mandatory cost cap, listed and removable by ox |
