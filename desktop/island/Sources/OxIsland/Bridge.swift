@@ -570,7 +570,7 @@ final class OxBridge: ObservableObject {
                 } else { card = UpdateCard(kind: .working, title: steps.last ?? "Updating", detail: "Checked before anything: ox's own GitHub, a fast-forward, the new code loads.") }
             } else if let n = doc["notice"] as? [String: Any] {
                 if (n["kind"] as? String) == "ask" {
-                    card = UpdateCard(kind: .ask, title: "Get new versions from the notch?", detail: "ox checks its GitHub a few times a day and tells you when one is out. Nothing about you is sent.")
+                    card = UpdateCard(kind: .ask, title: "Keep ox updated from the notch?", detail: "Auto-update installs only verified fast-forward updates from Ox's GitHub. Your changes are never overwritten.")
                 } else if (n["kind"] as? String) == "update", let count = n["count"] as? Int {
                     let first = ((n["subjects"] as? [String]) ?? []).first.map { String($0.drop { $0 != " " }.dropFirst()) } ?? ""
                     card = UpdateCard(kind: .available, title: "\(count) update\(count == 1 ? "" : "s") for ox", detail: first.isEmpty ? "New from GitHub." : "Newest: \(first)")
@@ -590,7 +590,7 @@ final class OxBridge: ObservableObject {
     /// Your answer on the update card: only this updates anything.
     func updateChoose(_ action: String) {
         switch action {
-        case "allow", "deny", "later", "ok":
+        case "allow", "deny", "later", "ok", "auto":
             updateCard = nil
             post("/ox/update", ["action": action]) { _ in }
         case "apply":

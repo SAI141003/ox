@@ -744,8 +744,9 @@ struct UpdateHome: View {
                 HStack(spacing: 6) {
                     switch card.kind {
                     case .ask:
-                        HomeButton(title: "Yes, tell me", style: .primary) { bridge.updateChoose("allow") }
-                        HomeButton(title: "No thanks", style: .plain) { bridge.updateChoose("deny") }
+                        HomeButton(title: "Auto-update", style: .primary) { bridge.updateChoose("auto") }
+                        HomeButton(title: "Tell me", style: .plain) { bridge.updateChoose("allow") }
+                        HomeButton(title: "No", style: .plain) { bridge.updateChoose("deny") }
                     case .available:
                         HomeButton(title: "Update now", style: .primary) { bridge.updateChoose("apply") }
                         HomeButton(title: "What's new", style: .plain) { bridge.updateChoose("whatsnew") }

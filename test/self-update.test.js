@@ -39,6 +39,16 @@ test('self-update: asks once, checks only when allowed, tells at most once a day
   assert.equal(U.notice({ now: Date.now() + 25 * 3600_000 }).kind, 'update', 'the next day it says it again');
 });
 
+test('self-update: automatic installation is a separate explicit opt-in', () => {
+  U.setAllowed(true);
+  assert.equal(U.readState().autoApply, false, 'ordinary update notices never install by themselves');
+  U.setAutoUpdate(true);
+  assert.deepEqual(U.readState().autoApply, true);
+  assert.equal(U.readState().allowed, true, 'automatic updates also permit the required GitHub check');
+  U.setAllowed(false);
+  assert.equal(U.readState().autoApply, false, 'turning updates off also disables automatic installation');
+});
+
 test('self-update: only from ox\'s own GitHub', () => {
   const { mine } = setup();
   assert.match(U.source(mine).why, /only from ox's own repository/);

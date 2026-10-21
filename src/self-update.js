@@ -25,7 +25,16 @@ export function readState() { try { return JSON.parse(fs.readFileSync(stateFile(
 function writeState(s) { fs.mkdirSync(path.dirname(stateFile()), { recursive: true }); fs.writeFileSync(stateFile(), JSON.stringify(s, null, 2)); return s; }
 
 /** Your answer to "may ox check GitHub for new versions?" */
-export function setAllowed(yes) { return writeState({ ...readState(), allowed: !!yes, askedAt: Date.now() }); }
+export function setAllowed(yes) {
+  const before = readState();
+  return writeState({ ...before, allowed: !!yes, autoApply: yes ? !!before.autoApply : false, askedAt: Date.now() });
+}
+
+/** Explicitly opt in to unattended, verified fast-forward updates. */
+export function setAutoUpdate(yes) {
+  const before = readState();
+  return writeState({ ...before, allowed: yes ? true : before.allowed, autoApply: !!yes, askedAt: Date.now() });
+}
 
 /** Where this ox comes from, and whether it can update itself. */
 export function source(root = OX_ROOT, trusted = HOME_REPO) {

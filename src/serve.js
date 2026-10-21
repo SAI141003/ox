@@ -1978,16 +1978,17 @@ const ROUTES = [
   // Your morning brief (src/today.js).
   { method: 'GET', pattern: /^\/ox\/today\/?$/, handler: appRoute(async () => (await import('./today.js')).brief()) },
   // ox updates itself from the notch (src/self-update.js): asked once, at most one notice a day.
-  { method: 'GET', pattern: /^\/ox\/update\/?$/, handler: appRoute(async () => { const U = await import('./self-update.js'); const st = U.readState(); return { notice: U.notice(), allowed: st.allowed ?? null, available: st.available ?? null, problem: st.problem ?? null, updatedTo: st.updatedTo ?? null, applying: st.applying ?? null }; }) },
+  { method: 'GET', pattern: /^\/ox\/update\/?$/, handler: appRoute(async () => { const U = await import('./self-update.js'); const st = U.readState(); return { notice: U.notice(), allowed: st.allowed ?? null, autoApply: st.autoApply === true, available: st.available ?? null, problem: st.problem ?? null, updatedTo: st.updatedTo ?? null, applying: st.applying ?? null }; }) },
   { method: 'POST', pattern: /^\/ox\/update\/?$/, handler: appRoute(async (body) => {
     const U = await import('./self-update.js');
     const a = String(body?.action ?? '');
     if (a === 'allow' || a === 'deny') { U.setAllowed(a === 'allow'); if (a === 'allow') U.inBackground('check'); return { ok: true }; }
+    if (a === 'auto') { U.setAutoUpdate(true); U.inBackground('check'); return { ok: true }; }
     if (a === 'later') { U.later(); return { ok: true }; }
     if (a === 'ok') { U.acknowledge(); return { ok: true }; }
     if (a === 'check') return U.inBackground('check');
     if (a === 'apply') return U.inBackground('apply');
-    throw new Error('action: allow, deny, later, check or apply');
+    throw new Error('action: allow, deny, auto, later, check or apply');
   }) },
   // Dictation styles and translation, per app (src/dictation-style.js).
   { method: 'GET', pattern: /^\/ox\/dictation\/styles\/?$/, handler: appRoute(async () => { const D = await import('./dictation-style.js'); return { ...D.readStyles(), styles: D.STYLES }; }) },
