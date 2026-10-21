@@ -105,6 +105,8 @@ struct IslandMenu: View {
     @AppStorage("dictation.enabled") private var dictationOn = true
     @AppStorage("wake.enabled") private var wakeOn = false
     @AppStorage("fn.talk") private var fnTalk = true
+    @AppStorage("island.hideFullscreen") private var hideFullscreen = true
+    @AppStorage("island.screen") private var islandScreen = "notch"
     var bridge: OxBridge? = nil
     @AppStorage("island.autoClose") private var autoClose = 6.0
     var body: some View {
@@ -139,6 +141,11 @@ struct IslandMenu: View {
             Text("After 6 seconds").tag(6.0)
             Text("After 15 seconds").tag(15.0)
             Text("Never").tag(0.0)
+        }
+        Toggle("Hide during full-screen apps", isOn: $hideFullscreen)
+        Picker("Island display", selection: $islandScreen) {
+            Text("Built-in notch").tag("notch")
+            Text("Follow pointer across displays").tag("active")
         }
         Divider()
         Button(T("Turn off OX Island")) { IslandSwitch.turnOff() }
