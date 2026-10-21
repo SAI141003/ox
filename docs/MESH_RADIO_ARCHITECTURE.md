@@ -6,6 +6,25 @@ open-source models as the fallback brain and everything under the owner's
 control. This builds on `docs/MESH_DESIGN.md` (the mesh as it is) and
 `docs/MESH_OFFLINE.md` (the first plan); sources are listed at the end.
 
+> ## Implementation status — October 21, 2026
+>
+> This is an architecture and research document, **not** a list of shipped
+> transports. The only shipping mesh link is an existing IP network: Ox uses
+> TCP for its encrypted peer session and UDP broadcast for LAN discovery. That
+> works without internet over Ethernet, a LAN/router, or a personal hotspot.
+>
+> | Capability | Actual status |
+> |---|---|
+> | LAN / cable / hotspot without internet | Shipped and tested as the current `ox mesh` transport |
+> | Signed bundle, outbox, and CRDT primitives | Implemented and unit-tested, but not yet connected to the live `mesh.js` transport loop |
+> | Apple peer-to-peer Wi-Fi (AWDL) | Research/design only; no Network.framework helper or physical two-Mac test exists in Ox |
+> | Bluetooth LE L2CAP | Research/design only; no CoreBluetooth adapter or physical test exists in Ox |
+> | Sound / ultrasonic data | Research/design only; Ox does not transmit, receive, or listen for sound data |
+>
+> Settings must continue to describe the last three entries as research until
+> their acceptance tests below pass on supported hardware. A document, mock,
+> or dependency is not evidence that a transport has shipped.
+
 ## 1. The goal in one line
 
 Any of the owner's machines can see, ask and direct the others, and think with
@@ -78,12 +97,11 @@ the owner's rule is to buy nothing, so the plan below never needs them.
 
 Each link is one small adapter with the same five calls: `discover()` (who is
 reachable, as rotating tokens, never raw ids), `send(frame)`, `mtu`, `rate`
-(measured), `cost` (battery, duty cycle, money). The adapters for cable and
-Wi-Fi LAN exist (ox mesh uses TCP + a UDP announcement). The new adapters,
-all on hardware the machines have: AWDL (a Swift helper inside OX Island,
-which already holds the right macOS permissions with its stable signature),
-BLE (CoreBluetooth L2CAP, same helper) and sound (ggwave through the speaker
-and microphone; the island already has the microphone permission).
+(measured), `cost` (battery, duty cycle, money). The TCP/UDP LAN path is the
+only existing adapter. AWDL, BLE, and sound below are proposed adapters, not
+features that a user can enable today. In particular, OX Island having a
+signature or microphone permission does not create an AWDL, CoreBluetooth, or
+sound transport.
 
 ### L2: overlay routing
 
@@ -165,14 +183,16 @@ over any link, including LoRa, because it is a few bytes.
 
 1. **Router up, internet down.** Nothing changes: ox mesh already works on the
    LAN; local models answer.
-2. **Two Macs, no network at all, same room.** AWDL comes up through the
-   island's helper; the full mesh runs over it (files, models, split
-   inference).
-3. **Macs in different rooms, Wi-Fi off.** BLE carries control and short
-   replies; anything bulky waits in the queue for a better link.
-4. **Every radio off or blocked, machines side by side.** Sound carries the
-   tiny commands (stop, approve, "are you there") from speaker to microphone;
-   each machine thinks with its own model and the rest waits in the queue.
+2. **Two Macs, no network at all, same room.** This is the target AWDL
+   scenario, not a current capability. Until phase 2 passes, both Macs work
+   independently or need an existing local IP link.
+3. **Macs in different rooms, Wi-Fi off.** This is the target BLE scenario,
+   not a current capability. Until phase 3 passes, queued work waits for an
+   existing local IP link.
+4. **Every radio off or blocked, machines side by side.** This is a research
+   scenario only. Sound is deliberately not a live control path until phase 7
+   has a visible, user-initiated send/receive flow and passes its physical
+   test.
 5. **Machines far apart with no internet.** No link without buying a radio,
    so each machine works alone with its own model and its copy of the shared
    state, and everything merges the moment any link returns (the CRDTs and the
@@ -191,13 +211,13 @@ over any link, including LoRa, because it is a few bytes.
 
 | Phase | What | Proof |
 |---|---|---|
-| 1 | Bundles, priority classes, store-and-forward and CRDT state on the existing TCP mesh | two machines, router unplugged mid-task: nothing lost, merges clean |
-| 2 | AWDL adapter in OX Island (Swift helper) | two Macs, no network joined: pair, describe, pull a file |
-| 3 | BLE adapter | Wi-Fi off: status, approvals, stop arrive; a big pull waits |
+| 1 | Connect the existing bundles, priority classes, outbox, and CRDT state to the TCP mesh | two machines, router unplugged mid-task: no accepted task is lost, duplicates are rejected, state merges cleanly |
+| 2 | AWDL adapter in OX Island (Swift helper using Network.framework peer-to-peer) | two Macs, no network joined: explicit user-enabled discovery, pair, `describe`, and a checksum-verified file pull; stop browsing after the test |
+| 3 | BLE L2CAP adapter | Wi-Fi off: status, approvals, and stop arrive with bounded payload sizes; a large pull is queued with a clear reason |
 | 4 | Health, failover, rotating beacons | kill Wi-Fi mid-transfer: control continues on BLE; bulk resumes |
 | 5 | Offline brain: model sharing and split inference (exo or llama.cpp RPC) | a model copied to one Mac reaches the other over AWDL; a 14B model answers across two Macs |
 | 6 | Multi-hop over the built-in links (Yggdrasil or ox's own relays) | three machines, A reaches C through B |
-| 7 | Sound link (ggwave, MIT) for tiny commands | Wi-Fi and Bluetooth off, two Macs side by side: "stop" and "approve" arrive |
+| 7 | Sound link (ggwave, MIT) for tiny signed control envelopes | Wi-Fi and Bluetooth off, two Macs side by side: a visible, user-initiated send and receive completes; replay, expiry, and microphone-denial cases are rejected |
 
 Every phase uses only what the machines already have. Nothing is bought.
 

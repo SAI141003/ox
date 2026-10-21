@@ -4,6 +4,14 @@ October 18, 2026. The owner's idea: every machine has antennas (Wi-Fi,
 Bluetooth). The multi-machine control system should keep working when there
 is no internet, by talking machine to machine over radio.
 
+> ## Status correction — October 21, 2026
+>
+> This document is a proposed build plan. Today, `ox mesh` works offline only
+> when the machines already share an IP link (LAN, Ethernet, Thunderbolt
+> Bridge, or a hotspot). AWDL/Apple peer-to-peer Wi-Fi, Bluetooth L2CAP, and
+> sound are **not implemented transports** in Ox. Do not present them as
+> available controls until their two-device hardware acceptance tests pass.
+
 ## Where ox mesh stands today
 
 ox mesh never needed the internet to work. Pairing (one-time code),
@@ -24,9 +32,9 @@ radio. That is this plan.
 
 | Link | Hardware | Range | Speed | Good for |
 |---|---|---|---|---|
-| Apple peer-to-peer Wi-Fi (AWDL, what AirDrop uses) | every Mac's Wi-Fi | a room to ~30 m | tens of MB/s | everything: control, files, model replies |
+| Apple peer-to-peer Wi-Fi (AWDL, what AirDrop uses) | every Mac's Wi-Fi | a room to ~30 m | tens of MB/s | proposed; not yet an Ox transport |
 | Ad hoc Wi-Fi network | every Mac's Wi-Fi (macOS: Wi-Fi › Advanced › "Show legacy networks and options", then Create Network); Linux and Windows too | ~30 m | high | everything, across Mac, Linux and Windows |
-| Bluetooth LE (L2CAP channels) | every Mac | ~10–30 m | about 36–100 KB/s measured by developers | control: status, approvals, stop, small files |
+| Bluetooth LE (L2CAP channels) | every Mac | ~10–30 m | about 36–100 KB/s measured by developers | proposed control path; not yet an Ox transport |
 | LoRa (Meshtastic or RNode radios) | **not built in**: a USB or Bluetooth radio, about $25–40 each | 2–10 km in the open, more with relays | 0.25–27 kbit/s | tiny control messages only: "status?", "stop", "run task 12", approvals |
 | Wi-Fi Aware (NAN) | iPhone and iPad on iOS 26 | ~30 m | high | later: your phone as a controller (Apple has not brought it to macOS) |
 
@@ -42,11 +50,11 @@ they are. A radio adds a way to reach a machine, never new permissions.
    (a few KB: a reply, a log tail), *bulk* (files, model output streams). Each
    link says what it can carry: LoRa only control, Bluetooth up to
    interactive, Wi-Fi, cable and LAN everything.
-2. **The best live link wins, per message.** ox keeps a health score for each
-   link to each machine (the φ-accrual detector the mesh already uses) and sends
-   on the fastest healthy link that can carry the class. If Wi-Fi drops mid-way,
-   control falls back to Bluetooth or LoRa, and the island says so ("Studio Mac
-   reached over Bluetooth: control only").
+2. **The best live link wins, per message (target).** Once more than one link
+   adapter exists, ox will keep a health score for each link to each machine
+   and send on the fastest healthy link that can carry the class. Current Ox
+   has no BLE, LoRa, or AWDL fallback adapter, so it must show a queued or
+   unreachable state rather than claim it changed transports.
 3. **Hold and forward.** With no link at all, control messages wait in a small
    queue (with an expiry) and go out when any link comes back.
 4. **Relays.** A paired machine can carry sealed frames for two others it can
