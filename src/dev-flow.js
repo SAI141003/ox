@@ -133,6 +133,41 @@ const gh = (root, args, extra) => {
   return r;
 };
 
+// ---------------------------------------------------------------- GitLab and Bitbucket
+
+/** Which forge origin is on, from its URL: github | gitlab | bitbucket | other. → { forge, host, path } */
+export function forgeOf(url) {
+  const u = String(url ?? '').trim();
+  const m = /^(?:https?:\/\/(?:[^@/]+@)?|ssh:\/\/(?:[^@/]+@)?|[^@/]+@)([^/:]+)(?::\d+)?[:/](.+?)(?:\.git)?\/?$/.exec(u);
+  if (!m) return { forge: 'other', host: null, path: null };
+  const host = m[1].toLowerCase();
+  const forge = host === 'github.com' || host.includes('github') ? 'github' : host.includes('gitlab') ? 'gitlab' : host.includes('bitbucket') ? 'bitbucket' : 'other';
+  return { forge, host, path: m[2] };
+}
+
+/** GitLab creates the merge request from the push itself (push options), so no CLI is needed. */
+export function gitlabPushArgs(branch, { into, title, body = '', draft = false }) {
+  const o = (k, v) => ['-o', `merge_request.${k}${v === undefined ? '' : `=${v}`}`];
+  return ['push', '-u', 'origin', branch, ...o('create'), ...o('target', into), ...o('title', `${draft ? 'Draft: ' : ''}${title}`), ...(body ? o('description', body.replace(/\n/g, ' ').slice(0, 2000)) : []), ...o('remove_source_branch')];
+}
+
+/** The merge request URL GitLab prints in the push's remote: lines. */
+export const gitlabUrlFrom = (text) => /https?:\/\/\S+\/-\/merge_requests\/\d+/.exec(String(text ?? ''))?.[0] ?? null;
+
+/** A Bitbucket pull request: through the REST API with an app password, else its "create" link. */
+export async function bitbucketPr({ path: repoPath, branch, into, title, body }, { env = process.env, fetchImpl = globalThis.fetch } = {}) {
+  const user = env.BITBUCKET_USERNAME, pass = env.BITBUCKET_APP_PASSWORD;
+  const link = `https://bitbucket.org/${repoPath}/pull-requests/new?source=${encodeURIComponent(branch)}&dest=${encodeURIComponent(into)}&t=1`;
+  if (!user || !pass) return { url: link, created: false, note: 'open the link and press Create (or set BITBUCKET_USERNAME and BITBUCKET_APP_PASSWORD and ox opens it)' };
+  const r = await fetchImpl(`https://api.bitbucket.org/2.0/repositories/${repoPath}/pullrequests`, {
+    method: 'POST', headers: { Authorization: `Basic ${Buffer.from(`${user}:${pass}`).toString('base64')}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, description: body, source: { branch: { name: branch } }, destination: { branch: { name: into } }, close_source_branch: true }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) fail(`Bitbucket refused the pull request (${r.status}): ${j?.error?.message ?? 'see the repository settings'}`);
+  return { url: j?.links?.html?.href ?? link, created: true };
+}
+
 /**
  * Commit what changed and open (or update) a pull request.
  * { title, body, base, draft, checks: true } → { url, branch, created, checks }
@@ -171,10 +206,38 @@ export async function openPr(cwd = process.cwd(), { title = null, body = '', bas
       onStep?.('capture', `${media.shots.length} page(s) from ${media.base}`);
     } catch (e) { onStep?.('capture', `skipped: ${e.message}`); }
   }
+  const forge = forgeOf(git(root, 'remote', 'get-url', 'origin').out);
+  const lines = [body.trim(), '', '### Checked by ox before opening'];
+  // GitLab and Bitbucket: the request is made here, from the same summary.
+  if (forge.forge === 'gitlab' || forge.forge === 'bitbucket') {
+    if (!checked.results.length) lines.push('- no lint/build/test steps known for this repo (edit .ox/environment.yml)');
+    for (const r of checked.results) lines.push(`- ${r.ok ? '✅' : '❌'} \`${r.command}\` (${Math.round(r.ms / 1000)} s)`);
+    const summary = lines.join('\n').trim();
+    if (forge.forge === 'gitlab') {
+      const glab = sh('glab', ['--version'], root);
+      if (glab.ok) {
+        const pu = git(root, 'push', '-u', 'origin', branch);
+        if (!pu.ok) fail(`push failed: ${pu.err}`);
+        onStep?.('push', branch);
+        const c = sh('glab', ['mr', 'create', '--source-branch', branch, '--target-branch', into, '--title', t, '--description', summary, '--yes', ...(draft ? ['--draft'] : [])], root);
+        const url = gitlabUrlFrom(`${c.out}\n${c.err}`);
+        if (!c.ok && !url) fail(`glab mr create failed: ${c.err}`);
+        return { url, branch, created: true, checks: checked, forge: 'gitlab' };
+      }
+      const pu = sh('git', gitlabPushArgs(branch, { into, title: t, body: summary, draft }), root);
+      if (!pu.ok) fail(`push failed: ${pu.err}`);
+      onStep?.('push', `${branch} (GitLab makes the merge request)`);
+      return { url: gitlabUrlFrom(`${pu.err}\n${pu.out}`), branch, created: true, checks: checked, forge: 'gitlab' };
+    }
+    const pu = git(root, 'push', '-u', 'origin', branch);
+    if (!pu.ok) fail(`push failed: ${pu.err}`);
+    onStep?.('push', branch);
+    const b = await bitbucketPr({ path: forge.path, branch, into, title: t, body: summary });
+    return { ...b, branch, checks: checked, forge: 'bitbucket' };
+  }
   const p = git(root, 'push', '-u', 'origin', branch);
   if (!p.ok) fail(`push failed: ${p.err}`);
   onStep?.('push', branch);
-  const lines = [body.trim(), '', '### Checked by ox before opening'];
   if (media) {
     const repo = gh(root, ['repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner']).out;
     const raw = (f) => `https://github.com/${repo}/blob/${branch}/${path.relative(root, f)}?raw=true`;
@@ -199,6 +262,9 @@ export async function openPr(cwd = process.cwd(), { title = null, body = '', bas
 /** CI checks, reviews and comments of the current branch's PR (or a number). */
 export function prStatus(cwd = process.cwd(), ref = null) {
   const root = repoRoot(cwd);
+  const forge = forgeOf(git(root, 'remote', 'get-url', 'origin').out);
+  if (forge.forge === 'gitlab') return gitlabStatus(root, ref);
+  if (forge.forge === 'bitbucket') fail(`ox pr status reads GitHub and GitLab for now; for Bitbucket open https://bitbucket.org/${forge.path}/pull-requests`);
   const v = gh(root, ['pr', 'view', ...(ref ? [String(ref)] : []), '--json', 'number,url,title,state,mergeable,reviewDecision,statusCheckRollup,reviews,comments,headRefName']);
   if (!v.ok) fail(/no pull requests found/i.test(v.err) ? 'no pull request for this branch yet: ox pr open' : v.err);
   const j = JSON.parse(v.out);
@@ -230,6 +296,21 @@ export function prStatus(cwd = process.cwd(), ref = null) {
   const open = threads.length;
   const canMerge = j.state === 'OPEN' && !failing.length && !pending.length && !changesRequested && !open && j.mergeable !== 'CONFLICTING';
   return { number: j.number, url: j.url, title: j.title, state: j.state, mergeable: j.mergeable, review: j.reviewDecision || null, checks, failing, pending, comments, openThreads: open, canMerge, branch: j.headRefName };
+}
+
+/** A GitLab merge request's pipeline and notes, through glab (GitLab's CLI). */
+function gitlabStatus(root, ref = null) {
+  const branch = ref ?? git(root, 'rev-parse', '--abbrev-ref', 'HEAD').out;
+  const v = sh('glab', ['mr', 'view', String(branch), '--output', 'json'], root);
+  if (!v.ok) fail(/not found|ENOENT/.test(v.err) ? 'for GitLab, ox reads merge requests through glab: brew install glab, then glab auth login' : v.err);
+  const j = JSON.parse(v.out);
+  const pipe = String(j.head_pipeline?.status ?? j.pipeline?.status ?? '').toUpperCase();
+  const checks = pipe ? [{ name: 'pipeline', state: pipe === 'SUCCESS' ? 'SUCCESS' : pipe === 'FAILED' ? 'FAILURE' : pipe === 'CANCELED' ? 'CANCELLED' : 'PENDING', url: j.head_pipeline?.web_url ?? null }] : [];
+  const failing = checks.filter((c) => ['FAILURE', 'CANCELLED'].includes(c.state));
+  const pending = checks.filter((c) => c.state === 'PENDING');
+  const state = String(j.state ?? '').toUpperCase() === 'OPENED' ? 'OPEN' : String(j.state ?? '').toUpperCase();
+  const conflicting = j.has_conflicts === true;
+  return { number: j.iid, url: j.web_url, title: j.title, state, mergeable: conflicting ? 'CONFLICTING' : 'MERGEABLE', review: null, checks, failing, pending, comments: [], openThreads: 0, canMerge: state === 'OPEN' && !failing.length && !pending.length && !conflicting, branch: j.source_branch, forge: 'gitlab' };
 }
 
 /** The task `ox pr fix` hands to ox: what reviewers asked and what CI says. */
