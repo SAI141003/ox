@@ -56,14 +56,30 @@ test('connectors: add a local or remote MCP server, list it, remove it; bad inpu
 
 test('the Settings pages exist and are searchable', () => {
   const html = fs.readFileSync(new URL('../src/web/chat.html', import.meta.url), 'utf8');
-  for (const id of ['instructions', 'connectors', 'data']) assert.match(html, new RegExp(`\\['${id}', `), id);
+  for (const id of ['instructions', 'connectors', 'data', 'devices']) assert.match(html, new RegExp(`\\['${id}', `), id);
   assert.match(html, /sec === 'instructions'/);
+  assert.match(html, /sec === 'devices'/);
+  assert.match(html, /Offline &amp; devices/);
+  assert.match(html, /AWDL, Bluetooth and sound transport ideas are research\/phase-one components/);
+  assert.match(html, /ox mesh audit/);
+  assert.match(html, /\/ox\/mesh\/invite/);
+  assert.match(html, /\/ox\/mesh\/peer/);
+  assert.match(html, /\/ox\/mesh\/run/);
   assert.match(html, /Export all chats/);
   assert.match(html, /Check for updates/);
   assert.match(html, /let renderSeq = 0/, 'stale pages cannot overwrite the current one');
   assert.match(html, /data-account-default/, 'a connected supported account can become the default from its card');
   assert.match(html, /a\.id !== 'claude'/, 'a Claude subscription is not made ox\'s default');
   assert.match(html, /This chat’s context meter appears here/, 'Usage explains when a current-context meter is available');
+});
+
+test('the app exposes paired-machine session inspection and approval-gated remote Ox tasks', () => {
+  const serve = fs.readFileSync(new URL('../src/serve.js', import.meta.url), 'utf8');
+  assert.match(serve, /mesh\\\/peer/);
+  assert.match(serve, /node\.ask\(machine, 'agents'/);
+  assert.match(serve, /mesh\\\/run/);
+  assert.match(serve, /\.ask\(machine, 'run'/);
+  assert.match(serve, /This is deliberately an Ox task, not a raw shell endpoint/);
 });
 
 test('backup model: saved from Settings, and app chats get it as a fallback target', () => {

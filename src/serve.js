@@ -1936,6 +1936,33 @@ const ROUTES = [
   // Your machines (ox mesh): status, an invite code, names, grants, and your
   // choice on an alert. Grants are set here, for what this machine gives.
   { method: 'GET', pattern: /^\/ox\/mesh\/?$/, handler: appRoute(meshView) },
+  // The desktop's Machines page.  A peer must explicitly grant `agents` or
+  // `tasks` on the machine being viewed; the mesh itself records every request
+  // there.  This is deliberately an Ox task, not a raw shell endpoint.
+  { method: 'GET', pattern: /^\/ox\/mesh\/peer\/?$/, handler: appRoute(async (_, __, req) => {
+    const machine = new URL(req.url, 'http://x').searchParams.get('machine') ?? '';
+    if (!machine.trim()) throw new Error('choose a paired machine');
+    const node = await meshUp();
+    const [describe, agents] = await Promise.allSettled([
+      node.ask(machine, 'describe', {}, { timeoutMs: 12_000 }),
+      node.ask(machine, 'agents', {}, { timeoutMs: 12_000 }),
+    ]);
+    const value = (r) => r.status === 'fulfilled' ? r.value : null;
+    const problem = (r) => r.status === 'rejected' ? r.reason?.message ?? String(r.reason) : null;
+    return { machine, describe: value(describe), describeError: problem(describe), agents: value(agents)?.sessions ?? [], agentsError: problem(agents) };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/mesh\/run\/?$/, handler: appRoute(async (body) => {
+    const machine = String(body?.machine ?? '').trim();
+    const prompt = String(body?.prompt ?? '').trim();
+    const cwd = String(body?.cwd ?? '').trim();
+    if (!machine || !prompt) throw new Error('choose a machine and describe the task');
+    const chunks = [];
+    const result = await (await meshUp()).ask(machine, 'run', { prompt, ...(cwd ? { cwd } : {}) }, {
+      timeoutMs: 10 * 60_000,
+      onChunk: (chunk) => { if (chunks.join('').length < 80_000) chunks.push(Buffer.from(chunk).toString('utf8')); },
+    });
+    return { ...result, output: chunks.join('').slice(-80_000) };
+  }) },
   { method: 'POST', pattern: /^\/ox\/mesh\/(invite|name|allow|deny|forget|choose)\/?$/, handler: appRoute(async (body, m) => {
     const M = await import('./mesh.js');
     switch (m[1]) {

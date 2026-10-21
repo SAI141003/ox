@@ -3456,6 +3456,7 @@ files: [src/billing/**]
     ['appearance', 'Appearance', 'palette', 'theme dark light text size width motion'],
     ['notifications', 'Notifications', 'bell', 'notify alert sound finished done failed background'],
     ['desktop', 'OX Island & desktop', 'monitor', 'island notch awake sleep buddy restart'],
+    ['devices', 'Offline & devices', 'office', 'offline without internet local models ollama lm studio paired machines mesh cable ethernet hotspot invite audit'],
     ['voice', 'Voice', 'mic', 'speech language read aloud dictation style prompt mode translate polished natural'],
     ['memory', 'Memory', 'brain', 'remember forget profile facts preferences'],
     ['usage', 'Usage', 'chart', 'tokens cost spend models agents billing'],
@@ -3645,6 +3646,54 @@ files: [src/billing/**]
           ${row('Keep the computer awake', 'While ox works, so long runs are not cut off by sleep.', sw('s-awake', st.awake.on))}`;
         bindIsland(el);
         $('s-awake').onchange = async () => { try { await postJson('/ox/settings', { awake: $('s-awake').checked }); } catch (e) { toast(e.message); } };
+      } else if (sec === 'devices') {
+        const [L, M] = await Promise.all([getJson('/ox/local'), getJson('/ox/mesh')]);
+        const runtimes = L.runtimes || [];
+        const peers = M.peers || [];
+        const grantWords = (g) => Object.entries(g || {}).filter(([, on]) => on).map(([k]) => k).join(', ') || 'status only';
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('office')}Offline &amp; devices</div>
+          <p class="sdesc">What works with no internet, and which of your own computers are paired with this one. Ox keeps model keys and files on the computer that owns them.</p>
+          <div class="sblock"><div class="section-cap cap">This Mac, offline</div>
+            ${row('Local tools', 'Small actions such as timers, calculations and opening apps work without a model or network.', '<span class="badge ok">Ready</span>')}
+            ${row('Local inference', runtimes.length ? `${runtimes.map((r) => `${r.name}${r.models?.length ? ` · ${r.models.length} model${r.models.length === 1 ? '' : 's'}` : ''}`).join(' · ')}` : 'No approved local model server yet. A local model makes chat work without Wi-Fi or an account.', `<button class="btn ghost" id="od-local">Local models</button>`)}
+            <p class="small muted" style="margin:10px 0 0">For a second computer, Ox works over Ethernet, a router or a phone hotspot even when the internet is down. With no link at all, each computer continues independently. The AWDL, Bluetooth and sound transport ideas are research/phase-one components, not switches that are ready to use.</p>
+          </div>
+          <div class="sblock"><div class="section-cap cap">Your paired computers</div>
+            ${M.me ? `<div class="chipline"><span class="badge ok">${esc(M.me.name || 'This Mac')}</span><span class="badge">${M.running ? 'mesh node running' : 'node starts with the Ox app'}</span></div>` : '<p class="small muted">This Mac has not joined a mesh yet.</p>'}
+            ${peers.length ? `<div class="cards" style="margin-top:10px">${peers.map((p) => `<div class="card"><span class="dot ${M.running ? 'ok' : ''}"></span><span class="t"><div class="n">${esc(p.name)}</div><div class="d">This Mac lets it: ${esc(grantWords(p.grants))}</div></span><button class="btn ghost" data-od-peer="${esc(p.name)}">Manage</button></div>`).join('')}</div>` : '<div class="box muted small" style="margin-top:10px">No other computers are paired. Pairing begins with a short-lived code and starts with status-only access.</div>'}
+            <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="btn" id="od-invite">Pair another computer</button><button class="btn ghost" id="od-office">Open Office</button><span class="small muted" id="od-invite-state"></span></div>
+            <div id="od-detail"></div>
+            <p class="small muted" style="margin:10px 0 0">Each machine must explicitly grant what the controller may do. Tasks run under that machine’s own approvals and every request is audited there. Inspect activity with <code>ox mesh audit</code> and remove all optional grants with <code>ox mesh lockdown</code>.</p>
+          </div>`;
+        $('od-local').onclick = () => { sec = 'local'; renderSnav(); renderSection(); };
+        $('od-office').onclick = () => { closeSettings(); document.querySelector('[data-view="office"]')?.click(); };
+        $('od-invite').onclick = async () => {
+          const b = $('od-invite'); b.disabled = true; $('od-invite-state').textContent = 'Making a one-time code…';
+          try {
+            const r = await postJson('/ox/mesh/invite', {});
+            $('od-invite-state').innerHTML = `On the other computer run <code>ox mesh join ${esc(r.code)}</code> before ${esc(new Date(r.expires).toLocaleTimeString())}.`;
+            b.textContent = 'New pairing code'; b.disabled = false;
+          } catch (e) { $('od-invite-state').textContent = e.message; b.disabled = false; }
+        };
+        el.querySelectorAll('[data-od-peer]').forEach((b) => (b.onclick = async () => {
+          const box = $('od-detail'); const machine = b.dataset.odPeer;
+          box.innerHTML = '<div class="section-cap cap" style="margin-top:18px">Loading ' + esc(machine) + '…</div><div class="skeleton"></div>';
+          try {
+            const r = await getJson(`/ox/mesh/peer?machine=${encodeURIComponent(machine)}`);
+            const d = r.describe;
+            const agentList = r.agents?.length ? r.agents.map((a) => `<div class="card"><span class="dot ${a.state === 'idle' ? '' : 'run'}"></span><span class="t"><div class="n">${esc(a.project || a.id)}</div><div class="d">${esc(a.tool || 'agent')} · ${esc(a.doing || a.state || '')}</div></span></div>`).join('') : `<div class="small muted">${esc(r.agentsError || 'No coding sessions shared by this machine yet. On that machine: ox mesh allow "${M.me?.name || 'this Mac'}" agents')}</div>`;
+            box.innerHTML = `<div class="section-cap cap" style="margin-top:18px">${esc(machine)}</div>
+              ${d ? `<div class="chipline"><span class="badge">${esc(d.os || '')}</span><span class="badge">${esc(String(d.cores || '?'))} cores</span><span class="badge">${esc(String(d.memGb || '?'))} GB</span><span class="badge">${esc(String(d.sessions || 0))} live sessions</span></div><p class="small muted" style="margin:8px 0">${esc(d.models?.join(', ') || 'No local models reported')}</p>` : `<div class="small muted">${esc(r.describeError || 'Machine details unavailable')}</div>`}
+              <div class="section-cap cap" style="margin-top:14px">Coding sessions</div><div class="cards">${agentList}</div>
+              <div class="section-cap cap" style="margin-top:14px">Run an Ox task there</div><p class="small muted">The other computer must first allow this Mac to run tasks. Ox will apply that computer’s own approval policy; this is not a raw shell.</p><textarea class="field" id="od-task" rows="3" placeholder="Run tests, inspect the failure, fix it, and report what changed."></textarea><input class="field" id="od-cwd" placeholder="Optional folder on ${esc(machine)}" style="margin-top:8px"><div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn primary" id="od-run">Run task</button><span class="small muted" id="od-run-state"></span></div><pre class="box mono small" id="od-run-output" style="display:none;max-height:240px;overflow:auto;white-space:pre-wrap"></pre>`;
+            $('od-run').onclick = async () => {
+              const prompt = $('od-task').value.trim(); if (!prompt) return toast('Describe the task first');
+              if (!(await askSure(`Run this task on ${machine}? Its own approvals still apply.`, 'Run task'))) return;
+              const run = $('od-run'); run.disabled = true; $('od-run-state').textContent = 'Running on ' + machine + '…';
+              try { const out = await postJson('/ox/mesh/run', { machine, prompt, cwd: $('od-cwd').value.trim() }); $('od-run-state').textContent = out.code === 0 ? 'Finished' : `Stopped (exit ${out.code})`; $('od-run-output').style.display = ''; $('od-run-output').textContent = out.output || 'No output returned.'; } catch (e) { $('od-run-state').textContent = e.message; } finally { run.disabled = false; }
+            };
+          } catch (e) { box.innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; }
+        }));
       } else if (sec === 'voice') {
         const voices = ('speechSynthesis' in window) ? speechSynthesis.getVoices() : [];
         const V = await voiceStatus();
