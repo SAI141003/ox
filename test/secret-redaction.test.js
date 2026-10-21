@@ -27,14 +27,16 @@ test('values are redacted, names and ordinary settings kept', () => {
 });
 
 test('read_file, grep and bash never hand the key to the model', async () => {
-  for (const r of [
-    await readFileTool({ path: '.env' }, ctx),
-    await grepTool({ pattern: 'API_KEY' }, ctx),
-    await bashTool({ command: 'cat .env' }, ctx),
-  ]) {
-    assert.doesNotMatch(r.content, /FAKEfakeFAKE/);
-    assert.match(r.content, /REDACTED/);
-    assert.match(r.content, /credential\(s\) redacted/);
-  }
+  // read_file refuses a .env outright and grep skips it (src/oxignore.js); bash,
+  // which can still cat it after approval, redacts what comes back.
+  const read = await readFileTool({ path: '.env' }, ctx);
+  assert.equal(read.isError, true);
+  assert.match(read.content, /looks like a secret/);
+  assert.doesNotMatch(read.content, /FAKEfakeFAKE/);
+  assert.doesNotMatch((await grepTool({ pattern: 'API_KEY' }, ctx)).content, /FAKEfakeFAKE/);
+  const sh = await bashTool({ command: 'cat .env' }, ctx);
+  assert.doesNotMatch(sh.content, /FAKEfakeFAKE/);
+  assert.match(sh.content, /REDACTED/);
+  assert.match(sh.content, /credential\(s\) redacted/);
   assert.match(fs.readFileSync(path.join(dir, '.env'), 'utf8'), /FAKEfakeFAKE/, 'the file itself is untouched');
 });

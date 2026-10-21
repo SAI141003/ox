@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { redactSecrets } from '../memory.js';
+import { secretMatch } from '../oxignore.js';
 
 const MAX_READ_CHARS = 100_000;
 const MAX_LIST_ENTRIES = 500;
@@ -180,6 +181,14 @@ function sensitiveReadError(p, root, tool) {
   return err(
     `${tool}: refusing to access '${p}' — it falls under the sensitive directory ${root}. Set OX_ALLOW_SENSITIVE_READS=1 to override.`
   );
+}
+
+// Project secrets (src/oxignore.js): .env, keys, credential files and whatever
+// the project's .oxignore names. Contents are never read, written or searched.
+function secretError(p, ctx, tool) {
+  const hit = secretMatch(p, ctx?.cwd);
+  if (!hit) return null;
+  return err(`${tool}: '${displayPath(p, ctx)}' looks like a secret (matches "${hit}"), so ox keeps out of it. To allow it, add "!${path.basename(p)}" to .oxignore in the project, or set OX_ALLOW_SECRET_READS=1 for one run.`);
 }
 
 function walkSkipsSensitive(absDir) {
@@ -397,6 +406,8 @@ export async function readFileTool(args = {}, ctx = {}) {
   // handing it the raw argument could let a relative path miss the check.
   const sens = sensitiveHits(p);
   if (sens) return sensitiveReadError(p, sens, 'read_file');
+  const secret = secretError(p, ctx, 'read_file');
+  if (secret) return secret;
   let raw;
   try {
     raw = await fsp.readFile(p, 'utf8');
@@ -565,6 +576,8 @@ export async function writeFileTool(args = {}, ctx = {}) {
   if (badPath) return badPath;
   const badGit = gitCheck(p, 'write_file');
   if (badGit) return badGit;
+  const secret = secretError(p, ctx, 'write_file');
+  if (secret) return secret;
   if (typeof args.content !== 'string') {
     return err("write_file: 'content' must be a string.");
   }
@@ -615,6 +628,8 @@ export async function editFileTool(args = {}, ctx = {}) {
   if (badPath) return badPath;
   const badGit = gitCheck(p, 'edit_file');
   if (badGit) return badGit;
+  const secret = secretError(p, ctx, 'edit_file');
+  if (secret) return secret;
   const oldString = args.old_string;
   const newString = args.new_string ?? '';
   if (typeof oldString !== 'string' || oldString === '') {
@@ -1000,6 +1015,7 @@ export async function grepTool(args = {}, ctx = {}) {
       const target = include.includes('/') ? rel : name;
       if (!incRe.test(target)) continue;
     }
+    if (secretMatch(abs, ctx?.cwd)) continue; // secrets are never searched
     if (await looksBinary(abs)) continue;
     let text;
     try {

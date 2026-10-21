@@ -1150,7 +1150,10 @@ test('daemon 16: nothing is written outside the sandbox HOME and the daemon dir'
     return r?.state === 'exited' ? r : null;
   }, { timeoutMs: 25000, what: 'the worker to finish' });
 
-  assert.equal(fs.readdirSync(realHome).sort().join('\n'), before, `the real home must be untouched (${realHome})`);
+  const after = fs.readdirSync(realHome).sort().join('\n');
+  const was = new Set(before.split('\n'));
+  const now = new Set(after.split('\n'));
+  assert.equal(after, before, `the real home must be untouched (${realHome}); appeared: ${[...now].filter((x) => !was.has(x)).join(', ') || 'none'}; gone: ${[...was].filter((x) => !now.has(x)).join(', ') || 'none'}`);
   // Every file the daemon made lives inside the sandbox, and the session
   // transcript lands under the sandboxed HOME too.
   const inside = (p) => path.resolve(String(p)).startsWith(path.resolve(sb.root));
