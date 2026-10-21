@@ -3674,12 +3674,14 @@ files: [src/billing/**]
       } else if (sec === 'usage') {
         const days = Number(store.get('ox.usage.days', 30));
         const U = await getJson(`/ox/usage?days=${days}`);
+        const activeContext = contextMeter(convo());
         const fmt = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
         const money = (c) => (c == null ? 'unpriced' : c < 0.01 ? `$${c.toFixed(4)}` : `$${c.toFixed(2)}`);
         const max = Math.max(1, ...U.byDay.map((d) => d.in + d.out));
         const table = (title, rows) => `<div class="section-cap cap">${title}</div>${rows.length ? `<div class="cards">${rows.map((r) => `<div class="card"><span class="t"><div class="n">${esc(r.key)}</div><div class="d"><span>${fmt(r.in)} in · ${fmt(r.out)} out</span>${r.runs ? `<span>${r.runs} run${r.runs === 1 ? '' : 's'}</span>` : ''}</div></span><span class="mono small">${money(r.cost)}</span></div>`).join('')}</div>` : '<div class="box muted small">Nothing yet.</div>'}`;
         el.innerHTML = `${mobileBack}<div class="shead">${icon('chart')}Usage</div><p class="sdesc">Every run's tokens, kept on this machine in ~/.ox/usage.jsonl, from the terminal, this app, the island and your phone. Prices come from ox's price table; a model with no published price (local, subscription) shows as unpriced, never $0. Incognito chats are not recorded.</p>
           ${row('Period', '', seg('udays', [['1', 'Today'], ['7', '7 days'], ['30', '30 days'], ['90', '90 days']], String(days)))}
+          ${activeContext ? `<div class="box small" style="margin:10px 0"><b>This chat</b><br><span class="mono">${esc(activeContext)}</span><br><span class="muted">Measured immediately before the latest model request. It includes instructions and tools, so it is the amount that actually consumes the context window.</span></div>` : '<div class="box muted small" style="margin:10px 0">This chat’s context meter appears here after its first model request.</div>'}
           <div class="chipline" style="margin:6px 0 4px"><span class="badge">${fmt(U.total.in)} tokens in</span><span class="badge">${fmt(U.total.out)} tokens out</span><span class="badge">${U.total.runs} runs</span><span class="badge ok">${money(U.total.cost)}</span></div>
           <div class="section-cap cap">By day</div><div style="display:flex;align-items:flex-end;gap:3px;height:90px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--panel)">${U.byDay.map((d) => `<div title="${esc(d.key)}: ${fmt(d.in + d.out)} tokens${d.cost != null ? `, ${money(d.cost)}` : ''}" style="flex:1;min-width:4px;background:var(--gold);opacity:.85;border-radius:3px 3px 0 0;height:${Math.max(3, ((d.in + d.out) / max) * 100)}%"></div>`).join('') || '<span class="dim small">no runs in this period</span>'}</div>
           ${table('By model', U.byModel)}${table('By agent', U.byAgent)}${table('By where it ran', U.bySurface)}${table('By project', U.byProject)}`;
@@ -3738,14 +3740,23 @@ files: [src/billing/**]
         el.querySelectorAll('.card svg:last-child').forEach((s) => (s.style.transform = 'rotate(180deg)'));
       } else if (sec === 'accounts') {
         el.innerHTML = `${mobileBack}<div class="shead">${icon('user')}Connect an account</div><p class="sdesc">Sign in with a subscription. No API key to copy. ox runs the official app for that plan on your machine and works through it. Checking what is installed…</p><div class="skeleton"></div><div class="skeleton"></div>`;
-        const acc = await getJson('/ox/accounts');
+        const [acc, settings] = await Promise.all([getJson('/ox/accounts'), getJson('/ox/settings')]);
         const ready = acc.filter((a) => a.works), rest = acc.filter((a) => !a.works);
-        const card = (a) => `<div class="card"><span class="dot ${a.works ? 'ok' : a.installed ? 'err' : ''}"></span><span class="t"><div class="n">${esc(a.label)} ${a.works ? '<span class="badge ok">Ready</span>' : a.installed ? '<span class="badge err">Broken install</span>' : ''}</div><div class="d">${a.works ? `Signed in · ${esc(a.version || '')} · pick <span class="mono">${esc(a.bot)}</span>${a.model ? ` (runs <span class="mono">${esc(a.model)}</span> on your account)` : ''}` : `${esc(a.problem || (a.installed ? '' : `Install: ${a.fix}`))}${a.login ? `<br>Then sign in: ${esc(a.login)}` : ''}`}</div></span>${a.fix && !a.works ? `<button class="btn" data-copy-cmd="${esc(a.fix.replace(/^reinstall: /, ''))}">${icon('copy')}Copy install</button>` : ''}</div>`;
+        const card = (a) => {
+          const canChoose = a.works && a.id !== 'claude';
+          const chosen = settings.model.defaultBot === a.bot;
+          return `<div class="card"><span class="dot ${a.works ? 'ok' : a.installed ? 'err' : ''}"></span><span class="t"><div class="n">${esc(a.label)} ${a.works ? `<span class="badge ok">${chosen ? 'Default' : 'Ready'}</span>` : a.installed ? '<span class="badge err">Broken install</span>' : ''}</div><div class="d">${a.works ? `Signed in · ${esc(a.version || '')} · pick <span class="mono">${esc(a.bot)}</span>${a.model ? ` (runs <span class="mono">${esc(a.model)}</span> on your account)` : ''}` : `${esc(a.problem || (a.installed ? '' : `Install: ${a.fix}`))}${a.login ? `<br>Then sign in: ${esc(a.login)}` : ''}`}</div></span>${canChoose && !chosen ? `<button class="btn" data-account-default="${esc(a.bot)}">Use by default</button>` : a.fix && !a.works ? `<button class="btn" data-copy-cmd="${esc(a.fix.replace(/^reinstall: /, ''))}">${icon('copy')}Copy install</button>` : ''}</div>`;
+        };
         el.innerHTML = `${mobileBack}<div class="shead">${icon('user')}Connect an account</div><p class="sdesc">Sign in with a subscription. No API key to copy. ox runs the official app for that plan on your machine and works through it. <a href="#" id="to-keys" style="color:var(--gold)">Have an API key instead?</a></p>
           ${acc.some((a) => a.id === 'claude') ? `<div class="box small" style="margin:10px 0;border-color:#F5A52455"><b>Claude plan:</b> Anthropic's terms (February 2026) keep Claude Pro and Max logins for Claude Code and Claude.ai. ox never reads that login and never makes the Claude plan your default; it only runs your own Claude Code when you pick it. For no doubt at all, use an Anthropic API key for Claude here. The ChatGPT plan is fine: OpenAI allows partner apps.</div>` : ''}
           ${ready.length ? `<div class="section-cap cap">Connected</div><div class="cards">${ready.map(card).join('')}</div>` : ''}
           <div class="section-cap cap">${ready.length ? 'Connect another' : 'Available'}</div><div class="cards">${rest.map(card).join('')}</div>`;
         $('to-keys').onclick = (e) => { e.preventDefault(); sec = 'keys'; renderSnav(); renderSection(); };
+        el.querySelectorAll('[data-account-default]').forEach((b) => (b.onclick = async () => {
+          b.disabled = true;
+          try { await postJson('/ox/settings', { defaultBot: b.dataset.accountDefault }); toast('Default model saved'); renderSection(); }
+          catch (e) { b.disabled = false; toast(e.message); }
+        }));
       } else if (sec === 'keys') {
         const keys = await getJson('/ox/providers');
         providerIndex = keys;

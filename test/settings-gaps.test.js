@@ -61,6 +61,9 @@ test('the Settings pages exist and are searchable', () => {
   assert.match(html, /Export all chats/);
   assert.match(html, /Check for updates/);
   assert.match(html, /let renderSeq = 0/, 'stale pages cannot overwrite the current one');
+  assert.match(html, /data-account-default/, 'a connected supported account can become the default from its card');
+  assert.match(html, /a\.id !== 'claude'/, 'a Claude subscription is not made ox\'s default');
+  assert.match(html, /This chat’s context meter appears here/, 'Usage explains when a current-context meter is available');
 });
 
 test('backup model: saved from Settings, and app chats get it as a fallback target', () => {
