@@ -14,6 +14,14 @@ import { readConfigDoc, saveConfigDoc } from './config.js';
 
 export const islandFile = (home = os.homedir()) => path.join(home, '.ox', 'island.json');
 
+/** PIDs of OX Island processes started from ox's own app bundle (exact path, not a name). */
+export function runningIslandPids(home = os.homedir()) {
+  if (process.platform !== 'darwin') return [];
+  const exe = path.join(home, '.ox', 'island', 'OX Island.app', 'Contents', 'MacOS', 'OxIsland');
+  const r = spawnSyncImported('ps', ['-axo', 'pid=,comm='], { encoding: 'utf8' });
+  return String(r.stdout ?? '').split('\n').map((l) => /^\s*(\d+)\s+(.+)$/.exec(l)).filter((m) => m && m[2].trim() === exe).map((m) => Number(m[1])).filter((p) => p !== process.pid);
+}
+
 const configDir = (home) => path.join(home, '.ox');
 
 /** The persistent switch: ~/.ox/config.json "island" (true unless set to false). */
@@ -177,6 +185,12 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
       try { process.kill(Number(JSON.parse(fs.readFileSync(islandFile(), 'utf8')).pid), 'SIGTERM'); } catch {}
       for (let i = 0; i < 30 && live(); i++) await new Promise((r) => setTimeout(r, 100));
     }
+    // Islands with no record (an older island removed it) are found by their
+    // exact app path and stopped one by one, so a restart never leaves two.
+    for (const pid of runningIslandPids()) {
+      try { process.kill(pid, 'SIGTERM'); } catch {}
+    }
+    for (let i = 0; i < 30 && runningIslandPids().length; i++) await new Promise((r) => setTimeout(r, 100));
     if (process.platform === 'darwin') {
       const b = await cmdIsland(['build'], { log, err });
       if (b !== 0) return b;

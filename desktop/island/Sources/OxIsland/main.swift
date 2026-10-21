@@ -52,7 +52,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         bridge.stop()
-        try? FileManager.default.removeItem(at: Presence.file)
+        // Only our own record: a newer island may have written its own since,
+        // and deleting that hid it from ox runs (and from the next restart).
+        if let data = try? Data(contentsOf: Presence.file),
+           let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           (j["pid"] as? Int) == Int(ProcessInfo.processInfo.processIdentifier) {
+            try? FileManager.default.removeItem(at: Presence.file)
+        }
     }
 
     /// ~/.ox/island.json tells ox runs an island is listening (src/island.js).
