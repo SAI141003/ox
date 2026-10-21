@@ -33,7 +33,7 @@ and `app-templates`; nothing private was taken apart.
 | `generate_*`, batch, `jobs_wait` | `generate_image`, `generate_video`, `edit_image`, `upscale`, `remove_background`, `lip_sync`, `generate_audio`, each returning a job; `jobs_wait` |
 | Camera presets (crash zoom, orbit…) | camera moves as words the open video models follow (Wan, LTX, Hunyuan) |
 | `get_workflow_instructions` | ox's recipes: product photoshoot, YouTube thumbnail, character sheet, explainer video, short-form ad |
-| Video tools | ox's own ffmpeg tools: captions, cut, vertical, highlights, polish, explainer video |
+| Video tools | ox's own ffmpeg tools: captions, cut, vertical, highlights, polish, explainer video, and `compose_video`—a streamed scene timeline with an optional narration/music track for 30-minute or one-hour exports |
 | Library | the Studio gallery and history (~/.ox/media) |
 | Skills | `skills/ox-studio/SKILL.md`: how an agent uses all of this |
 

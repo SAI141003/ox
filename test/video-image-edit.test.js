@@ -34,6 +34,20 @@ test('cut, speed, vertical, gif and polish on a real clip; the source is never c
   assert.match(V.outPath(src, 'cut'), /clip\.cut-2\.mp4$/, 'never overwrites an earlier result');
 });
 
+test('long-form composer joins scenes and loops an audio bed to the full timeline', { skip: !hasFfmpeg && 'needs ffmpeg' }, () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-timeline-'));
+  const one = path.join(d, 'one.mp4'), two = path.join(d, 'two.mp4'), music = path.join(d, 'music.wav');
+  spawnSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=15:duration=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', one]);
+  spawnSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=navy:size=320x180:rate=15:duration=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', two]);
+  spawnSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=0.4', music]);
+  const r = V.compose([one, two], { audio: music, volume: 0.2 });
+  const p = V.probe(r.file);
+  assert.equal(r.scenes, 2);
+  assert.ok(p.audio, 'the selected audio is in the export');
+  assert.ok(p.duration > 3.7 && p.duration < 4.3, `duration ${p.duration}`);
+  assert.ok(fs.statSync(r.file).size > 10_000);
+});
+
 test('image edit requests: OpenAI /images/edits with the file, OpenRouter with the image inline', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-img-'));
   process.env.OX_HOME = home;

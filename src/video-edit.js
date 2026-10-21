@@ -191,6 +191,52 @@ export function join(files) {
   return { file: out };
 }
 
+/**
+ * Put an audio track under a video.  This deliberately works after generation:
+ * most video models make short, silent shots, while a real edit can be as long
+ * as the source timeline.  Music is looped only for the export and is trimmed
+ * exactly to the picture, so an hour-long render never grows an extra tail.
+ */
+export function soundtrack(file, audio, { volume = 0.28, keepOriginal = true, loop = true, out = null } = {}) {
+  const video = probe(file);
+  if (!video.video) throw new Error(`${path.basename(file)} has no picture`);
+  const track = probe(audio);
+  if (!track.audio) throw new Error(`${path.basename(audio)} has no audio track`);
+  const gain = Math.max(0, Math.min(1, Number(volume) || 0));
+  const target = Math.max(0.01, video.duration).toFixed(3);
+  const dest = out ?? outPath(file, 'soundtracked', '.mp4');
+  const music = `[1:a]aresample=48000,volume=${gain.toFixed(3)},apad,atrim=duration=${target}[music]`;
+  const graph = video.audio && keepOriginal
+    ? `[0:a]aresample=48000[original];${music};[original][music]amix=inputs=2:duration=first:dropout_transition=2,atrim=duration=${target}[audio]`
+    : `${music};[music]anull[audio]`;
+  ff(['-i', file, ...(loop ? ['-stream_loop', '-1'] : []), '-i', audio, '-filter_complex', graph, '-map', '0:v:0', '-map', '[audio]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-shortest', dest]);
+  return { file: dest, seconds: video.duration, mixed: video.audio && keepOriginal, looped: loop };
+}
+
+/**
+ * Build a long-form deliverable from scenes.  It never invents an hour of
+ * footage: the duration is the sum of the supplied scenes, and an optional
+ * narration/music file is mixed across that complete timeline.  This is safe
+ * for a 30-minute or 1-hour movie because ffmpeg streams the inputs instead
+ * of loading them into memory.
+ */
+export function compose(files, { audio = null, volume = 0.28, keepOriginal = true, loopAudio = true, out = null } = {}) {
+  const list = [].concat(files ?? []).map(String).filter(Boolean);
+  if (!list.length) throw new Error('add at least one video scene');
+  for (const f of list) if (!probe(f).video) throw new Error(`${path.basename(f)} has no picture`);
+  let base;
+  if (list.length === 1) base = { file: list[0] };
+  else base = join(list);
+  let result;
+  if (audio) result = soundtrack(base.file, String(audio), { volume, keepOriginal, loop: loopAudio, out });
+  else if (out && path.resolve(out) !== path.resolve(base.file)) {
+    ff(['-i', base.file, '-c', 'copy', '-movflags', '+faststart', out]);
+    result = { ...base, file: out };
+  } else result = base;
+  const p = probe(result.file);
+  return { ...result, scenes: list.length, seconds: p.duration, minutes: Math.round((p.duration / 60) * 10) / 10 };
+}
+
 /** Captions from the transcript: burned in as drawn images (any ffmpeg), or a soft track. */
 export function captions(file, { burn = true } = {}) {
   const tr = transcribe(file);

@@ -99,6 +99,11 @@ screen (hold Ctrl+Alt+Space to talk).
 - **Animate a script**: a video, transcript or script becomes scene-by-scene
   motion graphics (headlines, counting numbers, lists, vs, quotes, steps,
   captions) with sound effects, on this machine (`ox video animate`).
+- **Long video, with sound**: Studio's **Long video** tab joins generated or
+  imported scenes into a 30-minute or one-hour timeline and mixes narration or
+  music across the whole export. It reports the real duration; short video
+  models remain short-shot generators (`ox video compose scene-*.mp4 --audio
+  narration.m4a`).
 - **Approvals everywhere**: every write and command asks Allow / Deny, in the
   app (on any model, Claude and ChatGPT plans included), in the notch, and on
   your iPhone's lock screen.

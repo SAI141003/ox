@@ -5381,6 +5381,33 @@ async function runSubcommand(cmd, args) {
         } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
         return;
       }
+      // ox video compose scene-01.mp4 scene-02.mp4 --audio narration.m4a
+      // Long exports are ordinary ffmpeg timelines, not a misleading request
+      // for a one-hour generative shot.
+      if (args[0] === 'compose') {
+        const rest = args.slice(1);
+        const flag = (n) => { const i = rest.indexOf(n); return i >= 0 ? rest[i + 1] : undefined; };
+        const valued = new Set(['--audio', '--volume', '--out']);
+        const files = rest.filter((x, i) => !x.startsWith('--') && !valued.has(rest[i - 1])).map((x) => path.resolve(x));
+        if (!files.length) { console.error('usage: ox video compose <scene.mp4> [scene-2.mp4 …] [--audio narration-or-music.m4a] [--volume 0.28] [--replace-audio] [--no-loop] [--out final.mp4]'); process.exitCode = 3; return; }
+        try {
+          const V = await import('./video-edit.js');
+          const r = V.compose(files, { audio: flag('--audio') ? path.resolve(flag('--audio')) : null, volume: flag('--volume') == null ? 0.28 : Number(flag('--volume')), keepOriginal: !rest.includes('--replace-audio'), loopAudio: !rest.includes('--no-loop'), out: flag('--out') ? path.resolve(flag('--out')) : null });
+          console.log(`${c.green('✓')} ${r.file} ${c.dim(`${r.scenes} scene${r.scenes === 1 ? '' : 's'} · ${Math.round(r.seconds)} s / ${r.minutes} min${flag('--audio') ? ' · audio mixed' : ''}`)}`);
+        } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+        return;
+      }
+      if (args[0] === 'soundtrack') {
+        const [_, video, audio, ...rest] = args;
+        if (!video || !audio) { console.error('usage: ox video soundtrack <video.mp4> <narration-or-music.m4a> [--volume 0.28] [--replace-audio] [--no-loop]'); process.exitCode = 3; return; }
+        const vi = rest.indexOf('--volume');
+        try {
+          const V = await import('./video-edit.js');
+          const r = V.soundtrack(path.resolve(video), path.resolve(audio), { volume: vi >= 0 ? Number(rest[vi + 1]) : 0.28, keepOriginal: !rest.includes('--replace-audio'), loop: !rest.includes('--no-loop') });
+          console.log(`${c.green('✓')} ${r.file} ${c.dim(`${Math.round(r.seconds)} s · audio ${r.mixed ? 'mixed' : 'added'}`)}`);
+        } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
+        return;
+      }
       const ops = ['transcribe', 'captions', 'cut', 'speed', 'vertical', 'highlights', 'gif', 'polish', 'understand'];
       if (ops.includes(args[0])) {
         const { editVideoTool } = await import('./tools/video.js');

@@ -774,6 +774,8 @@
         <div class="os-modes" id="os-modes" role="tablist" aria-label="What to make"></div>
         <textarea class="field os-prompt" id="os-prompt" rows="3" placeholder="Describe it: subject, setting, light, style, mood. ⌘/Ctrl+Enter to make it"></textarea>
         <input class="field" id="os-video" placeholder="The clip: a link to the video (4-10 s works best)" hidden>
+        <textarea class="field" id="os-scenes" rows="4" placeholder="Video scene paths, one per line, in the order they should play" hidden></textarea>
+        <input class="field" id="os-audio" placeholder="Optional narration or music file path — it will be mixed across the whole video" hidden>
         <input class="field" id="os-image" placeholder="Image to start from: a path on this Mac or a link" hidden>
         <div class="small muted" id="os-hint" hidden></div>
         <div class="os-row" id="os-chips"></div>
@@ -2714,6 +2716,7 @@ files: [src/billing/**]
   const OS_MODES = [
     { k: 'image', label: 'Image', kind: 'image', tool: 'generate_image' },
     { k: 'video', label: 'Video', kind: 'video', tool: 'generate_video' },
+    { k: 'timeline', label: 'Long video', kind: null, tool: 'compose_video', noPrompt: true, hint: 'Join scenes into a real 30-minute or 1-hour video. Paste local video paths one per line, in order. Add narration or music if you want it mixed across the entire export. Studio reports the actual duration — it never pretends a short AI clip is an hour.' },
     { k: 'edit', label: 'Edit an image', kind: 'edit', tool: 'edit_image', image: true },
     { k: 'upscale', label: 'Upscale', kind: 'upscale', tool: 'upscale', image: true, noPrompt: true },
     { k: 'cutout', label: 'Cut out', kind: 'cutout', tool: 'remove_background', image: true, noPrompt: true },
@@ -2756,8 +2759,10 @@ files: [src/billing/**]
     $('os-image').hidden = !mode.image && mode.k !== 'video' && !(mode.k === 'restyle' && osPick.restyle !== 'wan-vace');
     $('os-image').placeholder = mode.k === 'video' ? 'Optional first frame: a path on this Mac or a link' : mode.k === 'restyle' ? 'The person or character: a link to the picture' : 'The image: a path on this Mac or a link';
     $('os-video').hidden = mode.k !== 'restyle';
+    $('os-scenes').hidden = mode.k !== 'timeline';
+    $('os-audio').hidden = mode.k !== 'timeline';
     $('os-hint').hidden = !mode.hint; $('os-hint').textContent = mode.hint ?? '';
-    $('os-go').textContent = mode.k === 'animate' ? 'Animate it' : 'Make it';
+    $('os-go').textContent = mode.k === 'animate' ? 'Animate it' : mode.k === 'timeline' ? 'Compose video' : 'Make it';
     const chips = [];
     if (mode.k === 'upscale' && osPick.upscale === 'mac-upscale') chips.push(`<span class="lbl">How</span>${[['detail', 'Detail (a few min)'], ['quick', 'Quick']].map(([v, l]) => `<button class="${v === osUpMode ? 'on' : ''}" data-upmode="${v}">${l}</button>`).join('')}`);
     if (mode.k === 'image' && osPick.image === 'mac-image') chips.push(`<span class="lbl" style="margin-left:10px">Quality</span>${[[false, 'Best'], [true, 'Fast']].map(([v, l]) => `<button class="${v === osFast ? 'on' : ''}" data-fast="${v}">${l}</button>`).join('')}`);
@@ -2785,6 +2790,15 @@ files: [src/billing/**]
       if (!prompt) { toast('Paste the script, or a path to a video or transcript'); return; }
       $('os-go').disabled = true; $('os-state').textContent = 'Planning the scenes and drawing every frame: about a minute\u2026';
       try { const r = await postJson('/ox/studio/open', { tool: 'animate_script', args: { source: prompt, aspect: osAnimAspect, accent: osAccent } }); toast(r.text); loadStudio(); } catch (e) { toast(e.message); }
+      $('os-go').disabled = false; $('os-state').textContent = '';
+      return;
+    }
+    if (mode.k === 'timeline') {
+      const files = $('os-scenes').value.split(/\n+/).map((x) => x.trim()).filter(Boolean);
+      const audio = $('os-audio').value.trim();
+      if (!files.length) { toast('Add one or more local video scene paths, one per line'); return; }
+      $('os-go').disabled = true; $('os-state').textContent = 'Joining scenes and mixing audio — long exports can take a while…';
+      try { const r = await postJson('/ox/studio/open', { tool: 'compose_video', args: { files, ...(audio ? { audio } : {}) } }); toast(r.text); loadStudio(); } catch (e) { toast(e.message); }
       $('os-go').disabled = false; $('os-state').textContent = '';
       return;
     }

@@ -144,7 +144,8 @@ test('the MCP server: initialize, list 16 tools, calls answer independently', as
   await new Promise((r) => setTimeout(r, 30));
   const by = (id) => got.find((m) => m.id === id);
   assert.equal(by(1).result.serverInfo.name, 'ox-studio');
-  assert.equal(by(2).result.tools.length, 16);
+  assert.equal(by(2).result.tools.length, 17);
+  assert.ok(by(2).result.tools.some((t) => t.name === 'compose_video'));
   assert.equal(by(3), undefined, 'the slow wait has not answered yet');
   assert.equal(by(4).result.content[0].text, 'ok models_explore');
   assert.equal(by(5).result.isError, true);

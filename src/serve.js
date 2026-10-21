@@ -30,7 +30,7 @@ import { runAgent } from './agent.js';
 import { BOTS, KEY_ENV, resolveBot, defaultBotSpec } from './bots.js';
 
 import { readFile } from 'fs/promises';
-import { join, resolve, extname, dirname } from 'path';
+import { join, resolve, extname, dirname, basename } from 'path';
 import { homedir } from 'os';
 import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, statSync } from 'fs';
 import { spawn, spawnSync } from 'node:child_process';
@@ -2126,9 +2126,21 @@ const ROUTES = [
   }) },
   { method: 'POST', pattern: /^\/ox\/studio\/open\/?$/, handler: appRoute(async (body) => {
     const S = await import('./studio-mcp.js');
-    const tools = new Set(['generate_image', 'generate_video', 'edit_image', 'upscale', 'remove_background', 'generate_audio', 'restyle_video', 'animate_script', 'workflow_instructions']);
+    const tools = new Set(['generate_image', 'generate_video', 'edit_image', 'upscale', 'remove_background', 'generate_audio', 'restyle_video', 'animate_script', 'compose_video', 'workflow_instructions']);
     const tool = String(body?.tool ?? '');
-    if (!tools.has(tool)) throw new Error('tools: generate_image, generate_video, edit_image, upscale, remove_background, generate_audio, restyle_video, animate_script');
+    if (!tools.has(tool)) throw new Error('tools: generate_image, generate_video, edit_image, upscale, remove_background, generate_audio, restyle_video, animate_script, compose_video');
+    // A timeline is an edit, not a model request.  It can safely make an hour
+    // long export because ffmpeg streams scenes and audio from disk.
+    if (tool === 'compose_video') {
+      const V = await import('./video-edit.js');
+      const ms = await import('./media-studio.js');
+      const a = body?.args ?? {};
+      const files = [].concat(a.files ?? []).map(String).filter(Boolean);
+      const r = V.compose(files, { audio: a.audio ? String(a.audio) : null, volume: a.volume, keepOriginal: a.keep_original !== false, loopAudio: a.loop_audio !== false, out: a.out ? String(a.out) : null });
+      const id = (await import('node:crypto')).randomBytes(6).toString('hex');
+      ms.note({ id, at: Date.now(), provider: 'local', model: 'ox timeline', label: `Long video · ${r.scenes} scene${r.scenes === 1 ? '' : 's'} · ${r.minutes} min`, surface: 'video', prompt: `Timeline: ${files.map((f) => basename(f)).join(', ')}`, settings: { audio: !!a.audio, volume: a.volume ?? 0.28, keepOriginal: a.keep_original !== false }, media: { ...(a.audio ? { audio: [String(a.audio)] } : {}) }, status: 'completed', files: [r.file] });
+      return { text: `Long video ready: ${r.file} (${r.scenes} scene${r.scenes === 1 ? '' : 's'}, ${Math.round(r.seconds)} s / ${r.minutes} min${a.audio ? ', audio mixed' : ''})` };
+    }
     // Scene animations run here and land in the gallery like any other result.
     if (tool === 'animate_script') {
       const A = await import('./animate.js');
