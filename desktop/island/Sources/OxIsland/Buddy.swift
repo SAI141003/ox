@@ -38,6 +38,21 @@ enum AvatarKind: String, CaseIterable, Identifiable {
     var title: String { self == .ox ? "Ox" : rawValue.capitalized }
 }
 
+/// Optional animal companion shown beside the Island. These use OX's bundled
+/// Blender-rendered animal cycles, never third-party mascot artwork.
+enum IslandPetKind: String, CaseIterable, Identifiable {
+    case none, puff, pebble, dot
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .none: return "No pet"
+        case .puff: return "Puff · lamb"
+        case .pebble: return "Pebble · goat"
+        case .dot: return "Dot · calf"
+        }
+    }
+}
+
 @MainActor
 final class Buddy: NSObject, ObservableObject {
     enum Phase: Equatable { case idle, listening, thinking, speaking, message(String) }

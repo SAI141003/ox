@@ -107,6 +107,7 @@ struct IslandMenu: View {
     @AppStorage("fn.talk") private var fnTalk = true
     @AppStorage("island.hideFullscreen") private var hideFullscreen = true
     @AppStorage("island.screen") private var islandScreen = "notch"
+    @AppStorage("pet.kind") private var petKind = "none"
     var bridge: OxBridge? = nil
     @AppStorage("island.autoClose") private var autoClose = 6.0
     var body: some View {
@@ -122,6 +123,9 @@ struct IslandMenu: View {
         }
         Picker("Companion", selection: $buddy.character) {
             ForEach(AvatarKind.allCases) { Text($0.title).tag($0) }
+        }
+        Picker("Island pet", selection: $petKind) {
+            ForEach(IslandPetKind.allCases) { Text($0.title).tag($0.rawValue) }
         }
         Toggle("Natural voice (Kokoro)", isOn: $naturalVoice)
         Divider()
@@ -162,6 +166,7 @@ struct IslandControlsView: View {
     @AppStorage("island.autoClose") private var autoClose = 6.0
     @AppStorage("island.hideFullscreen") private var hideFullscreen = true
     @AppStorage("wake.enabled") private var wakeOn = false
+    @AppStorage("pet.kind") private var petKind = "none"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -199,7 +204,36 @@ struct IslandControlsView: View {
             }
             Text("The Island closes after you leave unless you are typing, speaking, or an agent needs an approval. Mail opens safely in Mail; replies stay drafts until you send them.")
                 .font(.system(size: 10)).foregroundStyle(Ink.dim).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Text("Island pet").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Ink.muted)
+                Picker("Island pet", selection: $petKind) {
+                    ForEach(IslandPetKind.allCases) { Text($0.title).tag($0.rawValue) }
+                }
+                .labelsHidden().frame(width: 150)
+                Text("Original Blender animal companions").font(.system(size: 10)).foregroundStyle(Ink.dim)
+            }
         }
+    }
+}
+
+/// One selected pet, with the same idle and mood animation frames used by the
+/// working-session animal cast. It is intentionally small: status and
+/// approvals remain readable in the notch.
+struct IslandPet: View {
+    let kind: IslandPetKind
+    let mood: Mood
+    let height: CGFloat
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: Energy.interval(12, active: true))) { context in
+            let frames = Frames.load("friends/\(kind.rawValue)/\(SessionCharacter.cycle(mood, t: context.date.timeIntervalSinceReferenceDate))")
+            let fallback = frames.isEmpty ? Frames.load("friends/\(kind.rawValue)/idle") : frames
+            if let image = fallback.isEmpty ? nil : fallback[Int(context.date.timeIntervalSinceReferenceDate * 12) % fallback.count] {
+                Image(nsImage: image).resizable().interpolation(.high).aspectRatio(4 / 3, contentMode: .fit)
+                    .frame(height: height).accessibilityLabel("\(kind.title), Island pet")
+            }
+        }
+        .frame(width: height * 4 / 3, height: height)
     }
 }
 

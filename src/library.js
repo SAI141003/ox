@@ -32,12 +32,12 @@ function pdfText(f) {
   return r.stdout.replace(/\f/g, '\n\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-function make({ title, kind, source, text, by = 'you' }) {
+function make({ title, kind, source, text, by = 'you', origin = null }) {
   const t = String(text ?? '').trim();
   if (words(t) < 5) throw new Error('nothing readable in it');
   const existing = list().find((x) => x.source === source);
   const id = existing?.id ?? crypto.randomBytes(5).toString('hex');
-  return save({ id, title: String(title || 'Untitled').replace(/\s+/g, ' ').trim().slice(0, 200), kind, source, words: words(t), addedAt: existing?.addedAt ?? new Date().toISOString(), by, highlights: existing?.highlights ?? [], text: t });
+  return save({ id, title: String(title || 'Untitled').replace(/\s+/g, ' ').trim().slice(0, 200), kind, source, origin: origin ?? existing?.origin ?? null, words: words(t), addedAt: existing?.addedAt ?? new Date().toISOString(), by, highlights: existing?.highlights ?? [], text: t });
 }
 
 /** Save a web page (its readable text) or a PDF at a URL. */
@@ -68,6 +68,31 @@ export async function addFile(p, { by = 'you' } = {}) {
   const raw = fs.readFileSync(f, 'utf8');
   if (/\.html?$/i.test(f)) { const W = await import('./tools/web.js'); return make({ title: /<title[^>]*>([^<]+)/i.exec(raw)?.[1] ?? name, kind: 'article', source: f, text: plain(W.htmlToText(raw)), by }); }
   return make({ title: /^#\s+(.+)$/m.exec(raw)?.[1] ?? name, kind: 'note', source: f, text: raw, by });
+}
+
+// Foresight does not expose a supported automation/data API.  An exported
+// Markdown, text, or JSON file is a deliberate user action and is safe to
+// import as local Library material; private Foresight databases are never read.
+export async function addForesightExport(p, { by = 'you' } = {}) {
+  const f = path.resolve(String(p).replace(/^~(?=\/)/, os.homedir()));
+  if (!fs.existsSync(f) || !fs.statSync(f).isFile()) throw new Error('choose a Foresight export file');
+  const ext = path.extname(f).toLowerCase();
+  if (!['.md', '.markdown', '.txt', '.json'].includes(ext)) throw new Error('a Foresight export must be Markdown, text, or JSON');
+  const raw = fs.readFileSync(f, 'utf8');
+  let title = path.basename(f, ext), text = raw;
+  if (ext === '.json') {
+    let doc;
+    try { doc = JSON.parse(raw); } catch { throw new Error('that Foresight JSON export is not valid'); }
+    if (!doc || Array.isArray(doc) || typeof doc !== 'object') throw new Error('that Foresight JSON export has no meeting object');
+    title = String(doc.title ?? doc.name ?? doc.meetingTitle ?? title);
+    const parts = [
+      ['Summary', doc.summary ?? doc.enhanced_content],
+      ['Notes', doc.notes ?? doc.note ?? doc.content],
+      ['Transcript', doc.transcript],
+    ].filter(([, value]) => typeof value === 'string' && value.trim()).map(([label, value]) => `## ${label}\n\n${String(value).trim()}`);
+    text = parts.join('\n\n');
+  }
+  return make({ title, kind: 'meeting', source: `foresight-export:${f}`, text, by, origin: 'Google AI Edge Foresight export' });
 }
 
 // htmlToText gives { text, … }; older callers got a string.

@@ -140,6 +140,7 @@ private func panelPoint(islandWidth: CGFloat, x: CGFloat, y: CGFloat) -> CGPoint
 struct CompactBar: View {
     @ObservedObject var bridge: OxBridge
     let metrics: NotchMetrics
+    @AppStorage("pet.kind") private var petKind = "none"
 
     var body: some View {
         let w = IslandLayout.shape(.compact, metrics).w
@@ -153,6 +154,10 @@ struct CompactBar: View {
                      height: oxSize * 0.95, vectorStyle: true, roam: true, stressed: bridge.gauges.contains { $0.percent >= 80 }, onPoke: { bridge.showReaction() })
                 .frame(width: wing + oxSize * 0.95 * 4 / 3 + 4)
             Spacer(minLength: 0)
+            if let pet = IslandPetKind(rawValue: petKind), pet != .none {
+                IslandPet(kind: pet, mood: bridge.headlineMood, height: metrics.height * 0.82)
+                    .frame(width: 31, height: metrics.height)
+            }
             if let team = bridge.officeSession, team.agents.contains(where: { $0.endedAt == nil }) {
                 // The notch crew: tiny helpers pace the right wing while a team works.
                 let active = Array(team.agents.enumerated().filter { $0.element.endedAt == nil }.prefix(2))

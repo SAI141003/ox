@@ -3255,13 +3255,15 @@ files: [src/billing/**]
       }
     }
     el.innerHTML = `<div class="shead">${icon('list')}Library</div>
-      <p class="sdesc">Your saved reading on one shelf: articles and PDFs. ox can add to it too ("save this article"). Open one, select any line, and ask about it.</p>
+      <p class="sdesc">Your saved reading and meeting context on one shelf. ox can add articles, PDFs, and a Foresight export. Open one, select any line, and ask about it.</p>
       <div class="box tk-new"><input class="field" id="lib-add" placeholder="Paste a link or a PDF path to save" style="flex:1"><button class="btn primary" id="lib-add-go">Save</button></div>
+      <div class="box tk-new"><input class="field" id="lib-foresight" placeholder="Path to a Foresight Markdown, text, or JSON export" style="flex:1"><button class="btn ghost" id="lib-foresight-go">Import Foresight export</button></div>
       <div class="box"><div class="lib-shelf">${items.map((it) => `<div class="lib-book" data-lib="${esc(it.id)}" title="${esc(it.title)}" style="height:${90 + Math.min(60, Math.round(Math.log2(it.words + 1) * 4))}px;background:hsl(${hue(it.title)} 42% 38%)"><span>${esc(it.title)}</span></div>`).join('') || '<div class="dim small" style="padding-bottom:20px">Empty shelf. Save a link above.</div>'}</div></div>
       ${reader}`;
     libOpen = openId;
     el.querySelectorAll('[data-lib]').forEach((b) => (b.onclick = () => loadLibrary(b.dataset.lib)));
     $('lib-add-go').onclick = async () => { const ref = $('lib-add').value.trim(); if (!ref) return; toast('Saving…'); try { const { item } = await postJson('/ox/library/add', { ref }); toast(`${item.title} is on the shelf`); loadLibrary(item.id); } catch (e) { toast(e.message); } };
+    $('lib-foresight-go').onclick = async () => { const ref = $('lib-foresight').value.trim(); if (!ref) return; toast('Importing local export…'); try { const { item } = await postJson('/ox/library/foresight', { ref }); toast(`${item.title} is in your private Library`); loadLibrary(item.id); } catch (e) { toast(e.message); } };
     if (!libOpen || !$('lib-text')) return;
     $('lib-close').onclick = () => loadLibrary(null);
     const askIt = async (question, quote = null) => {
@@ -3653,12 +3655,14 @@ files: [src/billing/**]
         bindSegs(el, (k, v) => { prefs[k] = v || null; savePrefs(); });
       } else if (sec === 'desktop') {
         const st = await getJson('/ox/settings');
-        const ip = st.island.preferences || { size: 'standard', autoClose: 6, hideFullscreen: true, companion: 'ox' };
+        const ip = st.island.preferences || { size: 'standard', autoClose: 6, hideFullscreen: true, companion: 'ox', pet: 'none' };
         const companion = (id, label, detail) => `<option value="${id}"${ip.companion === id ? ' selected' : ''}>${label} — ${detail}</option>`;
+        const pet = (id, label) => `<option value="${id}"${ip.pet === id ? ' selected' : ''}>${label}</option>`;
         el.innerHTML = `${mobileBack}<div class="shead">${icon('monitor')}OX Island &amp; desktop</div><p class="sdesc">Same as <code>ox island on</code> / <code>off</code> / <code>restart</code> and <code>ox awake</code> in a terminal.</p>
           ${row('OX Island', st.island.enabled ? (st.island.running ? 'On, in your notch now' : 'On. It starts with your next run, or press Restart') : `Off. ${st.island.platform === 'darwin' ? 'Turn it on and ox lives in your notch: runs, approvals, your voice' : 'Turn it on and a slim bar shows ox at the top of the screen'}`, `<span style="display:flex;gap:8px;align-items:center">${st.island.enabled ? '<button class="btn ghost" data-island-restart>Restart</button>' : ''}${sw('s-island', st.island.enabled)}</span>`)}
           ${st.island.platform === 'darwin' ? `<div class="sblock"><div class="shead">${icon('monitor')}Companion &amp; behavior</div><p class="sdesc">Choose the original OX companion shown in the Island. These controls are applied by restarting only the Island, never an active agent run.</p>
             ${row('Companion', 'The character that listens, speaks and reacts in OX Island.', `<select data-island-pref="companion">${companion('ox', 'Ox', 'the original OX companion')}${companion('mira', 'Mira', 'calm, focused guide')}${companion('theo', 'Theo', 'fast iteration partner')}${companion('ade', 'Ade', 'sharp review companion')}${companion('lin', 'Lin', 'steady deep-work partner')}${companion('sol', 'Sol', 'bright ideas companion')}${companion('rui', 'Rui', 'quiet debugging companion')}</select>`)}
+            ${row('Island pet', 'Choose an optional original Blender animal companion. It stays small so approvals and run status remain readable.', `<select data-island-pref="pet">${pet('none', 'No pet')}${pet('puff', 'Puff · lamb')}${pet('pebble', 'Pebble · goat')}${pet('dot', 'Dot · calf')}</select>`)}
             ${row('Island size', 'Compact removes the walking pasture; Standard keeps the full live scene.', `<select data-island-pref="size"><option value="standard"${ip.size === 'standard' ? ' selected' : ''}>Standard</option><option value="compact"${ip.size === 'compact' ? ' selected' : ''}>Compact</option></select>`)}
             ${row('Close after you leave', 'The Island always stays for a question, approval, voice turn or active typing.', `<select data-island-pref="autoClose"><option value="3"${ip.autoClose === 3 ? ' selected' : ''}>3 seconds</option><option value="6"${ip.autoClose === 6 ? ' selected' : ''}>6 seconds</option><option value="15"${ip.autoClose === 15 ? ' selected' : ''}>15 seconds</option><option value="0"${ip.autoClose === 0 ? ' selected' : ''}>Never</option></select>`)}
             ${row('Hide over full-screen apps', 'Temporarily hides the Island in a real full-screen app, except when an agent needs your answer.', sw('s-island-fullscreen', ip.hideFullscreen).replace('id="s-island-fullscreen"', 'data-island-pref="hideFullscreen"')))}</div>` : ''}

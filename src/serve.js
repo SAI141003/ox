@@ -1345,13 +1345,14 @@ async function handleResponses(req, res) {
 // ---------------------------------------------------------------------------
 
 const ISLAND_COMPANIONS = new Set(['ox', 'mira', 'theo', 'ade', 'lin', 'sol', 'rui']);
+const ISLAND_PETS = new Set(['none', 'puff', 'pebble', 'dot']);
 
 // Island preferences live in the signed macOS app's UserDefaults domain rather
 // than ~/.ox/config.json.  Keeping that boundary matters: the app is able to
 // start before the local server, and it never needs to read project settings.
 // `defaults` is macOS' supported bridge to that domain for this local-only UI.
 function islandPreferences() {
-  const fallback = { size: 'standard', autoClose: 6, hideFullscreen: true, companion: 'ox' };
+  const fallback = { size: 'standard', autoClose: 6, hideFullscreen: true, companion: 'ox', pet: 'none' };
   if (process.platform !== 'darwin') return fallback;
   const read = (key) => {
     const r = spawnSync('defaults', ['read', 'dev.ox.island', key], { encoding: 'utf8' });
@@ -1361,11 +1362,13 @@ function islandPreferences() {
   const close = Number(read('island.autoClose'));
   const hide = read('island.hideFullscreen');
   const companion = read('buddy.character');
+  const pet = read('pet.kind');
   return {
     size: size === 'compact' ? 'compact' : 'standard',
     autoClose: [0, 3, 6, 15].includes(close) ? close : 6,
     hideFullscreen: hide == null ? true : /^(1|true|yes)$/i.test(hide),
     companion: ISLAND_COMPANIONS.has(companion) ? companion : 'ox',
+    pet: ISLAND_PETS.has(pet) ? pet : 'none',
   };
 }
 
@@ -1390,6 +1393,10 @@ function saveIslandPreferences(next) {
   if (next.companion != null) {
     if (!ISLAND_COMPANIONS.has(next.companion)) throw new Error('That OX companion is not available');
     write('buddy.character', '-string', next.companion);
+  }
+  if (next.pet != null) {
+    if (!ISLAND_PETS.has(next.pet)) throw new Error('That Island pet is not available');
+    write('pet.kind', '-string', next.pet);
   }
 }
 
@@ -1437,7 +1444,7 @@ async function handleSettingsPost(req, res) {
     const { cmdIsland } = await import('./island.js');
     await cmdIsland(['restart'], { log: () => {}, err: () => {} });
   }
-  const islandPreferenceKeys = ['size', 'autoClose', 'hideFullscreen', 'companion'];
+  const islandPreferenceKeys = ['size', 'autoClose', 'hideFullscreen', 'companion', 'pet'];
   if (body.islandPreferences && typeof body.islandPreferences === 'object') {
     const prefs = body.islandPreferences;
     if (Object.keys(prefs).some((key) => !islandPreferenceKeys.includes(key))) {
@@ -1948,9 +1955,10 @@ const ROUTES = [
   // Your reading library (src/library.js): the shelf, one item, add, highlight, ask.
   { method: 'GET', pattern: /^\/ox\/library\/?$/, handler: appRoute(async () => ({ items: (await import('./library.js')).list() })) },
   { method: 'GET', pattern: /^\/ox\/library\/([a-f0-9]{6,20})\/?$/, handler: appRoute(async (_, m) => (await import('./library.js')).load(m[1])) },
-  { method: 'POST', pattern: /^\/ox\/library\/(add|ask|highlight|remove)\/?$/, handler: appRoute(async (body, m) => {
+  { method: 'POST', pattern: /^\/ox\/library\/(add|foresight|ask|highlight|remove)\/?$/, handler: appRoute(async (body, m) => {
     const L = await import('./library.js');
     if (m[1] === 'add') return { item: await L.add(String(body?.ref ?? '')) };
+    if (m[1] === 'foresight') return { item: await L.addForesightExport(String(body?.ref ?? '')) };
     if (m[1] === 'highlight') return { highlights: L.highlight(String(body?.id ?? ''), body?.quote, body?.note ?? '') };
     if (m[1] === 'remove') return { removed: L.remove(String(body?.id ?? '')) };
     return L.askAbout(String(body?.id ?? ''), String(body?.question ?? ''), { quote: body?.quote ?? null, ask: async ({ system, user }) => {

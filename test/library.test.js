@@ -29,6 +29,22 @@ test('a note on the shelf: listed, searched, highlighted, asked about', async ()
   assert.equal(L.list().length, 0);
 });
 
+test('a user-selected Foresight export becomes a local meeting item without touching app data', async () => {
+  process.env.OX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-foresight-'));
+  const L = await import('../src/library.js');
+  const f = path.join(process.env.OX_HOME, 'weekly-meeting.json');
+  fs.writeFileSync(f, JSON.stringify({ meetingTitle: 'Weekly launch', summary: 'Ship beta Friday.', notes: 'Ada owns QA.', transcript: 'We agreed to ship the beta on Friday.' }));
+  const it = await L.addForesightExport(f);
+  assert.equal(it.kind, 'meeting');
+  assert.equal(it.origin, 'Google AI Edge Foresight export');
+  assert.match(it.source, /^foresight-export:/);
+  assert.match(it.text, /## Summary[\s\S]*Ship beta Friday/);
+  assert.match(L.search('Ada QA')[0].passage, /Ada owns QA/);
+  const bad = path.join(process.env.OX_HOME, 'private.sqlite');
+  fs.writeFileSync(bad, 'not a Foresight export');
+  await assert.rejects(L.addForesightExport(bad), /Markdown, text, or JSON/);
+});
+
 test('connect your agent: the library as an MCP server (save, search, read, list; no delete)', async () => {
   process.env.OX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-libmcp-'));
   const L = await import('../src/library.js');

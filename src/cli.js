@@ -538,7 +538,7 @@ function usageAll() {
     '  ox org team "<sentence>" [--draft]   the chief sets up a whole team and its group chat; ox org say <team> "…"; ox org group <team>',
     '  ox skill from <book.pdf|folder>   a book or docs → a skill: an index plus chapters read only when needed',
     '',
-    'library: ox library [add <url|pdf> | read | ask <id> "q" | search]   saved articles and PDFs; highlight and ask in the app',
+    'library: ox library [add <url|pdf> | foresight <export> | read | ask <id> "q" | search]   saved articles and local meeting exports; highlight and ask in the app',
     'commands: ox commands [list | install [--claude] [--codex] [--cursor] | uninstall]   every ox command as /name, here and inside Claude Code, Codex, Cursor',
     'theme: ox theme ["<look>" | list | use <name> | reset]   restyle the app from a sentence (neumorphic, glass, paper, terminal, contrast…)',
     'browse: ox browse "<goal>" [--url <page>] [--show] [--model <id>]   the fast browser: one goal, a checked finish, asks before buy/pay/send',
@@ -4768,7 +4768,7 @@ async function runSubcommand(cmd, args) {
       await cmdPr(args);
       return;
     case 'library': {
-      // ox library [add <url|file> | read <id> | ask <id> "q" | search <words> | rm <id>]
+      // ox library [add <url|file> | foresight <export> | read <id> | ask <id> "q" | search <words> | rm <id>]
       const L = await import('./library.js');
       const sub = args[0] ?? 'list';
       const askModel = async ({ system, user }) => {
@@ -4785,6 +4785,7 @@ async function runSubcommand(cmd, args) {
           return;
         }
         if (sub === 'add') { const it = await L.add(args[1]); console.log(`${c.green('✓ on the shelf')} ${c.bold(it.title)} ${c.dim(`(${it.kind}, ${it.words.toLocaleString('en-US')} words, ${it.id})`)}`); return; }
+        if (sub === 'foresight') { const it = await L.addForesightExport(args[1]); console.log(`${c.green('✓ imported privately')} ${c.bold(it.title)} ${c.dim(`(${it.kind}, ${it.words.toLocaleString('en-US')} words, ${it.id})`)}\n${c.dim('Saved only in your local OX Library; ask before sending it to a cloud model.')}`); return; }
         if (sub === 'read') { const it = L.load(args[1]); if (!it) throw new Error(`no item ${args[1]}`); console.log(`${c.bold(it.title)}\n${c.dim(it.source)}\n\n${it.text}`); return; }
         if (sub === 'ask') { const r = await L.askAbout(args[1], args.slice(2).join(' '), { ask: askModel }); console.log(`${c.dim(r.title)}\n${r.answer}`); return; }
         if (sub === 'search') { for (const x of L.search(args.slice(1).join(' '))) console.log(`${c.dim(x.id)}  ${c.bold(x.title)}\n  ${c.dim(x.passage.replace(/\s+/g, ' ').slice(0, 200))}`); return; }
@@ -4796,7 +4797,7 @@ async function runSubcommand(cmd, args) {
           console.log(`Give any agent your library (it can save, search and read; never delete):\n\n  Claude Code:  claude mcp add ox-library -- ${bin} library mcp\n  Codex:        add to ~/.codex/config.toml:\n                [mcp_servers.ox-library]\n                command = "${process.execPath}"\n                args = ["${path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js')}", "library", "mcp"]\n  Any MCP app:  command ${bin} library mcp`);
           return;
         }
-        console.error('usage: ox library [add <url|file> | read <id> | ask <id> "<question>" | search <words> | rm <id> | connect | mcp]'); process.exitCode = 3;
+        console.error('usage: ox library [add <url|file> | foresight <export> | read <id> | ask <id> "<question>" | search <words> | rm <id> | connect | mcp]'); process.exitCode = 3;
       } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
       return;
     }

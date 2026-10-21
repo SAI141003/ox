@@ -113,11 +113,13 @@ test('Island companion and close controls are visible, persisted, and constraine
   const serve = fs.readFileSync(new URL('../src/serve.js', import.meta.url), 'utf8');
   const html = fs.readFileSync(new URL('../src/web/chat.html', import.meta.url), 'utf8');
   assert.match(serve, /ISLAND_COMPANIONS/);
+  assert.match(serve, /ISLAND_PETS/);
   assert.match(serve, /saveIslandPreferences/);
   assert.match(serve, /\[0, 3, 6, 15\]/);
   assert.match(serve, /islandPreferences/);
   assert.match(html, /Companion &amp; behavior/);
   assert.match(html, /data-island-pref="companion"/);
+  assert.match(html, /data-island-pref="pet"/);
   assert.match(html, /data-island-pref="autoClose"/);
   assert.match(html, /data-island-pref="hideFullscreen"/);
 });
