@@ -71,11 +71,14 @@ function recentFiles(dir, depth, now) {
 export function claudeSessions({ home = os.homedir(), now = Date.now() } = {}) {
   return recentFiles(path.join(home, '.claude', 'projects'), 1, now).map(({ file, mtime }) => {
     const lines = tailLines(file);
-    let cwd = '', model = '', doing = '', lastKind = '', pendingTool = false;
+    let cwd = '', model = '', doing = '', lastKind = '', pendingTool = false, tokens = null;
     for (const l of lines) {
       if (l.cwd) cwd = l.cwd;
       if (l.type === 'assistant' && l.message) {
         if (l.message.model && !/synthetic/.test(l.message.model)) model = l.message.model;
+        // The newest message's tokens: what it read (new and from cache) and wrote.
+        const u = l.message.usage;
+        if (u) tokens = { in: (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0), cached: u.cache_read_input_tokens || 0, out: u.output_tokens || 0 };
         const calls = (l.message.content ?? []).filter((c) => c?.type === 'tool_use');
         if (calls.length) { const c = calls.at(-1); doing = describeCall(c.name, c.input); pendingTool = true; lastKind = 'tool'; } else if ((l.message.content ?? []).some((c) => c?.type === 'text')) { lastKind = 'text'; pendingTool = false; }
       } else if (l.type === 'user' && Array.isArray(l.message?.content) && l.message.content.some((c) => c?.type === 'tool_result')) {
@@ -84,7 +87,7 @@ export function claudeSessions({ home = os.homedir(), now = Date.now() } = {}) {
     }
     const age = now - mtime;
     const working = age < WORKING_MS || (pendingTool && age < 5 * 60_000);
-    return { id: `claude:${path.basename(file, '.jsonl')}`, tool: 'Claude Code', project: projectName(cwd) || 'claude', cwd, model, state: working ? (doing && lastKind !== 'text' ? 'tool' : 'thinking') : 'idle', doing: working ? doing : '', idleSec: working ? 0 : Math.round(age / 1000), updated: mtime };
+    return { id: `claude:${path.basename(file, '.jsonl')}`, tool: 'Claude Code', project: projectName(cwd) || 'claude', cwd, model, state: working ? (doing && lastKind !== 'text' ? 'tool' : 'thinking') : 'idle', doing: working ? doing : '', idleSec: working ? 0 : Math.round(age / 1000), updated: mtime, ...(tokens ? { tokens } : {}) };
   }).filter((s) => s.cwd || s.model);
 }
 
@@ -97,10 +100,13 @@ export function codexSessions({ home = os.homedir(), now = Date.now() } = {}) {
       const fd = fs.openSync(file, 'r'); const buf = Buffer.alloc(4096); fs.readSync(fd, buf, 0, 4096, 0); fs.closeSync(fd);
       sid = /"(?:id|session_id)":"([0-9a-f-]{36})"/.exec(buf.toString('utf8'))?.[1] ?? sid;
     } catch {}
-    let cwd = '', model = '', doing = '', done = false;
+    let cwd = '', model = '', doing = '', done = false, tokens = null;
     for (const l of lines) {
       const p = l.payload ?? {};
       if (p.cwd) cwd = p.cwd;
+      // Codex's token_count event: the last turn's usage.
+      const lu = p.type === 'token_count' ? p.info?.last_token_usage : null;
+      if (lu) tokens = { in: lu.input_tokens || 0, cached: lu.cached_input_tokens || 0, out: (lu.output_tokens || 0) + (lu.reasoning_output_tokens || 0) };
       if (p.model) model = p.model;
       if (p.type === 'function_call' || p.type === 'local_shell_call' || p.type === 'custom_tool_call') {
         let args = {};
@@ -112,7 +118,7 @@ export function codexSessions({ home = os.homedir(), now = Date.now() } = {}) {
     }
     const age = now - mtime;
     const working = !done && age < WORKING_MS * 4;
-    return { id: `codex:${sid}`, tool: 'Codex', project: projectName(cwd) || 'codex', cwd, model, state: working ? (doing ? 'tool' : 'thinking') : 'idle', doing: working ? doing : '', idleSec: working ? 0 : Math.round(age / 1000), updated: mtime };
+    return { id: `codex:${sid}`, tool: 'Codex', project: projectName(cwd) || 'codex', cwd, model, state: working ? (doing ? 'tool' : 'thinking') : 'idle', doing: working ? doing : '', idleSec: working ? 0 : Math.round(age / 1000), updated: mtime, ...(tokens ? { tokens } : {}) };
   });
 }
 
@@ -244,6 +250,7 @@ export function asBoardRows(rows, now = Date.now()) {
     id: `ext:${s.id}`, kind: 'agent', ext: true, who: s.tool, project: s.project, model: s.model || null,
     title: s.project, state: s.state, tool: s.state === 'tool' ? s.doing.split(' ')[0] : null, detail: s.doing,
     idleSec: s.idleSec, started: s.updated, updated: s.updated, parent: null, steps: 0, seconds: Math.round((now - s.updated) / 1000),
+    ...(s.tokens ? { tokens: s.tokens.in + s.tokens.out, tokensIn: s.tokens.in, tokensOut: s.tokens.out, tokensCached: s.tokens.cached } : {}),
   }));
 }
 

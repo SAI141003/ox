@@ -422,9 +422,10 @@ Licences are checked before any code is taken. A product's name, mascot and art 
 | ShogunAI: Ask over mail, meetings and notes with sources | ✓ ox brain also searches call notes (~/ox-notes) and the library, read-only, each hit saying where it came from | test: brain |
 | ShogunAI: today's schedule and priorities every morning | ✓ `ox today` (and /ox/today): today's events, what needs you, what changed since yesterday, what is ready; Calendar and Mail read only when open | test: today; live on this Mac |
 | ShogunAI: Write anywhere, Meetings | ✓ already (B1, A14) | |
-| ShogunAI: Visual recall (search what you saw on screen) | ✗ not built: it records your screen all day; needs its own privacy design | |
-| luciomakes: 26 agents on a canvas, tools menu | ✓ already (Sessions canvas, Mission map, Library, Skills); Loops ✗ | |
+| ShogunAI: Visual recall (search what you saw on screen) | ✓ as a skill, by the owner's choice (not an app feature): `screen-recall` saves what is on screen when you ask, as words in ox brain, never in the background, never passwords or bank pages | skills/screen-recall |
+| luciomakes: 26 agents on a canvas, tools menu | ✓ already (Sessions canvas, Mission map, Library, Skills); Loops as a skill: `loop-until-done` (a real check, a round limit, stop on the same failure twice) | skills/loop-until-done |
 | WeKnora, OpenWhispr, OpenProject, Cal.com, ComfyUI, Open Design, gbrain, Agent Reach | ✓ in the marketplace with checked licences, each noting ox's own take | live: GitHub API |
 | ComfyUI's node graph | ✓ Studio provider: your ComfyUI runs the standard graph or your own Save (API) workflow | test: comfyui (stand-in server) |
 | Skills for Real Engineers (mattpocock/skills), Anatomy skill | ✓ in the marketplace (10 + 1 skills, MIT) | live: resolved on GitHub |
-| Four-agent trading team (simulated) | ~ `ox org team "<sentence>"` builds such a team; no ready-made preset; ox never trades real money | |
+| Four-agent trading team (simulated) | ✓ as a skill: `paper-trading-team` (scanner, risk with veto, paper trader, exits; a CSV ledger; simulation only, never real orders) | skills/paper-trading-team |
+| (Owner) Tokens for each message, in the app and the island | ✓ app: under every answer, always shown: total, in, out, from cache, time; island: each session's tokens on its row and tile (ox's runs so far; Claude Code's and Codex's newest message, from their own transcripts) | live: "2,879 tokens · 2,875 in · 4 out · 432 from cache · 8.89 s"; /ox/live carries tokens for the island |

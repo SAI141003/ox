@@ -40,6 +40,14 @@ export function onEvent(runId, ev) {
       break;
     }
     case 'error': touch(r, { state: 'failed', detail: clip(ev.error, 70) }); break;
+    // Tokens this run used so far (each answer in the app is one run).
+    case 'usage': {
+      r.tokensIn = (r.tokensIn ?? 0) + (Number(ev.inputTokens) || 0);
+      r.tokensOut = (r.tokensOut ?? 0) + (Number(ev.outputTokens) || 0);
+      r.tokensCached = (r.tokensCached ?? 0) + (Number(ev.cacheReadTokens) || 0);
+      r.tokens = r.tokensIn + r.tokensOut;
+      break;
+    }
   }
 }
 

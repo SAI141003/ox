@@ -517,7 +517,8 @@ struct AgentPill: View {
                         VStack(alignment: .leading, spacing: 0) {
                             Text(label).font(.system(size: 10.5, weight: .semibold))
                                 .foregroundStyle(hover ? c : HomeInk.text).lineLimit(1).truncationMode(.tail)
-                            Text(session.tool).font(.system(size: 8.5)).foregroundStyle(HomeInk.faint).lineLimit(1)
+                            Text(session.tokensIn + session.tokensOut > 0 ? "\(session.tool) · \(OxBridge.tokenText(session.tokensIn + session.tokensOut))" : session.tool)
+                                .font(.system(size: 8.5).monospacedDigit()).foregroundStyle(HomeInk.faint).lineLimit(1)
                         }
                         Spacer(minLength: 4)
                     }
@@ -530,7 +531,7 @@ struct AgentPill: View {
         .buttonStyle(.plain)
         .scaleEffect(hover ? 1.04 : 1)
         .onHover { h in withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) { hover = h } }
-        .help("\(session.project) · \(session.tool) · \(session.activity)")
+        .help("\(session.project) · \(session.tool) · \(session.activity)\(session.tokensIn + session.tokensOut > 0 ? " · last message \(session.tokensIn) tokens in, \(session.tokensOut) out" : "")")
     }
     /// The project, unless it is a temp folder's meaningless name ("T", "tmp").
     private var label: String {

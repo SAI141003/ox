@@ -536,6 +536,11 @@ final class OxBridge: ObservableObject {
         }.resume()
     }
 
+    /// 1234 → "1.2k", 747000 → "747k".
+    static func tokenText(_ n: Int) -> String {
+        n >= 1_000_000 ? String(format: "%.1fM", Double(n) / 1_000_000) : n >= 10_000 ? "\(n / 1000)k" : n >= 1000 ? String(format: "%.1fk", Double(n) / 1000) : "\(n)"
+    }
+
     // MARK: ox updates itself (src/self-update.js, Coucou's self-update)
 
     /// What the notch says about updates: ask once, a new version, the steps while it updates, the result.
@@ -907,6 +912,9 @@ final class OxBridge: ObservableObject {
                 s.cwd = ""
                 s.lastText = r["title"] as? String ?? ""
                 s.toolCount = r["steps"] as? Int ?? s.toolCount
+                // Tokens: the run's so far (an app answer), or another agent's newest message.
+                if let i = r["tokensIn"] as? Int { s.tokensIn = i }
+                if let o = r["tokensOut"] as? Int { s.tokensOut = o }
                 if ext {
                     let idle = r["idleSec"] as? Int ?? 0
                     // "Claude · idle for 3 m", "Codex · $ npm test": who, then what.

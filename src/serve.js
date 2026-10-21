@@ -528,7 +528,8 @@ function createChatCompletionChunk(model, content, isLast = false, usage = {}) {
     usage: isLast ? {
       prompt_tokens: usage.inputTokens || 0,
       completion_tokens: usage.outputTokens || 0,
-      total_tokens: (usage.inputTokens || 0) + (usage.outputTokens || 0)
+      total_tokens: (usage.inputTokens || 0) + (usage.outputTokens || 0),
+      ...(usage.cacheReadTokens ? { prompt_tokens_details: { cached_tokens: usage.cacheReadTokens } } : {}),
     } : undefined
   };
 }
@@ -547,6 +548,7 @@ function tallyUsage(total, event) {
   // billed. Read both shapes.
   const u = event.usage && typeof event.usage === 'object' ? event.usage : event;
   total.inputTokens += u.inputTokens || 0;
+  total.cacheReadTokens = (total.cacheReadTokens || 0) + (u.cacheReadTokens || 0);
   total.outputTokens += u.outputTokens || 0;
 }
 
