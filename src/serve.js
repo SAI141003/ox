@@ -936,6 +936,20 @@ async function handleChatCompletions(req, res) {
           sendSSE(res, createChatCompletionChunk(targetModel, last));
         } else if (event.type === 'usage') {
           tallyUsage(totalUsage, event);
+        } else if (event.type === 'context-estimate' && (body.ox_ui || body.ox_mode)) {
+          // The agent measures the real request payload (history *and* tool
+          // schemas) immediately before calling the model. Surface that to
+          // our own clients without changing the standard OpenAI wire shape.
+          sendSSE(res, {
+            ...createChatCompletionChunk(targetModel, ''),
+            ox: {
+              type: 'context',
+              tokens: Number(event.tokens) || 0,
+              window: Number(event.window) || 0,
+              historyTokens: Number(event.historyTokens) || 0,
+              schemaTokens: Number(event.schemaTokens) || 0,
+            },
+          });
         } else if (event.type === 'error') {
           // A run that stops (missing key, provider refusal, budget) says why,
           // instead of ending as an empty reply.

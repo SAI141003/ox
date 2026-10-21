@@ -1583,6 +1583,7 @@
     const inner = $('inner');
     inner.innerHTML = '';
     $('title').textContent = readonly ? readonly.title : convo()?.title || 'New session';
+    updateUsageMeter(convo());
     renderQueued();
     // Back on a chat whose answer ended while you were elsewhere: what you queued goes now.
     if (!busy && convo()?.queued?.length) setTimeout(drainQueue, 0);
@@ -1612,6 +1613,20 @@
     }
     for (const m of c.messages) paint(bubble(m.role), m);
     scrollDown();
+  }
+  // Based on the agent's measurement just before it calls the model. This
+  // includes instructions and tool schemas, not merely chat history.
+  function contextMeter(c) {
+    const m = c?.context;
+    if (!m || !Number.isFinite(m.tokens) || !Number.isFinite(m.window) || m.window <= 0) return '';
+    const n = (x) => x >= 1000 ? `${(x / 1000).toFixed(x >= 10000 ? 0 : 1)}k` : String(x);
+    return `context ${n(m.tokens)} / ${n(m.window)} (${Math.min(999, Math.round((m.tokens / m.window) * 100))}%)`;
+  }
+  function updateUsageMeter(c) {
+    const bits = [contextMeter(c), c?.lastTokens ? `${Number(c.lastTokens).toLocaleString()} tokens` : ''].filter(Boolean);
+    const el = $('usage');
+    el.textContent = bits.join(' · ');
+    el.title = c?.context ? 'Context sent to the model on the latest request, including instructions and tool definitions.' : '';
   }
   const scrollDown = () => { const t = $('thread'); t.scrollTop = t.scrollHeight; };
   document.addEventListener('click', (e) => {
@@ -1782,6 +1797,10 @@
           if (ev.error) { reply.error = plainDash(ev.error.message); continue; }
           const ox = ev.ox;
           if (ox?.type === 'mode') reply.routed = `${ox.routed ? 'auto → ' : ''}${ox.mode}${ox.reason ? ` · ${ox.reason}` : ''}${ox.model ? ` · ${ox.model} (${ox.modelWhy})` : ''}`;
+          if (ox?.type === 'context') {
+            c.context = { tokens: Number(ox.tokens) || 0, window: Number(ox.window) || 0, historyTokens: Number(ox.historyTokens) || 0, schemaTokens: Number(ox.schemaTokens) || 0, at: Date.now() };
+            updateUsageMeter(c);
+          }
           if (ox?.type === 'tool-start' && Array.isArray(ox.plan)) reply.plan = ox.plan;
           else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '', ...(ox.file ? { file: ox.file } : {}), ...(ox.files ? { files: ox.files } : {}) });
           if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; if (ox.canvas) { reply.canvases = (reply.canvases || []).filter((x) => x.id !== ox.id); reply.canvases.push({ id: ox.id, tree: ox.canvas }); } }
@@ -1796,7 +1815,8 @@
             reply.tokens = (ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0);
             reply.tokensIn = ev.usage.prompt_tokens || 0; reply.tokensOut = ev.usage.completion_tokens || 0;
             reply.tokensCached = ev.usage.prompt_tokens_details?.cached_tokens || 0;
-            $('usage').textContent = `${reply.tokens.toLocaleString()} tokens`;
+            c.lastTokens = reply.tokens;
+            updateUsageMeter(c);
           }
           reply.pending = !reply.content;
           paint(body, reply); scrollDown();

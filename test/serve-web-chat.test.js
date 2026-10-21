@@ -97,6 +97,21 @@ test('the stream carries tool activity as an ox extension, never tool output', a
   assert.doesNotMatch(raw, /SECRET_NOTE|must never reach/, 'tool output stays on the server');
 });
 
+test('the app receives the exact live context meter before model output', async () => {
+  const res = await fetch(`${base}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'mock', stream: true, ox_ui: 'live', messages: [{ role: 'user', content: 'show context' }] }),
+  });
+  assert.equal(res.status, 200);
+  const chunks = (await res.text()).split('\n\n').map((f) => f.replace(/^data: /, '')).filter((d) => d && d !== '[DONE]').map((d) => JSON.parse(d));
+  const meter = chunks.find((c) => c.ox?.type === 'context')?.ox;
+  assert.ok(meter, 'the app receives a context meter event');
+  assert.ok(meter.tokens > 0, 'the meter includes the prompt actually sent');
+  assert.ok(meter.window > meter.tokens, 'the meter includes the model context window');
+  assert.ok(meter.schemaTokens >= 0 && meter.historyTokens > 0, 'the meter distinguishes history from tool schemas');
+});
+
 test('a plan the agent writes reaches the app as a checklist (Devin-style worklog)', async () => {
   const res = await fetch(`${base}/v1/chat/completions`, {
     method: 'POST',
