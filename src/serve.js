@@ -2079,7 +2079,7 @@ const ROUTES = [
     const C = await import('./studio-catalog.js');
     const S = await import('./studio-mcp.js');
     const ready = (m) => { try { return S.hostFor(m); } catch { return null; } };
-    return { models: C.OPEN_MODELS.map((m) => ({ ...m, ready: ready(m) })), camera: C.CAMERA, workflows: C.WORKFLOWS, defaults: C.DEFAULTS };
+    return { models: C.OPEN_MODELS.map((m) => ({ ...m, ready: ready(m), cost: C.estimateCost(m), costLine: C.costLine(m) })), camera: C.CAMERA, workflows: C.WORKFLOWS, defaults: C.DEFAULTS };
   }) },
   // Studio on this Mac's own chip (src/studio-local.js): what it can make, and a one-time setup with progress.
   { method: 'GET', pattern: /^\/ox\/studio\/local\/?$/, handler: appRoute(async () => ({ ...(await import('./studio-local.js')).status(), setup: localSetup })) },

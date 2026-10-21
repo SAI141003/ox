@@ -168,10 +168,11 @@ export const STUDIO_MCP_TOOLS = [
   { name: 'generate_audio', description: 'Make a sound effect or a short loop from a description (Stable Audio Open).', inputSchema: { type: 'object', properties: { prompt: prop('string', 'The sound.'), seconds: prop('number', 'Length, up to 47.'), wait_seconds: waitProp }, required: ['prompt'] } },
   { name: 'jobs_wait', description: 'Wait for jobs to finish and return their files.', inputSchema: { type: 'object', properties: { ids: prop('array', 'Job ids.', { items: { type: 'string' } }), timeout_seconds: prop('number', 'Give up after this long (default 300).') }, required: ['ids'] } },
   { name: 'history', description: 'What the Studio made recently: prompt, model, status and files.', inputSchema: { type: 'object', properties: { limit: prop('number', 'How many (default 20).') } } },
-  { name: 'workflow_instructions', description: 'Step-by-step recipes for a production: product-photoshoot, youtube-thumbnail, character-sheet, explainer-video, scene-animation, video-restyle, short-ad. Omit the name for the list.', inputSchema: { type: 'object', properties: { name: prop('string', 'The recipe.') } } },
+  { name: 'workflow_instructions', description: 'Step-by-step recipes for a production: product-photoshoot, youtube-thumbnail, character-sheet, explainer-video, scene-animation, video-restyle, app-store-kit, short-ad. Omit the name for the list.', inputSchema: { type: 'object', properties: { name: prop('string', 'The recipe.') } } },
   { name: 'video_edit', description: 'Edit a video file on this machine with ffmpeg: captions (burned in from the speech), join (clips one after another; pass files), cut, speed, vertical (crop to 9:16 or 1:1), gif, highlights (the parts about a topic), polish (speed through idle stretches).', inputSchema: { type: 'object', properties: { op: prop('string', 'captions, join, cut, speed, vertical, gif, highlights or polish.', { enum: ['captions', 'join', 'cut', 'speed', 'vertical', 'gif', 'highlights', 'polish'] }), file: prop('string', 'The video file path.'), files: prop('array', 'join: the clips in order.', { items: { type: 'string' } }), start: prop('string', 'cut/gif: start (seconds or m:ss).'), end: prop('string', 'cut/gif: end.'), factor: prop('number', 'speed: 2 = twice as fast.'), aspect: prop('string', 'vertical: 9:16 or 1:1.'), query: prop('string', 'highlights: the topic.') }, required: ['op'] } },
   { name: 'restyle_video', description: 'Keep a video\'s motion and change what is in it (Genjutsu-style, open Wan models): move = the person in your picture does what the video shows; swap = the person in the video becomes the one in your picture; restyle = a new look or world from a prompt. Returns a job id; call jobs_wait.', inputSchema: { type: 'object', properties: { mode: prop('string', 'move, swap or restyle.', { enum: ['move', 'swap', 'restyle'] }), video: prop('string', 'Link to the clip (4-10 s is best).'), image: prop('string', 'move/swap: link or path to the person or character.'), prompt: prop('string', 'restyle: the new look.'), seed: prop('number', 'Seed.'), host: hostProp, wait_seconds: waitProp }, required: ['mode', 'video'] } },
   { name: 'animate_script', description: 'Turn a video, a transcript or a script into scene-by-scene motion animations on this machine (Flick-style: animated headlines, counting stats, lists, comparisons, quotes, flows, kinetic captions, sound effects). No key needed. plan_only first, then render; redo one scene after editing scene-spec.json.', inputSchema: { type: 'object', properties: { source: prop('string', 'A video/audio file path, a transcript file path, or the script text.'), folder: prop('string', 'An existing animation folder (to render a plan, redo or save a scene).'), aspect: prop('string', '9:16, 16:9, 1:1 or 4:5.', { enum: ['9:16', '16:9', '1:1', '4:5'] }), bg: prop('string', 'Background colour (#hex).'), fg: prop('string', 'Text colour.'), accent: prop('string', 'Accent colour.'), logo: prop('string', 'Logo image path.'), plan_only: prop('boolean', 'Write plan.md and scene-spec.json without rendering.'), redo: prop('array', 'Scene names to render again.', { items: { type: 'string' } }), save: prop('string', 'A scene name to keep as a reusable animation.') } } },
+  { name: 'app_assets', description: 'Assets an app needs, made on this machine (no key): icons (one square image → iOS AppIcon set, macOS .icns, Android mipmaps, web favicons), shots (screenshots → store-sized pictures with a headline each), demo (screenshots + captions → a vertical demo video).', inputSchema: { type: 'object', properties: { op: prop('string', 'icons, shots or demo.', { enum: ['icons', 'shots', 'demo'] }), images: prop('array', 'Image paths (icons: one square image).', { items: { type: 'string' } }), captions: prop('array', 'shots/demo: one headline per screenshot.', { items: { type: 'string' } }), sizes: prop('array', 'shots: iphone-6.9, iphone-6.5, ipad-13, play-phone.', { items: { type: 'string' } }), out: prop('string', 'Where to put them.') }, required: ['op', 'images'] } },
   { name: 'explainer_video', description: 'Turn steps into an explainer video on this machine: one slide per step with a lit diagram, crossfades. No model or key needed.', inputSchema: { type: 'object', properties: { title: prop('string', 'The title.'), steps: prop('array', 'Steps as "Label: what happens".', { items: { type: 'string' } }) }, required: ['title', 'steps'] } },
 ];
 
@@ -187,8 +188,8 @@ export function createStudio(deps = {}) {
   let seq = 0;
   const engine = async () => deps.generate ?? (await import('./media-studio.js')).generate;
   const show = (j) => (j.status === 'completed'
-    ? `job ${j.id} done (${j.label}): ${j.files.length ? j.files.join(', ') : j.urls.join(', ')}`
-    : j.status === 'failed' ? `job ${j.id} failed (${j.label}): ${j.error}` : `job ${j.id} is ${j.status} (${j.label}); call jobs_wait with ["${j.id}"]`);
+    ? `job ${j.id} done (${j.label}${j.cost ? `, ${j.cost}` : ''}): ${j.files.length ? j.files.join(', ') : j.urls.join(', ')}`
+    : j.status === 'failed' ? `job ${j.id} failed (${j.label}): ${j.error}` : `job ${j.id} is ${j.status} (${j.label}${j.cost ? `, ${j.cost}` : ''}); call jobs_wait with ["${j.id}"]`);
 
   function start(p) {
     const id = `j${Date.now().toString(36)}${(seq++).toString(36)}`;
@@ -223,6 +224,9 @@ export function createStudio(deps = {}) {
     if (GENERATORS.has(name)) {
       const p = plan(name, a, { env });
       const job = start(p);
+      // The price, shown with the job: free on this Mac, else fal's listed price.
+      const m = C.find(p.model) ?? C.OPEN_MODELS.find((x) => x.fal === p.model || x.falFromImage === p.model);
+      job.cost = C.costLine(m, { aspect: a.aspect ?? '1:1', n: a.n ?? 1 });
       const secs = a.wait_seconds != null ? Number(a.wait_seconds) : name === 'generate_video' || name === 'lip_sync' || name === 'restyle_video' ? 0 : 45;
       if (secs > 0) await waitOn([job], Math.min(secs, 290) * 1000);
       return show(job);
@@ -259,6 +263,14 @@ export function createStudio(deps = {}) {
       if (!ops[a.op]) throw new Error(`op is one of ${Object.keys(ops).join(', ')}`);
       const r = await ops[a.op]();
       return `${a.op} done: ${r.file ?? JSON.stringify(r)}`;
+    }
+    if (name === 'app_assets') {
+      const K = await import('./devkit.js');
+      const imgs = [].concat(a.images ?? []).map(String);
+      if (a.op === 'icons') { const r = K.iconSet(imgs[0] ?? '', { out: a.out ?? null }); return `${r.files.length} icons in ${r.dir}${r.warn ? ` (${r.warn})` : ''}`; }
+      if (a.op === 'shots') { const r = await K.storeShots(imgs, { captions: [].concat(a.captions ?? []), out: a.out ?? null, ...(a.sizes?.length ? { sizes: a.sizes } : {}) }); return `${r.files.length} store screenshots in ${r.dir}`; }
+      if (a.op === 'demo') { const r = await K.demoVideo(imgs, { captions: [].concat(a.captions ?? []), out: a.out ?? null }); return `demo video: ${r.file} (${r.seconds} s)`; }
+      throw new Error('op is icons, shots or demo');
     }
     if (name === 'animate_script') {
       const A = deps.animate ?? (await import('./animate.js'));

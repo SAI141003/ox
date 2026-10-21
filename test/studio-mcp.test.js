@@ -69,13 +69,13 @@ test('jobs: an image waits for its file; a video returns a job that jobs_wait fi
     generate: async (o) => { calls.push(o); if (o.model.includes('wan')) await gate; return { id: 'r1', status: 'completed', files: [`/out/${calls.length}.${o.model.includes('wan') ? 'mp4' : 'png'}`], urls: [] }; },
     history: () => [{ id: 'r1', status: 'completed', label: 'FLUX.1 [schnell]', prompt: 'a fox', files: ['/out/1.png'] }],
   });
-  assert.match(await st.call('generate_image', { prompt: 'a fox' }), /^job \w+ done \(FLUX\.1 \[schnell\]\): \/out\/1\.png$/);
+  assert.match(await st.call('generate_image', { prompt: 'a fox' }), /^job \w+ done \(FLUX\.1 \[schnell\], about \$0\.003 on fal\): \/out\/1\.png$/);
   const started = await st.call('generate_video', { prompt: 'a fox runs', camera: 'orbit' });
   const id = /job (\w+) is running/.exec(started)?.[1];
   assert.ok(id, started);
   assert.match(calls[1].prompt, /Camera: the camera orbits/);
   release();
-  assert.match(await st.call('jobs_wait', { ids: [id] }), /done \(Wan 2\.2 A14B\): \/out\/2\.mp4/);
+  assert.match(await st.call('jobs_wait', { ids: [id] }), /done \(Wan 2\.2 A14B, about \$0\.40 on fal\): \/out\/2\.mp4/);
   await assert.rejects(st.call('jobs_wait', { ids: ['nope'] }), /no job nope/);
   assert.match(await st.call('history', {}), /r1 completed · FLUX\.1 \[schnell\] · "a fox" · \/out\/1\.png/);
   const failing = S.createStudio({ env: { FAL_KEY: 'k', OX_STUDIO_LOCAL: '0' }, generate: async () => { throw new Error('fal said no'); } });
@@ -127,7 +127,7 @@ test('models_explore says what is ready; recipes and video ops are reachable', a
   assert.equal(await st.call('explainer_video', { title: 'T', steps: ['A: a', 'B: b'] }), 'explainer done: /x.mp4 (2 slides, 12 s)');
 });
 
-test('the MCP server: initialize, list 15 tools, calls answer independently', async () => {
+test('the MCP server: initialize, list 16 tools, calls answer independently', async () => {
   const input = new PassThrough(), output = new PassThrough();
   const got = [];
   output.on('data', (d) => String(d).split('\n').filter(Boolean).forEach((l) => got.push(JSON.parse(l))));
@@ -144,7 +144,7 @@ test('the MCP server: initialize, list 15 tools, calls answer independently', as
   await new Promise((r) => setTimeout(r, 30));
   const by = (id) => got.find((m) => m.id === id);
   assert.equal(by(1).result.serverInfo.name, 'ox-studio');
-  assert.equal(by(2).result.tools.length, 15);
+  assert.equal(by(2).result.tools.length, 16);
   assert.equal(by(3), undefined, 'the slow wait has not answered yet');
   assert.equal(by(4).result.content[0].text, 'ok models_explore');
   assert.equal(by(5).result.isError, true);

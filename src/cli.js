@@ -4861,6 +4861,19 @@ async function runSubcommand(cmd, args) {
       const sub = args[0] ?? 'models';
       try {
         if (sub === 'mcp') { S.serveStudioMcp(); await new Promise(() => {}); }
+        // ox studio icons <square.png> | shots <shot.png>… --caption "…" … | demo <shot.png>… --caption "…" …: app assets, on this machine (src/devkit.js).
+        if (sub === 'icons' || sub === 'shots' || sub === 'demo') {
+          const K = await import('./devkit.js');
+          const rest = args.slice(1);
+          const captions = rest.flatMap((a, i) => (rest[i - 1] === '--caption' ? [a] : []));
+          const outI = rest.indexOf('--out');
+          const files = rest.filter((a, i) => !a.startsWith('--') && rest[i - 1] !== '--caption' && rest[i - 1] !== '--out' && rest[i - 1] !== '--sizes').map((f) => path.resolve(f));
+          const out = outI >= 0 ? path.resolve(rest[outI + 1]) : null;
+          if (!files.length) { console.error('usage: ox studio icons <square.png> [--out dir]\n       ox studio shots <shot.png>… [--caption "…"]… [--sizes iphone-6.9,iphone-6.5,ipad-13,play-phone] [--out dir]\n       ox studio demo <shot.png>… [--caption "…"]… [--out demo.mp4]'); process.exitCode = 3; return; }
+          if (sub === 'icons') { const r = K.iconSet(files[0], { out }); console.log(`${c.green('✓')} ${r.files.length} icons in ${r.dir}${r.warn ? c.yellow(`\n  ${r.warn}`) : ''}`); return; }
+          if (sub === 'shots') { const si = rest.indexOf('--sizes'); const r = await K.storeShots(files, { captions, out, ...(si >= 0 ? { sizes: rest[si + 1].split(',') } : {}) }); console.log(`${c.green('✓')} ${r.files.length} store screenshots in ${r.dir}`); return; }
+          const r = await K.demoVideo(files, { captions, out }); console.log(`${c.green('✓')} ${r.file} ${c.dim(`(${r.seconds} s, 1080×1920)`)}`); return;
+        }
         // ox studio local [status|install|make "<prompt>"|clip "<prompt>"]: this Mac's own chip, no key.
         if (sub === 'local') {
           const L = await import('./studio-local.js');

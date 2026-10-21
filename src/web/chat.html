@@ -2755,7 +2755,7 @@ files: [src/billing/**]
     if ($('os-accent')) $('os-accent').oninput = (e) => { osAccent = e.target.value; };
     const models = mode.kind ? osCat.models.filter((m) => m.kind === mode.kind) : [];
     if (!osPick[mode.k] || !models.some((m) => m.id === osPick[mode.k])) osPick[mode.k] = osCat.defaults[mode.kind] ?? models[0]?.id;
-    $('os-models').innerHTML = models.map((m) => `<button class="os-model ${m.id === osPick[mode.k] ? 'on' : ''}" data-model="${m.id}"><b>${esc(m.name)}</b><span class="g">${esc(m.good)}</span><span class="l">${esc(m.license)}</span><span class="ready ${m.ready ? '' : 'no'}">${m.ready ? (m.ready === 'device' ? 'runs on this Mac \u00b7 no key' : `runs on ${m.ready === 'hf' ? 'Hugging Face' : m.ready}`) : m.device ? 'set up this Mac above (once)' : 'needs a fal key or Hugging Face token (Settings \u203a API keys)'}</span></button>`).join('');
+    $('os-models').innerHTML = models.map((m) => `<button class="os-model ${m.id === osPick[mode.k] ? 'on' : ''}" data-model="${m.id}"><b>${esc(m.name)}</b><span class="g">${esc(m.good)}</span><span class="l">${esc(m.license)}${m.costLine ? ` \u00b7 ${esc(m.costLine)}` : ''}</span><span class="ready ${m.ready ? '' : 'no'}">${m.ready ? (m.ready === 'device' ? 'runs on this Mac \u00b7 no key' : `runs on ${m.ready === 'hf' ? 'Hugging Face' : m.ready}`) : m.device ? 'set up this Mac above (once)' : 'needs a fal key or Hugging Face token (Settings \u203a API keys)'}</span></button>`).join('');
     $('os-models').querySelectorAll('[data-model]').forEach((b) => (b.onclick = () => { osPick[mode.k] = b.dataset.model; renderOpenStudio(); }));
   }
   async function openStudioGo() {
@@ -2788,6 +2788,14 @@ files: [src/billing/**]
     if (mode.k === 'video' && osCam) args.camera = osCam;
     if (mode.k === 'upscale' && args.model === 'mac-upscale') args.mode = osUpMode;
     if (mode.k === 'image' && args.model === 'mac-image' && osFast) args.fast = true;
+    // A hosted run costs money: say how much and ask first (this Mac is free).
+    const pick = osCat.models.find((m) => m.id === args.model);
+    if (pick?.cost > 0) {
+      const n = mode.k === 'image' ? osN : 1;
+      // The catalog's estimate is for one square image or one 5 s clip; a wide or tall image is about 1.8 megapixels.
+      const each = pick.price?.per === 'megapixel' && args.aspect && args.aspect !== '1:1' ? pick.cost * 1.78 : pick.cost;
+      if (!(await askSure(`${pick.name} runs on fal and costs about $${(each * n).toFixed(each * n < 0.01 ? 3 : 2)} (fal's listed price). Make it?`, 'Make it'))) return;
+    }
     $('os-go').disabled = true; $('os-state').textContent = args.model?.startsWith('mac-') ? ({ video: 'Making the clip on this Mac: about 3 minutes\u2026', upscale: osUpMode === 'detail' ? 'Redrawing at 2x on this Mac: a few minutes\u2026' : 'Resizing\u2026', image: osFast ? 'Making it on this Mac: about 12 s\u2026' : 'Making it on this Mac: about 30 s\u2026' }[mode.k] ?? 'Making it on this Mac\u2026') : mode.k === 'video' ? 'Making the clip: a few minutes\u2026' : 'Making it\u2026';
     try {
       const r = await postJson('/ox/studio/open', { tool: mode.tool, args });
