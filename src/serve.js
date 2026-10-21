@@ -1879,6 +1879,15 @@ const ROUTES = [
       return (await quickText(resolveBot(pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 700 })).text;
     } });
   }) },
+  // Code-aware dictation (src/dictation-words.js): words for the recognizer, by the app you dictate into.
+  { method: 'GET', pattern: /^\/ox\/dictation\/words\/?(?:\?.*)?$/, handler: appRoute(async (_b, _m, req) => {
+    const W = await import('./dictation-words.js');
+    const { loadDictionary } = await import('./dictionary.js');
+    const app = new URL(req.url, 'http://x').searchParams.get('app') ?? '';
+    let root = null;
+    try { const A = await import('./agents-live.js'); root = A.liveAgents().find((s) => s.cwd)?.cwd ?? null; } catch {}
+    return { app, project: root, words: await W.wordsFor(app, { root, dictionary: loadDictionary() }) };
+  }) },
   // Your morning brief (src/today.js).
   { method: 'GET', pattern: /^\/ox\/today\/?$/, handler: appRoute(async () => (await import('./today.js')).brief()) },
   // ox updates itself from the notch (src/self-update.js): asked once, at most one notice a day.

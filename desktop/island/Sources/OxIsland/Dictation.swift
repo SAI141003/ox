@@ -110,6 +110,10 @@ final class Dictation: ObservableObject {
         req.addsPunctuation = true
         req.taskHint = .dictation
         if recognizer.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }
+        // Code-aware: your project's names and your dictionary bias the recognizer (on device).
+        let words = Self.contextWords
+        if !words.isEmpty { req.contextualStrings = words }
+        Self.refreshContextWords()
         request = req
         let input = audio.inputNode
         input.removeTap(onBus: 0)
@@ -157,6 +161,29 @@ final class Dictation: ObservableObject {
     /// clipboard gets back what it held.
     /// The app's server, for styles and translation (set by the bridge when it finds it).
     nonisolated(unsafe) static var serverPort: Int?
+
+    /// Words for the recognizer for the app in front (src/dictation-words.js), fetched ahead of time.
+    nonisolated(unsafe) static var contextWords: [String] = []
+    nonisolated(unsafe) private static var watchingApps = false
+    nonisolated static func refreshContextWords() {
+        if !watchingApps {
+            watchingApps = true
+            NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { _ in refreshContextWords() }
+        }
+        guard let port = serverPort else { return }
+        let app = NSWorkspace.shared.frontmostApplication?.localizedName ?? ""
+        var comps = URLComponents(string: "http://127.0.0.1:\(port)/ox/dictation/words")
+        comps?.queryItems = [URLQueryItem(name: "app", value: app)]
+        guard let url = comps?.url else { return }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 5
+        URLSession.shared.dataTask(with: req) { data, resp, _ in
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let doc = data.flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }),
+                  let words = doc["words"] as? [String] else { return }
+            DispatchQueue.main.async { contextWords = Array(words.prefix(100)) }
+        }.resume()
+    }
 
     private func paste(_ text: String) {
         let app = NSWorkspace.shared.frontmostApplication?.localizedName ?? ""

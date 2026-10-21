@@ -683,6 +683,7 @@ final class OxBridge: ObservableObject {
               let url = URL(string: "http://127.0.0.1:\(port)/ox/live") else { appPort = nil; dropAppSessions(keep: []); startServerIfNeeded(); return }
         appPort = port
         Dictation.serverPort = port
+        if Dictation.contextWords.isEmpty { Dictation.refreshContextWords() }
         pollUsage(port: port)
         pollConnected(port: port)
         pollGauges(port: port)
