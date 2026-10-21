@@ -49,11 +49,17 @@ export const MODELS = Object.freeze({
 const binDir = (env) => path.join(root(env), `bin-${ENGINE.tag}`);
 export const sdBin = (env = process.env) => path.join(binDir(env), 'sd-cli');
 export const modelPath = (id, env = process.env) => path.join(root(env), 'models', MODELS[id].file);
-const freeBytes = (dir) => { try { const s = fs.statfsSync(dir); return s.bavail * s.bsize; } catch { return null; } };
+const freeBytes = (dir) => {
+  // The nearest folder that exists (the studio folder may not, before setup).
+  let d = dir;
+  while (d && !fs.existsSync(d) && path.dirname(d) !== d) d = path.dirname(d);
+  try { const s = fs.statfsSync(d); return s.bavail * s.bsize; } catch { return null; }
+};
 
 /** What this Mac can do on its own right now, and what a download would add. */
 export function status(env = process.env) {
-  fs.mkdirSync(root(env), { recursive: true });
+  // Read only: asking what this Mac can do must not create folders (a check
+  // that wrote ~/.ox/studio-local tripped the "real home untouched" test on CI).
   const engine = fs.existsSync(sdBin(env));
   const models = Object.fromEntries(Object.entries(MODELS).map(([id, m]) => [id, { ...m, ready: fs.existsSync(modelPath(id, env)) }]));
   const vision = process.platform === 'darwin' && Number(os.release().split('.')[0]) >= 23; // macOS 14+
