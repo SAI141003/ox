@@ -144,15 +144,11 @@ struct CompactBar: View {
 
     var body: some View {
         let w = IslandLayout.shape(.compact, metrics).w
-        let oxSize = metrics.height + 2
         let lead = IslandLayout.ear + 8
         HStack(spacing: 0) {
-            // The lane runs from the wing into the notch, whose camera housing
-            // hides the far end: the bull patrols in and out, and sleeps in there.
-            let wing = max(0, (w - metrics.width) / 2 - lead)
-            OxWalker(mood: bridge.gauges.contains { $0.percent >= 80 } && [Mood.idle, .sleeping, .done].contains(bridge.headlineMood) ? .needsYou : bridge.headlineMood,
-                     height: oxSize * 0.95, vectorStyle: true, roam: true, stressed: bridge.gauges.contains { $0.percent >= 80 }, onPoke: { bridge.showReaction() })
-                .frame(width: wing + oxSize * 0.95 * 4 / 3 + 4)
+            // Keep the compact Island quiet: status, approvals, and a chosen
+            // pet are useful here; the permanent orange Ox head was not.
+            Spacer().frame(width: max(0, (w - metrics.width) / 2 - lead))
             Spacer(minLength: 0)
             if let pet = IslandPetKind(rawValue: petKind), pet != .none {
                 IslandPet(kind: pet, mood: bridge.headlineMood, height: metrics.height * 0.82)

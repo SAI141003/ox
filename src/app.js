@@ -94,7 +94,9 @@ export function stopServer() {
 }
 
 // OX.app from the build: the binary, an Info.plist, an icon made from the ox art.
-export function buildMacApp({ home = os.homedir() } = {}) {
+// The throwaway runtime copy and the installed desktop app must not share a
+// bundle identifier. Otherwise LaunchServices can reopen a stale worktree copy.
+export function buildMacApp({ home = os.homedir(), bundleIdentifier = 'dev.ox.app.runtime' } = {}) {
   let bin = path.join(PKG, '.build', 'release', 'OxApp');
   // Rebuilt when its source is newer than the binary: installing used to copy
   // whatever binary was there, so a fix to the app never reached the Mac.
@@ -117,7 +119,7 @@ export function buildMacApp({ home = os.homedir() } = {}) {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-\t<key>CFBundleIdentifier</key><string>dev.ox.app</string>
+\t<key>CFBundleIdentifier</key><string>${bundleIdentifier}</string>
 \t<key>CFBundleName</key><string>ox</string>
 \t<key>CFBundleDisplayName</key><string>ox</string>
 \t<key>CFBundleExecutable</key><string>OxApp</string>
@@ -130,7 +132,7 @@ ${icon ? '\t<key>CFBundleIconFile</key><string>AppIcon</string>\n' : ''}</dict>
 </plist>
 `);
   // A fixed local identity when there is one (src/sign-local.js): permissions survive updates.
-  signApp(app, 'dev.ox.app');
+  signApp(app, bundleIdentifier);
   return app;
 }
 
@@ -184,7 +186,8 @@ export async function openApp({ cwd = process.cwd(), log = console.log } = {}) {
 }
 
 export function installMacApp() {
-  const app = buildMacApp();
+  // This is the one stable Dock/Spotlight identity.
+  const app = buildMacApp({ bundleIdentifier: 'dev.ox.app' });
   if (!app) return null;
   const dest = path.join(os.homedir(), 'Applications', 'OX.app');
   fs.mkdirSync(path.dirname(dest), { recursive: true });

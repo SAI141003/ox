@@ -123,3 +123,16 @@ test('Island companion and close controls are visible, persisted, and constraine
   assert.match(html, /data-island-pref="autoClose"/);
   assert.match(html, /data-island-pref="hideFullscreen"/);
 });
+
+test('the compact Island has no permanent Ox mascot, while optional pets remain available', () => {
+  const island = fs.readFileSync(new URL('../desktop/island/Sources/OxIsland/IslandView.swift', import.meta.url), 'utf8');
+  const compact = island.slice(island.indexOf('struct CompactBar'), island.indexOf('struct StatusGlyph'));
+  assert.doesNotMatch(compact, /OxWalker\(/, 'the compact lane must not force the orange Ox mascot');
+  assert.match(compact, /IslandPet\(kind: pet/, 'a pet selected by the person remains supported');
+});
+
+test('the installed Ox app and temporary runtime app use distinct macOS identities', () => {
+  const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
+  assert.match(app, /bundleIdentifier = 'dev\.ox\.app\.runtime'/);
+  assert.match(app, /buildMacApp\(\{ bundleIdentifier: 'dev\.ox\.app' \}\)/);
+});
