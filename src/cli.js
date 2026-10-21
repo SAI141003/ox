@@ -6107,6 +6107,18 @@ async function runSubcommand(cmd, args) {
           for (const f of all) console.log(`${f.id.padEnd(24)} ${String(f.trigger?.type ?? 'manual').padEnd(8)} ${f.trigger?.every ?? ''}${f.enabled === false ? c.dim(' (off)') : ''}  ${c.dim(`${f.steps.length} steps`)}`);
           return;
         }
+        // ox flow starters [install [id…]]: five automations that work right after install.
+        if (verb === 'starters') {
+          if (rest[0] === 'install') {
+            const saved = F.installStarters(rest.length > 1 ? rest.slice(1) : null, { repo: process.cwd() });
+            for (const f of saved) console.log(`${c.green('✓')} ${f.id.padEnd(22)} ${c.dim(`${f.trigger.every ?? f.trigger.type} · off until you turn it on: ox flow on ${f.id}`)}`);
+            console.log(c.dim('run one now: ox flow run <id>'));
+            return;
+          }
+          for (const st of F.starters({ repo: process.cwd() })) console.log(`${st.id.padEnd(22)} ${st.name}${c.dim(` · ${st.about}`)}`);
+          console.log(c.dim('add them: ox flow starters install [id…]'));
+          return;
+        }
         if (verb === 'show') { const f = F.loadFlow(id ?? ''); if (!f) return fail(`no flow ${id}`); console.log(JSON.stringify(f, null, 2)); return; }
         if (verb === 'run') {
           const ii = rest.indexOf('--input');
@@ -6172,7 +6184,7 @@ async function runSubcommand(cmd, args) {
           for (const r of rows) console.log(`${r.at.slice(0, 16).replace('T', ' ')}  ${String(r.flow).padEnd(20)} ${r.status.padEnd(7)} ${String(r.trigger).padEnd(8)} ${r.error ? c.dim(r.error.slice(0, 80)) : ''}`);
           return;
         }
-        return fail('usage: ox flow list | new "<description>" | run <id> [--input JSON] | show <id> | add <file.json> | runs [id] | on|off <id> | rm <id>');
+        return fail('usage: ox flow list | starters [install [id…]] | new "<description>" | run <id> [--input JSON] | show <id> | add <file.json> | runs [id] | on|off <id> | rm <id>');
       } catch (e) { return fail(e.message); }
     }
     case 'system1': {

@@ -1457,7 +1457,9 @@ async function flowsRoute(b) {
       if (!f) return null;
       return { flow: F.saveFlow({ ...f, enabled: b.enabled !== false }) };
     }
-    default: throw new Error('action must be save, remove, run, draft or enable');
+    case 'starters': return { starters: F.starters({ repo: process.cwd() }).map(({ steps, ...x }) => ({ ...x, steps: steps.length })) };
+    case 'install-starters': return { flows: F.installStarters(Array.isArray(b.ids) && b.ids.length ? b.ids.map(String) : null, { repo: process.cwd() }) };
+    default: throw new Error('action must be save, remove, run, draft, enable, starters or install-starters');
   }
 }
 

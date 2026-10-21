@@ -406,3 +406,66 @@ export async function checkFlow(flow, { io = {} } = {}) {
   }
   return problems;
 }
+
+// ---- starters ------------------------------------------------------------------------
+// Five automations that work right after install: free public APIs (no key),
+// your own model for the summaries, macOS notifications. Installed switched
+// off so nothing runs on its own until you turn the schedule on; "Run now"
+// works at once.
+
+export function starters({ repo = process.cwd() } = {}) {
+  const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
+  return [
+    {
+      id: 'weather-today', name: 'Weather today', about: 'The weather where you are, as a notification each morning (wttr.in, no key).',
+      trigger: { type: 'schedule', every: 'daily at 7am' },
+      steps: [
+        { name: 'weather', type: 'http', method: 'GET', url: 'https://wttr.in/?format=j1' },
+        { name: 'tell', type: 'notify', title: 'Weather today', text: '{{steps.weather.output.current_condition.0.temp_C}}°C, {{steps.weather.output.current_condition.0.weatherDesc.0.value}} (feels like {{steps.weather.output.current_condition.0.FeelsLikeC}}°C)' },
+      ],
+    },
+    {
+      id: 'hacker-news-digest', name: 'Hacker News digest', about: "The front page in five lines, saved to ~/ox-flows/hacker-news.md, every morning (your model writes it).",
+      trigger: { type: 'schedule', every: 'daily at 8am' },
+      steps: [
+        { name: 'front', type: 'http', method: 'GET', url: 'https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=12' },
+        { name: 'digest', type: 'ask', prompt: 'These are the Hacker News front-page stories as JSON. Write the 5 most interesting as Markdown bullets: the title, then one line on why it matters, then the link (url, or https://news.ycombinator.com/item?id=objectID).\n{{steps.front.output.hits}}' },
+        { name: 'save', type: 'write', path: 'hacker-news.md', text: '# Hacker News, {{now}}\n\n{{steps.digest.output}}\n' },
+        { name: 'tell', type: 'notify', title: 'Hacker News digest', text: 'Five stories in ~/ox-flows/hacker-news.md' },
+      ],
+    },
+    {
+      id: 'release-watch', name: 'Watch a GitHub release', about: "The latest release of a project you follow (nodejs/node here: change the url's owner/repo).",
+      trigger: { type: 'schedule', every: 'every 6h' },
+      steps: [
+        { name: 'release', type: 'http', method: 'GET', url: 'https://api.github.com/repos/nodejs/node/releases/latest', headers: { Accept: 'application/vnd.github+json' } },
+        { name: 'tell', type: 'notify', title: 'Latest release', text: '{{steps.release.output.name}} ({{steps.release.output.published_at}})' },
+      ],
+    },
+    {
+      id: 'exchange-rates', name: 'Exchange rates', about: 'One US dollar in euros, pounds and rupees, each morning (European Central Bank rates via frankfurter.app, no key).',
+      trigger: { type: 'schedule', every: 'daily at 9am' },
+      steps: [
+        { name: 'rates', type: 'http', method: 'GET', url: 'https://api.frankfurter.app/latest?from=USD&to=EUR,GBP,INR' },
+        { name: 'tell', type: 'notify', title: 'Exchange rates', text: '1 USD = {{steps.rates.output.rates.EUR}} EUR · {{steps.rates.output.rates.GBP}} GBP · {{steps.rates.output.rates.INR}} INR' },
+      ],
+    },
+    {
+      id: 'standup-notes', name: 'Yesterday in git', about: `What changed yesterday in ${path.basename(repo)}, written up as standup notes in ~/ox-flows/standup.md (your model writes it).`,
+      trigger: { type: 'schedule', every: 'daily at 9am' }, allowShell: true,
+      steps: [
+        { name: 'log', type: 'shell', command: `git -C ${q(repo)} log --since=yesterday --no-merges --pretty='%h %an: %s' | head -60; echo "(${path.basename(repo)})"` },
+        { name: 'notes', type: 'ask', prompt: 'Turn these commits from yesterday into short standup notes: Done (grouped by area), then anything that looks unfinished. Plain words, no commit hashes.\n{{steps.log.output}}' },
+        { name: 'save', type: 'write', path: 'standup.md', text: '# Standup, {{now}}\n\n{{steps.notes.output}}\n' },
+        { name: 'tell', type: 'notify', title: 'Standup notes', text: 'Ready in ~/ox-flows/standup.md' },
+      ],
+    },
+  ];
+}
+
+/** Add starters (all, or by id) to your flows, switched off. → the saved flows */
+export function installStarters(ids = null, opts = {}) {
+  const list = starters(opts).filter((s) => !ids || ids.includes(s.id));
+  if (ids && !list.length) throw new Error(`starters: ${starters(opts).map((s) => s.id).join(', ')}`);
+  return list.map(({ about, ...f }) => saveFlow({ ...f, description: about, enabled: loadFlow(f.id)?.enabled ?? false }));
+}

@@ -3349,12 +3349,26 @@ files: [src/billing/**]
     if (!flowsData) el.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
     try { flowsData = await getJson('/ox/flows'); } catch (e) { el.innerHTML = `<div class="empty-note">${esc(e.message)}</div>`; return; }
     const F = flowsData;
+    setTimeout(async () => {
+      const box = $('fl-starters');
+      if (!box) return;
+      try {
+        const { starters } = await postJson('/ox/flows', { action: 'starters' });
+        const have = new Set(F.flows.map((f) => f.id));
+        box.innerHTML = starters.map((x) => `<div class="card"><span class="dot ${have.has(x.id) ? 'ok' : ''}"></span><span class="t"><div class="n">${esc(x.name)}</div><div class="d">${esc(x.about)}</div></span>${have.has(x.id) ? '<span class="small muted">added</span>' : `<button class="btn" data-starter="${esc(x.id)}">${icon('plus')}Add</button>`}</div>`).join('');
+        paintIcons(box);
+        box.querySelectorAll('[data-starter]').forEach((b) => (b.onclick = async () => { b.disabled = true; try { await postJson('/ox/flows', { action: 'install-starters', ids: [b.dataset.starter] }); toast('Added, switched off: press Run to try it'); loadFlows(); } catch (e) { toast(e.message); b.disabled = false; } }));
+      } catch (e) { box.innerHTML = `<div class="small muted">${esc(e.message)}</div>`; }
+    }, 0);
     el.innerHTML = `
       <div class="shead">${icon('flow')}Automations</div>
       <p class="sdesc">Like n8n, built in: a trigger and steps (call an API, ask a model, pick a field, check a condition, notify you, write a file). Describe one in a sentence and ox drafts it; it checks every call before you rely on it. Scheduled ones run while the app or <code>ox daemon</code> is up.</p>
       <div class="box"><textarea class="field" id="fl-desc" rows="2" placeholder="Every day at 8am, get the top 3 Hacker News stories and save their titles to a file" style="width:100%;resize:vertical"></textarea>
         <div style="display:flex;gap:8px;margin-top:8px"><button class="btn primary" id="fl-draft">${icon('wand')}Draft it</button><button class="btn ghost" id="fl-blank">Start from an empty flow</button></div></div>
       <div id="fl-editor"></div>
+      <div class="shead" style="margin-top:28px">Ready-made</div>
+      <p class="sdesc">Five that work right after you add them. They are added switched off: press Run to try one, then turn its schedule on.</p>
+      <div class="cards" id="fl-starters"><div class="skeleton"></div></div>
       <div class="shead" style="margin-top:28px">Your automations</div>
       <div class="cards">${F.flows.length ? F.flows.map((f) => `<div class="card" style="flex-wrap:wrap"><span class="dot ${f.enabled === false ? '' : 'ok'}"></span><span class="t"><div class="n">${esc(f.name)}</div><div class="d"><span>${flowTrigger(f)}</span><span>${f.steps.length} steps</span><span class="mono">${esc(f.id)}</span>${f.lastRunAt ? `<span>last run ${ago(Date.parse(f.lastRunAt))}</span>` : ''}</div>
           ${f.trigger?.type === 'webhook' ? `<div class="d mono small" style="margin-top:4px">POST ${esc(location.origin)}/ox/flows/hook/${esc(f.id)}?secret=${esc(f.trigger.secret)}</div>` : ''}</span>
