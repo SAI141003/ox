@@ -698,7 +698,8 @@ test('ipc: the newest queued message survives the drop-oldest policy', async (t)
   const { server } = await pair(t);
   const [client] = server.clients;
   client.socket.write(Buffer.alloc(8 * 1024 * 1024));
-  await sleep(10);
+  // Flood in the same tick: a pause lets a fast reader (Linux CI) drain the
+  // 8 MB first, nothing backs up and nothing is dropped.
   for (let i = 0; i < 700; i += 1) server.broadcast({ event: 'flood', i });
   assert.ok(client.dropped > 0);
   const last = client.queue[client.queue.length - 1];
