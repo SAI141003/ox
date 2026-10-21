@@ -257,7 +257,8 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-marks"), i + 1 < Comma
 }
 
 // Dev aid: `OxIsland --render-mascot <dir>` writes one PNG per mood and exits,
-// so the character can be reviewed (and diffed) without running the island.
+// so the compact notch mascot can be reviewed (and diffed) without running the
+// island. This is the same crisp, original vector character used at notch size.
 if let i = CommandLine.arguments.firstIndex(of: "--render-mascot"), i + 1 < CommandLine.arguments.count {
     let dir = URL(fileURLWithPath: CommandLine.arguments[i + 1])
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

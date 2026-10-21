@@ -3530,6 +3530,18 @@ files: [src/billing/**]
       try { const r = await postJson('/ox/settings', { islandRestart: true }); toast(r.island?.running ? 'OX Island restarted' : 'OX Island is starting'); } catch (e) { toast(e.message); }
       renderSection();
     }));
+    el.querySelectorAll('[data-island-pref]').forEach((input) => (input.onchange = async () => {
+      const key = input.dataset.islandPref;
+      const value = input.type === 'checkbox' ? input.checked : key === 'autoClose' ? Number(input.value) : input.value;
+      input.disabled = true;
+      try {
+        await postJson('/ox/settings', { islandPreferences: { [key]: value } });
+        toast('Island preference saved');
+      } catch (e) {
+        toast(e.message);
+      }
+      renderSection();
+    }));
   }
 
   // Pages load asynchronously; a slow one (Local models scans the machine)
@@ -3641,8 +3653,15 @@ files: [src/billing/**]
         bindSegs(el, (k, v) => { prefs[k] = v || null; savePrefs(); });
       } else if (sec === 'desktop') {
         const st = await getJson('/ox/settings');
+        const ip = st.island.preferences || { size: 'standard', autoClose: 6, hideFullscreen: true, companion: 'ox' };
+        const companion = (id, label, detail) => `<option value="${id}"${ip.companion === id ? ' selected' : ''}>${label} — ${detail}</option>`;
         el.innerHTML = `${mobileBack}<div class="shead">${icon('monitor')}OX Island &amp; desktop</div><p class="sdesc">Same as <code>ox island on</code> / <code>off</code> / <code>restart</code> and <code>ox awake</code> in a terminal.</p>
           ${row('OX Island', st.island.enabled ? (st.island.running ? 'On, in your notch now' : 'On. It starts with your next run, or press Restart') : `Off. ${st.island.platform === 'darwin' ? 'Turn it on and ox lives in your notch: runs, approvals, your voice' : 'Turn it on and a slim bar shows ox at the top of the screen'}`, `<span style="display:flex;gap:8px;align-items:center">${st.island.enabled ? '<button class="btn ghost" data-island-restart>Restart</button>' : ''}${sw('s-island', st.island.enabled)}</span>`)}
+          ${st.island.platform === 'darwin' ? `<div class="sblock"><div class="shead">${icon('monitor')}Companion &amp; behavior</div><p class="sdesc">Choose the original OX companion shown in the Island. These controls are applied by restarting only the Island, never an active agent run.</p>
+            ${row('Companion', 'The character that listens, speaks and reacts in OX Island.', `<select data-island-pref="companion">${companion('ox', 'Ox', 'the original OX companion')}${companion('mira', 'Mira', 'calm, focused guide')}${companion('theo', 'Theo', 'fast iteration partner')}${companion('ade', 'Ade', 'sharp review companion')}${companion('lin', 'Lin', 'steady deep-work partner')}${companion('sol', 'Sol', 'bright ideas companion')}${companion('rui', 'Rui', 'quiet debugging companion')}</select>`)}
+            ${row('Island size', 'Compact removes the walking pasture; Standard keeps the full live scene.', `<select data-island-pref="size"><option value="standard"${ip.size === 'standard' ? ' selected' : ''}>Standard</option><option value="compact"${ip.size === 'compact' ? ' selected' : ''}>Compact</option></select>`)}
+            ${row('Close after you leave', 'The Island always stays for a question, approval, voice turn or active typing.', `<select data-island-pref="autoClose"><option value="3"${ip.autoClose === 3 ? ' selected' : ''}>3 seconds</option><option value="6"${ip.autoClose === 6 ? ' selected' : ''}>6 seconds</option><option value="15"${ip.autoClose === 15 ? ' selected' : ''}>15 seconds</option><option value="0"${ip.autoClose === 0 ? ' selected' : ''}>Never</option></select>`)}
+            ${row('Hide over full-screen apps', 'Temporarily hides the Island in a real full-screen app, except when an agent needs your answer.', sw('s-island-fullscreen', ip.hideFullscreen).replace('id="s-island-fullscreen"', 'data-island-pref="hideFullscreen"')))}</div>` : ''}
           ${row('Keep the computer awake', 'While ox works, so long runs are not cut off by sleep.', sw('s-awake', st.awake.on))}`;
         bindIsland(el);
         $('s-awake').onchange = async () => { try { await postJson('/ox/settings', { awake: $('s-awake').checked }); } catch (e) { toast(e.message); } };

@@ -150,7 +150,7 @@ struct CompactBar: View {
             // hides the far end: the bull patrols in and out, and sleeps in there.
             let wing = max(0, (w - metrics.width) / 2 - lead)
             OxWalker(mood: bridge.gauges.contains { $0.percent >= 80 } && [Mood.idle, .sleeping, .done].contains(bridge.headlineMood) ? .needsYou : bridge.headlineMood,
-                     height: oxSize * 0.95, roam: true, stressed: bridge.gauges.contains { $0.percent >= 80 }, onPoke: { bridge.showReaction() })
+                     height: oxSize * 0.95, vectorStyle: true, roam: true, stressed: bridge.gauges.contains { $0.percent >= 80 }, onPoke: { bridge.showReaction() })
                 .frame(width: wing + oxSize * 0.95 * 4 / 3 + 4)
             Spacer(minLength: 0)
             if let team = bridge.officeSession, team.agents.contains(where: { $0.endedAt == nil }) {
@@ -298,10 +298,10 @@ struct ExpandedContent: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
         } else if bridge.tray != nil {
             VStack(spacing: 6) {
-                if [.shelf, .focus, .clips, .mail, .recap, .office].contains(bridge.tray) {
+                if [.shelf, .focus, .clips, .mail, .recap, .office, .controls].contains(bridge.tray) {
                     // The + tab: files dropped on the notch, the focus timer, what you copied.
                     HStack(spacing: 5) {
-                        ForEach([TrayTab.shelf, .focus, .clips, .mail, .recap, .office]) { t in
+                        ForEach([TrayTab.shelf, .focus, .clips, .mail, .recap, .office, .controls]) { t in
                             TabCapsule(icon: t.icon, on: bridge.tray == t, label: t.title) { bridge.tray = t }
                         }
                         Spacer()

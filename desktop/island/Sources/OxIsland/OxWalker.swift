@@ -422,6 +422,10 @@ struct OxWalker: View {
     var mood: Mood
     /// Height of the ox in points; the frames are 4:3.
     var height: CGFloat
+    /// The compact notch needs a silhouette that reads in a few pixels. The
+    /// original vector ox keeps its facial states crisp there; the detailed
+    /// 3D pasture still appears in the opened island.
+    var vectorStyle = false
     /// Use the whole width: walk the lane while working, live on the pasture otherwise.
     var roam = false
     /// Past 80 % of a plan window: worried instead of on alert, when rendered.
@@ -443,7 +447,12 @@ struct OxWalker: View {
     private var pasture: Pasture { .shared }
 
     var body: some View {
-        if OxFrames.available {
+        if vectorStyle {
+            OxMascot(mood: mood, size: height)
+                .frame(width: height, height: height)
+                .contentShape(Rectangle())
+                .onTapGesture { onPoke?() }
+        } else if OxFrames.available {
             GeometryReader { geo in
                 // 12 frames a second (the session sprites' beat, so one layout pass serves
                 // both) while something happens; 10 (6 on battery) while ox only grazes or sleeps.

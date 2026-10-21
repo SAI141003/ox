@@ -120,7 +120,7 @@ struct IslandMenu: View {
                 }
             }
         }
-        Picker("Buddy character", selection: $buddy.character) {
+        Picker("Companion", selection: $buddy.character) {
             ForEach(AvatarKind.allCases) { Text($0.title).tag($0) }
         }
         Toggle("Natural voice (Kokoro)", isOn: $naturalVoice)
@@ -149,6 +149,57 @@ struct IslandMenu: View {
         }
         Divider()
         Button(T("Turn off OX Island")) { IslandSwitch.turnOff() }
+    }
+}
+
+/// The same controls as the context menu, but deliberately visible from the
+/// Island's + shelf.  A person should not have to discover a right-click to
+/// change the companion, close behaviour, or voice controls.
+struct IslandControlsView: View {
+    @ObservedObject var buddy: Buddy
+    @ObservedObject var bridge: OxBridge
+    @AppStorage("island.size") private var islandSize = "standard"
+    @AppStorage("island.autoClose") private var autoClose = 6.0
+    @AppStorage("island.hideFullscreen") private var hideFullscreen = true
+    @AppStorage("wake.enabled") private var wakeOn = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "slider.horizontal.3").font(.system(size: 10)).foregroundStyle(Ink.muted)
+                Text("Island controls").font(.system(size: 12, weight: .semibold)).foregroundStyle(Ink.text)
+                Spacer()
+                Text("changes save here").font(.system(size: 10)).foregroundStyle(Ink.dim)
+            }
+            HStack(spacing: 12) {
+                AvatarView(kind: buddy.character, expression: Expression.of(bridge.headlineMood, buddy: buddy.phase), mouth: buddy.mouth, gesture: buddy.gesture, level: buddy.level)
+                    .frame(width: 44, height: 52)
+                VStack(alignment: .leading, spacing: 5) {
+                    Picker("Companion", selection: $buddy.character) {
+                        ForEach(AvatarKind.allCases) { Text($0.title).tag($0) }
+                    }
+                    .labelsHidden().frame(width: 140)
+                    Text("Your on-device voice companion").font(.system(size: 10.5)).foregroundStyle(Ink.muted)
+                }
+                Divider().frame(height: 42)
+                VStack(alignment: .leading, spacing: 4) {
+                    Picker("Close", selection: $autoClose) {
+                        Text("Close in 3s").tag(3.0)
+                        Text("Close in 6s").tag(6.0)
+                        Text("Close in 15s").tag(15.0)
+                        Text("Stay open").tag(0.0)
+                    }.labelsHidden().frame(width: 128)
+                    Toggle("Hide in full screen", isOn: $hideFullscreen).font(.system(size: 10.5)).toggleStyle(.checkbox)
+                }
+                Spacer(minLength: 0)
+                VStack(alignment: .trailing, spacing: 4) {
+                    Button(buddy.isListeningOrStarting ? "Stop voice" : "Talk") { buddy.toggle() }
+                    Button(wakeOn ? "Wake word on" : "Wake word off") { wakeOn.toggle(); bridge.wake.setEnabled(wakeOn) }
+                }.font(.system(size: 10.5, weight: .semibold))
+            }
+            Text("The Island closes after you leave unless you are typing, speaking, or an agent needs an approval. Mail opens safely in Mail; replies stay drafts until you send them.")
+                .font(.system(size: 10)).foregroundStyle(Ink.dim).fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

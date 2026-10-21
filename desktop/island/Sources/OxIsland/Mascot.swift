@@ -128,6 +128,7 @@ struct OxPainter {
         drawTuft(&ctx, u, lx: lx)
         drawMuzzle(&ctx, u, lx: lx, ly: ly)
         drawEyes(&ctx, u, lx: lx, ly: ly)
+        drawBrows(&ctx, u, lx: lx, ly: ly)
         drawCheeks(&ctx, u, lx: lx)
         drawBadge(&ctx, u)
     }
@@ -192,6 +193,9 @@ struct OxPainter {
         // Key light: soft specular on the upper-left brow.
         ctx.fill(head, with: .radialGradient(Gradient(colors: [Color.white.opacity(0.35), .clear]),
                                              center: pt(38, 36, u), startRadius: 0, endRadius: 22 * u))
+        // A hairline contour keeps the silhouette legible when the island is
+        // dimmed over bright content, without turning the mascot into an icon.
+        ctx.stroke(head, with: .color(Self.ink.opacity(0.18)), lineWidth: 1.2 * u)
     }
 
     private func drawTuft(_ ctx: inout GraphicsContext, _ u: CGFloat, lx: Double) {
@@ -212,6 +216,25 @@ struct OxPainter {
         for side in [-1.0, 1.0] {
             ctx.fill(Path(ellipseIn: rect(x + side * 8 - 2.6, y - 2, 5.2, 6.2, u)), with: .color(Self.ink.opacity(0.75)))
         }
+        // A mouth is deliberately tiny, but is the difference between a face
+        // that merely has eyes and one that reads at notch size. Keep it above
+        // the ring, where it remains visible in every pose.
+        var mouth = Path()
+        switch mood {
+        case .done:
+            mouth.addArc(center: pt(x, y + 3.5, u), radius: 6.1 * u,
+                         startAngle: .degrees(18), endAngle: .degrees(162), clockwise: false)
+        case .error:
+            mouth.addArc(center: pt(x, y + 9.4, u), radius: 5.5 * u,
+                         startAngle: .degrees(198), endAngle: .degrees(342), clockwise: false)
+        case .thinking:
+            mouth.move(to: pt(x - 3, y + 6, u)); mouth.addLine(to: pt(x + 2, y + 6, u))
+        case .needsYou:
+            mouth.move(to: pt(x - 3.5, y + 6.2, u)); mouth.addLine(to: pt(x + 3.5, y + 6.2, u))
+        default:
+            break
+        }
+        if !mouth.isEmpty { ctx.stroke(mouth, with: .color(Self.ink.opacity(0.8)), style: StrokeStyle(lineWidth: 1.45 * u, lineCap: .round)) }
         // Nose ring swings like a pendulum, livelier while working.
         var swing = sin(t * 2.0) * 10
         if case .working = mood { swing = sin(t * 7) * 18 }
@@ -261,6 +284,38 @@ struct OxPainter {
                     ctx.fill(Path(ellipseIn: rect(cx + gx + r * 0.22, ey + gy + r * 0.18, r * 0.26, r * 0.26, u)), with: .color(.white.opacity(0.85)))
                 }
             }
+        }
+    }
+
+    /// Brows supply the high-level emotion before a person can resolve the
+    /// pupils. They are intentionally broad, warm and ox-like—not borrowed
+    /// from another app's character language.
+    private func drawBrows(_ ctx: inout GraphicsContext, _ u: CGFloat, lx: Double, ly: Double) {
+        guard mood != .sleeping else { return }
+        let y = 41 + ly * 0.18
+        for side in [-1.0, 1.0] {
+            let cx = 50 + side * 13 + lx
+            var rise = 0.0
+            var slant = 0.0
+            switch mood {
+            case .thinking:
+                rise = side < 0 ? -4.5 : 1.2; slant = side < 0 ? -1.6 : 0.7
+            case .working:
+                rise = 1.0; slant = -side * 2.2
+            case .needsYou:
+                rise = -3.5; slant = side * 1.2
+            case .error:
+                rise = 2.8; slant = side * 1.7
+            case .done:
+                rise = -0.6
+            default:
+                rise = 0.4
+            }
+            var b = Path()
+            b.move(to: pt(cx - 5, y + rise + slant, u))
+            b.addQuadCurve(to: pt(cx + 5, y + rise - slant, u), control: pt(cx, y + rise - 1.4, u))
+            ctx.stroke(b, with: .color(Self.hideShade.opacity(mood == .done ? 0.42 : 0.72)),
+                       style: StrokeStyle(lineWidth: 2.25 * u, lineCap: .round))
         }
     }
 

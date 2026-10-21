@@ -190,8 +190,10 @@ final class IslandPanel: NSPanel {
             let wait = IslandLayout.autoClose
             if wait > 0, let since = awaySince, Date().timeIntervalSince(since) > wait,
                !bridge.chat.busy, bridge.pendingSession == nil, !bridge.buddyActive, !(bridge.card?.busy ?? false),
-               // Typing in the island (a message to a session, the chat): it stays until you close it.
-               !isKeyWindow {
+               // A borderless panel can remain key after a click even when no
+               // field has focus.  Only protect an actual chat text edit;
+               // otherwise leaving the Island must reliably collapse it.
+               !isEditingChat {
                 bridge.pinnedOpen = false
                 bridge.tray = nil
                 bridge.card = nil
@@ -218,6 +220,11 @@ final class IslandPanel: NSPanel {
 
         let near = island.insetBy(dx: -260, dy: -200).contains(local)
         setPoll(near || bridge.expanded ? 1.0 / 60 : 1.0 / 10)
+    }
+
+    private var isEditingChat: Bool {
+        guard bridge.tray == .chat, isKeyWindow else { return false }
+        return firstResponder is NSTextView || firstResponder is NSTextField
     }
 
     /// Hide only for another app's *real* full-screen window, not a merely

@@ -1344,6 +1344,55 @@ async function handleResponses(req, res) {
 // when the server runs with --api-key).
 // ---------------------------------------------------------------------------
 
+const ISLAND_COMPANIONS = new Set(['ox', 'mira', 'theo', 'ade', 'lin', 'sol', 'rui']);
+
+// Island preferences live in the signed macOS app's UserDefaults domain rather
+// than ~/.ox/config.json.  Keeping that boundary matters: the app is able to
+// start before the local server, and it never needs to read project settings.
+// `defaults` is macOS' supported bridge to that domain for this local-only UI.
+function islandPreferences() {
+  const fallback = { size: 'standard', autoClose: 6, hideFullscreen: true, companion: 'ox' };
+  if (process.platform !== 'darwin') return fallback;
+  const read = (key) => {
+    const r = spawnSync('defaults', ['read', 'dev.ox.island', key], { encoding: 'utf8' });
+    return r.status === 0 ? String(r.stdout ?? '').trim() : null;
+  };
+  const size = read('island.size');
+  const close = Number(read('island.autoClose'));
+  const hide = read('island.hideFullscreen');
+  const companion = read('buddy.character');
+  return {
+    size: size === 'compact' ? 'compact' : 'standard',
+    autoClose: [0, 3, 6, 15].includes(close) ? close : 6,
+    hideFullscreen: hide == null ? true : /^(1|true|yes)$/i.test(hide),
+    companion: ISLAND_COMPANIONS.has(companion) ? companion : 'ox',
+  };
+}
+
+function saveIslandPreferences(next) {
+  if (process.platform !== 'darwin') throw new Error('OX Island preferences are available on macOS');
+  const write = (key, type, value) => {
+    const r = spawnSync('defaults', ['write', 'dev.ox.island', key, type, String(value)], { encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(`Could not save Island preference ${key}`);
+  };
+  if (next.size != null) {
+    if (!['standard', 'compact'].includes(next.size)) throw new Error('Island size must be standard or compact');
+    write('island.size', '-string', next.size);
+  }
+  if (next.autoClose != null) {
+    if (![0, 3, 6, 15].includes(next.autoClose)) throw new Error('Choose 3, 6, 15 seconds, or never');
+    write('island.autoClose', '-float', next.autoClose);
+  }
+  if (next.hideFullscreen != null) {
+    if (typeof next.hideFullscreen !== 'boolean') throw new Error('Hide in full screen must be on or off');
+    write('island.hideFullscreen', '-bool', next.hideFullscreen);
+  }
+  if (next.companion != null) {
+    if (!ISLAND_COMPANIONS.has(next.companion)) throw new Error('That OX companion is not available');
+    write('buddy.character', '-string', next.companion);
+  }
+}
+
 async function settingsView() {
   const { islandEnabled, islandRunning } = await import('./island.js');
   const { readConfigDoc, loadConfig } = await import('./config.js');
@@ -1362,7 +1411,7 @@ async function settingsView() {
   const { assistantName } = await import('./identity.js');
   return {
     name: assistantName(),
-    island: { enabled: islandEnabled(), running: islandRunning({ env: {} }), platform: process.platform },
+    island: { enabled: islandEnabled(), running: islandRunning({ env: {} }), platform: process.platform, preferences: islandPreferences() },
     // What a new chat actually uses: the configured default if it can run, else the best that can.
     model: { defaultBot: pickWorkingDefault(), configured: config.defaultBot ?? null, source: runnable(config.defaultBot ?? '') ? (config.defaultBotSource ?? 'config') : 'auto: the configured model cannot run here', bots, fallback: (doc.fallback_bots ?? doc.fallbackBots ?? [])[0] ?? null },
     awake: { on: doc.awake !== false && process.env.OX_NO_AWAKE !== '1' },
@@ -1387,6 +1436,22 @@ async function handleSettingsPost(req, res) {
   if (body.islandRestart === true && !process.env.NODE_TEST_CONTEXT) {
     const { cmdIsland } = await import('./island.js');
     await cmdIsland(['restart'], { log: () => {}, err: () => {} });
+  }
+  const islandPreferenceKeys = ['size', 'autoClose', 'hideFullscreen', 'companion'];
+  if (body.islandPreferences && typeof body.islandPreferences === 'object') {
+    const prefs = body.islandPreferences;
+    if (Object.keys(prefs).some((key) => !islandPreferenceKeys.includes(key))) {
+      sendError(res, 400, 'Unknown Island preference', 'invalid_request_error', 'invalid_island_preference', 'islandPreferences');
+      return;
+    }
+    try { saveIslandPreferences(prefs); }
+    catch (e) { sendError(res, 400, String(e?.message ?? e), 'invalid_request_error', 'invalid_island_preference', 'islandPreferences'); return; }
+    // UserDefaults are loaded when the notch app starts. Reopen it only after
+    // a deliberate settings change, never in the middle of an agent run.
+    if (!process.env.NODE_TEST_CONTEXT && process.platform === 'darwin') {
+      const { islandRunning, cmdIsland } = await import('./island.js');
+      if (islandRunning({ env: {} })) await cmdIsland(['restart'], { log: () => {}, err: () => {} });
+    }
   }
   if (typeof body.defaultBot === 'string') {
     try {
