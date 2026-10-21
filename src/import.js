@@ -1,112 +1,121 @@
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+// ox import: bring your setup from Claude Code, Codex, Cursor and Hermes, read
+// in each tool's real formats (as Cursor already reads .claude/agents and
+// .codex/agents), never changing their files:
+//   skills       folders with a SKILL.md (~/.claude/skills, ./.claude/skills,
+//                ~/.codex/skills, ~/.hermes/skills)
+//   subagents    markdown with front matter (~/.claude/agents, ./.claude/agents,
+//                ~/.codex/agents, ./.codex/agents) → ox agents (~/.ox/agents)
+//   MCP servers  ./.mcp.json and ~/.claude.json (user and this project),
+//                ~/.codex/config.toml [mcp_servers.<name>], ~/.cursor/mcp.json
+//                and ./.cursor/mcp.json, Hermes's config
+//   instructions CLAUDE.md, AGENTS.md, .cursorrules, .cursor/rules/*.mdc
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 
-function readSkillsDir(dirPath) {
-  const skills = [];
-  if (fs.existsSync(dirPath)) {
-    const files = fs.readdirSync(dirPath);
-    for (const file of files) {
-      const fullPath = path.join(dirPath, file);
-      const stat = fs.statSync(fullPath);
-      if (stat.isFile() && (file.endsWith('.js') || file.endsWith('.ts') || file.endsWith('.json'))) {
-        skills.push({ name: file.replace(/\.(js|ts|json)$/, ''), path: fullPath });
-      }
-    }
-  }
-  return skills;
+const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
+
+/** Skill folders (each with a SKILL.md) directly inside `dir`. */
+export function skillFolders(dir, from) {
+  let names = [];
+  try { names = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+  return names.filter((e) => (e.isDirectory() || e.isSymbolicLink()) && fs.existsSync(path.join(dir, e.name, 'SKILL.md')))
+    .map((e) => ({ name: e.name, path: path.join(dir, e.name), from }));
 }
 
-function readMcpConfig(filePath) {
-  if (fs.existsSync(filePath)) {
-    try {
-      const content = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(content);
-    } catch {
-      return {};
-    }
-  }
-  return {};
+/** Front matter + body of a markdown file. */
+export function frontMatter(text) {
+  const m = /^---\n([\s\S]*?)\n---\n?/.exec(String(text));
+  const meta = {};
+  if (m) for (const line of m[1].split('\n')) { const kv = /^([\w-]+):\s*(.*)$/.exec(line); if (kv) meta[kv[1]] = kv[2].trim().replace(/^["']|["']$/g, ''); }
+  return { meta, body: m ? String(text).slice(m[0].length).trim() : String(text).trim() };
 }
 
-function readMemoryFiles(cwd, patterns) {
-  const files = [];
-  for (const pattern of patterns) {
-    const fullPath = path.join(cwd, pattern);
-    if (fs.existsSync(fullPath)) {
-      files.push({ name: pattern, path: fullPath, content: fs.readFileSync(fullPath, 'utf8') });
-    }
-  }
-  return files;
+/** Subagents defined as markdown (Claude Code's and Codex's format). */
+export function subagents(dir, from) {
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.md')); } catch { return []; }
+  return names.map((n) => {
+    const { meta, body } = frontMatter(fs.readFileSync(path.join(dir, n), 'utf8'));
+    const tools = meta.tools ? meta.tools.split(/[,\s]+/).map((t) => t.trim()).filter(Boolean) : null;
+    return { name: (meta.name || n.replace(/\.md$/, '')).replace(/[^\w-]/g, '-'), description: meta.description ?? '', tools, model: meta.model ?? null, systemPrompt: body, path: path.join(dir, n), from };
+  });
 }
 
-export function importFromClaudeCode(cwd) {
-  const homeDir = os.homedir();
-  const skills = [
-    ...readSkillsDir(path.join(homeDir, '.claude', 'skills')),
-    ...readSkillsDir(path.join(cwd, '.claude', 'skills'))
-  ];
-  const mcpServers = readMcpConfig(path.join(cwd, '.mcp.json'));
-  const memoryFiles = readMemoryFiles(cwd, ['CLAUDE.md', 'AGENTS.md']);
-  return { skills, mcpServers, memoryFiles };
+/** MCP servers from Codex's config.toml: [mcp_servers.<name>] with command, args, env. */
+export function codexMcp(toml) {
+  const out = {};
+  let cur = null, sub = null;
+  const val = (v) => {
+    v = v.trim();
+    if (v.startsWith('[')) { try { return JSON.parse(v.replace(/'/g, '"')); } catch { return v.slice(1, -1).split(',').map((x) => x.trim().replace(/^["']|["']$/g, '')).filter(Boolean); } }
+    if (/^["']/.test(v)) return v.slice(1, -1);
+    if (v === 'true' || v === 'false') return v === 'true';
+    return Number.isFinite(Number(v)) ? Number(v) : v;
+  };
+  for (const raw of String(toml).split('\n')) {
+    const line = raw.replace(/\s+#.*$/, '').trim();
+    if (!line) continue;
+    const head = /^\[mcp_servers\.("?)([^".\]]+)\1(?:\.(\w+))?\]$/.exec(line);
+    if (head) { cur = head[2]; sub = head[3] ?? null; out[cur] ??= {}; if (sub) out[cur][sub] ??= {}; continue; }
+    if (line.startsWith('[')) { cur = null; continue; }
+    const kv = /^([\w-]+)\s*=\s*(.+)$/.exec(line);
+    if (cur && kv) { if (sub) out[cur][sub][kv[1]] = val(kv[2]); else out[cur][kv[1]] = val(kv[2]); }
+  }
+  return out;
 }
 
-export function importFromHermes(cwd) {
-  const homeDir = os.homedir();
-  const skills = readSkillsDir(path.join(homeDir, '.hermes', 'skills'));
-  let mcpServers = {};
-  const configPath = path.join(homeDir, '.hermes', 'config.json');
-  if (fs.existsSync(configPath)) {
-    try {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      mcpServers = config.mcpServers || config.mcp || {};
-    } catch {
-      mcpServers = {};
-    }
-  }
-  const memoryFiles = readMemoryFiles(cwd, ['AGENTS.md']);
-  return { skills, mcpServers, memoryFiles };
+function readMemoryFiles(cwd, names) {
+  return names.map((n) => path.join(cwd, n)).filter((f) => fs.existsSync(f)).map((f) => ({ name: path.basename(f), path: f }));
 }
 
-export function importFromCodex(cwd) {
-  const homeDir = os.homedir();
-  let mcpServers = {};
-  const configPath = path.join(homeDir, '.codex', 'config.toml');
-  if (fs.existsSync(configPath)) {
-    try {
-      const content = fs.readFileSync(configPath, 'utf8');
-      const mcpMatch = content.match(/mcpServers\s*=\s*(\{[\s\S]*?\})/);
-      if (mcpMatch) {
-        mcpServers = JSON.parse(mcpMatch[1].replace(/(\w+):/g, '"$1":'));
-      }
-    } catch {
-      mcpServers = {};
-    }
-  }
-  const memoryFiles = readMemoryFiles(cwd, ['AGENTS.md']);
-  return { skills: [], mcpServers, memoryFiles };
+export function importFromClaudeCode(cwd, home = os.homedir()) {
+  const user = readJson(path.join(home, '.claude.json')) ?? {};
+  return {
+    skills: [...skillFolders(path.join(home, '.claude', 'skills'), 'Claude Code'), ...skillFolders(path.join(cwd, '.claude', 'skills'), 'Claude Code (project)')],
+    agents: [...subagents(path.join(home, '.claude', 'agents'), 'Claude Code'), ...subagents(path.join(cwd, '.claude', 'agents'), 'Claude Code (project)')],
+    mcpServers: { ...(user.mcpServers ?? {}), ...(user.projects?.[cwd]?.mcpServers ?? {}), ...(readJson(path.join(cwd, '.mcp.json'))?.mcpServers ?? {}) },
+    memoryFiles: readMemoryFiles(cwd, ['CLAUDE.md', 'CLAUDE.local.md', 'AGENTS.md']),
+  };
 }
 
-export function importAll(cwd, source) {
-  switch (source) {
-    case 'claude':
-    case 'claude-code':
-      return importFromClaudeCode(cwd);
-    case 'hermes':
-      return importFromHermes(cwd);
-    case 'codex':
-      return importFromCodex(cwd);
-    case 'all': {
-      const claude = importFromClaudeCode(cwd);
-      const hermes = importFromHermes(cwd);
-      const codex = importFromCodex(cwd);
-      return {
-        skills: [...claude.skills, ...hermes.skills, ...codex.skills],
-        mcpServers: { ...claude.mcpServers, ...hermes.mcpServers, ...codex.mcpServers },
-        memoryFiles: [...claude.memoryFiles, ...hermes.memoryFiles, ...codex.memoryFiles]
-      };
-    }
-    default:
-      return { skills: [], mcpServers: {}, memoryFiles: [] };
-  }
+export function importFromCodex(cwd, home = os.homedir()) {
+  let toml = '';
+  try { toml = fs.readFileSync(path.join(home, '.codex', 'config.toml'), 'utf8'); } catch {}
+  return {
+    skills: skillFolders(path.join(home, '.codex', 'skills'), 'Codex'),
+    agents: [...subagents(path.join(home, '.codex', 'agents'), 'Codex'), ...subagents(path.join(cwd, '.codex', 'agents'), 'Codex (project)')],
+    mcpServers: codexMcp(toml),
+    memoryFiles: readMemoryFiles(cwd, ['AGENTS.md']),
+  };
+}
+
+export function importFromCursor(cwd, home = os.homedir()) {
+  let rules = [];
+  try { rules = fs.readdirSync(path.join(cwd, '.cursor', 'rules')).filter((n) => /\.mdc?$/.test(n)).map((n) => ({ name: `.cursor/rules/${n}`, path: path.join(cwd, '.cursor', 'rules', n) })); } catch {}
+  return {
+    skills: [],
+    agents: [],
+    mcpServers: { ...(readJson(path.join(home, '.cursor', 'mcp.json'))?.mcpServers ?? {}), ...(readJson(path.join(cwd, '.cursor', 'mcp.json'))?.mcpServers ?? {}) },
+    memoryFiles: [...readMemoryFiles(cwd, ['.cursorrules']), ...rules],
+  };
+}
+
+export function importFromHermes(cwd, home = os.homedir()) {
+  const config = readJson(path.join(home, '.hermes', 'config.json')) ?? {};
+  return { skills: skillFolders(path.join(home, '.hermes', 'skills'), 'Hermes'), agents: [], mcpServers: config.mcpServers || config.mcp || {}, memoryFiles: readMemoryFiles(cwd, ['AGENTS.md']) };
+}
+
+const SOURCES = { 'claude-code': importFromClaudeCode, claude: importFromClaudeCode, codex: importFromCodex, cursor: importFromCursor, hermes: importFromHermes };
+
+export function importAll(cwd, source, home = os.homedir()) {
+  const pick = source === 'all' ? [importFromClaudeCode, importFromCodex, importFromCursor, importFromHermes] : SOURCES[source] ? [SOURCES[source]] : [];
+  const parts = pick.map((f) => f(cwd, home));
+  const uniq = (list, key) => [...new Map(list.map((x) => [key(x), x])).values()];
+  return {
+    skills: uniq(parts.flatMap((p) => p.skills), (s) => s.name),
+    agents: uniq(parts.flatMap((p) => p.agents), (a) => a.name),
+    mcpServers: Object.assign({}, ...parts.map((p) => p.mcpServers)),
+    memoryFiles: uniq(parts.flatMap((p) => p.memoryFiles), (m) => m.path),
+  };
 }

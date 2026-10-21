@@ -2362,14 +2362,15 @@ async function cmdAgentDelete(args = []) {
 async function cmdImport(args = []) {
   const dryRun = args.includes('--dry-run');
   const source = args.find((a) => !String(a).startsWith('-'));
-  const validSources = ['claude-code', 'hermes', 'codex', 'all'];
+  const validSources = ['claude-code', 'claude', 'hermes', 'codex', 'cursor', 'all'];
   if (!source || !validSources.includes(source)) {
-    process.stderr.write('usage: ox import <claude-code|hermes|codex|all> [--dry-run]\n');
-    process.stderr.write('sources:\n');
-    process.stderr.write('  claude-code  read from ~/.claude/skills + ./.claude/skills + ./.mcp.json + CLAUDE.md/AGENTS.md\n');
-    process.stderr.write('  hermes       read from ~/.hermes/skills + config + AGENTS.md\n');
-    process.stderr.write('  codex        read from ~/.codex/config.toml + AGENTS.md\n');
-    process.stderr.write('  all          merge all of the above\n');
+    process.stderr.write('usage: ox import <claude-code|codex|cursor|hermes|all> [--dry-run]\n');
+    process.stderr.write('sources (read only; their files are never changed):\n');
+    process.stderr.write('  claude-code  skills (~/.claude/skills, ./.claude/skills), subagents (.claude/agents), MCP (~/.claude.json, ./.mcp.json), CLAUDE.md\n');
+    process.stderr.write('  codex        skills (~/.codex/skills), subagents (.codex/agents), MCP ([mcp_servers.*] in ~/.codex/config.toml), AGENTS.md\n');
+    process.stderr.write('  cursor       MCP (~/.cursor/mcp.json, ./.cursor/mcp.json), .cursorrules and .cursor/rules\n');
+    process.stderr.write('  hermes       ~/.hermes/skills + config + AGENTS.md\n');
+    process.stderr.write('  all          all of the above\n');
     process.exitCode = 3;
     return;
   }
@@ -2377,6 +2378,7 @@ async function cmdImport(args = []) {
   const homeDir = os.homedir();
   const result = importAll(cwd, source);
   const skills = result.skills || [];
+  const agents = result.agents || [];
   const mcpServers = result.mcpServers || {};
   const memoryFiles = result.memoryFiles || [];
   const mcpNames = Object.keys(mcpServers);
@@ -2389,6 +2391,10 @@ async function cmdImport(args = []) {
   } else {
     console.log(c.dim('  (none found)'));
   }
+  console.log('');
+  console.log(c.bold(`subagents (${agents.length}):`));
+  if (agents.length) for (const a of agents) console.log(`  ${a.name}  ${c.dim(`${a.from}: ${a.description.slice(0, 70)}`)}`);
+  else console.log(c.dim('  (none found)'));
   console.log('');
   console.log(c.bold(`mcp servers (${mcpNames.length}):`));
   if (mcpNames.length) {
@@ -2405,9 +2411,9 @@ async function cmdImport(args = []) {
     console.log(c.dim('  (none found)'));
   }
 
-  if (dryRun || (!skills.length && !mcpNames.length && !memoryFiles.length)) {
+  if (dryRun || (!skills.length && !agents.length && !mcpNames.length && !memoryFiles.length)) {
     console.log('');
-    if (!skills.length && !mcpNames.length && !memoryFiles.length) {
+    if (!skills.length && !agents.length && !mcpNames.length && !memoryFiles.length) {
       console.log(c.dim('nothing to import — all sources empty'));
     } else if (dryRun) {
       console.log(c.dim('dry-run — no files written (re-run without --dry-run to apply)'));
@@ -2422,15 +2428,23 @@ async function cmdImport(args = []) {
   let skippedSkills = 0;
   for (const s of skills) {
     const destDir = path.join(skillsDest, s.name);
-    const destFile = path.join(destDir, 'SKILL.md');
-    if (fs.existsSync(destFile)) {
+    if (fs.existsSync(path.join(destDir, 'SKILL.md'))) {
       skippedSkills++;
       continue;
     }
-    fs.mkdirSync(destDir, { recursive: true });
-    fs.copyFileSync(s.path, destFile);
+    // The whole folder: a skill's scripts and references come with its SKILL.md.
+    fs.cpSync(s.path, destDir, { recursive: true, dereference: true });
     copiedSkills++;
   }
+  // Subagents become ox agents (~/.ox/agents), kept if one of that name exists.
+  const { saveAgent, loadAgent } = await import('./agents.js');
+  let copiedAgents = 0;
+  for (const a of agents) {
+    if (loadAgent(a.name)) continue;
+    saveAgent(a.name, { description: a.description, tools: a.tools, systemPrompt: a.systemPrompt, ...(a.model && !/^(inherit|sonnet|opus|haiku)$/.test(a.model) ? { bot: a.model } : {}) });
+    copiedAgents++;
+  }
+  if (agents.length) console.log(`${c.green('✓')} subagents: ${copiedAgents} added to ox agents${agents.length - copiedAgents ? `, ${agents.length - copiedAgents} already there` : ''}`);
 
   // Merge MCP servers into ./.mcp.json (project precedence: do not overwrite existing)
   const mcpFile = path.join(cwd, '.mcp.json');
