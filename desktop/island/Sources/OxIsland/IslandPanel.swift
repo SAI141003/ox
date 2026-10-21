@@ -98,6 +98,10 @@ final class IslandPanel: NSPanel {
     private var clickMonitor: Any?
     /// The notch geometry, refreshed when displays change (not 60 times a second).
     private var metrics = NotchMetrics.current()
+    /// A presentation/video gets the screen unless Ox is actually waiting for
+    /// the person. `fullScreenAuxiliary` is kept so an approval can still be
+    /// shown above a full-screen app.
+    private var hiddenForFullscreen = false
 
     init(bridge: OxBridge) {
         self.bridge = bridge
@@ -164,6 +168,8 @@ final class IslandPanel: NSPanel {
     }
 
     private func tick() {
+        updateFullscreenVisibility()
+        if hiddenForFullscreen { return }
         // Several displays, following the pointer: move when it crosses to another screen.
         if NotchMetrics.followsPointer, let sc = NotchMetrics.pointerScreen(), sc.frame != metrics.screenFrame, !bridge.expanded { reposition(animated: false) }
         let mouse = NSEvent.mouseLocation
@@ -212,6 +218,43 @@ final class IslandPanel: NSPanel {
 
         let near = island.insetBy(dx: -260, dy: -200).contains(local)
         setPoll(near || bridge.expanded ? 1.0 / 60 : 1.0 / 10)
+    }
+
+    /// Hide only for another app's *real* full-screen window, not a merely
+    /// maximised window. A pending approval (or a session in needs-you state)
+    /// always wins: the island returns so the person can respond.
+    private func updateFullscreenVisibility() {
+        let configured = UserDefaults.standard.object(forKey: "island.hideFullscreen") as? Bool
+        let hideEnabled = configured ?? true
+        let needsPerson = bridge.pendingSession != nil || bridge.sessions.contains { $0.mood == .needsYou }
+        let shouldHide = hideEnabled && !needsPerson && frontmostWindowCoversIslandScreen()
+        guard shouldHide != hiddenForFullscreen else { return }
+        hiddenForFullscreen = shouldHide
+        if shouldHide {
+            ignoresMouseEvents = true
+            orderOut(nil)
+        } else {
+            orderFrontRegardless()
+        }
+    }
+
+    private func frontmostWindowCoversIslandScreen() -> Bool {
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return false }
+        let screen = metrics.screenFrame
+        // Core Graphics reports window bounds in top-left screen coordinates;
+        // width/height are coordinate-system independent. A normal maximised
+        // window leaves the menu bar, while full screen covers virtually all of
+        // this display's height.
+        return windows.contains { window in
+            guard (window[kCGWindowOwnerPID as String] as? pid_t) == app.processIdentifier,
+                  (window[kCGWindowLayer as String] as? Int ?? -1) == 0,
+                  let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
+                  (window[kCGWindowIsOnscreen as String] as? Bool ?? false) else { return false }
+            let width = bounds["Width"] ?? 0, height = bounds["Height"] ?? 0
+            return width >= screen.width * 0.98 && height >= screen.height * 0.98
+        }
     }
 }
 
