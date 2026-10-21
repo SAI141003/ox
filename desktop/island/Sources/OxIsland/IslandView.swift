@@ -251,6 +251,8 @@ struct ExpandedContent: View {
                         .overlay(alignment: .bottom) { Countdown(deadline: p.deadline).padding(.horizontal, 40) }
                 } else if let alert = bridge.meshAlerts.first {
                     MeshAlertHome(bridge: bridge, alert: alert)
+                } else if let u = bridge.updateCard {
+                    UpdateHome(bridge: bridge, card: u)
                 } else if let hire = bridge.proposedHire {
                     HireHome(bridge: bridge, hire: hire)
                 } else if bridge.buddyActive {

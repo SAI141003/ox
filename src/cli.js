@@ -6187,6 +6187,9 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'update': {
+      // The notch's self-update (src/self-update.js) runs these in the background.
+      if (args.includes('--notch-check')) { (await import('./self-update.js')).check({ force: true }); return; }
+      if (args.includes('--notch-apply')) { const r = (await import('./self-update.js')).applyWithProgress(); if (!r.ok) process.exitCode = 1; return; }
       // What is new upstream; --apply fast-forwards to it.
       const E = await import('./evolve.js');
       const u = E.updateCheck();

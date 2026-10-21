@@ -726,6 +726,41 @@ struct HireHome: View {
 }
 
 /// One of your machines needs a decision (ox mesh): what is wrong, and your options.
+/// ox updates itself (Coucou's self-update): ask once, a new version, the steps, the result.
+struct UpdateHome: View {
+    @ObservedObject var bridge: OxBridge
+    let card: OxBridge.UpdateCard
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            HomeCard(wash: Color(hex: card.kind == .failed ? "#F4505E" : "#2fa36b").opacity(0.28)) { EmptyView() }
+            HomeCharacter(bridge: bridge, mood: card.kind == .working ? .thinking : card.kind == .done ? .done : .idle, size: 52).position(x: 50, y: 49)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    if card.kind == .working { ProgressView().controlSize(.small).scaleEffect(0.7) }
+                    Text(card.title).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(HomeInk.text).lineLimit(1)
+                }
+                Text(card.detail).font(.system(size: 10.5)).foregroundStyle(HomeInk.muted).lineLimit(2)
+                HStack(spacing: 6) {
+                    switch card.kind {
+                    case .ask:
+                        HomeButton(title: "Yes, tell me", style: .primary) { bridge.updateChoose("allow") }
+                        HomeButton(title: "No thanks", style: .plain) { bridge.updateChoose("deny") }
+                    case .available:
+                        HomeButton(title: "Update now", style: .primary) { bridge.updateChoose("apply") }
+                        HomeButton(title: "What's new", style: .plain) { bridge.updateChoose("whatsnew") }
+                        HomeButton(title: "Later", style: .plain) { bridge.updateChoose("later") }
+                    case .working:
+                        EmptyView()
+                    case .done, .failed:
+                        HomeButton(title: "OK", style: .plain) { bridge.updateChoose("ok") }
+                    }
+                }
+            }
+            .padding(.leading, 100).padding(.trailing, 12).padding(.top, 12)
+        }
+    }
+}
+
 struct MeshAlertHome: View {
     @ObservedObject var bridge: OxBridge
     let alert: OxBridge.MeshAlert

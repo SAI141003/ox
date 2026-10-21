@@ -1869,6 +1869,18 @@ const ROUTES = [
       return (await quickText(resolveBot(pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 700 })).text;
     } });
   }) },
+  // ox updates itself from the notch (src/self-update.js): asked once, at most one notice a day.
+  { method: 'GET', pattern: /^\/ox\/update\/?$/, handler: appRoute(async () => { const U = await import('./self-update.js'); const st = U.readState(); return { notice: U.notice(), allowed: st.allowed ?? null, available: st.available ?? null, problem: st.problem ?? null, updatedTo: st.updatedTo ?? null, applying: st.applying ?? null }; }) },
+  { method: 'POST', pattern: /^\/ox\/update\/?$/, handler: appRoute(async (body) => {
+    const U = await import('./self-update.js');
+    const a = String(body?.action ?? '');
+    if (a === 'allow' || a === 'deny') { U.setAllowed(a === 'allow'); if (a === 'allow') U.inBackground('check'); return { ok: true }; }
+    if (a === 'later') { U.later(); return { ok: true }; }
+    if (a === 'ok') { U.acknowledge(); return { ok: true }; }
+    if (a === 'check') return U.inBackground('check');
+    if (a === 'apply') return U.inBackground('apply');
+    throw new Error('action: allow, deny, later, check or apply');
+  }) },
   // Dictation styles and translation, per app (src/dictation-style.js).
   { method: 'GET', pattern: /^\/ox\/dictation\/styles\/?$/, handler: appRoute(async () => { const D = await import('./dictation-style.js'); return { ...D.readStyles(), styles: D.STYLES }; }) },
   { method: 'POST', pattern: /^\/ox\/dictation\/styles\/?$/, handler: appRoute(async (body) => {
@@ -2379,6 +2391,10 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       writeFileSync(stamp, new Date().toISOString());
     }).catch(() => {});
     setTimeout(tidyBrain, 60_000).unref();
+    // New versions of ox, looked for every few hours once you allowed it (a git fetch).
+    const lookForUpdates = () => import('./self-update.js').then((U) => { const st = U.readState(); if (st.allowed === true && (!st.checkedAt || Date.now() - st.checkedAt > 3 * 3600_000)) U.inBackground('check'); }).catch(() => {});
+    setTimeout(lookForUpdates, 90_000).unref();
+    setInterval(lookForUpdates, 3 * 3600_000).unref();
     setInterval(tidyBrain, 6 * 3600_000).unref();
   }
   if (!process.env.NODE_TEST_CONTEXT && process.env.OX_MESH !== '0'

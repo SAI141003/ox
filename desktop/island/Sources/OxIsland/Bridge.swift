@@ -536,6 +536,70 @@ final class OxBridge: ObservableObject {
         }.resume()
     }
 
+    // MARK: ox updates itself (src/self-update.js, Coucou's self-update)
+
+    /// What the notch says about updates: ask once, a new version, the steps while it updates, the result.
+    struct UpdateCard: Equatable {
+        enum Kind: Equatable { case ask, available, working, done, failed }
+        let kind: Kind
+        let title: String
+        let detail: String
+    }
+    @Published private(set) var updateCard: UpdateCard?
+    private var updatePolledAt = Date.distantPast
+    private var updateWatching = false
+
+    private func pollUpdate(port: Int) {
+        guard Date().timeIntervalSince(updatePolledAt) > (updateWatching ? 1.5 : 600), let url = URL(string: "http://127.0.0.1:\(port)/ox/update") else { return }
+        updatePolledAt = Date()
+        URLSession.shared.dataTask(with: url) { [weak self] data, resp, _ in
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let doc = data.flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }) else { return }
+            var card: UpdateCard?
+            // While updating, and the result after (also in the new island the update restarted), until OK.
+            if let a = doc["applying"] as? [String: Any], let steps = a["steps"] as? [String], (a["done"] as? Bool) != true || Date().timeIntervalSince1970 * 1000 - ((a["at"] as? Double) ?? 0) < 30 * 60_000 {
+                if (a["done"] as? Bool) == true {
+                    let ok = (a["ok"] as? Bool) == true
+                    card = ok ? UpdateCard(kind: .done, title: "ox is up to date", detail: (doc["updatedTo"] as? String).map { "Now on \($0). Your settings and keys stay." } ?? "Your settings and keys stay.")
+                              : UpdateCard(kind: .failed, title: "The update did not go in", detail: a["why"] as? String ?? "ox stayed as it was.")
+                } else { card = UpdateCard(kind: .working, title: steps.last ?? "Updating", detail: "Checked before anything: ox's own GitHub, a fast-forward, the new code loads.") }
+            } else if let n = doc["notice"] as? [String: Any] {
+                if (n["kind"] as? String) == "ask" {
+                    card = UpdateCard(kind: .ask, title: "Get new versions from the notch?", detail: "ox checks its GitHub a few times a day and tells you when one is out. Nothing about you is sent.")
+                } else if (n["kind"] as? String) == "update", let count = n["count"] as? Int {
+                    let first = ((n["subjects"] as? [String]) ?? []).first.map { String($0.drop { $0 != " " }.dropFirst()) } ?? ""
+                    card = UpdateCard(kind: .available, title: "\(count) update\(count == 1 ? "" : "s") for ox", detail: first.isEmpty ? "New from GitHub." : "Newest: \(first)")
+                }
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let was = self.updateCard
+                if card != was { self.updateCard = card }
+                // A new question or a new version opens the island, once (Coucou's "then he tells you").
+                if let card, card.kind == .ask || card.kind == .available, was?.kind != card.kind { self.peek(for: 10) }
+                if card?.kind == .done || card?.kind == .failed { self.updateWatching = false }
+            }
+        }.resume()
+    }
+
+    /// Your answer on the update card: only this updates anything.
+    func updateChoose(_ action: String) {
+        switch action {
+        case "allow", "deny", "later", "ok":
+            updateCard = nil
+            post("/ox/update", ["action": action]) { _ in }
+        case "apply":
+            updateWatching = true
+            updateCard = UpdateCard(kind: .working, title: "Checking the update", detail: "Checked before anything: ox's own GitHub, a fast-forward, the new code loads.")
+            post("/ox/update", ["action": "apply"]) { [weak self] _ in DispatchQueue.main.async { self?.updatePolledAt = .distantPast } }
+        case "whatsnew":
+            if let url = URL(string: "https://github.com/SAI141003/ox/commits/main") { NSWorkspace.shared.open(url) }
+        default:
+            updateCard = nil
+        }
+        IslandLog.write("update choice: \(action)")
+    }
+
     /// Your choice on an alert: only this runs anything, and only what it names.
     func meshChoose(_ alert: MeshAlert, _ option: MeshOption) {
         var o: [String: Any] = ["label": option.label, "action": option.action]
@@ -619,6 +683,7 @@ final class OxBridge: ObservableObject {
         pollGauges(port: port)
         pollOrg(port: port)
         pollMesh(port: port)
+        pollUpdate(port: port)
         pollDay(port: port)
         appPolling = true
         var req = URLRequest(url: url)
