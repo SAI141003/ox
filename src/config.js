@@ -330,6 +330,8 @@ export function loadConfig(overrides = {}) {
   // G1: auxiliary bot for cheap calls (compaction summarizer, goal verifier,
   // max-mode planning/judge). Flag/env/file precedence like the main model.
   const auxBot = firstDefined(ov.auxBot ?? ov.aux_bot, env.OX_AUX_BOT, file.aux_bot ?? file.auxBot) ?? null;
+  // A stronger model to move to once when a run is stuck (src/agent.js escalateNow).
+  const escalateBot = firstDefined(ov.escalateBot ?? ov.escalate_bot, env.OX_ESCALATE_BOT, file.escalate_bot ?? file.escalateBot) ?? null;
 
   // Model routing strategy (pinned | cost | quality | fast). Default: cost.
   const routingRaw = firstDefined(ov.routingStrategy ?? ov.routing_strategy, env.OX_ROUTING, file.routing_strategy ?? file.routingStrategy);
@@ -531,6 +533,7 @@ export function loadConfig(overrides = {}) {
     maxMode,
     maxCostUsd,
     auxBot,
+    escalateBot,
     routingStrategy,
     modelWindow,
     compactAt,

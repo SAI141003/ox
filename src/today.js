@@ -81,6 +81,16 @@ export function compose({ events = null, unread = null, tasks = [], agents = [],
   return { needsYou, changed, schedule, ready, text };
 }
 
+/** The brief as a few sentences to say out loud. */
+export function spoken(b) {
+  const parts = [];
+  if (b.schedule?.length) parts.push(`Today: ${b.schedule.slice(0, 3).join('; ')}${b.schedule.length > 3 ? `, and ${b.schedule.length - 3} more` : ''}.`);
+  parts.push(b.needsYou.length ? `Needs you: ${b.needsYou.slice(0, 3).join('; ')}.` : 'Nothing is waiting for you.');
+  if (b.changed.length) parts.push(`Since yesterday: ${b.changed.slice(0, 2).join('; ')}.`);
+  if (b.ready.length) parts.push(`Ready: ${b.ready.slice(0, 2).join('; ')}.`);
+  return parts.join(' ');
+}
+
 /** Everything, from this Mac. */
 export async function brief({ home = os.homedir() } = {}) {
   const [{ listTasks }, A, AP, B] = await Promise.all([import('./tasks.js'), import('./agents-live.js'), import('./app-api.js'), import('./brain.js')]);

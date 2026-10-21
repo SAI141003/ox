@@ -1506,6 +1506,12 @@ export async function voiceTurn(body) {
   // Ada until "hang up" or ten quiet minutes.
   const call = await callRoute(text, body);
   if (call) return { route: 'call', handled: true, ok: true, say: call.say, agent: call.agent, ended: call.ended ?? false, ...(call.task ? { task: call.task.id } : {}), ms: Date.now() - started };
+  // "Good morning", "what's my day", "morning brief": the brief (src/today.js), said short.
+  if (/^(?:(?:good )?morning(?: ox)?|(?:my |the )?(?:morning )?brief(?:ing)?|what(?:'s| is) (?:my day|on today|today look like)|what needs me(?: today)?|what changed (?:since yesterday|overnight))[.!?]*$/i.test(text)) {
+    const T = await import('./today.js');
+    const b = await T.brief();
+    return { route: 'offline', handled: true, ok: true, say: T.spoken(b), brief: b, ms: Date.now() - started };
+  }
   const { doOffline } = await import('./offline.js');
   const done = doOffline(text, { dryRun: body?.dryRun === true });
   if (done.handled) return { route: 'offline', handled: true, ok: done.ok !== false, say: done.message, ms: Date.now() - started };

@@ -7,6 +7,7 @@ import { buildSystemPrompt, renderContractBlock } from './system-prompt.js';
 import { harvestEvidence, mergeGoalTodos, progressSignature, proveGoalItems, renderGoalBlock } from './goal.js';
 import { listToolSchemas, dispatchTool, pruneToolSchemas, narrowToolSchemas } from './tools/index.js';
 import { LOAD_TOOLS_SCHEMA } from './tools/load-tools.js';
+import { resolveBot } from './bots.js';
 
 // The tool offer each session settled on (names, in order), so every message
 // of a session sends the same tool list and keeps the prompt cache warm.
@@ -1093,6 +1094,23 @@ async function* runAgentLoop(opts = {}) {
   // the rest of THIS TURN only (the next runAgent invocation restores the
   // primary). Max ONE bounce per turn.
   let activeTarget = target;
+  // Start cheap, move up when stuck (SWE-Router's idea, on ox's own stuck
+  // signals): a run that loops on the same call or fails the same target twice
+  // switches once to config.escalateBot / OX_ESCALATE_BOT, and says so.
+  let escalated = false;
+  const escalateNow = (reason) => {
+    if (escalated) return null;
+    const spec = config?.escalateBot ?? process.env.OX_ESCALATE_BOT;
+    if (!spec) return null;
+    let to;
+    try { to = resolveBot(String(spec), config); } catch { return null; }
+    if (!to || (to.model && to.model === activeTarget?.model && to.provider === activeTarget?.provider)) return null;
+    escalated = true;
+    const from = activeTarget;
+    activeTarget = to;
+    toolCtx.activeTarget = activeTarget;
+    return modelSwitchEvent({ from: targetLabel(from), to: targetLabel(to), reason, kind: 'escalate', cost: classifyTargetCost(to) });
+  };
   let bouncedThisTurn = false;
   // The `critique` tool resolves a critic model and REFUSES one that matches the
   // model driving this session. It reads the live target off the tool ctx, so it
@@ -2097,6 +2115,7 @@ async function* runAgentLoop(opts = {}) {
         neutral = true;
       } else if (doomCount >= 3) {
         yield { type: 'doom-loop', key: doomKey, count: doomCount };
+        { const up = escalateNow('stuck: the same call three times in a row'); if (up) yield up; }
         const dref = recordDecision({
           session: toolCtx.sessionId,
           tool: name,
@@ -2285,6 +2304,8 @@ async function* runAgentLoop(opts = {}) {
         let g = `Previous attempt failed: ${truncate(content || 'unknown error', 400)}. Write a 1-3 sentence diagnosis, then RETRY WITH A DIFFERENT APPROACH.`;
         if (count >= 2) {
           g += ' This exact target failed twice — change strategy fundamentally or stop and report.';
+          const up = escalateNow('stuck: the same target failed twice');
+          if (up) yield up;
         }
         guidance = g;
         guidanceKey = key;
