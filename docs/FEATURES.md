@@ -5,7 +5,7 @@ The working list. Each feature: what it does, how it was checked, its state.
 **✗** broken or missing · **?** not tested yet. Nothing is ✓ without a run.
 Work goes top to bottom through the ~, ✗ and ? rows, each one: test, fix, test again.
 
-Updated October 20 2026.
+Updated October 21 2026.
 
 ## 1. Connections and models
 
@@ -58,6 +58,9 @@ Updated October 20 2026.
 | 4.3 | A bot answers to its name | ✓ | "I am the critic, reviewing diffs…" |
 | 4.4 | Group chat (bots check each other) | ~ | Fixed the empty second answer (the history ended on another bot's turn): skeptic now answers and responds to optimist. Open: the screen switched to an older chat while it answered |
 | 4.5 | Subagents checking each other's progress | ~ | agent_status + mailbox for terminal runs; the app's live view is the Office (11.12). Terminal runs are not on it yet |
+| 4.6 | One undo for files and chat | ✓ | /undo, `ox undo [--list]`, and "Undo this turn" in the app put back exactly the last turn's file changes (edits restored, new files removed) and drop the exchange; a file changed again since is left alone (test/undo.test.js) |
+| 4.7 | `ox fix "<bug>"`: a failing test first, then the fix, then proof | ✓ | ox runs the test itself: it must fail before and pass after, and the test file must not change during the fix; then the project's tests (test/fix.test.js, including a "fix" that edits the test, refused) |
+| 4.8 | Keep the agent out of secrets (.oxignore) | ✓ | read/write/edit refuse .env, keys and credential files by default, grep skips them; a project's .oxignore adds more, "!" re-allows (test/oxignore.test.js) |
 
 ## 5. Memory
 
@@ -85,6 +88,7 @@ Updated October 20 2026.
 | 7.3a | Animate a script (Flick-style) | ✓ | Video, transcript or script → scene plan → 7 animated templates with sound effects; 3-scene 12.5 s video from the Studio page; `ox video animate`, redo one scene, save a look |
 | 7.3b | Restyle a video (Genjutsu-style: move, swap, new look) | ~ | Routed to open Wan 2.2 Animate / VACE on fal; not run here (no fal key) |
 | 7.3c | Settings after OpenCode: activity detail, changed files, what's new, Notifications, Projects, Worktrees, Models, Extensions, Server, Providers with a Connect dialog | ✓ | Every page opened in the app; changed files and the compact fold drawn; Connect dialog lands on the filtered key |
+| 7.3d | Studio for developers: app icon sets, store screenshots, a demo video; prices before a paid run | ✓ | `ox studio icons|shots|demo` and the app_assets tool: 32 icon files (iOS set, .icns, Android, web), App Store and Play sizes, a 1080x1920 demo, all local; fal's listed price on each hosted card, asked before a paid run |
 | 7.4 | Marketplace | ✓ | 329 plugins, 30 GitHub skills listed |
 | 7.5 | Messaging (Telegram, Discord) | ~ | Setup shown; not paired here |
 | 7.6 | Scheduled runs | ✓ | Create in words, pause, resume; no edit, delete or history yet |
@@ -107,7 +111,7 @@ Updated October 20 2026.
 | 8.7 | Service cards: Stripe payments today, Vercel, GitHub (video 4) | ✗ | |
 | 8.8 | Wake word ("OK ox") (video 4) | ✗ | |
 | 8.9 | Agent question cards with option chips; live view of the file being read (video 5) | ✗ | Approvals with Allow / Deny work |
-| 8.10 | Approvals on the phone lock screen (Live Activity) (video 5) | ~ | Telegram buttons, no Live Activity |
+| 8.10 | Approvals on the phone lock screen (Live Activity) (video 5) | ~ | Built: the iPhone companion (desktop/ios) shows approvals in the app and as a Live Activity on the lock screen, over your own network; Telegram buttons as the backup. Not yet run on a physical iPhone here |
 | 8.11 | Now-playing music card; read Reminders (Pixie, video 7) | ✗ | Can open apps only |
 | 8.12 | Draw on the screen to explain (Pixie, video 7) | ✗ | |
 | 8.13 | Personal dictionary for dictation; call notes with speakers and to-dos (Coucou screenshot) | ✗ | Hold-to-talk dictation exists |
@@ -116,7 +120,7 @@ Updated October 20 2026.
 
 | # | Feature | State | Evidence / gap |
 |---|---|---|---|
-| 10.1 | Slack: work from Slack (Reason, video 6) | ✗ | Telegram and Discord only |
+| 10.1 | Slack: work from Slack (Reason, video 6) | ~ | Built (src/slack-gateway.js), like Telegram and Discord; not paired to a workspace here |
 | 10.2 | Your computers in sync (Reason, video 6) | ✗ | |
 | 10.3 | Live graph of agents talking (Reason, video 6) | ✗ | Group chat shows it as a thread |
 | 10.4 | Interactive breakdowns like ChatGPT's debt simulator (video 3) | ✓ | OpenUI Lang: sliders, live maths, Progress, deltas, @Reset |
@@ -151,7 +155,7 @@ Updated October 20 2026.
 | # | Feature | State | Note |
 |---|---|---|---|
 | 12.1 | OX Island upgrade from the Coucou repo and the Pixie video (section 8) | ~ | Started: natural voice (8.14) and the app's runs on the island (8.15) built; the cards in 8.4-8.13 are next |
-| 12.2 | ox's own automations (n8n-style flows), no n8n needed | ✗ | Scheduled runs exist (7.6); no flow builder |
+| 12.2 | ox's own automations (n8n-style flows), no n8n needed | ✓ | Flows (src/flows.js): triggers (manual, schedule, webhook) and steps; drafted from a sentence; five ready-made starters ran end to end against the live services |
 | 12.3 | Marketplace with every skill (Karpathy's; languages and stacks: Java, Python, Go, Spring, SQL Server, Postgres, Oracle, MongoDB, Redis, React, Angular, Azure, AWS, GCP, Docker, Kubernetes, Kafka, gRPC, GraphQL, Terraform…; markets, finance, other professions) | ~ | 329 plugins, 30 GitHub skills listed (7.4); far from everything |
 | 12.4 | ox's own deep learning (Andrew Ng's course ideas) | ✗ | To be scoped: what it should learn, from what data |
 | 12.6 | ox evolve: ox improves ox, kept only when measured better | ✓ | Wired as ox evolve list, failures, diff, accept, reject; its test found crash recording had never saved anything (fixed). A full attempt has not been run yet |
@@ -175,7 +179,7 @@ Updated October 20 2026.
 | 13.12 | Errands from one sentence with suggestion chips: cancel a subscription, track a package, book a plumber (Wajo, image) | Mail, browser and operator tools; scheduled runs | ~ no errand chips; no phone calls |
 | 13.13 | /anatomy: an interactive drawing that explains how a machine works (skill, image) | OpenUI answers draw SVG and sliders | ~ no ready-made skill |
 | 13.14 | A teammate with its own cloud computer (Sauna, image; Devin) | Runs on your Mac; the daemon keeps schedules | ✗ no cloud machine |
-| 13.15 | Devin: works in its own sandbox from a ticket, plans, opens pull requests, answers in Slack, Jira, Linear, wiki of the codebase, playbooks, many in parallel | Plans, modes, subagents, task board, playbooks (procedural memory), Telegram/Discord; GitHub through the gh CLI and MCP | ~ no Slack, Jira or Linear; no PR flow; no codebase wiki |
+| 13.15 | Devin: works in its own sandbox from a ticket, plans, opens pull requests, answers in Slack, Jira, Linear, wiki of the codebase, playbooks, many in parallel | Plans, modes, subagents, task board, playbooks (procedural memory), Telegram/Discord; GitHub through the gh CLI and MCP | ~ Slack built (not paired here); `ox pr` opens and fixes pull requests; `ox wiki` writes the codebase wiki; no Jira or Linear |
 
 ## 9. Reliability
 

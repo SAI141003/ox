@@ -1,9 +1,10 @@
 # ox
 
-**A coding agent that checks its own work.** Terminal, desktop app and a voice
-assistant in your Mac's notch. It runs on the AI you already pay for (Claude,
-ChatGPT, Cursor) or any API key or local model, with no dependencies, no
-account and no telemetry.
+**The coding agent that proves its work, on any model.** It writes a failing
+test before the fix, runs it again after, and shows you the result. Terminal,
+desktop app and a voice assistant in your Mac's notch. It runs on your ChatGPT
+plan, any API key (Claude through an Anthropic key) or a model on your own
+machine, with no dependencies, no account and no telemetry.
 
 ![ox answering with an interactive chart](assets/screenshots/chat-interactive-chart.png)
 
@@ -28,9 +29,21 @@ see `bench/h2h/RESULTS.md`), and the public benchmarks
 
 **Mac app** (Apple Silicon): download `ox-mac-arm64.zip` from
 [Releases](https://github.com/SAI141003/ox/releases), unzip, drag **OX** to
-Applications. It brings its own runtime; nothing else to install. The app is
-not notarized by Apple yet: the first time, right-click **OX** › Open (or
-System Settings › Privacy & Security › Open Anyway).
+Applications. It brings its own runtime; nothing else to install.
+
+The app is not notarized by Apple yet, so macOS blocks the first open. On macOS
+Sequoia 15.1 and later the right-click › Open trick no longer works (the warning
+only offers "Move to Trash"). Instead:
+
+1. Open **OX** once and close the warning (choose Done, not Move to Trash).
+2. Open **System Settings › Privacy & Security**, scroll to "OX was blocked",
+   and press **Open Anyway**, then confirm with your password or Touch ID.
+
+Or, in Terminal, clear the download flag once (it only affects this app):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OX.app
+```
 
 **Terminal** (macOS, Linux, Windows; Node 18 or later):
 
@@ -55,7 +68,8 @@ you ([how ox connects to each provider](docs/PROVIDER_ACCESS.md)).
 
 **Windows**: the same commands in PowerShell, or `ox-windows-x64.zip` from
 [Releases](https://github.com/SAI141003/ox/releases) (`ox.cmd` for the terminal,
-`OX.vbs` for the app window). The notch island is macOS only.
+`OX.vbs` for the app window). On Windows the island is a bar at the top of the
+screen (hold Ctrl+Alt+Space to talk).
 
 ## What's inside
 
@@ -64,6 +78,10 @@ you ([how ox connects to each provider](docs/PROVIDER_ACCESS.md)).
 - **Agent** with modes (ask, plan, code, orchestrate), approvals for every
   write and command, subagents that delegate and report back, a task board,
   memory that persists across sessions, and goals that refuse "done" until proven.
+- **`ox fix "<bug>"`**: a test that fails because of the bug, then the fix, then
+  the same test passing, all run by ox itself, not taken on the model's word.
+  **`/undo`** takes back the last turn's file changes and the exchange in one go,
+  and the agent stays out of `.env`, keys and anything you list in `.oxignore`.
 - **`ox transfer`**: move a whole session between Claude Code, Codex, Hermes, ox, Gemini CLI, Cursor and Paperclip. Other tools' files are only read, never written; the target starts on a handoff (or resumes its own session).
 - **`ox graph`**: the code as a graph (functions, classes, imports, calls, each link marked as read or inferred) you and the agent query instead of grepping: `explain`, `path`, `query`, a report and a clickable page. No model, under a second on ox itself.
 - **Interactive answers**: calculators, charts, tables and forms drawn in the
