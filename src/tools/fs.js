@@ -4,6 +4,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { redactSecrets } from '../memory.js';
 import { secretMatch } from '../oxignore.js';
+import { recordBefore, recordAfter } from '../undo.js';
 
 const MAX_READ_CHARS = 100_000;
 const MAX_LIST_ENTRIES = 500;
@@ -109,6 +110,7 @@ function ok(content) {
 function touched(result, p, ctx) {
   // The run's list of files it changed: the security check reads it (agent.js).
   try { ctx?.writtenFiles?.add?.(p); } catch {}
+  recordAfter(p, ctx); // what the turn left, so /undo notices later edits (src/undo.js)
   return { ...result, filesTouched: [displayPath(p, ctx)] };
 }
 
@@ -614,7 +616,7 @@ export async function writeFileTool(args = {}, ctx = {}) {
   try {
     if (existed && previous !== null) await backupExistingFile(p, ctx);
     await fsp.mkdir(path.dirname(p), { recursive: true });
-    await fsp.writeFile(p, content, 'utf8');
+    recordBefore(p, ctx); await fsp.writeFile(p, content, 'utf8');
   } catch (e) {
     return err(`write_file: failed to write ${p} — ${e?.message ?? e}`);
   }
@@ -668,7 +670,7 @@ export async function editFileTool(args = {}, ctx = {}) {
     );
     try {
       await ensureBackup();
-      await fsp.writeFile(p, updated, 'utf8');
+      recordBefore(p, ctx); await fsp.writeFile(p, updated, 'utf8');
     } catch (e) {
       return err(`edit_file: failed to write ${p} — ${e?.message ?? e}`);
     }
@@ -708,7 +710,7 @@ export async function editFileTool(args = {}, ctx = {}) {
     }
     try {
       await ensureBackup();
-      await fsp.writeFile(p, updatedNorm, 'utf8');
+      recordBefore(p, ctx); await fsp.writeFile(p, updatedNorm, 'utf8');
     } catch (e) {
       return err(`edit_file: failed to write ${p} — ${e?.message ?? e}`);
     }
@@ -736,7 +738,7 @@ export async function editFileTool(args = {}, ctx = {}) {
   updated += src.slice(last);
   try {
     await ensureBackup();
-    await fsp.writeFile(p, updated, 'utf8');
+    recordBefore(p, ctx); await fsp.writeFile(p, updated, 'utf8');
   } catch (e) {
     return err(`edit_file: failed to write ${p} — ${e?.message ?? e}`);
   }

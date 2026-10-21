@@ -1520,7 +1520,8 @@
       steps = `<details class="steps-fold"><summary>${tools.length} step${tools.length === 1 ? '' : 's'}${okN ? ` · ${okN} done` : ''}${errN ? ` · ${errN} failed` : ''}${runN ? ' · working…' : ''}</summary>${steps}</details>`;
     }
     const changed = prefs.changedFiles !== false && !msg.pending ? [...new Set(tools.filter((t) => t.state === 'ok').flatMap((t) => [...(t.file ? [t.file] : []), ...(t.files ?? [])]))] : [];
-    const changedHtml = changed.length ? `<div class="changed"><div class="cap">Changed ${changed.length} file${changed.length === 1 ? '' : 's'}</div>${changed.map((f) => `<div class="mono small">${esc(f)}</div>`).join('')}</div>` : '';
+    const lastReply = convo()?.messages?.at(-1) === msg;
+    const changedHtml = changed.length ? `<div class="changed"><div class="cap" style="display:flex;align-items:center">Changed ${changed.length} file${changed.length === 1 ? '' : 's'}<span style="flex:1"></span>${lastReply && !msg.undone ? '<button class="btn ghost" data-undo-turn style="padding:2px 10px;font-size:12px">Undo this turn</button>' : msg.undone ? '<span class="small muted">undone</span>' : ''}</div>${changed.map((f) => `<div class="mono small">${esc(f)}</div>`).join('')}</div>` : '';
     msg.key ??= `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     const text = msg.content ? md(msg.content, msg.key) : (msg.pending ? '<span class="typing"><i></i><i></i><i></i></span>' : '');
     const routed = (msg.compare ? `<span class="botname">${esc(msg.compare)}</span>` : '') + (msg.bot ? `<span class="botname">${esc(msg.bot)}</span>` : '') + (msg.routed ? `<span class="routed">${icon('mode')}${esc(msg.routed)}</span>` : '');
@@ -1545,6 +1546,18 @@
         .catch((e) => { if (a) a.state = 'deny'; paint(body, msg); toast(plainDash(e.message)); });
     }));
     mountLive(body); bindUi(body); bindOpenUI(body);
+    // One undo: the turn's file changes go back and the exchange leaves the chat.
+    const ub = body.querySelector('[data-undo-turn]');
+    if (ub) ub.onclick = async () => {
+      ub.disabled = true;
+      try {
+        const r = await postJson('/ox/undo', {});
+        toast(r.message);
+        const c = convo();
+        if (c && !r.none) { const i = c.messages.map((m) => m.role).lastIndexOf('user'); if (i >= 0) c.messages = c.messages.slice(0, i); saveConvos(); renderChat(); }
+        else ub.disabled = false;
+      } catch (e) { toast(e.message); ub.disabled = false; }
+    };
     const m = body.closest('.msg');
     m.dataset.text = msg.content || '';
     const meta = m.querySelector('.mt-meta');

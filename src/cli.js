@@ -211,7 +211,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -334,6 +334,7 @@ export function slashHelp(arg = '') {
     row('/context', 'what fills the context window'),
     row('/compact', 'summarize older history'),
     row('/clear', 'start fresh (the session file is kept)'),
+    row('/undo', 'take back the last turn: its file changes and the exchange'),
     c.bold('Goals and agents'),
     row('/goal <text>', 'a goal ox keeps working toward and proves'),
     row('/agents', 'live subagents: cancel or steer them'),
@@ -4976,6 +4977,36 @@ async function runSubcommand(cmd, args) {
       console.log((await (await import('./today.js')).brief()).text);
       return;
     }
+    case 'fix': {
+      // ox fix "<the bug>" [--no-suite]: a failing test first, then the fix, then proof (src/fix.js).
+      const F = await import('./fix.js');
+      const bug = args.filter((a) => !a.startsWith('--')).join(' ');
+      const { runOxTask } = await import('./dev-flow.js');
+      const ask = async (prompt) => { const r = await runOxTask(process.cwd(), prompt, ['--yes-edits']); return r.output; };
+      try {
+        const r = await F.fixBug(bug, { cwd: process.cwd(), ask, suite: args.includes('--no-suite') ? null : F.projectSuite(process.cwd()), onStep: (what, d) => console.log(c.dim(`${what}: ${d}`)) });
+        if (r.file) console.log(c.dim(`test: ${r.file}  ·  ${r.test}`));
+        if (r.before) console.log(c.dim(`before the fix: ${r.before.pass ? 'passed' : `failed (exit ${r.before.code})`}`));
+        if (r.after) console.log(c.dim(`after the fix:  ${r.after.pass ? 'passes' : `fails (exit ${r.after.code})`}`));
+        console.log(r.ok ? `${c.green('✓')} ${r.message}` : `${c.red('✗')} ${r.message}${r.stage === 'prove' || r.stage === 'fix' ? c.dim('  (ox undo puts the code back)') : ''}`);
+        if (!r.ok) process.exitCode = 1;
+      } catch (e) { console.error(c.red(e.message)); process.exitCode = 3; }
+      return;
+    }
+    case 'undo': {
+      // ox undo [--list | <turn>]: put back what the last turn changed in this folder (src/undo.js).
+      const U = await import('./undo.js');
+      if (args.includes('--list')) {
+        const turns = U.undoableTurns(process.cwd());
+        if (!turns.length) { console.log(c.dim('nothing to undo here')); return; }
+        for (const t of turns.slice(0, 10)) console.log(`${t.turn}  ${c.dim(new Date(t.at).toLocaleString())}  ${t.files.join(', ')}`);
+        return;
+      }
+      const r = U.undoTurn(process.cwd(), args.find((a) => !a.startsWith('--')) ?? null);
+      console.log(`${r.none ? c.dim('↶') : c.green('↶')} ${U.describe(r)}`);
+      if (r.skipped?.length) process.exitCode = 1;
+      return;
+    }
     case 'brain': {
       // ox brain: notes as markdown (opens in Obsidian) + a rebuildable search index (src/brain.js).
       // The research reports (ox brain research | gaps | synthesize) live in the older handler.
@@ -7668,6 +7699,16 @@ async function replWithBudget(config, opts, flags, budget) {
         messages = [];
         console.log(c.dim('context cleared (session file kept)'));
         return;
+      case '/undo': {
+        // One undo for files and chat (src/undo.js): the last turn's file changes
+        // go back, and that exchange leaves the conversation.
+        const U = await import('./undo.js');
+        const r = U.undoTurn(process.cwd());
+        const lastUser = messages.map((m) => m?.role).lastIndexOf('user');
+        if (lastUser >= 0) messages = messages.slice(0, lastUser);
+        console.log(`${r.none ? c.dim('↶') : c.green('↶')} ${U.describe(r)}${lastUser >= 0 ? c.dim(' · the last exchange left the chat') : ''}`);
+        return;
+      }
       case '/mode': {
         const want = rest.trim().toLowerCase();
         if (!want) {

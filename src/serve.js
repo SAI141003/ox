@@ -2127,6 +2127,12 @@ const ROUTES = [
     if (job) return { text: await studioOpen.call('jobs_wait', { ids: [job], timeout_seconds: 600 }) };
     return { text };
   }) },
+  // One undo for files and chat (src/undo.js): the newest turn's file changes go back.
+  { method: 'POST', pattern: /^\/ox\/undo\/?$/, handler: appRoute(async () => {
+    const U = await import('./undo.js');
+    const r = U.undoTurn(process.cwd());
+    return { ...r, message: U.describe(r) };
+  }) },
   // Settings › Projects, Worktrees, Server, What's new.
   { method: 'GET', pattern: /^\/ox\/workspace\/?$/, handler: appRoute(async (_b, _m, req) => {
     const A = await appApi();
