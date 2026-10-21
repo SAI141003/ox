@@ -40,16 +40,25 @@ test("a project's own instructions still come after yours (they win a conflict)"
   await api.saveInstructions('');
 });
 
-test('connectors: add a local or remote MCP server, list it, remove it; bad input is refused', async () => {
+test('connectors: add a local or remote MCP server, show and save its permission, remove it; bad input is refused', async () => {
   let list = await api.saveConnector({ name: 'github', command: 'npx', args: '-y @modelcontextprotocol/server-github' });
-  assert.deepEqual(list, [{ name: 'github', kind: 'stdio', target: 'npx -y @modelcontextprotocol/server-github', env: [] }]);
+  assert.deepEqual(list, [{ name: 'github', kind: 'stdio', target: 'npx -y @modelcontextprotocol/server-github', env: [], policy: 'ask' }]);
   list = await api.saveConnector({ name: 'remote', url: 'https://example.com/mcp' });
   assert.equal(list.find((c) => c.name === 'remote').kind, 'http');
+  assert.equal(list.find((c) => c.name === 'remote').policy, 'ask');
+  list = await api.saveConnector({ name: 'github', action: 'policy', policy: 'deny' });
+  assert.equal(list.find((c) => c.name === 'github').policy, 'deny');
+  list = await api.saveConnector({ name: 'github', action: 'policy', policy: 'allow' });
+  assert.equal(list.find((c) => c.name === 'github').policy, 'allow');
+  list = await api.saveConnector({ name: 'github', action: 'policy', policy: 'ask' });
+  assert.equal(list.find((c) => c.name === 'github').policy, 'ask', 'ask is the safe, explicit default');
   const doc = JSON.parse(fs.readFileSync(path.join(home, '.ox', 'config.json'), 'utf8'));
   assert.deepEqual(doc.mcpServers.github, { command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'] });
   await assert.rejects(api.saveConnector({ name: 'bad name!', command: 'x' }), /letters, numbers/);
   await assert.rejects(api.saveConnector({ name: 'x', url: 'ftp://nope' }), /http/);
   await assert.rejects(api.saveConnector({ name: 'x' }), /command .* or a URL/);
+  await assert.rejects(api.saveConnector({ name: 'github', action: 'policy', policy: 'unsafe' }), /permission/);
+  await assert.rejects(api.saveConnector({ name: 'missing', action: 'policy', policy: 'deny' }), /does not exist/);
   list = await api.saveConnector({ name: 'github', action: 'remove' });
   assert.deepEqual(list.map((c) => c.name), ['remote']);
 });
@@ -89,4 +98,13 @@ test('backup model: saved from Settings, and app chats get it as a fallback targ
   assert.match(serve, /fallback: \(doc\.fallback_bots \?\? doc\.fallbackBots \?\? \[\]\)\[0\]/);
   const html = fs.readFileSync(new URL('../src/web/chat.html', import.meta.url), 'utf8');
   assert.match(html, /row\('Backup model'/);
+});
+
+test('extensions settings shows each connector permission and a safe default', () => {
+  const html = fs.readFileSync(new URL('../src/web/chat.html', import.meta.url), 'utf8');
+  assert.match(html, /Safe by default:/);
+  assert.match(html, /Ask every call/);
+  assert.match(html, /Allow automatically/);
+  assert.match(html, /data-connector-policy/);
+  assert.match(html, /action: 'policy'/);
 });

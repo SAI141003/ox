@@ -4015,8 +4015,11 @@ files: [src/billing/**]
           return;
         }
         const C = await getJson('/ox/connectors');
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('blocks')}Extensions</div>${tabs}<p class="sdesc">MCP servers give ox more tools: GitHub, a database, Notion, your own. Every run can use them; each call asks first unless you allow that server. Ready-made ones are in the Marketplace.</p>
-          <div class="cards">${C.map((c) => `<div class="card"><span class="dot ok"></span><span class="t"><div class="n">${esc(c.name)}</div><div class="d mono"><span>${esc(c.kind)}</span><span>${esc(c.target)}</span></div></span><button class="btn ghost danger" data-con-rm="${esc(c.name)}">Remove</button></div>`).join('') || '<div class="box muted small">None yet.</div>'}</div>
+        const policyLabel = (p) => p === 'allow' ? 'Allowed automatically' : p === 'deny' ? 'Blocked' : 'Ask every call';
+        const policyNote = (p) => p === 'allow' ? 'This connector may act without asking. Choose this only for a server you trust.' : p === 'deny' ? 'Ox will not call this connector until you change it.' : 'Ox shows each tool call and its arguments before sharing data or acting.';
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('blocks')}Extensions</div>${tabs}<p class="sdesc">Connectors are MCP servers that add tools such as GitHub, a database, Notion, or your own service. Each connector has its own permission below. Ready-made ones are in the Marketplace.</p>
+          <div class="box small" style="margin:0 0 12px;line-height:1.5"><b>Safe by default:</b> a new connector is <b>Ask every call</b>. Ox shows the server, tool and arguments before it shares data or acts. <a href="#" id="ext-caps" style="color:var(--gold)">Inspect all installed capabilities</a>.</div>
+          <div class="cards">${C.map((c) => `<div class="card" style="align-items:flex-start"><span class="dot ${c.policy === 'deny' ? '' : c.policy === 'allow' ? 'warn' : 'ok'}" style="margin-top:7px"></span><span class="t"><div class="n">${esc(c.name)} <span class="badge">${esc(c.kind)}</span></div><div class="d mono"><span>${esc(c.target)}</span>${c.env?.length ? `<span>needs ${esc(c.env.join(', '))}</span>` : ''}</div><div class="small muted" style="margin-top:8px">${policyNote(c.policy)}</div><div class="seg" style="margin-top:9px" data-connector-policy="${esc(c.name)}"><button data-v="ask" class="${c.policy === 'ask' ? 'on' : ''}">Ask every call</button><button data-v="allow" class="${c.policy === 'allow' ? 'on' : ''}">Allow automatically</button><button data-v="deny" class="${c.policy === 'deny' ? 'on' : ''}">Block</button></div></span><span style="display:flex;flex-direction:column;align-items:flex-end;gap:8px"><span class="badge ${c.policy === 'ask' ? 'ok' : c.policy === 'allow' ? 'warn' : ''}">${policyLabel(c.policy)}</span><button class="btn ghost danger" data-con-rm="${esc(c.name)}">Remove</button></span></div>`).join('') || '<div class="box muted small">No connectors yet. Add a local or remote MCP server below.</div>'}</div>
           <div class="section-cap cap">Add one</div>
           <div class="box" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <label class="small muted">Name<input class="field" id="con-name" placeholder="github"></label>
@@ -4026,6 +4029,14 @@ files: [src/billing/**]
             <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center"><button class="btn primary" id="con-add">Add</button><span class="small muted" id="con-state"></span></div>
           </div>`;
         bindTabs();
+        $('ext-caps').onclick = (e) => { e.preventDefault(); closeSettings(); capsTab = 'mcp'; capsSel = null; show('caps'); renderCaps(); };
+        el.querySelectorAll('[data-connector-policy]').forEach((group) => group.querySelectorAll('button').forEach((b) => (b.onclick = async () => {
+          const name = group.dataset.connectorPolicy;
+          const policy = b.dataset.v;
+          if (policy === 'allow' && !(await askSure(`Allow ${name} to run its MCP tools without asking each time? It may read or act through that external service.`, 'Allow automatically'))) return;
+          b.disabled = true;
+          try { await postJson('/ox/connectors', { action: 'policy', name, policy }); toast(`${name}: ${policyLabel(policy)}`); renderSection(); } catch (e) { toast(e.message); b.disabled = false; }
+        })));
         $('con-add').onclick = async () => { try { await postJson('/ox/connectors', { name: $('con-name').value.trim(), command: $('con-cmd').value.trim(), args: $('con-args').value.trim(), url: $('con-url').value.trim() }); toast('Connector added: used from the next run'); renderSection(); } catch (e) { $('con-state').textContent = e.message; } };
         el.querySelectorAll('[data-con-rm]').forEach((b) => (b.onclick = async () => { try { await postJson('/ox/connectors', { action: 'remove', name: b.dataset.conRm }); toast('Connector removed'); renderSection(); } catch (e) { toast(e.message); } }));
       } else if (sec === 'data') {

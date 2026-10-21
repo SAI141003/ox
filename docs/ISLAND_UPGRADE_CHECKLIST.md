@@ -1,7 +1,7 @@
 # OX Island (and ox) upgrade checklist
 
-From the owner's videos and screenshots of October 16–17, 2026 and the latest
-Coucou (`Louis-CFM/coucou`, MIT code, main at `434d6a2`, Oct 16), checked
+From the owner's videos and screenshots of October 16–17, 2026 and Coucou
+(`Louis-CFM/coucou`, MIT code, release 0.5.2, Oct 20), checked
 against the island's own source. Coucou's name, mascot, art and sounds are
 reserved: its ideas and MIT code may be used, never its protected assets.
 

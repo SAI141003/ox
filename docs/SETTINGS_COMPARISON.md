@@ -1,6 +1,6 @@
 # ox Settings, side by side with ChatGPT, Claude and Hermes
 
-October 17, 2026. ox from its own app (checked page by page in a running copy);
+October 21, 2026. ox from its own app and its server-backed settings tests;
 Hermes from its real config on the owner's Mac (`~/.hermes/config.yaml`, 70+
 settings); ChatGPT and Claude from their help centres
 ([ChatGPT memory](https://help.openai.com/en/articles/8590148-memory-in-chatgpt),
@@ -19,7 +19,7 @@ settings); ChatGPT and Claude from their help centres
 | See what a key unlocks before using it | ✗ | ✗ | ✗ | ✓ Test lists its models (**new**) |
 | Use a plan you already pay for | — | — | ✗ | ✓ Claude, ChatGPT, Cursor and 13 more CLIs |
 | Custom / self-hosted endpoints | ✗ | ✗ | ✓ | ✓ with Test |
-| Fallback model when one fails | ✗ | ✗ | ✓ | ~ in config (`fallbackTargets`), not in the app yet |
+| Fallback model when one fails | ✗ | ✗ | ✓ | ✓ Default model › Backup model; the switch is disclosed in the run |
 | Prompt caching | automatic | automatic | ✓ toggle | ✓ automatic (**new**), `OX_PROMPT_CACHE=0` off |
 | **You** | | | | |
 | Custom instructions / how to respond | ✓ | ✓ | ✓ (SOUL.md) | ✓ **Instructions** page, every chat, terminal and plans (**new**) |
@@ -27,10 +27,10 @@ settings); ChatGPT and Claude from their help centres
 | Temporary / incognito chats | ✓ | ✓ | ~ | ✓ |
 | Name it | ✗ | ✗ | ✗ | ✓ (and the voice wake word follows) |
 | **Tools** | | | | |
-| Connectors (MCP servers) | ✓ apps | ✓ | ✓ | ✓ **Connectors** page (**new**); Marketplace of 1,129 |
+| Connectors (MCP servers) | ✓ apps | ✓ | ✓ | ✓ **Extensions** page: every server shows its transport, target, required environment names and real `Ask / Allow / Block` policy |
 | Web search provider | built in | built in | ✓ | ✓ keyless, or Tavily / Brave / Serper / Marginalia keys (**new** on the page) |
 | Images and video | ✓ | ✗ | ✓ | ✓ fal, Higgsfield, OpenAI, Gemini |
-| Approvals / permissions | ✗ | ~ | ✓ allowlist | ✓ modes and approvals; command allowlist in config only |
+| Approvals / permissions | ✗ | ~ | ✓ allowlist | ✓ modes and approvals; every connector defaults to **Ask every call**, and an explicit confirmation is required before changing it to Allow automatically |
 | Scheduled tasks | ✓ | ✗ | ✓ cron | ✓ Scheduled page |
 | **Looks and voice** | | | | |
 | Theme, text size | ✓ | ✓ | ✓ | ✓ plus width and motion |
@@ -66,4 +66,21 @@ settings); ChatGPT and Claude from their help centres
 
 1. **App language**: ChatGPT and Claude have one; ox is English only.
 2. **Messaging**: Hermes reaches Mattermost and Matrix; ox does not.
-3. **Fallback model and command allowlist** exist in config but not in the app.
+3. **Command allowlist editor** remains configuration-only. Ox deliberately does
+   not expose a broad "run anything" switch in the app.
+
+## Connector safety, verified against the real MCP model
+
+The Extensions page now makes the runtime rule visible rather than describing
+permissions in prose only:
+
+- **Ask every call** is the default and has no hidden configuration entry.
+- **Allow automatically** is a deliberate, confirmed global trust decision.
+- **Block** fails closed: the connector stays configured but cannot be called.
+
+This mirrors the important boundary in the official MCP guidance: an MCP
+server is an external service that receives tool arguments, so consent and
+inspection must happen before data is shared. Skills are shown separately
+because they are reusable workflow instructions, not external services or
+credentials. See [OpenAI's MCP server guide](https://developers.openai.com/api/docs/guides/tools-connectors-mcp)
+and [skills guide](https://developers.openai.com/plugins/concepts/skills).

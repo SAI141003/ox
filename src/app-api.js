@@ -161,14 +161,37 @@ export async function saveInstructions(text, env = process.env) {
 const CONNECTOR_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,40}$/;
 export async function connectorsView() {
   const { readConfigDoc } = await import('./config.js');
-  const servers = readConfigDoc().mcpServers ?? {};
-  return Object.entries(servers).map(([name, s]) => ({ name, kind: s?.url ? 'http' : 'stdio', target: s?.url ?? [s?.command, ...(s?.args ?? [])].filter(Boolean).join(' '), env: Object.keys(s?.env ?? {}) }));
+  const doc = readConfigDoc();
+  const servers = doc.mcpServers ?? {};
+  const policy = doc.mcpPolicy && typeof doc.mcpPolicy === 'object' ? doc.mcpPolicy : {};
+  return Object.entries(servers).map(([name, s]) => ({
+    name,
+    kind: s?.url ? 'http' : 'stdio',
+    target: s?.url ?? [s?.command, ...(s?.args ?? [])].filter(Boolean).join(' '),
+    env: Object.keys(s?.env ?? {}),
+    // No entry means the runtime asks.  Expose that explicitly instead of
+    // making a missing configuration look like an undocumented permission.
+    policy: ['ask', 'allow', 'deny'].includes(policy[name]) ? policy[name] : 'ask',
+  }));
 }
 export async function saveConnector(body = {}) {
-  const { saveConfigDoc } = await import('./config.js');
+  const { saveConfigDoc, readConfigDoc } = await import('./config.js');
   const name = String(body.name ?? '').trim();
   if (!CONNECTOR_NAME.test(name)) throw new Error('name: letters, numbers, - and _ (up to 40)');
   if (body.action === 'remove') { saveConfigDoc((doc) => { if (doc.mcpServers) delete doc.mcpServers[name]; }); return connectorsView(); }
+  if (body.action === 'policy') {
+    const policy = String(body.policy ?? '').toLowerCase();
+    if (!['ask', 'allow', 'deny'].includes(policy)) throw new Error('permission must be ask, allow or deny');
+    const configured = readConfigDoc().mcpServers ?? {};
+    if (!Object.prototype.hasOwnProperty.call(configured, name)) throw new Error(`connector '${name}' does not exist`);
+    saveConfigDoc((doc) => {
+      const next = { ...(doc.mcpPolicy ?? {}) };
+      if (policy === 'ask') delete next[name];
+      else next[name] = policy;
+      doc.mcpPolicy = next;
+    });
+    return connectorsView();
+  }
   let def;
   const url = String(body.url ?? '').trim();
   if (url) {
