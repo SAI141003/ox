@@ -757,3 +757,20 @@ inspection, debugger controls, evidence-bundle operations, and process capture. 
 proves initialization and enumeration, not that every operation is safe or usable
 without its required target/artifact; write-risk tools remain gated by Ox's approval
 policy.
+
+## Current full regression gate after benchmark-cost fixes — 2026-10-23
+
+`OX_SKIP_REPO_GUARD=1 npm test` completed successfully against the current checkout:
+
+| result | count |
+|---|---:|
+| passed | 2,235 |
+| failed | 0 |
+| skipped | 257 |
+| total | 2,492 |
+
+The run took **222.96 s**. This is the current repository regression baseline after
+the benchmark cost-integrity change. The skipped tests are intentionally conditional
+or environment-dependent; they are not counted as passes. The run emitted expected
+local-model context-window warnings from tests that intentionally exercise truncated
+context handling, with no test failures.
