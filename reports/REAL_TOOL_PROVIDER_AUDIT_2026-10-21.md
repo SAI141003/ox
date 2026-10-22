@@ -774,3 +774,26 @@ the benchmark cost-integrity change. The skipped tests are intentionally conditi
 or environment-dependent; they are not counted as passes. The run emitted expected
 local-model context-window warnings from tests that intentionally exercise truncated
 context handling, with no test failures.
+
+## Current live capability and update snapshot — 2026-10-23
+
+A fresh read-only `ox doctor --json` probe confirms the local machine still has
+Ollama 0.40.8, one configured MCP server (`rea`, write-risk, 200 tools), 153
+discovered skills, and working keyless routes for Marginalia search (533 ms),
+Wikipedia fallback search (519 ms), direct fetch (140 ms), and Jina Reader fallback
+(213 ms). The probe also confirms NVIDIA and OpenRouter key presence, but key
+presence is not treated as authenticated inference readiness; optional providers
+without keys remain explicitly listed as not configured.
+
+The current external-tool inventory detects running Claude and Kimi apps plus Claude
+Code, Cline, Codex, Continue, Cursor, Copilot, Hermes, Kilo, Kimi Code, Ollama,
+Blackbox, and other VS Code/Cursor extensions. These are discovery/session-adapter
+observations, not claims that every external tool has a live authenticated session.
+
+The self-update path was exercised against the real checkout in a temporary state
+directory. It accepted only `https://github.com/SAI141003/ox.git`, followed
+`origin/main`, fetched successfully in **575 ms**, found no incoming commits, and
+reported no notice. The implementation remains opt-in: automatic installation is
+disabled unless explicitly enabled, and update application requires the trusted
+fast-forward, clean-tracked-tree, JavaScript-load, Island-rebuild, and rollback
+checks documented above.
