@@ -148,6 +148,10 @@ test('unpriced benchmark runs keep cost unknown instead of recording a false zer
   assert.deepEqual(costStats([null, null]), { mean: null, stddev: null, n: 0, unknown: true });
   assert.deepEqual(costStats([0.01, null]), { mean: null, stddev: null, n: 0, unknown: true });
   assert.deepEqual(costStats([0.01, 0.03]), { mean: 0.02, stddev: Math.sqrt(0.0002), n: 2, unknown: false });
+  assert.equal(costFor('qwen2.5:3b-64k', { inputTokens: 10_000, outputTokens: 100, costUsd: 0 }), null,
+    'a local adapter placeholder cost must remain unknown');
+  assert.equal(costFor('qwen2.5:3b-64k', { inputTokens: 10_000, outputTokens: 100, costUsd: 0.0123 }), 0.0123,
+    'a positive provider-reported charge remains usable even without a catalog row');
 });
 
 test('an authentication failure before a model turn is unavailable, not a task failure', () => {

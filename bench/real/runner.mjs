@@ -128,8 +128,16 @@ function selectTasks(opts) {
 }
 
 export function costFor(model, summary) {
-  if (summary?.costUsd != null) return summary.costUsd;
-  return costOf(model, { inputTokens: summary?.inputTokens ?? 0, outputTokens: summary?.outputTokens ?? 0 });
+  const catalogCost = costOf(model, { inputTokens: summary?.inputTokens ?? 0, outputTokens: summary?.outputTokens ?? 0 });
+  // Local adapters commonly emit a placeholder costUsd=0 even though no
+  // provider price exists. Preserve a real positive provider-reported charge,
+  // but never turn an unpriced run into a misleading free/$0 comparison.
+  if (catalogCost == null) {
+    const reported = Number(summary?.costUsd);
+    return Number.isFinite(reported) && reported > 0 ? reported : null;
+  }
+  if (summary?.costUsd != null && Number.isFinite(Number(summary.costUsd))) return Number(summary.costUsd);
+  return catalogCost;
 }
 
 // An adapter can fail before a provider starts a model turn (for example, a

@@ -652,3 +652,31 @@ JavaScript, rebuilds the macOS Island if it changed, and rolls the checkout back
 validation or the Island rebuild fails. It does not claim signed/notarized package
 updates; this is a source-checkout GitHub updater. The full update safety suite and
 the Settings rendering suite passed on 2026-10-22.
+
+## Additional local-model comparison and cost-integrity fix — 2026-10-22
+
+To increase the measured sample without spending another hosted-provider request, the
+installed `ox-ollama:qwen2.5:3b-64k` model was run twice each against three objective
+real-agent tasks (`read-and-report`, `exact-edit`, and `debug-and-fix`). All six runs
+were genuine model turns against fresh sandboxes and all were graded by executing the
+resulting workspace:
+
+| task | result | mean agent time | mean first text | mean tools | mean turns | mean input/output |
+|---|---:|---:|---:|---:|---:|---:|
+| read-and-report | 0/2 | 133.8 s | 86.0 s | 5.0 | 3.5 | 14,478 / 379 |
+| exact-edit | 0/2 | 54.1 s | no text event | 0.0 | 2.0 | 13,218 / 200 |
+| debug-and-fix | 0/2 | 225.4 s | 142.1 s | 6.5 | 5.5 | 28,833 / 744 |
+
+The failures were concrete: the model claimed a file was written when it was missing,
+emitted a literal `$filecontent`, made no tool calls for the exact edit, and produced
+an incorrect or syntactically broken repair. This is evidence about this model/config
+on this machine, not a claim about every Ollama model.
+
+The run also exposed and fixed a benchmark accounting bug: Ollama's placeholder
+`costUsd: 0` was being serialized as a measured free run even though the local model
+has no provider price. `bench/real/runner.mjs` now records such costs as **unknown**
+(`null`), while retaining a positive provider-reported charge if one is explicitly
+supplied. The regression suite covers both cases (`test/bench-real-keep-events.test.js`;
+12/12 passed). The raw local run is retained locally at
+`bench/results/2026-10-22T-local-qwen3b-deep.json`; it is intentionally not presented
+as a $0 cost comparison.
