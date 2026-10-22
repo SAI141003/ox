@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { costFor, renderUsageLines, runOnce } from '../bench/real/runner.mjs';
+import { costFor, costStats, renderUsageLines, runOnce } from '../bench/real/runner.mjs';
 import { EVENTS_FILE, TIMINGS_FILE, summarizeEvents, writeTimingsFile } from '../bench/real/lib.mjs';
 
 const CANNED_NDJSON = [
@@ -118,6 +118,12 @@ test('a benchmark prices a resolved provider model, never the ox bot alias', asy
   assert.equal(run.resolvedModel, 'gpt-5.6-sol');
   assert.ok(run.costUsd > 0, 'a priced resolved model must not become an unpriced alias');
   assert.equal(run.costUsd, costFor('gpt-5.6-sol', { inputTokens: run.tokensIn, outputTokens: run.tokensOut }));
+});
+
+test('unpriced benchmark runs keep cost unknown instead of recording a false zero', () => {
+  assert.deepEqual(costStats([null, null]), { mean: null, stddev: null, n: 0, unknown: true });
+  assert.deepEqual(costStats([0.01, null]), { mean: null, stddev: null, n: 0, unknown: true });
+  assert.deepEqual(costStats([0.01, 0.03]), { mean: 0.02, stddev: Math.sqrt(0.0002), n: 2, unknown: false });
 });
 
 test('without --keep the sandbox is destroyed and nothing is left behind', async () => {

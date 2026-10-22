@@ -326,6 +326,18 @@ function meanStd(samples) {
   return { mean, stddev: Math.sqrt(variance), n: xs.length };
 }
 
+// A missing price is not a zero-dollar run. In particular, local inference has
+// no metered provider bill but still consumes hardware and electricity, while a
+// remote model can be unpriced because the catalog has not been audited yet.
+// Preserve that uncertainty in the JSON artifact rather than silently averaging
+// it as 0, which would make later cost-per-task comparisons dishonest.
+export function costStats(samples) {
+  if (!samples.length || samples.some((n) => !Number.isFinite(n))) {
+    return { mean: null, stddev: null, n: 0, unknown: true };
+  }
+  return { ...meanStd(samples), unknown: false };
+}
+
 function summariseRepeats(runs) {
   const passCount = runs.filter((r) => r.pass).length;
   const rate = passCount / runs.length;
@@ -343,7 +355,7 @@ function summariseRepeats(runs) {
     tokensIn: meanStd(runs.map((r) => r.tokensIn)),
     tokensOut: meanStd(runs.map((r) => r.tokensOut)),
     redundantCalls: meanStd(runs.map((r) => r.redundantCalls)),
-    costUsd: meanStd(runs.map((r) => (Number.isFinite(r.costUsd) ? r.costUsd : 0))),
+    costUsd: costStats(runs.map((r) => r.costUsd)),
     runs,
   };
 }
@@ -428,7 +440,7 @@ export async function main(argv = process.argv.slice(2)) {
   console.log('-'.repeat(header.length));
   for (const { task, stats } of rows) {
     const label = opts.repeats > 1 ? `${stats.passCount}/${stats.repeats}` : (stats.passCount ? 'PASS' : 'FAIL');
-    const cost = priced ? formatCost(stats.costUsd.mean) : '—';
+    const cost = priced && !stats.costUsd.unknown ? formatCost(stats.costUsd.mean) : '—';
     console.log(
       `${fmtCell(task.id, W.id)}  ${fmtCell(task.category, W.cat)}  ${fmtCell(label, W.res)}  ` +
       `${fmtCell(String(Math.round(stats.agentMs.mean)), W.ms)}  ` +
