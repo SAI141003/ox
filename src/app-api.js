@@ -28,7 +28,10 @@ export const PROVIDER_CATALOG = Object.freeze({
   perplexity: { label: 'Perplexity', group: 'models', url: 'https://www.perplexity.ai/settings/api', blurb: 'Sonar: answers with live web sources' },
   cohere: { label: 'Cohere', group: 'models', url: 'https://dashboard.cohere.com/api-keys', blurb: 'Command models' },
   huggingface: { label: 'Hugging Face', group: 'models', url: 'https://huggingface.co/settings/tokens', blurb: 'Thousands of open models through one router', free: true, aliases: 'hf inference' },
-  nvidia: { label: 'NVIDIA NIM', group: 'models', url: 'https://build.nvidia.com', blurb: 'Open models hosted by NVIDIA', free: true },
+  // NVIDIA Developer Program access is free only for prototyping, research,
+  // development and testing. Production NIM use requires NVIDIA AI Enterprise,
+  // so this must not be presented as an unconditional “free tier”.
+  nvidia: { label: 'NVIDIA NIM', group: 'models', url: 'https://build.nvidia.com', blurb: 'NVIDIA-hosted models; free for prototyping, Enterprise license for production' },
   github: { label: 'GitHub Models', group: 'models', url: 'https://github.com/settings/tokens', blurb: 'Models with your GitHub account (a token with the models scope)', free: true },
   dashscope: { label: 'Alibaba Qwen (Model Studio)', group: 'models', url: 'https://modelstudio.console.alibabacloud.com', blurb: 'Qwen models from Alibaba Cloud', aliases: 'qwen dashscope alibaba' },
   deepinfra: { label: 'DeepInfra', group: 'models', url: 'https://deepinfra.com/dash/api_keys', blurb: 'Open models, low prices' },

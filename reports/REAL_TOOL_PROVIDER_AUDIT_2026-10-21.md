@@ -510,3 +510,38 @@ than every coding agent. They establish only the measured task, machine, model,
 provider state, and scripted policy cases described above. A defensible cloud-provider
 ranking still needs valid credentials and repeated same-model, same-task trials with
 provider-reported cache/usage data.
+
+## Live NVIDIA NIM check and saved-bot benchmark repair — 2026-10-22
+
+The configured NVIDIA credential was validated without an inference request: its
+authenticated model-list request completed in **218 ms** and returned **83 models**.
+That establishes that the provider connection is real, but it is not a quality,
+latency, or spend measurement.
+
+One user-authorized, capped live agent task then ran against the saved
+`nvidia-nemotron-3-ultra-550b-a55b` bot. The first attempt exposed a runner defect:
+`bench/real` imported only built-in bot definitions, so it rejected a bot saved in
+the user's Ox configuration even though the application itself could run it. The
+runner now loads the ordinary local key store and read-only config before validation;
+for a saved standard-provider bot it executes the sandboxed child as the equivalent
+`provider:model`, so it does not copy the user's complete Ox configuration into the
+benchmark sandbox. This is covered by a regression test.
+
+After the repair, the real `read-and-report` task passed **1/1**. The execution took
+**9.14 s** agent wall time; first generated text arrived at **8.86 s**, the first
+tool call at **2.20 s**, and the two local tool calls averaged **12.3 ms**. It made
+two non-redundant calls (`read_file`, `write_file`), used three model turns and
+reported **14,951 input / 268 output tokens**. The workspace verifier confirmed that
+the agent wrote exactly `7314`, not merely that it claimed success. The raw result is
+versioned at `bench/results/2026-10-22T15-45-00-live-nvidia/nemotron-read.json`; its
+event stream and timing sidecar were retained in the disposable sandbox named in that
+file.
+
+This is a single observation, not a general benchmark or a market ranking. NVIDIA
+did not report a per-token price for the endpoint, so cost is recorded as **unknown**
+and displayed as `—`, never `$0`. The Settings provider card was also corrected: it
+now says that NVIDIA access is free for prototyping and that production needs an
+Enterprise license. NVIDIA's current documentation confirms both the free Developer
+Program scope and the production-license requirement; the stated Enterprise pricing
+starts at $4,500 per GPU per year. See NVIDIA's [General NIM FAQ](https://docs.api.nvidia.com/nim/docs/product)
+and [Run NIM Anywhere](https://docs.api.nvidia.com/nim/docs/run-anywhere).

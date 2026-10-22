@@ -25,7 +25,9 @@ import {
 
 // Only read-only project config is imported. Nothing under src/ is modified.
 import { resolveBot } from '../../src/bots.js';
+import { loadConfig } from '../../src/config.js';
 import { costOf, formatCost } from '../../src/cost.js';
+import { loadKeysIntoEnv } from '../../src/keystore.js';
 
 const USAGE = [
   'usage: node bench/real/runner.mjs --model <provider:model> [options]',
@@ -130,6 +132,29 @@ export function costFor(model, summary) {
   return costOf(model, { inputTokens: summary?.inputTokens ?? 0, outputTokens: summary?.outputTokens ?? 0 });
 }
 
+// Benchmarks must resolve the same saved bot definitions as `ox` itself.  The
+// runner is invoked directly with Node (rather than through the CLI bootstrap),
+// so load the local key store explicitly before validating a provider.  Keys
+// remain only in process memory and are inherited by the sandboxed child; they
+// are never serialized into benchmark output.
+export function resolveBenchmarkTarget(spec, config = {}) {
+  return resolveBot(spec, config, process.env);
+}
+
+// A named bot saved by a user is unavailable inside the fresh sandbox HOME.
+// Standard providers, however, are portable as provider:model and receive the
+// inherited credential without copying the user's whole ~/.ox configuration.
+// Keep custom endpoints and subscription adapters as their original spec:
+// their endpoint/sign-in setup cannot safely be reconstructed from a model ID.
+export function benchmarkExecutionSpec(spec, target, config = {}) {
+  const name = String(spec).trim().split(':', 1)[0];
+  const saved = config?.bots?.[name];
+  if (saved && target?.provider && target.provider !== 'custom' && target.provider !== 'subscription') {
+    return `${target.provider}:${target.model}`;
+  }
+  return spec;
+}
+
 // One agent run against one fresh sandbox, then the verifier grades the world.
 // `deps.spawn` is the seam the test suite uses to hand in a canned NDJSON child
 // instead of paying for a real model; production always uses spawnOx.
@@ -151,7 +176,7 @@ export async function runOnce(task, spec, opts, deps = {}) {
     // -y: headless stdin is never a TTY, so without it every write and every
     // non-read-only bash call is declined and the agent cannot do the task at all.
     // The workspace is a throwaway temp dir, so auto-approval costs nothing here.
-    const args = ['-p', task.prompt, '--json', '--model', spec, '-y'];
+    const args = ['-p', task.prompt, '--json', '--model', deps.executionSpec ?? spec, '-y'];
     agent = await spawn({ args, cwd: sb.ws, env: agentEnv({ home: sb.home }), timeoutMs });
     rawStream = String(agent.stdout ?? '');
     events = parseNdjsonEvents(rawStream);
@@ -380,10 +405,14 @@ export async function main(argv = process.argv.slice(2)) {
     process.exit(3);
   }
 
+  // Match the CLI's key/config bootstrap. Without this, `bench/real` could not
+  // run a bot a user selected in the app even though normal Ox runs could.
+  loadKeysIntoEnv(process.env);
+  const config = loadConfig();
   const spec = String(opts.model).trim();
   let target;
   try {
-    target = resolveBot(spec, {});
+    target = resolveBenchmarkTarget(spec, config);
   } catch (err) {
     process.stderr.write(`bench/real: ${err?.message ?? err}\n`);
     process.exit(3);
@@ -415,7 +444,10 @@ export async function main(argv = process.argv.slice(2)) {
   for (const task of tasks) {
     const runs = [];
     for (let i = 0; i < opts.repeats; i++) {
-      const run1 = await runOnce(task, spec, opts, { modelId: target.model });
+      const run1 = await runOnce(task, spec, opts, {
+        modelId: target.model,
+        executionSpec: benchmarkExecutionSpec(spec, target, config),
+      });
       runs.push(run1);
       const mark = run1.pass ? 'PASS' : 'FAIL';
       console.log(

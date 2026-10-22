@@ -28,6 +28,13 @@ test('a new model provider is runnable, not just stored: it resolves and has an 
   }
 });
 
+test('NVIDIA NIM is described as prototype access, not an unconditional free tier', () => {
+  const nvidia = providersView({}).find((p) => p.id === 'nvidia');
+  assert.equal(nvidia.free, false);
+  assert.match(nvidia.blurb, /free for prototyping/i);
+  assert.match(nvidia.blurb, /Enterprise license for production/i);
+});
+
 test('search keys are the names the web_search tool reads', () => {
   const web = fs.readFileSync(new URL('../src/tools/web.js', import.meta.url), 'utf8');
   for (const k of providersView({}).filter((x) => x.group === 'search')) assert.ok(web.includes(k.env), `${k.env} is read by web.js`);

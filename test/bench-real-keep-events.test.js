@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { costFor, costStats, renderUsageLines, runOnce } from '../bench/real/runner.mjs';
+import { benchmarkExecutionSpec, costFor, costStats, renderUsageLines, resolveBenchmarkTarget, runOnce } from '../bench/real/runner.mjs';
 import { EVENTS_FILE, TIMINGS_FILE, summarizeEvents, writeTimingsFile } from '../bench/real/lib.mjs';
 
 const CANNED_NDJSON = [
@@ -118,6 +118,18 @@ test('a benchmark prices a resolved provider model, never the ox bot alias', asy
   assert.equal(run.resolvedModel, 'gpt-5.6-sol');
   assert.ok(run.costUsd > 0, 'a priced resolved model must not become an unpriced alias');
   assert.equal(run.costUsd, costFor('gpt-5.6-sol', { inputTokens: run.tokensIn, outputTokens: run.tokensOut }));
+});
+
+test('a saved standard-provider bot resolves and executes without copying user config into the sandbox', () => {
+  const config = {
+    bots: {
+      'my-nvidia': { provider: 'nvidia', model: 'nvidia/nemotron-3-ultra-550b-a55b', desc: 'private test bot' },
+    },
+  };
+  const target = resolveBenchmarkTarget('my-nvidia', config);
+  assert.equal(target.provider, 'nvidia');
+  assert.equal(target.model, 'nvidia/nemotron-3-ultra-550b-a55b');
+  assert.equal(benchmarkExecutionSpec('my-nvidia', target, config), 'nvidia:nvidia/nemotron-3-ultra-550b-a55b');
 });
 
 test('unpriced benchmark runs keep cost unknown instead of recording a false zero', () => {
