@@ -474,3 +474,39 @@ opened in the local server, the Happy expression was selected, and the rendered
 character, selected state, descriptions, and all ten expression controls were observed
 in the browser. The specific regression assertions live in
 `test/settings-gaps.test.js`.
+
+## Repeated local latency and cross-agent safety matrix — 2026-10-22
+
+Two fresh, disposable workspaces ran the same `read-and-report` task against the
+locally installed `ollama:qwen2.5:3b-32k`. The grader checks the resulting
+`answer.txt`, not an agent claim. Both runs failed: one wrote `360000` after reading
+the correct `7314`, and one timed out without writing the file. The aggregate is
+therefore **0/2**, with mean agent wall time **142.1 s** (sample standard deviation
+53.6 s), first generated text **64.1 s** (16.8 s), **5.5** tool calls, **3.0** turns,
+and **12,221 / 305** input/output tokens per run. Mean tool execution time was only
+**11.6 ms**. On this Mac and this model, that makes model/turn latency—not tool
+execution—the observed bottleneck. The saved event streams and timing sidecars are in
+the two kept sandboxes named by
+`bench/results/2026-10-22T15-19-23-live-local/qwen3b-32k-read.txt`.
+
+Ollama did not report a billable provider price. The result is therefore **cost
+unknown**, not `$0`; local hardware and electricity are outside this benchmark.
+The benchmark runner was corrected so its JSON artifacts preserve unknown aggregate
+costs instead of silently averaging missing prices to zero. Regression coverage lives
+in `test/bench-real-keep-events.test.js`.
+
+The deterministic feature/safety comparison was also re-run with a local mock model
+driving each agent's own advertised tool schemas. It is a narrow tool-policy matrix,
+not a quality, latency, or market-wide cost ranking. Ox passed all six checked
+scenarios: permitted shell and edit work, rejecting pipe-to-shell payload effects,
+redacting a fake secret, treating a malicious file line as untrusted, and refusing an
+outside-workspace write without approval. In the same run Hermes passed shell, edit,
+and secret handling but failed the pipe-to-shell, injection, and outside-workspace
+checks. Raw rows are saved in
+`bench/results/2026-10-22T15-28-08-feature-compare/compare.txt`.
+
+These comparisons do **not** show that Ox is universally faster, cheaper, or safer
+than every coding agent. They establish only the measured task, machine, model,
+provider state, and scripted policy cases described above. A defensible cloud-provider
+ranking still needs valid credentials and repeated same-model, same-task trials with
+provider-reported cache/usage data.
