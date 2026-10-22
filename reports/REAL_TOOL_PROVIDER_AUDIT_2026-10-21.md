@@ -734,3 +734,16 @@ This is strong evidence that Ox's orchestration and safety plumbing works end to
 the model is scripted in this suite, so these numbers are not a claim about live model
 quality or provider latency. The machine-readable run is
 `bench/results/2026-10-23-deterministic.json`, and the baseline was left unchanged.
+
+## Hosted-key recheck and local tool-calling options — 2026-10-23
+
+A fresh read-only health probe still finds `OPENROUTER_API_KEY` and `NVIDIA_API_KEY`
+present. Key presence is not treated as authenticated inference readiness: the last
+OpenRouter model request returned HTTP 401, while NVIDIA's model-list request worked
+and the single approved Nemotron inference is the only measured hosted task. No new
+hosted inference was sent in this check.
+
+`ox models search 'tool calling'` also returned locally fitting candidates (including
+Qwen3-loop 0.6B, Llama 3.2 1B tool-calling, LittleLamb, and Falcon-H1 Tiny). Their
+throughput values are hardware estimates from the catalog, not measured Ox runs, so
+they remain recommendations only; no model was pulled or silently installed.
