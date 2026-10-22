@@ -697,3 +697,26 @@ no tool call and hallucinated a value. The artifacts are
 `bench/results/2026-10-23-local-smollm-read.json`. Their `costUsd` fields are
 `null` and their aggregate cost objects are marked `unknown: true` by the fixed
 runner.
+
+## Provider/catalog and capability coverage — 2026-10-23
+
+The live `ox doctor --json` check currently sees **35 provider adapters** and **28
+built-in bot presets**. Of those presets, **14 have verified catalog pricing**, 13
+are explicitly unpriced, and one (OpenRouter) is dynamic. The unpriced rows are not
+filled with guesses: their benchmark costs remain unknown until a price source or a
+user model override is supplied.
+
+The same doctor probe measured the currently usable keyless capability paths:
+
+| capability | live route | observed latency |
+|---|---|---:|
+| web search | Marginalia | 745 ms |
+| web search fallback | Wikipedia | 488 ms |
+| web fetch | direct HTTP | 78 ms |
+| web fetch fallback | Jina Reader | 268 ms |
+
+DDG returned zero parseable results in this probe, while SearXNG, Tavily, Brave, and
+Serper are not configured. The command therefore reports `ok: false` for the overall
+doctor result because many optional provider keys are absent, but it separately marks
+the usable routes and the concrete remediation for each missing backend. This avoids
+turning “not configured” into a false provider failure.
