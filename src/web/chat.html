@@ -4723,12 +4723,21 @@ files: [src/billing/**]
         const updateActions = !updateInfo ? ''
           : updateInfo.allowed !== true
             ? `<button class="btn primary" data-update="allow">Enable update checks</button>`
-            : `<button class="btn" data-update="check">Check now</button>${updateInfo.available?.count ? `<button class="btn primary" data-update="apply">Update now</button>` : ''}`;
+            : `<button class="btn" data-update="check">Check now</button>${updateInfo.available?.count ? `<button class="btn" data-update="notes">What’s new</button><button class="btn" data-update="later">Later</button><button class="btn primary" data-update="apply">Update now</button>` : ''}`;
         el.innerHTML = `${mobileBack}<div class="shead">${icon('info')}About ox</div><p class="sdesc">Your agent for code and everything around it. One ox in your terminal, this app, your notch and your phone.</p>
           <dl class="kv"><dt>version</dt><dd>${esc(about.version)}</dd><dt>licence</dt><dd>${esc(about.license)}</dd><dt>runtime</dt><dd>Node ${esc(about.node)} · ${esc(about.platform)} ${esc(about.arch)}</dd><dt>folder</dt><dd class="mono">${esc(about.cwd)}</dd><dt>settings</dt><dd class="mono">${esc(about.config)}</dd><dt>keys</dt><dd class="mono">${esc(about.keys)}</dd></dl>
           <div class="cmd"><code>ox doctor</code><button data-copy-cmd="ox doctor">${icon('copy')}</button></div>
           <div class="sblock" style="margin-top:16px"><div class="shead" style="font-size:15px">${icon('refresh')}GitHub updates</div><p class="sdesc" id="upd-state">${esc(updateStatus)}</p><p class="small muted">Ox checks only after you enable it. Automatic install is optional: it accepts only a fast-forward from the official Ox repository, protects edited tracked files, checks changed JavaScript, rebuilds the Island when needed, and rolls back if that fails.</p><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${updateActions}${updateInfo?.allowed === true ? `<label class="small" style="display:flex;align-items:center;gap:7px"><input type="checkbox" id="upd-auto" ${updateInfo.autoApply ? 'checked' : ''}> Install future verified updates automatically</label>` : ''}</div></div>`;
         el.querySelectorAll('[data-update]').forEach((b) => (b.onclick = async () => {
+          if (b.dataset.update === 'notes') {
+            const changes = updateInfo?.available?.subjects || [];
+            const d = document.createElement('div');
+            d.className = 'ask-ovl';
+            d.innerHTML = `<div class="ask-box" role="dialog" aria-modal="true" aria-label="Update changes" style="max-width:560px"><div class="shead" style="margin:0 0 6px">What’s new in Ox</div><div class="small muted" style="margin-bottom:10px">${changes.length} verified incoming change${changes.length === 1 ? '' : 's'} from ${esc(updateInfo.available.upstream || 'GitHub')}</div><div style="max-height:50vh;overflow:auto;display:flex;flex-direction:column;gap:8px">${changes.map((x) => `<div class="mono small">${esc(x)}</div>`).join('')}</div><div class="ask-row"><button class="btn primary" data-a="ok">Close</button></div></div>`;
+            d.onclick = (e) => { if (e.target === d || e.target.closest('[data-a="ok"]')) d.remove(); };
+            document.body.append(d);
+            return;
+          }
           b.disabled = true;
           try { await postJson('/ox/update', { action: b.dataset.update }); toast(b.dataset.update === 'apply' ? 'Update started in the background' : 'Update preference saved'); setTimeout(renderSection, 250); }
           catch (e) { toast(e.message); b.disabled = false; }

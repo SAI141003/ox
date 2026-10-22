@@ -607,3 +607,23 @@ tokens. The result is saved at
 The process deliberately exits nonzero for an unavailable-only comparison so CI or
 an operator knows that valid authentication is still required; it no longer calls
 the unavailable adapter a failed Claude task.
+
+## Coucou update-recording comparison — 2026-10-22
+
+The supplied 11.8-second recording shows Coucou 0.5.3 being announced through its
+Mochi companion: the companion turns blue, then a compact card offers **Update now**,
+**What’s new**, and **Later**. Its second card reports local activity (37 agent
+sessions and 2 h 20 with agents) and says it is counted on the Mac and never sent.
+The recording does not establish a signed binary updater, release verification, or
+any safety rule for the install itself, so those properties are not assumed.
+
+Ox now exposes the equivalent update journey under **Settings → About → GitHub
+updates**: explicit enablement, Check now, What’s new (the verified incoming Git
+commit subjects), Later, Update now, and a separate opt-in to install future verified
+updates automatically. The implementation is deliberately stricter than the demo:
+it accepts updates only from `github.com/SAI141003/ox`, requires a fast-forward,
+refuses tracked local edits or divergent local commits, syntax-checks changed
+JavaScript, rebuilds the macOS Island if it changed, and rolls the checkout back when
+validation or the Island rebuild fails. It does not claim signed/notarized package
+updates; this is a source-checkout GitHub updater. The full update safety suite and
+the Settings rendering suite passed on 2026-10-22.
