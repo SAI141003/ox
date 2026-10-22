@@ -567,3 +567,24 @@ a standard saved bot, it uses the portable `provider:model` form in the disposab
 sandbox. For a saved `custom` or `backboard` bot, it passes only the already-resolved
 endpoint through `OX_BASE_URL`; it never copies the user's complete `~/.ox` directory
 or serializes credentials into the result. Both paths now have regression coverage.
+
+## Cross-agent readiness check — 2026-10-22
+
+The same disposable `read-and-report` benchmark was requested through Ox's
+`claude-plan` adapter after confirming that Claude Code 2.1.303 is installed. It
+did **not** run an inference request: Claude returned `Not logged in · Please run
+/login`, exited in 7.85 s, made zero tool calls, and produced no usage. The task
+is recorded as **unavailable**, not as a Claude model-quality, token-cost, or speed
+failure. The kept result is
+`bench/results/2026-10-22T16-05-00-live-claude-plan/claude-plan-read.json`.
+
+The separate `codex` terminal installation on this Mac also cannot start: its
+Homebrew wrapper currently points to a missing native binary (`ENOENT`). This does
+not affect the running Codex desktop app, which Ox detects through its local session
+files, but it means an independent Codex-CLI benchmark cannot be claimed until that
+installation is repaired. Cursor Agent 2026.09.10-fd3934a is installed, but was not
+asked to consume a model turn in this audit.
+
+The only valid live quality/latency comparison points so far are therefore the
+local Qwen 3B runs (0/2 on the checked task) and the one NVIDIA Nemotron run (1/1).
+They are single-machine, small-sample observations, not a universal ranking.
