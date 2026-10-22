@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { benchmarkExecutionSpec, costFor, costStats, renderUsageLines, resolveBenchmarkTarget, runOnce } from '../bench/real/runner.mjs';
+import { benchmarkExecutionEnv, benchmarkExecutionSpec, costFor, costStats, renderUsageLines, resolveBenchmarkTarget, runOnce } from '../bench/real/runner.mjs';
 import { EVENTS_FILE, TIMINGS_FILE, summarizeEvents, writeTimingsFile } from '../bench/real/lib.mjs';
 
 const CANNED_NDJSON = [
@@ -130,6 +130,18 @@ test('a saved standard-provider bot resolves and executes without copying user c
   assert.equal(target.provider, 'nvidia');
   assert.equal(target.model, 'nvidia/nemotron-3-ultra-550b-a55b');
   assert.equal(benchmarkExecutionSpec('my-nvidia', target, config), 'nvidia:nvidia/nemotron-3-ultra-550b-a55b');
+  assert.deepEqual(benchmarkExecutionEnv('my-nvidia', target, config), {});
+});
+
+test('a saved custom-endpoint bot carries only its resolved endpoint into the sandbox', () => {
+  const config = {
+    bots: {
+      'my-local': { provider: 'custom', model: 'acme-code', baseUrl: 'http://127.0.0.1:9010/v1', keyEnv: 'OX_EP_ACME_KEY' },
+    },
+  };
+  const target = resolveBenchmarkTarget('my-local', config);
+  assert.equal(benchmarkExecutionSpec('my-local', target, config), 'custom:acme-code');
+  assert.deepEqual(benchmarkExecutionEnv('my-local', target, config), { OX_BASE_URL: 'http://127.0.0.1:9010/v1' });
 });
 
 test('unpriced benchmark runs keep cost unknown instead of recording a false zero', () => {

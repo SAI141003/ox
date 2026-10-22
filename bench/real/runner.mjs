@@ -142,17 +142,26 @@ export function resolveBenchmarkTarget(spec, config = {}) {
 }
 
 // A named bot saved by a user is unavailable inside the fresh sandbox HOME.
-// Standard providers, however, are portable as provider:model and receive the
-// inherited credential without copying the user's whole ~/.ox configuration.
-// Keep custom endpoints and subscription adapters as their original spec:
-// their endpoint/sign-in setup cannot safely be reconstructed from a model ID.
+// Standard providers are portable as provider:model and receive the inherited
+// credential without copying the user's whole ~/.ox configuration. Custom
+// endpoint bots carry their already-resolved endpoint in a narrowly scoped
+// environment variable, never by copying ~/.ox or serializing credentials.
 export function benchmarkExecutionSpec(spec, target, config = {}) {
   const name = String(spec).trim().split(':', 1)[0];
   const saved = config?.bots?.[name];
-  if (saved && target?.provider && target.provider !== 'custom' && target.provider !== 'subscription') {
+  if (saved && target?.provider && target.provider !== 'subscription') {
     return `${target.provider}:${target.model}`;
   }
   return spec;
+}
+
+export function benchmarkExecutionEnv(spec, target, config = {}) {
+  const name = String(spec).trim().split(':', 1)[0];
+  const saved = config?.bots?.[name];
+  if (saved && ['custom', 'backboard'].includes(target?.provider) && target?.baseUrl) {
+    return { OX_BASE_URL: target.baseUrl };
+  }
+  return {};
 }
 
 // One agent run against one fresh sandbox, then the verifier grades the world.
@@ -177,7 +186,7 @@ export async function runOnce(task, spec, opts, deps = {}) {
     // non-read-only bash call is declined and the agent cannot do the task at all.
     // The workspace is a throwaway temp dir, so auto-approval costs nothing here.
     const args = ['-p', task.prompt, '--json', '--model', deps.executionSpec ?? spec, '-y'];
-    agent = await spawn({ args, cwd: sb.ws, env: agentEnv({ home: sb.home }), timeoutMs });
+    agent = await spawn({ args, cwd: sb.ws, env: agentEnv({ home: sb.home, extra: deps.agentEnvExtra }), timeoutMs });
     rawStream = String(agent.stdout ?? '');
     events = parseNdjsonEvents(rawStream);
     summary = summarizeEvents(events, agent.eventTimings);
@@ -447,6 +456,7 @@ export async function main(argv = process.argv.slice(2)) {
       const run1 = await runOnce(task, spec, opts, {
         modelId: target.model,
         executionSpec: benchmarkExecutionSpec(spec, target, config),
+        agentEnvExtra: benchmarkExecutionEnv(spec, target, config),
       });
       runs.push(run1);
       const mark = run1.pass ? 'PASS' : 'FAIL';

@@ -561,3 +561,9 @@ detected tool is explicitly labelled either `session adapter` or `detected only`
 Ox does not invent an active session or claim it can resume a proprietary session it
 cannot safely interpret. The regression test verifies that this terminal view calls
 the same `liveAgents()` and `detectedCodingTools()` sources as the app.
+
+The real benchmark runner was further completed for saved custom-endpoint bots. For
+a standard saved bot, it uses the portable `provider:model` form in the disposable
+sandbox. For a saved `custom` or `backboard` bot, it passes only the already-resolved
+endpoint through `OX_BASE_URL`; it never copies the user's complete `~/.ox` directory
+or serializes credentials into the result. Both paths now have regression coverage.
