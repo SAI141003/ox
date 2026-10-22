@@ -588,3 +588,22 @@ asked to consume a model turn in this audit.
 The only valid live quality/latency comparison points so far are therefore the
 local Qwen 3B runs (0/2 on the checked task) and the one NVIDIA Nemotron run (1/1).
 They are single-machine, small-sample observations, not a universal ranking.
+
+## Adapter availability classification — 2026-10-22
+
+The benchmark runner now distinguishes an adapter that stops **before any model
+turn** from an actual task result. A run is classified as `unavailable` only when
+it has no tool calls, no input/output tokens, no timeout, and a known local
+readiness error such as `Not logged in`, `Please run /login`, authentication
+required, or a missing native binary. These runs are excluded from pass-rate,
+latency, token, and cost aggregates; the machine-readable artifact preserves both
+the availability state and its reason. A timeout, tool call, or any model token
+always remains a measurable pass/fail attempt.
+
+The live `claude-plan` recheck recorded **UNAVAILABLE** in 2.97 s: Claude Code
+reported `Not logged in`, started no model turn, used zero tools, and reported zero
+tokens. The result is saved at
+`bench/results/2026-10-22T16-20-00-claude-unavailable/claude-plan-read.json`.
+The process deliberately exits nonzero for an unavailable-only comparison so CI or
+an operator knows that valid authentication is still required; it no longer calls
+the unavailable adapter a failed Claude task.

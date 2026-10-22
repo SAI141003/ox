@@ -132,6 +132,21 @@ export function costFor(model, summary) {
   return costOf(model, { inputTokens: summary?.inputTokens ?? 0, outputTokens: summary?.outputTokens ?? 0 });
 }
 
+// An adapter can fail before a provider starts a model turn (for example, a
+// subscription CLI that is installed but has not been logged in). That is not
+// evidence about a model's task quality, latency, or cost. Keep this narrow:
+// once there are tokens, tool calls, or a timeout, the run was attempted and
+// remains a measurable pass/fail result.
+export function unavailableReason(agent = {}, summary = {}) {
+  if (agent.timedOut || (summary.toolCalls ?? 0) > 0 ||
+      (summary.inputTokens ?? 0) > 0 || (summary.outputTokens ?? 0) > 0) return null;
+  const text = [agent.stderr, ...(summary.errors ?? []), summary.finalText]
+    .filter(Boolean)
+    .join('\n');
+  const match = /(not logged in|please run\s*\/?login|authentication required|auth[_ -]?required|missing native binary|\benoent\b)/i.exec(text);
+  return match ? oneLine(match[0], 180) : null;
+}
+
 // Benchmarks must resolve the same saved bot definitions as `ox` itself.  The
 // runner is invoked directly with Node (rather than through the CLI bootstrap),
 // so load the local key store explicitly before validating a provider.  Keys
@@ -214,6 +229,7 @@ export async function runOnce(task, spec, opts, deps = {}) {
   }
 
   const pass = Boolean(verification?.pass);
+  const unavailable = unavailableReason(agent, summary ?? {});
   // Honesty rule: a timeout, an ox crash, or a total absence of tool calls is a FAIL
   // and says so, but the verifier's own detail is always preserved verbatim because
   // it is the only thing that makes a failure diagnosable.
@@ -269,6 +285,8 @@ export async function runOnce(task, spec, opts, deps = {}) {
     taskId: task.id,
     category: task.category,
     pass,
+    availability: unavailable ? 'unavailable' : 'ran',
+    unavailableReason: unavailable,
     detail: verification?.detail ?? '',
     checks: Array.isArray(verification?.checks) ? verification.checks : [],
     ms: Date.now() - started,
@@ -373,23 +391,26 @@ export function costStats(samples) {
 }
 
 function summariseRepeats(runs) {
-  const passCount = runs.filter((r) => r.pass).length;
-  const rate = passCount / runs.length;
+  const measured = runs.filter((r) => r.availability !== 'unavailable');
+  const passCount = measured.filter((r) => r.pass).length;
+  const rate = measured.length ? passCount / measured.length : null;
   return {
     repeats: runs.length,
+    measuredRuns: measured.length,
+    unavailableRuns: runs.length - measured.length,
     passCount,
     passRate: rate,
-    ms: meanStd(runs.map((r) => r.ms)),
-    agentMs: meanStd(runs.map((r) => r.agentMs)),
-    firstTextMs: meanStd(runs.map((r) => r.firstTextMs)),
-    firstToolMs: meanStd(runs.map((r) => r.firstToolMs)),
-    toolDurationMs: meanStd(runs.map((r) => r.toolDurationMs)),
-    toolCalls: meanStd(runs.map((r) => r.toolCalls)),
-    turns: meanStd(runs.map((r) => r.turns)),
-    tokensIn: meanStd(runs.map((r) => r.tokensIn)),
-    tokensOut: meanStd(runs.map((r) => r.tokensOut)),
-    redundantCalls: meanStd(runs.map((r) => r.redundantCalls)),
-    costUsd: costStats(runs.map((r) => r.costUsd)),
+    ms: meanStd(measured.map((r) => r.ms)),
+    agentMs: meanStd(measured.map((r) => r.agentMs)),
+    firstTextMs: meanStd(measured.map((r) => r.firstTextMs)),
+    firstToolMs: meanStd(measured.map((r) => r.firstToolMs)),
+    toolDurationMs: meanStd(measured.map((r) => r.toolDurationMs)),
+    toolCalls: meanStd(measured.map((r) => r.toolCalls)),
+    turns: meanStd(measured.map((r) => r.turns)),
+    tokensIn: meanStd(measured.map((r) => r.tokensIn)),
+    tokensOut: meanStd(measured.map((r) => r.tokensOut)),
+    redundantCalls: meanStd(measured.map((r) => r.redundantCalls)),
+    costUsd: costStats(measured.map((r) => r.costUsd)),
     runs,
   };
 }
@@ -459,10 +480,13 @@ export async function main(argv = process.argv.slice(2)) {
         agentEnvExtra: benchmarkExecutionEnv(spec, target, config),
       });
       runs.push(run1);
-      const mark = run1.pass ? 'PASS' : 'FAIL';
+      const mark = run1.availability === 'unavailable' ? 'UNAVAILABLE' : (run1.pass ? 'PASS' : 'FAIL');
+      const firstText = run1.availability === 'unavailable' || run1.firstTextMs == null
+        ? 'n/a'
+        : `${Math.round(run1.firstTextMs)}ms`;
       console.log(
         `  ${mark}  ${task.id}${opts.repeats > 1 ? ` [${i + 1}/${opts.repeats}]` : ''}  ` +
-        `${Math.round(run1.agentMs)}ms agent  first-text=${run1.firstTextMs == null ? 'n/a' : `${Math.round(run1.firstTextMs)}ms`} ` +
+        `${Math.round(run1.agentMs)}ms agent  first-text=${firstText} ` +
         `tools=${run1.toolCalls} turns=${run1.turns} ` +
         `${run1.tokensIn}/${run1.tokensOut} tok  redundant=${run1.redundantCalls}`
       );
@@ -475,13 +499,15 @@ export async function main(argv = process.argv.slice(2)) {
   const suiteMs = Date.now() - startedAt;
 
   // --- table -----------------------------------------------------------------
-  const W = { id: 26, cat: 11, res: 6, ms: 8, ttft: 12, toolMs: 12, tools: 6, turns: 6, tok: 13, cost: 8, red: 4 };
+  const W = { id: 26, cat: 11, res: 9, ms: 8, ttft: 12, toolMs: 12, tools: 6, turns: 6, tok: 13, cost: 8, red: 4 };
   const header = `${fmtCell('TASK', W.id)}  ${fmtCell('CATEGORY', W.cat)}  ${fmtCell('RESULT', W.res)}  ${fmtCell('AGENT_MS', W.ms)}  ${fmtCell('FIRST_TEXT', W.ttft)}  ${fmtCell('TOOL_AVG', W.toolMs)}  ${fmtCell('TOOLS', W.tools)}  ${fmtCell('TURNS', W.turns)}  ${fmtCell('TOK IN/OUT', W.tok)}  ${fmtCell('COST', W.cost)}  ${fmtCell('REDUN', W.red)}`;
   console.log('');
   console.log(header);
   console.log('-'.repeat(header.length));
   for (const { task, stats } of rows) {
-    const label = opts.repeats > 1 ? `${stats.passCount}/${stats.repeats}` : (stats.passCount ? 'PASS' : 'FAIL');
+    const label = stats.measuredRuns === 0
+      ? 'UNAVAIL'
+      : (opts.repeats > 1 ? `${stats.passCount}/${stats.measuredRuns}` : (stats.passCount ? 'PASS' : 'FAIL'));
     const cost = priced && !stats.costUsd.unknown ? formatCost(stats.costUsd.mean) : '—';
     console.log(
       `${fmtCell(task.id, W.id)}  ${fmtCell(task.category, W.cat)}  ${fmtCell(label, W.res)}  ` +
@@ -496,9 +522,11 @@ export async function main(argv = process.argv.slice(2)) {
   console.log('-'.repeat(header.length));
 
   const totalRuns = rows.reduce((a, r) => a + r.stats.repeats, 0);
+  const totalMeasured = rows.reduce((a, r) => a + r.stats.measuredRuns, 0);
+  const totalUnavailable = rows.reduce((a, r) => a + r.stats.unavailableRuns, 0);
   const totalPass = rows.reduce((a, r) => a + r.stats.passCount, 0);
-  const rate = totalRuns ? ((totalPass / totalRuns) * 100) : 0;
-  console.log(`PASS RATE: ${totalPass}/${totalRuns} = ${rate.toFixed(1)}%   wall ${(suiteMs / 1000).toFixed(1)}s   model ${spec}`);
+  const rate = totalMeasured ? ((totalPass / totalMeasured) * 100) : null;
+  console.log(`PASS RATE: ${totalMeasured ? `${totalPass}/${totalMeasured} = ${rate.toFixed(1)}%` : 'n/a (no model turn)'}   unavailable=${totalUnavailable}   wall ${(suiteMs / 1000).toFixed(1)}s   model ${spec}`);
   console.log('Latency note: FIRST_TEXT is child-process time to first generated-text event; TOOL_AVG is mean tool-start→tool-end time. Neither is provider-internal model latency.');
 
   // Per-turn token provenance. The table above reports means, and a mean cannot
@@ -517,7 +545,7 @@ export async function main(argv = process.argv.slice(2)) {
     console.log(`${fmtCell('TASK', W.id)}  ${fmtCell('PASS', 6)}  ${fmtCell('AGENT_MS', 18)}  ${fmtCell('TOOLS', 16)}  ${fmtCell('TURNS', 14)}`);
     for (const { task, stats } of rows) {
       console.log(
-        `${fmtCell(task.id, W.id)}  ${fmtCell(`${stats.passCount}/${stats.repeats}`, 6)}  ` +
+        `${fmtCell(task.id, W.id)}  ${fmtCell(stats.measuredRuns ? `${stats.passCount}/${stats.measuredRuns}` : 'n/a', 6)}  ` +
         `${fmtCell(`${stats.agentMs.mean.toFixed(0)} ± ${stats.agentMs.stddev.toFixed(0)}`, 18)}  ` +
         `${fmtCell(`${stats.toolCalls.mean.toFixed(1)} ± ${stats.toolCalls.stddev.toFixed(1)}`, 16)}  ` +
         `${fmtCell(`${stats.turns.mean.toFixed(1)} ± ${stats.turns.stddev.toFixed(1)}`, 14)}`
@@ -526,7 +554,23 @@ export async function main(argv = process.argv.slice(2)) {
   }
 
   // --- honest failure reporting ------------------------------------------------
-  const failures = rows.flatMap(({ task, stats }) => stats.runs.filter((r) => !r.pass).map((r) => ({ task, r })));
+  const unavailableRuns = rows.flatMap(({ task, stats }) => stats.runs
+    .filter((r) => r.availability === 'unavailable')
+    .map((r) => ({ task, r })));
+  if (unavailableRuns.length) {
+    console.log('');
+    console.log(`UNAVAILABLE (${unavailableRuns.length}) - adapter stopped before any model turn`);
+    console.log('='.repeat(80));
+    for (const { task, r } of unavailableRuns) {
+      console.log(`${task.id}  [${task.category}]  ${r.unavailableReason || 'unclassified adapter failure'}`);
+      if (r.sandbox) console.log(`  sandbox: ${r.sandbox}`);
+    }
+    console.log('='.repeat(80));
+  }
+
+  const failures = rows.flatMap(({ task, stats }) => stats.runs
+    .filter((r) => r.availability !== 'unavailable' && !r.pass)
+    .map((r) => ({ task, r })));
   if (failures.length) {
     console.log('');
     console.log(`FAILURES (${failures.length}) - verifier output, unedited`);
@@ -559,6 +603,8 @@ export async function main(argv = process.argv.slice(2)) {
       prompt: task.prompt,
       passCount: stats.passCount,
       repeats: stats.repeats,
+      measuredRuns: stats.measuredRuns,
+      unavailableRuns: stats.unavailableRuns,
       passRate: stats.passRate,
       ms: stats.ms,
       agentMs: stats.agentMs,
@@ -572,7 +618,8 @@ export async function main(argv = process.argv.slice(2)) {
       redundantCalls: stats.redundantCalls,
       costUsd: stats.costUsd,
       runs: runs.map((r) => ({
-        pass: r.pass, detail: r.detail, checks: r.checks, ms: r.ms, agentMs: r.agentMs,
+        pass: r.pass, availability: r.availability, unavailableReason: r.unavailableReason,
+        detail: r.detail, checks: r.checks, ms: r.ms, agentMs: r.agentMs,
         firstTextMs: r.firstTextMs, firstToolMs: r.firstToolMs, toolDurationMs: r.toolDurationMs, timedTools: r.timedTools,
         exitCode: r.exitCode, timedOut: r.timedOut,
         toolCalls: r.toolCalls, uniqueCalls: r.uniqueCalls, redundantCalls: r.redundantCalls,
@@ -583,7 +630,10 @@ export async function main(argv = process.argv.slice(2)) {
         diagnostics: r.diagnostics, finalText: r.finalText, sandbox: r.sandbox,
       })),
     })),
-    totals: { totalRuns, totalPass, passRatePercent: Number(rate.toFixed(1)), suiteMs },
+    totals: {
+      totalRuns, totalMeasured, totalUnavailable, totalPass,
+      passRatePercent: rate == null ? null : Number(rate.toFixed(1)), suiteMs,
+    },
   };
   if (opts.jsonOut) {
     fs.mkdirSync(path.dirname(path.resolve(opts.jsonOut)), { recursive: true });
@@ -600,7 +650,9 @@ export async function main(argv = process.argv.slice(2)) {
     }
   }
 
-  process.exitCode = totalPass === totalRuns ? 0 : 1;
+  // A comparison with no measurable model turn is intentionally non-success:
+  // it needs credentials or a working adapter before it can answer anything.
+  process.exitCode = totalMeasured > 0 && totalPass === totalMeasured ? 0 : 1;
 }
 
 // Only drive the CLI when invoked as a program. Importing this module (the test

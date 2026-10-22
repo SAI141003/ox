@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { benchmarkExecutionEnv, benchmarkExecutionSpec, costFor, costStats, renderUsageLines, resolveBenchmarkTarget, runOnce } from '../bench/real/runner.mjs';
+import { benchmarkExecutionEnv, benchmarkExecutionSpec, costFor, costStats, renderUsageLines, resolveBenchmarkTarget, runOnce, unavailableReason } from '../bench/real/runner.mjs';
 import { EVENTS_FILE, TIMINGS_FILE, summarizeEvents, writeTimingsFile } from '../bench/real/lib.mjs';
 
 const CANNED_NDJSON = [
@@ -148,6 +148,14 @@ test('unpriced benchmark runs keep cost unknown instead of recording a false zer
   assert.deepEqual(costStats([null, null]), { mean: null, stddev: null, n: 0, unknown: true });
   assert.deepEqual(costStats([0.01, null]), { mean: null, stddev: null, n: 0, unknown: true });
   assert.deepEqual(costStats([0.01, 0.03]), { mean: 0.02, stddev: Math.sqrt(0.0002), n: 2, unknown: false });
+});
+
+test('an authentication failure before a model turn is unavailable, not a task failure', () => {
+  const summary = { toolCalls: 0, inputTokens: 0, outputTokens: 0, errors: ['Not logged in. Please run /login'], finalText: '' };
+  assert.match(unavailableReason({ timedOut: false, stderr: '' }, summary), /not logged in/i);
+  assert.equal(unavailableReason({ timedOut: true, stderr: 'Not logged in' }, summary), null, 'timeouts remain measurable failures');
+  assert.equal(unavailableReason({ timedOut: false, stderr: 'Not logged in' }, { ...summary, toolCalls: 1 }), null, 'a tool turn is a real attempt');
+  assert.equal(unavailableReason({ timedOut: false, stderr: 'Not logged in' }, { ...summary, inputTokens: 1 }), null, 'a model token is a real attempt');
 });
 
 test('without --keep the sandbox is destroyed and nothing is left behind', async () => {
