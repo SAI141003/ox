@@ -608,6 +608,31 @@ The process deliberately exits nonzero for an unavailable-only comparison so CI 
 an operator knows that valid authentication is still required; it no longer calls
 the unavailable adapter a failed Claude task.
 
+## Current checkout gate and live capability snapshot — 2026-10-22
+
+The full project gate was rerun after the updater-card and benchmark changes with
+`OX_SKIP_REPO_GUARD=1 npm test`: **2,235 passed, 0 failed, 257 skipped** (2,492
+tests) in 227.8 seconds. `npm run verify:quick` separately passed syntax for 559
+files and six entry-point smoke checks. `ox secure --diff` reported no findings in
+16 changed files. These are current checkout results; skipped tests are not silently
+counted as passes.
+
+The live machine snapshot reported 35 provider adapters, 37 built-in tool
+implementations, 153 discovered skills, one configured MCP server (`rea`, write
+risk, 200 advertised tools), five approved Ollama models, and 21 detected coding
+apps/extensions. It found an active Codex session and three recent idle Claude
+benchmark records. The idle rows are shown as idle, not working; proprietary tools
+are labelled `session adapter` only where Ox can safely read their session format,
+and `detected only` otherwise. This is detection and contract coverage—not proof
+that every external service is authenticated or that all 200 MCP operations work.
+
+Provider readiness remains the limiting factor for a market-wide live comparison:
+NVIDIA is configured and has a verified model-list connection, OpenRouter is set but
+its earlier credential check returned HTTP 401, Ollama is reachable, and most paid
+providers have no local credential. Therefore the audit reports measured runs and
+unknown prices exactly as observed; it does not invent speed, quality, or cost
+rankings for providers that could not make an authenticated model turn.
+
 ## Coucou update-recording comparison — 2026-10-22
 
 The supplied 11.8-second recording shows Coucou 0.5.3 being announced through its
