@@ -680,3 +680,20 @@ supplied. The regression suite covers both cases (`test/bench-real-keep-events.t
 12/12 passed). The raw local run is retained locally at
 `bench/results/2026-10-22T-local-qwen3b-deep.json`; it is intentionally not presented
 as a $0 cost comparison.
+
+### Installed-model read-task matrix — 2026-10-23
+
+The same `read-and-report` task was also run once against the other two installed
+Ollama models. These are real, fresh-sandbox attempts, not replay fixtures:
+
+| model | result | agent time | first text | tools/turns | input/output | cost |
+|---|---:|---:|---:|---:|---:|---:|
+| `qwen2.5:1.5b` | FAIL | 35.9 s | 28.1 s | 1 / 2 | 7,583 / 168 | unknown |
+| `SmolLM2-135M-Instruct` | FAIL | 22.6 s | 22.2 s | 0 / 1 | 1,385 / 59 | unknown |
+
+Qwen 1.5B found the task context but failed to create `answer.txt`; SmolLM2 made
+no tool call and hallucinated a value. The artifacts are
+`bench/results/2026-10-23-local-qwen15-read.json` and
+`bench/results/2026-10-23-local-smollm-read.json`. Their `costUsd` fields are
+`null` and their aggregate cost objects are marked `unknown: true` by the fixed
+runner.
