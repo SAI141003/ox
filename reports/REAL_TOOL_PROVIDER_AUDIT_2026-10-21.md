@@ -720,3 +720,17 @@ Serper are not configured. The command therefore reports `ok: false` for the ove
 doctor result because many optional provider keys are absent, but it separately marks
 the usable routes and the concrete remediation for each missing backend. This avoids
 turning “not configured” into a false provider failure.
+
+## Deterministic full-system tool bench — 2026-10-23
+
+The complete deterministic harness passed **25/25 scenarios (100%)** in 11.4 s. It
+covered core file tools, multi-file refactors, recovery, safety/trust gates, context
+compaction, resume pairing, MCP round-trip and policy, skill disclosure and safe skill
+installation, memory recall (including procedural memory), plan mode, goal verification,
+subagent round-trip, repo mapping, and budget-stop enforcement. The harness measured
+73,800 input and 18,380 output tokens and a catalog-derived synthetic cost of $0.2579.
+
+This is strong evidence that Ox's orchestration and safety plumbing works end to end;
+the model is scripted in this suite, so these numbers are not a claim about live model
+quality or provider latency. The machine-readable run is
+`bench/results/2026-10-23-deterministic.json`, and the baseline was left unchanged.
