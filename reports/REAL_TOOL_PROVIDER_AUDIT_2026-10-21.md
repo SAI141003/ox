@@ -747,3 +747,13 @@ hosted inference was sent in this check.
 Qwen3-loop 0.6B, Llama 3.2 1B tool-calling, LittleLamb, and Falcon-H1 Tiny). Their
 throughput values are hardware estimates from the catalog, not measured Ox runs, so
 they remain recommendations only; no model was pulled or silently installed.
+
+## MCP live protocol probe — 2026-10-23
+
+`ox mcp test rea` completed the configured stdio MCP handshake and `tools/list` in
+**2,054 ms**, returning **200 tools**. The server is reported `ok` with write risk;
+the inventory includes native analysis, web/CDP inspection, Android/Apple artifact
+inspection, debugger controls, evidence-bundle operations, and process capture. This
+proves initialization and enumeration, not that every operation is safe or usable
+without its required target/artifact; write-risk tools remain gated by Ox's approval
+policy.
