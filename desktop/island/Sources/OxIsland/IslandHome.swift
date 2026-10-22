@@ -732,8 +732,15 @@ struct UpdateHome: View {
     @ObservedObject var bridge: OxBridge
     let card: OxBridge.UpdateCard
     var body: some View {
+        let wash: Color = {
+            switch card.kind {
+            case .failed: return Color(hex: "#F4505E")
+            case .done: return Color(hex: "#2FA36B")
+            case .ask, .available, .working: return Color(hex: "#4D8DFF")
+            }
+        }()
         ZStack(alignment: .topLeading) {
-            HomeCard(wash: Color(hex: card.kind == .failed ? "#F4505E" : "#2fa36b").opacity(0.28)) { EmptyView() }
+            HomeCard(wash: wash.opacity(0.28)) { EmptyView() }
             HomeCharacter(bridge: bridge, mood: card.kind == .working ? .thinking : card.kind == .done ? .done : .idle, size: 52).position(x: 50, y: 49)
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {

@@ -2006,11 +2006,12 @@ const ROUTES = [
     const a = String(body?.action ?? '');
     if (a === 'allow' || a === 'deny') { U.setAllowed(a === 'allow'); if (a === 'allow') U.inBackground('check'); return { ok: true }; }
     if (a === 'auto') { U.setAutoUpdate(true); U.inBackground('check'); return { ok: true }; }
+    if (a === 'auto-off') { U.setAutoUpdate(false); return { ok: true }; }
     if (a === 'later') { U.later(); return { ok: true }; }
     if (a === 'ok') { U.acknowledge(); return { ok: true }; }
     if (a === 'check') return U.inBackground('check');
     if (a === 'apply') return U.inBackground('apply');
-    throw new Error('action: allow, deny, auto, later, check or apply');
+    throw new Error('action: allow, deny, auto, auto-off, later, check or apply');
   }) },
   // Dictation styles and translation, per app (src/dictation-style.js).
   { method: 'GET', pattern: /^\/ox\/dictation\/styles\/?$/, handler: appRoute(async () => { const D = await import('./dictation-style.js'); return { ...D.readStyles(), styles: D.STYLES }; }) },
@@ -2200,7 +2201,6 @@ const ROUTES = [
   { method: 'POST', pattern: /^\/ox\/instructions\/?$/, handler: appRoute(async (b) => (await appApi()).saveInstructions(b.text ?? '')) },
   { method: 'GET', pattern: /^\/ox\/connectors\/?$/, handler: appRoute(async () => (await appApi()).connectorsView()) },
   { method: 'POST', pattern: /^\/ox\/connectors\/?$/, handler: appRoute(async (b) => (await appApi()).saveConnector(b)) },
-  { method: 'GET', pattern: /^\/ox\/update\/?$/, handler: appRoute(async () => (await appApi()).updateView()) },
   { method: 'GET', pattern: /^\/ox\/accounts\/?$/, handler: appRoute(async (_, __, req) => { const id = new URL(req.url, 'http://x').searchParams.get('id'); return (await appApi()).accountsView(process.env, id); }) },
   { method: 'POST', pattern: /^\/ox\/accounts\/connect\/?$/, handler: appRoute(async (b) => (await appApi()).connectAccount(b.id)) },
   { method: 'GET', pattern: /^\/ox\/local\/?$/, handler: appRoute(async () => (await appApi()).localView()) },

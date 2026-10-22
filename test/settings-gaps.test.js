@@ -75,7 +75,9 @@ test('the Settings pages exist and are searchable', () => {
   assert.match(html, /\/ox\/mesh\/peer/);
   assert.match(html, /\/ox\/mesh\/run/);
   assert.match(html, /Export all chats/);
-  assert.match(html, /Check for updates/);
+  assert.match(html, /GitHub updates/);
+  assert.match(html, /Enable update checks/);
+  assert.match(html, /Install future verified updates automatically/);
   assert.match(html, /let renderSeq = 0/, 'stale pages cannot overwrite the current one');
   assert.match(html, /data-account-default/, 'a connected supported account can become the default from its card');
   assert.match(html, /a\.id !== 'claude'/, 'a Claude subscription is not made ox\'s default');

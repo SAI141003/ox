@@ -92,6 +92,16 @@ function loads(root, files) {
   return bad;
 }
 
+// A fast-forward protects commits, but it does not explain why a pull refuses
+// a checkout with edited tracked files. Detect that case before touching the
+// network so the person gets an actionable answer and no local work is mixed
+// with an update. Untracked output is intentionally allowed: it is not
+// overwritten by a fast-forward unless it collides, in which case git still
+// refuses safely.
+function hasTrackedEdits(root) {
+  return git(root, ['diff', '--quiet']).status !== 0 || git(root, ['diff', '--cached', '--quiet']).status !== 0;
+}
+
 /**
  * Update now. `rebuildIsland()` and `restartIsland()` are called when the
  * island's code changed. → { ok, steps, from, to, islandRebuilt } or { ok: false, why }
@@ -101,6 +111,7 @@ export function apply({ root = OX_ROOT, rebuildIsland = defaultRebuild, restartI
   const step = (t) => { steps.push(t); say(t); };
   const src = source(root, trusted);
   if (!src.ok) return { ok: false, why: src.why, steps };
+  if (hasTrackedEdits(root)) return { ok: false, why: 'this copy has edited tracked files; commit or stash them before updating so ox never mixes an update with your work', steps };
   step('Checking the update');
   const from = git(root, ['rev-parse', 'HEAD']).stdout.trim();
   const fetch = git(root, ['fetch', '--quiet']);
@@ -122,8 +133,15 @@ export function apply({ root = OX_ROOT, rebuildIsland = defaultRebuild, restartI
   if (files.some((f) => f.startsWith('desktop/island/')) && process.platform === 'darwin') {
     step('Rebuilding the island');
     const r = rebuildIsland(root);
-    if (r?.ok === false) step(`The island could not be rebuilt (${r.why}); the rest is updated`);
-    else { islandRebuilt = true; restartIsland(root); }
+    if (r?.ok === false) {
+      // The desktop companion is part of this product, not an optional
+      // afterthought. Leave the whole checkout on the known-good version when
+      // its native build cannot be produced.
+      git(root, ['reset', '--keep', from]);
+      return { ok: false, why: `the island could not be rebuilt, so ox went back: ${r?.why ?? 'unknown build error'}`, steps };
+    }
+    islandRebuilt = true;
+    restartIsland(root);
   }
   writeState({ ...readState(), available: null, updatedAt: Date.now(), updatedTo: to.slice(0, 7) });
   step('Up to date');

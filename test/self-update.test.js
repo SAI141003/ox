@@ -82,3 +82,19 @@ test('self-update: code that does not load is rolled back; your own commits are 
   assert.equal(r2.ok, false);
   assert.match(r2.why, /its own commits/);
 });
+
+test('self-update: tracked local edits and a failed native rebuild both leave the prior version intact', () => {
+  const { mine, ship } = setup();
+  fs.writeFileSync(path.join(mine, 'src/a.js'), 'export const local = true;\n');
+  const dirty = U.apply({ root: mine, trusted: ANY });
+  assert.equal(dirty.ok, false);
+  assert.match(dirty.why, /edited tracked files/);
+
+  // Start a clean checkout for the native-build rollback assertion.
+  const fresh = setup();
+  fresh.ship('// changed native source\n', 'native update', 'desktop/island/Sources/x.swift');
+  const failed = U.apply({ root: fresh.mine, trusted: ANY, rebuildIsland: () => ({ ok: false, why: 'Swift compiler failed' }) });
+  assert.equal(failed.ok, false);
+  assert.match(failed.why, /island could not be rebuilt/);
+  assert.equal(fs.existsSync(path.join(fresh.mine, 'desktop/island/Sources/x.swift')), false, 'failed native update is rolled back');
+});
