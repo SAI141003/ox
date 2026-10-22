@@ -84,10 +84,12 @@ export function setName(name, o = {}) {
 
 // ---------------------------------------------------------------- paired machines
 
-const DEFAULT_GRANTS = { status: true, infer: false, tasks: false, files: false, agents: false, dev: false };
+const DEFAULT_GRANTS = { status: true, infer: false, tasks: false, files: false, agents: false, dev: false, screen: false, control: false };
 export const GRANTS = Object.keys(DEFAULT_GRANTS);
 // Presets for `ox mesh allow <machine> <preset>`.
-export const PRESETS = Object.freeze({ viewer: ['status'], helper: ['status', 'infer', 'tasks'], full: ['status', 'infer', 'tasks', 'files', 'agents', 'dev'] });
+// Screen and control are deliberately not part of `full`: the controlled Mac's
+// owner must opt in to each, or use the explicit desktop preset.
+export const PRESETS = Object.freeze({ viewer: ['status'], helper: ['status', 'infer', 'tasks'], full: ['status', 'infer', 'tasks', 'files', 'agents', 'dev'], desktop: ['status', 'screen', 'control'] });
 
 export function readPeers(o = {}) {
   try { return JSON.parse(fs.readFileSync(path.join(dir(o), 'peers.json'), 'utf8')).peers ?? {}; } catch { return {}; }
@@ -428,7 +430,7 @@ export async function startNode(o = {}) {
     // The machine's makeup, its agent sessions, its shared folders (src/mesh-services.js).
     const S = await import('./mesh-services.js');
     const roots = readPeers(o)[peer.id]?.roots ?? [os.homedir()];
-    if (await S.serveOp({ ch, peer, msg, grants, roots, home: home(o), ollamaUrl, meName: me.name })) return;
+    if (await S.serveOp({ ch, peer, msg, grants, roots, home: home(o), ollamaUrl, meName: me.name, remoteControl: o.remoteControl })) return;
     refuse(`unknown request ${msg.op}`);
   }
 

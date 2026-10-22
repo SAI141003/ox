@@ -6,14 +6,21 @@ import { assertCostBudget } from "./cost.js";
 import { recordDecision, recordOutcome } from "./audit.js";
 
 export const VERIFY_SCHEMA_VERSION = "1.0.0";
+// The repo's full test suite takes several minutes. The bash tool default is
+// intentionally shorter for individual commands; verification of a whole suite
+// needs its own ceiling or `ox verify` kills healthy test runs midway through.
+// The repository's unskipped `npm test` also runs its per-file mutation sweep,
+// which re-executes most of the suite; keep the verifier ceiling aligned with
+// scripts/verify.mjs's 40-minute unit-stage ceiling.
+export const VERIFY_TEST_TIMEOUT_MS = 2_400_000;
 
 function readSafe(p) {
   try { return fs.readFileSync(p, "utf8"); } catch { return null; }
 }
 
-export async function runVerificationCommand(cmd, ctx = {}, execute = dispatchTool) {
+export async function runVerificationCommand(cmd, ctx = {}, execute = dispatchTool, timeoutMs = 120_000) {
   assertCostBudget();
-  const args = { command: cmd, timeout_ms: 120000 };
+  const args = { command: cmd, timeout_ms: timeoutMs };
   let blocked = null;
   let rule = "verification-approved";
   if (typeof cmd !== "string" || !cmd.trim()) blocked = "verification command is required";
@@ -58,7 +65,7 @@ export const VerificationCriteria = {
 
 export function createVerifier(cwd, { ctx = {}, execute = dispatchTool } = {}) {
   const state = { runs: [] };
-  const runCmd = (cmd) => runVerificationCommand(cmd, { ...ctx, cwd }, execute);
+  const runCmd = (cmd, timeoutMs) => runVerificationCommand(cmd, { ...ctx, cwd }, execute, timeoutMs);
 
   async function runTests() {
     const pkg = readSafe(path.join(cwd, "package.json"));
@@ -70,7 +77,7 @@ export function createVerifier(cwd, { ctx = {}, execute = dispatchTool } = {}) {
         else if (j.scripts && j.scripts["test:unit"]) cmd = "npm run test:unit";
       } catch {}
     }
-    const r = await runCmd(cmd, cwd);
+    const r = await runCmd(cmd, VERIFY_TEST_TIMEOUT_MS);
     return { name: "tests", passed: r.ok, output: (r.output || "").slice(-2000), exitCode: r.code };
   }
 
@@ -196,7 +203,7 @@ export function formatVerificationReport(report) {
   lines.push("Passed: " + (report.passed ? "YES" : "NO"));
   lines.push("-".repeat(50));
   for (const c of report.checks || []) {
-    lines.push((c.passed ? "[PASS]" : "[FAIL]") + " " + c.name + " (exit " + (c.exitCode || 0) + ")");
+    lines.push((c.passed ? "[PASS]" : "[FAIL]") + " " + c.name + " (exit " + (c.exitCode == null ? "n/a" : c.exitCode) + ")");
     if (!c.passed && c.output) {
       lines.push(c.output.split("\n").slice(-5).map(function(l) { return "  " + l; }).join("\n"));
     }

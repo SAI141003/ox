@@ -91,7 +91,7 @@ const STAGES = {
   async smoke() {
     const checks = [
       { argv: ['--version'], expect: /^ox \d+\.\d+\.\d+/m },
-      { argv: ['help'], expect: /featherweight coding agent/ },
+      { argv: ['help'], expect: /fast, frugal coding agent/ },
       { argv: ['bots'], expect: /ox-ollama/ },
       { argv: ['prompt'], expect: /You are ox/ },
       { argv: ['skill', 'ls'], expect: /./ },
@@ -116,13 +116,37 @@ const STAGES = {
     // kept the file's process alive) is reported as a failure instead of
     // holding the whole suite until the ceiling below. That is how Windows CI
     // hung for 25+ minutes before the cleanup fixes.
-    const r = await run(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=4', '--test-timeout=600000', ...files], {
-      timeoutMs: 2_400_000,
-      plain: false,
-      // The per-file repo guard reruns the whole suite; the dedicated full run
-      // (`npm test`) still covers it. Here we want the fast inner loop.
-      env: { OX_SKIP_REPO_GUARD: '1', OX_NO_BUILTIN_SKILLS: '1', OX_NO_PLUGINS: '1', OX_ISLAND: '0', OX_LEARN: '0', OX_NO_KEYSTORE: '1', OX_USAGE_LOG: '0', OX_MEMORY_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'ox-test-memory-')) },
-    });
+    const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-verify-home-'));
+    let r;
+    try {
+      r = await run(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=4', '--test-timeout=600000', ...files], {
+        timeoutMs: 2_400_000,
+        plain: false,
+        // The per-file repo guard reruns the whole suite; the dedicated full run
+        // (`npm test`) still covers it. Here we want the fast inner loop.
+        // Isolate HOME as well as memory: approved local endpoints and installed
+        // skills/plugins in the developer's ~/.ox must not change test outcomes.
+        env: {
+          HOME: testHome,
+          USERPROFILE: testHome,
+          XDG_CONFIG_HOME: path.join(testHome, '.config'),
+          XDG_CACHE_HOME: path.join(testHome, '.cache'),
+          XDG_DATA_HOME: path.join(testHome, '.local', 'share'),
+          XDG_STATE_HOME: path.join(testHome, '.local', 'state'),
+          OX_HOME: path.join(testHome, '.ox'),
+          OX_SKIP_REPO_GUARD: '1',
+          OX_NO_BUILTIN_SKILLS: '1',
+          OX_NO_PLUGINS: '1',
+          OX_ISLAND: '0',
+          OX_LEARN: '0',
+          OX_NO_KEYSTORE: '1',
+          OX_USAGE_LOG: '0',
+          OX_MEMORY_HOME: path.join(testHome, '.ox', 'memory'),
+        },
+      });
+    } finally {
+      fs.rmSync(testHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
     const num = (k) => Number((r.out.match(new RegExp(`^# ${k} (\\d+)`, 'm')) ?? [])[1] ?? NaN);
     const pass = num('pass');
     const fail = num('fail');

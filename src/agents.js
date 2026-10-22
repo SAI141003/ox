@@ -55,6 +55,10 @@ export function saveAgent(name, agent) {
     shape: Number.isInteger(agent.shape) && agent.shape >= 0 && agent.shape <= 12 ? agent.shape : null,
     // Its colour in the app (a palette name); the app itself stays black and white.
     color: typeof agent.color === 'string' && /^[a-z]{3,10}$/.test(agent.color) ? agent.color : null,
+    // Optional, licensed companion used by the bot UI; this never changes the
+    // Island's independent Blender animals. Keep only the allowlisted values.
+    character: agent.character === 'mochi' ? 'mochi' : 'ox',
+    colorway: ['matcha', 'sakura', 'kinako', 'yuzu', 'ramune', 'budo'].includes(agent.colorway) ? agent.colorway : 'matcha',
     createdAt: agent.createdAt ?? new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

@@ -65,7 +65,7 @@ test('costOf: cached input is billed at the cached rate', () => {
   const cached = costOf('claude-x', { inputTokens: 10_000, outputTokens: 0, cacheReadTokens: 9_000 }, overrides);
   assert.equal(full, 0.03);
   assert.ok(Math.abs(cached - (1_000 * 3 + 9_000 * 3 * 0.1) / 1e6) < 1e-12);
-  assert.deepEqual(cacheRates('claude-opus-5-5'), { read: 0.1, write: 1.25 });
+  assert.deepEqual(cacheRates('claude-opus-5-5'), { read: 0.1, write: 2 });
   assert.deepEqual(cacheRates('deepseek-v4-pro'), { read: 0.1, write: 1 });
   assert.deepEqual(cacheRates('gpt-5.6-sol'), { read: 0.5, write: 1 });
 });

@@ -162,6 +162,17 @@ test('loadMemoryBlock returns content and truncates past the 150-line cap', (t) 
   assert.ok(loaded.split('\n').length <= 151);
 });
 
+test('loadMemoryBlock does not read project memory during incognito sessions', (t) => {
+  const dir = sandbox(t);
+  const adir = path.join(dir, '.agent');
+  fs.mkdirSync(adir, { recursive: true });
+  fs.writeFileSync(path.join(adir, 'MEMORY.md'), 'private project context\n');
+  const old = process.env.OX_INCOGNITO;
+  process.env.OX_INCOGNITO = '1';
+  t.after(() => { if (old === undefined) delete process.env.OX_INCOGNITO; else process.env.OX_INCOGNITO = old; });
+  assert.equal(loadMemoryBlock(dir), '');
+});
+
 test('writeEpisode writes a dated episode capped at 40 lines', (t) => {
   const dir = sandbox(t);
   const files = Array.from({ length: 30 }, (_, i) => `src/file-${i}.js`);

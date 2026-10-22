@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Canvas, checkUi, uiBlocks, mendBrackets } from '../src/ui-lang.js';
-import { LIVE_UI_GUIDE, repairLiveUi, mendUi } from '../src/serve.js';
+import { LIVE_UI_GUIDE, WANTS_UI, repairLiveUi, mendUi } from '../src/serve.js';
 
 const load = (src) => {
   const ev = new Canvas().load(src);
@@ -72,6 +72,18 @@ test('every example in the interactive guide loads cleanly', () => {
   const blocks = uiBlocks(LIVE_UI_GUIDE);
   assert.ok(blocks.length >= 3);
   for (const b of blocks) assert.equal(checkUi('```openui\n' + b + '\n```').ok, true, b);
+});
+
+test('interactive intent routing covers useful answer shapes without wrapping ordinary chat', () => {
+  for (const ask of [
+    'walk me through how a mortgage works', 'plan a 3-day trip to Montreal',
+    'make a project roadmap', 'draw a flowchart for this process',
+    'help me choose between these laptops', 'show a timeline of the release',
+    'make a tracker for my weekly habits', 'summarize these results',
+  ]) assert.equal(WANTS_UI.test(ask), true, ask);
+  for (const ask of ['hi', 'what is photosynthesis?', 'tell me a joke']) {
+    assert.equal(WANTS_UI.test(ask), false, ask);
+  }
 });
 
 test('checkUi: no block, nothing to draw, lines dropped, fine', () => {

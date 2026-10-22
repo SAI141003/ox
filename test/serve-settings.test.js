@@ -12,11 +12,22 @@ const OX = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-settings-h-'));
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/_API_KEY$|^OX_/.test(k)));
 Object.assign(env, { HOME: home, OX_ISLAND: '0', OX_NO_PLUGINS: '1', OX_LEARN: '0', ANTHROPIC_API_KEY: 'test' });
-const port = 41000 + Math.floor(Math.random() * 9000);
-const srv = spawn(process.execPath, [OX, 'serve', '--port', String(port)], { cwd: home, env, stdio: 'ignore' });
+// Let the OS choose an unused ephemeral port. A random number in a high range
+// can still belong to an unrelated WebSocket/dev server; the old test then
+// silently queried that server and tried to parse its HTML as settings JSON.
+const srv = spawn(process.execPath, [OX, 'serve', '--port', '0'], { cwd: home, env, stdio: ['ignore', 'pipe', 'ignore'] });
 after(() => srv.kill());
+const port = await new Promise((resolve, reject) => {
+  let output = '';
+  const timeout = setTimeout(() => reject(new Error(`ox serve did not announce its ephemeral port: ${output}`)), 10_000);
+  srv.stdout.on('data', (chunk) => {
+    output += chunk.toString();
+    const match = /\[serve\] listening on http:\/\/(?:\[[^\]]+\]|[^:\s]+):(\d+)/.exec(output);
+    if (match) { clearTimeout(timeout); resolve(Number(match[1])); }
+  });
+  srv.once('exit', (code) => { clearTimeout(timeout); reject(new Error(`ox serve exited before listening (code ${code}): ${output}`)); });
+});
 const base = `http://127.0.0.1:${port}`;
-for (let i = 0; i < 100; i++) { try { await fetch(`${base}/health`); break; } catch { await new Promise((r) => setTimeout(r, 100)); } }
 const post = (body, headers = {}) => fetch(`${base}/ox/settings`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
 
 test('settings show the model ox chose from your keys, and which bots are ready', async () => {

@@ -155,7 +155,7 @@ Preset table (name → provider/model):
 | haiku | anthropic | claude-haiku-4-5 | ANTHROPIC_API_KEY |
 | gpt | openai | gpt-5.6-sol | OPENAI_API_KEY |
 | gemini | gemini | gemini-3.1-pro-preview | GEMINI_API_KEY |
-| flash | gemini | gemini-3.7-flash | GEMINI_API_KEY |
+| flash | gemini | gemini-3.8-flash | GEMINI_API_KEY |
 | groq | groq | moonshotai/kimi-k2-instruct-0905 | GROQ_API_KEY |
 | deepseek | deepseek | deepseek-v4-pro | DEEPSEEK_API_KEY |
 | ollama | ollama | qwen3 @ http://localhost:11434/v1 | none |
@@ -244,7 +244,7 @@ Price table (USD/Mtok in/out) covering every preset plus alternates:
 | terra | $2 | $12 |
 | luna | $0.20 | $1.20 |
 | gemini-3.1-pro-preview | $2 | $12 |
-| gemini-3.7-flash | $0.38 | $1.88 |
+| gemini-3.8-flash | $0.75 | $3.75 (standard tier through 2026-12-31) |
 | moonshotai/kimi-k2-instruct-0905 | $1 | $3 |
 | qwen/qwen3.6-27b | $0.60 | $3 |
 | deepseek-v4-pro | $1.32 | $3.96 |

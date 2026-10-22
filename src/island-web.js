@@ -98,7 +98,12 @@ function runOx(args, cwd) {
 
 const cleanAnswer = (s) => String(s).split('\n').filter((l) => !/^[·●✓] /.test(l)).join('\n').trim();
 
-export function createIslandServer({ port = 0, token = crypto.randomBytes(18).toString('base64url'), watcher = createRunWatcher() } = {}) {
+export function createIslandServer({
+  port = 0,
+  token = crypto.randomBytes(18).toString('base64url'),
+  watcher = createRunWatcher(),
+  transcribeAudio = null,
+} = {}) {
   const shelf = SHELF_DIR();
   const server = http.createServer(async (req, res) => {
     const send = (code, body, type = 'application/json') => {
@@ -148,8 +153,9 @@ export function createIslandServer({ port = 0, token = crypto.randomBytes(18).to
         const f = path.join(os.tmpdir(), `ox-voice-${Date.now()}-${crypto.randomBytes(3).toString('hex')}.${/ogg/.test(req.headers['content-type'] ?? '') ? 'ogg' : /wav/.test(req.headers['content-type'] ?? '') ? 'wav' : 'webm'}`);
         fs.writeFileSync(f, buf);
         try {
-          const V = await import('./video-edit.js');
-          const tr = V.transcribe(f);
+          const tr = transcribeAudio
+            ? await transcribeAudio(f)
+            : await (await import('./video-edit.js')).transcribe(f);
           const text = tr.segments.map((x) => x.text).join(' ').replace(/\s+/g, ' ').trim();
           let typed = false;
           if (url.searchParams.get('type') === '1' && text) {

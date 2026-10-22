@@ -441,6 +441,52 @@ export function checkAll(config = {}, env = process.env) {
   return Object.keys(allClis(config)).map((id) => checkCli(id, config, env));
 }
 
+// Login is deliberately allow-listed: a request from the local app can launch
+// only these known vendor CLIs, never a command supplied by a browser client.
+const ACCOUNT_LOGIN_ARGS = Object.freeze({
+  claude: [], chatgpt: ['login'], gemini: [], qwen: [], kimi: [],
+  copilot: ['login'], cursor: ['login'], opencode: ['auth', 'login'],
+  iflow: [], amp: ['login'], droid: [], auggie: ['login'],
+});
+const ACCOUNT_INSTALL_PAGES = Object.freeze({
+  claude: 'https://docs.anthropic.com/en/docs/claude-code/getting-started',
+  chatgpt: 'https://developers.openai.com/codex/cli',
+  gemini: 'https://github.com/google-gemini/gemini-cli/blob/main/docs/get-started/index.md',
+  qwen: 'https://github.com/QwenLM/qwen-code',
+  kimi: 'https://github.com/MoonshotAI/kimi-cli',
+  copilot: 'https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli',
+  cursor: 'https://docs.cursor.com/en/cli/overview',
+  opencode: 'https://opencode.ai/docs/cli/',
+  aider: 'https://aider.chat/docs/install.html',
+  goose: 'https://block.github.io/goose/docs/getting-started/installation/',
+  crush: 'https://github.com/charmbracelet/crush',
+  openhands: 'https://docs.openhands.dev/openhands/usage/cli',
+  iflow: 'https://github.com/iflow-ai/iflow-cli',
+  amp: 'https://ampcode.com/manual',
+  droid: 'https://docs.factory.ai/cli/getting-started/overview',
+  auggie: 'https://docs.augmentcode.com/cli/overview',
+});
+
+export function accountInstallPage(id) { return ACCOUNT_INSTALL_PAGES[id] ?? null; }
+export function accountCanConnect(id) { return Object.hasOwn(ACCOUNT_LOGIN_ARGS, id); }
+
+export function launchSubscriptionLogin(id, { env = process.env, platform = process.platform } = {}) {
+  if (!Object.hasOwn(ACCOUNT_LOGIN_ARGS, id)) throw new Error('This account does not support a built-in sign-in flow. Use its API key or provider setup instead.');
+  if (platform !== 'darwin') return { opened: false, reason: 'The one-click Terminal sign-in is currently available in the macOS app.' };
+  const check = checkCli(id, {}, env);
+  if (!check.installed || (!check.works && check.signedIn !== false)) {
+    throw new Error(check.fix ? `The ${id} CLI is not ready. Open its official setup guide first.` : `The ${id} CLI is not installed.`);
+  }
+  const cli = SUBSCRIPTION_CLIS[id];
+  if (!cli) throw new Error('Custom account providers cannot be launched automatically.');
+  const quote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+  const command = [cli.bin, ...ACCOUNT_LOGIN_ARGS[id]].map(quote).join(' ');
+  const script = `tell application "Terminal"\nactivate\ndo script ${JSON.stringify(command)}\nend tell`;
+  const r = spawnSync('osascript', ['-e', script], { encoding: 'utf8', timeout: 15000, env });
+  if (r.error || r.status !== 0) throw new Error(String(r.stderr || r.error?.message || 'Could not open Terminal sign-in').trim());
+  return { opened: true, id, message: 'The official sign-in flow is open in Terminal. Complete any browser approval there; Ox will verify the connection.' };
+}
+
 // ---- output parsers: one line in, ox events out ----
 
 const preview = (v) => {

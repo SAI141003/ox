@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-export const OP_GRANT = Object.freeze({ describe: 'status', agents: 'agents', 'agent-read': 'agents', ls: 'files', pull: 'files', 'dev-start': 'dev', 'dev-stop': 'dev', 'dev-list': 'dev', http: 'dev' });
+export const OP_GRANT = Object.freeze({ describe: 'status', agents: 'agents', 'agent-read': 'agents', ls: 'files', pull: 'files', 'dev-start': 'dev', 'dev-stop': 'dev', 'dev-list': 'dev', http: 'dev', screen: 'screen', 'control-list': 'control', 'control-click': 'control', 'control-type': 'control', 'control-key': 'control' });
 const CHUNK = 48 * 1024;
 const b64 = (b) => Buffer.from(b).toString('base64');
 const expand = (p) => String(p ?? '').replace(/^~(?=$|\/)/, os.homedir());
@@ -67,7 +67,7 @@ export function inside(target, roots) {
 }
 
 /** One read-only request from a paired machine. Returns true when `msg.op` is one of these. */
-export async function serveOp({ ch, peer, msg, grants, roots, home, ollamaUrl, meName }) {
+export async function serveOp({ ch, peer, msg, grants, roots, home, ollamaUrl, meName, remoteControl = null }) {
   const op = msg.op;
   const need = OP_GRANT[op];
   if (!need) return false;
@@ -75,7 +75,24 @@ export async function serveOp({ ch, peer, msg, grants, roots, home, ollamaUrl, m
   const refuse = (why) => ch.send({ t: 'res', rid: msg.rid, ok: false, error: why });
   if (!grants[need]) { refuse(`${meName} does not allow ${need} for ${peer.name}: on ${meName}, run  ox mesh allow "${peer.name}" ${need}`); return true; }
   const a = msg.args ?? {};
-  audit(home, { from: peer.name, peer: peer.id, op, detail: String(a.path ?? a.id ?? '').slice(0, 200) });
+  let detail = String(a.path ?? a.id ?? '').slice(0, 200);
+  if (need === 'screen' || need === 'control') {
+    const C = await import('./mesh-control.js');
+    detail = C.controlAuditDetail(op, a);
+  }
+  audit(home, { from: peer.name, peer: peer.id, op, detail });
+
+  if (need === 'screen' || need === 'control') {
+    const C = await import('./mesh-control.js');
+    const r = await (remoteControl ?? C.remoteControl)(op, a);
+    if (r?.error) { refuse(r.error); return true; }
+    if (op === 'screen') {
+      const data = Buffer.from(r.data ?? []);
+      for (let at = 0; at < data.length; at += CHUNK) ch.send({ t: 'chunk', rid: msg.rid, data: b64(data.subarray(at, at + CHUNK)) });
+      reply({ mime: r.mime ?? 'image/png', size: data.length });
+    } else reply(r);
+    return true;
+  }
 
   if (op === 'describe') { reply(await describe({ ollamaUrl, home })); return true; }
   if (op === 'agents') {

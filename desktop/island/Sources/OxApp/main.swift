@@ -8,14 +8,20 @@ import WebKit
 // `ox app` starts the local server and opens this app with OX_APP_URL set;
 // opened from the Dock it asks `ox` for the URL the same way.
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     var window: NSWindow!
     var web: WKWebView!
+    private var desktopPet: DesktopPetController!
+    private var pendingPetEvent: String?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         buildMenu()
         let config = WKWebViewConfiguration()
         config.preferences.isElementFullscreenEnabled = true
+        config.userContentController.add(self, name: "oxMiniPet")
+        config.userContentController.addUserScript(WKUserScript(
+            source: "document.documentElement.classList.add('native-desktop-pet');",
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
         web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
         web.uiDelegate = self
@@ -34,7 +40,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
+        desktopPet = DesktopPetController()
+        desktopPet.onOpenChat = { [weak self] in self?.openMain(with: "ox:pet-open-chat") }
+        desktopPet.onTalk = { [weak self] in self?.openMain(with: "ox:pet-talk") }
+        desktopPet.onSettings = { [weak self] in self?.openMain(with: "ox:pet-settings") }
+        desktopPet.onHide = { [weak self] in
+            guard let self else { return }
+            self.web.evaluateJavaScript("window.dispatchEvent(new Event('ox:pet-hide'))")
+        }
         load()
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "oxMiniPet", let state = message.body as? [String: Any] else { return }
+        desktopPet.update(state)
+    }
+
+    private func openMain(with event: String) {
+        pendingPetEvent = event
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        if !web.isLoading { deliverPendingPetEvent() }
+    }
+
+    private func deliverPendingPetEvent() {
+        guard let event = pendingPetEvent else { return }
+        pendingPetEvent = nil
+        let safeEvent = event.replacingOccurrences(of: "'", with: "")
+        web.evaluateJavaScript("window.dispatchEvent(new Event('\(safeEvent)'))")
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        deliverPendingPetEvent()
     }
 
     /// The page to show: given by `ox app`, or asked of `ox` when opened from the Dock.
@@ -57,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     /// Opened again from the Dock or by `ox app`: if the server is gone, bring it back.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         checkServer()
+        if !window.isVisible { window.makeKeyAndOrderFront(nil) }
         return true
     }
     func applicationDidBecomeActive(_ notification: Notification) { checkServer() }
@@ -166,13 +204,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         return j.compactMapValues { $0 as? String }
     }
 
+    /// Dock launches have no caller-selected project. Reuse the last project
+    /// unless it is ox's own source tree; in that case start in a clean,
+    /// dedicated workspace so normal app use cannot accidentally edit ox.
+    /// `ox app` from a terminal and File > Open Folder remain explicit choices.
+    static func defaultWorkingDirectory() -> String {
+        let fm = FileManager.default
+        let home = NSHomeDirectory()
+        let workspace = URL(fileURLWithPath: home)
+            .appendingPathComponent("Documents", isDirectory: true)
+            .appendingPathComponent("Ox Workspace", isDirectory: true)
+        let saved = savedState()["cwd"]
+        if let saved, fm.fileExists(atPath: saved), !isOxSourcePath(saved) {
+            return saved
+        }
+        try? fm.createDirectory(at: workspace, withIntermediateDirectories: true)
+        return workspace.path
+    }
+
+    private static func isOxSourcePath(_ candidate: String) -> Bool {
+        guard let (_, cli) = oxPaths() else { return false }
+        let fm = FileManager.default
+        let root = URL(fileURLWithPath: cli)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .standardizedFileURL.resolvingSymlinksInPath()
+        let path = URL(fileURLWithPath: candidate)
+            .standardizedFileURL.resolvingSymlinksInPath()
+        let package = root.appendingPathComponent("package.json")
+        guard let data = fm.contents(atPath: package.path),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              json["name"] as? String == "ox-agent" else { return false }
+        return path.path == root.path || path.path.hasPrefix(root.path + "/")
+    }
+
     /// Run one ox command (in `cwd`) and return its last line of output.
     static func ox(_ args: [String], cwd: String? = nil) -> String? {
         guard let (node, cli) = oxPaths() else { return nil }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: node)
         p.arguments = [cli] + args
-        p.currentDirectoryURL = URL(fileURLWithPath: cwd ?? savedState()["cwd"] ?? NSHomeDirectory())
+        p.currentDirectoryURL = URL(fileURLWithPath: cwd ?? defaultWorkingDirectory())
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = FileHandle.nullDevice
@@ -188,7 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: node)
         p.arguments = [cli, "app", "--print-url"]
-        p.currentDirectoryURL = URL(fileURLWithPath: cwd ?? savedState()["cwd"] ?? NSHomeDirectory())
+        p.currentDirectoryURL = URL(fileURLWithPath: cwd ?? defaultWorkingDirectory())
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = FileHandle.nullDevice
@@ -226,7 +298,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         a.beginSheetModal(for: window) { _ in completionHandler() }
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    // The main chat window can close while the independent desktop companion
+    // remains visible. Quit Ox explicitly from its menu to stop both.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     /// The standard menus: without Edit, ⌘C / ⌘V / ⌘A do nothing in a web view.
     func buildMenu() {

@@ -87,6 +87,38 @@ export const MCP_TEMPLATES = {
     ].join('\n'),
   },
 
+  notion: {
+    name: 'notion',
+    title: 'Notion (official MCP)',
+    risk: 'write',
+    desc: 'Connect Ox to Notion through Notion’s official MCP endpoint and OAuth bridge; search and work with pages the signed-in account can access.',
+    requires: [],
+    entry: () => npx('mcp-remote', 'https://mcp.notion.com/mcp'),
+    setup: [
+      'Uses Notion’s official MCP endpoint via the mcp-remote OAuth bridge.',
+      'The first connection may open a browser for Notion sign-in and consent.',
+      'Configured in the user’s local Ox MCP settings; Ox does not copy or self-host your Notion workspace.',
+      'Notion content is untrusted input. Keep connector permissions at Ask and confirm page edits deliberately.',
+      'Requires Node.js/npm and a Notion account with MCP access.',
+    ].join('\n'),
+  },
+
+  github: {
+    name: 'github',
+    title: 'GitHub (official MCP server)',
+    risk: 'write',
+    desc: 'GitHub’s official local MCP server for repositories, issues, pull requests and actions. Uses its browser OAuth flow on github.com; Docker is required.',
+    requires: [],
+    entry: () => ({ command: 'docker', args: ['run', '-i', '--rm', 'ghcr.io/github/github-mcp-server'] }),
+    setup: [
+      'Uses github/github-mcp-server, the official GitHub MCP server, in a local Docker container.',
+      'Docker must be installed and running. The first use can open a browser to sign in with GitHub OAuth.',
+      'The server keeps its OAuth token in memory; Ox does not store a PAT.',
+      'The server can mutate repositories. Keep the Ox connector permission at Ask and review write operations.',
+      'For GitHub Enterprise or headless use, configure authentication as documented by the official repository.',
+    ].join('\n'),
+  },
+
   slack: {
     name: 'slack',
     title: 'Slack (hosted MCP)',

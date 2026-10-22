@@ -36,6 +36,7 @@ import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, statSyn
 import { spawn, spawnSync } from 'node:child_process';
 import { createReadStream } from 'fs';
 import { stat, unlink } from 'fs/promises';
+import { fileURLToPath } from 'node:url';
 import { resolveTurnMode } from './modes.js';
 import { listAgents, loadAgent, agentBotSpec, agentPersonaBlock } from './agents.js';
 import { readConfigDoc } from './config.js';
@@ -95,6 +96,11 @@ function sendSSE(res, data) {
 // (OX_APP_APPROVAL_MS overrides that, for tests). Only a literal allow says yes.
 const appApprovals = new Map();
 let appApprovalSeq = 0;
+// In-process steering mailboxes for live app chats. They are deliberately
+// transient: a steer belongs to one active run and one upcoming model turn.
+const appChatSteers = new Map();
+const MAX_APP_STEERS = 8;
+const MAX_APP_STEER_CHARS = 4000;
 export function appApprover(res, model, { timeoutMs = Number(process.env.OX_APP_APPROVAL_MS) || 10 * 60_000 } = {}) {
   const mine = new Set();
   res.on?.('close', () => { for (const id of mine) answerAppApproval(id, 'deny'); });
@@ -663,7 +669,10 @@ const NEEDS_TOOLS = /\b(search|look up|google|browse|latest|today|news|price|wea
 const BUILDS = /\b(build|create|make|write|generate|scaffold|implement|code|script|website|app|deploy|install|edit|change|update|delete|rename|fix|refactor|add|remove|run|test)\b/i;
 const SMALL_TALK = /^\s*(hi|hey|hello|yo|thanks|thank you|ok|okay|cool|nice|great|good (morning|night|evening)|how are you|who are you|what can you do)[\s!.?]*$/i;
 const TOUCHES_CODE = /\b(file|files|repo|repository|project|codebase|function|class|module|component|test|tests|bug|fix|refactor|commit|branch|src|readme)\b|[\w-]+\.(js|ts|tsx|jsx|py|go|rs|java|rb|css|html|json|md)\b/i;
-const WANTS_UI = /\b(calculat\w*|convert\w*|compar\w*|table|chart|graph|plot|slider|interactive|estimat\w*|budget|breakdown|checklist|options|pros and cons|form)\b/i;
+// Prefer a useful, native interactive answer for requests whose natural shape
+// is something to explore (not just a paragraph). Keep this intent-based so
+// ordinary questions and small talk stay fast and don't get wrapped in UI.
+export const WANTS_UI = /\b(calculat\w*|convert\w*|compar\w*|table|chart|graph|plot|slider|interactive|estimat\w*|budget|breakdown|checklist|options|pros and cons|form|dashboard|visuali[sz]\w*|diagram|flow(?:chart)?|timeline|roadmap|itinerar\w*|schedule|planner|plan (?:out|a|an|the|my|our|your)|step(?:s|[- ]by[- ]step)?|walk me through|explain how|how does .{1,50} work|decision matrix|help me choose|which (?:one|option|model|tool)|recommend(?:ation)?\s+(?:for|between)|track(?:er|ing)?|calculator|quiz|poll|rank(?:ing)?|scorecard|status|progress|report|summar(?:y|i[sz]\w*)|organize|organise)\b/i;
 // OpenUI Lang (thesysdev/openui), the way OpenUI does it: the prompt is built
 // from the component library itself, so what the model is told and what the
 // page can draw never drift apart.
@@ -697,6 +706,10 @@ export const LIVE_UI_GUIDE = [
   '```openui',
   '$bought = false',
   'root = Card("Phones", [Table([Col("Phone", ["iPhone", "Pixel"]), Col("Price", [999, 799])]), Checkbox("Bought one", $bought)])',
+  '```',
+  'For explainers and plans, use an Explainer so the reader can step through, or Flow for a process. For a decision, use a comparison Table plus buttons for useful follow-ups. Do not invent live facts: use Query or web tools when the request needs current data.',
+  '```openui',
+  'root = Explainer("How a request flows", ["Input: the app receives the message", "Route: Ox chooses a model and tools", "Respond: the model streams an answer"], true)',
   '```',
   'Write one block like these, filled with what the user asked for, then at most one short sentence.',
   'Every $var a line reads must be declared. Use 0 - x for a negative number. For anything the components cannot show, a block fenced with ```html-live holds one self-contained HTML snippet (inline style and script, no network).',
@@ -833,11 +846,11 @@ async function handleChatCompletions(req, res) {
   // nothing learned, no usage record, memory writes refused.
   const incognito = body.ox_incognito === true || process.env.OX_INCOGNITO === '1';
   let memoryBlock = '';
-  if (!tool.noMemory) 
+  if (!tool.noMemory && !incognito && process.env.OX_MEMORY !== '0')
   try {
     const { loadMemoryBlock } = await import('./memory.js');
     const { memoryPromptBlock } = await import('./memory-graph.js');
-    memoryBlock = [loadMemoryBlock(process.cwd()), process.env.OX_MEMORY === '0' || incognito ? '' : memoryPromptBlock({ cwd: process.cwd(), task: lastText })].filter(Boolean).join('\n\n');
+    memoryBlock = [loadMemoryBlock(process.cwd()), memoryPromptBlock({ cwd: process.cwd(), task: lastText })].filter(Boolean).join('\n\n');
   } catch {}
   // `ox_ui: 'live'` is sent by ox's own app, which can run interactive answers.
   // About 600 tokens: sent only when the message asks for something to use.
@@ -874,8 +887,9 @@ async function handleChatCompletions(req, res) {
   const board = await import('./live-board.js');
   const runId = board.startRun({ who: agentDef?.name ?? autoPick?.id ?? String(targetModel), title: incognito ? 'Incognito chat' : lastText || '(no text)', model: target?.model ?? null });
   ctx.ipcBroadcast = board.boardBroadcaster(runId);
-  // Preferences the user states here are kept, as in the terminal.
-  if (process.env.OX_LEARN !== '0' && lastText && !incognito && !tool.noMemory) {
+  // App chats are not mined for long-term memory unless the user explicitly
+  // opts in via Data & privacy. Manual memory tools remain explicit actions.
+  if (body.ox_remember_preferences === true && process.env.OX_LEARN !== '0' && lastText && !incognito && !tool.noMemory) {
     try { (await import('./memory-graph.js')).learnFromMessages([{ role: 'user', content: lastText }], { source: 'app' }); } catch {}
   }
   const config = { maxTokens: max_tokens };
@@ -914,6 +928,12 @@ async function handleChatCompletions(req, res) {
     const fromApp = Boolean(body.ox_mode || body.ox_ui);
     if (fromApp || target?.provider === 'subscription') ctx.requestApproval = appApprover(res, targetModel);
     if (target?.provider === 'subscription') ctx.planApprovals = true;
+    const appSessionId = typeof body.ox_session_id === 'string' ? body.ox_session_id.slice(0, 128) : '';
+    const steerState = appSessionId && fromApp ? { pending: [], startedAt: Date.now() } : null;
+    if (steerState) {
+      appChatSteers.set(appSessionId, steerState);
+      ctx._steerInbox = async () => steerState.pending.splice(0).join('\n\n');
+    }
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -973,6 +993,8 @@ async function handleChatCompletions(req, res) {
       sendSSE(res, { error: { message: error.message, type: 'server_error' } });
       sendSSEDone(res);
       res.end();
+    } finally {
+      if (steerState && appChatSteers.get(appSessionId) === steerState) appChatSteers.delete(appSessionId);
     }
   } else {
     let fullContent = '';
@@ -2095,6 +2117,17 @@ const ROUTES = [
     return body?.confirm ? { agent: O.hire(draft) } : { draft };
   }) },
   // Allow / Deny for a step a chat run is waiting on (appApprover).
+  { method: 'POST', pattern: /^\/ox\/chat\/steer\/?$/, handler: appRoute(async (body) => {
+    const sessionId = typeof body?.sessionId === 'string' ? body.sessionId.slice(0, 128) : '';
+    const text = typeof body?.text === 'string' ? body.text.trim() : '';
+    if (!sessionId || !text) throw new Error('Choose an active session and enter a steering instruction');
+    if (text.length > MAX_APP_STEER_CHARS) throw new Error(`Steering instructions must be ${MAX_APP_STEER_CHARS} characters or fewer`);
+    const state = appChatSteers.get(sessionId);
+    if (!state) throw new Error('That session is no longer running');
+    if (state.pending.length >= MAX_APP_STEERS) throw new Error('This session already has several steering notes waiting; try again after its next step');
+    state.pending.push(text);
+    return { ok: true, queued: state.pending.length };
+  }) },
   { method: 'POST', pattern: /^\/ox\/approval\/?$/, handler: appRoute(async (body) => {
     const decision = body?.decision === 'allow' ? 'allow' : 'deny';
     if (!answerAppApproval(String(body?.id ?? ''), decision)) throw new Error('that approval is no longer waiting');
@@ -2112,7 +2145,10 @@ const ROUTES = [
     }
   }) },
   // Other agents' sessions (src/agents-live.js): read one, message it, open it in Terminal.
-  { method: 'GET', pattern: /^\/ox\/agents\/?$/, handler: appRoute(async () => ({ sessions: (await import('./agents-live.js')).liveAgents() })) },
+  { method: 'GET', pattern: /^\/ox\/agents\/?$/, handler: appRoute(async () => {
+    const A = await import('./agents-live.js');
+    return { sessions: A.liveAgents(), detected: A.detectedCodingTools() };
+  }) },
   // The office's floors: this Mac, then every paired machine (its agents over
   // ox mesh, when it shares them), each with the name you gave its floor.
   { method: 'GET', pattern: /^\/ox\/office\/floors\/?$/, handler: appRoute(officeFloors) },
@@ -2165,9 +2201,11 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/connectors\/?$/, handler: appRoute(async () => (await appApi()).connectorsView()) },
   { method: 'POST', pattern: /^\/ox\/connectors\/?$/, handler: appRoute(async (b) => (await appApi()).saveConnector(b)) },
   { method: 'GET', pattern: /^\/ox\/update\/?$/, handler: appRoute(async () => (await appApi()).updateView()) },
-  { method: 'GET', pattern: /^\/ox\/accounts\/?$/, handler: appRoute(async () => (await appApi()).accountsView()) },
+  { method: 'GET', pattern: /^\/ox\/accounts\/?$/, handler: appRoute(async (_, __, req) => { const id = new URL(req.url, 'http://x').searchParams.get('id'); return (await appApi()).accountsView(process.env, id); }) },
+  { method: 'POST', pattern: /^\/ox\/accounts\/connect\/?$/, handler: appRoute(async (b) => (await appApi()).connectAccount(b.id)) },
   { method: 'GET', pattern: /^\/ox\/local\/?$/, handler: appRoute(async () => (await appApi()).localView()) },
   { method: 'GET', pattern: /^\/ox\/capabilities\/?$/, handler: appRoute(async () => (await appApi()).capabilitiesView()) },
+  { method: 'POST', pattern: /^\/ox\/plugins\/?$/, handler: appRoute(async (b) => (await appApi()).pluginAction(b)) },
   { method: 'GET', pattern: /^\/ox\/skills\/([^/]+)$/, handler: appRoute(async (_, m) => (await appApi()).skillBody(decodeURIComponent(m[1]))) },
   { method: 'GET', pattern: /^\/ox\/messaging\/?$/, handler: appRoute(async () => (await appApi()).messagingView()) },
   { method: 'GET', pattern: /^\/ox\/flows\/?$/, handler: appRoute(async () => { const F = await import('./flows.js'); return { flows: F.listFlows(), runs: F.flowRuns({ limit: 40 }), steps: F.FLOW_STEP_TYPES, triggers: F.FLOW_TRIGGERS }; }) },
@@ -2288,6 +2326,20 @@ const ROUTES = [
     throw new Error('action: remove-worktree');
   }) },
   { method: 'GET', pattern: /^\/ox\/studio\/?$/, handler: appRoute(async () => (await appApi()).studioView()) },
+  // Personal adapters are local, opt-in and evaluated before a user may
+  // promote one. This route exposes the control plane only; it never begins a
+  // training job just because a chat or a browser page was opened.
+  { method: 'GET', pattern: /^\/ox\/personal-model\/?$/, handler: appRoute(async () => {
+    const P = await import('./personal-model.js');
+    return { state: P.personalModelState(), plan: P.trainingPlan(), examples: P.personalModelDataset() };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/personal-model\/?$/, handler: appRoute(async (b) => {
+    const P = await import('./personal-model.js');
+    if (b.action === 'save') return { state: P.savePersonalModelState(b), plan: P.trainingPlan(), examples: P.personalModelDataset() };
+    if (b.action === 'add-example') return { example: P.addTrainingExample(b), state: P.personalModelState(), plan: P.trainingPlan(), examples: P.personalModelDataset() };
+    if (b.action === 'promotion-check') return P.evaluateAdapterPromotion(b);
+    throw new Error('action: save, add-example, or promotion-check');
+  }) },
   { method: 'POST', pattern: /^\/ox\/studio\/create\/?$/, handler: appRoute(async (b) => (await appApi()).studioCreate(b)) },
   { method: 'POST', pattern: /^\/ox\/studio\/?$/, handler: appRoute(async (b) => (await appApi()).studioAction(b)) },
   { method: 'GET', pattern: /^\/ox\/media\/([^/]+)\/([^/]+)$/, handler: serveMediaFile },
@@ -2410,7 +2462,7 @@ async function serveChatPage(res) {
     'Content-Length': chatPage.length,
     'Cache-Control': 'no-cache',
     // The page talks only to this server and loads nothing else (it frames only its own /office).
-    'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
   });
@@ -2459,6 +2511,24 @@ async function handleRequest(req, res) {
     return;
   }
   const path = url.pathname;
+  // Only the published, allowlisted JS modules of the Mochi avatar package are
+  // exposed. Its relative imports stay under this same path; nothing else in
+  // node_modules is made web-accessible.
+  const mochiModule = /^\/vendor\/mochi-avatar\/dist\/(?:canvas2d|characters|core|element|svg)\/[a-z0-9-]+\.js$/.test(path);
+  if (req.method === 'GET' && mochiModule) {
+    try {
+      const appDir = dirname(fileURLToPath(import.meta.url));
+      const file = resolve(appDir, '../node_modules/mochi-avatar', `.${path.slice('/vendor/mochi-avatar'.length)}`);
+      const root = resolve(appDir, '../node_modules/mochi-avatar/dist') + '/';
+      if (!file.startsWith(root)) throw new Error('invalid avatar module path');
+      const data = await readFile(file);
+      res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' });
+      res.end(data);
+    } catch {
+      sendError(res, 404, 'Mochi avatar module is not installed.', 'invalid_request_error', 'not_found', null);
+    }
+    return;
+  }
   const PLATFORM_ROOT = resolve(process.cwd(), 'platform');
   if (await serveStaticFile(req, res, PLATFORM_ROOT)) return;
   if (req.method === 'GET' && (path === '/' || path === '/chat')) {
@@ -2578,9 +2648,10 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
         return;
       }
       reportExposure(exposure);
-      console.log(`[serve] listening on http://${host}:${port}`);
-      console.log(`[serve] web chat: http://${host.includes(':') ? `[${host}]` : host}:${port}/`);
-      const announced = announceServer(server.address()?.port ?? port, host, !!(config.apiKey ?? apiKey()));
+      const actualPort = server.address()?.port ?? port;
+      console.log(`[serve] listening on http://${host}:${actualPort}`);
+      console.log(`[serve] web chat: http://${host.includes(':') ? `[${host}]` : host}:${actualPort}/`);
+      const announced = announceServer(actualPort, host, !!(config.apiKey ?? apiKey()));
       // The app's server steps aside when ox's code changes under it (a pull, an
       // update), once nothing is being worked on; the app page notices and the
       // app starts a fresh server (src/app.js ensureServer). A plain `ox serve` stays.

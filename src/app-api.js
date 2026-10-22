@@ -104,7 +104,7 @@ export async function testProviderKey(provider, key = null, env = process.env, {
   if (!k) return { ok: false, error: 'no key: paste one first' };
   const base = cfg.baseUrl.replace(/\/+$/, '');
   const started = Date.now();
-  let url = `${base}/models`;
+  let url = cfg.keyTestUrl ?? `${base}/models`;
   const headers = { authorization: `Bearer ${k}` };
   if (cfg.kind === 'anthropic') { delete headers.authorization; headers['x-api-key'] = k; headers['anthropic-version'] = '2023-06-01'; }
   if (cfg.kind === 'gemini') { delete headers.authorization; url = `${base}/models?key=${encodeURIComponent(k)}`; }
@@ -113,6 +113,16 @@ export async function testProviderKey(provider, key = null, env = process.env, {
     const ms = Date.now() - started;
     if (r.status === 401 || r.status === 403) return { ok: false, ms, error: `the provider refused this key (HTTP ${r.status})` };
     if (!r.ok) return { ok: false, ms, error: `the provider answered HTTP ${r.status}` };
+    // OpenRouter's account check proves the key is valid, but does not list
+    // models. Fetch its public catalog separately to populate the picker.
+    if (cfg.keyTestUrl) {
+      url = `${base}/models`;
+      const catalog = await fetchImpl(url, { headers, signal: AbortSignal.timeout(15000) });
+      if (!catalog.ok) return { ok: true, ms: Date.now() - started, count: 0, models: [], catalogError: `the key is valid, but the model catalog answered HTTP ${catalog.status}` };
+      const j = await catalog.json().catch(() => ({}));
+      const list = (Array.isArray(j) ? j : j.data ?? j.models ?? []).map((m) => String(m?.id ?? m?.name ?? m).replace(/^models\//, '')).filter(Boolean);
+      return { ok: true, ms: Date.now() - started, count: list.length, models: list.slice(0, 3000) };
+    }
     const j = await r.json().catch(() => ({}));
     const list = (Array.isArray(j) ? j : j.data ?? j.models ?? []).map((m) => String(m?.id ?? m?.name ?? m).replace(/^models\//, '')).filter(Boolean);
     return { ok: true, ms, count: list.length, models: list.slice(0, 3000) };
@@ -214,18 +224,27 @@ export async function updateView() {
 }
 
 // Subscriptions you already pay for (Claude, ChatGPT, …) through their CLIs.
-export async function accountsView(env = process.env) {
-  const { checkAll, planModel } = await import('./subscriptions.js');
+export async function accountsView(env = process.env, onlyId = null) {
+  const { checkAll, checkCli, planModel, accountInstallPage, accountCanConnect } = await import('./subscriptions.js');
   const { loadConfig } = await import('./config.js');
   let config = {};
   try { config = loadConfig(); } catch {}
-  return checkAll(config, env).map((c) => ({
+  const checked = onlyId ? [checkCli(String(onlyId), config, env)] : checkAll(config, env);
+  return checked.filter((c) => c.known !== false).map((c) => ({
     id: c.id, label: c.label, bin: c.bin, installed: !!c.installed, works: !!c.works,
-    version: c.version ?? null, problem: c.problem ?? null, fix: c.fix ?? null, login: c.login ?? null,
+    signedIn: c.signedIn ?? null, version: c.version ?? null, problem: c.problem ?? null, fix: c.fix ?? null, login: c.login ?? null,
+    installUrl: accountInstallPage(c.id), canConnect: accountCanConnect(c.id),
     bot: `${c.id}-plan`,
     // The model this account accepted last time (e.g. a free ChatGPT account), shown on its card.
     model: c.works ? (c.model ?? planModel(c.id)) : null,
   }));
+}
+
+// Open the vendor's own interactive OAuth/login flow in Terminal. Ox never
+// reads or stores the vendor's credentials; the official CLI owns that flow.
+export async function connectAccount(id, { env = process.env, platform = process.platform } = {}) {
+  const { launchSubscriptionLogin } = await import('./subscriptions.js');
+  return launchSubscriptionLogin(String(id ?? ''), { env, platform });
 }
 
 // Models on this machine: what is running now, and what would fit.
@@ -281,9 +300,28 @@ export async function capabilitiesView(cwd = process.cwd()) {
   let plugins = [];
   try {
     const pj = JSON.parse(fs.readFileSync(path.join(home, '.ox', 'plugins.json'), 'utf8')).plugins ?? {};
-    plugins = Object.entries(pj).map(([name, x]) => ({ name, source: x.source ?? '', enabled: x.enabled !== false, version: x.version ?? null }));
+    const { readPlugin } = await import('./plugins.js');
+    plugins = Object.entries(pj).map(([name, x]) => {
+      const plugin = x.path ? readPlugin(x.path) : null;
+      return { name, source: x.source ?? '', enabled: x.enabled !== false, version: x.version ?? plugin?.version ?? null,
+        kind: x.kind ?? 'copy', mcp: x.mcp !== false, missing: !plugin,
+        description: plugin?.description ?? '', skills: plugin?.skills ?? [], commands: plugin?.commands ?? [],
+        mcpServers: Object.keys(plugin?.mcpServers ?? {}), hasHooks: Boolean(plugin?.hasHooks) };
+    });
   } catch {}
   return { skills, tools, mcp, agents, plugins };
+}
+
+/** Change one installed plugin using the same registry actions as `ox plugin`. */
+export async function pluginAction(body = {}) {
+  const P = await import('./plugins.js');
+  const name = String(body.name ?? '');
+  const action = String(body.action ?? '');
+  if (!name || name.length > 64) throw new Error('choose a valid installed plugin');
+  if (action === 'enable' || action === 'disable') return P.setPluginEnabled(name, action === 'enable');
+  if (action === 'mcp') return P.setPluginMcp(name, body.enabled === true);
+  if (action === 'remove') return P.removePlugin(name);
+  throw new Error('plugin action must be enable, disable, mcp or remove');
 }
 
 export function skillBody(name, cwd = process.cwd()) {
@@ -491,7 +529,7 @@ export async function botsView(env = process.env) {
   const mine = listAgents().map((name) => {
     const a = loadAgent(name);
     if (!a) return null;
-    return { name, description: a.description ?? '', bot: agentBotSpec(a), mode: a.mode ?? 'code', tools: a.tools ?? null, instructions: a.systemPrompt ?? '', shape: a.shape ?? null, color: a.color ?? null, updatedAt: a.updatedAt ?? null };
+    return { name, description: a.description ?? '', bot: agentBotSpec(a), mode: a.mode ?? 'code', tools: a.tools ?? null, instructions: a.systemPrompt ?? '', shape: a.shape ?? null, color: a.color ?? null, character: a.character === 'mochi' ? 'mochi' : 'ox', colorway: a.colorway ?? 'matcha', updatedAt: a.updatedAt ?? null };
   }).filter(Boolean);
   const models = Object.entries(BOTS).filter(([, d]) => d.model).map(([id, d]) => {
     const k = KEY_ENV[d.provider] ?? null;
@@ -530,7 +568,7 @@ export async function botSave(body = {}, env = process.env) {
   if (bot) resolveBot(bot, { bots: readConfigDoc().bots ?? {} }, env);
   const tools = Array.isArray(body.tools) && body.tools.length ? body.tools.map(String) : null;
   const prior = loadAgent(name) ?? {};
-  saveAgent(name, { ...prior, description: String(body.description ?? '').slice(0, 200), bot, mode, tools, systemPrompt: String(body.instructions ?? '').slice(0, 20_000), shape: Number.isInteger(body.shape) ? body.shape : prior.shape ?? null, color: typeof body.color === 'string' ? body.color : prior.color ?? null });
+  saveAgent(name, { ...prior, description: String(body.description ?? '').slice(0, 200), bot, mode, tools, systemPrompt: String(body.instructions ?? '').slice(0, 20_000), shape: Number.isInteger(body.shape) ? body.shape : prior.shape ?? null, color: typeof body.color === 'string' ? body.color : prior.color ?? null, character: body.character === 'mochi' ? 'mochi' : body.character === 'ox' ? 'ox' : prior.character ?? 'ox', colorway: body.colorway ?? prior.colorway ?? 'matcha' });
   return botsView(env);
 }
 

@@ -17,8 +17,11 @@ const OX_BIN = path.join(__dirname, '..', 'bin', 'ox.js');
 // waiting on a slow local model.
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-int-cmd-'));
 const ENV = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/_API_KEY$|^OX_BOT$|^OX_MODEL$/.test(k)));
-Object.assign(ENV, { HOME, OX_ISLAND: '0', OX_NO_PLUGINS: '1', OX_NO_BUILTIN_SKILLS: '1', OX_BASE_URL: 'http://127.0.0.1:9/v1', NO_COLOR: '1' });
-after(() => fs.rmSync(HOME, { recursive: true, force: true }));
+Object.assign(ENV, { HOME, OX_ISLAND: '0', OX_MCP: '0', OX_NO_PLUGINS: '1', OX_NO_BUILTIN_SKILLS: '1', OX_BASE_URL: 'http://127.0.0.1:9/v1', NO_COLOR: '1' });
+// task-run exercises code paths that can start npm-backed helpers. Let their
+// cache writes settle before Node removes the throwaway home; without retries,
+// macOS can report ENOTEMPTY for the transient .npm/_npx/node_modules tree.
+after(() => fs.rmSync(HOME, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }));
 
 function ox(args, opts = {}) {
   return spawnSync('node', [OX_BIN, ...args], { encoding: 'utf8', env: ENV, timeout: 60_000, ...opts });

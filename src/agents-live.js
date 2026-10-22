@@ -233,13 +233,143 @@ export function continueSessions({ home = os.homedir(), now = Date.now() } = {})
   return names.map((n) => { let m = 0; try { m = fs.statSync(path.join(dir, n)).mtimeMs; } catch { return null; } return active('Continue', n.replace(/\.json$/, '').slice(0, 12), m, now); }).filter(Boolean);
 }
 
+/** Cline persists one small metadata file per task.  Read it directly instead
+ * of VS Code's opaque state database; no prompt or credentials leave disk. */
+export function clineSessions({ home = os.homedir(), now = Date.now() } = {}) {
+  const root = path.join(home, '.cline', 'data', 'sessions');
+  let dirs = [];
+  try { dirs = fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return []; }
+  return dirs.map((id) => {
+    const file = path.join(root, id, `${id}.json`);
+    let st, row;
+    try { st = fs.statSync(file); row = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+    const age = now - st.mtimeMs;
+    if (age > SHOW_MS) return null;
+    const running = /^(running|working|active)$/i.test(String(row.status ?? '')) || (!row.ended_at && age < WORKING_MS);
+    const usage = row.metadata?.aggregateUsage ?? row.metadata?.usage;
+    const tokens = usage ? { in: Number(usage.inputTokens) || 0, cached: Number(usage.cacheReadTokens) || 0, out: Number(usage.outputTokens) || 0 } : null;
+    return { id: `cline:${id}`, tool: 'Cline', project: projectName(row.cwd || row.workspace_root) || 'Cline', cwd: row.cwd || row.workspace_root || '', model: row.model || row.metadata?.modelId || '', state: running ? 'thinking' : 'idle', doing: '', idleSec: running ? 0 : Math.round(age / 1000), updated: st.mtimeMs, ...(tokens ? { tokens } : {}) };
+  }).filter(Boolean);
+}
+
+/** Kilo Code stores sessions in a local SQLite database (the same database its
+ * desktop and VS Code surfaces share).  This is a read-only query. */
+export function kiloSessions({ home = os.homedir(), now = Date.now() } = {}) {
+  const db = path.join(home, '.local', 'share', 'kilo', 'kilo.db');
+  const since = now - SHOW_MS;
+  return sqliteRows(db, `select id, title, directory, model, agent, time_updated from session where time_updated > ${since} order by time_updated desc limit 12`).map((r) => {
+    const updated = Number(r.time_updated);
+    const age = now - updated;
+    let model = '';
+    try { model = JSON.parse(r.model ?? '{}').id ?? ''; } catch { model = String(r.model ?? ''); }
+    return { id: `kilo:${r.id}`, tool: 'Kilo', project: projectName(r.directory) || r.title || 'Kilo', cwd: r.directory ?? '', model, state: age < WORKING_MS ? 'thinking' : 'idle', doing: '', idleSec: age < WORKING_MS ? 0 : Math.round(age / 1000), updated };
+  });
+}
+
+/** Kimi's daemon records active turns/tools in its local runner state.  Only
+ * report a session while it says there is active work; never read its loopback
+ * token, conversations, or browser profile. */
+export function kimiSessions({ home = os.homedir(), now = Date.now() } = {}) {
+  const file = path.join(home, 'Library', 'Application Support', 'kimi-desktop', 'daimon-share', 'daimon', 'agents', 'main', 'runner.state.json');
+  let st, row;
+  try { st = fs.statSync(file); row = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return []; }
+  const updated = Date.parse(row.updatedAt ?? '') || st.mtimeMs;
+  const turns = Array.isArray(row.activeKernelTurns) ? row.activeKernelTurns : [];
+  const tools = Array.isArray(row.activeKernelToolCalls) ? row.activeKernelToolCalls : [];
+  if (now - updated > SHOW_MS || (!turns.length && !tools.length && Number(row.kernel?.activeTurnCount ?? 0) < 1)) return [];
+  return [{ id: 'kimi:main', tool: 'Kimi', project: 'Kimi', cwd: '', model: row.kernel?.providerModel?.model ?? '', state: tools.length || Number(row.kernel?.activeToolCallCount ?? 0) ? 'tool' : 'thinking', doing: tools.length ? 'using a tool' : '', idleSec: 0, updated }];
+}
+
+// ---------------------------------------------------------------- installed tools
+
+// A detected extension or app is not automatically an active conversation.
+// Discovery can safely show what is available; a live-session adapter must
+// understand the tool's local state format before it says a session is active.
+const CODING_TOOL_WORDS = /\b(agent|ai|assistant|copilot|claude|cline|kilo|kimi|cursor|codex|continue|aider|gemini|hermes|opencode)\b/i;
+const KNOWN_CODING_EXTENSIONS = new Set([
+  'github.copilot', 'github.copilot-chat', 'anthropic.claude-code',
+  'saoudrizwan.claude-dev', 'kilocode.kilo-code', 'moonshot-ai.kimi-code',
+  'continue.continue', 'cursor.cursor', 'google.geminicodeassist',
+]);
+const NATIVE_SESSION_TOOLS = new Set(['cline', 'kilo', 'kimi', 'claude', 'codex', 'copilot', 'cursor', 'continue', 'gemini', 'hermes', 'opencode']);
+const SESSION_TOOL_ALIASES = new Map([
+  ['saoudrizwan.claude-dev', 'cline'], ['kilocode.kilo-code', 'kilo'],
+  ['moonshot-ai.kimi-code', 'kimi'], ['github.copilot', 'copilot'],
+  ['github.copilot-chat', 'copilot'], ['continue.continue', 'continue'],
+  ['google.geminicodeassist', 'gemini'], ['anthropic.claude-code', 'claude'],
+  ['openai.chatgpt', 'codex'],
+]);
+
+function toolSlug(value) {
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function packageTool(packageFile, source) {
+  let p;
+  try { p = JSON.parse(fs.readFileSync(packageFile, 'utf8')); } catch { return null; }
+  const extensionId = `${p.publisher ?? ''}.${p.name ?? ''}`.replace(/^\.|\.$/g, '');
+  const extensionKey = extensionId.toLowerCase();
+  const words = [extensionId, p.displayName, p.description, ...(Array.isArray(p.categories) ? p.categories : [])].filter(Boolean).join(' ');
+  if (!KNOWN_CODING_EXTENSIONS.has(extensionKey) && !CODING_TOOL_WORDS.test(words)) return null;
+  const id = toolSlug(extensionId || p.displayName || path.basename(path.dirname(packageFile)));
+  // Do not infer a session protocol merely because an unrelated extension says
+  // “Copilot” or “AI”. Only an explicit adapter mapping earns “native”.
+  const sessionKey = SESSION_TOOL_ALIASES.get(extensionKey) ?? '';
+  return {
+    id: `extension:${id}`, tool: p.displayName || p.name || extensionId, source,
+    extensionId, state: 'available', sessionSupport: NATIVE_SESSION_TOOLS.has(sessionKey) ? 'native' : 'detected',
+  };
+}
+
+function runningApp(name) {
+  if (process.platform === 'win32') return false; // Windows needs a process-name map, not a guessed .exe name.
+  try { return spawnSync('pgrep', ['-x', name], { encoding: 'utf8', timeout: 1500 }).status === 0; } catch { return false; }
+}
+
+function defaultAppRoots(home) {
+  if (process.platform === 'darwin') return ['/Applications', path.join(home, 'Applications')];
+  if (process.platform === 'win32') return [process.env.ProgramFiles, process.env.LOCALAPPDATA, process.env.APPDATA].filter(Boolean);
+  return ['/usr/share/applications', '/usr/local/share/applications', path.join(home, '.local', 'share', 'applications')];
+}
+
+/**
+ * Finds coding agents already installed on this computer, including VS Code and
+ * Cursor extensions. It is read-only on macOS, Windows, and Linux: no settings,
+ * API keys, prompts, or extension data are inspected.
+ */
+export function detectedCodingTools({ home = os.homedir(), appRoots = null } = {}) {
+  const found = new Map();
+  const add = (row) => { if (row && !found.has(row.id)) found.set(row.id, row); };
+  const extensionRoots = [
+    [path.join(home, '.vscode', 'extensions'), 'VS Code extension'],
+    [path.join(home, '.cursor', 'extensions'), 'Cursor extension'],
+    [path.join(home, '.vscode-insiders', 'extensions'), 'VS Code Insiders extension'],
+  ];
+  for (const [root, source] of extensionRoots) {
+    let entries = [];
+    try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) if (entry.isDirectory()) add(packageTool(path.join(root, entry.name, 'package.json'), source));
+  }
+  for (const root of appRoots ?? defaultAppRoots(home)) {
+    let entries = [];
+    try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      const appName = entry.name.replace(/\.(app|exe|desktop)$/i, '');
+      if (!CODING_TOOL_WORDS.test(appName)) continue;
+      const slug = toolSlug(appName);
+      add({ id: `app:${slug}`, tool: appName, source: 'Installed app', appPath: path.join(root, entry.name), state: runningApp(appName) ? 'running' : 'available', sessionSupport: NATIVE_SESSION_TOOLS.has(slug) ? 'native' : 'detected' });
+    }
+  }
+  return [...found.values()].sort((a, b) => a.tool.localeCompare(b.tool));
+}
+
 let cache = { at: 0, rows: [] };
 /** Every live session of other agents, newest first (cached 2 s: the island polls often). */
 export function liveAgents({ home = os.homedir(), now = Date.now(), fresh = false } = {}) {
   if (!fresh && now - cache.at < 2000 && home === os.homedir()) return cache.rows;
   const safe = (f) => { try { return f({ home, now }); } catch { return []; } };
   // Runs ox started inside Claude Code or Codex are ox's own (shown as ox), not another agent (src/own-sessions.js).
-  const rows = [claudeSessions, codexSessions, copilotSessions, dbSessions, antigravitySessions, cursorSessions, geminiCliSessions, continueSessions].flatMap(safe).filter((s) => !isOwn(s.id)).sort((a, b) => b.updated - a.updated).slice(0, 24);
+  const rows = [claudeSessions, codexSessions, copilotSessions, dbSessions, antigravitySessions, cursorSessions, geminiCliSessions, continueSessions, clineSessions, kiloSessions, kimiSessions].flatMap(safe).filter((s) => !isOwn(s.id)).sort((a, b) => b.updated - a.updated).slice(0, 24);
   if (home === os.homedir()) cache = { at: now, rows };
   return rows;
 }

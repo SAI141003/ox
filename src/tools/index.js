@@ -67,7 +67,7 @@ export const TOOL_IMPLS = {
       return { content: 'library: action is save, search or read', isError: true };
     } catch (e) { return { content: `library: ${e.message}`, isError: true }; }
   },
-  social_research: async (args = {}) => { const S = await import('../social-research.js'); const q = String(args.query ?? '').trim(); if (!q) return { content: 'social_research: a query is required', isError: true }; const r = await S.research(q, { platforms: Array.isArray(args.platforms) && args.platforms.length ? args.platforms : S.PLATFORMS }); return { content: S.format(r, q), isError: false }; },
+  social_research: async (args = {}, ctx = {}) => { const S = await import('../social-research.js'); const q = String(args.query ?? '').trim(); if (!q) return { content: 'social_research: a query is required', isError: true }; const r = await S.research(q, { platforms: Array.isArray(args.platforms) && args.platforms.length ? args.platforms : S.PLATFORMS, env: ctx.env ?? process.env, fetchImpl: ctx.fetchImpl ?? fetch }); return { content: S.format(r, q), isError: false }; },
   youtube_transcript: (args) => youtubeTranscriptTool(args),
   current_page: (args) => currentPageTool(args),
   critique: critiqueTool,
@@ -276,16 +276,22 @@ export function listToolSchemas(ctx = {}, strictSchemas = false) {
     strictSchemas === true ||
     (strictSchemas === undefined &&
       (ctx?.strictSchemas === true || ctx?.tools?.strictSchemas === true));
+  const forSession = (schemas) => {
+    const offered = ctx?.incognito
+      ? schemas.filter((s) => !/^memory_/.test(String(s?.name ?? '')) && s?.name !== 'brain')
+      : schemas;
+    return strict ? offered.map((s) => applyStrictSchema(s, true)) : offered;
+  };
 
   // Subagent contexts pass a pre-filtered tool set via ctx.allTools or
   // ctx.subagentTools. Use it directly to avoid re-adding 'subagent' and to
   // preserve report_result injection.
   if (Array.isArray(ctx.allTools) && ctx.allTools.length > 0) {
     const pre = Array.isArray(ctx.allowedTools) ? ctx.allTools.filter((s) => grantRefusal(ctx.allowedTools, s.name) === null) : ctx.allTools;
-    return strict ? pre.map((s) => applyStrictSchema(s, true)) : pre;
+    return forSession(pre);
   }
   if (Array.isArray(ctx.subagentTools) && ctx.subagentTools.length > 0) {
-    return strict ? ctx.subagentTools.map((s) => applyStrictSchema(s, true)) : ctx.subagentTools;
+    return forSession(ctx.subagentTools);
   }
 
   let schemas = [...BUILTIN_SCHEMAS];
@@ -343,13 +349,13 @@ export function listToolSchemas(ctx = {}, strictSchemas = false) {
   // four readers: about 620 tokens instead of ~1,850 for ten tools.
   if (Array.isArray(ctx.onlyTools)) {
     const only = schemas.filter((s) => ctx.onlyTools.includes(s.name));
-    return strict ? only.map((s) => applyStrictSchema(s, true)) : only;
+    return forSession(only);
   }
   // An agent with a tool grant is offered only those tools.
   const granted = Array.isArray(ctx.allowedTools)
     ? schemas.filter((s) => grantRefusal(ctx.allowedTools, s.name) === null)
     : schemas;
-  return strict ? granted.map((s) => applyStrictSchema(s, true)) : granted;
+  return forSession(granted);
 }
 
 // Small-model competence guard: keep the tool-schema block inside a fraction
@@ -671,7 +677,16 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
       : (Array.isArray(relevantSkillTools) ? relevantSkillTools : []).filter((t) => typeof t === 'string');
   const memoryOn = keywordSignal(message, MEMORY_KEYWORDS) !== null;
   const operatorOn = keywordSignal(message, OPERATOR_KEYWORDS) !== null;
-  const webOn = keywordSignal(message, WEB_KEYWORDS) !== null;
+  // "Current" is common in repository work (current value, current config,
+  // current file), so by itself it should not attach two network schemas to
+  // every code-facing turn. A project/repository/workspace + file/config scope
+  // is local evidence; explicit web/version/news signals still opt back in.
+  const locallyScopedCurrent =
+    /\b(?:current|latest)\b/i.test(String(message)) &&
+    /\b(?:project|repo|repository|workspace|codebase)\b/i.test(String(message)) &&
+    /\b(?:file|config|configuration|source|directory|path|deployment)\b/i.test(String(message));
+  const explicitWebSignal = keywordSignal(message, WEB_KEYWORDS.filter((word) => word !== 'current')) !== null;
+  const webOn = keywordSignal(message, WEB_KEYWORDS) !== null && (!locallyScopedCurrent || explicitWebSignal);
   const webTaskOn = keywordSignal(message, WEB_TASK_KEYWORDS) !== null;
   const critiqueOn = keywordSignal(message, CRITIQUE_KEYWORDS) !== null;
   // `agentOn` keeps the mailbox for a LEAD whose own turn is about agents. A
@@ -735,8 +750,9 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
 
 export async function dispatchTool(name, args, ctx = {}) {
   try {
-    // Incognito: nothing is written to memory.
-    if (ctx?.incognito && name === 'memory_add') return { content: 'memory_add: this is an incognito chat — nothing is saved.', isError: true };
+    // Incognito neither reads nor writes saved memory; keep this guard even
+    // though memory schemas are withheld, because a model can still guess a tool.
+    if (ctx?.incognito && (/^memory_/.test(name) || name === 'brain')) return { content: `${name}: unavailable in an incognito chat.`, isError: true };
     if (typeof name !== 'string' || name === '') {
       return { content: 'dispatchTool: a tool name is required.', isError: true };
     }

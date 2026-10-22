@@ -19,15 +19,28 @@
     "README.md",
     "LICENSE"
   ],
-  "keywords": ["coding-agent", "ai", "llm", "cli", "agent", "mcp", "ollama", "anthropic", "openai"],
+  "keywords": [
+    "coding-agent",
+    "ai",
+    "llm",
+    "cli",
+    "agent",
+    "mcp",
+    "ollama",
+    "anthropic",
+    "openai"
+  ],
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "test": "OX_ISLAND=0 OX_LEARN=0 OX_NO_KEYSTORE=1 OX_USAGE_LOG=0 OX_MEMORY_HOME=${TMPDIR:-/tmp}/ox-test-memory OX_NO_BUILTIN_SKILLS=1 OX_NO_PLUGINS=1 node --test --test-concurrency=2 test/*.test.js",
+    "test": "node scripts/test.mjs",
     "start": "node bin/ox.js",
     "verify": "node scripts/verify.mjs",
     "verify:quick": "node scripts/verify.mjs --quick",
     "verify:loop": "node scripts/verify.mjs --loop"
+  },
+  "dependencies": {
+    "mochi-avatar": "1.1.0"
   }
 }

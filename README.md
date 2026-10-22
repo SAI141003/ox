@@ -60,11 +60,15 @@ ox
 ```
 
 Then connect a model: set any API key (Anthropic, OpenAI, Gemini, xAI, Groq,
-DeepSeek, Mistral, OpenRouter… 22 providers); or `ox connect` finds a ChatGPT
+DeepSeek, Mistral, OpenRouter and dozens more); or `ox connect` finds a ChatGPT
 plan you are signed in to (OpenAI allows partner apps); or run a local model
 with Ollama. For Claude, use an Anthropic API key: Anthropic keeps Claude
 Pro/Max logins for its own apps, so ox never reads them or picks that plan for
 you ([how ox connects to each provider](docs/PROVIDER_ACCESS.md)).
+
+For OpenAI's current GPT-6 family, choose `ox --bot ox-gpt-luna`,
+`ox --bot ox-gpt-sol`, or `ox --bot ox-gpt-astra`. GPT-6 tool calls use the
+Responses API; the existing `ox-gpt` preset is unchanged.
 
 **Windows**: the same commands in PowerShell, or `ox-windows-x64.zip` from
 [Releases](https://github.com/SAI141003/ox/releases) (`ox.cmd` for the terminal,

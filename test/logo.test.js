@@ -5,6 +5,11 @@ import { createRequire } from 'node:module';
 
 const SRC = new URL('../src/logo.js', import.meta.url).pathname;
 
+// The ambient shell may export NO_COLOR (this workstation does). Keep the
+// baseline deterministic so the explicit TTY-colour assertions below exercise
+// the colour path; the dedicated NO_COLOR test sets and verifies it itself.
+delete process.env.NO_COLOR;
+
 // The colour path is gated on process.stdout.isTTY, which is false under the
 // test runner. Force it so the colour branches actually run, and restore it
 // afterwards so the non-TTY assertions below are measuring the real gate.

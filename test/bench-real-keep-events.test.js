@@ -14,8 +14,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { renderUsageLines, runOnce } from '../bench/real/runner.mjs';
-import { EVENTS_FILE } from '../bench/real/lib.mjs';
+import { costFor, renderUsageLines, runOnce } from '../bench/real/runner.mjs';
+import { EVENTS_FILE, TIMINGS_FILE, summarizeEvents, writeTimingsFile } from '../bench/real/lib.mjs';
 
 const CANNED_NDJSON = [
   { t: 'session-start' },
@@ -26,11 +26,19 @@ const CANNED_NDJSON = [
   { t: 'assistant-turn', index: 2 },
   { t: 'usage', inputTokens: 2100, outputTokens: 55 },
   { t: 'usage', aux: true, inputTokens: 300, outputTokens: 20 },
+  { t: 'text-delta', text: 'done' },
   { t: 'final', message: { content: 'done' } },
 ].map((e) => `${JSON.stringify(e)}\n`).join('');
 
 function cannedChild() {
-  return { exitCode: 0, stdout: CANNED_NDJSON, stderr: '', ms: 3, timedOut: false };
+  return {
+    exitCode: 0, stdout: CANNED_NDJSON, stderr: '', ms: 90, timedOut: false,
+    eventTimings: [
+      { t: 'tool-start', id: 'c1', name: 'list_dir', atMs: 12 },
+      { t: 'tool-end', id: 'c1', name: 'list_dir', atMs: 42 },
+      { t: 'text-delta', atMs: 60 },
+    ],
+  };
 }
 
 const task = {
@@ -63,17 +71,28 @@ test('--keep persists the raw NDJSON event stream into the sandbox as events.ndj
   assert.ok(fs.existsSync(expected), 'events.ndjson exists in the kept sandbox');
 
   const { lines, parsed } = readEvents(expected);
-  assert.equal(lines.length, 9, 'every event survived the round trip');
+  assert.equal(lines.length, 10, 'every event survived the round trip');
   assert.equal(parsed.length, lines.length, 'every line is one complete JSON value');
   assert.equal(parsed[0].t, 'session-start', 'stream order is preserved');
   assert.equal(parsed.at(-1).t, 'final');
   assert.ok(parsed.some((e) => e.t === 'tool-start'), 'tool events are in the file');
   assert.equal(run.eventsKept, parsed.length, 'the runner counted what it wrote');
+  assert.ok(fs.existsSync(run.timingsFile), 'arrival timing evidence is kept separately');
+  const timingEvidence = JSON.parse(fs.readFileSync(run.timingsFile, 'utf8'));
+  assert.equal(path.basename(run.timingsFile), TIMINGS_FILE);
+  assert.equal(timingEvidence.clock, 'child-stdout-arrival-ms-from-spawn');
+  assert.equal(timingEvidence.events.find((e) => e.t === 'text-delta').atMs, 60);
+  assert.ok(!JSON.stringify(timingEvidence).includes('done'), 'timing evidence omits model output');
 
   assert.equal(run.pass, true, 'the fixture verifier still graded the run');
   assert.equal(run.toolCalls, 1, 'the mocked tool call was summarised');
   assert.equal(run.tokensIn, 3300, 'token totals still come from the stream');
   assert.equal(run.auxTokensIn, 300, 'aux usage is separated from main usage');
+  assert.equal(run.agentMs, 90, 'agent wall time is reported independently from harness time');
+  assert.equal(run.firstTextMs, 60, 'first generated text latency comes from child event arrival timing');
+  assert.equal(run.firstToolMs, 12, 'first tool start latency comes from child event arrival timing');
+  assert.equal(run.toolDurationMs, 30, 'tool duration is paired by call id');
+  assert.equal(run.timedTools, 1);
 
   fs.rmSync(run.sandbox, { recursive: true, force: true });
 });
@@ -92,6 +111,13 @@ test('per-turn usage is reported per request, not only as a total', async () => 
   );
   // --keep is NOT set, so there is no sandbox left to write into.
   assert.equal(run.eventsFile, null);
+});
+
+test('a benchmark prices a resolved provider model, never the ox bot alias', async () => {
+  const run = await runOnce(task, 'ox-gpt', { keep: false, timeoutMs: 5_000 }, { spawn: cannedChild, modelId: 'gpt-5.6-sol' });
+  assert.equal(run.resolvedModel, 'gpt-5.6-sol');
+  assert.ok(run.costUsd > 0, 'a priced resolved model must not become an unpriced alias');
+  assert.equal(run.costUsd, costFor('gpt-5.6-sol', { inputTokens: run.tokensIn, outputTokens: run.tokensOut }));
 });
 
 test('without --keep the sandbox is destroyed and nothing is left behind', async () => {
@@ -133,4 +159,48 @@ test('the printed summary shows per-request input/output when a stream is availa
   // fabricated zeroes: absence of data prints as absence.
   assert.ok(!text.includes('adapter-without-usage'));
   assert.deepEqual(renderUsageLines([{ taskId: 'x', usageTurns: [] }], 26), []);
+});
+
+test('nested subagent token totals are attributed in the per-request table', () => {
+  const summary = summarizeEvents([
+    { t: 'usage', inputTokens: 3060, outputTokens: 66 },
+    { t: 'usage', inputTokens: 3724, outputTokens: 102 },
+    { t: 'subagent-end', id: 'sa-1', model: 'local-model', inputTokens: 12895, outputTokens: 343 },
+    { t: 'usage-total', inputTokens: 19679, outputTokens: 511, costUsd: 0 },
+  ]);
+  assert.equal(summary.inputTokens, 19679, 'aggregate total remains authoritative');
+  assert.equal(summary.auxInputTokens, 12895, 'nested usage is separately attributable');
+  assert.deepEqual(summary.usageEvents.at(-1), {
+    turn: 'subagent', aux: true, inputTokens: 12895, outputTokens: 343, agentId: 'sa-1', model: 'local-model',
+  });
+  const output = renderUsageLines([{ taskId: 'debug', usageTurns: summary.usageEvents }]).join('\n');
+  assert.match(output, /subagent\s+—\s+—\s+12895\/343/);
+  assert.match(output, /TOTAL\s+19679\s+6784\s+168\s+12895\/343/);
+});
+
+test('latency metrics are absent rather than fabricated when event timestamps are unavailable', () => {
+  const summary = summarizeEvents([{ t: 'text-delta', text: 'hi' }]);
+  assert.equal(summary.firstTextMs, null);
+  assert.equal(summary.firstToolMs, null);
+  assert.equal(summary.toolDurationMs, null);
+  assert.equal(summary.timedTools, 0);
+});
+
+test('timing sidecar is a payload-free, sanitized event timeline', () => {
+  const root = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'ox-timing-test-'));
+  try {
+    writeTimingsFile({ root }, [
+      { t: 'text-delta', atMs: 27.4, text: 'private answer text' },
+      { t: 'tool-start', atMs: 31, id: 44, name: 'read_file', argsPreview: 'private path' },
+      { t: 'bad-event', atMs: NaN, payload: 'discarded' },
+    ]);
+    const evidence = JSON.parse(fs.readFileSync(path.join(root, TIMINGS_FILE), 'utf8'));
+    assert.deepEqual(evidence.events, [
+      { t: 'text-delta', atMs: 27.4 },
+      { t: 'tool-start', atMs: 31, id: '44', name: 'read_file' },
+    ]);
+    assert.doesNotMatch(JSON.stringify(evidence), /private|payload/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

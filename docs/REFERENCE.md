@@ -341,8 +341,10 @@ ox serve        # then open http://127.0.0.1:8080/
 ```
 
 `ox serve` includes a chat page, so ox works in a browser with nothing else to
-install: conversations kept in the browser, a model picker, streaming answers,
-code blocks with copy buttons, light and dark themes, and a phone layout. While
+install: conversations stay in tab memory by default; optional local chat
+history is available under Settings › Data & privacy. It also has a model
+picker, streaming answers, code blocks with copy buttons, light and dark
+themes, and a phone layout. While
 the agent works, each tool it runs appears in the reply (for example
 `read_file src/app.js`). The stream carries this as an extra `ox` field that
 other OpenAI clients ignore, and only the tool's name and a short preview leave
@@ -650,8 +652,11 @@ npm run verify:loop   # re-run on every change in src/ bin/ test/
 | opus | anthropic | `ANTHROPIC_API_KEY` | claude-opus-5 | $5 | $25 |
 | haiku | anthropic | `ANTHROPIC_API_KEY` | claude-haiku-4-5 | $1 | $5 |
 | gpt | openai | `OPENAI_API_KEY` | gpt-5.6-sol | $4 | $20 |
+| gpt-luna | openai | `OPENAI_API_KEY` | gpt-6-luna | $0.10 | $0.50 |
+| gpt-sol | openai | `OPENAI_API_KEY` | gpt-6.1-sol | $2 | $10 |
+| gpt-astra | openai | `OPENAI_API_KEY` | gpt-6-astra | $10 | $50 |
 | gemini | gemini | `GEMINI_API_KEY` | gemini-3.1-pro-preview | $2 | $12 |
-| flash | gemini | `GEMINI_API_KEY` | gemini-3.7-flash | $0.38 | $1.88 |
+| flash | gemini | `GEMINI_API_KEY` | gemini-3.8-flash | $0.75 | $3.75 through 2026-12-31 |
 | groq | groq | `GROQ_API_KEY` | moonshotai/kimi-k2-instruct-0905 | $1 | $3 |
 | deepseek | deepseek | `DEEPSEEK_API_KEY` | deepseek-v4-pro | $1.32 | $3.96 |
 | ollama | ollama | none — local | qwen2.5:0.5b (any local tag) | free | free |
@@ -660,6 +665,12 @@ npm run verify:loop   # re-run on every change in src/ bin/ test/
 
 Hard pinning by design: a missing key fails loudly naming the env var. Extra bots
 are definable under `"bots"` in `~/.ox/config.json`.
+
+OpenAI GPT-6 tool calls use the Responses API; established OpenAI models keep
+the Chat Completions adapter. Cached-input and cache-write rates are reflected
+in cost estimates. For GPT-6 prompts above 272k input tokens, the estimate uses
+the higher published tier; when aggregating multiple requests this may
+conservatively overestimate if only the combined total crosses that threshold.
 
 A fallback chain *does* exist — `fallback_bots` (`OX_FALLBACK_BOTS`) plus
 `aux_bot` — but it is never silent: every switch emits a non-dismissible
@@ -754,14 +765,32 @@ ox memory recall "deploys"    # best matches, current facts only
 ox memory add "I use pnpm"    # tell it (--project for this folder)
 ox memory history <id>        # every version of one fact, with dates
 ox memory forget <id>         # never shown to a model again
+ox memory import-claude <file> # preview user-exported Claude account memory
+ox memory import-claude <file> --apply  # explicitly merge screened entries
 ```
+
+Claude Code project auto-memory is available to `ox import claude-code` as
+well: it reads only the matching project's `~/.claude/projects/<project>/memory/`
+Markdown index and topic notes, and brings them into `.agent/topics/` behind a
+searchable Ox memory pointer. Use `ox import claude-code --dry-run` to inspect
+what it found before applying. The importer never scans Claude transcripts.
+
+Claude Desktop/account memory is a separate cloud feature and is not exposed as
+a local file or API to Ox. To bring it over, use Claude's Settings › Memory
+export (or copy the exported memory text into a local Markdown file), inspect
+that file, preview with `ox memory import-claude <file>`, then opt in with
+`--apply`. Ox imports one dated/bulleted memory per line into its local user
+memory graph; it does not ingest a full Claude chat-history data export. This is
+an explicit user-mediated migration, not live account synchronization.
 
 The app shows the same under **Settings › Memory**. The design draws on Zep /
 Graphiti (facts carry when they were true and when ox learned them),
 Supermemory (updates, extends, forgetting) and Generative Agents (recency,
 importance and relevance together). Every write passes the same credential and
-injection screen as `MEMORY.md`. `OX_LEARN=0` stops learning from what you say,
-and `OX_MEMORY=0` keeps the graph out of the prompt.
+injection screen as `MEMORY.md`. In the app, automatic preference learning is
+off by default and can be enabled under Settings › Data & privacy;
+`OX_LEARN=0` disables learning everywhere, and `OX_MEMORY=0` keeps the graph
+out of the prompt.
 
 ### Persistence screen
 

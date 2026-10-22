@@ -264,6 +264,10 @@ test('registry integrity: unique names, valid risks, resolvable entry shapes', (
 
   // spec-pinned shapes and safety copy
   assert.equal(MCP_TEMPLATES.browser.risk, 'write');
+  assert.equal(MCP_TEMPLATES.github.risk, 'write');
+  assert.deepEqual(MCP_TEMPLATES.github.entry().args, ['run', '-i', '--rm', 'ghcr.io/github/github-mcp-server']);
+  assert.equal(MCP_TEMPLATES.notion.risk, 'write');
+  assert.deepEqual(MCP_TEMPLATES.notion.entry().args, ['-y', 'mcp-remote', 'https://mcp.notion.com/mcp']);
   assert.deepEqual(MCP_TEMPLATES.devtools.entry().args, ['-y', 'chrome-devtools-mcp@latest', '--slim']);
   assert.deepEqual(MCP_TEMPLATES.gsuite.entry().args, ['workspace-mcp', '--read-only']);
   assert.equal(MCP_TEMPLATES.slack.entry().url, 'https://mcp.slack.com/mcp');

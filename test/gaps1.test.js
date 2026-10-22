@@ -141,14 +141,12 @@ test('PRICING windows: every listed model carries its context window; lookupMode
   const expected = {
     'grok-4.6': 500_000,
     'grok-build-0.1': 256_000,
-    'claude-opus-5': 200_000,
-    'claude-sonnet-5': 200_000,
     'claude-haiku-4-5': 200_000,
     'gpt-5.6-sol': 400_000,
     'gemini-3.1-pro-preview': 1_000_000,
-    'gemini-3.7-flash': 1_000_000,
+    'gemini-3.8-flash': 1_000_000,
     'moonshotai/kimi-k2-instruct-0905': 256_000,
-    'deepseek-v4-pro': 128_000,
+    'deepseek-v4-pro': 1_000_000,
   };
   for (const [model, window] of Object.entries(expected)) {
     assert.equal(PRICING[model].window, window, model);

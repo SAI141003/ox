@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { McpHub } from '../src/mcp.js';
+import { DEFAULT_MCP_STARTUP_TIMEOUT_MS, McpHub } from '../src/mcp.js';
 
 const FIXTURE = [
   "import readline from 'node:readline';",
@@ -66,6 +66,12 @@ let fixture;
 let mainHub;
 let slowHub;
 let overflowHub;
+
+test('MCP startup timeout accommodates real servers with expensive initialization', () => {
+  assert.equal(DEFAULT_MCP_STARTUP_TIMEOUT_MS, 30_000);
+  assert.equal(new McpHub({}).startupTimeoutMs, DEFAULT_MCP_STARTUP_TIMEOUT_MS);
+  assert.equal(new McpHub({}, { startupTimeoutMs: 5000 }).startupTimeoutMs, 5000, 'explicit test and user overrides remain respected');
+});
 
 async function waitFor(fn, ms = 2000, step = 20) {
   const end = Date.now() + ms;

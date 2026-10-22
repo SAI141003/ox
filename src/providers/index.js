@@ -2,6 +2,7 @@ import {
   makeOpenAICompat,
   createOpenAICompatParser,
 } from './openai-compat.js';
+import { makeOpenAIResponses, createOpenAIResponsesParser } from './openai-responses.js';
 import { makeAnthropic, createAnthropicParser } from './anthropic.js';
 import { makeGemini, createGeminiParser } from './gemini.js';
 import { currentCostBudget } from '../cost.js';
@@ -13,6 +14,10 @@ export const PROVIDERS = {
   openrouter: {
     kind: 'openai-compat',
     baseUrl: 'https://openrouter.ai/api/v1',
+    // /models is a public catalog and succeeds even with a bogus key. Validate
+    // credentials against an authenticated, read-only endpoint available to
+    // ordinary inference keys. /credits is management-key-only.
+    keyTestUrl: 'https://openrouter.ai/api/v1/key',
     keyEnv: 'OPENROUTER_API_KEY',
   },
   deepseek: { kind: 'openai-compat', baseUrl: 'https://api.deepseek.com/v1', keyEnv: 'DEEPSEEK_API_KEY' },
@@ -59,8 +64,9 @@ const ADAPTERS = new Map();
 function adapterFor(name, cfg) {
   let a = ADAPTERS.get(name);
   if (!a) {
-    a =
-      cfg.kind === 'anthropic'
+    a = name === 'openai'
+      ? createOpenAIAdapter()
+      : cfg.kind === 'anthropic'
         ? makeAnthropic()
         : cfg.kind === 'gemini'
           ? makeGemini()
@@ -68,6 +74,22 @@ function adapterFor(name, cfg) {
     ADAPTERS.set(name, a);
   }
   return a;
+}
+
+// OpenAI's GPT-6 family requires Responses for function calling (Luna only
+// supports Chat Completions tools with reasoning_effort=none). Keep established
+// models and other OpenAI-compatible providers on their existing route.
+function createOpenAIAdapter() {
+  const chat = makeOpenAICompat({ name: 'openai' });
+  const responses = makeOpenAIResponses();
+  return async function* streamOpenAI(opts = {}) {
+    const model = String(opts.model ?? '');
+    if (opts.tools?.length && /^gpt-6(?:[-.]|$)/i.test(model)) {
+      yield* responses(opts);
+      return;
+    }
+    yield* chat(opts);
+  };
 }
 
 export function getProvider(name) {
@@ -172,6 +194,7 @@ export async function* streamVia(target, opts = {}) {
 
 export const testHooks = {
   createOpenAICompatParser,
+  createOpenAIResponsesParser,
   createAnthropicParser,
   createGeminiParser,
 };

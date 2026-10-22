@@ -16,6 +16,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
 export const REAL_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -171,7 +172,7 @@ export function check(name, ok, detail = '') {
 
 export function spawnOx({ args = [], cwd = process.cwd(), env = process.env, timeoutMs = 180_000 }) {
   return new Promise((resolve) => {
-    const started = Date.now();
+    const started = performance.now();
     const child = spawn(process.execPath, [BIN_OX, ...args.map(String)], {
       cwd,
       env,
@@ -179,19 +180,37 @@ export function spawnOx({ args = [], cwd = process.cwd(), env = process.env, tim
     });
     let stdout = '';
     let stderr = '';
+    let pendingLine = '';
+    const eventTimings = [];
+    const timeLines = (chunk, final = false) => {
+      pendingLine += chunk;
+      const lines = pendingLine.split('\n');
+      pendingLine = final ? '' : lines.pop();
+      if (final && lines.length && lines.at(-1) === '') lines.pop();
+      if (final && pendingLine) lines.push(pendingLine);
+      for (const line of lines) {
+        const text = line.trim();
+        if (!text.startsWith('{')) continue;
+        try {
+          const ev = JSON.parse(text);
+          if (ev && typeof ev.t === 'string') eventTimings.push({ t: ev.t, atMs: performance.now() - started, id: ev.id ?? null, name: ev.name ?? null });
+        } catch {}
+      }
+    };
     let timedOut = false;
     let settled = false;
     const timer = setTimeout(() => {
       timedOut = true;
       try { child.kill('SIGKILL'); } catch {}
     }, Math.max(1, Number(timeoutMs) || 180_000));
-    child.stdout?.on('data', (d) => { stdout += d.toString(); });
+    child.stdout?.on('data', (d) => { const text = d.toString(); stdout += text; timeLines(text); });
     child.stderr?.on('data', (d) => { stderr += d.toString(); });
     const finish = (exitCode) => {
       if (settled) return;
       settled = true;
+      timeLines('', true);
       clearTimeout(timer);
-      resolve({ exitCode, stdout, stderr, ms: Date.now() - started, timedOut });
+      resolve({ exitCode, stdout, stderr, ms: performance.now() - started, timedOut, eventTimings });
     };
     child.on('error', (err) => {
       stderr += `${stderr ? '\n' : ''}${err.message}\n`;
@@ -217,6 +236,7 @@ export function spawnOx({ args = [], cwd = process.cwd(), env = process.env, tim
 // ---------------------------------------------------------------------------
 
 export const EVENTS_FILE = 'events.ndjson';
+export const TIMINGS_FILE = 'event-timings.json';
 
 export function writeEventsFile(sb, events, rawStdout = '') {
   const dest = path.join(sb?.root ?? '', EVENTS_FILE);
@@ -235,6 +255,17 @@ export function writeEventsFile(sb, events, rawStdout = '') {
     events: lines.length,
     unparsable: Math.max(0, rawLines.length - lines.length),
   };
+}
+
+// Keep arrival times separately so events.ndjson remains the exact, replayable
+// child stream. The timeline deliberately contains no prompts, event payloads,
+// tool arguments, or model output.
+export function writeTimingsFile(sb, eventTimings = []) {
+  const dest = path.join(sb?.root ?? '', TIMINGS_FILE);
+  const safe = (Array.isArray(eventTimings) ? eventTimings : []).filter((x) => x && typeof x.t === 'string' && Number.isFinite(x.atMs))
+    .map(({ t, atMs, id, name }) => ({ t, atMs, ...(id != null ? { id: String(id) } : {}), ...(name != null ? { name: String(name) } : {}) }));
+  fs.writeFileSync(dest, `${JSON.stringify({ clock: 'child-stdout-arrival-ms-from-spawn', events: safe }, null, 2)}\n`, 'utf8');
+  return { path: dest, events: safe.length };
 }
 
 export function parseNdjsonEvents(stdout) {
@@ -266,7 +297,7 @@ function normalizeArgs(preview) {
   try { return JSON.stringify(JSON.parse(raw)); } catch { return raw; }
 }
 
-export function summarizeEvents(events = []) {
+export function summarizeEvents(events = [], eventTimings = []) {
   const calls = [];
   const perTool = Object.create(null);
   const seen = new Map();
@@ -286,6 +317,29 @@ export function summarizeEvents(events = []) {
   // expensive turn that actually cost the run, so the per-turn series is kept
   // beside the totals and printed by the runner.
   const usageEvents = [];
+  const starts = new Map();
+  const toolDurations = [];
+  let firstTextMs = null;
+  let firstToolMs = null;
+
+  // These are child-process arrival times, not provider-internal timings. They
+  // include startup and local scheduling; keep the labels honest.
+  for (const timed of Array.isArray(eventTimings) ? eventTimings : []) {
+    if (!timed || !Number.isFinite(timed.atMs)) continue;
+    if (timed.t === 'text-delta' && firstTextMs == null) firstTextMs = timed.atMs;
+    if (timed.t === 'tool-start') {
+      if (firstToolMs == null) firstToolMs = timed.atMs;
+      const key = timed.id != null ? `id:${timed.id}` : `name:${timed.name ?? ''}`;
+      const q = starts.get(key) ?? [];
+      q.push(timed.atMs);
+      starts.set(key, q);
+    } else if (timed.t === 'tool-end') {
+      const key = timed.id != null ? `id:${timed.id}` : `name:${timed.name ?? ''}`;
+      const q = starts.get(key) ?? [];
+      const began = q.shift();
+      if (Number.isFinite(began) && timed.atMs >= began) toolDurations.push(timed.atMs - began);
+    }
+  }
 
   for (const ev of Array.isArray(events) ? events : []) {
     if (!ev || typeof ev !== 'object') continue;
@@ -336,6 +390,29 @@ export function summarizeEvents(events = []) {
         usageEvents.push({ turn: usageEvents.length + 1, aux: ev.aux === true, inputTokens: inTok, outputTokens: outTok });
         break;
       }
+      case 'subagent-end': {
+        // Nested agent request events are intentionally folded out of the
+        // parent's event stream. The lifecycle summary is the only parent-side
+        // accounting record for that nested run; keep it as an attributed aux
+        // row instead of silently making per-request totals smaller than the
+        // authoritative cumulative usage-total.
+        const inTok = Number(ev.inputTokens ?? 0) || 0;
+        const outTok = Number(ev.outputTokens ?? 0) || 0;
+        if (inTok || outTok) {
+          auxInputTokens += inTok;
+          auxOutputTokens += outTok;
+          usageEvents.push({
+            turn: 'subagent', aux: true, inputTokens: inTok, outputTokens: outTok,
+            agentId: ev.id ?? null, model: ev.model ?? null,
+          });
+          // If this provider does not emit an aggregate, still include nested
+          // work in the best available run total. usage-total, when present,
+          // replaces these counters below with the provider/session aggregate.
+          inputTokens += inTok;
+          outputTokens += outTok;
+        }
+        break;
+      }
       case 'usage-total':
         inputTokens = Number(ev.inputTokens ?? inputTokens) || 0;
         outputTokens = Number(ev.outputTokens ?? outputTokens) || 0;
@@ -376,5 +453,9 @@ export function summarizeEvents(events = []) {
     auxInputTokens,
     auxOutputTokens,
     costUsd,
+    firstTextMs,
+    firstToolMs,
+    toolDurationMs: toolDurations.length ? toolDurations.reduce((a, b) => a + b, 0) / toolDurations.length : null,
+    timedTools: toolDurations.length,
   };
 }

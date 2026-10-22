@@ -143,11 +143,11 @@ Overload and credits are watched; nothing happens without the owner's say.
 |---|---|---|
 | 1. Trust | Ed25519 identity per machine, one-time code pairing, keys pinned | ✓ built (v1) |
 | 2. Channel | One sealed connection per pair (X25519 + AES-GCM), many requests and live streams over it at once (each has an id); a stream carries input, output, resize and close | v2: streams added |
-| 3. Grants | Set on the machine that gives, per paired machine: `status` (on), `infer`, `tasks`, `terminal`, `files` (+ folders), `agents`, `control`, `screen`. Presets: `viewer` = status · `helper` = status + infer + tasks · `full` = everything | v2: four grants and presets added |
+| 3. Grants | Set on the machine that gives, per paired machine: `status` (on), `infer`, `tasks`, `files` (+ folders), `agents`, `dev`, `control`, `screen`. Presets: `viewer` = status · `helper` = status + infer + tasks · `full` = infer + tasks + files + agents + dev; `desktop` = screen + control. Desktop access is never silently included in `full`. | implemented and tested |
 | 4. Services | What each node answers (below) | v2 |
 | 5. Controller | The same verbs everywhere: `ox mesh <verb> <machine> …`, the chat tool `mesh` (ox itself works across machines), the island (machines and alerts), the app's Machines page | v2 |
 | 6. Watch | Heartbeats, φ liveness, overload and credit alerts with choices; picking another machine's model switches to it | ✓ built (v1) |
-| 7. Safety | Every remote action is written to the giving machine's `~/.ox/mesh/audit.jsonl`; terminal, control and screen sessions notify its owner when they start; `ox mesh lockdown` drops every grant at once; a machine you forget can no longer connect | v2 |
+| 7. Safety | Every remote action is written to the giving machine's `~/.ox/mesh/audit.jsonl`; `ox mesh lockdown` drops every grant at once; a machine you forget can no longer connect. Screen/control writes exclude typed content from the audit. | implemented and tested |
 
 ### The services (on every node, each behind its grant)
 
@@ -157,12 +157,10 @@ Overload and credits are watched; nothing happens without the owner's say.
 | status | `stats` | live health (load, memory, heat, battery, disk, models, plans) |
 | infer | `infer` | model calls on its models or keys (`mesh:<machine>/<model>`) |
 | tasks | `run` | an ox task in a folder there, under that machine's approvals |
-| terminal | `exec` | one command, its output streamed, its exit code |
-| terminal | `shell` | a live interactive terminal (a real pseudo-terminal there), typed into from here |
 | files | `ls`, `pull`, `push` | browse, copy from, copy to: only inside the folders that machine allows (default: its home) |
 | agents | `agents`, `agent-read`, `agent-send` | the agent sessions running there (any tool), read one, message one |
-| control | `open`, `notify`, `type`, `key` | open an app / URL / file, show a notification, type text, press a key |
-| screen | `screenshot` | what its screen shows now |
+| control | `control-list`, `control-click`, `control-type`, `control-key` | macOS accessibility controls: inspect controls, click safe controls, type text, or press a safe key. Send/Pay/Delete and Return/Enter are refused. |
+| screen | `screen` | a current screenshot from the paired macOS machine |
 
 ### How it looks
 
@@ -183,7 +181,8 @@ Overload and credits are watched; nothing happens without the owner's say.
 |---|---|
 | describe, agents, agent-read, ls, pull, share, audit, lockdown, presets | ✓ built and checked: two machines' homes on one Mac, real CLI (makeup, live agent session, shared-folder copy, /etc refused, audit rows) |
 | island machine pills (up/down, load ring) | ✓ built |
-| exec, shell (live terminal), push, agent-send, open, notify, type, key, screenshot | designed above, **not built**: this session's safety check refused to create a remote-execution surface; they need the owner's explicit permission in Claude Code's settings before they are written |
+| `screen`, `control-list`, `control-click`, `control-type`, `control-key` | ✓ built for paired macOS machines. They require the controlled Mac to grant `screen`/`control` (or the explicit `desktop` preset); every request is audited and dangerous actions are refused. |
+| Beam-style native-window pull / “Bring It Back”, Windows/Linux remote-input backend | not built. Ox has screenshot + guarded macOS accessibility control, not virtual native-window transport. |
 
 ### Across networks
 
@@ -201,6 +200,7 @@ WireGuard) and `--at <address>`; no relay of ours. A relay is a later step.
 | 5 | `mesh:<machine>/<model>` | ✓ | live: `ox --model "mesh:Gaming laptop/qwen2.5:3b" -p …` answered "pong" from the other node's Ollama |
 | 6 | Credits-low hand-over | ✓ suggestion at 85 % of a plan window; choosing "Finish with <machine>'s <model>" makes it the default model for the next turns | unit test; the switch is the owner's click |
 | 7 | `ox mesh run <machine> "…" --in <folder>` | built; refused without the `tasks` grant (tested); a full remote task not yet run | — |
+| 7a | `ox mesh screen <machine>` and `ox mesh control <machine> …` | ✓ on paired macOS machines after an explicit `desktop`/`screen`/`control` grant | integration test verifies the grant boundary and audit redaction |
 | — | "Move its work", "pause", "smaller model" choices | shown, not automatic: ox says so and leaves them to you | test |
 | 8 | Two physical laptops; a PAKE (CPace) for shorter codes; checkpointing long tasks across machines; a relay | next | — |
 

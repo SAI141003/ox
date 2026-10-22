@@ -88,7 +88,9 @@ import {
   listEpisodes,
   loadMemoryBlock,
   promoteEpisode,
+  createMemoryApi,
   screenReadTexts,
+  screenReadLines,
   shortWithheldNotice,
   writeSessionNote,
   writeEpisode,
@@ -563,7 +565,7 @@ function usageAll() {
     '  ox mesh name <name>               name this machine ("Studio Mac")',
     '  ox mesh invite                    show a one-time code (10 min) for another machine to join',
     '  ox mesh join <code> [--name N] [--at host:port]   pair this machine (--at: across networks, e.g. Tailscale)',
-    '  ox mesh allow|deny <machine> <grant|preset>   what that machine may ask of THIS one: status, infer, tasks, files, agents; presets viewer, helper, full',
+    '  ox mesh allow|deny <machine> <grant|preset>   what that machine may ask of THIS one: status, infer, tasks, files, agents, dev, screen, control; presets viewer, helper, full, desktop',
     '  ox mesh describe <machine>        its makeup: chip, cores, memory, GPU, disks, OS, agent tools, models, keys (names)',
     '  ox mesh agents <machine> [read <id>]   the agent sessions running there, and what one said',
     '  ox mesh ls <machine>[:<folder>] · ox mesh pull <machine>:<file> [<here>]   its shared folders',
@@ -642,6 +644,7 @@ function usageAll() {
     '      [--dry-run]             report what would be imported without writing anything; without it',
     '                              skills are copied to ~/.agents/skills, MCP servers are merged into ./.mcp.json,',
     '                              and memory files are appended to ./.agent/',
+    '  ox memory import-claude <export.md> [--apply]  preview/import a user-exported Claude account memory file',
     'sessions:',
     '  ox sessions                     table of recent sessions (id/date/cwd/title/first prompt)',
     '  ox sessions resume <prefix>     resume a session by id OR title prefix in the REPL',
@@ -1637,7 +1640,7 @@ async function cmdMcpList() {
   let hub = null;
   let startErr = null;
   try {
-    hub = new McpHub(servers, { startupTimeoutMs: 8000, callTimeoutMs: 8000, sandbox: mcpSandboxFor(config) });
+    hub = new McpHub(servers, { callTimeoutMs: 8000, sandbox: mcpSandboxFor(config) });
     await hub.start();
   } catch (err) {
     startErr = err;
@@ -1867,7 +1870,7 @@ async function cmdMcpTest(args = []) {
     process.exitCode = 3;
     return;
   }
-  const hub = new McpHub({ [name]: cfg }, { startupTimeoutMs: 20000, callTimeoutMs: 20000, sandbox: mcpSandboxFor(config) });
+  const hub = new McpHub({ [name]: cfg }, { callTimeoutMs: 20000, sandbox: mcpSandboxFor(config) });
   const t0 = Date.now();
   try {
     await hub.start();
@@ -2366,7 +2369,7 @@ async function cmdImport(args = []) {
   if (!source || !validSources.includes(source)) {
     process.stderr.write('usage: ox import <claude-code|codex|cursor|hermes|all> [--dry-run]\n');
     process.stderr.write('sources (read only; their files are never changed):\n');
-    process.stderr.write('  claude-code  skills (~/.claude/skills, ./.claude/skills), subagents (.claude/agents), MCP (~/.claude.json, ./.mcp.json), CLAUDE.md\n');
+    process.stderr.write('  claude-code  skills (~/.claude/skills, ./.claude/skills), subagents (.claude/agents), MCP (~/.claude.json, ./.mcp.json), instructions, and this project\'s Claude Code auto-memory\n');
     process.stderr.write('  codex        skills (~/.codex/skills), subagents (.codex/agents), MCP ([mcp_servers.*] in ~/.codex/config.toml), AGENTS.md\n');
     process.stderr.write('  cursor       MCP (~/.cursor/mcp.json, ./.cursor/mcp.json), .cursorrules and .cursor/rules\n');
     process.stderr.write('  hermes       ~/.hermes/skills + config + AGENTS.md\n');
@@ -2476,7 +2479,29 @@ async function cmdImport(args = []) {
   fs.mkdirSync(agentDir, { recursive: true });
   let appendedMemory = 0;
   let skippedMemory = 0;
+  let importedClaudeAutoMemory = false;
+  const claudeAutoFiles = memoryFiles.filter((m) => m.autoMemory);
+  if (claudeAutoFiles.length) {
+    const sections = claudeAutoFiles.map((m) => {
+      const { kept, withheld } = screenReadLines(String(m.content ?? '').split('\n'), m.name, 'ox import claude-code auto-memory');
+      return `## ${m.name}\n\n${kept.join('\n')}${withheld ? `\n\n${shortWithheldNotice(withheld)}` : ''}`;
+    });
+    const detail = sections.join('\n\n');
+    const memoryApi = createMemoryApi(cwd);
+    const imported = await memoryApi.dispatch('memory_add', {
+      type: 'project', scope: 'project', topic: 'claude-code-auto-memory',
+      statement: `Claude Code automatic project memory imported (${claudeAutoFiles.length} file${claudeAutoFiles.length === 1 ? '' : 's'}); retrieve details with memory_get topic claude-code-auto-memory.`,
+      detail,
+    });
+    if (imported.isError) {
+      process.stderr.write(`${c.yellow('!')} Claude Code auto-memory was not imported: ${imported.content}\n`);
+    } else {
+      importedClaudeAutoMemory = true;
+      console.log(`${c.green('✓')} imported ${claudeAutoFiles.length} Claude Code auto-memory file(s) as project topic ".agent/topics/claude-code-auto-memory.md"`);
+    }
+  }
   for (const m of memoryFiles) {
+    if (m.autoMemory) continue;
     const base = path.basename(m.path);
     const destMem = path.join(agentDir, base);
     let existing = '';
@@ -2494,7 +2519,7 @@ async function cmdImport(args = []) {
   if (mergedMcp) console.log(`${c.green(`✓ merged ${mergedMcp} MCP server(s)`)} → ${c.dim(mcpFile)}`);
   else console.log(c.dim(`mcp: nothing new to merge`));
   if (appendedMemory) console.log(`${c.green(`✓ appended ${appendedMemory} memory file(s)`)}${skippedMemory ? ` · ${skippedMemory} skipped (already present)` : ''} → ${c.dim(agentDir)}`);
-  else console.log(c.dim(`memory: nothing new to append`));
+  else if (!importedClaudeAutoMemory) console.log(c.dim(`memory: nothing new to append`));
   console.log(c.green('\n✓ import complete'));
 }
 
@@ -3877,7 +3902,53 @@ async function cmdMesh(args = []) {
       } finally { await node.close(); }
       return;
     }
-    console.error('usage: ox mesh [status|name|invite|join|allow|deny|forget|up|models|run|describe|agents|ls|pull|share|audit|lockdown] — ox help for details');
+    if (sub === 'screen') {
+      const who = args[1];
+      if (!who) throw new Error('usage: ox mesh screen <machine> [output.png]');
+      const out = path.resolve(args[2] ?? `mesh-${who.replace(/[^a-z0-9]+/ig, '-').replace(/^-|-$/g, '') || 'screen'}-${Date.now()}.png`);
+      if (fs.existsSync(out)) throw new Error(`${out} exists; choose another output path`);
+      const node = await oneShot();
+      try {
+        const chunks = [];
+        const r = await node.ask(who, 'screen', {}, { timeoutMs: 30_000, onChunk: (b) => chunks.push(b) });
+        const data = Buffer.concat(chunks);
+        if (!data.length || data.length !== r.size) throw new Error(`incomplete screenshot (${data.length} of ${r.size ?? 0} bytes)`);
+        fs.writeFileSync(out, data, { mode: 0o600 });
+        console.log(`${c.green('✓')} ${out} ${c.dim(`(${data.length} bytes from ${who})`)}`);
+      } finally { await node.close(); }
+      return;
+    }
+    if (sub === 'control') {
+      const who = args[1], action = String(args[2] ?? '').toLowerCase();
+      if (!who || !action) throw new Error('usage: ox mesh control <machine> list|click|type|key … [--app <app>]');
+      const app = flag('--app');
+      const node = await oneShot();
+      try {
+        if (action === 'list') {
+          const r = await node.ask(who, 'control-list', { app });
+          console.log(`${r.app ?? who}${r.window ? ` · ${r.window}` : ''}`);
+          for (const e of r.elements ?? []) console.log(`${e.id}. ${String(e.role ?? '').replace(/^AX/, '')}: ${e.name || e.description || e.identifier || e.value || '(no name)'}`);
+          return;
+        }
+        if (action === 'click') {
+          const element = args.slice(3).filter((x, i, a) => x !== '--app' && a[i - 1] !== '--app').join(' ').trim();
+          if (!element) throw new Error('usage: ox mesh control <machine> click <control name> [--app <app>]');
+          const r = await node.ask(who, 'control-click', { app, element }); console.log(`${c.green('✓')} ${r.text}`); return;
+        }
+        if (action === 'type') {
+          const text = args.slice(3).filter((x, i, a) => x !== '--app' && a[i - 1] !== '--app').join(' ').trim();
+          if (!text) throw new Error('usage: ox mesh control <machine> type <text> [--app <app>]');
+          const r = await node.ask(who, 'control-type', { app, text }); console.log(`${c.green('✓')} ${r.text}`); return;
+        }
+        if (action === 'key') {
+          const key = args[3];
+          if (!key) throw new Error('usage: ox mesh control <machine> key <key> [--app <app>]');
+          const r = await node.ask(who, 'control-key', { app, key }); console.log(`${c.green('✓')} ${r.text}`); return;
+        }
+        throw new Error('remote control action is one of list, click, type, key');
+      } finally { await node.close(); }
+    }
+    console.error('usage: ox mesh [status|name|invite|join|allow|deny|forget|up|models|run|screen|control|describe|agents|ls|pull|share|audit|lockdown] — ox help for details');
     process.exitCode = 1;
   } catch (e) {
     console.error(c.red(e.message));
@@ -5638,6 +5709,17 @@ async function runSubcommand(cmd, args) {
       const file = project ? projFile : userFile;
       const day = mg.fmtDay;
       const row = (m) => `${c.dim(m.id)}  ${m.text}  ${c.dim(`${m.kind} · ${day(m.createdAt)}${m.strength > 1 ? ` · said ${m.strength}×` : ''}${m.updates ? ' · replaced an older fact' : ''}${m.expiresAt ? ` · until ${day(m.expiresAt)}` : ''}`)}`;
+      if (sub === 'import-claude') {
+        const sourceFile = words.find((a) => !String(a).startsWith('--'));
+        if (!sourceFile) { console.log(c.red('usage: ox memory import-claude <export.md> [--apply]')); process.exitCode = 3; return; }
+        try {
+          const { importClaudeMemoryFile } = await import('./external-memory.js');
+          const result = importClaudeMemoryFile(sourceFile, { dryRun: !args.includes('--apply'), cwd: process.cwd() });
+          if (result.dryRun) console.log(`${c.bold('Claude account-memory import preview')}\n${result.found} candidate entries found in ${result.file}\n${c.dim('Nothing was written. Review the file, then repeat with --apply to merge screened entries into ox memory.')}`);
+          else console.log(`${c.green('Claude account-memory import complete')}: ${result.imported} imported/updated, ${result.refused} refused by the memory safety screen (${result.found} candidates).`);
+        } catch (err) { console.log(c.red(`memory import failed: ${err?.message ?? err}`)); process.exitCode = 1; }
+        return;
+      }
       if (!sub) {
         const p = mg.profile({ file: userFile });
         console.log(c.bold('What ox remembers about you'));

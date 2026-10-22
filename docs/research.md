@@ -267,7 +267,7 @@ Seven of eight targets are OpenAI-shaped. Only Anthropic and Gemini need real ad
 | DeepSeek | `https://api.deepseek.com` | Bearer `$DEEPSEEK_API_KEY` | dual-compat: OpenAI + Anthropic shapes | deepseek-v4-pro $1.32/$3.96 (peak) · v4-flash $0.44/$1.32 · chat/-reasoner RETIRED 2026-07-24 |
 | Ollama (local) | `http://localhost:11434/v1` | none | OpenAI-compat; tools YES, `tool_choice` NO — omit it | local models, e.g. qwen3 |
 | Anthropic | `https://api.anthropic.com/v1/messages` | `x-api-key: $ANTHROPIC_API_KEY` + header `anthropic-version: 2023-06-01` | own shape | opus-5 $5/$25 · sonnet-5 $2/$10 · haiku-4.5 $1/$5 |
-| Gemini | `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` (+ `:streamGenerateContent?alt=sse`) | `x-goog-api-key: $GEMINI_API_KEY` | own shape | gemini-3.1-pro-preview $2/$12 · gemini-3.7-flash $0.38/$1.88 |
+| Gemini | `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` (+ `:streamGenerateContent?alt=sse`) | `x-goog-api-key: $GEMINI_API_KEY` | own shape | gemini-3.1-pro-preview $2/$12 · gemini-3.8-flash $0.75/$3.75 standard through 2026-12-31 |
 
 Provider docs: https://docs.x.ai · https://platform.openai.com/docs/api-reference/chat · https://console.groq.com/docs/api · https://openrouter.ai/docs · https://api-docs.deepseek.com · https://docs.ollama.com · https://docs.anthropic.com/en/api/messages · https://ai.google.dev/gemini-api/docs
 

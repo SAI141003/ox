@@ -115,15 +115,25 @@ ox is SIGKILLed on expiry — a hung agent cannot hang the runner.
 The runner parses the child's NDJSON stdout to compute the summary, and that
 stream exists only in memory. `--keep` writes it into the sandbox as
 `<sandbox>/events.ndjson` (one JSON value per line, stream order, written
-*before* the summary prints) so the numbers in the report trace back to the
-events that produced them:
+*before* the summary prints) and a payload-free arrival timeline as
+`<sandbox>/event-timings.json`, so the timing metrics trace back to child stdout
+event arrivals without duplicating prompts, tool arguments, or model output:
 
 ```
 /var/folders/.../ox-realbench-read-and-report-4vsdNz
 ├── events.ndjson   <- every tool-start/tool-end/usage event, verbatim
+├── event-timings.json <- event type + stdout-arrival time, no event payloads
 ├── home/           <- sandboxed HOME + XDG
 └── ws/             <- the workspace the agent was graded against
 ```
+
+`AGENT_MS` measures only the spawned Ox process. It excludes task setup and
+verification. `FIRST_TEXT` is time from spawn to the first generated-text event
+arriving on stdout. `TOOL_AVG` is the mean time between matching tool-start and
+tool-end events. These are end-to-end child-process observations, **not** model
+provider latency or token-generation speed; network, CLI startup, local scheduling,
+and tool execution can contribute. Missing timing events are shown as `n/a`, never
+as zero. The JSON result retains both harness `ms` and isolated `agentMs`.
 
 The summary also prints a `USAGE PER REQUEST` table — per-request input/output
 rather than only run totals, because a mean cannot show you which request cost

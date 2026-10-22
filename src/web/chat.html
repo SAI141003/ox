@@ -135,8 +135,11 @@
   .row:hover .acts, .row:focus-within .acts { display: flex; } .row:hover .age, .row:focus-within .age { display: none; }
   @media (hover: none) { .row .acts { display: flex; } .row .age { display: none; } }
   .ask-ovl { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(0,0,0,.45); }
+  .ask-ovl[hidden] { display: none; }
   .ask-box { width: min(360px, calc(100% - 32px)); padding: 18px; border-radius: 14px; border: 1px solid var(--line2); background: var(--panel); box-shadow: 0 20px 60px rgba(0,0,0,.4); }
   .ask-box p { margin: 0 0 16px; line-height: 1.45; } .ask-row { display: flex; justify-content: flex-end; gap: 8px; }
+  .sketch-box { width: min(760px, calc(100% - 28px)); }
+  .sketch-board { display:block; width:100%; height:auto; aspect-ratio:5/3; background:#fff; border-radius:10px; border:1px solid var(--line2); touch-action:none; cursor:crosshair; }
   .btn.danger-fill { background: var(--red); color: #fff; border-color: transparent; }
   .toast-act { margin-left: 12px; font-weight: 600; text-decoration: underline; color: inherit; pointer-events: auto; }
   .row .acts button { width: 22px; height: 22px; border-radius: 5px; display: grid; place-items: center; color: var(--dim); }
@@ -232,10 +235,27 @@
   .talk-end { min-width: 110px; height: 52px; border-radius: 16px; background: var(--red); color: #fff; font-weight: 650; }
   .sch-new { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; } .sch-new #sch-prompt { flex: 1; min-width: 220px; }
   .bots-grid { display: grid; grid-template-columns: minmax(240px, 320px) 1fr; gap: 18px; align-items: start; margin-top: 16px; }
+  .bots-grid.empty { grid-template-columns: 1fr; }
   .bots-grid .card { text-align: left; width: 100%; }
   .bots-grid .card.on { border-color: var(--text); }
   .botface { flex: none; display: block; }
-  .bot-hero { display: grid; place-items: center; padding: 6px 0 2px; }
+  .mochi-face { flex: none; display: block; }
+  .bot-character-controls { display:grid; gap:16px; }
+  .bot-character-controls[hidden],#b-ox-controls[hidden] { display:none!important; }
+  .bot-character-note { border-left:2px solid #8eb3c8; padding:8px 10px; line-height:1.5; }
+  .bot-head-icon { display:inline-grid; place-items:center; width:38px; height:38px; margin-right:8px; border-radius:12px; background:color-mix(in srgb,#7397ff 14%,var(--panel)); }
+  .bot-head-icon svg { width:30px; height:30px; }
+  .bot-hero { display:grid; place-items:center; min-height:214px; overflow:hidden; position:relative; border:1px solid color-mix(in srgb,#8caeff 22%,var(--line2)); border-radius:18px; background:radial-gradient(ellipse at 50% 65%,color-mix(in srgb,#82a6ff 24%,transparent),transparent 54%),linear-gradient(145deg,color-mix(in srgb,#263657 52%,var(--panel)),var(--panel) 72%); }
+  .bot-hero:before { content:""; position:absolute; inset:16px; border:1px solid color-mix(in srgb,#fff 5%,transparent); border-radius:13px; pointer-events:none; }
+  .bot-hero .mochi-face { width:170px!important; height:170px!important; filter:drop-shadow(0 14px 20px rgba(54,91,190,.32)); }
+  .bot-hero .botface { width:112px; height:112px; filter:drop-shadow(0 12px 18px rgba(0,0,0,.2)); }
+  .bot-picker-label { font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); margin-bottom:7px; }
+  .bot-swatch-row,.bot-emotion-row { display:flex; gap:8px; flex-wrap:wrap; }
+  .bot-swatch { display:inline-flex; align-items:center; gap:7px; min-height:34px; padding:5px 10px; border:1px solid var(--line2); border-radius:999px; background:var(--panel); color:var(--text); cursor:pointer; }
+  .bot-swatch i { width:13px; height:13px; border-radius:50%; background:var(--swatch); box-shadow:inset 0 0 0 1px #ffffff30; }
+  .bot-swatch.on,.bot-mood.on { border-color:#86aaff; box-shadow:0 0 0 2px color-mix(in srgb,#86aaff 20%,transparent); }
+  .bot-mood { min-height:32px; padding:5px 10px; border:1px solid var(--line2); border-radius:10px; background:var(--panel); color:var(--text); cursor:pointer; }
+  .bot-edit .field:focus-visible,.bot-swatch:focus-visible,.bot-mood:focus-visible { outline:2px solid #86aaff; outline-offset:2px; }
   .bot-shapes { display: grid; grid-template-columns: repeat(auto-fill, 40px); gap: 6px; justify-content: center; }
   .bot-shapes button { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; }
   .bot-shapes button.on { box-shadow: inset 0 0 0 1.5px var(--text); }
@@ -251,6 +271,12 @@
   .msg.assistant .who.botwho { background: none; }
   .botname { font-weight: 650; font-size: 13px; margin-right: 8px; }
   .bot-new { border-style: dashed !important; }
+  .bots-empty { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(180px,.8fr); gap:18px; align-items:center; padding:24px; border:1px solid var(--line2); border-radius:14px; background:linear-gradient(135deg,color-mix(in srgb,#7397ff 12%,var(--panel)),var(--panel) 62%); }
+  .bots-empty h3 { margin:0 0 6px; font-size:19px; } .bots-empty p { margin:0; max-width:560px; color:var(--dim); line-height:1.55; }
+  .bots-empty-art { display:grid; place-items:center; min-height:120px; border-radius:12px; background:color-mix(in srgb,var(--bg) 55%,transparent); }
+  .bots-empty-art svg { width:94px; height:94px; filter:drop-shadow(0 8px 16px rgba(83,128,255,.2)); }
+  .bots-empty .btn { margin-top:16px; }
+  @media (max-width:600px) { .bots-empty { grid-template-columns:1fr; } .bots-empty-art { display:none; } }
   .bot-edit { display: flex; flex-direction: column; gap: 12px; }
   .bot-edit label { display: flex; flex-direction: column; gap: 6px; }
   .bot-two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -561,7 +587,7 @@
   /* ---------- settings */
   .ovl { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 20; padding: 34px; }
   .ovl.on { display: block; }
-  .sheet { position: relative; height: 100%; max-width: 1280px; margin: 0 auto; background: var(--bg); border: 1px solid var(--line2); border-radius: 14px; display: grid; grid-template-columns: 250px 1fr; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.5); }
+  .sheet { position: relative; height: 100%; width: 100%; max-width: none; margin: 0 auto; background: var(--bg); border: 1px solid var(--line2); border-radius: 14px; display: grid; grid-template-columns: clamp(250px, 20vw, 380px) minmax(0, 1fr); overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.5); }
   .snav { border-right: 1px solid var(--line); padding: 14px 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; background: var(--side); }
   .snav .search { margin: 0 2px 10px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); }
   .snav button { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; color: var(--muted); text-align: left; font-size: 13.5px; }
@@ -570,7 +596,7 @@
   .snav button.sub { padding-left: 32px; font-size: 13px; }
   .snav .gap { height: 12px; }
   .sbody { overflow-y: auto; padding: 30px 44px 60px; }
-  .sbody-inner { max-width: 860px; }
+  .sbody-inner { max-width: 980px; }
   .shead { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; font-size: 15px; font-weight: 600; }
   .sdesc { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
   .srow { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 14px 0; border-top: 1px solid var(--line); }
@@ -580,6 +606,64 @@
   .srow .l span { color: var(--dim); font-size: 12.5px; }
   .srow select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line2); background: var(--panel); max-width: 280px; }
   .sblock { margin-bottom: 34px; }
+  .pet-preview { position:relative; display:grid; grid-template-columns:minmax(180px,.85fr) minmax(260px,1.15fr); align-items:center; gap:clamp(18px,4vw,48px); padding:clamp(20px,4vw,36px); margin:20px 0 30px; overflow:hidden; border:1px solid var(--line2); border-radius:20px; background:radial-gradient(ellipse at 20% 48%,color-mix(in srgb,var(--pet-accent,#7397ff) 19%,transparent),transparent 54%),var(--panel); }
+  .pet-preview::after { content:""; position:absolute; inset:auto -8% -78% 35%; height:100%; pointer-events:none; background:radial-gradient(ellipse,color-mix(in srgb,var(--pet-accent,#7397ff) 12%,transparent),transparent 68%); }
+  .pet-preview-copy,.pet-preview-art { position:relative; z-index:1; }
+  .pet-preview-copy h2 { margin:5px 0 7px; font-size:22px; font-weight:620; letter-spacing:-.025em; }
+  .pet-preview-copy p { max-width:410px; margin:0; color:var(--muted); font-size:13px; line-height:1.55; }
+  .pet-preview-art { display:grid; justify-items:center; gap:10px; min-height:172px; }
+  .pet-heading-icon { display:inline-grid; place-items:center; width:40px; height:40px; margin-right:8px; border-radius:12px; background:color-mix(in srgb,#7397ff 14%,var(--panel)); vertical-align:middle; }
+  .pet-heading-icon svg { width:34px; height:34px; image-rendering:pixelated; }
+  .pet-stage { position:relative; width:176px; min-height:156px; display:grid; place-items:center; isolation:isolate; filter:drop-shadow(0 12px 18px color-mix(in srgb,var(--pet-accent,#7397ff) 24%,transparent)); }
+  .pet-stage::before { content:""; position:absolute; z-index:-1; width:116px; height:116px; border-radius:50%; background:radial-gradient(circle,color-mix(in srgb,var(--pet-accent,#7397ff) 18%,transparent),transparent 70%); }
+  .pet-stage::after { content:""; position:absolute; z-index:-1; bottom:10px; width:74px; height:10px; border-radius:50%; background:color-mix(in srgb,var(--pet-accent,#7397ff) 24%,transparent); filter:blur(7px); animation:pet-shadow 3.2s ease-in-out infinite; }
+  .pet-stage svg { overflow:visible; animation:pet-float 3.2s ease-in-out infinite; transform-origin:50% 80%; }
+  .pet-custom-art { position:relative; display:inline-grid; place-items:center; line-height:1; }
+  .pet-custom-art .pet-custom-emoji { line-height:1; }
+  .pet-custom-mood { position:absolute; top:-.12em; right:-.3em; display:grid; place-items:center; width:.34em; height:.34em; border-radius:50%; background:var(--panel); color:var(--pet-accent,#7397ff); font:700 .23em/1 var(--sans); box-shadow:0 0 0 1px var(--line2); }
+  @keyframes pet-float { 0%,100% { transform:translateY(0) rotate(0); } 50% { transform:translateY(-7px) rotate(-2deg); } }
+  @keyframes pet-shadow { 0%,100% { transform:scaleX(1); opacity:.8; } 50% { transform:scaleX(.78); opacity:.45; } }
+  .pet-expression-label { color:var(--muted); font-size:12px; }
+  .pet-expression-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; margin:12px 0 28px; }
+  .pet-expression { min-width:0; min-height:76px; display:grid; grid-template-columns:42px minmax(0,1fr); align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--line); border-radius:14px; background:color-mix(in srgb,var(--panel) 72%,transparent); color:var(--muted); text-align:left; cursor:pointer; transition:background .16s,border-color .16s,color .16s,transform .16s,box-shadow .16s; }
+  .pet-expression:hover { transform:translateY(-2px); color:var(--text); background:var(--hover); }
+  .pet-expression:focus-visible { outline:2px solid var(--pet-accent,#7397ff); outline-offset:2px; }
+  .pet-expression[aria-pressed="true"] { border-color:color-mix(in srgb,var(--pet-accent,#7397ff) 75%,var(--line)); background:color-mix(in srgb,var(--pet-accent,#7397ff) 13%,var(--panel)); color:var(--text); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pet-accent,#7397ff) 25%,transparent); }
+  .pet-expression-art { width:42px; height:42px; display:grid; place-items:center; border-radius:12px; background:color-mix(in srgb,var(--pet-accent,#7397ff) 10%,var(--bg)); }
+  .pet-expression-art svg { width:38px; height:38px; image-rendering:pixelated; transition:transform .18s; }
+  .pet-expression:hover .pet-expression-art svg { transform:translateY(-2px) rotate(-3deg); }
+  .pet-expression-copy { min-width:0; display:grid; gap:3px; }
+  .pet-expression-copy b { color:var(--text); font-size:12px; font-weight:600; }
+  .pet-expression-copy small { color:var(--dim); font-size:10.5px; line-height:1.3; }
+  @media (max-width:700px) { .pet-expression-list { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width:420px) { .pet-expression-list { grid-template-columns:1fr; } }
+  .pet-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:12px 0 26px; }
+  .pet-card { display:grid; justify-items:center; align-content:start; gap:7px; min-height:190px; padding:20px 12px; border:1px solid var(--line); border-radius:16px; background:color-mix(in srgb,var(--panel) 48%,transparent); color:var(--text); text-align:center; cursor:pointer; transition:transform .16s,border-color .16s,background .16s; }
+  .pet-card:hover { transform:translateY(-2px); }
+  .pet-card:hover { background:var(--hover); }
+  .pet-card[aria-pressed="true"] { border-color:var(--accent,#6ea8fe); box-shadow:inset 0 0 0 1px var(--accent,#6ea8fe); }
+  .pet-card .pet-art { width:72px; height:72px; display:grid; place-items:center; }
+  .pet-card .pet-art svg { width:100%; height:100%; image-rendering:pixelated; filter:drop-shadow(0 5px 7px color-mix(in srgb,var(--pet-accent,#7397ff) 22%,transparent)); transition:transform .18s,filter .18s; }
+  .pet-card:hover .pet-art svg { transform:translateY(-3px) rotate(-2deg); filter:drop-shadow(0 8px 9px color-mix(in srgb,var(--pet-accent,#7397ff) 34%,transparent)); }
+  .pet-card .pet-copy { color:var(--dim); font-size:12px; line-height:1.45; }
+  .pet-card .pet-expression-tag { color:var(--muted); font-size:10px; letter-spacing:.04em; text-transform:uppercase; }
+  @media (max-width:860px) { .pet-preview { grid-template-columns:1fr; text-align:center; gap:8px; } .pet-preview-copy p { margin-inline:auto; } .pet-preview-actions { justify-content:center !important; } }
+  .pet-dock { position:fixed; right:20px; bottom:72px; z-index:21; display:grid; grid-template-columns:148px 1fr; grid-template-rows:1fr auto; align-items:center; gap:0 8px; width:276px; min-height:154px; padding:8px 10px 8px 8px; border:1px solid var(--line2); border-radius:24px; background:color-mix(in srgb,var(--panel) 88%,transparent); box-shadow:0 12px 36px rgba(0,0,0,.34); backdrop-filter:blur(16px); }
+  .pet-dock[hidden], .pet-mini[hidden] { display:none; }
+  html.native-desktop-pet .pet-dock { display:none !important; }
+  .pet-mini { grid-row:1 / 3; width:148px; height:138px; display:grid; place-items:center; border:0; border-radius:18px; background:transparent; cursor:pointer; }
+  .pet-mini svg { width:var(--pet-size,132px); height:var(--pet-size,132px); overflow:visible; }
+  .pet-mini:hover svg { animation:pet-bounce .45s ease; }
+  @keyframes pet-bounce { 50% { transform:translateY(-5px) rotate(-3deg); } }
+  .pet-side { display:grid; place-items:center; width:56px; height:56px; justify-self:center; border:1px solid var(--line2); border-radius:16px; background:var(--bg); }
+  .pet-side svg { width:46px; height:46px; }
+  .pet-actions { grid-column:2; display:flex; justify-content:center; align-items:center; gap:0; margin-top:5px; overflow:hidden; border-radius:999px; background:var(--raise); }
+  .pet-actions button { width:38px; height:34px; display:grid; place-items:center; color:var(--text); background:transparent; cursor:pointer; }
+  .pet-actions button + button { border-left:1px solid var(--line2); }
+  .pet-actions button:hover { background:var(--hover); }
+  .pet-actions svg { width:17px; height:17px; }
+  .pet-dock[hidden] { display:none; }
+  .settings-open .pet-dock { display:none; }
   .close { position: absolute; top: 12px; right: 12px; z-index: 2; }
   .keyrow { display: grid; grid-template-columns: 14px 1fr minmax(220px, 300px) auto; align-items: center; gap: 12px; padding: 12px 4px; border-top: 1px solid var(--line); }
   .keyrow:first-child { border-top: 0; }
@@ -610,6 +694,17 @@
   body.incog .bar { background: repeating-linear-gradient(135deg, var(--raise) 0 6px, transparent 6px 12px); }
   .incog-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); letter-spacing: .02em; text-transform: none; }
   @media (max-width: 860px) {
+    .pet-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .pet-preview { grid-template-columns:1fr; }
+    .pet-preview > .btn { justify-self:end; }
+    .pet-dock { right:10px; bottom:90px; width:154px; grid-template-columns:66px 1fr; min-height:78px; padding:5px; border-radius:18px; }
+    .pet-mini { width:66px; height:66px; }
+    .pet-mini svg { width:60px; height:60px; }
+    .pet-side { width:38px; height:38px; border-radius:12px; }
+    .pet-side svg { width:32px; height:32px; }
+    .pet-actions { margin-top:3px; }
+    .pet-actions button { width:28px; height:27px; }
+    .pet-actions svg { width:14px; height:14px; }
     .mback { display: inline-flex !important; }
     #sizer-side, #sizer-pane { display: none !important; }
     .pane2 { position: fixed; inset: 0 0 0 auto; width: min(100%, 520px); z-index: 12; box-shadow: 0 0 40px rgba(0,0,0,.5); }
@@ -627,6 +722,7 @@
     .page { padding: 20px 16px; }
     .keyrow { grid-template-columns: 14px 1fr; } .keyrow input, .keyrow .btn { grid-column: 2; }
   }
+  @media (max-width: 540px) { .pet-grid { grid-template-columns:1fr; } }
 </style>
 </head>
 <body>
@@ -655,11 +751,12 @@
     <div id="tab-sessions">
       <div class="nav">
         <button id="nav-new"><span data-i="plus"></span><span class="grow">New session</span><span class="kbd">⌘</span><span class="kbd">N</span></button>
-        <button id="nav-incog" title="Nothing is saved: no history, no memory used or learned, no usage record (⌘⇧N)"><span data-i="incog"></span><span class="grow">New incognito chat</span><span class="kbd">⇧</span><span class="kbd">N</span></button>
+        <button id="nav-incog" title="Chat transcript, memory and usage are not retained. Project file changes still apply. (⌘⇧N)"><span data-i="incog"></span><span class="grow">New incognito chat</span><span class="kbd">⇧</span><span class="kbd">N</span></button>
         <button data-view="map"><span data-i="mapi"></span><span class="grow">Project map</span></button>
         <button data-view="bots"><span data-i="bot"></span><span class="grow">Bots</span></button>
         <button data-view="caps"><span data-i="blocks"></span><span class="grow">Capabilities</span></button>
         <button data-view="studio"><span data-i="film"></span><span class="grow">Studio</span></button>
+        <button data-view="review"><span data-i="check"></span><span class="grow">Code Review</span></button>
         <button data-view="market"><span data-i="store"></span><span class="grow">Marketplace</span></button>
         <button data-view="msg"><span data-i="chat"></span><span class="grow">Messaging</span></button>
         <button data-view="sched"><span data-i="clock"></span><span class="grow">Scheduled</span></button>
@@ -703,6 +800,7 @@
           <div class="crow">
             <button class="round" id="attach" title="Add photos, files and tools" aria-label="Add photos, files and tools" aria-haspopup="menu" aria-expanded="false" data-i="plus"></button>
             <input type="file" id="file" multiple hidden>
+            <input type="file" id="folder" webkitdirectory directory multiple hidden>
             <input type="file" id="photo" accept="image/png,image/jpeg,image/gif,image/webp,video/*" multiple hidden>
             <input type="file" id="camera" accept="image/*" capture="environment" hidden>
             <button class="pill" id="mode-btn" aria-haspopup="listbox" aria-expanded="false" title="Mode, enforced (⌘. next mode)"><span data-i="mode"></span><span id="mode-name">Auto</span></button>
@@ -720,15 +818,19 @@
           </div>
         </div>
         <div class="pop" id="plus-menu" role="menu" hidden>
+          <div class="pop-h">Add</div>
           <div class="pop-tiles">
             <button data-act="photo" role="menuitem"><span data-i="image"></span>Photos</button>
             <button data-act="camera" role="menuitem"><span data-i="camera"></span>Camera</button>
             <button data-act="file" role="menuitem"><span data-i="clip"></span>Files</button>
           </div>
+          <div class="pop-group" id="pop-add"></div>
           <div class="pop-h">Answer with</div>
           <div class="pop-group" id="pop-tools"></div>
           <div class="pop-h">This chat</div>
           <div class="pop-group" id="pop-flags"></div>
+          <div class="pop-h">Plugins & apps</div>
+          <div class="pop-group" id="pop-apps"></div>
           <div class="pop-h">More</div>
           <div class="pop-group" id="pop-more"></div>
         </div>
@@ -803,6 +905,7 @@
     </div></div></section>
 
     <section class="view" id="v-map"><div class="page"><div class="page-inner" style="max-width:1100px" id="map"></div></div></section>
+    <section class="view" id="v-review"><div class="page"><div class="page-inner" style="max-width:900px" id="code-review"></div></div></section>
 
     <section class="view" id="v-office"><div class="page"><div class="page-inner" style="max-width:1100px">
       <div class="office-head"><div><h2 style="margin:0">Office</h2><div class="small dim">Who is working on what, live: every chat, bot and helper agent this app started.</div></div><span class="grow"></span><span class="small dim" id="office-sum"></span></div>
@@ -847,7 +950,36 @@
     <div class="row2"><button class="btn" value="cancel">Cancel</button><button class="btn primary" value="ok">Connect</button></div>
   </form>
 </dialog>
+<dialog id="petdlg">
+  <form id="pet-create-form">
+    <strong>Create a mini pet</strong>
+    <p class="muted small">Choose a name, short description and emoji. Your pet stays in this browser and does not alter the OX Island characters.</p>
+    <label class="small muted" for="pet-name">Name</label>
+    <input class="field" id="pet-name" maxlength="24" required placeholder="e.g. Comet" style="width:100%;margin:4px 0 10px">
+    <label class="small muted" for="pet-description">Description</label>
+    <input class="field" id="pet-description" maxlength="80" placeholder="A bright companion for big ideas" style="width:100%;margin:4px 0 10px">
+    <label class="small muted" for="pet-emoji">Emoji</label>
+    <input class="field" id="pet-emoji" maxlength="8" value="🐾" aria-label="Pet emoji" style="width:90px;margin:4px 0">
+    <div class="row2"><button class="btn" type="button" id="pet-cancel">Cancel</button><button class="btn primary" type="submit">Create pet</button></div>
+  </form>
+</dialog>
+<div class="pet-dock" id="pet-dock" hidden aria-label="OX mini companion">
+  <button class="pet-mini" id="pet-mini" type="button" aria-label="Open OX chat with your mini pet" title="Open OX chat · ⌥Space"></button>
+  <div class="pet-side" id="pet-side" aria-hidden="true"></div>
+  <div class="pet-actions" role="group" aria-label="Mini actions">
+    <button id="pet-chat" type="button" aria-label="Open chat" title="Open chat"><span data-i="chat"></span></button>
+    <button id="pet-talk" type="button" aria-label="Start voice conversation" title="Start voice conversation"><span data-i="wave"></span></button>
+    <button id="pet-settings" type="button" aria-label="Customize mini pet" title="Customize mini pet"><span data-i="gear"></span></button>
+  </div>
+</div>
 <div class="toast" id="toast" role="status"></div>
+<div class="ask-ovl" id="sketch-ovl" hidden>
+  <div class="ask-box sketch-box" role="dialog" aria-modal="true" aria-label="Sketch">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><b class="grow">Sketch</b><label class="small">Pen <input id="sketch-color" type="color" value="#20242b" aria-label="Pen color"></label><button class="btn ghost small" id="sketch-clear">Clear</button><button class="iconbtn" id="sketch-close" aria-label="Close sketch">×</button></div>
+    <canvas class="sketch-board" id="sketch-board" width="1000" height="600" aria-label="Drawing area"></canvas>
+    <div class="ask-row" style="margin-top:12px"><button class="btn ghost" id="sketch-cancel">Cancel</button><button class="btn primary" id="sketch-add">Add sketch to message</button></div>
+  </div>
+</div>
 
 <!--OX_UI_LANG-->
 <script>
@@ -857,6 +989,7 @@
   const store = {
     get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+    remove(k) { try { localStorage.removeItem(k); } catch {} },
   };
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
   const MOD = isMac ? '⌘' : 'Ctrl';
@@ -933,7 +1066,7 @@
   }
 
   // ---------- preferences (this browser only)
-  const prefs = Object.assign({ theme: null, size: 'medium', width: 'medium', motion: 'system', sendKey: 'enter', speakReplies: false, lang: '', voice: '', activity: 'normal', changedFiles: true, whatsNew: true, notifyDone: false, notifyFail: false, notifySound: false, hiddenModels: [] }, store.get('ox.prefs', {}));
+  const prefs = Object.assign({ theme: null, size: 'medium', width: 'medium', motion: 'system', sendKey: 'enter', speakReplies: false, lang: '', voice: '', activity: 'normal', changedFiles: true, whatsNew: true, notifyDone: false, notifyFail: false, notifySound: false, hiddenModels: [], saveChatHistory: false, learnFromChats: false }, store.get('ox.prefs', {}));
   const savePrefs = () => { store.set('ox.prefs', prefs); applyPrefs(); };
   function applyPrefs() {
     const r = document.documentElement;
@@ -978,7 +1111,7 @@
   // When ox is updated its server steps aside; reload so the app comes back on the new one.
   let healthMiss = 0;
   setInterval(async () => {
-    if (busy) return;
+    if (runningControllers.size) return;
     const ok = await fetch('/health', { cache: 'no-store' }).then((r) => r.ok).catch(() => false);
     healthMiss = ok ? 0 : healthMiss + 1;
     if (healthMiss === 2) { try { toast('Updating ox…'); } catch {} setTimeout(() => location.reload(), 1500); }
@@ -1041,11 +1174,20 @@
   }
 
   // ---------- state
-  let convos = store.get('ox.convos', []).map((c) => ({ at: Number(String(c.id).slice(1)) || Date.now(), ...c }));
+  // Chat content stays in this tab's memory unless the user opts into local
+  // history. Previously saved history is not loaded under the private default.
+  const storedConvos = () => { const rows = store.get('ox.convos', []); return Array.isArray(rows) ? rows : []; };
+  let convos = (prefs.saveChatHistory ? storedConvos() : []).map((c) => ({ at: Number(String(c.id).slice(1)) || Date.now(), ...c }));
   let current = convos.find((c) => !c.archived)?.id ?? null;
+  let convoSeq = 0;
+  const newConvoId = () => `c${Date.now()}-${++convoSeq}`;
   let view = 'chat';
   let readonly = null;          // a terminal session being viewed
-  let busy = null;
+  // A run belongs to its chat, not to the whole window. Keeping one global
+  // AbortController made a running session block every other session and sent
+  // follow-ups into the wrong chat after switching tabs.
+  const runningControllers = new Map();
+  const currentController = () => runningControllers.get(current) ?? null;
   let tab = 'sessions';
   let terminalSessions = [];
   let caps = null;
@@ -1053,8 +1195,12 @@
   // The name you gave ox (Settings › General); every label here follows it.
   let botName = 'ox';
   const applyName = (n) => { botName = n || 'ox'; document.title = botName; $('brand-name').textContent = botName; const own = botName !== 'ox'; document.querySelector('.brand').classList.toggle('own', own); const sn = document.querySelector('#splash .nm'); if (sn && own) sn.textContent = botName; if (!convo()?.messages?.length) renderChat(); };
-  // Incognito chats live only in this tab: never written to storage.
-  const saveConvos = () => store.set('ox.convos', convos.filter((c) => !c.incognito).slice(0, 200).map((c) => (c.messages.some((m) => m.images) ? { ...c, messages: c.messages.map(({ images, ...m }) => m) } : c)));
+  // Normal chats, too, are private by default. The opt-in stores text locally;
+  // image payloads are never included in that history.
+  const saveConvos = () => {
+    if (!prefs.saveChatHistory) return;
+    store.set('ox.convos', convos.filter((c) => !c.incognito).slice(0, 200).map((c) => (c.messages.some((m) => m.images || m.thumbs) ? { ...c, messages: c.messages.map(({ images, thumbs, ...m }) => m) } : c)));
+  };
   const convo = () => convos.find((c) => c.id === current);
 
   // ---------- views
@@ -1063,7 +1209,7 @@
     view = v;
     document.querySelectorAll('.view').forEach((el) => el.classList.toggle('on', el.id === `v-${v}`));
     document.querySelectorAll('.nav [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
-    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : v === 'flows' ? 'Automations' : v === 'tasks' ? 'Task board' : v === 'gallery' ? 'Agents' : v === 'mission' ? 'Mission map' : v === 'library' ? 'Library' : v === 'canvas' ? 'Sessions canvas' : (readonly ? readonly.title : convo()?.title || 'New session');
+    $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'review' ? 'Code Review' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : v === 'flows' ? 'Automations' : v === 'tasks' ? 'Task board' : v === 'gallery' ? 'Agents' : v === 'mission' ? 'Mission map' : v === 'library' ? 'Library' : v === 'canvas' ? 'Sessions canvas' : (readonly ? readonly.title : convo()?.title || 'New session');
     document.body.classList.remove('nav');
     if (v === 'caps') loadCaps();
     if (v === 'msg') loadMessaging();
@@ -1071,6 +1217,7 @@
     if (v === 'bots') loadBots();
     if (v === 'market') loadMarket();
     if (v === 'studio') loadStudio();
+    if (v === 'review') loadCodeReview();
     if (v === 'office') pollOffice();
     if (v === 'flows') loadFlows();
     if (v === 'tasks') loadTasks();
@@ -1588,9 +1735,10 @@
     updateUsageMeter(convo());
     renderQueued();
     // Back on a chat whose answer ended while you were elsewhere: what you queued goes now.
-    if (!busy && convo()?.queued?.length) setTimeout(drainQueue, 0);
+    setBusy(!!currentController(), current);
+    if (!currentController() && convo()?.queued?.length) setTimeout(drainQueue, 0);
     document.body.classList.toggle('incog', !!convo()?.incognito && !readonly);
-    $('ro').innerHTML = readonly ? 'terminal session · read-only' : convo()?.incognito ? `<span class="incog-tag">${icon('incog')}incognito, nothing is saved</span>` : '';
+    $('ro').innerHTML = readonly ? 'terminal session · read-only' : convo()?.incognito ? `<span class="incog-tag" title="The conversation, memory updates and usage record are not retained. Any approved code changes still apply to the selected project.">${icon('incog')}incognito · chat not retained · project edits still apply</span>` : '';
     $('input').disabled = !!readonly;
     $('input').placeholder = readonly ? 'Viewing a terminal session' : 'Describe what you need';
     if (readonly) {
@@ -1600,7 +1748,7 @@
       bar.innerHTML = `<button class="btn" id="cont">${icon('play')}Continue in a new chat</button><button class="btn ghost" id="leave">Back to your chats</button>`;
       inner.append(bar);
       $('cont').onclick = () => {
-        const c = { id: `c${Date.now()}`, at: Date.now(), title: readonly.title, messages: readonly.messages.map((m) => ({ role: m.role, content: m.content })) };
+        const c = { id: newConvoId(), at: Date.now(), title: readonly.title, messages: readonly.messages.map((m) => ({ role: m.role, content: m.content })) };
         convos.unshift(c); current = c.id; readonly = null; saveConvos(); renderChat(); renderLists(); $('input').focus();
       };
       $('leave').onclick = () => { readonly = null; renderChat(); renderLists(); };
@@ -1641,7 +1789,7 @@
       const text = mt.closest('.msg').dataset.text || '';
       if (mt.dataset.mt === 'copy') copy(text);
       if (mt.dataset.mt === 'speak') speakText(text, true);
-      if (mt.dataset.mt === 'retry' && !busy) {
+      if (mt.dataset.mt === 'retry' && !currentController()) {
         const c = convo(); if (!c) return;
         const lastUser = [...c.messages].reverse().find((x) => x.role === 'user');
         if (!lastUser) return;
@@ -1653,7 +1801,7 @@
   });
 
   function newConvo(incognito = false) {
-    const c = { id: `c${Date.now()}`, at: Date.now(), title: incognito ? 'Incognito chat' : 'New session', messages: [], ...(incognito === true ? { incognito: true } : {}) };
+    const c = { id: newConvoId(), at: Date.now(), title: incognito ? 'Incognito chat' : 'New session', messages: [], ...(incognito === true ? { incognito: true } : {}) };
     convos.unshift(c); current = c.id; readonly = null; saveConvos(); show('chat'); renderChat();
     $('input').focus();
   }
@@ -1668,7 +1816,7 @@
     const c = convo();
     if (!c) return;
     const input = $('input');
-    const item = { text: input.value.trim(), files: takeAttachments(), pics: takePhotos() };
+    const item = { text: input.value.trim(), files: takeAttachments(), pics: takePhotos(), model: $('model').value, mode: $('mode').value };
     if (!item.text && !item.files && !item.pics.length) return;
     (c.queued ??= []).push(item);
     input.value = ''; resize(); renderQueued(); saveConvos();
@@ -1677,14 +1825,24 @@
     const c = convo(), el = $('queued');
     const q = c?.queued ?? [];
     el.hidden = !q.length;
-    el.innerHTML = q.map((x, i) => `<div class="q"><span class="k">${i === 0 ? 'Next' : 'Then'}</span><span class="t">${esc(x.text || (x.pics.length ? 'Photo' : 'Files'))}</span><button class="iconbtn" data-unqueue="${i}" title="Remove" aria-label="Remove queued message">${icon('x')}</button></div>`).join('');
+    const canSteer = !!currentController();
+    el.innerHTML = q.map((x, i) => `<div class="q"><span class="k">${i === 0 ? 'Next' : 'Then'}</span><span class="t">${esc(x.text || (x.pics.length ? 'Photo' : 'Files'))}</span>${canSteer && x.text ? `<button class="btn ghost small" data-steer="${i}" title="Send this instruction to the active run at its next safe step">Steer now</button>` : ''}<button class="iconbtn" data-unqueue="${i}" title="Remove" aria-label="Remove queued message">${icon('x')}</button></div>`).join('');
     el.querySelectorAll('[data-unqueue]').forEach((b) => (b.onclick = () => { c.queued.splice(Number(b.dataset.unqueue), 1); renderQueued(); saveConvos(); }));
+    el.querySelectorAll('[data-steer]').forEach((b) => (b.onclick = async () => {
+      const index = Number(b.dataset.steer), item = c.queued[index];
+      if (!item?.text || !runningControllers.has(c.id)) return;
+      b.disabled = true;
+      try {
+        await postJson('/ox/chat/steer', { sessionId: c.id, text: item.text });
+        c.queued.splice(index, 1); renderQueued(); saveConvos(); toast('Steer sent · applied at the next safe step');
+      } catch (e) { toast(`Could not steer: ${e.message}`); b.disabled = false; }
+    }));
     syncSendButton();
   }
   /** Send what was queued for this chat, as one turn (several queued lines are read together, as in Claude Code). */
-  async function drainQueue() {
-    const c = convo();
-    if (busy || !c?.queued?.length) return;
+  async function drainQueue(sessionId = current) {
+    const c = convos.find((x) => x.id === sessionId);
+    if (runningControllers.has(sessionId) || !c?.queued?.length) return;
     const items = c.queued.splice(0);
     renderQueued(); saveConvos();
     // You stopped the answer yourself: the queued words come back to the box, unsent.
@@ -1694,9 +1852,10 @@
       resize(); input.focus();
       return;
     }
-    await send({ text: items.map((x) => x.text).filter(Boolean).join('\n\n'), files: items.map((x) => x.files).join(''), pics: items.flatMap((x) => x.pics) });
+    await send({ text: items.map((x) => x.text).filter(Boolean).join('\n\n'), files: items.map((x) => x.files).join(''), pics: items.flatMap((x) => x.pics), model: items[0].model, mode: items[0].mode }, sessionId);
   }
   function syncSendButton() {
+    const busy = currentController();
     if (!busy) return;
     const typed = !!$('input').value.trim() || attachments.length || photos.length;
     const b = $('send');
@@ -1705,21 +1864,25 @@
     b.title = typed ? 'Sends when the current answer ends (it is not stopped)' : 'Stop (Esc)';
   }
 
-  async function send(queued = null) {
+  async function send(queued = null, sessionId = current) {
     const input = $('input');
-    if (busy && !queued) {
+    const activeController = runningControllers.get(sessionId);
+    if (activeController && !queued) {
       const typed = input.value.trim() || attachments.length || photos.length;
-      if (typed) queueFollowUp(); else busy.abort();
+      if (typed) queueFollowUp(); else activeController.abort();
       return;
     }
     if (readonly) return;
+    let c = convos.find((x) => x.id === sessionId);
+    if (!c && sessionId === current) { newConvo(); sessionId = current; c = convo(); }
+    if (!c) return;
+    c.model = queued?.model ?? $('model').value;
+    c.mode = queued?.mode ?? $('mode').value;
     const files = queued ? queued.files : takeAttachments();
     const pics = queued ? queued.pics : takePhotos();
     if (!queued && !files && !pics.length && /^\/[\w-]+/.test(input.value.trim()) && await runSlash(input.value.trim())) return;
     const text = ((queued ? queued.text : input.value.trim()) || (files ? 'Here are the files:' : pics.length ? 'What is in this photo?' : '')) + files;
     if (!text) return;
-    if (!convo()) newConvo();
-    const c = convo();
     if (!c.tools && Object.keys(draftTools).length) c.tools = { ...draftTools };
     if (!c.messages.length && !c.group) c.title = text.replace(/\s+/g, ' ').slice(0, 60);
     c.messages.push({ role: 'user', content: text, ...(pics.length ? { images: pics.map((x) => ({ mediaType: x.mediaType, data: x.data })), thumbs: pics.map((x) => x.thumb) } : {}) });
@@ -1732,11 +1895,14 @@
       c.messages.push(...replies);
       c.updated = Date.now(); c.running = true;
       saveConvos(); renderChat(); renderLists();
-      const bodies = [...$('inner').querySelectorAll('.msg.assistant .body')].slice(-replies.length);
-      busy = new AbortController(); setBusy(true);
-      await Promise.all(replies.map((r, k) => replyOnce(c, text, null, null, { reply: r, body: bodies[k], model: c.compare[k], signal: busy.signal })));
-      c.running = false; busy = null; setBusy(false); resize(); saveConvos(); renderLists();
-      drainQueue();
+      const bodies = c.id === current ? [...$('inner').querySelectorAll('.msg.assistant .body')].slice(-replies.length) : [];
+      const controller = new AbortController();
+      runningControllers.set(c.id, controller); setBusy(true, c.id);
+      await Promise.all(replies.map((r, k) => replyOnce(c, text, null, null, { reply: r, body: bodies[k] ?? null, model: c.compare[k], signal: controller.signal })));
+      c.running = false;
+      if (runningControllers.get(c.id) === controller) runningControllers.delete(c.id);
+      setBusy(false, c.id); resize(); saveConvos(); renderLists();
+      drainQueue(c.id);
       return;
     }
     const group = Array.isArray(c.group) && c.group.length ? c.group : null;
@@ -1746,20 +1912,22 @@
       const ok = await replyOnce(c, text, bot, group);
       if (!ok) break;
     }
-    drainQueue();
+    drainQueue(c.id);
   }
 
   // One answer from one model (or one bot in a group).
   async function replyOnce(c, text, bot, group, opts = {}) {
     const reply = opts.reply ?? { role: 'assistant', content: '', tools: [], pending: true, ...(bot ? { bot } : {}) };
+    if (bot && !Object.hasOwn(botCharacters, bot)) { try { await loadBotFaceRegistry(); } catch {} }
+    if (bot) setBotEmotion(bot, 'thinking');
     const t0 = performance.now();
     if (!opts.reply) {
       c.messages.push(reply);
       c.updated = Date.now(); c.running = true;
       saveConvos(); renderChat(); renderLists();
     }
-    const body = opts.body ?? $('inner').lastElementChild.querySelector('.body');
-    const model = opts.model ?? (bot ? `agent:${bot}` : ($('model').value || undefined));
+    const body = opts.body ?? (c.id === current ? $('inner').lastElementChild?.querySelector('.body') : null);
+    const model = opts.model ?? (bot ? `agent:${bot}` : (c.model || $('model').value || undefined));
     // Earlier answers from other bots or models in this turn travel as quoted
     // context, never as this model's own turn: a conversation ending on an
     // assistant turn gives the model nothing to answer (local models return
@@ -1774,13 +1942,14 @@
       history[last] = { ...history[last], content: `${history[last].content}\n\n${said ? `${said}\n\n` : ''}(Group chat with ${names.join(', ')}. You are ${bot}. Answer for yourself, build on what the others already said, and say plainly if you think one of them is wrong. Do not repeat them.)` };
     }
     const own = !opts.signal;
-    if (own) { busy = new AbortController(); setBusy(true); }
-    const signal = opts.signal ?? busy.signal;
+    const controller = own ? new AbortController() : null;
+    if (own) { runningControllers.set(c.id, controller); setBusy(true, c.id); }
+    const signal = opts.signal ?? controller.signal;
     let ok = true;
     try {
       const res = await api('/v1/chat/completions', {
         method: 'POST', signal,
-        body: JSON.stringify({ model, ox_mode: $('mode').value, ox_ui: 'live', ...(c.incognito ? { ox_incognito: true } : {}), ...toolFlags(c.tools), stream: true, messages: history }),
+        body: JSON.stringify({ model, ox_session_id: c.id, ox_mode: c.mode || $('mode').value, ox_ui: 'live', ox_remember_preferences: prefs.learnFromChats === true, ...(c.incognito ? { ox_incognito: true } : {}), ...toolFlags(c.tools), stream: true, messages: history }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error?.message || `HTTP ${res.status}`);
       const reader = res.body.getReader();
@@ -1812,7 +1981,7 @@
           // The server redrew an interactive answer that did not load.
           if (ox?.type === 'replace' && typeof ox.content === 'string') reply.content = ox.content;
           const delta = ev.choices?.[0]?.delta?.content;
-          if (delta) reply.content += delta;
+          if (delta) { reply.content += delta; if (bot) setBotEmotion(bot, 'happy'); }
           if (ev.usage) {
             reply.tokens = (ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0);
             reply.tokensIn = ev.usage.prompt_tokens || 0; reply.tokensOut = ev.usage.completion_tokens || 0;
@@ -1821,7 +1990,7 @@
             updateUsageMeter(c);
           }
           reply.pending = !reply.content;
-          paint(body, reply); scrollDown();
+          if (body && c.id === current) { paint(body, reply); scrollDown(); }
         }
       }
     } catch (e) {
@@ -1829,10 +1998,21 @@
       ok = false;
     } finally {
       reply.pending = false; c.updated = Date.now();
+      if (bot) {
+        const finalEmotion = reply.error ? 'sad' : 'happy';
+        setBotEmotion(bot, finalEmotion);
+        setTimeout(() => { if (botEmotions[bot] === finalEmotion) setBotEmotion(bot, 'neutral'); }, 2600);
+      }
       for (const a of reply.asks || []) if (!a.state) a.state = 'deny';
       reply.ms = Math.round(performance.now() - t0);
-      if (own) { c.running = false; busy = null; setBusy(false); resize(); }
-      paint(body, reply); saveConvos(); renderLists();
+      if (own) {
+        c.running = false;
+        if (runningControllers.get(c.id) === controller) runningControllers.delete(c.id);
+        setBusy(false, c.id);
+        if (c.id === current) resize();
+      }
+      if (body && c.id === current) paint(body, reply);
+      saveConvos(); renderLists();
       // Three things to ask next, made after the answer so it never waits on them.
       if (!group && !opts.reply && reply.content && !reply.error && prefs.followups === true && !c.incognito) {
         postJson('/ox/followups', { model, question: text, answer: reply.content })
@@ -1875,20 +2055,24 @@
     document.body.append(d);
   }
   setTimeout(showWhatsNew, 1500);
-  function setBusy(on) {
+  function setBusy(on, sessionId = current) {
     const b = $('send');
+    try { window.webkit?.messageHandlers?.oxMiniPet?.postMessage({ busy: runningControllers.size > 0 }); } catch {}
+    if (sessionId !== current) return;
     if (on) { b.hidden = false; $('speak').hidden = true; }
     b.disabled = !on && !$('input').value.trim() && !attachments.length;
     b.innerHTML = icon(on ? 'stop' : 'up');
     b.setAttribute('aria-label', on ? 'Stop (Esc)' : 'Send');
+    renderQueued();
   }
   function resize() {
     const t = $('input');
+    const busy = currentController();
     // Speak while the box is empty, send once there is something to send.
     if (Speech && !readonly) { const empty = !t.value.trim() && !attachments.length && !busy; $('speak').hidden = !empty; $('send').hidden = empty; }
     t.style.height = 'auto';
     t.style.height = `${Math.min(260, t.scrollHeight)}px`;
-    if (!busy) $('send').disabled = !t.value.trim() && !attachments.length;
+    if (!busy) $('send').disabled = !t.value.trim() && !attachments.length && !photos.length;
     else syncSendButton();
   }
   $('input').addEventListener('input', resize);
@@ -2036,7 +2220,7 @@
       + attachments.map((a, i) => `<span>${esc(a.name)}<button data-i2="${i}" aria-label="Remove">✕</button></span>`).join('');
     $('attached').querySelectorAll('button[data-i2]').forEach((b) => (b.onclick = () => { attachments.splice(Number(b.dataset.i2), 1); showAttachments(); }));
     $('attached').querySelectorAll('button[data-p]').forEach((b) => (b.onclick = () => { photos.splice(Number(b.dataset.p), 1); showAttachments(); }));
-    if (!busy) $('send').disabled = !$('input').value.trim() && !attachments.length && !(typeof photos !== 'undefined' && photos.length);
+    if (!currentController()) $('send').disabled = !$('input').value.trim() && !attachments.length && !(typeof photos !== 'undefined' && photos.length);
   }
   // Any file: a small text file goes straight into the message; anything else
   // (a video, a PDF, audio, a spreadsheet, a zip) is uploaded to ox, which
@@ -2050,28 +2234,30 @@
   }
   async function addFiles(list) {
     for (const f of list) {
+      const displayName = f.webkitRelativePath || f.name;
       if (/^image\//.test(f.type)) { await addPhotos([f]); continue; }
       if (f.size <= 200_000) {
         const text = await f.text();
-        if (!/\u0000/.test(text)) { attachments.push({ name: f.name, text }); continue; }
+        if (!/\u0000/.test(text)) { attachments.push({ name: displayName, text }); continue; }
       }
-      const chip = { name: `${f.name} (uploading…)`, text: '' };
+      const chip = { name: `${displayName} (uploading…)`, text: '' };
       attachments.push(chip); showAttachments();
       try {
         const u = await uploadFile(f);
-        chip.name = f.name;
+        chip.name = displayName;
         chip.text = u.text ? `${u.note}\n${u.text}` : u.note;
         for (const fr of u.frames ?? []) photos.push({ name: `${f.name} @ ${fr.t} s`, mediaType: 'image/jpeg', data: fr.data, thumb: fr.thumb || `data:image/jpeg;base64,${fr.data}` });
-        toast(u.kind === 'video' ? `${f.name}: ${u.frames?.length ?? 0} frames${u.duration ? ` from ${Math.round(u.duration)} s` : ''}, ready` : `${f.name} ready`);
+        toast(u.kind === 'video' ? `${displayName}: ${u.frames?.length ?? 0} frames${u.duration ? ` from ${Math.round(u.duration)} s` : ''}, ready` : `${displayName} ready`);
       } catch (e) {
         attachments.splice(attachments.indexOf(chip), 1);
-        toast(`${f.name}: ${e.message}`);
+        toast(`${displayName}: ${e.message}`);
       }
       showAttachments();
     }
     showAttachments();
   }
   $('file').onchange = async () => { await addFiles($('file').files); $('file').value = ''; };
+  $('folder').onchange = async () => { await addFiles($('folder').files); $('folder').value = ''; };
   $('v-chat').addEventListener('dragover', (e) => e.preventDefault());
   $('v-chat').addEventListener('drop', (e) => { e.preventDefault(); const fl = [...(e.dataTransfer?.files ?? [])]; if (fl.some((f) => /^image\//.test(f.type))) addPhotos(fl.filter((f) => /^image\//.test(f.type))); const rest = fl.filter((f) => !/^image\//.test(f.type)); if (rest.length) addFiles(rest); });
   function takeAttachments() {
@@ -2125,7 +2311,7 @@
     $('pane2').hidden = false; $('sizer-pane').hidden = false;
     paintIcons($('pane2'));
     if (view === v) show('chat'); else renderLists();
-    if (v === 'studio') loadStudio(); else if (v === 'map') loadMap(); else if (v === 'office') pollOffice(); else if (v === 'flows') loadFlows(); else if (v === 'tasks') loadTasks(); else if (v === 'sched') loadScheduled(); else if (v === 'bots') loadBots();
+    if (v === 'studio') loadStudio(); else if (v === 'review') loadCodeReview(); else if (v === 'map') loadMap(); else if (v === 'office') pollOffice(); else if (v === 'flows') loadFlows(); else if (v === 'tasks') loadTasks(); else if (v === 'sched') loadScheduled(); else if (v === 'bots') loadBots();
     prefs.beside = v; savePrefs();
   }
   function closeBeside(save = true) {
@@ -2166,6 +2352,26 @@
     ['market', 'store', 'Marketplace', 'Skills, agents and connectors to add'],
     ['incog', 'incog', 'Incognito chat', 'Nothing saved, nothing remembered or learned'],
   ];
+  const ADD_ACTIONS = [
+    ['folder', 'folder', 'Files and folders', 'Attach files from a folder; relative names are kept'],
+    ['goal', 'list', 'Set a goal', 'Open the goal map and break work into trackable steps'],
+    ['plan-mode', 'list', 'Plan mode', 'Switch this chat to read-only planning'],
+    ['record-skill', 'bolt', 'Record a skill', 'Start a guided chat to capture a reusable workflow'],
+    ['sketch', 'blocks', 'Sketch', 'Draw and attach a sketch; use Interactive answer for charts and forms'],
+    ['files-chats', 'search', 'Search sessions', 'Find a previous conversation'],
+  ];
+  const APP_ACTIONS = [
+    ['plugins', 'blocks', 'Plugins and connectors', 'Browse tools, MCP servers and connected services'],
+    ['browser-tools', 'globe', 'Browser tools', 'Inspect available browser and Chrome connectors'],
+    ['github', 'branch', 'Connect GitHub', 'Add GitHub’s official MCP server; Docker and browser sign-in required'],
+    ['notion', 'file', 'Connect Notion', 'Add Notion’s official MCP bridge; sign in on first use'],
+    ['documents', 'file', 'Documents and PDFs', 'Attach local documents; PDF text extraction depends on pdftotext'],
+    ['spreadsheets', 'list', 'Spreadsheet analysis', 'Switch to Data mode, then choose a local data file'],
+    ['presentations', 'film', 'Create slide videos', 'Studio can render step-by-step explainer videos; it is not a PPTX editor'],
+    ['code-review', 'check', 'Code review', 'Review the current project changes'],
+    ['mini-pets', 'bot', 'Mini and pets', 'Choose and configure Ox’s desktop companion'],
+    ['market', 'store', 'Discover skills and tools', 'Browse the Ox marketplace'],
+  ];
   let draftTools = {};
   const curTools = () => convo()?.tools ?? draftTools;
   function setTools(next) {
@@ -2190,6 +2396,8 @@
     `<button class="pop-row${on ? ' on' : ''}" data-k="${key}" role="menuitem"${extra}>${icon(ic)}<span class="txt"><b>${esc(title)}</b><small>${esc(sub)}</small></span>${end}</button>`;
   function renderPlus() {
     const t = curTools(), incog = !!convo()?.incognito;
+    $('pop-add').innerHTML = ADD_ACTIONS.map(([k, ic, ti, sub]) => popRow(k, ic, ti, sub, icon('chev'))).join('');
+    $('pop-apps').innerHTML = APP_ACTIONS.map(([k, ic, ti, sub]) => popRow(k, ic, ti, sub, icon('chev'))).join('');
     $('pop-tools').innerHTML = TOOLS.map(([k, ic, ti, sub]) => popRow(k, ic, ti, sub, undefined, t.tool === k)).join('');
     $('pop-flags').innerHTML = FLAGS.map(([k, ic, ti, sub]) => {
       const on = k === 'think' ? !!t.think : t.memory !== false && !incog;
@@ -2204,6 +2412,49 @@
       if (k === 'incog') { newConvo(true); return; }
       if (k === 'skills' || k === 'mcp') { capsTab = k; capsSel = null; show('caps'); if (typeof renderCaps === 'function') renderCaps(); return; }
       show(k);
+    }));
+    const openCaps = (tab) => { capsTab = tab; capsSel = null; caps = null; show('caps'); };
+    $('pop-add').querySelectorAll('.pop-row').forEach((b) => (b.onclick = () => {
+      closePops();
+      const k = b.dataset.k;
+      if (k === 'folder') { $('folder').click(); return; }
+      if (k === 'goal') { show('mission'); return; }
+      if (k === 'plan-mode') { $('mode').value = 'plan'; $('mode').dispatchEvent(new Event('change', { bubbles: true })); $('input').focus(); return; }
+      if (k === 'record-skill') {
+        if ($('input').value.trim() || attachments.length || photos.length) { toast('Send or clear the current draft before starting skill capture.'); return; }
+        newConvo();
+        $('input').value = 'Help me record this workflow as a reusable Ox skill. First ask what task it should cover, when to use it, required steps, safeguards, and how to verify success. Then draft a SKILL.md and tell me where to save it with `ox skill new <name>`.';
+        resize(); $('send').disabled = false; toast('Guided skill capture is ready; review and send the prompt to begin.'); return;
+      }
+      if (k === 'sketch') { openSketch(); return; }
+      if (k === 'files-chats') { show('chat'); $('q').focus(); return; }
+    }));
+    $('pop-apps').querySelectorAll('.pop-row').forEach((b) => (b.onclick = () => {
+      closePops();
+      const k = b.dataset.k;
+      if (k === 'plugins') openCaps('mcp');
+      else if (k === 'browser-tools') { openCaps('tools'); setTimeout(() => { $('caps-q').value = 'browser'; $('caps-q').dispatchEvent(new Event('input')); }, 0); }
+      else if (k === 'documents') $('file').click();
+      else if (k === 'spreadsheets') { $('mode').value = 'data'; $('mode').onchange(); $('file').click(); }
+      else if (k === 'presentations') show('studio');
+      else if (k === 'code-review') show('review');
+      else if (k === 'mini-pets') openSettings('mini');
+      else if (k === 'notion' || k === 'github') {
+        (async () => {
+          try {
+            const existing = await getJson('/ox/connectors');
+            if (!existing.some((c) => c.name === k)) {
+              const entry = k === 'notion'
+                ? { command: 'npx', args: ['-y', 'mcp-remote', 'https://mcp.notion.com/mcp'] }
+                : { command: 'docker', args: ['run', '-i', '--rm', 'ghcr.io/github/github-mcp-server'] };
+              await postJson('/ox/connectors', { name: k, ...entry });
+            }
+            toast(`${k === 'notion' ? 'Notion' : 'GitHub'} connector configured. Sign in on first use; permission stays Ask.`);
+            openCaps('mcp');
+          } catch (e) { toast(`${k === 'notion' ? 'Notion' : 'GitHub'} setup: ${e.message}`); }
+        })();
+      }
+      else show('market');
     }));
   }
   function closePops() {
@@ -2279,6 +2530,35 @@
     showAttachments();
   }
   function takePhotos() { const p = photos; photos = []; showAttachments(); return p; }
+  const sketchCanvas = $('sketch-board'), sketchCtx = sketchCanvas.getContext('2d');
+  let sketchHasInk = false;
+  function clearSketch() { sketchCtx.fillStyle = '#fff'; sketchCtx.fillRect(0, 0, sketchCanvas.width, sketchCanvas.height); sketchHasInk = false; }
+  function openSketch() { clearSketch(); $('sketch-ovl').hidden = false; $('sketch-board').focus?.(); }
+  function closeSketch() { $('sketch-ovl').hidden = true; }
+  let sketchDrawing = false;
+  sketchCanvas.addEventListener('pointerdown', (e) => {
+    sketchDrawing = true; sketchHasInk = true; sketchCanvas.setPointerCapture(e.pointerId);
+    const r = sketchCanvas.getBoundingClientRect(), x = (e.clientX - r.left) * sketchCanvas.width / r.width, y = (e.clientY - r.top) * sketchCanvas.height / r.height;
+    sketchCtx.beginPath(); sketchCtx.moveTo(x, y); sketchCtx.lineWidth = 5; sketchCtx.lineCap = 'round'; sketchCtx.lineJoin = 'round'; sketchCtx.strokeStyle = $('sketch-color').value;
+    sketchCtx.lineTo(x + .01, y + .01); sketchCtx.stroke();
+  });
+  sketchCanvas.addEventListener('pointermove', (e) => {
+    if (!sketchDrawing) return;
+    const r = sketchCanvas.getBoundingClientRect(); sketchCtx.lineTo((e.clientX - r.left) * sketchCanvas.width / r.width, (e.clientY - r.top) * sketchCanvas.height / r.height); sketchCtx.stroke();
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) sketchCanvas.addEventListener(ev, () => { sketchDrawing = false; });
+  $('sketch-clear').onclick = clearSketch;
+  $('sketch-close').onclick = $('sketch-cancel').onclick = closeSketch;
+  $('sketch-ovl').onclick = (e) => { if (e.target === $('sketch-ovl')) closeSketch(); };
+  $('sketch-add').onclick = () => {
+    if (!sketchHasInk) { toast('Draw something first'); return; }
+    if (photos.length >= 4) { toast('Up to 4 images or sketches per message'); return; }
+    const image = sketchCanvas.toDataURL('image/png');
+    const thumb = document.createElement('canvas'); thumb.width = 240; thumb.height = 144;
+    thumb.getContext('2d').drawImage(sketchCanvas, 0, 0, thumb.width, thumb.height);
+    photos.push({ name: 'Sketch', mediaType: 'image/png', data: image.split(',')[1], thumb: thumb.toDataURL('image/jpeg', 0.72) });
+    closeSketch(); showAttachments(); toast('Sketch attached');
+  };
   $('photo').onchange = async () => { const fl = [...$('photo').files]; await addPhotos(fl.filter((f) => /^image\//.test(f.type))); const rest = fl.filter((f) => !/^image\//.test(f.type)); if (rest.length) await addFiles(rest); $('photo').value = ''; };
   $('camera').onchange = async () => { await addPhotos($('camera').files); $('camera').value = ''; };
 
@@ -2459,7 +2739,7 @@
     clearTimeout(officeTimer);
     const ff = $('floor-frame'); if (ff && officeShown() && !ff.src) ff.src = '/office?app=1';
     try {
-      if (!Object.keys(botShapes).length) { try { const B = await getJson('/ox/bots'); for (const b of B.mine ?? []) { botShapes[b.name] = b.shape ?? null; botColors[b.name] = b.color ?? null; } } catch {} }
+      if (!Object.keys(botShapes).length) { try { await loadBotFaceRegistry(); } catch {} }
       const live = await getJson('/ox/live');
       officeRuns = live.runs ?? [];
       const n = officeRuns.filter((r) => !r.ended && r.state !== 'idle').length;
@@ -2591,7 +2871,7 @@
     const t = talk; talk = null;
     try { t?.rec?.abort(); } catch {}
     stopSpeaking();
-    if (busy) busy.abort();
+    currentController()?.abort();
     $('talk').hidden = true;
   }
 
@@ -2984,7 +3264,24 @@ files: [src/billing/**]
   // Bots have colour (as in Grok Bot); the app around them stays black and white.
   const BOT_COLORS = { mono: null, black: '#1C1C1E', brown: '#9A6A3E', red: '#FF2D46', orange: '#FF6A00', amber: '#FF9F0A', green: '#16C47F', teal: '#14B8A6', blue: '#1E88FF', purple: '#8B5CF6', pink: '#FF3EA5', grey: '#7A7A7A' };
   const nameHash = (n) => [...String(n)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
-  function botFace(name, shape = null, size = 32, color = null) {
+  const MOCHI_COLOURWAYS = ['matcha', 'sakura', 'kinako', 'yuzu', 'ramune', 'budo'];
+  const MOCHI_EMOTIONS = ['neutral', 'happy', 'shy', 'sad', 'angry', 'surprised', 'thinking', 'sleepy'];
+  let mochiModuleReady = null, mochiFaces = null, botCharacters = {}, botColorways = {}, botEmotions = {};
+  function ensureMochiAvatar() {
+    if (!mochiModuleReady) mochiModuleReady = Promise.all([
+      import('/vendor/mochi-avatar/dist/element/index.js'),
+      import('/vendor/mochi-avatar/dist/characters/mochi.js'),
+      import('/vendor/mochi-avatar/dist/characters/colourways.js'),
+    ]).then(([, { MOCHI }, { mochiIn }]) => { mochiFaces = { MOCHI, mochiIn }; return true; }).catch(() => false);
+    return mochiModuleReady;
+  }
+  function botFace(name, shape = null, size = 32, color = null, character = null, colorway = null, emotion = null) {
+    const selectedCharacter = character || botCharacters[name] || 'ox';
+    if (selectedCharacter === 'mochi') {
+      const face = mochiFaces ? mochiFaces.mochiIn(colorway || botColorways[name] || 'matcha', mochiFaces.MOCHI) : null;
+      const mood = MOCHI_EMOTIONS.includes(emotion || botEmotions[name]) ? (emotion || botEmotions[name]) : 'neutral';
+      return `<dough-avatar class="mochi-face" ${face ? `face="${esc(JSON.stringify(face))}"` : ''} data-bot-face="${esc(name)}" emotion="${mood}" style="width:${size}px;height:${size}px" aria-label="Mochi by HANDO K.K."></dough-avatar>`;
+    }
     const k = Number.isInteger(shape) ? shape : nameHash(name) % BOT_SHAPES.length;
     const shade = SHADES[nameHash(`${name}!`) % SHADES.length];
     const hex = BOT_COLORS[color ?? botColors[name]] ?? null;
@@ -2992,30 +3289,55 @@ files: [src/billing/**]
     return `<svg class="botface" viewBox="0 0 40 40" width="${size}" height="${size}" aria-hidden="true"><g fill="${fill}" stroke="${fill}" stroke-width="0" opacity="${hex ? 1 : shade}">${BOT_SHAPES[k]}</g><g fill="${eye}"><rect x="14.5" y="15" width="3.6" height="8" rx="1.8" transform="rotate(-14 16.3 19)"/><rect x="21.5" y="15" width="3.6" height="8" rx="1.8" transform="rotate(-14 23.3 19)"/></g></svg>`;
   }
   let botShapes = {}, botColors = {};
+  function setBotEmotion(name, emotion) {
+    if (!name || botCharacters[name] !== 'mochi') return;
+    botEmotions[name] = emotion;
+    document.querySelectorAll('[data-bot-face]').forEach((node) => {
+      if (node.dataset.botFace === name) node.setAttribute('emotion', emotion);
+    });
+  }
+  async function loadBotFaceRegistry() {
+    const B = await getJson('/ox/bots');
+    botShapes = Object.fromEntries(B.mine.map((b) => [b.name, b.shape]));
+    botColors = Object.fromEntries(B.mine.map((b) => [b.name, b.color]));
+    botCharacters = Object.fromEntries(B.mine.map((b) => [b.name, b.character || 'ox']));
+    botColorways = Object.fromEntries(B.mine.map((b) => [b.name, b.colorway || 'matcha']));
+    if (B.mine.some((b) => b.character === 'mochi')) await ensureMochiAvatar();
+    return B;
+  }
 
   // ---------- bots: your own, and what they run on
   let botSel = null;
+  const botHeaderMark = () => `<svg class="bot-header-mark" viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="bot-mark-gradient" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8db5ff"/><stop offset="1" stop-color="#625de8"/></linearGradient></defs><path fill="url(#bot-mark-gradient)" d="M24 3a4 4 0 0 1 4 4v2h6a8 8 0 0 1 8 8v15a8 8 0 0 1-8 8H14a8 8 0 0 1-8-8V17a8 8 0 0 1 8-8h6V7a4 4 0 0 1 4-4Z"/><path fill="#182338" d="M13 18h22v14H13z"/><path fill="#eaf4ff" d="M17 22h4v5h-4zm10 0h4v5h-4zM20 29h8v2h-8z"/><path fill="#b9d4ff" d="M3 22h3v8H3zm39 0h3v8h-3zM17 40h5v5h-5zm9 0h5v5h-5z"/></svg>`;
   async function loadBots() {
     const el = $('bots');
     el.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
     let B;
     try { B = await getJson('/ox/bots'); } catch (e) { el.innerHTML = `<div class="box">${esc(e.message)} <button class="btn" id="bots-retry">Retry</button></div>`; $('bots-retry').onclick = loadBots; return; }
-    const sel = botSel === '+new' ? { name: '', description: '', bot: '', mode: 'code', tools: null, instructions: '' } : B.mine.find((b) => b.name === botSel) ?? null;
+    if (B.mine.some((b) => b.character === 'mochi')) await ensureMochiAvatar();
+    botCharacters = Object.fromEntries(B.mine.map((b) => [b.name, b.character || 'ox']));
+    botColorways = Object.fromEntries(B.mine.map((b) => [b.name, b.colorway || 'matcha']));
+    const sel = botSel === '+new' ? { name: '', description: '', bot: '', mode: 'code', tools: null, instructions: '', character: 'ox', colorway: 'matcha' } : B.mine.find((b) => b.name === botSel) ?? null;
     const runs = (k) => B.runsOn.filter((r) => r.kind === k);
     const opt = (r) => `<option value="${esc(r.id)}">${esc(r.id)}${r.ready ? '' : ' (not ready)'}</option>`;
-    el.innerHTML = `<div class="shead" style="margin-bottom:4px">${icon('bot')}Bots</div>
+    el.innerHTML = `<div class="shead" style="margin-bottom:4px"><span class="bot-head-icon">${botHeaderMark()}</span>Bots</div>
       <p class="sdesc">A bot is a name with a model, a mode, the tools it may use and its own instructions. Talk to one in a chat, call it from the terminal (<code>ox --agent &lt;name&gt;</code>) or from your phone. It answers to its name.</p>
-      <div class="bots-grid">
+      <div class="bots-grid${B.mine.length ? '' : ' empty'}">
         <div class="cards">
-          <button class="card bot-new" data-bot="+new">${icon('plus')}<span class="t"><div class="n">New bot</div><div class="d">Pick a model, a mode and what it may do</div></span></button>
+          ${B.mine.length ? `<button class="card bot-new" data-bot="+new">${icon('plus')}<span class="t"><div class="n">New bot</div><div class="d">Pick a model, a mode and what it may do</div></span></button>` : ''}
           ${B.mine.length > 1 ? `<button class="card bot-new" id="b-group">${icon('chat')}<span class="t"><div class="n">New group chat</div><div class="d">Several bots in one chat, checking each other</div></span></button>` : ''}
-          ${B.mine.map((b) => `<button class="card${botSel === b.name ? ' on' : ''}" data-bot="${esc(b.name)}">${botFace(b.name, b.shape, 34, b.color)}<span class="t"><div class="n">${esc(b.name)}</div><div class="d">${esc(b.description || `${b.mode} · ${b.bot || 'default model'}`)}</div></span><span class="badge">${esc(b.mode)}</span></button>`).join('')}
-          ${B.mine.length ? '' : '<div class="box muted small">No bots yet.</div>'}
+          ${B.mine.map((b) => `<button class="card${botSel === b.name ? ' on' : ''}" data-bot="${esc(b.name)}">${botFace(b.name, b.shape, 34, b.color, b.character, b.colorway)}<span class="t"><div class="n">${esc(b.name)}</div><div class="d">${esc(b.description || `${b.mode} · ${b.bot || 'default model'}`)}</div></span><span class="badge">${esc(b.mode)}</span></button>`).join('')}
         </div>
         <div>${sel ? `<div class="box bot-edit">
-          <div class="bot-hero" id="b-hero">${botFace(sel.name || 'new', sel.shape, 96, sel.color)}</div>
-          <div class="bot-shapes">${BOT_SHAPES.map((_, k) => `<button data-shape="${k}" class="${(Number.isInteger(sel.shape) ? sel.shape : nameHash(sel.name || 'new') % BOT_SHAPES.length) === k ? 'on' : ''}" aria-label="Shape ${k + 1}">${botFace(sel.name || 'new', k, 30)}</button>`).join('')}</div>
-          <div class="bot-colors">${Object.entries(BOT_COLORS).map(([n, h]) => `<button data-color="${n}" title="${n}" class="${(sel.color || 'mono') === n ? 'on' : ''}" style="background:${h ?? 'var(--text)'}"></button>`).join('')}</div>
+          <div class="bot-hero" id="b-hero">${botFace(sel.name || 'new', sel.shape, 96, sel.color, sel.character, sel.colorway)}</div>
+          <label class="small muted">Bot character<select class="field" id="b-character"><option value="ox">OX bot face</option><option value="mochi">Mochi — original character by HANDO K.K.</option></select></label>
+          <div id="b-ox-controls"><div class="bot-shapes">${BOT_SHAPES.map((_, k) => `<button data-shape="${k}" class="${(Number.isInteger(sel.shape) ? sel.shape : nameHash(sel.name || 'new') % BOT_SHAPES.length) === k ? 'on' : ''}" aria-label="Shape ${k + 1}">${botFace(sel.name || 'new', k, 30)}</button>`).join('')}</div>
+          <div class="bot-colors">${Object.entries(BOT_COLORS).map(([n, h]) => `<button data-color="${n}" title="${n}" class="${(sel.color || 'mono') === n ? 'on' : ''}" style="background:${h ?? 'var(--text)'}"></button>`).join('')}</div></div>
+          <div class="bot-character-controls" id="b-mochi-controls" hidden>
+            <div class="bot-character-note small muted">Mochi is an optional animated companion. Her expressions follow the bot’s thinking and reply states. This does not change OX Island’s Blender animals.</div>
+            <div><div class="bot-picker-label">Mochi colourway</div><div class="bot-swatch-row">${[['matcha','#a8c878'],['sakura','#f2a6ba'],['kinako','#c9a77a'],['yuzu','#e8cc54'],['ramune','#72bfd6'],['budo','#9a76bd']].map(([n,h]) => `<button type="button" class="bot-swatch${(sel.colorway || 'matcha') === n ? ' on' : ''}" data-mochi-colorway="${n}" aria-pressed="${(sel.colorway || 'matcha') === n}" title="${n}"><i style="--swatch:${h}"></i>${n[0].toUpperCase() + n.slice(1)}</button>`).join('')}</div></div>
+            <div><div class="bot-picker-label">Expression preview <span class="dim" style="font-weight:400;letter-spacing:0;text-transform:none">· changes while the bot works</span></div><div class="bot-emotion-row">${MOCHI_EMOTIONS.map((n) => `<button type="button" class="bot-mood${n === 'neutral' ? ' on' : ''}" data-mochi-emotion="${n}" aria-pressed="${n === 'neutral'}">${n[0].toUpperCase() + n.slice(1)}</button>`).join('')}</div></div>
+          </div>
           <label class="small muted">Name<input class="field" id="b-name" value="${esc(sel.name)}" placeholder="reviewer" maxlength="48"></label>
           <label class="small muted">What it is for<input class="field" id="b-desc" value="${esc(sel.description)}" placeholder="Reviews my diffs for bugs" maxlength="200"></label>
           <div class="bot-two">
@@ -3033,7 +3355,7 @@ files: [src/billing/**]
             ${botSel !== '+new' ? `<button class="btn" id="b-chat">${icon('chat')}Chat with it</button><button class="btn ghost danger" id="b-del">Delete</button>` : ''}
             <span class="small muted" id="b-state"></span>
           </div></div>`
-          : `<div class="box muted" style="text-align:center;padding:40px 20px">Pick a bot to edit it, or make a new one.</div>`}
+          : B.mine.length ? `<div class="box muted" style="text-align:center;padding:40px 20px">Choose a bot to see its setup, or create a new one.</div>` : `<div class="bots-empty"><div><h3>Build your first OX bot</h3><p>Give it a name, choose the model and mode, then set the tools and instructions it should follow. Your bot can be called from chat, the terminal, and your phone.</p><button class="btn primary" data-bot="+new">${icon('plus')} Create your first bot</button></div><div class="bots-empty-art">${botHeaderMark()}</div></div>`}
           <div class="section-cap cap" style="margin-top:22px">What bots can run on</div>
           <div class="cards">${B.runsOn.filter((r) => r.ready).slice(0, 12).map((r) => `<div class="card"><span class="dot ok"></span><span class="t"><div class="n mono">${esc(r.id)}</div><div class="d">${esc(r.desc)}</div></span><span class="badge">${esc(r.kind)}</span></div>`).join('') || '<div class="box muted small">Nothing is connected yet. Add a key, an account or a local model in Settings.</div>'}</div>
           <p class="small muted">${B.runsOn.filter((r) => !r.ready).length} more need a key, a sign-in or a model: Settings › Providers.</p>
@@ -3045,7 +3367,7 @@ files: [src/billing/**]
     if ($('b-group')) $('b-group').onclick = () => {
       const box = document.createElement('div');
       box.className = 'box bot-groupnew';
-      box.innerHTML = `<b>New group chat</b><p class="small muted">Pick the bots. Each answers in turn and sees what the others said; write @name to ask just one.</p>${B.mine.map((b) => `<label class="bot-pick"><input type="checkbox" value="${esc(b.name)}">${botFace(b.name, b.shape, 26, b.color)}<span>${esc(b.name)}</span><span class="dim small">${esc(b.description || b.mode)}</span></label>`).join('')}<div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="g-go">Start</button><button class="btn ghost" id="g-cancel">Cancel</button></div>`;
+      box.innerHTML = `<b>New group chat</b><p class="small muted">Pick the bots. Each answers in turn and sees what the others said; write @name to ask just one.</p>${B.mine.map((b) => `<label class="bot-pick"><input type="checkbox" value="${esc(b.name)}">${botFace(b.name, b.shape, 26, b.color, b.character, b.colorway)}<span>${esc(b.name)}</span><span class="dim small">${esc(b.description || b.mode)}</span></label>`).join('')}<div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="g-go">Start</button><button class="btn ghost" id="g-cancel">Cancel</button></div>`;
       el.querySelector('.bots-grid').before(box);
       box.querySelector('#g-cancel').onclick = () => box.remove();
       box.querySelector('#g-go').onclick = () => {
@@ -3057,14 +3379,27 @@ files: [src/billing/**]
       };
     };
     if (!sel) return;
-    let pickedShape = Number.isInteger(sel.shape) ? sel.shape : null, pickedColor = sel.color || 'mono';
-    const hero = () => { $('b-hero').innerHTML = botFace($('b-name').value || 'new', pickedShape, 96, pickedColor); el.querySelectorAll('[data-shape]').forEach((b) => (b.innerHTML = botFace($('b-name').value || 'new', Number(b.dataset.shape), 30, pickedColor))); };
+    let pickedShape = Number.isInteger(sel.shape) ? sel.shape : null, pickedColor = sel.color || 'mono', pickedCharacter = sel.character || 'ox', pickedColorway = sel.colorway || 'matcha', pickedEmotion = 'neutral';
+    $('b-character').value = pickedCharacter;
+    const hero = () => {
+      const name = $('b-name').value || 'new';
+      $('b-hero').innerHTML = botFace(name, pickedShape, pickedCharacter === 'mochi' ? 170 : 112, pickedColor, pickedCharacter, pickedColorway, pickedEmotion);
+      $('b-ox-controls').hidden = pickedCharacter === 'mochi';
+      $('b-mochi-controls').hidden = pickedCharacter !== 'mochi';
+      el.querySelectorAll('[data-mochi-colorway]').forEach((b) => { const on = b.dataset.mochiColorway === pickedColorway; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+      el.querySelectorAll('[data-mochi-emotion]').forEach((b) => { const on = b.dataset.mochiEmotion === pickedEmotion; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+      el.querySelectorAll('[data-shape]').forEach((b) => (b.innerHTML = botFace(name, Number(b.dataset.shape), 30, pickedColor)));
+    };
+    $('b-character').onchange = async () => { pickedCharacter = $('b-character').value; if (pickedCharacter === 'mochi') await ensureMochiAvatar(); hero(); };
+    el.querySelectorAll('[data-mochi-colorway]').forEach((b) => (b.onclick = () => { pickedColorway = b.dataset.mochiColorway; hero(); }));
+    el.querySelectorAll('[data-mochi-emotion]').forEach((b) => (b.onclick = () => { pickedEmotion = b.dataset.mochiEmotion; hero(); }));
     el.querySelectorAll('[data-color]').forEach((b) => (b.onclick = () => { pickedColor = b.dataset.color; el.querySelectorAll('[data-color]').forEach((x) => x.classList.toggle('on', x === b)); hero(); }));
     el.querySelectorAll('[data-shape]').forEach((b) => (b.onclick = () => {
       pickedShape = Number(b.dataset.shape);
       el.querySelectorAll('[data-shape]').forEach((x) => x.classList.toggle('on', x === b));
       hero();
     }));
+    hero();
     $('b-bot').value = sel.bot || '';
     $('b-mode').value = sel.mode || 'code';
     const st = (t) => ($('b-state').textContent = t);
@@ -3072,7 +3407,7 @@ files: [src/billing/**]
       const tools = [...el.querySelectorAll('.bot-tools input:checked')].map((i) => i.value);
       const name = $('b-name').value.trim();
       try {
-        await postJson('/ox/bots', { name, from: botSel === '+new' ? null : sel.name, description: $('b-desc').value, bot: $('b-bot').value || null, mode: $('b-mode').value, tools, instructions: $('b-ins').value, shape: pickedShape, color: pickedColor === 'mono' ? null : pickedColor });
+        await postJson('/ox/bots', { name, from: botSel === '+new' ? null : sel.name, description: $('b-desc').value, bot: $('b-bot').value || null, mode: $('b-mode').value, tools, instructions: $('b-ins').value, shape: pickedShape, color: pickedColor === 'mono' ? null : pickedColor, character: pickedCharacter, colorway: pickedColorway });
         botSel = name; toast('Saved'); caps = null; loadModels(); loadBots();
       } catch (e) { st(e.message); }
     };
@@ -3107,6 +3442,34 @@ files: [src/billing/**]
     }));
   }
 
+  // The Code Review page uses the same read-only PR status that `ox pr status`
+  // uses. It never edits, pushes, or merges; those remain explicit workflows.
+  async function loadCodeReview() {
+    const el = $('code-review');
+    if (!el) return;
+    el.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
+    const cwd = convo()?.cwd;
+    const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
+    let status;
+    try { status = await getJson(`/ox/pr${query}`); }
+    catch (e) {
+      const noPr = /no pull request for this branch yet/i.test(e.message);
+      el.innerHTML = `<div class="shead">${icon('check')}Code Review</div><p class="sdesc">Pull request status and reviewer feedback for the current project. Review is read-only here; Ox will not edit, push, or merge from this page.</p><div class="box"><b>${noPr ? 'No pull request for this branch yet' : 'Could not load pull request status'}</b><p class="small muted">${esc(noPr ? 'Open a pull request to see its checks and review comments here.' : e.message)}</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="review-open-pr">Open a PR</button><button class="btn" id="review-retry">Try again</button></div></div>`;
+      $('review-open-pr').onclick = () => $('open-pr').click();
+      $('review-retry').onclick = loadCodeReview;
+      return;
+    }
+    const stateTone = status.state === 'OPEN' && status.canMerge ? 'ok' : status.failing?.length || status.review === 'CHANGES_REQUESTED' ? 'err' : 'warn';
+    const stateLabel = status.state === 'OPEN' && status.canMerge ? 'Ready to merge' : status.state !== 'OPEN' ? status.state : status.failing?.length ? 'Checks failing' : status.pending?.length ? 'Checks running' : status.review === 'CHANGES_REQUESTED' ? 'Changes requested' : status.openThreads ? 'Review threads open' : 'Review in progress';
+    const checks = (status.checks || []).map((c) => `<div class="card"><span class="dot ${c.state === 'SUCCESS' || c.state === 'NEUTRAL' || c.state === 'SKIPPED' ? 'ok' : ['FAILURE','ERROR','CANCELLED','TIMED_OUT'].includes(c.state) ? 'err' : ''}"></span><span class="t"><div class="n">${esc(c.name)}</div><div class="d">${esc(c.state || 'UNKNOWN')}</div></span>${c.url ? `<a class="btn ghost small" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">Details</a>` : ''}</div>`).join('');
+    const comments = (status.comments || []).map((c) => `<div class="box" style="margin-top:8px"><div class="small muted">${esc(c.author || 'Reviewer')}${c.path ? ` · ${esc(c.path)}${c.line ? `:${esc(c.line)}` : ''}` : ''}${c.state ? ` · ${esc(c.state)}` : ''}</div><div style="white-space:pre-wrap;margin-top:6px">${esc(c.body)}</div></div>`).join('');
+    el.innerHTML = `<div class="shead">${icon('check')}Code Review</div><p class="sdesc">Pull request status and reviewer feedback for the current project. Review is read-only here; Ox will not edit, push, or merge from this page.</p>
+      <div class="box"><div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap"><span class="badge ${stateTone}">${esc(stateLabel)}</span><span class="grow" style="flex:1"></span><button class="btn" id="review-retry">Refresh</button><a class="btn primary" href="${esc(status.url)}" target="_blank" rel="noopener noreferrer">Open PR</a></div><h2 style="margin:16px 0 4px;font-size:18px">#${esc(status.number)} · ${esc(status.title)}</h2><div class="small muted">${esc(status.branch || '')}${status.mergeable === 'CONFLICTING' ? ' · conflicts with the base branch' : ''}</div></div>
+      <div class="shead" style="margin-top:24px">Checks <span class="badge">${(status.checks || []).length}</span></div><div class="cards">${checks || '<div class="box small muted">No CI checks reported for this pull request.</div>'}</div>
+      <div class="shead" style="margin-top:24px">Review feedback <span class="badge">${(status.comments || []).length}</span></div><div>${comments || '<div class="box small muted">No outstanding review comments.</div>'}</div>`;
+    $('review-retry').onclick = loadCodeReview;
+  }
+
   // ---------- Task board (src/tasks.js): Paperclip's model, on a page. A task
   // has one owner at a time, waits for its blockers, can carry a budget, and
   // with review on it waits for you before it counts as done.
@@ -3128,11 +3491,12 @@ files: [src/billing/**]
     const cards = [
       ...(org.agents || []).map((a) => ({ id: `org:${a.id}`, name: a.name, what: `${a.title}${a.role && a.role !== a.title ? ` · ${a.role}` : ''}`, price: a.budget != null ? `$${Number(a.spent || 0).toFixed(2)} of $${a.budget}/mo` : 'no budget set', runs: a.runtime, state: a.status, live: a.status === 'active', kind: 'Your company' })),
       ...(live.sessions || []).map((x) => ({ id: `live:${x.id}`, name: x.project, what: x.doing || `${x.tool} session`, price: x.model || x.tool, runs: x.tool, state: x.state === 'idle' ? 'idle' : 'working', live: x.state !== 'idle', kind: 'Running now' })),
+      ...(live.detected || []).map((x) => ({ id: `detected:${x.id}`, name: x.tool, what: x.source + (x.extensionId ? ` · ${x.extensionId}` : ''), price: x.sessionSupport === 'native' ? 'session bridge ready' : 'detected — no session adapter yet', runs: x.source, state: x.state, live: x.state === 'running', kind: 'Detected automatically' })),
       ...(tools.tools || []).map((t) => ({ id: `tool:${t.id}`, name: t.name, what: t.via ? `via ${t.via}` : 'agent tool', price: t.plan || (t.state === 'ready' ? 'ready' : t.state), runs: t.id, state: t.state, live: t.state === 'ready', kind: 'On this Mac' })),
     ];
     const shown = cards.filter((c) => galTab === 'all' || (galTab === 'fav' ? fav.has(c.id) : use.has(c.id)));
     el.innerHTML = `<div class="shead">${icon('office')}Agents</div>
-      <p class="sdesc">Every agent you have, as a card: your company's agents, the sessions running now in any tool, and the agent tools on this Mac. Star the ones you like; mark the ones you use.</p>
+      <p class="sdesc">Every agent you have, as a card: your company's agents, active sessions, installed apps, and VS Code/Cursor extensions. Detection is automatic; a tool is only marked running when Ox verifies local activity.</p>
       <div class="box tk-new"><input class="field" id="gal-hire" placeholder="Hire in a sentence: someone who reviews my pull requests every morning, $15 a month" style="flex:1"><button class="btn primary" id="gal-hire-go">Draft</button></div>
       <div id="gal-draft"></div>
       <div class="gal-tabs">${[['all', `All ${cards.length}`], ['fav', `Favorites ${cards.filter((c) => fav.has(c.id)).length}`], ['use', `I use this ${cards.filter((c) => use.has(c.id)).length}`]].map(([k, l]) => `<button class="btn ${galTab === k ? 'primary' : 'ghost'} small" data-galtab="${k}">${l}</button>`).join('')}</div>
@@ -3163,7 +3527,7 @@ files: [src/billing/**]
     const el = $('scanvas');
     if (!el.querySelector('.sc-board')) {
       el.innerHTML = `<div class="shead">${icon('office')}Sessions canvas</div>
-        <p class="sdesc">One tile per AI coding session running on this Mac right now (Claude Code, Codex, Copilot, Cursor, Gemini, Hermes, OpenCode, ox…). Each tile says which project and tool it is, whether it is working or waiting for you, what it is doing this second, and the last things said; type in its box to message it. Drag a tile by its top bar to place it.</p>
+        <p class="sdesc">One tile per verified AI coding session running right now (including Cline, Kilo, Kimi, Claude Code, Codex, Copilot, Cursor, Gemini, Hermes and OpenCode). Installed apps and extensions appear in Agents automatically; a tile appears only when Ox can verify local activity. Drag a tile by its top bar to place it.</p>
         <div class="sc-bar"><span class="small" id="sc-sum"></span><span class="grow"></span><span class="dim small"><span class="sc-dot" style="display:inline-block;background:#3B9EFF"></span> working <span class="sc-dot" style="display:inline-block;background:#A78BFA;margin-left:10px"></span> thinking <span class="sc-dot" style="display:inline-block;background:#F5A524;margin-left:10px"></span> waiting for you <span class="sc-dot" style="display:inline-block;background:#9CA3AF;margin-left:10px"></span> resting</span><button class="btn ghost small" id="sc-tidy" style="margin-left:12px">Tidy up</button></div>
         <div class="sc-board" id="sc-board"></div>`;
       $('sc-tidy').onclick = () => { store.set('ox.sc.pos', {}); $('sc-board').innerHTML = ''; loadSessionsCanvas(); };
@@ -3231,7 +3595,7 @@ files: [src/billing/**]
       board.style.minHeight = `${Math.max(640, ...[...board.querySelectorAll('.sc-tile')].map((t) => t.offsetTop + t.offsetHeight + 16))}px`;
     }
     flow();
-    if (!sessions.length) board.innerHTML = '<div class="dim small" style="padding:18px">No agent sessions right now. Start Claude Code, Codex or ox anywhere: they appear here.</div>';
+    if (!sessions.length) board.innerHTML = '<div class="dim small" style="padding:18px">No verified agent sessions right now. Installed coding apps and VS Code/Cursor extensions are listed in Agents automatically; when a supported tool starts work, it appears here and on Island.</div>';
     clearInterval(scTimer);
     scTimer = setInterval(() => { if (view === 'canvas') loadSessionsCanvas(); else clearInterval(scTimer); }, 4000);
   }
@@ -3460,6 +3824,7 @@ files: [src/billing/**]
     ['desktop', 'OX Island & desktop', 'monitor', 'island notch awake sleep buddy restart'],
     ['devices', 'Offline & devices', 'office', 'offline without internet local models ollama lm studio paired machines mesh cable ethernet hotspot invite audit'],
     ['voice', 'Voice', 'mic', 'speech language read aloud dictation style prompt mode translate polished natural'],
+    ['mini', 'Mini & Pets', 'bot', 'mini pets companion mascot avatar focus hide customize create codex dewey fireball hoots rocky seedy stacky bsod null signal'],
     ['memory', 'Memory', 'brain', 'remember forget profile facts preferences'],
     ['usage', 'Usage', 'chart', 'tokens cost spend models agents billing'],
     ['gap'],
@@ -3472,7 +3837,8 @@ files: [src/billing/**]
     ['endpoints', 'Custom endpoints', 'globe', 'openai compatible vllm llama.cpp gateway url server azure bedrock proxy base url self-hosted', true],
     ['local', 'Local models', 'cpu', 'ollama lm studio offline ram hugging face', true],
     ['models', 'Models', 'mode', 'model picker show hide list enable disable'],
-    ['connectors', 'Extensions', 'blocks', 'mcp servers tools connectors plugins skills extensions integrations github slack notion database'],
+    ['personal-model', 'Personal model', 'brain', 'train fine tune lora adapter learn preferences approved chats studio recipes evaluation'],
+    ['connectors', 'Plugins', 'blocks', 'plugins extensions marketplace install installed disable remove skills mcp servers tools connectors integrations github slack notion database'],
     ['messaging', 'Messaging', 'chat', 'telegram discord slack phone'],
     ['shortcuts', 'Keyboard shortcuts', 'keyboard', 'keys hotkeys'],
     ['archived', 'Archived chats', 'archive', 'archive restore'],
@@ -3488,10 +3854,11 @@ files: [src/billing/**]
   let providerIndex = null;
   function openSettings(which) {
     if (which) sec = which;
+    document.body.classList.add('settings-open');
     $('ovl').classList.add('on');
     renderSnav(); renderSection();
   }
-  function closeSettings() { $('ovl').classList.remove('on'); }
+  function closeSettings() { $('ovl').classList.remove('on'); document.body.classList.remove('settings-open'); }
   $('open-settings').onclick = () => openSettings();
   $('open-keys').onclick = () => openSettings('shortcuts');
   $('sclose').onclick = closeSettings;
@@ -3516,11 +3883,128 @@ files: [src/billing/**]
     $('snav').querySelectorAll('[data-sec-link]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); sec = a.dataset.secLink; renderSnav(); renderSection(); }));
     const sq = $('sq');
     sq.oninput = () => { renderSnav(sq.value); const s2 = $('sq'); s2.focus(); s2.setSelectionRange(s2.value.length, s2.value.length); };
-    $('snav').querySelectorAll('[data-sec]').forEach((b) => (b.onclick = () => { sec = b.dataset.sec; $('sheet').classList.remove('nav-open'); renderSnav(sq.value); renderSection(); }));
+    $('snav').querySelectorAll('[data-sec]').forEach((b) => (b.onclick = () => { if (b.dataset.sec === 'connectors' && sec !== 'connectors') store.set('ox.extTab', 'plugins'); sec = b.dataset.sec; $('sheet').classList.remove('nav-open'); renderSnav(sq.value); renderSection(); }));
   }
   const row = (label, desc, control) => `<div class="srow"><div class="l"><b>${label}</b>${desc ? `<span>${desc}</span>` : ''}</div>${control}</div>`;
   const sw = (id, on) => `<label class="switch"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span></span></label>`;
   const seg = (name, opts, cur) => `<div class="seg" data-seg="${name}">${opts.map(([v, l]) => `<button data-v="${v}" class="${cur === v ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  const MINI_PETS = [
+    { id: 'none', name: 'None', desc: 'The lightweight OX companion', emoji: '○', color: '#777777' },
+    { id: 'codex', name: 'Codex', desc: 'The original OX mini companion', emoji: '⌘', color: '#7397ff' },
+    { id: 'dewey', name: 'Dewey', desc: 'A calm companion for focused workspace days', emoji: '💧', color: '#45c8e8' },
+    { id: 'fireball', name: 'Fireball', desc: 'Hot-path energy for fast iteration', emoji: '🔥', color: '#ff8a32' },
+    { id: 'hoots', name: 'Hoots', desc: 'A sharp-eyed owl for polished work in a blink', emoji: '🦉', color: '#e3a24c' },
+    { id: 'rocky', name: 'Rocky', desc: 'A steady rock when the diff gets large', emoji: '🪨', color: '#9b8b79' },
+    { id: 'seedy', name: 'Seedy', desc: 'Small green shoots for new ideas', emoji: '🌱', color: '#86c96b' },
+    { id: 'stacky', name: 'Stacky', desc: 'A balanced stack for deep work', emoji: '▤', color: '#aa8bea' },
+    { id: 'bsod', name: 'BSOD', desc: 'A tiny blue-screen gremlin', emoji: '▣', color: '#4b9bff' },
+    { id: 'null-signal', name: 'Null Signal', desc: 'A quiet signal from the void', emoji: '◉', color: '#9476bf' },
+  ];
+  const MINI_EXPRESSIONS = [
+    { id: 'neutral', name: 'Calm', face: '•', note: 'A little company while you work' },
+    { id: 'happy', name: 'Happy', face: '☺', note: 'Glad to see you' },
+    { id: 'thinking', name: 'Thinking', face: '…', note: 'Working through an idea' },
+    { id: 'focused', name: 'Focused', face: '⌁', note: 'Eyes on the task' },
+    { id: 'sleepy', name: 'Sleepy', face: 'ᴗ', note: 'Taking a quiet moment' },
+    { id: 'surprised', name: 'Surprised', face: '!', note: 'Something caught its eye' },
+    { id: 'curious', name: 'Curious', face: '?', note: 'Peeking closer at a new idea' },
+    { id: 'worried', name: 'Concerned', face: '﹏', note: 'Noticing a tricky part' },
+    { id: 'proud', name: 'Proud', face: '⌣', note: 'A little win, well earned' },
+    { id: 'celebrating', name: 'Celebrating', face: '✦', note: 'That worked — nice one!' },
+  ];
+  const miniExpression = () => MINI_EXPRESSIONS.find((x) => x.id === store.get('ox.mini.expression', 'neutral')) || MINI_EXPRESSIONS[0];
+  const miniCustom = () => store.get('ox.mini.customPets', []);
+  const miniPet = () => [...MINI_PETS, ...miniCustom()].find((p) => p.id === store.get('ox.mini.pet', 'codex')) || MINI_PETS[1];
+  const miniArt = (p, size = 64, expression = miniExpression().id) => {
+    if (p.id === 'none') return `<span aria-hidden="true" style="font-size:${Math.round(size * .72)}px;color:var(--dim);line-height:1">○</span>`;
+    const color = /^#[0-9a-f]{6}$/i.test(p.color) ? p.color : '#7397ff';
+    if (!MINI_PETS.some((x) => x.id === p.id)) {
+      const mood = MINI_EXPRESSIONS.find((x) => x.id === expression) || MINI_EXPRESSIONS[0];
+      return `<span class="pet-custom-art" role="img" aria-label="${esc(p.name)} companion, ${esc(mood.name)} expression" style="font-size:${Math.round(size * .72)}px;--pet-accent:${esc(p.color || '#7397ff')}"><span class="pet-custom-emoji" aria-hidden="true">${esc(p.emoji || '🐾')}</span><span class="pet-custom-mood" aria-hidden="true">${mood.face}</span></span>`;
+    }
+    const art = {
+      codex: `<path fill="${color}" d="M15 8h8V4h18v4h8v5h5v9h4v11h-4v5h-4v5h-7v3h-7v-3h-8v3h-7v-3h-7v-5h-4V22h4v-9h5z"/><path fill="${color}" d="M18 39h28v5h4v8h-6v5h-7v-4H27v4h-7v-5h-6v-8h4zM13 30h5v11h-5zm33 0h5v11h-5z"/><path fill="#182338" d="M16 19h32v17H16z"/><path fill="#9eeaff" d="m22 23 6 4-6 5v-4l2-1-2-1zm12 6h9v3h-9zM29 40h6v2h-6z"/><path fill="#fff" opacity=".32" d="M16 13h8v3h-8z"/><path fill="#6488ee" d="M24 49h4v4h-4zm12 0h4v4h-4z"/>`,
+      dewey: `<path fill="${color}" d="M32 4C25 16 12 29 12 40a20 20 0 0 0 40 0C52 29 39 16 32 4Z"/><path fill="#18324a" d="M19 36h26v15H19z"/><path fill="#fff" d="M24 39h4v5h-4zm12 0h4v5h-4z"/><path fill="#ff9eab" d="M19 44h5v3h-5zm21 0h5v3h-5z"/><path fill="#fff" opacity=".45" d="M27 15h5v10h-5z"/>`,
+      fireball: `<path fill="#ffb52e" d="M29 3c5 8 2 11 9 15 4-5 5-8 6-11 7 7 11 16 10 25a22 22 0 1 1-44 0c0-8 5-16 12-22 0 7 2 10 5 12 4-5 5-11 2-19Z"/><path fill="${color}" d="M17 30h30v18H17z"/><path fill="#182338" d="M21 34h22v11H21z"/><path fill="#fff" d="M25 36h4v4h-4zm10 0h4v4h-4z"/><path fill="#ffd26b" d="M25 48h7v7h-7zm11 0h7v7h-7z"/>`,
+      hoots: `<path fill="${color}" d="m11 21-4-12 14 8Q32 9 43 17l14-8-4 15q7 13 1 26-8 11-22 11T10 50q-6-14 1-29Z"/><path fill="#f4d39b" d="M13 28q7-12 16 0-1 13-8 13t-8-13zm22 0q9-12 16 0-1 13-8 13t-8-13z"/><path fill="#182338" d="M20 30h5v6h-5zm14 0h5v6h-5z"/><path fill="#ffbe4a" d="m28 40 4-5 4 5-4 5zM23 53h6v5h-6zm12 0h6v5h-6z"/>`,
+      rocky: `<path fill="${color}" d="m10 20 8-8 8 2 8-7 8 9 9 3 4 13-4 15-9 6H21l-10-8-3-14z"/><path fill="#cfc2ae" opacity=".7" d="m19 19 7-5 4 3-5 6h-7zm15-1 6-4 5 7-7 3z"/><path fill="#28303b" d="M17 31h30v13H17z"/><path fill="#f2e6d4" d="M23 33h4v4h-4zm14 0h4v4h-4zM28 40h8v2h-8z"/>`,
+      seedy: `<path fill="${color}" d="M15 28h34v22H15z"/><path fill="#e8d5a5" d="M19 32h26v17H19z"/><path fill="#27303a" d="M21 36h5v5h-5zm17 0h5v5h-5z"/><path fill="#708f46" d="M30 30V15h4v15z"/><path fill="#8bcf65" d="M32 17Q17 18 17 7q13-1 15 10Q34 6 48 5q0 13-16 14Z"/><path fill="${color}" d="M23 50h7v7h-7zm12 0h7v7h-7z"/>`,
+      stacky: `<path fill="${color}" d="M16 6h32v14H16zM10 24h44v14H10zM15 42h34v15H15z"/><path fill="#182338" d="M21 10h4v6h-4zm16 0h4v6h-4zM17 28h5v5h-5zm24 0h5v5h-5zM23 46h5v5h-5zm13 0h5v5h-5z"/><path fill="#c8b8ff" d="M28 16h8v3h-8zM27 34h10v3H27z"/>`,
+      bsod: `<path fill="${color}" d="M8 9h48v38H8z"/><path fill="#182338" d="M13 14h38v27H13z"/><path fill="#eaf4ff" d="m20 20 8 6-8 6v-5l2-1-2-1zm13 12h11v3H33z"/><path fill="#a9c9ff" d="M26 48h12v5H26zM21 54h22v4H21z"/><path fill="#fff" d="M5 17h3v4H5zM56 18h3v4h-3z"/>`,
+      'null-signal': `<circle cx="32" cy="32" r="26" fill="${color}" opacity=".7"/><circle cx="32" cy="32" r="17" fill="#171827"/><path fill="#d8c9ff" d="M20 29h8v5h-8zm16 0h8v5h-8zM27 39h10v3H27z"/><path fill="none" stroke="#c7a8ff" stroke-width="2" d="M9 15q7-7 14 0M41 49q7 7 14 0"/><circle cx="14" cy="48" r="2" fill="#fff"/><circle cx="51" cy="12" r="2" fill="#fff"/>`,
+    }[p.id];
+    // Redraw each character's face in a shared, carefully aligned expression
+    // window. This keeps the personality while making expression changes legible
+    // in the settings preview, floating dock, and the persistent macOS pet.
+    const faces = {
+      codex: [16,19,32,17,'#182338'], dewey: [19,36,26,15,'#45c8e8'],
+      fireball: [21,34,22,11,'#182338'], hoots: [13,27,38,16,'#f4d39b'],
+      rocky: [17,31,30,13,'#28303b'], seedy: [19,32,26,17,'#e8d5a5'],
+      stacky: [10,24,44,14,color], bsod: [13,14,38,27,'#182338'],
+      'null-signal': [15,22,34,22,'#171827'],
+    };
+    const f = faces[p.id];
+    let face = '';
+    if (f) {
+      const [x,y,w,h,fill] = f, eyeY = y + h * .39, eyeGap = w * .22, cx = x + w / 2, eyeRx = Math.max(1.1,w*.055), eyeRy = Math.max(1.2,h*.16);
+      const eyeColor = p.id === 'dewey' ? '#18324a' : p.id === 'hoots' ? '#182338' : '#eaf4ff';
+      let eyes = `<ellipse cx="${cx-eyeGap}" cy="${eyeY}" rx="${eyeRx}" ry="${eyeRy}" fill="${eyeColor}"/><ellipse cx="${cx+eyeGap}" cy="${eyeY}" rx="${eyeRx}" ry="${eyeRy}" fill="${eyeColor}"/>`;
+      let mouth = `<path d="M${cx-w*.10} ${y+h*.72}h${w*.20}" stroke="#9eeaff" stroke-width="${Math.max(1.2,h*.09)}" stroke-linecap="round"/>`;
+      if (expression === 'happy') {
+        eyes = `<path d="M${cx-eyeGap-eyeRx} ${eyeY}q${eyeRx} ${-eyeRy*1.5} ${eyeRx*2} 0M${cx+eyeGap-eyeRx} ${eyeY}q${eyeRx} ${-eyeRy*1.5} ${eyeRx*2} 0" fill="none" stroke="${eyeColor}" stroke-width="${Math.max(1.3,eyeRy*.8)}" stroke-linecap="round"/>`;
+        mouth = `<path d="M${cx-w*.12} ${y+h*.67}q${w*.12} ${h*.30} ${w*.24} 0" fill="none" stroke="#9eeaff" stroke-width="${Math.max(1.3,h*.09)}" stroke-linecap="round"/>`;
+      } else if (expression === 'thinking') {
+        eyes = `<ellipse cx="${cx-eyeGap}" cy="${eyeY}" rx="${eyeRx}" ry="${eyeRy*.7}" fill="${eyeColor}"/><ellipse cx="${cx+eyeGap}" cy="${eyeY-eyeRy*.7}" rx="${eyeRx}" ry="${eyeRy}" fill="${eyeColor}"/>`;
+        mouth = `<path d="M${cx-w*.06} ${y+h*.73}h${w*.13}" stroke="#9eeaff" stroke-width="${Math.max(1.3,h*.09)}" stroke-linecap="round"/>`;
+      } else if (expression === 'focused') {
+        eyes = `<path d="M${cx-eyeGap-eyeRx} ${eyeY-eyeRy*.4}l${eyeRx*2} ${eyeRy*.8}M${cx+eyeGap-eyeRx} ${eyeY-eyeRy*.4}l${eyeRx*2} ${-eyeRy*.8}" fill="none" stroke="${eyeColor}" stroke-width="${Math.max(1.4,eyeRy*.75)}" stroke-linecap="round"/>`;
+        mouth = `<path d="M${cx-w*.08} ${y+h*.73}h${w*.16}" stroke="#9eeaff" stroke-width="${Math.max(1.5,h*.11)}" stroke-linecap="round"/>`;
+      } else if (expression === 'sleepy') {
+        eyes = `<path d="M${cx-eyeGap-eyeRx} ${eyeY}q${eyeRx} ${eyeRy} ${eyeRx*2} 0M${cx+eyeGap-eyeRx} ${eyeY}q${eyeRx} ${eyeRy} ${eyeRx*2} 0" fill="none" stroke="${eyeColor}" stroke-width="${Math.max(1.2,eyeRy*.8)}" stroke-linecap="round"/>`;
+        mouth = `<path d="M${cx-w*.05} ${y+h*.73}q${w*.05} ${h*.06} ${w*.10} 0" fill="none" stroke="#9eeaff" stroke-width="${Math.max(1.1,h*.07)}"/>`;
+      } else if (expression === 'surprised') {
+        eyes = `<circle cx="${cx-eyeGap}" cy="${eyeY}" r="${eyeRx*1.15}" fill="${eyeColor}"/><circle cx="${cx+eyeGap}" cy="${eyeY}" r="${eyeRx*1.15}" fill="${eyeColor}"/>`;
+        mouth = `<ellipse cx="${cx}" cy="${y+h*.73}" rx="${w*.055}" ry="${h*.10}" fill="none" stroke="#9eeaff" stroke-width="${Math.max(1.2,h*.08)}"/>`;
+      } else if (expression === 'curious') {
+        eyes = `<ellipse cx="${cx-eyeGap}" cy="${eyeY+eyeRy*.18}" rx="${eyeRx*1.15}" ry="${eyeRy*1.35}" fill="${eyeColor}"/><ellipse cx="${cx+eyeGap}" cy="${eyeY-eyeRy*.28}" rx="${eyeRx*.8}" ry="${eyeRy*.9}" fill="${eyeColor}"/>`;
+        mouth = `<path d="M${cx-w*.07} ${y+h*.72}q${w*.08} ${-h*.08} ${w*.16} 0" fill="none" stroke="#9eeaff" stroke-width="${Math.max(1.3,h*.09)}" stroke-linecap="round"/>`;
+      } else if (expression === 'worried') {
+        eyes = `<ellipse cx="${cx-eyeGap}" cy="${eyeY+eyeRy*.25}" rx="${eyeRx}" ry="${eyeRy*.9}" fill="${eyeColor}"/><ellipse cx="${cx+eyeGap}" cy="${eyeY+eyeRy*.25}" rx="${eyeRx}" ry="${eyeRy*.9}" fill="${eyeColor}"/><path d="M${cx-eyeGap-eyeRx} ${eyeY-eyeRy*1.1}l${eyeRx*1.4} ${eyeRy*.55}m${eyeGap*2-eyeRx*.4} 0  ${eyeRx*1.4} ${-eyeRy*.55}" fill="none" stroke="${eyeColor}" stroke-width="${Math.max(1,h*.055)}" stroke-linecap="round"/>`;
+        mouth = `<path d="M${cx-w*.10} ${y+h*.82}q${w*.10} ${-h*.18} ${w*.20} 0" fill="none" stroke="#9eeaff" stroke-width="${Math.max(1.3,h*.09)}" stroke-linecap="round"/>`;
+      } else if (expression === 'proud') {
+        eyes = `<path d="M${cx-eyeGap-eyeRx} ${eyeY+eyeRy*.35}q${eyeRx} ${-eyeRy*.7} ${eyeRx*2} 0M${cx+eyeGap-eyeRx} ${eyeY+eyeRy*.35}q${eyeRx} ${-eyeRy*.7} ${eyeRx*2} 0" fill="none" stroke="${eyeColor}" stroke-width="${Math.max(1.3,eyeRy*.8)}" stroke-linecap="round"/>`;
+        mouth = `<path d="M${cx-w*.12} ${y+h*.68}q${w*.12} ${h*.24} ${w*.24} 0" fill="none" stroke="#9eeaff" stroke-width="${Math.max(1.4,h*.10)}" stroke-linecap="round"/>`;
+      } else if (expression === 'celebrating') {
+        eyes = `<path d="m${cx-eyeGap-eyeRx} ${eyeY-eyeRy} ${eyeRx*2} ${eyeRy*2}m${-eyeRx*2} 0 ${eyeRx*2} ${-eyeRy*2}m${eyeGap*2} 0 ${eyeRx*2} ${eyeRy*2}m${-eyeRx*2} 0 ${eyeRx*2} ${-eyeRy*2}" fill="none" stroke="${eyeColor}" stroke-width="${Math.max(1.4,eyeRy*.8)}" stroke-linecap="round"/>`;
+        mouth = `<path d="M${cx-w*.14} ${y+h*.67}q${w*.14} ${h*.38} ${w*.28} 0" fill="none" stroke="#9eeaff" stroke-width="${Math.max(1.5,h*.10)}" stroke-linecap="round"/>`;
+      }
+      face = `<g class="mini-face mini-face-${esc(expression)}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.min(3,h*.12)}" fill="${fill}"/>${eyes}${mouth}</g>`;
+    }
+    return `<svg viewBox="0 0 64 64" width="${size}" height="${size}" role="img" aria-label="${esc(p.name)} companion, ${esc(MINI_EXPRESSIONS.find((x) => x.id === expression)?.name || 'calm')} expression" shape-rendering="crispEdges" class="mini-sprite mini-${esc(p.id)}">${art || ''}${face}</svg>`;
+  };
+  const paintMiniPet = () => {
+    const p = miniPet(), dock = $('pet-dock'), b = $('pet-mini');
+    if (!b || !dock) return;
+    const size = Number(store.get('ox.mini.size', 132));
+    b.innerHTML = miniArt(p, size, miniExpression().id);
+    b.style.setProperty('--pet-size', `${size}px`);
+    dock.hidden = p.id === 'none' || !store.get('ox.mini.visible', true);
+    b.setAttribute('aria-label', `Open OX chat with ${p.name}`);
+    b.title = `${p.name} · Open OX chat`;
+    $('pet-side').innerHTML = botHeaderMark();
+    $('pet-talk').disabled = !window.SpeechRecognition && !window.webkitSpeechRecognition;
+    $('pet-talk').title = $('pet-talk').disabled ? 'Voice conversation is not supported by this browser' : 'Start voice conversation';
+    // Mirror the selection into the native macOS panel. It is independent of
+    // this WebView, so closing the chat window leaves the companion on screen.
+    try {
+      window.webkit?.messageHandlers?.oxMiniPet?.postMessage({
+        id: p.id, name: p.name, emoji: p.emoji || '🐾', color: p.color || '#7397ff',
+        size, expression: miniExpression().id, visible: !dock.hidden,
+        svg: p.id === 'none' ? '' : miniArt(p, size, miniExpression().id),
+        expressionSvgs: p.id === 'none' ? {} : Object.fromEntries(MINI_EXPRESSIONS.map((mood) => [mood.id, miniArt(p, size, mood.id)]))
+      });
+    } catch {}
+  };
   const mobileBack = `<button class="btn ghost mback" style="margin:-8px 0 14px" onclick="document.getElementById('sheet').classList.add('nav-open')">${icon('back')}Settings</button>`;
   function bindSegs(root, onPick) { root.querySelectorAll('[data-seg]').forEach((g) => g.querySelectorAll('button').forEach((b) => (b.onclick = () => { onPick(g.dataset.seg, b.dataset.v); g.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); }))); }
 
@@ -3559,7 +4043,48 @@ files: [src/billing/**]
     });
     el.innerHTML = '<div class="skeleton" style="width:40%"></div><div class="skeleton"></div><div class="skeleton"></div>';
     try {
-      if (sec === 'general') {
+      if (sec === 'mini') {
+        const selected = store.get('ox.mini.pet', 'codex');
+        const visible = store.get('ox.mini.visible', true);
+        const size = Number(store.get('ox.mini.size', 132));
+        const expression = miniExpression();
+        const pets = [...MINI_PETS, ...miniCustom()];
+        const currentPet = pets.find((x) => x.id === selected) || MINI_PETS[1];
+        const petMarkup = (p) => `<button class="pet-card" type="button" data-mini-pet="${esc(p.id)}" aria-pressed="${selected === p.id}" style="--pet-accent:${esc(p.color || '#7397ff')}"><span class="pet-art">${miniArt(p, 58, expression.id)}</span><b>${esc(p.name)}</b><span class="pet-copy">${esc(p.desc || 'Your own mini companion')}</span>${selected === p.id ? `<span class="pet-expression-tag">${esc(expression.name)} now</span>` : ''}</button>`;
+        const expressionMarkup = MINI_EXPRESSIONS.map((x) => `<button class="pet-expression" type="button" data-mini-expression="${x.id}" aria-label="${esc(currentPet.name)}: ${esc(x.name)} — ${esc(x.note)}" title="${esc(x.note)}" aria-pressed="${expression.id === x.id}"><span class="pet-expression-art">${miniArt(currentPet, 38, x.id)}</span><span class="pet-expression-copy"><b>${esc(x.name)}</b><small>${esc(x.note)}</small></span></button>`).join('');
+        el.innerHTML = `${mobileBack}<div class="shead"><span class="pet-heading-icon">${miniArt(currentPet, 34, expression.id)}</span>Mini &amp; Pets</div><p class="sdesc">Pick a companion, set its mood, and let it keep you company on your Mac. This is separate from OX Island’s existing Blender characters and animals. Toggle or focus it with <kbd>⌥Space</kbd> while the OX app is focused.</p>
+          <div class="pet-preview" style="--pet-accent:${esc(currentPet.color || '#7397ff')}">
+            <div class="pet-preview-art"><div class="pet-stage" id="pet-stage">${miniArt(currentPet, 132, expression.id)}</div><span class="pet-expression-label" id="pet-expression-status">${esc(currentPet.name)} · ${esc(expression.name)}</span></div>
+            <div class="pet-preview-copy"><div class="small muted">YOUR COMPANION</div><h2>${esc(currentPet.name)}</h2><p>${esc(expression.note)}. Choose a different expression below; it updates the mini on your desktop too.</p>
+              <div class="pet-preview-actions" style="display:flex;gap:8px;justify-content:flex-start;margin-top:18px"><button class="btn" id="pet-visible">${visible ? 'Hide mini' : 'Show mini'}</button><button class="btn" id="pet-customize">Pet size</button></div>
+            </div>
+          </div>
+          <div class="shead">Expressions</div><p class="sdesc">Give your mini a mood. The face is part of the companion artwork and follows it onto the floating Mac pet.</p><div class="pet-expression-list" style="--pet-accent:${esc(currentPet.color || '#7397ff')}" aria-label="Choose pet expression">${expressionMarkup}</div>
+          <div class="shead" style="margin-top:24px">My pets</div><p class="sdesc">Choose who stays with you, or select None to keep the desktop clear.</p>
+          <div class="pet-grid">${pets.map(petMarkup).join('')}</div>
+          <div class="sblock"><div class="shead">Pet size</div>${row('Desktop companion', 'Adjust the floating mini size (32–144 px).', `<span style="display:flex;align-items:center;gap:10px"><input id="pet-size" type="range" min="32" max="144" step="8" value="${size}" aria-label="Pet size"><output id="pet-size-value">${size}px</output><button class="btn ghost" id="pet-size-reset">Reset</button></span>`)}</div>
+          <div style="display:flex;justify-content:flex-end"><button class="btn" id="pet-create">Create pet</button></div>`;
+        el.querySelectorAll('[data-mini-pet]').forEach((b) => (b.onclick = () => {
+          store.set('ox.mini.pet', b.dataset.miniPet); store.set('ox.mini.visible', b.dataset.miniPet !== 'none'); paintMiniPet(); renderSection();
+        }));
+        $('pet-visible').onclick = () => { const next = !store.get('ox.mini.visible', true); store.set('ox.mini.visible', next); paintMiniPet(); renderSection(); };
+        $('pet-customize').onclick = () => $('pet-size').focus();
+        el.querySelectorAll('[data-mini-expression]').forEach((b) => (b.onclick = () => {
+          store.set('ox.mini.expression', b.dataset.miniExpression); paintMiniPet(); renderSection();
+        }));
+        $('pet-size').oninput = () => { const v = Number($('pet-size').value); store.set('ox.mini.size', v); $('pet-size-value').value = `${v}px`; paintMiniPet(); };
+        $('pet-size-reset').onclick = () => { store.set('ox.mini.size', 132); renderSection(); paintMiniPet(); };
+        $('pet-create').onclick = () => { $('pet-create-form').reset(); $('pet-emoji').value = '🐾'; $('petdlg').showModal(); $('pet-name').focus(); };
+        $('pet-cancel').onclick = () => $('petdlg').close();
+        $('pet-create-form').onsubmit = (e) => {
+          e.preventDefault(); const name = $('pet-name').value.trim(); if (!name) return;
+          const custom = miniCustom();
+          if (custom.length >= 20) { toast('You can create up to 20 mini pets'); return; }
+          const id = `custom-${Date.now().toString(36)}`;
+          custom.push({ id, name: name.slice(0, 24), desc: $('pet-description').value.trim().slice(0, 80), emoji: [...$('pet-emoji').value.trim()][0] || '🐾', custom: true });
+          store.set('ox.mini.customPets', custom); store.set('ox.mini.pet', id); store.set('ox.mini.visible', true); $('petdlg').close(); paintMiniPet(); renderSection(); toast(`${name} is ready`);
+        };
+      } else if (sec === 'general') {
         const st = await getJson('/ox/settings');
         if (!caps) await loadCaps().catch(() => {});
         el.innerHTML = `${mobileBack}<div class="sblock"><div class="shead">${icon('monitor')}OX Island</div><p class="sdesc">ox in your notch: what each run is doing, approvals to answer, and your buddy to talk to (hold Fn, or ⌃⌥Space).</p>
@@ -3639,6 +4164,31 @@ files: [src/billing/**]
         el.querySelectorAll('[data-model-id]').forEach((i) => (i.onchange = () => { const h = new Set(prefs.hiddenModels || []); if (i.checked) h.delete(i.dataset.modelId); else h.add(i.dataset.modelId); prefs.hiddenModels = [...h]; savePrefs(); loadModels(); }));
         $('md-all').onclick = () => { prefs.hiddenModels = []; savePrefs(); loadModels(); renderSection(); };
         $('md-q').oninput = () => { const q = $('md-q').value.toLowerCase().trim(); el.querySelectorAll('[data-md]').forEach((r) => (r.style.display = !q || r.dataset.md.includes(q) ? '' : 'none')); };
+      } else if (sec === 'personal-model') {
+        const P = await getJson('/ox/personal-model');
+        const S = P.state;
+        const plan = P.plan;
+        const blockers = plan.blockers?.length ? `<ul class="small muted" style="margin:8px 0 0;padding-left:18px">${plan.blockers.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<p class="small ok">Ready to prepare a local adapter dataset.</p>';
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('brain')}Personal model</div><p class="sdesc">Create a private <b>LoRA adapter</b> for an open-weight model. Ox never silently trains on chats, screen activity, or Studio media. You select sources, approve every example, evaluate on held-out examples, then manually promote or reject a version.</p>
+          <div class="sblock"><div class="section-cap cap">Collection</div>
+            ${row('Enable personal-model collection', S.enabled ? 'Armed. It still collects nothing until you add individually approved examples.' : 'Off. Turning it on requires your explicit consent.', sw('pm-enabled', S.enabled))}
+            ${row('Adapter name', 'A local name; it does not change the base model.', `<input class="field" id="pm-name" maxlength="64" value="${esc(S.name)}">`)}
+            ${row('Open-weight base model', 'Choose a compatible local/open model before preparing training. Base weights are never changed.', `<input class="field" id="pm-base" maxlength="200" placeholder="e.g. Qwen/Qwen2.5-7B-Instruct" value="${esc(S.baseModel)}">`)}
+            ${row('Preferences', 'Only examples you explicitly add from preferences.', sw('pm-preferences', !!S.sources.preferences))}
+            ${row('Approved chats', 'Only individual chat excerpts you explicitly approve — never all chat history.', sw('pm-chats', !!S.sources.approved_chats))}
+            ${row('Studio recipes', 'Only recipe metadata you explicitly add. Original media is never collected automatically.', sw('pm-studio', !!S.sources.studio_recipes))}
+            <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn primary" id="pm-save">Save collection settings</button></div>
+          </div>
+          <div class="sblock"><div class="section-cap cap">Training readiness</div><p class="small muted">${esc(plan.method)}</p><p class="small muted">${esc(plan.runtime.detail)}</p><div class="chipline"><span class="badge">${esc(String(plan.dataset.examples))} approved examples</span><span class="badge">${plan.dataset.heldOutRecommended ? `${esc(String(plan.dataset.heldOutRecommended))} held out recommended` : '50 minimum before training'}</span><span class="badge">${esc(S.status)}</span></div>${blockers}</div>
+          <div class="sblock"><div class="section-cap cap">Safety boundary</div><p class="small muted">A personal adapter can suggest work, but it cannot update Ox, Studio, prompts, code, or itself. Every training run and promotion requires an explicit later action; automatic self-modification is not available.</p></div>`;
+        $('pm-save').onclick = async () => {
+          const enabled = $('pm-enabled').checked;
+          if (enabled && !S.enabled && !(await askSure('Turn on personal-model collection? Ox will still collect nothing until you individually approve examples.', 'Turn on'))) return;
+          try {
+            await postJson('/ox/personal-model', { action: 'save', enabled, consent: enabled ? true : undefined, name: $('pm-name').value, baseModel: $('pm-base').value, sources: { preferences: $('pm-preferences').checked, approved_chats: $('pm-chats').checked, studio_recipes: $('pm-studio').checked } });
+            toast(enabled ? 'Personal model collection is armed' : 'Personal model collection is off'); renderSection();
+          } catch (e) { toast(e.message); }
+        };
       } else if (sec === 'server') {
         const W = await getJson('/ox/workspace');
         const S = W.server;
@@ -3665,7 +4215,7 @@ files: [src/billing/**]
             ${row('Island pet', 'Choose an optional original Blender animal companion. It stays small so approvals and run status remain readable.', `<select data-island-pref="pet">${pet('none', 'No pet')}${pet('puff', 'Puff · lamb')}${pet('pebble', 'Pebble · goat')}${pet('dot', 'Dot · calf')}</select>`)}
             ${row('Island size', 'Compact removes the walking pasture; Standard keeps the full live scene.', `<select data-island-pref="size"><option value="standard"${ip.size === 'standard' ? ' selected' : ''}>Standard</option><option value="compact"${ip.size === 'compact' ? ' selected' : ''}>Compact</option></select>`)}
             ${row('Close after you leave', 'The Island always stays for a question, approval, voice turn or active typing.', `<select data-island-pref="autoClose"><option value="3"${ip.autoClose === 3 ? ' selected' : ''}>3 seconds</option><option value="6"${ip.autoClose === 6 ? ' selected' : ''}>6 seconds</option><option value="15"${ip.autoClose === 15 ? ' selected' : ''}>15 seconds</option><option value="0"${ip.autoClose === 0 ? ' selected' : ''}>Never</option></select>`)}
-            ${row('Hide over full-screen apps', 'Temporarily hides the Island in a real full-screen app, except when an agent needs your answer.', sw('s-island-fullscreen', ip.hideFullscreen).replace('id="s-island-fullscreen"', 'data-island-pref="hideFullscreen"')))}</div>` : ''}
+            ${row('Hide over full-screen apps', 'Temporarily hides the Island in a real full-screen app, except when an agent needs your answer.', sw('s-island-fullscreen', ip.hideFullscreen).replace('id="s-island-fullscreen"', 'data-island-pref="hideFullscreen"'))}</div>` : ''}
           ${row('Keep the computer awake', 'While ox works, so long runs are not cut off by sleep.', sw('s-awake', st.awake.on))}`;
         bindIsland(el);
         $('s-awake').onchange = async () => { try { await postJson('/ox/settings', { awake: $('s-awake').checked }); } catch (e) { toast(e.message); } };
@@ -3704,7 +4254,7 @@ files: [src/billing/**]
           try {
             const r = await getJson(`/ox/mesh/peer?machine=${encodeURIComponent(machine)}`);
             const d = r.describe;
-            const agentList = r.agents?.length ? r.agents.map((a) => `<div class="card"><span class="dot ${a.state === 'idle' ? '' : 'run'}"></span><span class="t"><div class="n">${esc(a.project || a.id)}</div><div class="d">${esc(a.tool || 'agent')} · ${esc(a.doing || a.state || '')}</div></span></div>`).join('') : `<div class="small muted">${esc(r.agentsError || 'No coding sessions shared by this machine yet. On that machine: ox mesh allow "${M.me?.name || 'this Mac'}" agents')}</div>`;
+            const agentList = r.agents?.length ? r.agents.map((a) => `<div class="card"><span class="dot ${a.state === 'idle' ? '' : 'run'}"></span><span class="t"><div class="n">${esc(a.project || a.id)}</div><div class="d">${esc(a.tool || 'agent')} · ${esc(a.doing || a.state || '')}</div></span></div>`).join('') : `<div class="small muted">${esc(r.agentsError || 'No coding sessions shared by this machine yet. On that machine: ox mesh allow "${M.me?.name || "this Mac"}" agents')}</div>`;
             box.innerHTML = `<div class="section-cap cap" style="margin-top:18px">${esc(machine)}</div>
               ${d ? `<div class="chipline"><span class="badge">${esc(d.os || '')}</span><span class="badge">${esc(String(d.cores || '?'))} cores</span><span class="badge">${esc(String(d.memGb || '?'))} GB</span><span class="badge">${esc(String(d.sessions || 0))} live sessions</span></div><p class="small muted" style="margin:8px 0">${esc(d.models?.join(', ') || 'No local models reported')}</p>` : `<div class="small muted">${esc(r.describeError || 'Machine details unavailable')}</div>`}
               <div class="section-cap cap" style="margin-top:14px">Coding sessions</div><div class="cards">${agentList}</div>
@@ -3831,9 +4381,26 @@ files: [src/billing/**]
         const card = (a) => {
           const canChoose = a.works && a.id !== 'claude';
           const chosen = settings.model.defaultBot === a.bot;
-          return `<div class="card"><span class="dot ${a.works ? 'ok' : a.installed ? 'err' : ''}"></span><span class="t"><div class="n">${esc(a.label)} ${a.works ? `<span class="badge ok">${chosen ? 'Default' : 'Ready'}</span>` : a.installed ? '<span class="badge err">Broken install</span>' : ''}</div><div class="d">${a.works ? `Signed in · ${esc(a.version || '')} · pick <span class="mono">${esc(a.bot)}</span>${a.model ? ` (runs <span class="mono">${esc(a.model)}</span> on your account)` : ''}` : `${esc(a.problem || (a.installed ? '' : `Install: ${a.fix}`))}${a.login ? `<br>Then sign in: ${esc(a.login)}` : ''}`}</div></span>${canChoose && !chosen ? `<button class="btn" data-account-default="${esc(a.bot)}">Use by default</button>` : a.fix && !a.works ? `<button class="btn" data-copy-cmd="${esc(a.fix.replace(/^reinstall: /, ''))}">${icon('copy')}Copy install</button>` : ''}</div>`;
+          const state = a.works ? 'Connected' : a.signedIn === false ? 'Sign-in needed' : a.installed ? 'Needs attention' : 'Not installed';
+          const detail = a.works
+            ? `Verified by ${esc(a.version || a.bin)} · choose <span class="mono">${esc(a.bot)}</span>${a.model ? ` (uses <span class="mono">${esc(a.model)}</span>)` : ''}`
+            : a.signedIn === false && a.canConnect
+              ? 'This CLI is installed. Open its official sign-in flow; Ox will verify it when you finish.'
+              : !a.canConnect
+                ? 'This CLI does not provide an account sign-in that Ox can launch. Follow its setup guide and connect its model provider or API key.'
+              : a.installed
+                ? `${esc(a.problem || 'The CLI did not pass its health check. See its official setup guide.')}`
+                : 'Install the official CLI first. Its sign-in flow then opens in Terminal and your browser.';
+          const action = a.works
+            ? (canChoose && !chosen ? `<button class="btn" data-account-default="${esc(a.bot)}">Use by default</button>` : '<span class="badge ok">Ready to use</span>')
+            : a.signedIn === false && a.installed && a.canConnect
+              ? `<button class="btn primary" data-account-connect="${esc(a.id)}">${icon('open')}Connect account</button>`
+              : a.installUrl
+                ? `<a class="btn" href="${esc(a.installUrl)}" target="_blank" rel="noopener noreferrer">${icon('open')}${a.installed ? 'Setup guide' : 'Install guide'} ↗</a>`
+                : '<span class="badge">Use API key</span>';
+          return `<div class="card" data-account-card="${esc(a.id)}"><span class="dot ${a.works ? 'ok' : a.signedIn === false ? 'warn' : ''}"></span><span class="t"><div class="n">${esc(a.label)} <span class="badge ${a.works ? 'ok' : ''}">${state}</span></div><div class="d">${detail}</div><div class="d" data-account-status="${esc(a.id)}" hidden></div></span>${action}</div>`;
         };
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('user')}Connect an account</div><p class="sdesc">Sign in with a subscription. No API key to copy. ox runs the official app for that plan on your machine and works through it. <a href="#" id="to-keys" style="color:var(--gold)">Have an API key instead?</a></p>
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('user')}Connect an account</div><p class="sdesc">Connect opens the provider’s official CLI sign-in in Terminal; OAuth continues in your browser. The vendor CLI keeps its own credentials, and Ox checks the connection before showing it as ready. <a href="#" id="to-keys" style="color:var(--gold)">Use an API key instead</a></p>
           ${acc.some((a) => a.id === 'claude') ? `<div class="box small" style="margin:10px 0;border-color:#F5A52455"><b>Claude plan:</b> Anthropic's terms (February 2026) keep Claude Pro and Max logins for Claude Code and Claude.ai. ox never reads that login and never makes the Claude plan your default; it only runs your own Claude Code when you pick it. For no doubt at all, use an Anthropic API key for Claude here. The ChatGPT plan is fine: OpenAI allows partner apps.</div>` : ''}
           ${ready.length ? `<div class="section-cap cap">Connected</div><div class="cards">${ready.map(card).join('')}</div>` : ''}
           <div class="section-cap cap">${ready.length ? 'Connect another' : 'Available'}</div><div class="cards">${rest.map(card).join('')}</div>`;
@@ -3842,6 +4409,33 @@ files: [src/billing/**]
           b.disabled = true;
           try { await postJson('/ox/settings', { defaultBot: b.dataset.accountDefault }); toast('Default model saved'); renderSection(); }
           catch (e) { b.disabled = false; toast(e.message); }
+        }));
+        el.querySelectorAll('[data-account-connect]').forEach((b) => (b.onclick = async () => {
+          const id = b.dataset.accountConnect, card = b.closest('[data-account-card]'), status = card.querySelector('[data-account-status]');
+          b.disabled = true; b.textContent = 'Opening sign-in…';
+          try {
+            const opened = await postJson('/ox/accounts/connect', { id });
+            if (!opened.opened) throw new Error(opened.reason || 'Could not open sign-in');
+            status.hidden = false; status.textContent = 'Finish signing in in Terminal/browser. Checking connection…';
+            b.textContent = 'Waiting for sign-in…';
+            const deadline = Date.now() + 120000;
+            while (Date.now() < deadline && document.body.contains(card)) {
+              await new Promise((resolve) => setTimeout(resolve, 2500));
+              const [current] = await getJson(`/ox/accounts?id=${encodeURIComponent(id)}`);
+              if (current?.works) {
+                toast(`${current.label} connected and verified`);
+                if (sec === 'accounts') renderSection();
+                return;
+              }
+            }
+            if (document.body.contains(card)) {
+              status.textContent = 'Still waiting. Complete the provider sign-in, then choose Check connection to retry.';
+              b.disabled = false; b.innerHTML = `${icon('refresh')}Check connection`;
+            }
+          } catch (e) {
+            status.hidden = false; status.textContent = e.message;
+            b.disabled = false; b.innerHTML = `${icon('open')}Try sign-in again`;
+          }
         }));
       } else if (sec === 'keys') {
         const keys = await getJson('/ox/providers');
@@ -4024,23 +4618,36 @@ files: [src/billing/**]
         $('ins-text').oninput = count; count();
         $('ins-save').onclick = async () => { try { await postJson('/ox/instructions', { text: $('ins-text').value }); toast($('ins-text').value.trim() ? 'Instructions saved: used from the next message' : 'Instructions cleared'); } catch (e) { toast(e.message); } };
       } else if (sec === 'connectors') {
-        const extTab = store.get('ox.extTab', 'mcp');
+        const extTab = store.get('ox.extTab', 'plugins');
         const tabs = `<div class="seg" id="ext-tabs" style="margin:0 0 14px">${[['mcp', 'MCPs'], ['plugins', 'Plugins'], ['skills', 'Skills']].map(([k, l]) => `<button data-ext="${k}" class="${extTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
         const bindTabs = () => el.querySelectorAll('[data-ext]').forEach((b) => (b.onclick = () => { store.set('ox.extTab', b.dataset.ext); renderSection(); }));
         if (extTab !== 'mcp') {
           if (!caps) await loadCaps().catch(() => {});
           const list = extTab === 'skills' ? (caps?.skills ?? []) : (caps?.plugins ?? []);
-          el.innerHTML = `${mobileBack}<div class="shead">${icon('blocks')}Extensions</div>${tabs}<p class="sdesc">${extTab === 'skills' ? 'Skills: instructions ox reads when a task matches. Available to every project; your own live in ~/.ox/skills.' : 'Plugins: bundles of skills, commands and MCP servers from a marketplace. Kept in ~/.ox/plugins.json.'} <a href="#" id="ext-market" style="color:var(--gold)">Find more in the Marketplace</a></p>
-            <div class="cards">${list.map((x) => `<div class="card"><span class="dot ${x.enabled === false ? '' : 'ok'}"></span><span class="t"><div class="n">${esc(x.name ?? x.id)}</div><div class="d">${esc(String(x.desc ?? x.description ?? x.source ?? '').slice(0, 160))}</div></span></div>`).join('') || `<div class="box muted small">No ${extTab} yet.</div>`}</div>`;
+          el.innerHTML = `${mobileBack}<div class="shead">${icon('blocks')}Plugins, MCP servers &amp; skills</div>${tabs}<p class="sdesc">${extTab === 'skills' ? 'Skills: instructions ox reads when a task matches. Available to every project; your own live in ~/.ox/skills.' : extTab === 'plugins' ? 'Plugins bundle skills, commands and MCP servers. Installed plugins are listed here; enable, pause, configure their MCP tools, or remove them. Find and install more in the Marketplace. Plugins’ arbitrary hooks are never run.' : 'Connectors (MCP servers) add tools such as GitHub, a database, Notion, or your own service. Each has its own permission policy.'} <a href="#" id="ext-market" style="color:var(--gold)">Open Marketplace</a></p>
+            <div class="cards">${extTab === 'plugins' ? (list.map((p) => `<div class="card" style="align-items:flex-start"><span class="dot ${p.missing ? 'err' : p.enabled ? 'ok' : ''}" style="margin-top:7px"></span><span class="t"><div class="n">${esc(p.name)} ${p.version ? `<span class="badge">v${esc(p.version)}</span>` : ''} <span class="badge">${esc(p.kind)}</span></div><div class="d">${esc(p.description || p.source || (p.missing ? 'Plugin folder is missing' : 'Installed plugin'))}</div><div class="d">${p.skills.length} skills · ${p.commands.length} commands · ${p.mcpServers.length} MCP servers${p.hasHooks ? ' · hooks not run by ox' : ''}</div>${p.mcpServers.length ? `<label class="small muted" style="display:flex;align-items:center;gap:8px;margin-top:8px">MCP tools (${esc(p.mcpServers.join(', '))}) <input type="checkbox" data-plugin-mcp="${esc(p.name)}" ${p.mcp ? 'checked' : ''} aria-label="Enable MCP tools for ${esc(p.name)}"></label>` : ''}</span><span style="display:flex;flex-direction:column;align-items:flex-end;gap:8px"><label class="switch" title="${p.enabled ? 'Enabled' : 'Paused'}"><input type="checkbox" data-plugin-enabled="${esc(p.name)}" ${p.enabled ? 'checked' : ''} aria-label="Enable plugin ${esc(p.name)}"><span></span></label><button class="btn ghost danger" data-plugin-remove="${esc(p.name)}">Remove</button></span></div>`).join('') || '<div class="box muted small">No plugins installed yet. Open the Marketplace to browse and install; to link plugins already in Claude Code, run <code>ox plugin import-claude</code>.</div>') : list.map((x) => `<div class="card"><span class="dot ${x.enabled === false ? '' : 'ok'}"></span><span class="t"><div class="n">${esc(x.name ?? x.id)}</div><div class="d">${esc(String(x.desc ?? x.description ?? x.source ?? '').slice(0, 160))}</div></span></div>`).join('') || `<div class="box muted small">No ${extTab} yet.</div>`}</div>`;
           bindTabs();
           $('ext-market').onclick = (e) => { e.preventDefault(); closeSettings(); document.querySelector('[data-view="market"],[data-go-view="market"]')?.click(); };
+          const applyPluginAction = async (name, action, enabled) => {
+            try { const r = await postJson('/ox/plugins', { name, action, ...(enabled === undefined ? {} : { enabled }) }); if (!r.ok) throw new Error(r.message); toast(r.message); caps = null; renderSection(); }
+            catch (e) { toast(e.message); renderSection(); }
+          };
+          el.querySelectorAll('[data-plugin-enabled]').forEach((i) => (i.onchange = () => applyPluginAction(i.dataset.pluginEnabled, i.checked ? 'enable' : 'disable')));
+          el.querySelectorAll('[data-plugin-mcp]').forEach((i) => (i.onchange = async () => {
+            if (i.checked && !(await askSure(`Allow ${i.dataset.pluginMcp} to start its MCP servers? Their tools may read or act through connected services.`, 'Enable MCP tools'))) { i.checked = false; return; }
+            applyPluginAction(i.dataset.pluginMcp, 'mcp', i.checked);
+          }));
+          el.querySelectorAll('[data-plugin-remove]').forEach((b) => (b.onclick = async () => {
+            if (!(await askSure(`Remove plugin ${b.dataset.pluginRemove}? Ox-installed files will be deleted; linked Claude Code files are only unlinked.`, 'Remove plugin'))) return;
+            applyPluginAction(b.dataset.pluginRemove, 'remove');
+          }));
           paintIcons(el);
           return;
         }
         const C = await getJson('/ox/connectors');
         const policyLabel = (p) => p === 'allow' ? 'Allowed automatically' : p === 'deny' ? 'Blocked' : 'Ask every call';
         const policyNote = (p) => p === 'allow' ? 'This connector may act without asking. Choose this only for a server you trust.' : p === 'deny' ? 'Ox will not call this connector until you change it.' : 'Ox shows each tool call and its arguments before sharing data or acting.';
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('blocks')}Extensions</div>${tabs}<p class="sdesc">Connectors are MCP servers that add tools such as GitHub, a database, Notion, or your own service. Each connector has its own permission below. Ready-made ones are in the Marketplace.</p>
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('blocks')}Plugins, MCP servers &amp; skills</div>${tabs}<p class="sdesc">Connectors are MCP servers that add tools such as GitHub, a database, Notion, or your own service. Each connector has its own permission below. Ready-made ones are in the Marketplace.</p>
           <div class="box small" style="margin:0 0 12px;line-height:1.5"><b>Safe by default:</b> a new connector is <b>Ask every call</b>. Ox shows the server, tool and arguments before it shares data or acts. <a href="#" id="ext-caps" style="color:var(--gold)">Inspect all installed capabilities</a>.</div>
           <div class="cards">${C.map((c) => `<div class="card" style="align-items:flex-start"><span class="dot ${c.policy === 'deny' ? '' : c.policy === 'allow' ? 'warn' : 'ok'}" style="margin-top:7px"></span><span class="t"><div class="n">${esc(c.name)} <span class="badge">${esc(c.kind)}</span></div><div class="d mono"><span>${esc(c.target)}</span>${c.env?.length ? `<span>needs ${esc(c.env.join(', '))}</span>` : ''}</div><div class="small muted" style="margin-top:8px">${policyNote(c.policy)}</div><div class="seg" style="margin-top:9px" data-connector-policy="${esc(c.name)}"><button data-v="ask" class="${c.policy === 'ask' ? 'on' : ''}">Ask every call</button><button data-v="allow" class="${c.policy === 'allow' ? 'on' : ''}">Allow automatically</button><button data-v="deny" class="${c.policy === 'deny' ? 'on' : ''}">Block</button></div></span><span style="display:flex;flex-direction:column;align-items:flex-end;gap:8px"><span class="badge ${c.policy === 'ask' ? 'ok' : c.policy === 'allow' ? 'warn' : ''}">${policyLabel(c.policy)}</span><button class="btn ghost danger" data-con-rm="${esc(c.name)}">Remove</button></span></div>`).join('') || '<div class="box muted small">No connectors yet. Add a local or remote MCP server below.</div>'}</div>
           <div class="section-cap cap">Add one</div>
@@ -4064,10 +4671,35 @@ files: [src/billing/**]
         el.querySelectorAll('[data-con-rm]').forEach((b) => (b.onclick = async () => { try { await postJson('/ox/connectors', { action: 'remove', name: b.dataset.conRm }); toast('Connector removed'); renderSection(); } catch (e) { toast(e.message); } }));
       } else if (sec === 'data') {
         const n = convos.length;
+        const storedCount = storedConvos().length;
         el.innerHTML = `${mobileBack}<div class="shead">${icon('shield')}Data & privacy</div>
-          <p class="sdesc">ox has no account and sends no telemetry. Your chats in this app are kept in this browser; terminal sessions in ~/.ox/sessions; memory and keys in ~/.ox on this machine. A message goes only to the model you chose for it.</p>
+          <p class="sdesc">App chats stay in this tab’s memory and are not written to Ox’s server or this browser by default. Turn on local history only if you want them to survive closing the app; that history is stored in this browser on this device. Code changes are made in the project folder you chose, not copied into an Ox-hosted workspace, and approved edits still apply in an incognito chat. When you send a message, its text and the context needed to answer (which can include code you asked Ox to inspect) go to the model provider you selected. Ox does not keep an app-chat transcript on its server. Usage totals (model, project folder and token counts, not prompts) are kept locally in ~/.ox/usage.jsonl. Separately, terminal/CLI runs save resumable transcripts locally under ~/.ox/sessions. These include your prompts, Ox’s replies, and tool-call arguments, which can contain code, commands, paths, or other project data. Use ox --incognito when you do not want a terminal run retained; it also avoids using or updating saved memory for that run. Existing memory may still be used in normal chats; new automatic preference learning from app chats is opt-in.</p>
+          ${row('Save chat history on this device', 'Off by default. When on, text-only chat history is stored in this browser so you can reopen it later.', sw('save-chats', prefs.saveChatHistory === true))}
+          ${row('Learn preferences from my chats', 'Off by default. When on, ox may save preferences you state as separate local memory facts; it never stores a full transcript this way. Existing saved memories may still be used as context.', sw('learn-chats', prefs.learnFromChats === true))}
+          ${storedCount && !prefs.saveChatHistory ? row('Previously saved chats', `${storedCount} chat${storedCount === 1 ? '' : 's'} from an earlier version remain in this browser but are not loaded.`, '<button class="btn ghost danger" id="del-stored">Delete saved chats…</button>') : ''}
           ${row('Export all chats', `${n} chat${n === 1 ? '' : 's'} in this app, as one file you keep`, '<div style="display:flex;gap:6px"><button class="btn" id="exp-json">JSON</button><button class="btn" id="exp-md">Markdown</button></div>')}
           ${row('Delete all chats', 'Every chat in this app, archived ones included. Memory and terminal sessions are kept.', '<button class="btn ghost danger" id="del-all">Delete all…</button>')}`;
+        $('save-chats').onchange = async () => {
+          if ($('save-chats').checked) {
+            const currentIds = new Set(convos.map((c) => c.id));
+            convos = [...storedConvos().filter((c) => !currentIds.has(c.id)).map((c) => ({ at: Number(String(c.id).slice(1)) || Date.now(), ...c })), ...convos];
+            prefs.saveChatHistory = true; savePrefs(); saveConvos();
+            current = current || convos.find((c) => !c.archived)?.id || null;
+            toast('Local chat history on'); renderLists(); renderChat(); renderSection();
+            return;
+          }
+          $('save-chats').checked = true;
+          if (!(await askSure('Turn off chat history and delete chats saved in this browser? This does not delete terminal sessions, usage totals or memory.', 'Turn off and delete'))) return;
+          prefs.saveChatHistory = false; store.remove('ox.convos'); convos = []; current = null;
+          savePrefs(); renderLists(); renderChat(); renderSection(); toast('Local chat history deleted');
+        };
+        $('learn-chats').onchange = () => { prefs.learnFromChats = $('learn-chats').checked; savePrefs(); toast(prefs.learnFromChats ? 'Preference learning on' : 'Preference learning off'); };
+        if ($('del-stored')) $('del-stored').onclick = async () => {
+          if (!(await askSure(`Delete ${storedCount} previously saved chat${storedCount === 1 ? '' : 's'} from this browser? This cannot be undone.`, 'Delete saved chats'))) return;
+          store.remove('ox.convos');
+          if (prefs.saveChatHistory) { convos = []; current = null; renderLists(); renderChat(); }
+          toast('Saved chats deleted'); renderSection();
+        };
         const download = (name, text, type) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
         const stamp = new Date().toISOString().slice(0, 10);
         $('exp-json').onclick = () => download(`ox-chats-${stamp}.json`, JSON.stringify(convos, null, 2), 'application/json');
@@ -4102,9 +4734,14 @@ files: [src/billing/**]
   // ---------- keyboard
   document.addEventListener('keydown', (e) => {
     const mod = isMac ? e.metaKey : e.ctrlKey;
+    if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'Space' && !$('petdlg').open) {
+      e.preventDefault();
+      if (store.get('ox.mini.pet', 'codex') !== 'none') { store.set('ox.mini.visible', !store.get('ox.mini.visible', true)); paintMiniPet(); }
+      return;
+    }
     if (e.key === 'Escape') {
       if ($('ovl').classList.contains('on')) { closeSettings(); return; }
-      if (busy) { busy.abort(); return; }
+      if (currentController()) { currentController().abort(); return; }
     }
     if (mod && !e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); newConvo(); }
     else if (mod && e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); newConvo(true); }
@@ -4119,6 +4756,26 @@ files: [src/billing/**]
 
   // ---------- start
   paintIcons();
+  paintMiniPet();
+  const openPetChat = () => { show('chat'); closeSettings(); requestAnimationFrame(() => $('input').focus()); };
+  $('pet-mini').onclick = openPetChat;
+  $('pet-chat').onclick = openPetChat;
+  $('pet-talk').onclick = () => { if ($('pet-talk').disabled) { toast('Voice conversation is not supported by this browser'); return; } show('chat'); startTalk(); };
+  $('pet-settings').onclick = () => openSettings('mini');
+  window.addEventListener('ox:pet-open-chat', openPetChat);
+  window.addEventListener('ox:pet-talk', () => {
+    openPetChat();
+    requestAnimationFrame(() => {
+      if (!window.SpeechRecognition && !window.webkitSpeechRecognition) { toast('Voice input is not available in this web view'); return; }
+      startTalk();
+    });
+  });
+  window.addEventListener('ox:pet-settings', () => openSettings('mini'));
+  window.addEventListener('ox:pet-hide', () => {
+    store.set('ox.mini.visible', false);
+    paintMiniPet();
+    if (document.querySelector('.settings-open')) renderSection();
+  });
   $('host').textContent = location.host;
   setBusy(false); resize();
   loadModels();
@@ -4131,7 +4788,7 @@ files: [src/billing/**]
   const t0 = performance.now();
   const hideSplash = () => setTimeout(() => { splash.classList.add('done'); setTimeout(() => splash.remove(), 500); }, Math.max(0, 1250 - (performance.now() - t0)));
   if (seen) splash.remove(); else setTimeout(hideSplash, 2400);
-  getJson('/ox/bots').then((B) => { botShapes = Object.fromEntries(B.mine.map((b) => [b.name, b.shape])); botColors = Object.fromEntries(B.mine.map((b) => [b.name, b.color])); }).catch(() => {});
+  loadBotFaceRegistry().catch(() => {});
   getJson('/ox/settings').then((st) => applyName(st.name)).catch(() => {}).finally(() => { if (!seen) hideSplash(); });
   loadTerminalSessions();
   if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => {};

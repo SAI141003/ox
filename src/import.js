@@ -66,7 +66,39 @@ export function codexMcp(toml) {
 }
 
 function readMemoryFiles(cwd, names) {
-  return names.map((n) => path.join(cwd, n)).filter((f) => fs.existsSync(f)).map((f) => ({ name: path.basename(f), path: f }));
+  return names.map((n) => path.join(cwd, n)).filter((f) => fs.existsSync(f)).map((f) => {
+    try { return { name: path.basename(f), path: f, content: fs.readFileSync(f, 'utf8') }; }
+    catch { return null; }
+  }).filter(Boolean);
+}
+
+// Claude Code keeps auto-memory outside the repository, per project. Its
+// project directory is the absolute cwd with path separators replaced by '-'
+// (for example /Users/me/app -> -Users-me-app). Only the exact candidate is
+// considered; we never scan unrelated Claude projects or read transcripts.
+function claudeAutoMemory(cwd, home) {
+  const project = path.resolve(cwd).replace(/[\\/]/g, '-');
+  const dir = path.join(home, '.claude', 'projects', project, 'memory');
+  const files = [];
+  const visit = (folder, relative = '', depth = 2) => {
+    if (depth < 0) return;
+    let entries = [];
+    try { entries = fs.readdirSync(folder, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const abs = path.join(folder, entry.name);
+      const rel = path.join(relative, entry.name);
+      if (entry.isDirectory() && !entry.isSymbolicLink()) visit(abs, rel, depth - 1);
+      else if (entry.isFile() && entry.name.endsWith('.md') && files.length < 100) {
+        try {
+          const stat = fs.statSync(abs);
+          if (stat.size > 256 * 1024) continue;
+          files.push({ name: `Claude Code auto-memory/${rel}`, path: abs, content: fs.readFileSync(abs, 'utf8'), autoMemory: true });
+        } catch {}
+      }
+    }
+  };
+  visit(dir);
+  return files;
 }
 
 export function importFromClaudeCode(cwd, home = os.homedir()) {
@@ -75,7 +107,7 @@ export function importFromClaudeCode(cwd, home = os.homedir()) {
     skills: [...skillFolders(path.join(home, '.claude', 'skills'), 'Claude Code'), ...skillFolders(path.join(cwd, '.claude', 'skills'), 'Claude Code (project)')],
     agents: [...subagents(path.join(home, '.claude', 'agents'), 'Claude Code'), ...subagents(path.join(cwd, '.claude', 'agents'), 'Claude Code (project)')],
     mcpServers: { ...(user.mcpServers ?? {}), ...(user.projects?.[cwd]?.mcpServers ?? {}), ...(readJson(path.join(cwd, '.mcp.json'))?.mcpServers ?? {}) },
-    memoryFiles: readMemoryFiles(cwd, ['CLAUDE.md', 'CLAUDE.local.md', 'AGENTS.md']),
+    memoryFiles: [...readMemoryFiles(cwd, ['CLAUDE.md', 'CLAUDE.local.md', 'AGENTS.md']), ...claudeAutoMemory(cwd, home)],
   };
 }
 

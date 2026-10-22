@@ -19,8 +19,8 @@ import { fileURLToPath } from 'node:url';
 
 import { REAL_TASKS, TASK_IDS } from './tasks.mjs';
 import {
-  EVENTS_FILE, agentEnv, createSandbox, destroySandbox, oneLine, parseNdjsonEvents, spawnOx,
-  summarizeEvents, writeEventsFile,
+  EVENTS_FILE, TIMINGS_FILE, agentEnv, createSandbox, destroySandbox, oneLine, parseNdjsonEvents, spawnOx,
+  summarizeEvents, writeEventsFile, writeTimingsFile,
 } from './lib.mjs';
 
 // Only read-only project config is imported. Nothing under src/ is modified.
@@ -125,7 +125,7 @@ function selectTasks(opts) {
   return REAL_TASKS;
 }
 
-function costFor(model, summary) {
+export function costFor(model, summary) {
   if (summary?.costUsd != null) return summary.costUsd;
   return costOf(model, { inputTokens: summary?.inputTokens ?? 0, outputTokens: summary?.outputTokens ?? 0 });
 }
@@ -155,7 +155,7 @@ export async function runOnce(task, spec, opts, deps = {}) {
     agent = await spawn({ args, cwd: sb.ws, env: agentEnv({ home: sb.home }), timeoutMs });
     rawStream = String(agent.stdout ?? '');
     events = parseNdjsonEvents(rawStream);
-    summary = summarizeEvents(events);
+    summary = summarizeEvents(events, agent.eventTimings);
     try {
       verification = await task.verify({
         ws: sb.ws,
@@ -192,10 +192,19 @@ export async function runOnce(task, spec, opts, deps = {}) {
   if (agent.stderr && oneLine(agent.stderr)) diagnostics.push(`stderr: ${oneLine(agent.stderr, 240)}`);
   if (summary && summary.errors.length) diagnostics.push(`agent error events: ${oneLine(summary.errors.join('; '), 240)}`);
 
-  const costUsd = costFor(spec, summary);
+  // `spec` can be an Ox bot alias (for example `ox-gpt`), which is not a
+  // provider model ID and therefore cannot be priced. Resolve it once here so
+  // a genuine priced run never gets reported as “unpriced” merely because the
+  // user chose the convenient bot name.
+  let resolvedModel = deps.modelId ?? spec;
+  if (!deps.modelId) {
+    try { resolvedModel = resolveBot(spec, {}).model ?? spec; } catch { /* fixture/custom spec: retain it */ }
+  }
+  const costUsd = costFor(resolvedModel, summary);
   const kept = opts.keep;
   let sandboxPath = null;
   let eventsFile = null;
+  let timingsFile = null;
   let eventsKept = 0;
   if (kept) {
     sandboxPath = sb.root;
@@ -206,6 +215,9 @@ export async function runOnce(task, spec, opts, deps = {}) {
       const written = writeEventsFile(sb, events, rawStream);
       eventsFile = written.path;
       eventsKept = written.events;
+      try { timingsFile = writeTimingsFile(sb, agent.eventTimings).path; } catch (err) {
+        process.stderr.write(`bench/real: could not write ${TIMINGS_FILE}: ${oneLine(err?.message ?? err, 200)}\n`);
+      }
       if (written.unparsable > 0) {
         process.stderr.write(
           `bench/real: ${EVENTS_FILE}: ${written.unparsable} unparsable stream line(s) not persisted\n`
@@ -227,6 +239,10 @@ export async function runOnce(task, spec, opts, deps = {}) {
     checks: Array.isArray(verification?.checks) ? verification.checks : [],
     ms: Date.now() - started,
     agentMs: agent.ms,
+    firstTextMs: summary?.firstTextMs ?? null,
+    firstToolMs: summary?.firstToolMs ?? null,
+    toolDurationMs: summary?.toolDurationMs ?? null,
+    timedTools: summary?.timedTools ?? 0,
     exitCode: agent.exitCode,
     timedOut: Boolean(agent.timedOut),
     toolCalls: summary?.toolCalls ?? 0,
@@ -244,9 +260,11 @@ export async function runOnce(task, spec, opts, deps = {}) {
     auxTokensOut: summary?.auxOutputTokens ?? 0,
     usageTurns: summary?.usageEvents ?? [],
     eventsFile,
+    timingsFile,
     eventsKept,
     costUsd,
     model: spec,
+    resolvedModel,
     diagnostics,
     finalText: oneLine(summary?.finalText ?? '', 600),
     sandbox: sandboxPath,
@@ -265,7 +283,7 @@ function fmtCell(s, w) {
 export function renderUsageLines(runs, idWidth = 26) {
   const withUsage = runs.filter((r) => (r?.usageTurns ?? []).length);
   if (!withUsage.length) return [];
-  const W = { turn: 6, in: 10, out: 10, aux: 14 };
+  const W = { turn: 10, in: 10, out: 10, aux: 14 };
   const head = `${fmtCell('TASK', idWidth)}  ${fmtCell('TURN', W.turn)}  ${fmtCell('INPUT', W.in)}  ${fmtCell('OUTPUT', W.out)}  ${fmtCell('AUX IN/OUT', W.aux)}`;
   const lines = ['', 'USAGE PER REQUEST (input tokens are re-sent every turn - the dominant cost)', head, '-'.repeat(head.length)];
   let sumIn = 0;
@@ -316,6 +334,10 @@ function summariseRepeats(runs) {
     passCount,
     passRate: rate,
     ms: meanStd(runs.map((r) => r.ms)),
+    agentMs: meanStd(runs.map((r) => r.agentMs)),
+    firstTextMs: meanStd(runs.map((r) => r.firstTextMs)),
+    firstToolMs: meanStd(runs.map((r) => r.firstToolMs)),
+    toolDurationMs: meanStd(runs.map((r) => r.toolDurationMs)),
     toolCalls: meanStd(runs.map((r) => r.toolCalls)),
     turns: meanStd(runs.map((r) => r.turns)),
     tokensIn: meanStd(runs.map((r) => r.tokensIn)),
@@ -381,24 +403,26 @@ export async function main(argv = process.argv.slice(2)) {
   for (const task of tasks) {
     const runs = [];
     for (let i = 0; i < opts.repeats; i++) {
-      const run1 = await runOnce(task, spec, opts);
+      const run1 = await runOnce(task, spec, opts, { modelId: target.model });
       runs.push(run1);
       const mark = run1.pass ? 'PASS' : 'FAIL';
       console.log(
         `  ${mark}  ${task.id}${opts.repeats > 1 ? ` [${i + 1}/${opts.repeats}]` : ''}  ` +
-        `${Math.round(run1.ms)}ms  tools=${run1.toolCalls} turns=${run1.turns} ` +
+        `${Math.round(run1.agentMs)}ms agent  first-text=${run1.firstTextMs == null ? 'n/a' : `${Math.round(run1.firstTextMs)}ms`} ` +
+        `tools=${run1.toolCalls} turns=${run1.turns} ` +
         `${run1.tokensIn}/${run1.tokensOut} tok  redundant=${run1.redundantCalls}`
       );
       if (run1.sandbox) console.log(`        sandbox kept: ${run1.sandbox}`);
       if (run1.eventsFile) console.log(`        events kept: ${run1.eventsFile} (${run1.eventsKept} event(s))`);
+      if (run1.timingsFile) console.log(`        timings kept: ${run1.timingsFile}`);
     }
     rows.push({ task, runs, stats: summariseRepeats(runs) });
   }
   const suiteMs = Date.now() - startedAt;
 
   // --- table -----------------------------------------------------------------
-  const W = { id: 26, cat: 11, res: 6, ms: 8, tools: 6, turns: 6, tok: 13, cost: 8, red: 4 };
-  const header = `${fmtCell('TASK', W.id)}  ${fmtCell('CATEGORY', W.cat)}  ${fmtCell('RESULT', W.res)}  ${fmtCell('MS', W.ms)}  ${fmtCell('TOOLS', W.tools)}  ${fmtCell('TURNS', W.turns)}  ${fmtCell('TOK IN/OUT', W.tok)}  ${fmtCell('COST', W.cost)}  ${fmtCell('REDUN', W.red)}`;
+  const W = { id: 26, cat: 11, res: 6, ms: 8, ttft: 12, toolMs: 12, tools: 6, turns: 6, tok: 13, cost: 8, red: 4 };
+  const header = `${fmtCell('TASK', W.id)}  ${fmtCell('CATEGORY', W.cat)}  ${fmtCell('RESULT', W.res)}  ${fmtCell('AGENT_MS', W.ms)}  ${fmtCell('FIRST_TEXT', W.ttft)}  ${fmtCell('TOOL_AVG', W.toolMs)}  ${fmtCell('TOOLS', W.tools)}  ${fmtCell('TURNS', W.turns)}  ${fmtCell('TOK IN/OUT', W.tok)}  ${fmtCell('COST', W.cost)}  ${fmtCell('REDUN', W.red)}`;
   console.log('');
   console.log(header);
   console.log('-'.repeat(header.length));
@@ -407,7 +431,10 @@ export async function main(argv = process.argv.slice(2)) {
     const cost = priced ? formatCost(stats.costUsd.mean) : '—';
     console.log(
       `${fmtCell(task.id, W.id)}  ${fmtCell(task.category, W.cat)}  ${fmtCell(label, W.res)}  ` +
-      `${fmtCell(String(Math.round(stats.ms.mean)), W.ms)}  ${fmtCell(stats.toolCalls.mean.toFixed(1), W.tools)}  ` +
+      `${fmtCell(String(Math.round(stats.agentMs.mean)), W.ms)}  ` +
+      `${fmtCell(stats.firstTextMs.n ? `${Math.round(stats.firstTextMs.mean)}ms` : 'n/a', W.ttft)}  ` +
+      `${fmtCell(stats.toolDurationMs.n ? `${Math.round(stats.toolDurationMs.mean)}ms` : 'n/a', W.toolMs)}  ` +
+      `${fmtCell(stats.toolCalls.mean.toFixed(1), W.tools)}  ` +
       `${fmtCell(stats.turns.mean.toFixed(1), W.turns)}  ${fmtCell(`${Math.round(stats.tokensIn.mean)}/${Math.round(stats.tokensOut.mean)}`, W.tok)}  ` +
       `${fmtCell(cost, W.cost)}  ${fmtCell(stats.redundantCalls.mean.toFixed(1), W.red)}`
     );
@@ -418,6 +445,7 @@ export async function main(argv = process.argv.slice(2)) {
   const totalPass = rows.reduce((a, r) => a + r.stats.passCount, 0);
   const rate = totalRuns ? ((totalPass / totalRuns) * 100) : 0;
   console.log(`PASS RATE: ${totalPass}/${totalRuns} = ${rate.toFixed(1)}%   wall ${(suiteMs / 1000).toFixed(1)}s   model ${spec}`);
+  console.log('Latency note: FIRST_TEXT is child-process time to first generated-text event; TOOL_AVG is mean tool-start→tool-end time. Neither is provider-internal model latency.');
 
   // Per-turn token provenance. The table above reports means, and a mean cannot
   // show you WHICH request cost the run - which is exactly the number anyone
@@ -432,11 +460,11 @@ export async function main(argv = process.argv.slice(2)) {
   if (opts.repeats > 1) {
     console.log('');
     console.log('VARIANCE (sample stddev across independent repeats)');
-    console.log(`${fmtCell('TASK', W.id)}  ${fmtCell('PASS', 6)}  ${fmtCell('MS', 18)}  ${fmtCell('TOOLS', 16)}  ${fmtCell('TURNS', 14)}`);
+    console.log(`${fmtCell('TASK', W.id)}  ${fmtCell('PASS', 6)}  ${fmtCell('AGENT_MS', 18)}  ${fmtCell('TOOLS', 16)}  ${fmtCell('TURNS', 14)}`);
     for (const { task, stats } of rows) {
       console.log(
         `${fmtCell(task.id, W.id)}  ${fmtCell(`${stats.passCount}/${stats.repeats}`, 6)}  ` +
-        `${fmtCell(`${stats.ms.mean.toFixed(0)} ± ${stats.ms.stddev.toFixed(0)}`, 18)}  ` +
+        `${fmtCell(`${stats.agentMs.mean.toFixed(0)} ± ${stats.agentMs.stddev.toFixed(0)}`, 18)}  ` +
         `${fmtCell(`${stats.toolCalls.mean.toFixed(1)} ± ${stats.toolCalls.stddev.toFixed(1)}`, 16)}  ` +
         `${fmtCell(`${stats.turns.mean.toFixed(1)} ± ${stats.turns.stddev.toFixed(1)}`, 14)}`
       );
@@ -479,6 +507,10 @@ export async function main(argv = process.argv.slice(2)) {
       repeats: stats.repeats,
       passRate: stats.passRate,
       ms: stats.ms,
+      agentMs: stats.agentMs,
+      firstTextMs: stats.firstTextMs,
+      firstToolMs: stats.firstToolMs,
+      toolDurationMs: stats.toolDurationMs,
       toolCalls: stats.toolCalls,
       turns: stats.turns,
       tokensIn: stats.tokensIn,
@@ -486,13 +518,14 @@ export async function main(argv = process.argv.slice(2)) {
       redundantCalls: stats.redundantCalls,
       costUsd: stats.costUsd,
       runs: runs.map((r) => ({
-        pass: r.pass, detail: r.detail, checks: r.checks, ms: r.ms,
+        pass: r.pass, detail: r.detail, checks: r.checks, ms: r.ms, agentMs: r.agentMs,
+        firstTextMs: r.firstTextMs, firstToolMs: r.firstToolMs, toolDurationMs: r.toolDurationMs, timedTools: r.timedTools,
         exitCode: r.exitCode, timedOut: r.timedOut,
         toolCalls: r.toolCalls, uniqueCalls: r.uniqueCalls, redundantCalls: r.redundantCalls,
         tools: r.tools, perTool: r.perTool, turns: r.turns,
         errorEvents: r.errorEvents, toolErrors: r.toolErrors, retryEvents: r.retryEvents,
         tokensIn: r.tokensIn, tokensOut: r.tokensOut, costUsd: r.costUsd,
-        usageTurns: r.usageTurns, eventsFile: r.eventsFile, eventsKept: r.eventsKept,
+        usageTurns: r.usageTurns, eventsFile: r.eventsFile, timingsFile: r.timingsFile, eventsKept: r.eventsKept,
         diagnostics: r.diagnostics, finalText: r.finalText, sandbox: r.sandbox,
       })),
     })),

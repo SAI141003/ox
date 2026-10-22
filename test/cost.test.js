@@ -5,14 +5,22 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
-import { PRICING, lookupModel, costOf, formatCost, createCostBudget, assertCostBudget, currentCostBudget, resolveMaxCostUsd } from '../src/cost.js';
+import { PRICING, lookupModel, cacheRates, costOf, formatCost, createCostBudget, assertCostBudget, currentCostBudget, resolveMaxCostUsd } from '../src/cost.js';
+import { classifyTargetCost } from '../src/agent.js';
+
+test('fallback cost classification fails closed for unpriced remote models', () => {
+  assert.equal(classifyTargetCost({ provider: 'ollama', model: 'local-model', keyEnv: null }), 'free');
+  assert.equal(classifyTargetCost({ provider: 'openrouter', model: 'free-model', keyEnv: 'OPENROUTER_API_KEY', pricing: { in: 0, out: 0 } }), 'free');
+  assert.equal(classifyTargetCost({ provider: 'openai', model: 'gpt-5.6-sol', keyEnv: 'OPENAI_API_KEY' }), 'paid');
+  assert.equal(classifyTargetCost({ provider: 'openrouter', model: 'new-model', keyEnv: 'OPENROUTER_API_KEY' }), 'unknown');
+});
 
 test('costOf exact arithmetic for priced models', () => {
   const cases = [
     ['grok-4.6', { inputTokens: 250_000, outputTokens: 125_000 }, 1.25],
     ['gpt-5.6-sol', { inputTokens: 10_000, outputTokens: 2_000 }, 0.08],
-    ['claude-opus-5', { inputTokens: 100_000, outputTokens: 40_000 }, 1.5],
-    ['gemini-3.7-flash', { inputTokens: 1_000_000, outputTokens: 500_000 }, 1.32],
+    ['claude-haiku-4-5', { inputTokens: 100_000, outputTokens: 40_000 }, 0.3],
+    ['gemini-3.8-flash', { inputTokens: 1_000_000, outputTokens: 500_000 }, 2.625],
     ['claude-haiku-4-5', { inputTokens: 333_333, outputTokens: 7_777 }, null],
   ];
   for (const [model, usage, approx] of cases) {
@@ -25,11 +33,62 @@ test('costOf exact arithmetic for priced models', () => {
   }
 });
 
+test('current Claude models have verified pricing; unknown aliases remain unpriced', () => {
+  for (const model of ['claude-sonnet-5-preview', 'claude-opus-5-preview']) {
+    assert.equal(lookupModel(model).priced, false, model);
+    assert.equal(costOf(model, { inputTokens: 1_000_000, outputTokens: 1_000_000 }), null, model);
+  }
+  assert.deepEqual(lookupModel('claude-haiku-4-5'), { in: 1, out: 5, window: 200_000, priced: true });
+  for (const [model, prices, cacheRead] of [
+    ['claude-fable-5-1', [10, 50], 0.025],
+    ['claude-opus-5-5', [4, 20], 0.05],
+    ['claude-sonnet-5-5', [2, 10], 0.05],
+    // Conservative high-prompt tier: aggregated usage cannot recover the tier
+    // for each individual request.
+    ['claude-haiku-5-5', [0.5, 2.5], 0.1],
+    ['claude-sonnet-5', [2, 10], 0.1],
+    ['claude-opus-5', [5, 25], 0.1],
+  ]) {
+    const row = lookupModel(model);
+    assert.equal(row.priced, true, model);
+    assert.deepEqual([row.in, row.out], prices, model);
+    assert.equal(row.cacheRead, cacheRead, model);
+    assert.equal(costOf(model, { inputTokens: 1_000_000, outputTokens: 1_000_000 }), prices[0] + prices[1], model);
+  }
+});
+
+test('temporary Gemini standard pricing expires closed when published promo ends', () => {
+  assert.equal(lookupModel('gemini-3.8-flash', null, { now: Date.parse('2026-12-31T23:59:59.999Z') }).priced, true);
+  assert.equal(lookupModel('gemini-3.8-flash', null, { now: Date.parse('2027-01-01T00:00:00.000Z') }).priced, false);
+  assert.equal(costOf('gemini-3.8-flash', { inputTokens: 1, outputTokens: 1 }), 0.0000045);
+});
+
+test('Anthropic cache-write estimates use the documented maximum TTL multiplier', () => {
+  assert.equal(PRICING['claude-fable-5-1'].cacheWrite, 2);
+  assert.equal(costOf('claude-haiku-4-5', { inputTokens: 100_000, cacheWriteTokens: 100_000 }), 0.2);
+});
+
+test('verified xAI and OpenAI cache-read prices override the generic estimate', () => {
+  for (const [model, ratio] of [['grok-4.6', 0.25], ['grok-build-0.1', 0.2], ['gpt-5.6-sol', 0.1]]) {
+    const row = lookupModel(model);
+    assert.equal(cacheRates(model, row).read, ratio, model);
+    assert.equal(costOf(model, { inputTokens: 1_000_000, cacheReadTokens: 1_000_000 }), row.in * ratio, model);
+  }
+});
+
+test('GPT-6 public pricing covers cached input, cache writes, long prompts, and context windows', () => {
+  assert.deepEqual([lookupModel('gpt-6-luna').in, lookupModel('gpt-6-luna').out, lookupModel('gpt-6-luna').window], [0.1, 0.5, 1_050_000]);
+  assert.equal(costOf('gpt-6-luna', { inputTokens: 1_000, cacheReadTokens: 1_000 }), 0.00001);
+  assert.equal(costOf('gpt-6-luna', { inputTokens: 1_000, cacheWriteTokens: 1_000 }), 0.000125);
+  assert.equal(costOf('gpt-6.1-sol', { inputTokens: 272_001, outputTokens: 1_000 }), (272_001 * 2 * 2 + 1_000 * 10 * 1.5) / 1_000_000);
+  assert.equal(costOf('gpt-6-astra', { inputTokens: 1_000_000, outputTokens: 1_000_000 }), 20 + 75);
+});
+
 test('costOf returns null for unpriced or invalid models', () => {
   assert.equal(costOf('totally-unknown-model', { inputTokens: 1000 }), null);
   assert.equal(costOf(null, { inputTokens: 1000 }), null);
   assert.equal(costOf(undefined), null);
-  assert.deepEqual(lookupModel('grok-4.6'), { in: 2, out: 6, window: 500_000, priced: true });
+  assert.deepEqual(lookupModel('grok-4.6'), { in: 2, out: 6, window: 500_000, cacheRead: 0.25, priced: true });
   assert.deepEqual(lookupModel('nope'), { priced: false });
 });
 
@@ -43,7 +102,7 @@ test('budget scope prices actual models and fails closed at equality or unknown 
   await budget.run(async () => {
     assert.equal(currentCostBudget(), budget);
     budget.record('grok-4.6', { inputTokens: 500_000 });
-    budget.record('claude-opus-5', { inputTokens: 400_000 });
+    budget.record('claude-haiku-4-5', { inputTokens: 2_000_000 });
     assert.equal(budget.snapshot().costUsd, 3);
     assert.throws(() => assertCostBudget(), { code: 'OX_BUDGET_STOP' });
   });

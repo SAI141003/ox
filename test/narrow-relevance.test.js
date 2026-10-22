@@ -161,6 +161,19 @@ test('2. desktop prompt: operator tools are KEPT (defect-2 regression guard)', (
   assert.ok(!kept.includes('memory_list'), 'memory still withheld here');
 });
 
+test('a current value scoped to a project config does not pay for unrelated web schemas', () => {
+  const kept = names(narrowToolSchemas(OFFER, {
+    message: "Find the CURRENT value in this project's deployment tuning config and write it to answer.txt",
+    relevantSkillTools: [],
+  }));
+  assert.ok(kept.includes('read_file'));
+  assert.ok(kept.includes('write_file'));
+  assert.equal(kept.includes('web_search'), false, kept.join(','));
+  assert.equal(kept.includes('web_fetch'), false, kept.join(','));
+  const external = names(narrowToolSchemas(OFFER, { message: 'find the current Node version on the web' }));
+  assert.ok(external.includes('web_search'), external.join(','));
+});
+
 test('3. memory prompt: memory_* kept', () => {
   const kept = names(narrowToolSchemas(OFFER, { message: 'remember that we chose Postgres' }));
   for (const m of MEMORY_NAMES) assert.ok(kept.includes(m), `${m} kept on a memory keyword`);

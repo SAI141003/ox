@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { liveAgents, describeCall, projectName, asBoardRows } from '../src/agents-live.js';
+import { liveAgents, describeCall, projectName, asBoardRows, detectedCodingTools } from '../src/agents-live.js';
 
 const line = (o) => JSON.stringify(o);
 
@@ -133,5 +133,45 @@ test('Cursor, Gemini CLI and Continue show up while their files change', async (
   assert.deepEqual(continueSessions({ home, now }).map((s) => s.id), ['continue:7f3e'], 'the index file is not a session');
   assert.equal(cursorSessions({ home, now: now + 60_000 })[0].state, 'idle', 'quiet a minute: resting');
   assert.deepEqual(cursorSessions({ home, now: now + 24 * 3600_000 }), [], 'quiet a day: gone');
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test('Cline, Kilo and Kimi sessions are discovered from their local state without reading credentials', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-more-agents-'));
+  const now = Date.now();
+  const cline = path.join(home, '.cline', 'data', 'sessions', 'c1'); fs.mkdirSync(cline, { recursive: true });
+  fs.writeFileSync(path.join(cline, 'c1.json'), JSON.stringify({ status: 'running', cwd: '/Users/me/site', model: 'claude', metadata: { aggregateUsage: { inputTokens: 12, outputTokens: 3, cacheReadTokens: 4 } } }));
+  const kilo = path.join(home, '.local', 'share', 'kilo'); fs.mkdirSync(kilo, { recursive: true });
+  const { spawnSync } = await import('node:child_process');
+  const create = spawnSync('sqlite3', [path.join(kilo, 'kilo.db'), 'create table session (id text, title text, directory text, model text, agent text, time_updated integer);']);
+  assert.equal(create.status, 0);
+  const insert = spawnSync('sqlite3', [path.join(kilo, 'kilo.db'), `insert into session values ('k1','Fix UI','/Users/me/app','{"id":"kilo-auto/free"}','build',${now});`]);
+  assert.equal(insert.status, 0);
+  const kimi = path.join(home, 'Library', 'Application Support', 'kimi-desktop', 'daimon-share', 'daimon', 'agents', 'main'); fs.mkdirSync(kimi, { recursive: true });
+  fs.writeFileSync(path.join(kimi, 'runner.state.json'), JSON.stringify({ updatedAt: new Date(now).toISOString(), kernel: { activeTurnCount: 1, providerModel: { model: 'kimi-k2' } }, activeKernelTurns: [{}], activeKernelToolCalls: [] }));
+  const { clineSessions, kiloSessions, kimiSessions } = await import('../src/agents-live.js');
+  assert.deepEqual(clineSessions({ home, now }).map((s) => [s.tool, s.project, s.tokens.cached]), [['Cline', 'site', 4]]);
+  assert.deepEqual(kiloSessions({ home, now }).map((s) => [s.tool, s.project, s.model]), [['Kilo', 'app', 'kilo-auto/free']]);
+  assert.deepEqual(kimiSessions({ home, now }).map((s) => [s.tool, s.model, s.state]), [['Kimi', 'kimi-k2', 'thinking']]);
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test('installed coding apps and VS Code/Cursor extensions are detected without pretending they are sessions', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-detected-tools-'));
+  const extension = (root, folder, pkg) => {
+    const d = path.join(home, root, folder); fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify(pkg));
+  };
+  extension('.vscode/extensions', 'saoudrizwan.claude-dev-1.0.0', { publisher: 'saoudrizwan', name: 'claude-dev', displayName: 'Cline' });
+  extension('.cursor/extensions', 'example.review-agent-1.0.0', { publisher: 'example', name: 'review-agent', displayName: 'Review Agent', description: 'An AI code review assistant' });
+  const apps = path.join(home, 'Applications'); fs.mkdirSync(path.join(apps, 'Kimi.app'), { recursive: true });
+  fs.mkdirSync(path.join(apps, 'Preview.app'), { recursive: true });
+  const rows = detectedCodingTools({ home, appRoots: [apps] });
+  assert.deepEqual(rows.map((x) => [x.tool, x.source, x.sessionSupport]), [
+    ['Cline', 'VS Code extension', 'native'],
+    ['Kimi', 'Installed app', 'native'],
+    ['Review Agent', 'Cursor extension', 'detected'],
+  ]);
+  assert.ok(['available', 'running'].includes(rows.find((x) => x.tool === 'Kimi').state));
   fs.rmSync(home, { recursive: true, force: true });
 });

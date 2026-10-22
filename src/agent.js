@@ -142,12 +142,10 @@ export function modelSwitchEvent({ from, to, reason, kind, cost }) {
 }
 
 // Cost-honest routing: what would serving this target actually charge?
-//   'free'     — no pricing entry, priced === false, a keyless local endpoint
-//                (keyEnv null, e.g. ollama), or an explicitly 0/0 entry
+//   'free'     — a keyless local endpoint (keyEnv null, e.g. ollama), or an
+//                explicitly 0/0 pricing entry
 //   'paid'     — real per-token prices, i.e. a provider bounce would spend money
-//   'unknown'  — priced-looking but unusable numbers; never silently trusted
-// A model with no pricing row is treated as free because ox has no evidence it
-// bills anything; an explicitly malformed entry is not.
+//   'unknown'  — remote price missing or unusable; never silently trusted
 export function classifyTargetCost(target, overrides = null) {
   if (!target) return 'unknown';
   // keyless local providers (ollama) can never bill.
@@ -156,7 +154,7 @@ export function classifyTargetCost(target, overrides = null) {
     target.pricing && typeof target.pricing === 'object'
       ? target.pricing
       : lookupModel(target.model, overrides);
-  if (!pricing || pricing.priced === false) return 'free';
+  if (!pricing || pricing.priced === false) return 'unknown';
   const i = Number(pricing.in);
   const o = Number(pricing.out);
   if (!Number.isFinite(i) || !Number.isFinite(o) || i < 0 || o < 0) return 'unknown';
@@ -1229,6 +1227,34 @@ async function* runAgentLoop(opts = {}) {
     b.cacheWriteTokens = (b.cacheWriteTokens ?? 0) + (Number(u?.cacheWriteTokens) || 0);
     usageByModel.set(key, b);
   };
+  // Browser automation's planner is a nested request on the same active model,
+  // not a second hard-coded OpenRouter credential or a page-side localhost URL.
+  // Keep its usage in the parent turn's ordinary usage/cost accounting.
+  const webTaskDecide = async ({ system, user }) => {
+    const modelKey = activeModel();
+    let text = '';
+    for await (const raw of streamVia(activeTarget, {
+      model: modelKey,
+      messages: [{ role: 'system', content: String(system ?? '') }, { role: 'user', content: String(user ?? '') }],
+      signal,
+    })) {
+      const ev = normalizeStreamEvent(raw);
+      if (!ev) continue;
+      if (ev.kind === 'text') text += ev.text;
+      else if (ev.kind === 'usage') {
+        usage.inputTokens += Number(ev.usage.inputTokens) || 0;
+        usage.outputTokens += Number(ev.usage.outputTokens) || 0;
+        usage.cacheReadTokens += Number(ev.usage.cacheReadTokens) || 0;
+        usage.cacheWriteTokens += Number(ev.usage.cacheWriteTokens) || 0;
+        addMainUsage(ev.usage, modelKey);
+        toolModelUsageEvents.push({ type: 'usage', ...ev.usage, costUsd: costOf(modelKey, ev.usage, costOverrides), model: modelKey });
+      }
+    }
+    return text.trim();
+  };
+  const toolModelUsageEvents = [];
+  toolCtx.webTaskDecide = webTaskDecide;
+  toolCtx.fastBrowserDecide = webTaskDecide;
   const failures = new Map();
   const lessoned = new Set();
   const policyWarned = new Set();
@@ -2232,6 +2258,7 @@ async function* runAgentLoop(opts = {}) {
           } catch (err) {
             result = { content: String(err?.message ?? err), isError: true };
           }
+          while (toolModelUsageEvents.length) yield toolModelUsageEvents.shift();
           // Append hook output to tool result if any
           if (preHookResult.outputs.length) {
             const hookOutput = formatHookOutputs(preHookResult.outputs);

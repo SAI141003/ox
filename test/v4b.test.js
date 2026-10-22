@@ -184,6 +184,30 @@ test('401 skips retries and bounces immediately (one request to primary)', async
   assert.equal(events.find((e) => e.type === 'final')?.message.content, 'AUTH_FALLBACK_OK');
 });
 
+test('free_only refuses an unpriced remote fallback without sending it a request', async (t) => {
+  const cwd = tmpDir(t, 'ox-v4b-free-only-unknown-');
+  const primary = await statusServer(t, 401, 'Unauthorized', 'bad api key');
+  let fallbackHits = 0;
+  const secondary = await startServerRaw(t, (_b, res) => {
+    fallbackHits++;
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.end(turn({ text: 'MUST_NOT_RUN' }));
+  });
+
+  const events = await collectEvents({
+    target: mkTarget(primary.port),
+    messages: [{ role: 'user', content: 'hi' }],
+    ctx: { cwd, fallbackTargets: [{ ...mkTarget(secondary.port, 'unpriced-remote-model'), keyEnv: 'CUSTOM_API_KEY' }] },
+    config: { fallbackPolicy: { cost: 'free_only' } },
+    auxTarget: null,
+  });
+
+  assert.equal(primary.bodies.length, 1, 'the primary still fails once');
+  assert.equal(fallbackHits, 0, 'unknown remote pricing is never treated as permission to spend');
+  assert.equal(events.some((e) => e.type === 'fallback'), false);
+  assert.match(events.find((e) => e.type === 'warning')?.text ?? '', /free_only refused.*\[unknown\]/);
+});
+
 test('max one bounce per turn: failing secondary ends with a clean error', async (t) => {
   const cwd = tmpDir(t, 'ox-v4b-once-');
   const primary = await statusServer(t, 401, 'Unauthorized', 'nope');

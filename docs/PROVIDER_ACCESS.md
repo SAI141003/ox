@@ -5,7 +5,7 @@ provider. It connects in one of four ways, and you pick which.
 
 | Way | Who it is for | What ox does | What ox never does |
 |---|---|---|---|
-| **API key** | Anthropic, OpenAI, Google, xAI, Groq, DeepSeek, Mistral, OpenRouter and the rest (22 providers) | Sends your requests with your key, from your shell's environment or `~/.ox/keys.json` (mode 600, readable only by your account) | Send the key anywhere but that provider |
+| **API key** | Anthropic, OpenAI, Google, xAI, Groq, DeepSeek, Mistral, OpenRouter and dozens more | Sends your requests with your key, from your shell's environment or `~/.ox/keys.json` (mode 600, readable only by your account) | Send the key anywhere but that provider |
 | **ChatGPT plan** | ChatGPT Free, Plus, Pro, Team | Runs OpenAI's own Codex program, which you signed in to with "Sign in with ChatGPT". OpenAI allows partner apps to use a plan's allowance this way | Read Codex's login file |
 | **Claude plan** | Claude Pro and Max | Only when **you** pick it: runs Anthropic's own `claude` program (Claude Code) on your Mac | Pick it for you, read or reuse its login, or call Anthropic's servers with it |
 | **Local model** | Ollama, LM Studio, MLX | Talks to the model server on your own machine | Send anything off the machine |

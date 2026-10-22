@@ -123,22 +123,40 @@ export function createCostBudget(options = {}) {
 }
 
 export const PRICING = {
-  'grok-4.6': { in: 2, out: 6, window: 500_000 },
-  'grok-build-0.1': { in: 1, out: 2, window: 256_000 },
-  // The current Claude family. Haiku 5.5 is $0.10/$0.50 up to 100K-token
-  // prompts ($0.50/$2.50 beyond); the table keeps the common case.
-  'claude-fable-5-1': { in: 10, out: 50, window: 1_000_000 },
-  'claude-opus-5-5': { in: 4, out: 20, window: 1_000_000 },
-  'claude-sonnet-5-5': { in: 2, out: 10, window: 1_000_000 },
-  'claude-haiku-5-5': { in: 0.1, out: 0.5, window: 1_000_000 },
-  'claude-sonnet-5': { in: 2, out: 10, window: 200_000 },
-  'claude-opus-5': { in: 5, out: 25, window: 200_000 },
+  // xAI cache-hit input is 25% of base (not the generic 50% fallback).
+  'grok-4.6': { in: 2, out: 6, window: 500_000, cacheRead: 0.25 },
+  'grok-build-0.1': { in: 1, out: 2, window: 256_000, cacheRead: 0.2 },
+  // Prices are only included where the model ID and rate have been verified.
+  // In particular, do not put cached-input rates in the base input/output
+  // fields: that makes an ordinary uncached run look far cheaper than it is.
+  // Haiku 4.5 is the provider's exact public model ID. Its cache-hit input
+  // discount is applied by cacheRates(); its base input/output are $1/$5.
   'claude-haiku-4-5': { in: 1, out: 5, window: 200_000 },
-  'gpt-5.6-sol': { in: 4, out: 20, window: 400_000 },
+  // Verified against Anthropic's published pricing/model pages 2026-10-21.
+  // Cache writes use the 1-hour rate (the conservative published rate) because
+  // usage totals do not tell us which cache-write TTL the caller was billed for.
+  'claude-fable-5-1': { in: 10, out: 50, window: 1_000_000, cacheRead: 0.025, cacheWrite: 2 },
+  'claude-opus-5-5': { in: 4, out: 20, window: 1_000_000, cacheRead: 0.05, cacheWrite: 2 },
+  'claude-sonnet-5-5': { in: 2, out: 10, window: 1_000_000, cacheRead: 0.05, cacheWrite: 2 },
+  'claude-sonnet-5': { in: 2, out: 10, window: 1_000_000, cacheRead: 0.1, cacheWrite: 2 },
+  'claude-opus-5': { in: 5, out: 25, window: 1_000_000, cacheRead: 0.1, cacheWrite: 2 },
+  // Haiku 5.5's rate doubles for prompts over 100k. Aggregated run usage loses
+  // per-request prompt sizes, so use the higher tier rather than understate cost.
+  'claude-haiku-5-5': { in: 0.5, out: 2.5, window: 1_000_000, cacheRead: 0.1, cacheWrite: 2 },
+  // OpenAI cached input is $0.40/M at this $4/M base rate (10%).
+  'gpt-5.6-sol': { in: 4, out: 20, window: 400_000, cacheRead: 0.1 },
+  // OpenAI standard text rates verified against the public model pages
+  // 2026-10-22. Requests over 272k prompt tokens cost 2x input/cache and 1.5x
+  // output. Aggregated usage crossing the threshold is conservatively priced
+  // at the higher tier (may overestimate, never understate).
+  'gpt-6-luna': { in: 0.1, out: 0.5, window: 1_050_000, cacheRead: 0.1, cacheWrite: 1.25, longPromptThreshold: 272_000, longPromptInputMultiplier: 2, longPromptOutputMultiplier: 1.5 },
+  'gpt-6.1-sol': { in: 2, out: 10, window: 1_050_000, cacheRead: 0.05, cacheWrite: 1.25, longPromptThreshold: 272_000, longPromptInputMultiplier: 2, longPromptOutputMultiplier: 1.5 },
+  'gpt-6-astra': { in: 10, out: 50, window: 1_050_000, cacheRead: 0.1, cacheWrite: 1.25, longPromptThreshold: 272_000, longPromptInputMultiplier: 2, longPromptOutputMultiplier: 1.5 },
   'gemini-3.1-pro-preview': { in: 2, out: 12, window: 1_000_000 },
-  'gemini-3.7-flash': { in: 0.38, out: 1.88, window: 1_000_000 },
+  // Standard tier promo rate; Google's published rate changes 2027-01-01.
+  'gemini-3.8-flash': { in: 0.75, out: 3.75, window: 1_000_000, expiresAt: '2026-12-31T23:59:59.999Z' },
   'moonshotai/kimi-k2-instruct-0905': { in: 1, out: 3, window: 256_000 },
-  'deepseek-v4-pro': { in: 1.32, out: 3.96, window: 128_000 },
+  'deepseek-v4-pro': { in: 1.32, out: 3.96, window: 1_000_000 },
 };
 
 const UNPRICED = Object.freeze({ priced: false });
@@ -161,7 +179,7 @@ function finiteNum(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-export function lookupModel(model, overrides = null) {
+export function lookupModel(model, overrides = null, { now = Date.now() } = {}) {
   if (typeof model !== 'string') return UNPRICED;
   const ov = overrideFor(model, overrides);
   const oIn = finiteNum(ov?.in);
@@ -170,12 +188,14 @@ export function lookupModel(model, overrides = null) {
   // An override carrying BOTH in and out is authoritative pricing.
   if (oIn !== null && oOut !== null) {
     const window = oWindow !== null ? oWindow : PRICING[model]?.window;
-    return { in: oIn, out: oOut, ...(window ? { window } : {}), priced: true };
+    const builtIn = PRICING[model] ?? {};
+    return { in: oIn, out: oOut, ...(window ? { window } : {}), ...(Number.isFinite(ov?.cacheRead) ? { cacheRead: ov.cacheRead } : Number.isFinite(builtIn.cacheRead) ? { cacheRead: builtIn.cacheRead } : {}), ...(Number.isFinite(ov?.cacheWrite) ? { cacheWrite: ov.cacheWrite } : Number.isFinite(builtIn.cacheWrite) ? { cacheWrite: builtIn.cacheWrite } : {}), ...(Number.isFinite(builtIn.longPromptThreshold) ? { longPromptThreshold: builtIn.longPromptThreshold, longPromptInputMultiplier: builtIn.longPromptInputMultiplier, longPromptOutputMultiplier: builtIn.longPromptOutputMultiplier } : {}), priced: true };
   }
   const hit = PRICING[model];
   if (!hit) return UNPRICED;
+  if (hit.expiresAt && now > Date.parse(hit.expiresAt)) return UNPRICED;
   // Window-only override: the pricing row is untouched, only its window moves.
-  return { in: hit.in, out: hit.out, window: oWindow !== null ? oWindow : hit.window, priced: true };
+  return { in: hit.in, out: hit.out, window: oWindow !== null ? oWindow : hit.window, ...(Number.isFinite(hit.cacheRead) ? { cacheRead: hit.cacheRead } : {}), ...(Number.isFinite(hit.cacheWrite) ? { cacheWrite: hit.cacheWrite } : {}), ...(Number.isFinite(hit.longPromptThreshold) ? { longPromptThreshold: hit.longPromptThreshold, longPromptInputMultiplier: hit.longPromptInputMultiplier, longPromptOutputMultiplier: hit.longPromptOutputMultiplier } : {}), priced: true };
 }
 
 export const DEFAULT_MODEL_WINDOW = 128_000;
@@ -198,11 +218,11 @@ export function resolveModelWindow({ model, configWindow, overrides, env = proce
 // behaviour byte for byte: unpriced stays null, never 0.
 // What a cached input token costs, as a share of the input price: the price
 // row's own cacheRead / cacheWrite when it has them, else the provider
-// family's published rate (Anthropic reads 0.1x and writes 1.25x, DeepSeek
+// family's published rate (Anthropic reads 0.1x and writes up to 2x, DeepSeek
 // 0.1x, Gemini 0.25x), else 0.5x, the most conservative of the others.
 export function cacheRates(model, p = {}) {
   const m = String(model ?? '').toLowerCase();
-  const fam = /claude|anthropic/.test(m) ? { read: 0.1, write: 1.25 } : /deepseek/.test(m) ? { read: 0.1, write: 1 } : /gemini/.test(m) ? { read: 0.25, write: 1 } : { read: 0.5, write: 1 };
+  const fam = /claude|anthropic/.test(m) ? { read: 0.1, write: 2 } : /deepseek/.test(m) ? { read: 0.1, write: 1 } : /gemini/.test(m) ? { read: 0.25, write: 1 } : { read: 0.5, write: 1 };
   return { read: Number.isFinite(p.cacheRead) ? p.cacheRead : fam.read, write: Number.isFinite(p.cacheWrite) ? p.cacheWrite : fam.write };
 }
 
@@ -215,8 +235,11 @@ export function costOf(model, usage = {}, overrides = null) {
   const read = Math.min(inputTokens, Number(usage.cacheReadTokens) || 0);
   const write = Math.min(inputTokens - read, Number(usage.cacheWriteTokens) || 0);
   const r = cacheRates(model, p);
-  const input = (inputTokens - read - write) * p.in + read * p.in * r.read + write * p.in * r.write;
-  return (input + outputTokens * p.out) / 1_000_000;
+  const longPrompt = Number.isFinite(p.longPromptThreshold) && inputTokens > p.longPromptThreshold;
+  const inputMultiplier = longPrompt ? p.longPromptInputMultiplier : 1;
+  const outputMultiplier = longPrompt ? p.longPromptOutputMultiplier : 1;
+  const input = ((inputTokens - read - write) * p.in + read * p.in * r.read + write * p.in * r.write) * inputMultiplier;
+  return (input + outputTokens * p.out * outputMultiplier) / 1_000_000;
 }
 
 export function formatCost(usd) {

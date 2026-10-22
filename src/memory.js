@@ -488,6 +488,9 @@ function brainBlock() {
 }
 
 export function loadMemoryBlock(cwd) {
+  // Incognito is a promise not to use what Ox has retained about the user or
+  // this project; do not inject the project MEMORY.md either.
+  if (process.env.OX_INCOGNITO === '1') return '';
   const brain = brainBlock();
   const project = loadProjectMemoryBlock(cwd);
   return [project, brain].filter(Boolean).join('\n\n');

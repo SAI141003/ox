@@ -213,7 +213,7 @@ test('v2: describe, agents, shared folders (no escaping them), audit, presets an
     // Presets, set on B for A.
     M.setGrant(M.identity({ home: ha }).name, 'full', true, { home: hb });
     const g = Object.values(M.readPeers({ home: hb }))[0].grants;
-    assert.deepEqual(g, { status: true, infer: true, tasks: true, files: true, agents: true, dev: true });
+    assert.deepEqual(g, { status: true, infer: true, tasks: true, files: true, agents: true, dev: true, screen: false, control: false });
     assert.ok(Array.isArray((await A.ask('Laptop B', 'agents', {}, { timeoutMs: 20_000 })).sessions));
 
     // Files only inside what B shares; a symlink out of it does not count.
@@ -237,6 +237,44 @@ test('v2: describe, agents, shared folders (no escaping them), audit, presets an
     assert.equal(M.lockdown({ home: hb }), 1);
     await assert.rejects(A.ask('Laptop B', 'agents'), /does not allow agents/);
     assert.ok((await A.ask('Laptop B', 'describe', {}, { timeoutMs: 20_000 })).cores >= 1, 'status stays');
+  } finally { await B.close(); await A.close(); }
+});
+
+test('remote desktop: screen and control are explicit, audited grants and keep typed content out of audit', async () => {
+  const ha = home(), hb = home();
+  const calls = [];
+  const remoteControl = async (op, args) => {
+    calls.push({ op, args });
+    if (op === 'screen') return { mime: 'image/png', data: Buffer.from('not-a-real-png') };
+    if (op === 'control-list') return { app: 'Notes', window: 'Draft', elements: [{ id: 1, role: 'AXTextField', name: 'Body' }] };
+    return { text: `${op} safe` };
+  };
+  const A = await node(ha);
+  const B = await node(hb, { remoteControl });
+  try {
+    const { code } = A.invite();
+    await M.join({ code, at: `127.0.0.1:${A.port}`, name: 'Laptop B', o: { home: hb }, myPort: B.port });
+    await assert.rejects(A.ask('Laptop B', 'screen'), /does not allow screen/);
+    await assert.rejects(A.ask('Laptop B', 'control-list'), /does not allow control/);
+    const me = M.identity({ home: ha }).name;
+    M.setGrant(me, 'desktop', true, { home: hb });
+    const g = Object.values(M.readPeers({ home: hb }))[0].grants;
+    assert.equal(g.screen, true); assert.equal(g.control, true); assert.equal(g.files, false, 'desktop does not widen file/task access');
+    const chunks = [];
+    const screen = await A.ask('Laptop B', 'screen', {}, { onChunk: (b) => chunks.push(b) });
+    assert.equal(screen.mime, 'image/png'); assert.equal(Buffer.concat(chunks).toString(), 'not-a-real-png');
+    const list = await A.ask('Laptop B', 'control-list', { app: 'Notes' });
+    assert.equal(list.elements[0].name, 'Body');
+    await A.ask('Laptop B', 'control-type', { app: 'Notes', text: 'private draft content' });
+    const { readAudit } = await import('../src/mesh-services.js');
+    const log = readAudit(hb);
+    assert.ok(log.some((r) => r.op === 'screen'));
+    const typed = log.find((r) => r.op === 'control-type');
+    assert.match(typed.detail, /type 21 chars app:Notes/);
+    assert.ok(!JSON.stringify(log).includes('private draft content'));
+    assert.deepEqual(calls.map((x) => x.op), ['screen', 'control-list', 'control-type']);
+    M.lockdown({ home: hb });
+    await assert.rejects(A.ask('Laptop B', 'screen'), /does not allow screen/);
   } finally { await B.close(); await A.close(); }
 });
 

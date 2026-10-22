@@ -295,9 +295,9 @@ const hasPython = () => spawnSync('python3', ['-c', 'import PIL'], { timeout: 10
 
 /** Where what you asked about is said: the matching lines, padded and joined into one clip. */
 export function highlights(file, query, { pad = 0.6, maxSeconds = 60 } = {}) {
-  const tr = transcribe(file);
   const terms = [...new Set(String(query).toLowerCase().match(/[a-z0-9']{3,}/g) ?? [])].filter((w) => !['the', 'and', 'about', 'where', 'what', 'part', 'parts', 'talks', 'says', 'said'].includes(w));
   if (!terms.length) throw new Error('say what to look for (words that are spoken in the video)');
+  const tr = transcribe(file);
   const hits = tr.segments.map((s) => ({ ...s, score: terms.filter((t) => s.text.toLowerCase().includes(t)).length })).filter((s) => s.score > 0);
   if (!hits.length) return { file: null, found: 0, note: `nothing in the speech matches: ${terms.join(', ')}` };
   // Merge neighbours; best first until the length budget, then back in time order.

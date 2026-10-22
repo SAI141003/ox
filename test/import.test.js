@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { importAll, codexMcp } from '../src/import.js';
+import { importAll, codexMcp, importFromClaudeCode } from '../src/import.js';
 
 test('import: skills, subagents, MCP servers and instructions from each tool', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-imp-home-'));
@@ -25,6 +25,22 @@ test('import: skills, subagents, MCP servers and instructions from each tool', (
   assert.deepEqual(Object.keys(r.mcpServers).sort(), ['db', 'docs', 'github', 'linear']);
   assert.deepEqual(r.mcpServers.docs, { command: 'npx', args: ['-y', 'docs-mcp'], env: { TOKEN: 'x' } });
   assert.ok(r.memoryFiles.some((m) => m.name === '.cursor/rules/style.mdc') && r.memoryFiles.some((m) => m.name === 'AGENTS.md'));
+  assert.equal(r.memoryFiles.find((m) => m.name === 'AGENTS.md').content, '# agents');
   assert.deepEqual(Object.keys(codexMcp('[mcp_servers."my-srv"]\ncommand = "a"')), ['my-srv']);
   fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(cwd, { recursive: true, force: true });
+});
+
+test('Claude Code import includes only the matching project auto-memory index and topic notes', (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-claude-memory-home-'));
+  const cwd = path.join(os.tmpdir(), 'ox-claude-memory-project');
+  const w = (f, text) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); };
+  const memory = path.join(home, '.claude', 'projects', cwd.replace(/[\\/]/g, '-'), 'memory');
+  w(path.join(memory, 'MEMORY.md'), '# Claude memory index\n- Use pnpm.');
+  w(path.join(memory, 'debugging.md'), '# Debugging\nCheck the process owner first.');
+  w(path.join(home, '.claude', 'projects', '-some-other-project', 'memory', 'MEMORY.md'), 'DO NOT IMPORT THIS');
+  const result = importFromClaudeCode(cwd, home);
+  assert.deepEqual(result.memoryFiles.filter((m) => m.autoMemory).map((m) => path.basename(m.path)).sort(), ['MEMORY.md', 'debugging.md']);
+  assert.ok(result.memoryFiles.find((m) => m.name.endsWith('MEMORY.md'))?.content.includes('Use pnpm'));
+  assert.ok(!result.memoryFiles.some((m) => m.content.includes('DO NOT IMPORT THIS')));
+  fs.rmSync(home, { recursive: true, force: true });
 });

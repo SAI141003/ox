@@ -33,19 +33,27 @@ test('search keys are the names the web_search tool reads', () => {
   for (const k of providersView({}).filter((x) => x.group === 'search')) assert.ok(web.includes(k.env), `${k.env} is read by web.js`);
 });
 
-test('Test asks the provider for its models with the key, and says plainly when it is refused', async () => {
+test('Test validates credentials, not just a public model catalog', async () => {
   const calls = [];
-  const fake = async (url, opts) => { calls.push([url, opts.headers]); return url.includes('bad') ? { ok: false, status: 401 } : { ok: true, status: 200, json: async () => ({ data: [{ id: 'm1' }, { id: 'm2' }] }) }; };
+  const fake = async (url, opts) => { calls.push([url, opts.headers]); return url.endsWith('/key') ? { ok: true, status: 200, json: async () => ({ data: { label: 'secret-label', usage: 99, limit: 100 } }) } : url.includes('bad') ? { ok: false, status: 401 } : { ok: true, status: 200, json: async () => ({ data: [{ id: 'm1' }, { id: 'm2' }] }) }; };
   const ok = await testProviderKey('openrouter', 'sk-or-v1-x', {}, { fetchImpl: fake });
   assert.equal(ok.ok, true);
   assert.deepEqual(ok.models, ['m1', 'm2']);
-  assert.equal(calls[0][0], 'https://openrouter.ai/api/v1/models');
+  assert.equal(ok.count, 2);
+  assert.equal(calls[0][0], 'https://openrouter.ai/api/v1/key');
   assert.equal(calls[0][1].authorization, 'Bearer sk-or-v1-x');
+  assert.equal(calls[1][0], 'https://openrouter.ai/api/v1/models');
+  assert.doesNotMatch(JSON.stringify(ok), /secret-label|usage|limit|99|100/, 'key metadata is never returned');
   const anth = await testProviderKey('anthropic', 'k', {}, { fetchImpl: fake });
   assert.equal(anth.ok, true);
-  assert.equal(calls[1][1]['x-api-key'], 'k', 'Anthropic uses its own header');
-  const refused = await testProviderKey('openrouter', 'k', {}, { fetchImpl: async () => ({ ok: false, status: 401 }) });
+  assert.equal(calls[2][1]['x-api-key'], 'k', 'Anthropic uses its own header');
+  let publicCatalogRequested = false;
+  const refused = await testProviderKey('openrouter', 'k', {}, { fetchImpl: async (url) => {
+    if (url.endsWith('/models')) publicCatalogRequested = true;
+    return url.endsWith('/key') ? { ok: false, status: 401 } : { ok: true, status: 200, json: async () => ({ data: [{ id: 'public-model' }] }) };
+  } });
   assert.match(refused.error, /refused this key/);
+  assert.equal(publicCatalogRequested, false, 'a public model list cannot make a bad key look valid');
   assert.match((await testProviderKey('perplexity', null, {})).error, /no key/);
   assert.equal((await testProviderKey('tavily', 'x', {})).ok, false, 'search keys are not tested by spending a query');
 });

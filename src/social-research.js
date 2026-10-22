@@ -8,8 +8,8 @@ import { searchRows } from './tools/web.js';
 const UA = { 'User-Agent': 'ox-research/1.0 (personal research tool)' };
 export const PLATFORMS = ['reddit', 'hn', 'x', 'linkedin', 'youtube'];
 
-async function getJson(url, timeoutMs = 12_000) {
-  const r = await fetch(url, { headers: { ...UA, Accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
+async function getJson(url, timeoutMs = 12_000, fetchImpl = fetch) {
+  const r = await fetchImpl(url, { headers: { ...UA, Accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
@@ -18,8 +18,8 @@ const clip = (s, n = 280) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0
 const unhtml = (s) => String(s ?? '').replace(/<[^>]+>/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
 
 /** Reddit's public search feed (RSS, meant for readers; its JSON API needs an account). */
-export async function reddit(query, { limit = 8, since = 'month' } = {}) {
-  const r = await fetch(`https://www.reddit.com/search.rss?q=${encodeURIComponent(query)}&sort=relevance&t=${since}`, { headers: UA, signal: AbortSignal.timeout(12_000) });
+export async function reddit(query, { limit = 8, since = 'month', fetchImpl = fetch } = {}) {
+  const r = await fetchImpl(`https://www.reddit.com/search.rss?q=${encodeURIComponent(query)}&sort=relevance&t=${since}`, { headers: UA, signal: AbortSignal.timeout(12_000) });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const xml = await r.text();
   // Posts only: the feed also lists matching communities.
@@ -31,8 +31,8 @@ export async function reddit(query, { limit = 8, since = 'month' } = {}) {
 }
 
 /** YouTube's public results page (the videos' titles, channels and views; no account). */
-export async function youtube(query, { limit = 8 } = {}) {
-  const r = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, { headers: { ...UA, 'Accept-Language': 'en' }, signal: AbortSignal.timeout(12_000) });
+export async function youtube(query, { limit = 8, fetchImpl = fetch } = {}) {
+  const r = await fetchImpl(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, { headers: { ...UA, 'Accept-Language': 'en' }, signal: AbortSignal.timeout(12_000) });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const html = await r.text();
   const m = /var ytInitialData = (\{[\s\S]*?\});<\/script>/.exec(html);
@@ -51,8 +51,8 @@ export async function youtube(query, { limit = 8 } = {}) {
   return out;
 }
 
-export async function hn(query, { limit = 8 } = {}) {
-  const j = await getJson(`https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=(story,comment)&hitsPerPage=${limit}`);
+export async function hn(query, { limit = 8, fetchImpl = fetch } = {}) {
+  const j = await getJson(`https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=(story,comment)&hitsPerPage=${limit}`, 12_000, fetchImpl);
   return (j.hits ?? []).map((h) => ({
     platform: 'hn', title: clip(h.title ?? h.story_title ?? 'comment', 200), url: h.url ?? `https://news.ycombinator.com/item?id=${h.objectID}`,
     author: h.author, where: 'Hacker News', score: h.points ?? null, comments: h.num_comments ?? null, at: h.created_at, text: clip(h.comment_text ?? h.story_text ?? ''),
@@ -72,18 +72,18 @@ export async function bySite(platform, query, { limit = 8, env = process.env } =
 const cache = new Map();
 
 /** All platforms at once; one failing does not stop the others (its error is said). */
-export async function research(query, { platforms = PLATFORMS, limit = 6, env = process.env } = {}) {
+export async function research(query, { platforms = PLATFORMS, limit = 6, env = process.env, fetchImpl = fetch } = {}) {
   const key = `${query}|${platforms.join(',')}|${limit}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < 10 * 60_000) return hit.v;
-  const v = await researchNow(query, { platforms, limit, env });
+  const v = await researchNow(query, { platforms, limit, env, fetchImpl });
   if (v.some((r) => r.rows.length)) cache.set(key, { at: Date.now(), v });
   return v;
 }
-async function researchNow(query, { platforms, limit, env }) {
+async function researchNow(query, { platforms, limit, env, fetchImpl }) {
   const jobs = platforms.map(async (p) => {
     try {
-      const rows = p === 'reddit' ? await reddit(query, { limit }) : p === 'hn' ? await hn(query, { limit }) : p === 'youtube' ? await youtube(query, { limit }) : await bySite(p, query, { limit, env });
+      const rows = p === 'reddit' ? await reddit(query, { limit, fetchImpl }) : p === 'hn' ? await hn(query, { limit, fetchImpl }) : p === 'youtube' ? await youtube(query, { limit, fetchImpl }) : await bySite(p, query, { limit, env });
       return { platform: p, rows };
     } catch (e) { return { platform: p, rows: [], error: e.message }; }
   });

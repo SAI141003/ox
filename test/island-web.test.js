@@ -97,21 +97,30 @@ test('a run appears on the web island and its approval is answered from there', 
   assert.equal(fs.readFileSync(path.join(cwd, 'approved.txt'), 'utf8'), 'yes', out);
 });
 
-test('hold to talk: /api/dictate needs the token and turns speech into text', { skip: (process.platform !== 'darwin' || !(await import('node:child_process')).spawnSync('which', ['whisper-cli']).stdout?.length) && 'needs say and whisper.cpp' }, async () => {
-  const fs = await import('node:fs'); const os = await import('node:os'); const path = await import('node:path');
-  const { spawnSync } = await import('node:child_process');
-  const { createIslandServer } = await import('../src/island-web.js');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-dictate-'));
-  spawnSync('say', ['-o', path.join(dir, 'a.aiff'), 'Testing the island']);
-  spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', path.join(dir, 'a.aiff'), '-ar', '16000', '-ac', '1', path.join(dir, 'a.wav')]);
-  const srv = await createIslandServer({ watcher: { scan() {}, snapshot: () => [], answer: () => false, close() {} } });
+test('hold to talk: /api/dictate authenticates, transcribes audio and removes the recording', async () => {
+  let recording = null;
+  const srv = await createIslandServer({
+    watcher: { scan() {}, snapshot: () => [], answer: () => false, close() {} },
+    transcribeAudio: async (file) => {
+      recording = file;
+      assert.ok(fs.statSync(file).size > 0);
+      return { segments: [{ text: 'Testing the island' }] };
+    },
+  });
   try {
     const base = srv.url.replace(/\?.*/, '');
     const t = new URL(srv.url).searchParams.get('t');
     assert.equal((await fetch(`${base}api/dictate`, { method: 'POST', body: 'x' })).status, 401);
-    const r = await (await fetch(`${base}api/dictate?t=${t}`, { method: 'POST', headers: { 'content-type': 'audio/wav' }, body: fs.readFileSync(path.join(dir, 'a.wav')) })).json();
+    const response = await fetch(`${base}api/dictate?t=${t}`, {
+      method: 'POST',
+      headers: { 'content-type': 'audio/wav' },
+      body: Buffer.from('test audio bytes'),
+    });
+    assert.equal(response.status, 200);
+    const r = await response.json();
     assert.match(r.text, /testing the island/i);
     assert.equal(r.typed, false, 'typed only when asked');
-    assert.equal(fs.readdirSync(os.tmpdir()).filter((f) => /^ox-voice-.*\.wav$/.test(f) && fs.statSync(path.join(os.tmpdir(), f)).mtimeMs > Date.now() - 60_000).length, 0, 'the recording is removed');
-  } finally { await srv.close?.(); fs.rmSync(dir, { recursive: true, force: true }); }
+    assert.ok(recording, 'audio was handed to the transcription adapter');
+    assert.equal(fs.existsSync(recording), false, 'the recording is removed');
+  } finally { await srv.close?.(); }
 });

@@ -8,6 +8,9 @@ import { prepareSandbox } from './sandbox.js';
 
 export const MCP_PROTOCOL_VERSION = '2025-11-25';
 export const MCP_CLIENT_INFO = { name: 'ox', version: '0.1.0' };
+// Some real MCP servers compile/load sizeable tool catalogs before replying to
+// initialize. The 10s default caused valid servers to be killed during startup.
+export const DEFAULT_MCP_STARTUP_TIMEOUT_MS = 30_000;
 export const MAX_TOOLS_PER_SERVER = 200;
 export const STDERR_TAIL_LINES = 50;
 export const MAX_CONTENT_CHARS = 25_000;
@@ -207,7 +210,7 @@ export class McpHub {
     // through, so a JSON-RPC server behaves identically inside the prefix.
     this.sandbox = opts.sandbox && typeof opts.sandbox === 'object' ? opts.sandbox : null;
     this.startupTimeoutMs =
-      Number.isFinite(opts.startupTimeoutMs) && opts.startupTimeoutMs > 0 ? opts.startupTimeoutMs : 10_000;
+      Number.isFinite(opts.startupTimeoutMs) && opts.startupTimeoutMs > 0 ? opts.startupTimeoutMs : DEFAULT_MCP_STARTUP_TIMEOUT_MS;
     // Wave5a G: fail-closed startup validation of the allow list.
     this.allowedHosts = normalizeAllowedHosts(opts.allowedHosts);
     this.servers = new Map();

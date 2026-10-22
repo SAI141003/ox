@@ -1,110 +1,179 @@
-# Hermes Agent — gap analysis vs ox
+# Agent platform comparison — verified 2026-10-21
 
-Hermes Agent ([NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent),
-MIT, ~240k stars) is the widest-feature open coding agent: the widest tool fan,
-the widest provider surface, and the weakest verification spine. Latest released
-tag at check time: **v0.21.5 / v2026.9.24**. Date checked: **2026-09-30**.
+Scope: NousResearch's current Hermes Agent repository and first-party Hermes
+documentation, compared with the Ox source and tests in this checkout. This is a
+capability audit, not a claim that either product has been exhaustively tested
+against every provider, operating system, or deployment. Upstream docs and code
+change frequently; re-check before treating this as a release certification.
 
-Marks below are ox's own status against that release. `PARTIAL` means the
-capability exists in a weaker form — the module that would need to change is
-named in every row.
+Primary references: [Hermes Agent repository](https://github.com/NousResearch/hermes-agent),
+[Persistent Memory](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory),
+[Memory Providers](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory-providers),
+[Tools & Toolsets](https://hermes-agent.nousresearch.com/docs/user-guide/features/tools),
+[Skills System](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills),
+[Scheduled Tasks](https://hermes-agent.nousresearch.com/docs/user-guide/features/cron),
+[Messaging Gateway](https://hermes-agent.nousresearch.com/docs/user-guide/messaging),
+[Curator](https://hermes-agent.nousresearch.com/docs/user-guide/features/curator), and
+[LSP diagnostics](https://hermes-agent.nousresearch.com/docs/user-guide/features/lsp).
 
-## 1. What Hermes has that ox does not
+## Memory: actual capacity and architecture
 
-| Capability | ox | ox module that would change |
+| Dimension | Hermes (first-party docs) | Ox (this checkout) |
 |---|---|---|
-| Background, non-foreground desktop automation (`computer_use` / cua-driver over AX/UIA/AT-SPI; the cursor never moves) | PARTIAL | `src/tools/operator.js` — drives only the frontmost app |
-| Bounded computer-use capability manifests | NO | new manifest layer over `src/tools/` |
-| A2A (agent-to-agent) protocol | NO | new; no `a2a` reference anywhere in `src/` |
-| Mixture-of-Agents exposed as selectable models | NO | `src/bots.js`, `src/model-registry.js` |
-| First-party `web_search` / `web_extract` with pluggable backends + TTL cache | NO | web is MCP-template only; no native tool |
-| LSP-backed semantic diagnostics | PARTIAL | syntax advisory only, no language server |
-| Memory provider plugin abstraction (8 backends) | PARTIAL | `src/honcho-user.js` is hardcoded to one backend |
-| Live subagent steering (`steer` / `stop` mid-flight) | PARTIAL | `src/subagent.js` is resumable but not steerable |
-| Cron that runs an agent with per-job memory, continuity, and monitor mode | PARTIAL | `src/cron-scheduler.js` only emits crontab / launchd snippets |
+| Always-loaded curated memory | `MEMORY.md` 2,200 characters (~800 tokens) plus `USER.md` 1,375 characters (~500 tokens); capacity shown in the prompt; overflow is refused, not silently dropped. | Project `.agent/MEMORY.md` index is capped for prompt injection at 150 lines / 20 KiB; overflow remains on disk and is reported. The temporal graph has no fixed entry-count cap; each fact is limited to 1,000 characters. Prompt selection is bounded (up to 12 stable + 8 recent user facts, plus task-relevant recall). |
+| Structure / recall | Two compact files plus optional external provider; frozen snapshot at session start. | Separate user and per-project append-only JSONL temporal graphs, typed facts, entities/slots, supersession history, time validity/expiry, strength/importance, lexical BM25-style ranking, recency decay, one-hop entity expansion; plus project index/topic notes, brain notes, episodes, procedural memory and subagent memory. |
+| Update / deletion | `memory` tool supports add/patch/remove; exact char-cap feedback and duplicate prevention. | Similar entries are deduplicated/updated; changed values supersede prior facts with history; CLI/UI can inspect and forget (forget marks inactive, retained on disk). `memory_add` can append detail to topic notes. |
+| Safety / consent | Injection, credential, and invisible Unicode scanning; optional `write_approval` stages memory changes for review; notification of writes. | Shared persistence screen blocks credential-shaped and injection-shaped content at write and read time across memory and related stores; withheld content is surfaced and audited. Explicit memory tool and app action save locally. App chat preference learning is opt-in; terminal learning can be disabled with `OX_LEARN=0`; incognito must neither inject nor write memory. There is no general approval queue for a model-requested memory write today. |
+| Conversation recall | All CLI and messaging sessions in SQLite/FTS5; search yields actual messages and supports browse/scroll, with no LLM call claimed for search itself. | CLI transcript search exists, including BM25-style index and a raw JSONL substring fallback. A BM25 session-index module provides search/browse/scroll but is currently instantiated in `src/platform.js` without an evident indexing/search-tool integration. This is a concrete wiring gap to resolve before claiming parity with Hermes' agent-callable cross-session recall. |
+| External memory | Built-in memory always remains; two bundled provider plugins (RetainDB and ByteRover), with additional catalog integrations including Honcho, Hindsight, Supermemory, Mem0, OpenViking and Holographic. One external provider active at a time. Context prefetch, turn sync, end-of-session extraction and mirrored writes are provider-dependent. | Honcho integration exists, as do plugins/MCP and local memory; there is not yet a uniform, provider-neutral memory adapter matching Hermes' documented provider selection and lifecycle. Connecting cloud memory would send conversation/context data off-device and should remain explicit opt-in with per-provider disclosure. |
 
-## 2. Where ox is already ahead
+**Capacity conclusion:** Hermes' built-in always-loaded memory is deliberately small and
+predictable (~1,300 tokens total). Ox can retain a much larger local corpus, and its
+graph carries temporal/history metadata, but only a bounded subset is injected each
+turn. Neither product's docs establish a true finite maximum for all disk-backed
+history; “unlimited” should be read as no product-level session-count quota, not
+unlimited storage. Ox's append-only graph can grow until compacted; compaction keeps
+the latest record per fact ID. Session transcripts are also local JSONL. The web app
+does not persist chats by default; local browser history is opt-in. Provider requests
+still contain the prompt and code/context needed to answer.
 
-**Partly evidence-gated persistence.** `ox episode promote` (`src/memory.js:627`)
-requires at least one lesson **and** (`score >= 6` **or** `verified`), otherwise it
-returns `kind: 'unqualified'` and the CLI exits **4** (`src/cli.js:2092`).
+## Current feature map
 
-The secret/persistence half is closed by **one shared screen** covering every
-store ox writes and every path it reads back into a prompt; the pattern tables
-live only in `src/memory.js` (`screenMatch`, `screenPersistText`,
-`screenReadLines`, `screenReadTexts`, `shortWithheldNotice`) and no module
-re-derives them. It matches credential shapes (provider key prefixes, JWTs, PEM
-private-key blocks, long bearer tokens, inline `secret = <opaque>` assignments)
-and prompt-injection phrasing, refusing with an error that names the pattern
-class and never echoes the text.
+| Hermes capability | Ox evidence / status | What remains |
+|---|---|---|
+| Multi-provider coding agent, tools/toolsets, MCP and plugins | Ox has multi-provider routing, MCP, plugins, a large built-in tool set, adaptive schema narrowing and local models. See `src/providers/`, `src/tools/`, `src/plugins.js`, tests. | Audit provider- and platform-level tool compatibility with real credentials; this checkout has no valid hosted inference credential, so live comparisons cannot prove all paths. |
+| Skills, progressive/on-demand context, learned procedures and skill cleanup | Ox supports skills, skill usage/curation/archiving, evidence-qualified drafts, and `ox self-improve`; skills are reviewed/accepted rather than silently promoted. | Hermes allows direct agent-authored skill changes with optional approval and a background curator; Ox intentionally stages drafts but has no memory-write review queue. Compare UX, not just feature count. |
+| Session search, recall and scroll | Ox stores JSONL sessions and exposes CLI history search. `src/session-index.js` has BM25 search and scroll/browse primitives, but the platform instance is not visibly connected to a tool or indexer. | Wire the index lifecycle and agent tool to session transcripts (or remove dead wiring); provide source/session IDs, exact message hits, and pagination. Protect Incognito sessions from indexing. |
+| Cron / scheduled agents | Ox has schedule/cron modules and app schedule surfaces. | Verify in a running daemon that per-job model, project, skills, continuity, delivery and no-agent execution all work end-to-end; do not infer complete parity from module presence. |
+| Messaging gateway / voice and cross-platform continuity | Ox has Telegram, Discord and Slack gateways, phone bridge, voice and mesh features. | Hermes documents a broader platform roster (including WhatsApp, Signal, email, Teams, Matrix, iMessage via BlueBubbles, etc.). Ox does not have equivalent turnkey coverage for every listed channel. |
+| Persistent, profile-scoped external memory | Ox has a local temporal graph and Honcho integration. | Provider-neutral lifecycle (selection/status, background recall/sync, provider write mirroring, strict opt-in/data disclosure) is still a gap. Do not send user/project content to a cloud provider by default. |
+| Computer-use / remote execution | Ox has local operator tools and a deliberate security boundary around remote machine control; mesh is not authorization to execute commands on another machine. | Hermes deployment backends and Ox mesh are not the same capability. No implicit remote execution should be added from this comparison. |
+| LSP semantic diagnostics | Ox has repository maps and language-aware analysis, but no general language-server manager comparable to Hermes' documented post-write semantic diagnostics. | Consider an opt-in local LSP diagnostic adapter with explicit server installation/launch controls and safe workspace scoping. |
+| Mixture of Agents, delegated execution, model gateway | Ox has parallel subagents, agent teams, model routing, and provider adapters. | Validate provider/model feature combinations and cancellation/steering; avoid claiming parity with all Hermes backends or orchestration modes. |
+| Cross-platform deployment and terminal UI | Ox ships macOS app/island plus CLI/web/server surfaces and is actively tested across targets. Hermes documents Linux/macOS/Windows/Termux and container/SSH/cloud terminal backends. | Linux desktop and signed distribution items remain separate release gaps; use the CI matrix for platform proof. |
 
-- **Write = refuse.** `addMemory` (`.agent/MEMORY.md`, `topics/*`),
-  `recordLesson`, `writeSessionNote` (`.agent/notes/`) and `writeEpisode`
-  (`.agent/episodes/`) — each also screened in the derived filename slug, since
-  `memory_search` echoes hit paths to the model — `recordPattern`
-  (`.agent/procedural.md`), subagent-scoped `addEntry`
-  (`.agent/_sub/<id>/MEMORY.md`), and `screenFilePaths` (subagent
-  `filesTouched`).
-- **Read = withhold, never rewrite.** `loadMemoryBlock`, `memory_list` /
-  `memory_get` / `memory_search` (including stored hit paths),
-  `formatProceduralContext` / `recallPatterns`, the subagent lessons block plus
-  scoped block/list/get/search and `filesTouchedBlock`, `screenSkillBody` +
-  skill-index frontmatter (`/skill <name>`, the `# SKILLS` prompt block), and
-  `replayMessages` (`--resume` / `--continue` / `/resume` / `/rewind`), which
-  covers `tool_call` arguments and tool results while preserving order and
-  `tool_call`/`tool_result` pairing. Entries written before the screen existed are
-  no longer re-injected; a withheld line is skipped, never echoed, and the file on
-  disk is left untouched — deletion stays the user's call. Skips are counted in the
-  block/tool notice, `memoryScreenStats()`, and one `t: "memory-screen"` /
-  `event: "read-withheld"` row per read in the `OX_AUDIT` ledger; a replay also
-  warns on stderr. Cost is zero added bytes when nothing is withheld, one
-  ~26-token notice when something is.
+## Priorities from this review
 
-Precision guards keep ordinary prose storable (`token = config.getToken()`,
-`OPENAI_API_KEY`, "you are now able to run the suite"). One deliberate residual: a
-subagent’s `finalText` — its live answer — passes through unscreened into the
-parent’s result; its persisted `result`, `error` and `filesTouched` are. Hermes has
-no memory-load, tool-result or session-replay chokepoint at all, so whatever a
-store holds is re-injected verbatim.
-`.agent/MEMORY.md` is still re-injected every turn by `src/context.js`, but only in
-screened form.
-The **evidence gate is still missing**: `memory_add` validates only `type` and a
-non-empty `statement`, with no source, citation, or score requirement, so most
-memories are still *not* born through the gate. Hermes ships *advisory* scanning
-only — its Curator auto-archived 54 of 87 skills on a live install (#18373).
+1. **Connect Ox's existing session index.** It is the clearest code-level omission:
+   the search/browse/scroll API exists but is not wired into `platform.js`'s agent
+   tools or an indexing lifecycle. Add end-to-end tests for indexing, exact hit
+   retrieval, pagination, corruption/torn lines, and Incognito exclusion before
+   advertising agent-accessible historical recall.
+2. **Offer an optional memory-write approval mode.** Keep today's explicit/local
+   workflow as default; add a durable pending queue and review/approve/reject UI/CLI
+   only if it can atomically pin the exact fact version being approved, reject stale
+   edits, surface automatic learning, and preserve the existing security screen.
+3. **Show memory capacity and lifecycle clearly.** Expose graph counts/bytes, index
+   cap/truncation, last write, sources, and what is actually injected into the next
+   prompt. Distinguish “stored” from “available to this turn.”
+4. **Benchmark semantic diagnostics and external memory providers separately.** LSP
+   can be local; provider adapters can incur external data egress and extra model/API
+   costs. Keep opt-in, consent, pricing, and failure behavior explicit.
 
-**No silent paid fallbacks, by design.** Hermes: $4.12 spent across 46.9M tokens
-accidentally (#97942), 5x cost escalation on re-login (#68144), silent model
-substitution (#33174). ox fails closed on unknown pricing and announces every
-switch (§3).
+## Verification and honesty
 
-**Append-only JSONL sessions, never a SQLite `state.db`.** A crashed or corrupt
-session file costs you that one transcript and nothing else. Hermes' `state.db`
-corruption cluster: #5563, #92996, #100788, #97940/#98077.
+This comparison is based on source/docs, not a live product-vs-product benchmark.
+The full Ox test suite on this checkout executed 2,441 tests: 2,192 passed, 0
+failed, and 249 were skipped (duration 223.4 seconds). Targeted memory, web-chat,
+pricing, and session tests also passed before that run. This verifies the current
+checkout's tests, not every real provider, GUI path, operating system, or release
+build. Provider latency, token cost, and model quality require identical tasks,
+models, accounts, hardware/network conditions, and credentials; no such benchmark
+was run here.
 
-**Adaptive context that supports sub-64K local models.** Hermes hard-rejects
-startup with `MINIMUM_CONTEXT_LENGTH = 64_000` (#31600, #53347), which pushes
-users to lie about their context window. ox adapts instead of refusing.
+## Xiryn — repository shown in the screenshot
 
-**Zero-dep install.** `node bin/ox.js`, no `npm install`, no build. Hermes needs
-Python >= 3.11 + uv + Node.
+The screenshot is Xiryn, repository
+[`SouravBeraAkaSpeed/xiryn`](https://github.com/SouravBeraAkaSpeed/xiryn), not
+OpenMausBot. Its README and source were inspected at commit
+[`0a55cd9`](https://github.com/SouravBeraAkaSpeed/xiryn/commit/0a55cd9). These are
+the upstream project's implementation/documentation claims, not an independent
+installation or security certification.
 
-## 3. What we changed in response
+| Xiryn feature area | Ox status from this checkout | Assessment / appropriate next step |
+|---|---|---|
+| Personal agents, separate roles/instructions/models, squads, task continuity | Ox has configurable agents/providers, agent teams, subagents, work tracking, resumable sessions, and project memory. | Core orchestration is present, but Xiryn's dedicated agent/workstation lifecycle is a different product shape. Compare per-agent identity, workspace, memory and lifecycle UX before claiming equivalent. |
+| One Linux desktop per agent, Docker, persistent home, Chromium, live view and pause/takeover | Ox `--backend docker` runs shell commands in one temporary per-process container, mounts the project, and removes it at exit. It does not create one persistent GUI desktop per bot, include Chromium/screen control, or offer takeover. | **Major gap.** Design an opt-in, isolated per-agent workstation service as a separate backend, with lifecycle controls, narrow workspace mounts, resource limits, and explicit live-view/takeover consent. Do not repurpose the current shell-only backend or give a bot host-wide access. |
+| Any model / local inference | Ox routes to hosted and local providers and has model discovery/routing. | Strong overlap. Validate actual installed models and tool-call compatibility per provider; README support is not proof every model works equally. |
+| Local-first storage and update transparency | Ox keeps CLI sessions/memory/usage locally and describes app-chat persistence explicitly. | Overlap. Continue to disclose provider egress (prompt/code sent for inference), app history choices, and update checks. |
+| Telegram access from outside the laptop | Ox has a Telegram gateway and phone bridge/approval path, plus Discord and Slack gateways. | **Present, but not the same surface.** Xiryn documents per-agent/squad selection, live screenshots/progress, and workstation takeover from Telegram. Verify/extend Ox's phone UX only within explicit pairing and approval boundaries; never imply offline remote control. |
+| Encrypted vault for logins/payment details, masked hints, site-bound autofill, payment approval | Ox has credential screening, key storage, `.oxignore`, and approval gates, but no Xiryn-style autofill/payment vault. | **Absent by design.** Do not copy payment/autofill functionality as a quick feature. It requires threat modeling, platform keychain, domain binding, payment confirmation, replay prevention, and a dedicated security review. |
+| Web search/research with citations; browser fallback | Ox has web search/fetch, research and browser tooling. | Present in parts; no equivalent Firecrawl account/search-fallback contract established by this source scan. Test citation retention, site failures and local-vs-provider egress separately. |
+| Background work, notifications, spend tracking | Ox supports schedules/flows, daemon tasks, desktop/phone notifications and usage/cost tracking. | Strong overlap; Xiryn's README lists recurring schedules as roadmap rather than shipped, so don't count them as an Xiryn match. Ox schedules intentionally require opt-in and a budget cap. |
+| Speech input | Ox has dictation/voice features, with platform-specific backends and honest fallbacks. | Overlap; compare on-device behavior and actual platform availability rather than feature labels. |
+| Security boundary | Xiryn says its web server is loopback-only, agents run inside their workstation containers, and Telegram is owner-paired. | Ox has tool approval modes, workspace controls, incognito boundaries, and encrypted mesh identity. These are different boundaries; adding a workstation backend must preserve or strengthen current approval and privacy guarantees. |
 
-- **Cost honesty.** `model_overrides` plus `fallback_policy.cost: free_only`,
-  which fails closed on unknown pricing instead of guessing, and an explicit
-  non-dismissible `model_switch` event so every target change is announced:
-  `src/cost.js`, `src/config.js`, `src/agent.js`.
-- **Degraded-history honesty.** `loadSessionWithStatus` returns `ok` / `empty` /
-  `unavailable`, so a failed transcript read can never masquerade as an empty
-  conversation; `OX_STRICT_READ=1` aborts instead of degrading; resume sites in
-  `src/cli.js` print an explicit warning.
-- **Identity.** The ox logo and the converging particle-swarm intro
-  (`src/logo.js`), with `NO_COLOR=1` / `OX_NO_ANIM=1` opt-outs.
+Xiryn also documents a local setup path (Docker, model provider or Ollama), optional
+Firecrawl and Telegram, per-turn usage, notifications, persistent/disposable
+workstations, reset/delete behavior, and a vault. Its current README lists scheduled
+and recurring tasks as a roadmap item, so this report does **not** classify those as
+shipped. No Xiryn setup script was run and no Docker desktop session was launched.
 
-## 4. Not verified
+## OpenMausBot — separate GitHub project
 
-- v0.22.0 release notes were unpublished as of 2026-09-30.
-- main-branch source beyond the released tags was not read.
-- Issue counts drift at Hermes' release cadence; numbers above are as-seen
-  2026-09-30.
+The second target is the repository
+[`milind-soni/OpenMausBot`](https://github.com/milind-soni/OpenMausBot), inspected at
+[`bd5e209`](https://github.com/milind-soni/OpenMausBot/commit/bd5e209), plus the
+[OpenMausBot feature documentation](https://docs.openmausbot.com/docs/features).
+The project calls itself OpenMausBot (also MausBot); it is separate from Xiryn.
+The feature docs explicitly distinguish released capabilities from proposals, but
+this review did not install/run the app or independently verify service accounts.
+
+| OpenMausBot feature area | Ox status from this checkout | Assessment / appropriate next step |
+|---|---|---|
+| Agent roster, per-bot role/model/folder, persistent chats, live tool events | Ox has agents/providers, project-scoped sessions, streaming runs and a web app. | Present in core; audit per-bot configuration and discoverability in the UI separately. |
+| Edit/branch/rewind/pin/react/export/share chat controls | Ox has session continuation, `/undo`, rewind/history and exports, but not every conversation-management affordance as a single coherent app UI. | Partial. Inventory each visible operation and its persistence/undo semantics before implementation. |
+| Rooms, agent-to-agent delegation, queueing/steering | Ox has agent teams, subagents, task board, run cancellation/steering surfaces. | Partial-to-present; room-style shared conversation and queued message UX are not assumed equivalent. |
+| Per-task tokens and cost | Ox has usage logs, cost estimates, model/provider prices, budgets and trace views. | Present; improve in-turn visibility only if estimates are labeled and match provider billing. |
+| Readable/editable bot memory | Ox has local temporal memory, project notes, CLI/app controls and skill drafts. | Present with a different architecture; transcript recall wiring and reviewable memory-write queue remain gaps from the Hermes audit. |
+| Local host, isolated Docker/Podman VM, hosted computers, self-hosted VPS, screen preview/takeover, Android USB | Ox has local operator tools, a shell-only ephemeral Docker backend, and a direct paired-machine mesh. | **Partial/major UX and capability gap.** There is no single bot-level computer picker spanning those backends, and mesh is a different trust model. Do not equate paired-machine access to a disposable agent workstation. |
+| Composio connected apps (hundreds; multiple labeled accounts) | Ox has plugins/MCP and email plus messaging integrations, not a unified OAuth marketplace with per-bot labeled accounts. | Partial. A provider-neutral connector UX/permission registry is a candidate, but each connector needs real account authorization and least-privilege scopes. |
+| One-time/weekday routines, secret webhooks, app-event triggers, run receipts | Ox has opt-in, cost-capped schedules and flows/webhook support. | Partial: the full event-triggered-app integration and durable per-run receipt UX are not established as equivalent. Build only with replay protection, secret rotation, approval, and spend controls. |
+| Bot-specific TTS, Mac dictation/call mode, paired iOS companion with search/approvals/view | Ox has voice/dictation, Telegram/Discord/Slack gateways, phone bridge/approval, and desktop web/app surfaces. | Partial. No equivalent native iOS client has been verified in Ox. Compare platform behavior and the exact approval/viewing scope. |
+| Cross-platform packaged app and automatic updates | Ox has macOS app/island, web/CLI, and a CI matrix; some distribution targets remain open in the handoff. | Partial. A successful source/CI test is not a signed installer or automatic updater. |
+| Theme, sidebar, pinned messages, attachments, accessibility | Ox has theme controls, app navigation, media/attachments and accessibility work. | Needs visual/interaction acceptance testing; source presence alone doesn't certify layout or usability. |
+
+The project documentation also advertises integrations, computer backends, routine
+management, chat editing/search, and platform-specific safety gates. Notable
+constraints in its own docs: Ubuntu Wayland host control is disabled under a safety
+hold; Windows installer signing is incomplete; and the iOS companion keeps sensitive
+workspace configuration on the host. These caveats matter as much as the feature
+list. The current README/docs describe a release-oriented feature set; this audit
+does not exercise its native app, OAuth, cloud desktop, or phone client.
+
+## What to build in Ox from these comparisons
+
+This is not a request to copy either application's source or reproduce every screen.
+Both projects cover large products with differing security and deployment models.
+The audit yields the following safe Ox work packages; each needs its own design,
+acceptance criteria and tests before it can be called done:
+
+1. **Per-agent isolated workstations (Xiryn's key differentiator).** New backend,
+   persistent container identity, per-agent working home, optional Chromium GUI,
+   preview, pause/takeover, restart/reset/delete, offline network policy, CPU/RAM/disk
+   quotas, and no host home/key mounts. This is not shipped by Ox's current
+   `--backend docker` command runner.
+2. **Connected-app catalog and account scopes (OpenMausBot).** Discover, OAuth
+   connect/disconnect, show scopes/account labels, and route tool access by agent.
+   Add connectors only after permissions and secret storage are reviewed.
+3. **App-event automations and receipts (OpenMausBot).** Add source-filtered event
+   triggers, replay-safe webhook secrets, per-run context/receipts, pause/edit/undo,
+   attention notifications, and budgets. Current schedules/flows are not a blanket
+   substitute.
+4. **Conversation controls and historical recall.** Close the session-index wiring
+   gap documented above; then test exact hit retrieval/pagination and add explicit
+   edit/branch/export/share affordances where the Ox UI lacks them.
+5. **Mobile continuity.** Audit which phone bridge actions can safely be completed
+   from paired devices; make approvals, run status, search, and any screen viewing
+   clear and revocable. Do not advertise an iOS companion until it exists and passes
+   platform tests.
+6. **Keep intentionally high-risk features separate.** Do not add automated
+   payment, password/card autofill, unconstrained host computer use, or remote
+   execution merely to match a competitor's feature list. They require explicit
+   user demand, threat models, opt-in, narrow grants, and security acceptance.
+
+The only meaningful design decision from these sources that should affect Ox now is
+to treat **agent identity + isolated persistent computer + approvals + cost + logs**
+as one coherent unit, rather than presenting shell containers, mesh peers, and
+browser control as interchangeable. That is an architecture roadmap item, not a
+claim that all competitor features have already been added.
