@@ -18,6 +18,7 @@ import { c, truncate } from './ui.js';
 import { socketPathFor } from './ipc.js';
 import { attachSession } from './daemon-attach.js';
 import { listSessions, latestSessionFile, loadSessionWithStatus } from './session.js';
+import { detectedCodingTools, liveAgents } from './agents-live.js';
 import {
   addSchedule,
   claimSchedule,
@@ -64,7 +65,7 @@ const USAGE = [
   '  ox daemon doctor [--fix]        inspect the runtime state; --fix repairs it',
   '  ox daemon log [--lines <n>]     the supervisor\'s own account of what it did',
   '',
-  '  ox agents [--json] [--limit <n>] running / idle / saved sessions',
+  '  ox agents [--json] [--limit <n>] Ox daemon sessions plus live/detected coding tools',
   '  ox attach <id> [--no-replay]    stream a running session; detach leaves it running',
   '  ox shutdown [--force]           stop workers + supervisor (alias: ox daemon stop)',
   '',
@@ -287,6 +288,14 @@ async function cmdDaemonLog(args, json) {
 // this machine cannot do" path in this file.
 const SUBAGENT_CONTROL_TIMEOUT_MS = 3000;
 
+// The desktop app and the terminal must not disagree about what other coding
+// tools Ox can see on this computer.  Keep this read-only and distinguish a
+// live session from an installed app/extension: detecting an extension is not
+// evidence that it owns an active conversation.
+export function externalAgentSnapshot({ live = liveAgents, detected = detectedCodingTools } = {}) {
+  return { live: live({ fresh: true }), detected: detected() };
+}
+
 async function sendSubagentControl(socketPath, frame) {
   const { connectIpcClient } = await import('./ipc.js');
   return new Promise((resolve) => {
@@ -376,9 +385,10 @@ export async function cmdAgents(args = []) {
   const limitArg = Number(flagValue(args, '--limit'));
   const savedLimit = Number.isFinite(limitArg) && limitArg > 0 ? Math.floor(limitArg) : 15;
   const snap = await agentsSnapshot({ savedLimit });
+  const external = externalAgentSnapshot();
 
   if (json) {
-    console.log(JSON.stringify({ t: 'agents', ...snap }));
+    console.log(JSON.stringify({ t: 'agents', ...snap, external }));
     return;
   }
 
@@ -420,6 +430,21 @@ export async function cmdAgents(args = []) {
     console.log(
       `  ${pad(r.id, 20)} ${pad((r.mtime ?? '').replace('T', ' ').slice(0, 19), 20)} ${truncate(r.title || r.firstUserPrompt || r.file, 80)}`
     );
+  }
+
+  console.log(c.bold(`\nother coding sessions (${external.live.length})`));
+  if (!external.live.length) console.log(c.dim('  (no recent external sessions; installed tools are listed below)'));
+  for (const s of external.live) {
+    const usage = s.tokens ? ` · ${s.tokens.in.toLocaleString('en-US')} in / ${s.tokens.out.toLocaleString('en-US')} out${s.tokens.cached ? ` (${s.tokens.cached.toLocaleString('en-US')} cached)` : ''}` : '';
+    const activity = s.doing ? ` · ${truncate(s.doing, 48)}` : '';
+    console.log(`  ${pad(s.tool, 14)} ${pad(s.state, 9)} ${pad(s.project || '-', 22)} ${s.model || '-'}${activity}${usage}`);
+  }
+
+  console.log(c.bold(`\ndetected coding tools (${external.detected.length})`));
+  if (!external.detected.length) console.log(c.dim('  (none found in standard app and extension locations)'));
+  for (const tool of external.detected) {
+    const session = tool.sessionSupport === 'native' ? 'session adapter' : 'detected only';
+    console.log(`  ${pad(tool.tool, 44)} ${pad(tool.source, 18)} ${pad(tool.state, 10)} ${session}`);
   }
 }
 

@@ -545,3 +545,19 @@ Enterprise license. NVIDIA's current documentation confirms both the free Develo
 Program scope and the production-license requirement; the stated Enterprise pricing
 starts at $4,500 per GPU per year. See NVIDIA's [General NIM FAQ](https://docs.api.nvidia.com/nim/docs/product)
 and [Run NIM Anywhere](https://docs.api.nvidia.com/nim/docs/run-anywhere).
+
+## Installed-agent inventory parity — 2026-10-22
+
+Ox's app endpoint already discovers external coding sessions and installed coding
+tools without reading credentials. A CLI gap made `ox agents` show only Ox's daemon
+workers, which incorrectly suggested that tools such as Claude, Kimi, Cline, Kilo,
+Cursor, Copilot, Continue, Hermes, and Codex were not visible. The same command now
+also shows a fresh, read-only external-session list and installed-app/extension
+inventory; JSON exposes this as `external.live` and `external.detected`.
+
+On this Mac at verification time, the app/CLI inventory found the active Codex session
+and 21 detected coding tools/extensions, including running Claude and Kimi apps. A
+detected tool is explicitly labelled either `session adapter` or `detected only`;
+Ox does not invent an active session or claim it can resume a proprietary session it
+cannot safely interpret. The regression test verifies that this terminal view calls
+the same `liveAgents()` and `detectedCodingTools()` sources as the app.
