@@ -43,7 +43,7 @@ still contain the prompt and code/context needed to answer.
 |---|---|---|
 | Multi-provider coding agent, tools/toolsets, MCP and plugins | Ox has multi-provider routing, MCP, plugins, a large built-in tool set, adaptive schema narrowing and local models. See `src/providers/`, `src/tools/`, `src/plugins.js`, tests. | Audit provider- and platform-level tool compatibility with real credentials; this checkout has no valid hosted inference credential, so live comparisons cannot prove all paths. |
 | Skills, progressive/on-demand context, learned procedures and skill cleanup | Ox supports skills, skill usage/curation/archiving, evidence-qualified drafts, and `ox self-improve`; skills are reviewed/accepted rather than silently promoted. | Hermes allows direct agent-authored skill changes with optional approval and a background curator; Ox intentionally stages drafts but has no memory-write review queue. Compare UX, not just feature count. |
-| Session search, recall and scroll | Ox stores JSONL sessions and exposes CLI history search. `src/session-index.js` has BM25 search and scroll/browse primitives, but the platform instance is not visibly connected to a tool or indexer. | Wire the index lifecycle and agent tool to session transcripts (or remove dead wiring); provide source/session IDs, exact message hits, and pagination. Protect Incognito sessions from indexing. |
+| Session search and recall | Ox stores JSONL sessions, exposes CLI history search, and gives agents a read-only `session_recall` tool over matching terminal-transcript excerpts. Results name the local transcript, project folder, and date; the existing secret redactor runs before content reaches a model. | The experimental `session-index.js` BM25 index/scroll implementation is still not the serving path. Recall currently uses the established transcript search and does not expose full-message scrolling. Incognito sessions remain excluded. |
 | Cron / scheduled agents | Ox has schedule/cron modules and app schedule surfaces. | Verify in a running daemon that per-job model, project, skills, continuity, delivery and no-agent execution all work end-to-end; do not infer complete parity from module presence. |
 | Messaging gateway / voice and cross-platform continuity | Ox has Telegram, Discord and Slack gateways, phone bridge, voice and mesh features. | Hermes documents a broader platform roster (including WhatsApp, Signal, email, Teams, Matrix, iMessage via BlueBubbles, etc.). Ox does not have equivalent turnkey coverage for every listed channel. |
 | Persistent, profile-scoped external memory | Ox has a local temporal graph and Honcho integration. | Provider-neutral lifecycle (selection/status, background recall/sync, provider write mirroring, strict opt-in/data disclosure) is still a gap. Do not send user/project content to a cloud provider by default. |
@@ -55,11 +55,11 @@ still contain the prompt and code/context needed to answer.
 
 ## Priorities from this review
 
-1. **Connect Ox's existing session index.** It is the clearest code-level omission:
-   the search/browse/scroll API exists but is not wired into `platform.js`'s agent
-   tools or an indexing lifecycle. Add end-to-end tests for indexing, exact hit
-   retrieval, pagination, corruption/torn lines, and Incognito exclusion before
-   advertising agent-accessible historical recall.
+1. **Improve the existing session recall path.** Agent-accessible recall now uses
+   the established transcript search with redacted excerpts. The remaining
+   `session-index.js` BM25 experiment should either become a separately verified,
+   incrementally maintained index with paginated message access, or be removed;
+   it must not silently replace the transcript source of truth.
 2. **Offer an optional memory-write approval mode.** Keep today's explicit/local
    workflow as default; add a durable pending queue and review/approve/reject UI/CLI
    only if it can atomically pin the exact fact version being approved, reject stale

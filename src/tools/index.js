@@ -36,6 +36,7 @@ import { editVideoTool, VIDEO_TOOL_SCHEMAS } from './video.js';
 import { installSkillTool, INSTALL_SKILL_SCHEMAS, INSTALL_SKILL_TOOLS, INSTALL_SKILL_KEYWORDS } from './install-skill.js';
 import { codeGraphTool, CODE_GRAPH_TOOL_SCHEMAS, CODE_GRAPH_TOOLS, CODE_GRAPH_KEYWORDS } from './code-graph.js';
 import { createBotTool, BOT_TOOL_SCHEMAS } from './bots.js';
+import { sessionRecallTool, SESSION_RECALL_TOOL_SCHEMAS } from './session-recall.js';
 import { withWriteLock } from '../write-lock.js';
 
 export const TOOL_IMPLS = {
@@ -86,6 +87,7 @@ export const TOOL_IMPLS = {
   install_skill: installSkillTool,
   code_graph: codeGraphTool,
   create_bot: createBotTool,
+  session_recall: sessionRecallTool,
   // ox brain (src/brain.js): your notes, as markdown that opens in Obsidian.
   brain: async (args = {}) => {
     const B = await import('../brain.js');
@@ -101,7 +103,7 @@ export const TOOL_IMPLS = {
   },
 };
 
-const PLAN_READ_ONLY = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'show_ui', 'agent_status', 'code_graph'];
+const PLAN_READ_ONLY = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'show_ui', 'agent_status', 'code_graph', 'session_recall'];
 
 export const BUILTIN_SCHEMAS = [
   ...OPERATOR_TOOL_SCHEMAS,
@@ -117,6 +119,7 @@ export const BUILTIN_SCHEMAS = [
   ...INSTALL_SKILL_SCHEMAS,
   ...CODE_GRAPH_TOOL_SCHEMAS,
   ...BOT_TOOL_SCHEMAS,
+  ...SESSION_RECALL_TOOL_SCHEMAS,
   {
     name: 'brain',
     description: "Your long-term notes (ox brain, markdown that opens in Obsidian). action \"search\": what is known about something (decisions, facts about the user and projects, past research), current facts first, at most ~1,500 tokens. action \"note\": save something worth keeping; when it replaces an older note, name it in supersedes (the old one is kept as history).",
