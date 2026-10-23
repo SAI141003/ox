@@ -722,6 +722,28 @@ struct SessionCardView: View {
                 .onAppear { proxy.scrollTo(card.lines.last?.id, anchor: .bottom) }
             }
             if !card.note.isEmpty { Text(card.note).font(.system(size: 10.5)).foregroundStyle(Ink.muted).lineLimit(2) }
+            // A desktop-only agent may be readable but intentionally not
+            // resumable by Ox.  It can still receive a safe, redacted handoff;
+            // do not hide that route behind `canSend`.
+            if OxBridge.externalId(session.id) != nil {
+                HStack(spacing: 6) {
+                    Text("Transfer").font(.system(size: 10.5)).foregroundStyle(Ink.muted)
+                    Picker("Target", selection: $transferTarget) {
+                        Text("Ox").tag("ox")
+                        Text("Claude").tag("claude")
+                        Text("Codex").tag("codex")
+                        Text("Hermes").tag("hermes")
+                        Text("Gemini").tag("gemini")
+                        Text("Cursor").tag("cursor")
+                        Text("Cline").tag("cline")
+                        Text("Kimi").tag("kimi")
+                        Text("Kilo").tag("kilo")
+                        Text("Handoff file").tag("file")
+                    }
+                    .labelsHidden().pickerStyle(.menu).font(.system(size: 10.5))
+                    PillButton(title: "Transfer", primary: false) { bridge.transferCard(to: transferTarget) }
+                }
+            }
             if card.canSend {
                 if OxBridge.externalId(session.id) != nil {
                     HStack(spacing: 6) {
@@ -730,23 +752,6 @@ struct SessionCardView: View {
                             .textFieldStyle(.plain).font(.system(size: 10.5)).foregroundStyle(Ink.text)
                             .padding(.horizontal, 7).padding(.vertical, 4)
                             .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.07)))
-                    }
-                    HStack(spacing: 6) {
-                        Text("Transfer").font(.system(size: 10.5)).foregroundStyle(Ink.muted)
-                        Picker("Target", selection: $transferTarget) {
-                            Text("Ox").tag("ox")
-                            Text("Claude").tag("claude")
-                            Text("Codex").tag("codex")
-                            Text("Hermes").tag("hermes")
-                            Text("Gemini").tag("gemini")
-                            Text("Cursor").tag("cursor")
-                            Text("Cline").tag("cline")
-                            Text("Kimi").tag("kimi")
-                            Text("Kilo").tag("kilo")
-                            Text("Handoff file").tag("file")
-                        }
-                        .labelsHidden().pickerStyle(.menu).font(.system(size: 10.5))
-                        PillButton(title: "Transfer", primary: false) { bridge.transferCard(to: transferTarget) }
                     }
                 }
                 HStack(spacing: 6) {
