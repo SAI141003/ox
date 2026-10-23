@@ -2180,6 +2180,7 @@ const ROUTES = [
   }) },
   { method: 'POST', pattern: /^\/ox\/agents\/session\/?$/, handler: appRoute(async (body) => { const A = await import('./agents-live.js'); const r = await A.sessionMessages(body?.id); return { ...r, queued: A.queuedFor(body?.id) }; }) },
   { method: 'POST', pattern: /^\/ox\/agents\/send\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).sendToSession(body?.id, body?.text, { model: body?.model })) },
+  { method: 'POST', pattern: /^\/ox\/agents\/transfer\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).transferSession(body?.id, body?.target)) },
   { method: 'POST', pattern: /^\/ox\/agents\/open\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).openInTerminal(body?.id)) },
   // Jump to the exact terminal tab the session runs in (Coucou); the island falls back to opening one.
   { method: 'POST', pattern: /^\/ox\/agents\/focus\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).focusTerminal(body?.id)) },

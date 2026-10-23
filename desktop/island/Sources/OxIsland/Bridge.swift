@@ -900,6 +900,23 @@ final class OxBridge: ObservableObject {
         }
     }
 
+    /// Create a redacted handoff without writing into another agent's private
+    /// store. Native CLI targets can be started by the Office; desktop-only
+    /// tools receive a paste-ready continuation note.
+    func transferCard(to target: String) {
+        guard let c = card, let ext = Self.externalId(c.id), !target.isEmpty else { return }
+        card?.note = "Preparing a redacted handoff…"
+        post("/ox/agents/transfer", ["id": ext, "target": target]) { [weak self] j in
+            guard let self else { return }
+            if let err = (j?["error"] as? [String: Any])?["message"] as? String { self.card?.note = err; return }
+            if (j?["kind"] as? String) == "external" {
+                self.card?.note = (j?["note"] as? String) ?? "Handoff ready for (target)."
+            } else {
+                self.card?.note = (j?["note"] as? String) ?? "Handoff ready for (target)."
+            }
+        }
+    }
+
     /// Take over in Terminal: the session continued by its own tool.
     func openCardInTerminal() {
         guard let c = card, let ext = Self.externalId(c.id) else { return }

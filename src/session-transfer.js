@@ -255,14 +255,72 @@ const ox = {
   start: (prompt) => [process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js'), prompt]],
 };
 
+// Cline's VS Code extension stores a JSON transcript per task. Reading it is
+// safe; continuing it still belongs to Cline, so transfers use a handoff file.
+const cline = {
+  label: 'Cline',
+  list(home) {
+    const root = path.join(home, '.cline', 'data', 'sessions');
+    let dirs = []; try { dirs = fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()); } catch { return []; }
+    return dirs.map((e) => {
+      const id = e.name, ref = path.join(root, id, `${id}.messages.json`);
+      if (!fs.existsSync(ref)) return null;
+      let meta = {}; try { meta = JSON.parse(fs.readFileSync(path.join(root, id, `${id}.json`), 'utf8')); } catch {}
+      return { tool: 'cline', id, cwd: meta.cwd ?? meta.workspace_root ?? meta.workspacePath ?? null, title: meta.task ?? meta.title ?? id, updatedAt: mtime(ref), ref };
+    }).filter(Boolean).sort((a, b) => b.updatedAt - a.updatedAt);
+  },
+  read(home, ref) {
+    let doc = {}; try { doc = JSON.parse(fs.readFileSync(ref, 'utf8')); } catch {}
+    let meta = {}; try { meta = JSON.parse(fs.readFileSync(ref.replace(/\.messages\.json$/, '.json'), 'utf8')); } catch {}
+    const s = base('cline', doc.sessionId ?? path.basename(ref, '.messages.json'), ref);
+    s.title = doc.task ?? doc.title ?? meta.task ?? meta.title ?? meta.metadata?.title ?? s.id;
+    s.cwd = doc.cwd ?? meta.cwd ?? meta.workspace_root ?? meta.workspacePath ?? null;
+    s.model = doc.model ?? meta.model ?? meta.metadata?.modelId ?? null;
+    s.updatedAt = doc.updated_at ?? meta.updated_at ?? new Date(mtime(ref)).toISOString();
+    for (const m of Array.isArray(doc.messages) ? doc.messages : []) {
+      const text = textOfParts((m.content ?? []).filter((p) => p?.type === 'text').map((p) => p.text ?? ''));
+      if (text.trim()) push(s, m.role === 'user' ? 'user' : 'assistant', text);
+    }
+    return finish(s);
+  },
+};
+
+// Kimi Code's desktop daemon keeps conversation metadata in a local SQLite
+// database and the model wire transcript beside it. Both are read-only here.
+const kimi = {
+  label: 'Kimi',
+  list(home) {
+    const db = path.join(home, 'Library', 'Application Support', 'kimi-desktop', 'daimon-share', 'daimon', 'agents', 'main', 'sessions', 'hosted-logical', 'conversations.sqlite');
+    if (!fs.existsSync(db)) return [];
+    const q = spawnSync('sqlite3', ['-readonly', '-json', db, 'select conversation_key,title,workspace_path,updated_at,updated_at_ms from conversations order by updated_at_ms desc limit 30'], { encoding: 'utf8', timeout: 5000 });
+    let rows = []; try { rows = JSON.parse(q.stdout || '[]'); } catch { return []; }
+    return rows.map((r) => ({ tool: 'kimi', id: r.conversation_key, cwd: r.workspace_path || null, title: r.title || 'Kimi session', updatedAt: r.updated_at || new Date(Number(r.updated_at_ms)).toISOString(), ref: `${db}::${r.conversation_key}` }));
+  },
+  read(home, ref) {
+    const raw = String(ref), sep = raw.indexOf('::');
+    const db = sep >= 0 ? raw.slice(0, sep) : raw, key = sep >= 0 ? raw.slice(sep + 2) : '';
+    const safe = String(key || '').replace(/'/g, "''");
+    const q = spawnSync('sqlite3', ['-readonly', '-json', db, `select title,workspace_path,kernel_records_path,updated_at from conversations where conversation_key='${safe}' limit 1`], { encoding: 'utf8', timeout: 5000 });
+    let row = []; try { row = JSON.parse(q.stdout || '[]'); } catch {}
+    const meta = row[0] || {}, s = base('kimi', key || 'main', ref);
+    Object.assign(s, { cwd: meta.workspace_path || null, title: meta.title || 'Kimi session', updatedAt: meta.updated_at || null });
+    let lines = []; try { lines = fs.readFileSync(meta.kernel_records_path, 'utf8').split('\n').filter(Boolean).map((x) => JSON.parse(x)); } catch { return finish(s); }
+    for (const e of lines) {
+      if (e.type === 'turn.prompt') push(s, 'user', textOfParts(e.input));
+      if (e.type === 'context.append_message') push(s, e.message?.role === 'user' ? 'user' : 'assistant', textOfParts(e.message?.content));
+    }
+    return finish(s);
+  },
+};
+
 // Targets only: these keep their sessions where ox does not read them, but
 // they can be handed a session through their command line.
 const gemini = { label: 'Gemini CLI', start: (prompt) => ['gemini', ['-i', prompt]] };
 const cursor = { label: 'Cursor', start: (prompt) => ['cursor-agent', [prompt]], resume: (id) => ['cursor-agent', ['--resume', id]] };
 
-export const TOOLS = Object.freeze({ claude, codex, hermes, ox, gemini, cursor });
-export const SOURCES = Object.freeze(['claude', 'codex', 'hermes', 'ox']);
-export const TARGETS = Object.freeze(['claude', 'codex', 'hermes', 'ox', 'gemini', 'cursor', 'paperclip', 'file']);
+export const TOOLS = Object.freeze({ claude, codex, hermes, ox, cline, kimi, gemini, cursor });
+export const SOURCES = Object.freeze(['claude', 'codex', 'hermes', 'ox', 'cline', 'kimi']);
+export const TARGETS = Object.freeze(['claude', 'codex', 'hermes', 'ox', 'gemini', 'cursor', 'cline', 'kilo', 'kimi', 'paperclip', 'file']);
 const ALIASES = { 'claude-code': 'claude', cc: 'claude', chatgpt: 'codex', openai: 'codex', 'cursor-agent': 'cursor', 'gemini-cli': 'gemini' };
 export const toolName = (s) => { const n = String(s ?? '').toLowerCase(); return ALIASES[n] ?? n; };
 
@@ -424,6 +482,11 @@ export function deliveryPlan(s, target, handoff, { company = process.env.PAPERCL
     if (!company) return { kind: 'paperclip', cmd: null, cwd, title, note: 'Paperclip needs a company: --company <id> or PAPERCLIP_COMPANY_ID' };
     return { kind: 'paperclip', cmd: 'paperclipai', args: ['issue', 'create', '-C', company, '--title', title, '--description', fs.readFileSync(handoff.md, 'utf8')], cwd, title };
   }
+  // Desktop-only agents do not expose a supported CLI resume endpoint. Ox
+  // still creates a redacted handoff for them so the user can paste one
+  // deterministic continuation prompt into Cline or Kimi, without writing to
+  // either app's private database.
+  if (to === 'cline' || to === 'kilo' || to === 'kimi') return { kind: 'external', cwd, target: to, note: `handoff ready for ${to}; open ${to} and paste the continuation prompt`, prompt, handoff: handoff.md };
   if (!TOOLS[to]?.start) throw new Error(`ox can hand a session to ${TARGETS.join(', ')}; not "${target}"`);
   const [cmd, args] = TOOLS[to].start(prompt);
   const bin = binaryFor(to, cmd);

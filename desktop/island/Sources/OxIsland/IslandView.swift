@@ -523,6 +523,7 @@ struct RunRow: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { bridge.openCard(session) }
+        .simultaneousGesture(TapGesture(count: 2).onEnded { bridge.openCardInTerminal() })
         .help("Open this session: read it, message it, open it in Terminal")
     }
 
@@ -678,6 +679,7 @@ struct SessionCardView: View {
     let card: OxBridge.SessionCard
     @State private var draft = ""
     @State private var modelDraft = ""
+    @State private var transferTarget = "ox"
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -721,6 +723,23 @@ struct SessionCardView: View {
                             .textFieldStyle(.plain).font(.system(size: 10.5)).foregroundStyle(Ink.text)
                             .padding(.horizontal, 7).padding(.vertical, 4)
                             .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.07)))
+                    }
+                    HStack(spacing: 6) {
+                        Text("Transfer").font(.system(size: 10.5)).foregroundStyle(Ink.muted)
+                        Picker("Target", selection: $transferTarget) {
+                            Text("Ox").tag("ox")
+                            Text("Claude").tag("claude")
+                            Text("Codex").tag("codex")
+                            Text("Hermes").tag("hermes")
+                            Text("Gemini").tag("gemini")
+                            Text("Cursor").tag("cursor")
+                            Text("Cline").tag("cline")
+                            Text("Kimi").tag("kimi")
+                            Text("Kilo").tag("kilo")
+                            Text("Handoff file").tag("file")
+                        }
+                        .labelsHidden().pickerStyle(.menu).font(.system(size: 10.5))
+                        PillButton(title: "Transfer", primary: false) { bridge.transferCard(to: transferTarget) }
                     }
                 }
                 HStack(spacing: 6) {

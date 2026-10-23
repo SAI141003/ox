@@ -495,6 +495,29 @@ function waitAndSend(key, home, run, model = '') {
 
 export const queuedFor = (id) => (queue.get(String(id).replace(/^ext:/, '')) ?? []).length;
 
+/** Create a redacted, project-local handoff for moving a chat between agents.
+ * Native CLI targets are started by the transfer layer; desktop-only Cline and
+ * Kimi receive a paste-ready handoff because neither exposes a supported resume
+ * API. Ox never writes into another tool's private store. */
+export async function transferSession(id, target, { home = os.homedir() } = {}) {
+  const key = String(id).replace(/^ext:/, '');
+  const [tool, ...rest] = key.split(':');
+  const T = await import('./session-transfer.js');
+  if (!T.SOURCES.includes(tool)) throw new Error(`${tool} sessions are visible but their transcript is not exposed for transfer`);
+  // The live board intentionally uses a stable `kimi:main` row while Kimi's
+  // real conversation key is an opaque value. Resolve that row to Kimi's
+  // newest readable conversation instead of pretending `main` is a key.
+  const requested = rest.join(':');
+  const entry = tool === 'kimi' && (!requested || requested === 'main')
+    ? T.listSessions({ home, tools: ['kimi'], limit: 1 })[0]
+    : T.findSession(`${tool}:${requested}`, { home });
+  if (!entry) throw new Error(`no ${tool} session available to transfer`);
+  const source = T.readSession(entry, { home });
+  const handoff = T.writeHandoff(source, { home });
+  const plan = T.deliveryPlan(source, target, handoff, { home });
+  return { ok: true, source: { tool, id: source.id }, target: String(target), ...plan, handoff: handoff.md };
+}
+
 // The agent CLIs whose processes can be found by folder.
 const AGENT_BINS = /(^|\/)(claude|codex|copilot|opencode|hermes|gemini|cursor-agent|aider|ox)$/;
 
@@ -582,6 +605,18 @@ export async function openInTerminal(id, { home = os.homedir(), dryRun = false }
   const T = await import('./session-transfer.js');
   const cmds = { claude: [T.binaryFor('claude', 'claude'), '--resume', sid], codex: [T.binaryFor('codex', 'codex'), 'resume', sid], hermes: ['hermes', '--resume', sid] };
   const argv = cmds[tool];
+  // Cline/Kimi/Kilo are editor/desktop sessions, not resumable terminal
+  // processes. Activate the owning app instead of spawning a second Ox or a
+  // fake CLI session; the user can select the exact conversation there.
+  if (!argv && ['cline', 'kimi', 'kilo'].includes(tool)) {
+    const apps = tool === 'kimi' ? ['Kimi', 'Kimi Code'] : ['Visual Studio Code', 'Cursor'];
+    if (dryRun || process.platform !== 'darwin') return { line: `open -a "${apps[0]}"`, app: apps[0] };
+    for (const app of apps) {
+      const r = spawnSync('open', ['-a', app], { encoding: 'utf8', timeout: 10000 });
+      if (r.status === 0) return { opened: true, app, line: `open -a "${app}"` };
+    }
+    throw new Error(`could not activate ${tool}; open its app manually`);
+  }
   if (!argv) throw new Error(`open ${tool} itself to continue this session`);
   const live = liveAgents({ home }).find((s) => s.id === key);
   const q = (a) => `'${String(a).replace(/'/g, `'\\''`)}'`;
