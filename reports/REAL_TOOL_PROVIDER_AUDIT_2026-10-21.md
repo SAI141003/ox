@@ -848,3 +848,7 @@ and `npm run verify:quick` passes **560 syntax files + 6 smoke entry points**.
 The parallel `runStandardized`/`standardizedEval` path now emits the same measured
 fields, preserving the old `tokens` estimate as a clearly named compatibility
 alias rather than silently mixing estimates with provider usage.
+
+The follow-up accounting gate passed **56/56** on 2026-10-23 across benchmark event
+retention, cost classification and budget stops, measured benchmark metrics, and
+parallel-subagent scheduling. No test treats estimated tokens as provider usage.
