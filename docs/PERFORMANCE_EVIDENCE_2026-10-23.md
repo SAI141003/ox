@@ -98,6 +98,47 @@ ordinary tool-enabled turn**. This changes no underlying history data and does
 not make a provider or model faster; it removes unnecessary context from turns
 that cannot use recall.
 
+### Runtime-routing regression check: 2026-10-23
+
+The agent's local-context optimization had been sending Ollama's private
+`/api/ps` probe to every loopback target marked `ollama`, including arbitrary
+OpenAI-compatible servers. A stateful compatible endpoint could consume that
+unexpected request as its first turn, leaving Ox with a plain-text response
+instead of the intended tool call. That made downstream Island and hook flows
+appear to lose a request.
+
+Ox now probes only its standard local Ollama endpoint (`localhost` or
+`127.0.0.1` on port `11434`) unless an owner explicitly enables
+`ollamaContextProbe`. The affected real-loop tests passed after the repair:
+
+```sh
+node --test --test-reporter=tap test/hook-events.test.js
+npm run verify:quick
+```
+
+Observed result: 15/15 hook-flow checks passed; quick verification passed
+syntax parsing for 570 files and six smoke entry points. The live local Ollama
+daemon reported the loaded `qwen2.5:3b` context length as 4,096 tokens. This
+is a routing correctness result, not a model-quality or provider-latency
+comparison.
+
+### Focus sleep-inhibitor check: 2026-10-23
+
+The Island focus timer invokes `ox awake <duration>` on start and releases the
+same timed hold on pause or reset. A five-second real macOS check was run:
+
+```sh
+node bin/ox.js awake 5s
+node bin/ox.js awake status
+# after expiry
+node bin/ox.js awake status
+```
+
+It first reported a timed awake deadline and, after expiry, reported no timed
+hold. `swift build -c release` for `desktop/island` also completed. This
+verifies the local inhibitor lifecycle; it does not override macOS's separate
+closed-lid sleep policy.
+
 ## What still needs a fair comparison
 
 - At least several warm and cold repeats per model on identical isolated tasks.
