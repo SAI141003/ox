@@ -807,6 +807,11 @@ async function handleChatCompletions(req, res) {
   const wantsUi = WANTS_UI.test(said) || s1?.kind === 'interactive';
   const needsWeb = NEEDS_WEB.test(said) || s1?.kind === 'current';
   const by = s1 ? ` (System 1, ${s1.ms} ms)` : '';
+  // "Reply with exactly …" / "say only …" is a direct-answer request, not
+  // an edit just because the lightweight router interprets "reply" as an
+  // action verb.  Sending it through tools wastes a local model turn and can
+  // make a harmless chat appear to have touched the workspace.
+  const directAnswer = /^(?:reply|respond|say|answer)\s+(?:with|exactly|only)\b/i.test(said);
   // Choosing "Interactive answer" (ox_canvas) means exactly that: an answer to
   // use here, drawn, with no tools to wander off with (a 3B model offered tools
   // made to-do lists instead of drawing).
@@ -835,7 +840,9 @@ async function handleChatCompletions(req, res) {
   // A short message that names no file or code, needs no tool and asks to build
   // nothing is a question, whatever the mode guesser read into its first word
   // ("Name the capital of Australia" was routed as a change: 2,115 tokens).
-  if (s1 && turnMode.routed && !turnMode.answerOnly && !TOUCHES_CODE.test(said)) {
+  if (directAnswer && !TOUCHES_CODE.test(said)) {
+    turnMode = { mode: 'ask', routed: true, reason: 'a direct answer', answerOnly: true };
+  } else if (s1 && turnMode.routed && !turnMode.answerOnly && !TOUCHES_CODE.test(said)) {
     // System 1's reading wins over the word lists; a named file or code still
     // keeps the tools whatever it says.
     if (['chat', 'question', 'current'].includes(s1.kind) && !(s1.plan > 0.5)) {
