@@ -507,10 +507,25 @@ final class OxBridge: ObservableObject {
     private var meshPolledAt = Date.distantPast
     // Dismissed alerts stay quiet while the server continues reporting the
     // same condition. They become eligible again after the condition clears.
-    private var dismissedMeshAlerts: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "mesh.dismissedAlerts") ?? [])
+    // Keep a small on-disk copy as well as UserDefaults: ad-hoc signing or an
+    // app-bundle rebuild can give macOS a fresh defaults domain, which used to
+    // make a dismissed load alert immediately return after an Island restart.
+    private static let dismissedMeshAlertsFile = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".ox/island/dismissed-mesh-alerts.json")
+    private static func loadDismissedMeshAlerts() -> Set<String> {
+        let defaults = Set(UserDefaults.standard.stringArray(forKey: "mesh.dismissedAlerts") ?? [])
+        guard let data = try? Data(contentsOf: dismissedMeshAlertsFile),
+              let rows = try? JSONDecoder().decode([String].self, from: data) else { return defaults }
+        return defaults.union(rows)
+    }
+    private var dismissedMeshAlerts: Set<String> = OxBridge.loadDismissedMeshAlerts()
 
     private func saveDismissedMeshAlerts() {
-        UserDefaults.standard.set(Array(dismissedMeshAlerts), forKey: "mesh.dismissedAlerts")
+        let rows = Array(dismissedMeshAlerts).sorted()
+        UserDefaults.standard.set(rows, forKey: "mesh.dismissedAlerts")
+        let file = Self.dismissedMeshAlertsFile
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let data = try? JSONEncoder().encode(rows) { try? data.write(to: file, options: .atomic) }
     }
 
     func dismissMesh(_ alert: MeshAlert) {
