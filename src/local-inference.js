@@ -72,7 +72,9 @@ export const LOCAL_ORIGINS = Object.freeze([
 ]);
 
 const OLLAMA_ORIGIN = 'http://localhost:11434';
-export const OLLAMA_PRESET_MODEL = 'qwen2.5:0.5b';
+// The preset deliberately discovers the installed model. A fixed model name
+// made the default unusable whenever Ollama had a different local inventory.
+export const OLLAMA_PRESET_MODEL = 'auto';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -532,14 +534,13 @@ export function canPrompt(io = process) {
 // ---------------------------------------------------------------------------
 // Preset-model surfacing
 //
-// The `ox-ollama` preset hardcodes qwen2.5:0.5b, which is NOT in LOCAL_MODELS
-// and may simply not exist on a given machine. We never silently switch the
-// preset -- a silent substitution would change which model answers every
-// request. We surface it instead, with the exact `--bot ox-ollama:<model>` form
-// that does work.
+// The `ox-ollama` preset uses `auto`, which is an explicit request to discover
+// an installed model from the approved local server. Explicit
+// `ox-ollama:<model>` specs remain pinned and reproducible.
 // ---------------------------------------------------------------------------
 export function presetModelWarning(found) {
   if (!found || found.protocol !== 'ollama') return null;
+  if (OLLAMA_PRESET_MODEL === 'auto') return null;
   const names = (found.models ?? []).map(m => m.name);
   if (!names.length) return null;
   if (names.includes(OLLAMA_PRESET_MODEL)) return null;

@@ -905,3 +905,15 @@ The adapter was local and unpriced, so the report must not call it “free”; h
 cost was not available from the run. Its failures included malformed file writes
 and redundant retries. This is why provider comparisons distinguish measured remote
 billing from unpriced local inference and include pass rate alongside latency.
+
+## Live local-provider repair — 2026-10-22
+
+The live `ox doctor` check found a concrete default-route defect: Ollama was
+approved and healthy with five installed models, but the `ox-ollama` preset was
+pinned to absent `qwen2.5:0.5b`. The preset now explicitly uses `auto`, which asks
+the approved Ollama endpoint for its installed model; an explicit
+`ox-ollama:<model>` remains pinned for reproducible runs. Doctor now reports all
+five discovered models without the stale-preset warning. The provider-routing,
+local-discovery, and model-registry regression set passes **63/63**; routing tests
+were also isolated from the user's real `~/.ox` trust record so live approvals no
+longer make pure unit tests nondeterministic.

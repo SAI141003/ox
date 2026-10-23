@@ -18,7 +18,7 @@ test('every preset resolves to its expected provider+model', () => {
     'ox-flash': ['gemini', 'gemini-3.8-flash', null],
     'ox-groq': ['groq', 'moonshotai/kimi-k2-instruct-0905', null],
     'ox-deepseek': ['deepseek', 'deepseek-v4-pro', null],
-    'ox-ollama': ['ollama', 'qwen2.5:0.5b', OLLAMA_BASE_URL],
+    'ox-ollama': ['ollama', 'auto', OLLAMA_BASE_URL],
     'ox-backboard': ['backboard', 'backboard-routing', 'https://api.backboard.io/v1'],
     'ox-glm': ['zhipu', 'glm-4.5', 'https://open.bigmodel.cn/api/paas/v4'],
     'ox-glm-turbo': ['zhipu', 'glm-4.5-turbo', 'https://open.bigmodel.cn/api/paas/v4'],

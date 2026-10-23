@@ -225,18 +225,16 @@ export function isReachable(candidate, config = {}, env = process.env) {
   return false;
 }
 
-// The `ox-ollama` preset hardcodes a model that is not in LOCAL_MODELS and may
-// not exist on the user's machine. We never silently substitute: a quiet switch
-// would change which model answers every request without telling anyone. We
-// report the mismatch so the caller can print the exact `--bot ox-ollama:<model>`
-// form that does work. Requires an approval record, so this stays offline.
+// The default Ollama preset is `auto`, so it asks the approved endpoint for an
+// installed model. Explicit `ox-ollama:<model>` specs remain pinned. Requires
+// an approval record, so this stays offline.
 export function ollamaPresetMismatch(config = {}, env = process.env) {
   const { ok, baseUrl } = ollamaReachability({ config, env });
   if (!ok) return null;
   const dir = config?.configDir ?? undefined;
   const rec = readTrustRecords(dir ? { dir } : {}).find(r => r.baseUrl === baseUrl || r.protocol === 'ollama');
   const names = (rec?.models ?? []).map(m => m.name).filter(Boolean);
-  if (!names.length || names.includes(OLLAMA_PRESET_MODEL)) return null;
+  if (!names.length || OLLAMA_PRESET_MODEL === 'auto' || names.includes(OLLAMA_PRESET_MODEL)) return null;
   return { expected: OLLAMA_PRESET_MODEL, available: names, baseUrl };
 }
 

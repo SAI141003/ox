@@ -11,6 +11,10 @@ import {
   pickForRole,
 } from '../src/model-registry.js';
 
+// Keep routing unit tests independent of a user's real ~/.ox trust record.
+// Live Ollama approval is exercised by local-discovery tests instead.
+const NO_LOCAL_APPROVAL = { configDir: '/tmp/ox-model-registry-no-local-approval' };
+
 test('MODEL_CATALOG: every entry has strengths and maxComplexity', () => {
   for (const [name, caps] of Object.entries(MODEL_CATALOG)) {
     assert.ok(Array.isArray(caps.strengths) && caps.strengths.length > 0, `${name} missing strengths`);
@@ -63,8 +67,8 @@ test('listCandidates: includes custom bots from config', () => {
 });
 
 test('isReachable: ollama requires OX_OLLAMA_AVAILABLE=1', () => {
-  assert.equal(isReachable({ provider: 'ollama' }, {}, {}), false);
-  assert.equal(isReachable({ provider: 'ollama' }, {}, { OX_OLLAMA_AVAILABLE: '1' }), true);
+  assert.equal(isReachable({ provider: 'ollama' }, NO_LOCAL_APPROVAL, {}), false);
+  assert.equal(isReachable({ provider: 'ollama' }, NO_LOCAL_APPROVAL, { OX_OLLAMA_AVAILABLE: '1' }), true);
 });
 
 test('isReachable: anthropic requires ANTHROPIC_API_KEY when no OX_BASE_URL', () => {
@@ -89,7 +93,7 @@ test('pickModel: with OX_OLLAMA_AVAILABLE=1 and no other keys, ollama is picked'
 });
 
 test('pickModel: returns null when no candidate is reachable and no defaultBot', () => {
-  const p = pickModel({ config: {}, task: { kind: 'code' }, env: {} });
+  const p = pickModel({ config: NO_LOCAL_APPROVAL, task: { kind: 'code' }, env: {} });
   assert.equal(p, null);
 });
 

@@ -59,7 +59,10 @@ export const BOTS = {
   'ox-flash': { provider: 'gemini', model: 'gemini-3.8-flash', desc: 'Google Gemini Flash' },
   'ox-groq': { provider: 'groq', model: 'moonshotai/kimi-k2-instruct-0905', desc: 'Groq-hosted Kimi K2' },
   'ox-deepseek': { provider: 'deepseek', model: 'deepseek-v4-pro', desc: 'DeepSeek V4 Pro' },
-  'ox-ollama': { provider: 'ollama', model: 'qwen2.5:0.5b', desc: 'local Ollama (no key needed)' },
+  // Ollama's installed model set is machine-specific. `auto` asks the
+  // approved local server which model it serves; users can still pin one with
+  // `ox-ollama:<model>` when reproducibility matters.
+  'ox-ollama': { provider: 'ollama', model: 'auto', desc: 'local Ollama (auto-selects an installed model; no key needed)' },
   'ox-openrouter': { provider: 'openrouter', model: null, desc: 'any OpenRouter model; explicit model required' },
   'ox-lmstudio': { provider: 'lmstudio', model: 'auto', desc: 'local LM Studio server (no key; uses the loaded model)' },
   'ox-llamacpp': { provider: 'llamacpp', model: 'auto', desc: 'local llama.cpp server (no key; uses the loaded model)' },

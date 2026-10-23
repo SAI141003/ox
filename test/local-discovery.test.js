@@ -437,10 +437,10 @@ test('the approval prompt shows the endpoint, the models and what approving mean
   }
 });
 
-test('the preset model mismatch is surfaced and never auto-applied', async () => {
+test('the default Ollama preset discovers an installed model without a stale mismatch', async () => {
   const dir = tmpDir('ox-local-preset-');
   try {
-    // A server whose models do not include the hardcoded ox-ollama preset.
+    // A server whose inventory differs from the old fixed preset.
     const stub = await startStub((req, res) => {
       if (req.url === '/api/version') return json(res, { version: '1.2.3' });
       if (req.url === '/api/tags') return json(res, { models: [{ name: 'some-other-model:1b', size: 1024 }] });
@@ -449,23 +449,19 @@ test('the preset model mismatch is surfaced and never auto-applied', async () =>
     try {
       const found = await probeOrigin(stub.origin);
       const warn = presetModelWarning(found);
-      assert.ok(warn, 'mismatch is surfaced');
-      assert.equal(warn.expected, 'qwen2.5:0.5b');
-      assert.deepEqual(warn.available, ['some-other-model:1b']);
-      assert.match(warn.message, /will NOT silently switch/i);
-      assert.match(warn.message, /ox --bot ox-ollama:some-other-model:1b/);
+      assert.equal(warn, null, 'auto discovery makes the default usable');
 
       approveEndpoint(found, { dir });
-      // The trust record stores what was found; nothing rewrites the preset.
+      // The trust record stores what was found; the preset remains auto.
       const rec = readTrustRecords({ dir })[0];
       assert.deepEqual(rec.models.map(m => m.name), ['some-other-model:1b']);
       const preset = (await import('../src/bots.js')).BOTS['ox-ollama'];
-      assert.equal(preset.model, 'qwen2.5:0.5b', 'the preset itself is left alone');
+      assert.equal(preset.model, 'auto', 'the preset remains explicit auto discovery');
     } finally {
       await stub.close();
     }
 
-    // No warning when the preset model is actually installed.
+    // No warning when the default model is discovered from the server.
     const okStub = await ollamaStub();
     try {
       assert.equal(presetModelWarning(await probeOrigin(okStub.origin)), null);
