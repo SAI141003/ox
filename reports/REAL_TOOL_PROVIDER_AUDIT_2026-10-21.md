@@ -967,3 +967,10 @@ not a market-wide ranking.
 The aggregator also recognizes pre-availability-field artifacts: zero-token,
 zero-tool readiness failures are classified as **unavailable**, so an old
 subscription-provider record cannot dilute the measured pass-rate denominator.
+
+## Repository-mutation guard — 2026-10-24
+
+The separate expensive guard completed with **260/260 guarded tests passed, 0
+failed** in **621.7 s**. It launches each test in a clean comparison and checks
+that the repository remains unchanged, closing the release-gate gap intentionally
+excluded from the ordinary `npm test` command.
