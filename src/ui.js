@@ -368,7 +368,10 @@ export function renderMeter({ estTokens = 0, budget = 0, costUsd = null, model =
   const ratio = budget > 0 ? Math.min(Math.max(Number(estTokens) / budget, 0), 1) : 0;
   const filled = Math.round(ratio * cells);
   const bar = `[${'█'.repeat(filled)}${'░'.repeat(cells - filled)}]`;
-  const cost = Number.isFinite(costUsd) ? `$${Number(costUsd).toFixed(4)}` : '$0';
+  // An absent price is not a free request.  Local endpoints and providers that
+  // omit billing information must stay visibly unpriced so a user never treats
+  // an unknown spend as a zero-dollar run.
+  const cost = Number.isFinite(costUsd) ? `$${Number(costUsd).toFixed(4)}` : 'unpriced';
   return c.dim(`${bar} ${fmtCount(estTokens)}/${fmtCount(budget)} tokens · ${cost} · ${model}@${providerName}`);
 }
 
