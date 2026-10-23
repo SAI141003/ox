@@ -20,6 +20,8 @@ import {
 } from './operator.js';
 import { modeRefusal, grantRefusal } from '../modes.js';
 import { mail_accounts, mail_compose, MAIL_TOOL_SCHEMAS } from './mail.js';
+import { messages_send, MESSAGES_TOOL_SCHEMAS } from './messages.js';
+import { whatsapp_send, WHATSAPP_TOOL_SCHEMAS } from './whatsapp.js';
 import { webFetchTool, webSearchTool, WEB_TOOL_SCHEMAS, WEB_TOOLS, READING_TOOL_SCHEMAS } from './web.js';
 import { youtubeTranscriptTool, YOUTUBE_TOOL_SCHEMAS, YOUTUBE_TOOLS, YOUTUBE_SIGNAL } from './youtube.js';
 import { currentPageTool, CURRENT_PAGE_SCHEMAS, CURRENT_PAGE_TOOLS, CURRENT_PAGE_SIGNAL } from './current-page.js';
@@ -57,6 +59,8 @@ export const TOOL_IMPLS = {
   draw,
   mail_accounts,
   mail_compose,
+  messages_send,
+  whatsapp_send,
   web_fetch: webFetchTool,
   web_search: webSearchTool,
   library: async (args = {}) => {
@@ -100,6 +104,8 @@ const PLAN_READ_ONLY = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', '
 export const BUILTIN_SCHEMAS = [
   ...OPERATOR_TOOL_SCHEMAS,
   ...MAIL_TOOL_SCHEMAS,
+  ...MESSAGES_TOOL_SCHEMAS,
+  ...WHATSAPP_TOOL_SCHEMAS,
   ...WEB_TOOL_SCHEMAS,
   ...READING_TOOL_SCHEMAS,
   ...WEB_TASK_TOOL_SCHEMAS,
@@ -486,7 +492,7 @@ export const MEMORY_KEYWORDS = Object.freeze([
 export const OPERATOR_TOOLS = Object.freeze([
   'open_app', 'open_url', 'open_path', 'open_window', 'type_text', 'screenshot', 'notify',
   'ui_elements', 'click', 'press_key', 'draw',
-  'mail_accounts', 'mail_compose',
+  'mail_accounts', 'mail_compose', 'messages_send', 'whatsapp_send',
 ]);
 
 export const OPERATOR_KEYWORDS = Object.freeze([

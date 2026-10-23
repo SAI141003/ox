@@ -69,13 +69,16 @@ function osa(lines, args = [], runner) {
   if (runner) return runner(lines, args);
   return new Promise((resolve) => {
     const argv = lines.flatMap((l) => ['-e', l]);
-    const child = spawn('osascript', [...argv, ...args], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 });
+    const child = spawn('osascript', [...argv, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     let e = '';
+    let settled = false;
+    const finish = (result) => { if (settled) return; settled = true; clearTimeout(timer); resolve(result); };
+    const timer = setTimeout(() => { try { child.kill('SIGTERM'); } catch {} finish({ ok: false, out: '', err: 'timed out after 8 seconds' }); }, 8_000);
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (e += d));
-    child.on('error', (x) => resolve({ ok: false, out: '', err: x.message }));
-    child.on('close', (code) => resolve({ ok: code === 0, out: out.trim(), err: e.trim() }));
+    child.on('error', (x) => finish({ ok: false, out: '', err: x.message }));
+    child.on('close', (code) => finish({ ok: code === 0, out: out.trim(), err: e.trim() }));
   });
 }
 

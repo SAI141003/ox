@@ -340,6 +340,8 @@ export async function messagingView(env = process.env) {
   const tg = await import('./telegram-gateway.js');
   const dc = await import('./discord-gateway.js');
   const sl = await import('./slack-gateway.js');
+  const whatsapp = await import('./tools/whatsapp.js');
+  const wa = await whatsapp.whatsapp_health({ env });
   const one = (id, label, st, tokenEnv, how) => ({
     id, label,
     configured: !!(env[tokenEnv] || st.token || (st.appToken && st.botToken)),
@@ -369,8 +371,10 @@ export async function messagingView(env = process.env) {
       command: 'mail_compose', how: process.platform === 'darwin'
         ? ['Ox is connected to the local Mail app.', 'Voice and chat can create a visible draft after selecting an exact From account.', 'Sending is never automatic: review the draft and approve Send in Mail.']
         : ['The Mail-app connector is macOS-only.', 'On Windows or Linux, connect Gmail or Outlook through an MCP connector in Settings › Connectors.', 'Ox will show the connector as ready only after its health check passes.'], mail: true },
-    { id: 'whatsapp', label: 'WhatsApp', configured: false, tokenFrom: null, paired: false, pairing: false,
-      command: 'ox mcp add whatsapp', how: ['WhatsApp is not silently scraped or claimed as connected.', 'Add an official Cloud API or approved local gateway through Settings › Connectors.', 'After the connector health check passes, Ox can expose its approved actions here.'], experimental: true },
+    { id: 'whatsapp', label: 'WhatsApp', configured: wa.configured, reachable: wa.reachable, tokenFrom: wa.configured ? 'environment' : null, paired: false, pairing: false,
+      command: 'whatsapp_send', how: ['Official WhatsApp Cloud API is supported for outbound messages.', 'Set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID, then run the connector health check.', 'Every send is approval-gated. Personal-account scraping and unofficial bridges remain blocked.'], experimental: !wa.configured, health: wa },
+    { id: 'imessage', label: 'SMS / iMessage', configured: process.platform === 'darwin', reachable: process.platform === 'darwin', paired: false, pairing: false,
+      command: 'messages_send', how: process.platform === 'darwin' ? ['Uses the local Messages app through macOS Automation.', 'The first send requires Automation permission and explicit approval.', 'Ox reports failure instead of pretending delivery.'] : ['Requires macOS Messages; no native transport is available on this OS.'], sms: true },
   ];
 }
 
