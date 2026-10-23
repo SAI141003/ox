@@ -110,7 +110,7 @@ export function appApprover(res, model, { timeoutMs = Number(process.env.OX_APP_
     const timer = setTimeout(() => answerAppApproval(id, 'deny'), timeoutMs);
     timer.unref?.();
     mine.add(id);
-    appApprovals.set(id, { timer, resolve: (decision) => {
+    appApprovals.set(id, { timer, tool: String(tool), preview: String(detail || '').slice(0, 400), model: String(model ?? ''), createdAt: Date.now(), resolve: (decision) => {
       mine.delete(id);
       if (!res.writableEnded && !res.destroyed) sendSSE(res, { ...createChatCompletionChunk(model, ''), ox: { type: 'approval-resolved', id, decision } });
       resolve(decision === 'allow');
@@ -125,6 +125,10 @@ export function answerAppApproval(id, decision) {
   clearTimeout(p.timer);
   p.resolve(decision === 'allow' ? 'allow' : 'deny');
   return true;
+}
+
+export function pendingAppApprovals() {
+  return [...appApprovals.entries()].map(([id, p]) => ({ id, tool: p.tool, preview: p.preview, model: p.model || null, createdAt: p.createdAt }));
 }
 
 function sendSSEDone(res) {
@@ -2144,6 +2148,7 @@ const ROUTES = [
     if (!answerAppApproval(String(body?.id ?? ''), decision)) throw new Error('that approval is no longer waiting');
     return { ok: true, decision };
   }) },
+  { method: 'GET', pattern: /^\/ox\/approvals\/?$/, handler: appRoute(async () => ({ approvals: pendingAppApprovals() })) },
   { method: 'POST', pattern: /^\/ox\/org\/(approve|reject|beat|pause|resume)\/?$/, handler: appRoute(async (body, m) => {
     const O = await import('./org.js');
     const id = String(body?.id ?? '');
@@ -2174,7 +2179,7 @@ const ROUTES = [
     return { ok: true, names };
   }) },
   { method: 'POST', pattern: /^\/ox\/agents\/session\/?$/, handler: appRoute(async (body) => { const A = await import('./agents-live.js'); const r = await A.sessionMessages(body?.id); return { ...r, queued: A.queuedFor(body?.id) }; }) },
-  { method: 'POST', pattern: /^\/ox\/agents\/send\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).sendToSession(body?.id, body?.text)) },
+  { method: 'POST', pattern: /^\/ox\/agents\/send\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).sendToSession(body?.id, body?.text, { model: body?.model })) },
   { method: 'POST', pattern: /^\/ox\/agents\/open\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).openInTerminal(body?.id)) },
   // Jump to the exact terminal tab the session runs in (Coucou); the island falls back to opening one.
   { method: 'POST', pattern: /^\/ox\/agents\/focus\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).focusTerminal(body?.id)) },

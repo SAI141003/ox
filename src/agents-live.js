@@ -414,12 +414,12 @@ export async function sessionMessages(id, { home = os.homedir(), limit = 12 } = 
 }
 
 /** How each tool continues a session with one message (its own resume, headless). */
-export function sendCommand(tool, sid, text, bin = (t, f) => f, { modelArgs = () => [] } = {}) {
-  if (tool === 'claude') return [bin('claude', 'claude'), ['-p', text, '--resume', sid]];
+export function sendCommand(tool, sid, text, bin = (t, f) => f, { modelArgs = () => [], model = '' } = {}) {
+  if (tool === 'claude') return [bin('claude', 'claude'), ['-p', text, '--resume', sid, ...(model ? ['--model', model] : [])]];
   // Codex's own config can name a model the ChatGPT account may not use (gpt-5.5
   // was refused here): the account's own list decides, as for ox's plan runs.
-  if (tool === 'codex') { const b = bin('codex', 'codex'); return [b, ['exec', 'resume', ...modelArgs(b), sid, text]]; }
-  if (tool === 'hermes') return ['hermes', ['chat', '-q', text, '--resume', sid, '-Q']];
+  if (tool === 'codex') { const b = bin('codex', 'codex'); return [b, ['exec', 'resume', ...(model ? ['--model', model] : modelArgs(b)), sid, text]]; }
+  if (tool === 'hermes') return ['hermes', ['chat', '-q', text, '--resume', sid, '-Q', ...(model ? ['--model', model] : [])]];
   return null;
 }
 
@@ -431,7 +431,7 @@ const sending = new Set();
  * session through the tool's own resume. A session at work in its own window is
  * never written to at the same time: the message waits until it is idle.
  */
-export async function sendToSession(id, text, { home = os.homedir(), run = null } = {}) {
+export async function sendToSession(id, text, { home = os.homedir(), run = null, model = '' } = {}) {
   const key = String(id).replace(/^ext:/, '');
   const [tool, ...rest] = key.split(':');
   const sid = rest.join(':');
@@ -443,16 +443,16 @@ export async function sendToSession(id, text, { home = os.homedir(), run = null 
   const live = liveAgents({ home, fresh: true }).find((s) => s.id === key);
   if ((live && live.state !== 'idle') || sending.has(key)) {
     queue.set(key, [...(queue.get(key) ?? []), { text: msg, at: Date.now() }]);
-    waitAndSend(key, home, run);
+    waitAndSend(key, home, run, model);
     return { queued: true, why: `${live?.tool ?? tool} is working on this session now; your message goes in as soon as it is idle` };
   }
-  return runTurn(key, tool, sid, msg, live?.cwd || null, home, run);
+  return runTurn(key, tool, sid, msg, live?.cwd || null, home, run, model);
 }
 
-function runTurn(key, tool, sid, msg, cwd, home, run) {
+function runTurn(key, tool, sid, msg, cwd, home, run, model = '') {
   return new Promise((resolve) => {
     import('./session-transfer.js').then((T) => {
-      const [cmd, args] = sendCommand(tool, sid, msg, T.binaryFor, { modelArgs: (b) => T.codexModelArgs(b, { home }) });
+      const [cmd, args] = sendCommand(tool, sid, msg, T.binaryFor, { modelArgs: (b) => T.codexModelArgs(b, { home }), model });
       sending.add(key);
       const go = run ?? ((c, a, o) => spawn(c, a, o));
       const p = go(cmd, args, { cwd: cwd && fs.existsSync(cwd) ? cwd : home, env: { ...process.env, OX_ISLAND: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -475,7 +475,7 @@ export function plainError(text, code = 1) {
 }
 
 const waiting = new Set();
-function waitAndSend(key, home, run) {
+function waitAndSend(key, home, run, model = '') {
   if (waiting.has(key)) return;
   waiting.add(key);
   const started = Date.now();
@@ -487,7 +487,7 @@ function waitAndSend(key, home, run) {
     const next = q.shift();
     queue.set(key, q);
     const [tool, ...rest] = key.split(':');
-    await runTurn(key, tool, rest.join(':'), next.text, live?.cwd || null, home, run);
+    await runTurn(key, tool, rest.join(':'), next.text, live?.cwd || null, home, run, model);
     setTimeout(tick, 1000).unref?.();
   };
   setTimeout(tick, 5000).unref?.();

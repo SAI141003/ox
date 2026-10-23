@@ -867,7 +867,7 @@ final class OxBridge: ObservableObject {
     }
 
     /// A message from the island to the open session.
-    func sendToCard(_ raw: String) {
+    func sendToCard(_ raw: String, model: String? = nil) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard var c = card, !text.isEmpty, c.canSend, !c.busy else { return }
         c.lines.append(CardLine(mine: true, text: text))
@@ -883,7 +883,9 @@ final class OxBridge: ObservableObject {
         c.busy = true
         c.note = "Sending…"
         card = c
-        post("/ox/agents/send", ["id": ext, "text": text]) { [weak self] j in
+        var payload: [String: Any] = ["id": ext, "text": text]
+        if let model, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { payload["model"] = model.trimmingCharacters(in: .whitespacesAndNewlines) }
+        post("/ox/agents/send", payload) { [weak self] j in
             guard let self, self.card?.id == c.id else { return }
             self.card?.busy = false
             if let err = (j?["error"] as? [String: Any])?["message"] as? String { self.card?.note = err; return }

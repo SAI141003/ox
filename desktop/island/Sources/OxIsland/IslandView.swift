@@ -677,6 +677,7 @@ struct SessionCardView: View {
     let session: AgentSession
     let card: OxBridge.SessionCard
     @State private var draft = ""
+    @State private var modelDraft = ""
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -713,14 +714,23 @@ struct SessionCardView: View {
             }
             if !card.note.isEmpty { Text(card.note).font(.system(size: 10.5)).foregroundStyle(Ink.muted).lineLimit(2) }
             if card.canSend {
+                if OxBridge.externalId(session.id) != nil {
+                    HStack(spacing: 6) {
+                        Text("Model").font(.system(size: 10.5)).foregroundStyle(Ink.muted)
+                        TextField(session.model.isEmpty ? "keep current" : session.model, text: $modelDraft)
+                            .textFieldStyle(.plain).font(.system(size: 10.5)).foregroundStyle(Ink.text)
+                            .padding(.horizontal, 7).padding(.vertical, 4)
+                            .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.07)))
+                    }
+                }
                 HStack(spacing: 6) {
                     TextField("Message \(session.project)…", text: $draft)
                         .textFieldStyle(.plain).font(.system(size: 12)).foregroundStyle(Ink.text)
                         .padding(.horizontal, 9).padding(.vertical, 5)
                         .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.07)))
                         .focused($focused)
-                        .onSubmit { bridge.sendToCard(draft); draft = "" }
-                    PillButton(title: card.busy ? "…" : "Send", primary: true) { bridge.sendToCard(draft); draft = "" }
+                        .onSubmit { bridge.sendToCard(draft, model: modelDraft); draft = "" }
+                    PillButton(title: card.busy ? "…" : "Send", primary: true) { bridge.sendToCard(draft, model: modelDraft); draft = "" }
                 }
             }
         }
