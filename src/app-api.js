@@ -365,6 +365,12 @@ export async function messagingView(env = process.env) {
       'Bot scopes chat:write and im:history; Event Subscriptions: message.im; Interactivity on; App Home: allow messages. Install it and copy the Bot token (xoxb-…).',
       'Run: ox gateway slack --app-token xapp-… --bot-token xoxb-…, then DM the app "pair <code>" with the code ox shows. It answers DMs only.',
     ]), slashless: true },
+    { id: 'email', label: 'Email · Mail', configured: process.platform === 'darwin', tokenFrom: null, paired: false, pairing: false,
+      command: 'mail_compose', how: process.platform === 'darwin'
+        ? ['Ox is connected to the local Mail app.', 'Voice and chat can create a visible draft after selecting an exact From account.', 'Sending is never automatic: review the draft and approve Send in Mail.']
+        : ['The Mail-app connector is macOS-only.', 'On Windows or Linux, connect Gmail or Outlook through an MCP connector in Settings › Connectors.', 'Ox will show the connector as ready only after its health check passes.'], mail: true },
+    { id: 'whatsapp', label: 'WhatsApp', configured: false, tokenFrom: null, paired: false, pairing: false,
+      command: 'ox mcp add whatsapp', how: ['WhatsApp is not silently scraped or claimed as connected.', 'Add an official Cloud API or approved local gateway through Settings › Connectors.', 'After the connector health check passes, Ox can expose its approved actions here.'], experimental: true },
   ];
 }
 

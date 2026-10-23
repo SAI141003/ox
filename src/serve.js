@@ -39,7 +39,7 @@ import { stat, unlink } from 'fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolveTurnMode } from './modes.js';
 import { listAgents, loadAgent, agentBotSpec, agentPersonaBlock } from './agents.js';
-import { readConfigDoc } from './config.js';
+import { readConfigDoc, saveConfigDoc } from './config.js';
 import * as UI_LANG from './ui-lang.js';
 import { classifyTurn, warmSystem1 } from './system1.js';
 
@@ -1373,9 +1373,19 @@ const ISLAND_PETS = new Set(['none', 'puff', 'pebble', 'dot']);
 // than ~/.ox/config.json.  Keeping that boundary matters: the app is able to
 // start before the local server, and it never needs to read project settings.
 // `defaults` is macOS' supported bridge to that domain for this local-only UI.
-function islandPreferences() {
+function islandPreferences(doc = null) {
   const fallback = { size: 'standard', autoClose: 6, hideFullscreen: true, companion: 'ox', pet: 'none' };
-  if (process.platform !== 'darwin') return fallback;
+  const saved = doc?.islandPreferences && typeof doc.islandPreferences === 'object' ? doc.islandPreferences : {};
+  // The native island reads UserDefaults on macOS.  The config copy is the
+  // portable source of truth for Windows/Linux and also keeps settings visible
+  // before the native companion has started.
+  if (process.platform !== 'darwin') return {
+    size: saved.size === 'compact' ? 'compact' : fallback.size,
+    autoClose: [0, 3, 6, 15].includes(Number(saved.autoClose)) ? Number(saved.autoClose) : fallback.autoClose,
+    hideFullscreen: typeof saved.hideFullscreen === 'boolean' ? saved.hideFullscreen : fallback.hideFullscreen,
+    companion: ISLAND_COMPANIONS.has(saved.companion) ? saved.companion : fallback.companion,
+    pet: ISLAND_PETS.has(saved.pet) ? saved.pet : fallback.pet,
+  };
   const read = (key) => {
     const r = spawnSync('defaults', ['read', 'dev.ox.island', key], { encoding: 'utf8' });
     return r.status === 0 ? String(r.stdout ?? '').trim() : null;
@@ -1386,38 +1396,39 @@ function islandPreferences() {
   const companion = read('buddy.character');
   const pet = read('pet.kind');
   return {
-    size: size === 'compact' ? 'compact' : 'standard',
-    autoClose: [0, 3, 6, 15].includes(close) ? close : 6,
-    hideFullscreen: hide == null ? true : /^(1|true|yes)$/i.test(hide),
-    companion: ISLAND_COMPANIONS.has(companion) ? companion : 'ox',
-    pet: ISLAND_PETS.has(pet) ? pet : 'none',
+    size: size === 'compact' ? 'compact' : (saved.size === 'compact' ? 'compact' : 'standard'),
+    autoClose: [0, 3, 6, 15].includes(close) ? close : ([0, 3, 6, 15].includes(Number(saved.autoClose)) ? Number(saved.autoClose) : 6),
+    hideFullscreen: hide == null ? (typeof saved.hideFullscreen === 'boolean' ? saved.hideFullscreen : true) : /^(1|true|yes)$/i.test(hide),
+    companion: ISLAND_COMPANIONS.has(companion) ? companion : (ISLAND_COMPANIONS.has(saved.companion) ? saved.companion : 'ox'),
+    pet: ISLAND_PETS.has(pet) ? pet : (ISLAND_PETS.has(saved.pet) ? saved.pet : 'none'),
   };
 }
 
 function saveIslandPreferences(next) {
-  if (process.platform !== 'darwin') throw new Error('OX Island preferences are available on macOS');
+  if (next.size != null && !['standard', 'compact'].includes(next.size)) throw new Error('Island size must be standard or compact');
+  if (next.autoClose != null && ![0, 3, 6, 15].includes(Number(next.autoClose))) throw new Error('Choose 3, 6, 15 seconds, or never');
+  if (next.hideFullscreen != null && typeof next.hideFullscreen !== 'boolean') throw new Error('Hide in full screen must be on or off');
+  if (next.companion != null && !ISLAND_COMPANIONS.has(next.companion)) throw new Error('That OX companion is not available');
+  if (next.pet != null && !ISLAND_PETS.has(next.pet)) throw new Error('That Island pet is not available');
+  saveConfigDoc((doc) => { doc.islandPreferences = { ...(doc.islandPreferences ?? {}), ...next }; });
+  if (process.platform !== 'darwin') return;
   const write = (key, type, value) => {
     const r = spawnSync('defaults', ['write', 'dev.ox.island', key, type, String(value)], { encoding: 'utf8' });
     if (r.status !== 0) throw new Error(`Could not save Island preference ${key}`);
   };
   if (next.size != null) {
-    if (!['standard', 'compact'].includes(next.size)) throw new Error('Island size must be standard or compact');
     write('island.size', '-string', next.size);
   }
   if (next.autoClose != null) {
-    if (![0, 3, 6, 15].includes(next.autoClose)) throw new Error('Choose 3, 6, 15 seconds, or never');
     write('island.autoClose', '-float', next.autoClose);
   }
   if (next.hideFullscreen != null) {
-    if (typeof next.hideFullscreen !== 'boolean') throw new Error('Hide in full screen must be on or off');
     write('island.hideFullscreen', '-bool', next.hideFullscreen);
   }
   if (next.companion != null) {
-    if (!ISLAND_COMPANIONS.has(next.companion)) throw new Error('That OX companion is not available');
     write('buddy.character', '-string', next.companion);
   }
   if (next.pet != null) {
-    if (!ISLAND_PETS.has(next.pet)) throw new Error('That Island pet is not available');
     write('pet.kind', '-string', next.pet);
   }
 }
@@ -1440,7 +1451,7 @@ async function settingsView() {
   const { assistantName } = await import('./identity.js');
   return {
     name: assistantName(),
-    island: { enabled: islandEnabled(), running: islandRunning({ env: {} }), platform: process.platform, preferences: islandPreferences() },
+    island: { enabled: islandEnabled(), running: islandRunning({ env: {} }), platform: process.platform, preferences: islandPreferences(doc) },
     // What a new chat actually uses: the configured default if it can run, else the best that can.
     model: { defaultBot: pickWorkingDefault(), configured: config.defaultBot ?? null, source: runnable(config.defaultBot ?? '') ? (config.defaultBotSource ?? 'config') : 'auto: the configured model cannot run here', bots, fallback: (doc.fallback_bots ?? doc.fallbackBots ?? [])[0] ?? null },
     awake: { on: doc.awake !== false && process.env.OX_NO_AWAKE !== '1' },
@@ -1456,7 +1467,6 @@ async function handleSettingsPost(req, res) {
   if (!authorized(req)) { unauthorized(res); return; }
   let body;
   try { body = await parseBody(req); } catch { sendInvalidJson(res); return; }
-  const { saveConfigDoc } = await import('./config.js');
   if (typeof body.island === 'boolean') {
     const { cmdIsland } = await import('./island.js');
     await cmdIsland([body.island ? 'on' : 'off'], { log: () => {}, err: () => {} });
@@ -1577,7 +1587,7 @@ async function flowsRoute(b) {
 // Small tasks are done here with no AI; a question or small talk gets one short
 // spoken answer from the quickest model that can answer; anything that has to
 // act (open, send, play, write…) comes back as a task for an agent run.
-const VOICE_SYSTEM = (name) => `You are ${name}, a voice assistant in the notch of the user's Mac: quick, warm, a little playful. Everything you write is read aloud: one or two short sentences, no markdown, no lists, no emojis, no links. Never invent the user's own data; if you would need to act on the Mac or look something up, say so in a few words. Today is ${new Date().toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.`;
+const VOICE_SYSTEM = (name) => `You are ${name}, a voice assistant in the user's desktop Island: quick, warm, and precise. You can act through Ox's approved local tools (open apps and URLs, inspect configured mail/connectors, draft messages, and perform supported desktop actions). When a request requires an action, do it through the available tools or explain the exact missing connector/permission; never claim an action happened when it did not. Sending email or messages always requires a visible draft or explicit approval. Everything you write is read aloud: one or two short sentences, no markdown, no lists, no emojis, no links. Never invent the user's data. Today is ${new Date().toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.`;
 // Questions about what is on screen need a look at it: the island attaches a screenshot.
 const SCREEN = /\b(my screen|on (?:the|my) screen|what am i looking at|what(?:'s| is) (?:this|that) (?:on|in)|this (?:page|window|screen|tab|error|message)|read (?:this|it|my screen)|look at (?:this|my|the screen)|see (?:this|my screen)|what do you see)\b/i;
 const ACTS = /\b(open|launch|close|quit|send|message|text|whatsapp|email|mail|play|pause|create|make|write|draft|delete|remove|move|rename|book|order|buy|schedule|remind|call|download|install|draw|annotate|search|look up|find|fix|build|run|deploy|commit|push|edit|change|update|turn (?:on|off)|set)\b/i;
