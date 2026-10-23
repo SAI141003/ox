@@ -52,6 +52,21 @@ Useful flags: `--task <id>` one task · `--filter <regex>` a subset · `--all` �
 `--repeats <n>` variance (fresh sandbox per repeat) · `--json <path>` ·
 `--keep` leave sandboxes on disk · `--timeout <ms>` override every task timeout.
 
+## Compare retained runs
+
+After real runs have written JSON artifacts, aggregate them without making another
+provider request:
+
+```sh
+npm run bench:compare
+node bench/real/compare.mjs bench/results/2026-10-24T-live-openrouter --json /tmp/provider-summary.json
+```
+
+The report groups by provider/model and shows pass rate, unavailable runs, tokens,
+mean and p95 latency, and cost. A missing or local/unpriced cost is shown as
+`unknown`; it is never converted to `$0`. This is an evidence summary, not a claim
+that providers without credentials were tested.
+
 Model specs resolve through `resolveBot()` in `src/bots.js`, so every provider ox
 supports is selectable and the list cannot drift out of sync with the CLI:
 

@@ -39,7 +39,8 @@
     "start": "node bin/ox.js",
     "verify": "node scripts/verify.mjs",
     "verify:quick": "node scripts/verify.mjs --quick",
-    "verify:loop": "node scripts/verify.mjs --loop"
+    "verify:loop": "node scripts/verify.mjs --loop",
+    "bench:compare": "node bench/real/compare.mjs"
   },
   "dependencies": {
     "mochi-avatar": "1.1.0"
