@@ -3605,6 +3605,19 @@ files: [src/billing/**]
           } catch (e) { toast(e.message); }
           finally { inp.disabled = false; go.disabled = false; }
         };
+        // A session tile is primarily a status surface; double-click is the
+        // deliberate escape hatch into the owning tool.  The server chooses
+        // focus/activation for desktop tools and a native resume only where
+        // that tool exposes one, so this never launches a second Ox instance.
+        t.ondblclick = async (e) => {
+          if (e.target.closest('input,button')) return;
+          try {
+            const opened = await postJson('/ox/agents/open', { id: x.id });
+            if (opened.focused) toast(`Focused ${opened.app || x.tool}`);
+            else if (opened.opened) toast(`Opened ${opened.app || x.tool}`);
+            else toast(opened.why || `Open ${x.tool} to continue this session`);
+          } catch (e) { toast(e.message); }
+        };
       }
       const m = mood(x), mins = Math.round((x.idleSec || 0) / 60);
       t.querySelector('.sc-dot').style.background = color[m] ?? '#9CA3AF';
