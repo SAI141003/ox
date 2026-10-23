@@ -487,6 +487,7 @@ describe('5. ox doctor: the live backend, the three failure classes, a fix, and 
     assert.equal(row.fix, null);
     // Every backend appears with a state label, including the ones never tried.
     assert.deepEqual(row.backends.map((b) => b.label), ['CONFIGURED-BROKEN', 'NOT-CONFIGURED', 'LIVE']);
+    assert.equal(row.backends.find((b) => b.name === 'live-one')?.fix, null, 'a live backend needs no remediation');
     assert.match(capabilityHeadline(rows), /1\/1 live/);
   });
 

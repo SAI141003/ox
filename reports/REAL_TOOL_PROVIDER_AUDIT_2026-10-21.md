@@ -797,3 +797,10 @@ reported no notice. The implementation remains opt-in: automatic installation is
 disabled unless explicitly enabled, and update application requires the trusted
 fast-forward, clean-tracked-tree, JavaScript-load, Island-rebuild, and rollback
 checks documented above.
+
+The capability-report path was also corrected and re-tested. Successful backend
+records now carry `fix: null`; remediation text is emitted only for failed probes.
+This prevents a live keyless backend from being displayed with the contradictory
+instruction to configure another keyed backend. The focused capability suite passed
+**19/19**, and the complete regression gate after the change passed **2,235/2,492**
+tests (**0 failed, 257 skipped**) in **227.49 s**.

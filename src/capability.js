@@ -392,7 +392,10 @@ export async function probeBackend(backend, {
       pinned: Boolean(backend?.pinned),
       ...extra,
     };
-    record.fix = fixFor(record);
+    // A prescription belongs only to an unsuccessful probe. Previously a
+    // successful keyless route inherited failure text, making `ox doctor` say
+    // "configure a keyed backend" beside a backend it had just proved usable.
+    record.fix = ok ? null : fixFor(record);
     recordProbeRecord(capability ?? cap?.name ?? '', name, record);
     return record;
   };
