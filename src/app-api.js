@@ -552,7 +552,8 @@ export async function botsView(env = process.env) {
   } catch {}
   let tools = [];
   try { tools = listToolSchemas({}).map((t) => t.name).sort(); } catch {}
-  return { mine, runsOn: [...endpoints, ...plans, ...models], modes: MODE_NAMES, tools };
+  const { listMods } = await import('./mods.js');
+  return { mine, runsOn: [...endpoints, ...plans, ...models], modes: MODE_NAMES, tools, mods: listMods() };
 }
 
 export async function botSave(body = {}, env = process.env) {

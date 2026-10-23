@@ -992,3 +992,19 @@ The separate expensive guard completed with **260/260 guarded tests passed, 0
 failed** in **621.7 s**. It launches each test in a clean comparison and checks
 that the repository remains unchanged, closing the release-gate gap intentionally
 excluded from the ordinary `npm test` command.
+
+## Reference parity pass — 2026-10-22
+
+The supplied Coucou/Windows recording was reviewed at sampled five-second
+frames. Its relevant behavior is a compact Island lane that can surface a
+messaging integration and accept a reply while the host app stays closed. The
+short second recording shows the same compact notification/status treatment.
+Ox already has the cross-platform web Island, loopback token protection,
+hold-to-talk, approvals, run cards, and a file shelf. This pass adds the
+remaining reference-visible presentation gap: a shared Mod catalog in Bots and
+Island. Six Ox-owned presets expose a name, description, expression, accent and
+Island status label; selecting a preset seeds an editable bot draft. No
+third-party logos or artwork are copied, and Mods do not alter model routing,
+tool permissions, or the existing Blender characters. Targeted evidence:
+`node --test test/bots-page.test.js test/island-web.test.js` **20/20**, and
+`npm run verify:quick` **566 syntax files + 6 smoke entry points**.

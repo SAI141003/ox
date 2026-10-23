@@ -162,6 +162,11 @@ test('an authentication failure before a model turn is unavailable, not a task f
   assert.equal(unavailableReason({ timedOut: false, stderr: 'Not logged in' }, { ...summary, inputTokens: 1 }), null, 'a model token is a real attempt');
 });
 
+test('HTTP 401 provider auth failures are unavailable before a model turn', () => {
+  const summary = { toolCalls: 0, inputTokens: 0, outputTokens: 0, errors: ['provider auth failure: HTTP 401 Unauthorized: User not found'], finalText: '' };
+  assert.match(unavailableReason({ timedOut: false, stderr: '' }, summary), /provider auth failure|401|unauthorized/i);
+});
+
 test('without --keep the sandbox is destroyed and nothing is left behind', async () => {
   let spawns = 0;
   const run = await runOnce(task, 'ox-fixture:model', { keep: false, timeoutMs: 5_000 }, {

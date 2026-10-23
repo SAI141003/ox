@@ -55,6 +55,7 @@ Updated October 21 2026.
 |---|---|---|---|
 | 4.1 | Bots page: make, edit, rename, delete | ✓ | API + page tested; bad names and unknown models refused |
 | 4.2 | Bot shapes and colours | ✓ | 13 shapes, 12 colours |
+| 4.2a | Bot Mods: named presentation presets with Island status identity | ✓ | Six Ox-owned presets (Claude, Grok Bot, Meta Muse, Dots, Claude Widget, Ox Mods); selecting one seeds a new editable bot without changing provider, tools or permissions; `/ox/mods` and Island Mods tab expose the same catalog |
 | 4.3 | A bot answers to its name | ✓ | "I am the critic, reviewing diffs…" |
 | 4.4 | Group chat (bots check each other) | ~ | Fixed the empty second answer (the history ended on another bot's turn): skeptic now answers and responds to optimist. Open: the screen switched to an older chat while it answered |
 | 4.5 | Subagents checking each other's progress | ~ | agent_status + mailbox for terminal runs; the app's live view is the Office (11.12). Terminal runs are not on it yet |

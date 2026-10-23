@@ -151,7 +151,7 @@ export function unavailableReason(agent = {}, summary = {}) {
   const text = [agent.stderr, ...(summary.errors ?? []), summary.finalText]
     .filter(Boolean)
     .join('\n');
-  const match = /(not logged in|please run\s*\/?login|authentication required|auth[_ -]?required|missing native binary|\benoent\b)/i.exec(text);
+  const match = /(not logged in|please run\s*\/?login|authentication required|auth[_ -]?required|provider auth failure|http\s*401|unauthori[sz]ed|user not found|missing native binary|\benoent\b)/i.exec(text);
   return match ? oneLine(match[0], 180) : null;
 }
 
