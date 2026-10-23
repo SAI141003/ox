@@ -678,6 +678,14 @@ export async function openInTerminal(id, { home = os.homedir(), dryRun = false }
   const T = await import('./session-transfer.js');
   const cmds = { claude: [T.binaryFor('claude', 'claude'), '--resume', sid], codex: [T.binaryFor('codex', 'codex'), 'resume', sid], hermes: ['hermes', '--resume', sid] };
   const argv = cmds[tool];
+  // A Codex desktop transcript belongs to the already-running desktop app.
+  // Focusing it preserves the user's native conversation; opening a terminal
+  // resume is a fallback, not a second copy of their work.
+  if (tool === 'codex' && runningApp('Codex')) {
+    if (dryRun || process.platform !== 'darwin') return { line: 'open -a "Codex"', app: 'Codex' };
+    const r = spawnSync('open', ['-a', 'Codex'], { encoding: 'utf8', timeout: 10000 });
+    if (r.status === 0) return { opened: true, focused: true, app: 'Codex', line: 'open -a "Codex"' };
+  }
   // Cline/Kimi/Kilo are editor/desktop sessions, not resumable terminal
   // processes. Activate the owning app instead of spawning a second Ox or a
   // fake CLI session; the user can select the exact conversation there.
