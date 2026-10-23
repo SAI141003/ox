@@ -338,6 +338,16 @@ function packageTool(packageFile, source) {
 
 function runningApp(name) {
   if (process.platform === 'win32') return false; // Windows needs a process-name map, not a guessed .exe name.
+  // GUI apps frequently have helper executables whose POSIX process name does
+  // not equal their user-facing name (ChatGPT is one).  Ask LaunchServices on
+  // macOS before falling back to pgrep for command-line-style apps.
+  if (process.platform === 'darwin') {
+    const safe = String(name).replace(/"/g, '\\"');
+    try {
+      const r = spawnSync('osascript', ['-e', `application "${safe}" is running`], { encoding: 'utf8', timeout: 1500 });
+      if (/^true\s*$/i.test(String(r.stdout ?? ''))) return true;
+    } catch {}
+  }
   try { return spawnSync('pgrep', ['-x', name], { encoding: 'utf8', timeout: 1500 }).status === 0; } catch { return false; }
 }
 
