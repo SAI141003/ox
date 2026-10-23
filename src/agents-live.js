@@ -276,8 +276,15 @@ export function kimiSessions({ home = os.homedir(), now = Date.now() } = {}) {
   const updated = Date.parse(row.updatedAt ?? '') || st.mtimeMs;
   const turns = Array.isArray(row.activeKernelTurns) ? row.activeKernelTurns : [];
   const tools = Array.isArray(row.activeKernelToolCalls) ? row.activeKernelToolCalls : [];
-  if (now - updated > SHOW_MS || (!turns.length && !tools.length && Number(row.kernel?.activeTurnCount ?? 0) < 1)) return [];
-  return [{ id: 'kimi:main', tool: 'Kimi', project: 'Kimi', cwd: '', model: row.kernel?.providerModel?.model ?? '', state: tools.length || Number(row.kernel?.activeToolCallCount ?? 0) ? 'tool' : 'thinking', doing: tools.length ? 'using a tool' : '', idleSec: 0, updated }];
+  if (now - updated > SHOW_MS) return [];
+  const activeTurn = turns.length || tools.length || Number(row.kernel?.activeTurnCount ?? 0) > 0;
+  const age = Math.max(0, now - updated);
+  return [{ id: 'kimi:main', tool: 'Kimi', project: 'Kimi', cwd: '', model: row.kernel?.providerModel?.model ?? '',
+    // Kimi keeps the runner state file fresh even between turns. Keep that
+    // session visible as idle instead of making it vanish from the Island;
+    // active turns/tools still get the stronger working state.
+    state: activeTurn ? (tools.length || Number(row.kernel?.activeToolCallCount ?? 0) ? 'tool' : 'thinking') : 'idle',
+    doing: tools.length ? 'using a tool' : '', idleSec: activeTurn ? 0 : Math.round(age / 1000), updated }];
 }
 
 // ---------------------------------------------------------------- installed tools
