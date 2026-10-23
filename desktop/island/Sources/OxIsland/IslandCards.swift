@@ -2,12 +2,22 @@ import AppKit
 import SwiftUI
 
 // Cards under the + tab: mail from the Mail app (Coucou's mail in the notch)
-// and the week at a glance (Coucou's weekly recap). Mail is read only while
-// Mail is open (the island never launches it); a reply is a draft you send
-// yourself (ox never sends mail).
+// and the week at a glance (Coucou's weekly recap). Mail access stays local
+// to the user's Mail app; the Island can open Mail to refresh, while replies
+// remain drafts the user sends themselves.
 
 final class MailCenter: ObservableObject {
-    struct Message: Identifiable, Equatable { let id: String; let sender: String; let subject: String; let ago: String; let excerpt: String }
+    struct Message: Identifiable, Equatable {
+        let id: String
+        let mailID: String
+        let account: String
+        let address: String
+        let sender: String
+        let subject: String
+        let ago: String
+        let unread: Bool
+        let excerpt: String
+    }
     @Published private(set) var messages: [Message] = []
     @Published private(set) var note = ""
     @Published var selected: String?
@@ -30,19 +40,38 @@ final class MailCenter: ObservableObject {
             let script = """
             set out to ""
             tell application "Mail"
-              set ms to (messages of inbox whose read status is false)
-              set n to count of ms
-              if n > 8 then set n to 8
-              repeat with i from 1 to n
-                set m to item i of ms
-                set d to date received of m
-                set secs to (current date) - d
-                set c to ""
+              set accts to every account whose enabled is true
+              repeat with ai from 1 to count of accts
+                set a to item ai of accts
+                set accountName to name of a
+                set accountAddress to ""
                 try
-                  set c to content of m
-                  if (length of c) > 220 then set c to text 1 thru 220 of c
+                  set addrs to email addresses of a
+                  if (count of addrs) > 0 then set accountAddress to item 1 of addrs
                 end try
-                set out to out & (message id of m) & tab & (sender of m) & tab & (subject of m) & tab & secs & tab & c & linefeed & "␞" & linefeed
+                set boxes to every mailbox of a
+                repeat with bi from 1 to count of boxes
+                  set b to item bi of boxes
+                  set boxName to (name of b as text)
+                  if boxName is "INBOX" or boxName is "Inbox" then
+                    set ms to messages of b
+                  else
+                    set ms to {}
+                  end if
+                  set n to count of ms
+                  if n > 8 then set n to 8
+                  repeat with i from 1 to n
+                    set m to item i of ms
+                    set d to date received of m
+                    set secs to (current date) - d
+                    set c to ""
+                    try
+                      set c to content of m
+                      if (length of c) > 220 then set c to text 1 thru 220 of c
+                    end try
+                    set out to out & (message id of m) & tab & accountName & tab & accountAddress & tab & (sender of m) & tab & (subject of m) & tab & (read status of m is false) & tab & secs & tab & c & linefeed & "␞" & linefeed
+                  end repeat
+                end repeat
               end repeat
             end tell
             return out
@@ -51,16 +80,23 @@ final class MailCenter: ObservableObject {
             let raw = NSAppleScript(source: script)?.executeAndReturnError(&err).stringValue ?? ""
             let msgs = raw.components(separatedBy: "\n␞\n").compactMap { chunk -> Message? in
                 let f = chunk.components(separatedBy: "\t")
-                guard f.count >= 4, !f[0].isEmpty else { return nil }
-                let secs = Int(Double(f[3].trimmingCharacters(in: .whitespaces)) ?? 0)
+                guard f.count >= 7, !f[0].isEmpty else { return nil }
+                let secs = Int(Double(f[6].trimmingCharacters(in: .whitespaces)) ?? 0)
                 let ago = secs < 3600 ? "\(max(1, secs / 60))m" : secs < 86400 ? "\(secs / 3600)h" : "\(secs / 86400)d"
-                let sender = f[1].replacingOccurrences(of: #"\s*<.*>$"#, with: "", options: .regularExpression)
-                return Message(id: f[0], sender: sender, subject: f[2], ago: ago, excerpt: f.count > 4 ? f[4...].joined(separator: " ").replacingOccurrences(of: "\n", with: " ") : "")
+                let sender = f[3].replacingOccurrences(of: #"\s*<.*>$"#, with: "", options: .regularExpression)
+                let account = f[1].isEmpty ? "Mail account" : f[1]
+                let excerpt = f.count > 7 ? f[7...].joined(separator: " ").replacingOccurrences(of: "\n", with: " ") : ""
+                return Message(id: "\(account)|\(f[0])", mailID: f[0], account: account, address: f[2], sender: sender, subject: f[4], ago: ago, unread: f[5].lowercased() == "true", excerpt: excerpt)
             }
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.messages = msgs
-                self.note = err != nil ? "Mail did not answer: allow OX Island under Privacy & Security › Automation." : msgs.isEmpty ? "No unread mail." : ""
+                if let err {
+                    let detail = (err[NSAppleScript.errorMessage] as? String) ?? "Mail did not answer"
+                    self.note = "Mail access needs approval: \(detail). Open System Settings › Privacy & Security › Automation and allow OX Island, then refresh."
+                } else {
+                    self.note = msgs.isEmpty ? "No recent mail across your Mail accounts." : ""
+                }
             }
         }
     }
@@ -75,16 +111,16 @@ final class MailCenter: ObservableObject {
     private func q(_ id: String) -> String { id.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") }
 
     func markRead(_ m: Message) {
-        run("set read status of (first message of inbox whose message id is \"\(q(m.id))\") to true") { [weak self] in
+        run("set read status of (first message of inbox whose message id is \"\(q(m.mailID))\") to true") { [weak self] in
             self?.messages.removeAll { $0 == m }
         }
     }
     func openInMail(_ m: Message) {
-        run("open (first message of inbox whose message id is \"\(q(m.id))\")\nactivate")
+        run("open (first message of inbox whose message id is \"\(q(m.mailID))\")\nactivate")
     }
     /// A reply draft opens in Mail; you read it and press Send there.
     func reply(_ m: Message) {
-        run("set r to reply (first message of inbox whose message id is \"\(q(m.id))\") opening window yes\nactivate")
+        run("set r to reply (first message of inbox whose message id is \"\(q(m.mailID))\") opening window yes\nactivate")
         note = "A reply draft is open in Mail. Press Send there."
     }
 }
@@ -96,7 +132,12 @@ struct MailView: View {
             HStack(spacing: 6) {
                 Image(systemName: "envelope").font(.system(size: 10)).foregroundStyle(Ink.muted)
                 Text("Mail · Inbox").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Ink.text)
-                if !mail.messages.isEmpty { Text("\(mail.messages.count) unread").font(.system(size: 10.5)).foregroundStyle(Color(hex: "#60A5FA")) }
+                let unreadCount = mail.messages.filter(\.unread).count
+                if unreadCount > 0 { Text("\(unreadCount) unread").font(.system(size: 10.5)).foregroundStyle(Color(hex: "#60A5FA")) }
+                if !mail.messages.isEmpty {
+                    let accountCount = Set(mail.messages.map { $0.account }).count
+                    if accountCount > 1 { Text("\(accountCount) accounts").font(.system(size: 9.5)).foregroundStyle(Ink.dim) }
+                }
                 Spacer()
                 Button { mail.refresh() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 10)) }.buttonStyle(.plain).foregroundStyle(Ink.dim).help(T("Refresh"))
             }
@@ -104,7 +145,10 @@ struct MailView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Button { mail.selected = nil } label: { Image(systemName: "chevron.left").font(.system(size: 10)) }.buttonStyle(.plain).foregroundStyle(Ink.muted)
-                        Text(m.sender).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Ink.text).lineLimit(1)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(m.sender).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Ink.text).lineLimit(1)
+                            Text(m.address.isEmpty ? m.account : "\(m.account) · \(m.address)").font(.system(size: 9.5)).foregroundStyle(Ink.dim).lineLimit(1)
+                        }
                         Spacer(); Text(m.ago).font(.system(size: 10.5)).foregroundStyle(Ink.dim)
                     }
                     Text(m.subject).font(.system(size: 11.5)).foregroundStyle(Ink.text.opacity(0.9)).lineLimit(1)
@@ -121,8 +165,11 @@ struct MailView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         ForEach(mail.messages) { m in
                             HStack(spacing: 6) {
-                                Circle().fill(Color(hex: "#60A5FA")).frame(width: 5, height: 5)
-                                Text(m.sender).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Ink.text).lineLimit(1).frame(maxWidth: 120, alignment: .leading)
+                                Circle().fill(m.unread ? Color(hex: "#60A5FA") : Ink.dim).frame(width: 5, height: 5)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(m.sender).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Ink.text).lineLimit(1)
+                                    Text(m.address.isEmpty ? m.account : m.account).font(.system(size: 9)).foregroundStyle(Color(hex: "#60A5FA")).lineLimit(1)
+                                }.frame(maxWidth: 145, alignment: .leading)
                                 Text(m.ago).font(.system(size: 10)).foregroundStyle(Ink.dim)
                                 Text(m.subject).font(.system(size: 11)).foregroundStyle(Ink.muted).lineLimit(1)
                                 Spacer(minLength: 0)
@@ -133,7 +180,9 @@ struct MailView: View {
                     }
                 }
             }
-            if !mail.note.isEmpty { Text(mail.note).font(.system(size: 10.5)).foregroundStyle(Ink.dim).lineLimit(2) }
+            if !mail.note.isEmpty {
+                Text(mail.note).font(.system(size: 10.5)).foregroundStyle(mail.note.hasPrefix("Mail access") ? Color(hex: "#FBBF24") : Ink.dim).lineLimit(3)
+            }
         }
         .onAppear { mail.refresh() }
     }
