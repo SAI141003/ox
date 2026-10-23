@@ -1074,7 +1074,10 @@
   }
 
   // ---------- preferences (this browser only)
-  const prefs = Object.assign({ theme: null, size: 'medium', width: 'medium', motion: 'system', sendKey: 'enter', speakReplies: false, lang: '', voice: '', activity: 'normal', changedFiles: true, whatsNew: true, notifyDone: false, notifyFail: false, notifySound: false, hiddenModels: [], saveChatHistory: false, learnFromChats: false }, store.get('ox.prefs', {}));
+  // Chats are a core workspace surface, so persist text-only history on this
+  // device by default.  Settings can turn this off and erase it; attachments
+  // remain deliberately excluded from browser storage below.
+  const prefs = Object.assign({ theme: null, size: 'medium', width: 'medium', motion: 'system', sendKey: 'enter', speakReplies: false, lang: '', voice: '', activity: 'normal', changedFiles: true, whatsNew: true, notifyDone: false, notifyFail: false, notifySound: false, hiddenModels: [], saveChatHistory: true, learnFromChats: false }, store.get('ox.prefs', {}));
   const savePrefs = () => { store.set('ox.prefs', prefs); applyPrefs(); };
   function applyPrefs() {
     const r = document.documentElement;
@@ -1182,8 +1185,8 @@
   }
 
   // ---------- state
-  // Chat content stays in this tab's memory unless the user opts into local
-  // history. Previously saved history is not loaded under the private default.
+  // Text-only chat content is kept locally so conversations survive reopening.
+  // Users can opt out in Settings; incognito chats are never persisted.
   const storedConvos = () => { const rows = store.get('ox.convos', []); return Array.isArray(rows) ? rows : []; };
   let convos = (prefs.saveChatHistory ? storedConvos() : []).map((c) => ({ at: Number(String(c.id).slice(1)) || Date.now(), ...c }));
   let current = convos.find((c) => !c.archived)?.id ?? null;
@@ -1203,7 +1206,7 @@
   // The name you gave ox (Settings › General); every label here follows it.
   let botName = 'ox';
   const applyName = (n) => { botName = n || 'ox'; document.title = botName; $('brand-name').textContent = botName; const own = botName !== 'ox'; document.querySelector('.brand').classList.toggle('own', own); const sn = document.querySelector('#splash .nm'); if (sn && own) sn.textContent = botName; if (!convo()?.messages?.length) renderChat(); };
-  // Normal chats, too, are private by default. The opt-in stores text locally;
+  // Normal chats are stored only in this browser when local history is enabled;
   // image payloads are never included in that history.
   const saveConvos = () => {
     if (!prefs.saveChatHistory) return;
@@ -4684,8 +4687,8 @@ files: [src/billing/**]
         const n = convos.length;
         const storedCount = storedConvos().length;
         el.innerHTML = `${mobileBack}<div class="shead">${icon('shield')}Data & privacy</div>
-          <p class="sdesc">App chats stay in this tab’s memory and are not written to Ox’s server or this browser by default. Turn on local history only if you want them to survive closing the app; that history is stored in this browser on this device. Code changes are made in the project folder you chose, not copied into an Ox-hosted workspace, and approved edits still apply in an incognito chat. When you send a message, its text and the context needed to answer (which can include code you asked Ox to inspect) go to the model provider you selected. Ox does not keep an app-chat transcript on its server. Usage totals (model, project folder and token counts, not prompts) are kept locally in ~/.ox/usage.jsonl. Separately, terminal/CLI runs save resumable transcripts locally under ~/.ox/sessions. These include your prompts, Ox’s replies, and tool-call arguments, which can contain code, commands, paths, or other project data. Use ox --incognito when you do not want a terminal run retained; it also avoids using or updating saved memory for that run. Existing memory may still be used in normal chats; new automatic preference learning from app chats is opt-in.</p>
-          ${row('Save chat history on this device', 'Off by default. When on, text-only chat history is stored in this browser so you can reopen it later.', sw('save-chats', prefs.saveChatHistory === true))}
+          <p class="sdesc">App chats are saved as text-only history in this browser by default so they survive reopening; turn that off below to erase local browser history. Code changes are made in the project folder you chose, not copied into an Ox-hosted workspace, and approved edits still apply in an incognito chat. When you send a message, its text and the context needed to answer (which can include code you asked Ox to inspect) go to the model provider you selected. Ox does not keep an app-chat transcript on its server. Usage totals (model, project folder and token counts, not prompts) are kept locally in ~/.ox/usage.jsonl. Separately, terminal/CLI runs save resumable transcripts locally under ~/.ox/sessions. These include your prompts, Ox’s replies, and tool-call arguments, which can contain code, commands, paths, or other project data. Use ox --incognito when you do not want a terminal run retained; it also avoids using or updating saved memory for that run. Existing memory may still be used in normal chats; new automatic preference learning from app chats is opt-in.</p>
+          ${row('Save chat history on this device', 'On by default. Text-only chat history is stored in this browser so you can reopen it later; turn it off here to erase it.', sw('save-chats', prefs.saveChatHistory === true))}
           ${row('Learn preferences from my chats', 'Off by default. When on, ox may save preferences you state as separate local memory facts; it never stores a full transcript this way. Existing saved memories may still be used as context.', sw('learn-chats', prefs.learnFromChats === true))}
           ${storedCount && !prefs.saveChatHistory ? row('Previously saved chats', `${storedCount} chat${storedCount === 1 ? '' : 's'} from an earlier version remain in this browser but are not loaded.`, '<button class="btn ghost danger" id="del-stored">Delete saved chats…</button>') : ''}
           ${row('Export all chats', `${n} chat${n === 1 ? '' : 's'} in this app, as one file you keep`, '<div style="display:flex;gap:6px"><button class="btn" id="exp-json">JSON</button><button class="btn" id="exp-md">Markdown</button></div>')}
