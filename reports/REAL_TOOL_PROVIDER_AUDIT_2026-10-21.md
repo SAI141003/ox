@@ -945,3 +945,10 @@ checks **37/37**, cost controls **25/25**, benchmark accounting **13/13**, and
 `npm run verify:quick` (**563 syntax files + 6 smoke entry points**). The latest
 full-suite rerun was not used as release evidence after the final changes; the
 last authoritative full baseline is recorded in the earlier lifecycle section.
+
+## Clean full-suite confirmation — 2026-10-24
+
+After the final provider, benchmark, and documentation changes, a clean `npm test`
+completed with **2,241 passed, 0 failed, 259 skipped, 2,500 total** in **232.4 s**.
+The skipped cases are conditional/environment-specific tests reported by the
+runner; no test was cancelled or failed.
