@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import SwiftUI
 
 /// Read-only view of the WhatsApp desktop window already on this Mac. WhatsApp
@@ -11,7 +12,18 @@ final class WhatsAppCenter: ObservableObject {
     @Published private(set) var note = ""
 
     private var open: Bool { NSWorkspace.shared.runningApplications.contains { ($0.localizedName ?? "").lowercased().contains("whatsapp") } }
+    var accessibilityAllowed: Bool { AXIsProcessTrusted() }
+
+    func openAccessibilitySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
+        NSWorkspace.shared.open(url)
+    }
     func refresh() {
+        guard accessibilityAllowed else {
+            lines = []
+            note = "Allow OX Island under Privacy & Security › Accessibility, then open a WhatsApp chat and refresh."
+            return
+        }
         if !open {
             note = "Opening WhatsApp… select a chat, then refresh."
             NSWorkspace.shared.launchApplication(withBundleIdentifier: "net.whatsapp.WhatsApp", options: [], additionalEventParamDescriptor: nil, launchIdentifier: nil)
@@ -49,7 +61,15 @@ struct WhatsAppView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack { Image(systemName: "message").foregroundStyle(Ink.muted); Text("WhatsApp · on this Mac").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Ink.text); Spacer(); Button { whatsapp.refresh() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(Ink.dim) }
             ScrollView { VStack(alignment: .leading, spacing: 3) { ForEach(whatsapp.lines) { Text($0.text).font(.system(size: 11)).foregroundStyle(Ink.text).lineLimit(3).padding(.vertical, 2) } } }
-            if !whatsapp.note.isEmpty { Text(whatsapp.note).font(.system(size: 10)).foregroundStyle(Ink.dim).lineLimit(3) }
+            if !whatsapp.note.isEmpty {
+                HStack(spacing: 6) {
+                    Text(whatsapp.note).font(.system(size: 10)).foregroundStyle(Ink.dim).lineLimit(3)
+                    if !whatsapp.accessibilityAllowed {
+                        Button("Allow access") { whatsapp.openAccessibilitySettings() }
+                            .buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(Color(hex: "#60A5FA"))
+                    }
+                }
+            }
         }.onAppear { whatsapp.refresh() }
     }
 }
