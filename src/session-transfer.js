@@ -316,9 +316,20 @@ const kimi = {
     const meta = row[0] || {}, s = base('kimi', key || 'main', ref);
     Object.assign(s, { cwd: meta.workspace_path || null, title: meta.title || 'Kimi session', updatedAt: meta.updated_at || null });
     let lines = []; try { lines = fs.readFileSync(meta.kernel_records_path, 'utf8').split('\n').filter(Boolean).map((x) => JSON.parse(x)); } catch { return finish(s); }
+    // Kimi records a typed prompt twice in sequence: once as `turn.prompt`
+    // and again as the user `context.append_message`.  Keep the real
+    // conversation order while suppressing only that adjacent duplicate; two
+    // genuinely repeated prompts separated by an assistant turn are retained.
+    let previous = null;
+    const append = (role, raw) => {
+      const text = textOfParts(raw).trim();
+      if (previous?.role === role && previous.text === text) return;
+      push(s, role, text);
+      if (text) previous = { role, text };
+    };
     for (const e of lines) {
-      if (e.type === 'turn.prompt') push(s, 'user', textOfParts(e.input));
-      if (e.type === 'context.append_message') push(s, e.message?.role === 'user' ? 'user' : 'assistant', textOfParts(e.message?.content));
+      if (e.type === 'turn.prompt') append('user', e.input);
+      if (e.type === 'context.append_message') append(e.message?.role === 'user' ? 'user' : 'assistant', e.message?.content);
     }
     return finish(s);
   },
