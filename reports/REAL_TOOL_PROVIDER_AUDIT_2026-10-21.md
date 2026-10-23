@@ -932,3 +932,16 @@ This is an authentication/readiness failure, not a model-quality score. The resu
 is retained at `bench/results/2026-10-24T-live-openrouter/nemotron-free-read.json`.
 `ox doctor` now says `configured (not live-validated)` for present API keys so a
 credential's presence cannot be mistaken for a successful provider connection.
+
+## Inventory and verification regrade — 2026-10-24
+
+The source inventory was re-counted from `src/bots.js`: **28 named bot presets**
+and **35 provider integration keys**. This supersedes older comparison-document
+counts without implying that every adapter is currently usable. The live doctor
+check remains the authority for configured versus validated credentials.
+
+Post-change gates are green: provider/local routing **63/63**, CLI and capability
+checks **37/37**, cost controls **25/25**, benchmark accounting **13/13**, and
+`npm run verify:quick` (**563 syntax files + 6 smoke entry points**). The latest
+full-suite rerun was not used as release evidence after the final changes; the
+last authoritative full baseline is recorded in the earlier lifecycle section.
