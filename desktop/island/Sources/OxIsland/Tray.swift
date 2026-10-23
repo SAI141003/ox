@@ -536,6 +536,7 @@ struct ShelfView: View {
 
 struct FocusView: View {
     @ObservedObject var timer: FocusTimer
+    @State private var customMinutes = ""
     var body: some View {
         HStack(spacing: 18) {
             TimelineView(.periodic(from: .now, by: 0.5)) { ctx in
@@ -550,6 +551,14 @@ struct FocusView: View {
                             timer.reset(); timer.minutes = m
                         }
                     }
+                    TextField("minutes", text: $customMinutes)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 72)
+                        .onSubmit {
+                            let value = min(24 * 60, max(1, Int(customMinutes) ?? timer.minutes))
+                            timer.reset(); timer.minutes = value; customMinutes = "\(value)"
+                        }
+                    Text("min").font(.system(size: 10)).foregroundStyle(Ink.dim)
                 }
                 HStack(spacing: 6) {
                     PillButton(title: timer.running ? "Pause" : (timer.active ? "Resume" : "Start"), primary: true) {
