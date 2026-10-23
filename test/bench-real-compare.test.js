@@ -37,6 +37,17 @@ test('comparison recognizes legacy zero-token readiness failures as unavailable'
   assert.equal(row.passRate, null);
 });
 
+test('comparison reclassifies retained pre-availability auth failures', () => {
+  const [row] = aggregate([{
+    file: 'old-auth.json',
+    value: { suite: 'bench/real', provider: 'openrouter', modelId: 'free-model', results: [{ runs: [{ availability: 'ran', pass: false, tokensIn: 0, tokensOut: 0, toolCalls: 0, agentMs: 500, ms: 520, diagnostics: ['provider auth failure: HTTP 401 Unauthorized: User not found'] }] }] },
+  }]);
+  assert.equal(row.measured, 0);
+  assert.equal(row.unavailable, 1);
+  assert.equal(row.agentMsMean, null);
+  assert.equal(row.wallMsP95, null);
+});
+
 test('empty comparison fails closed instead of exiting green', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-compare-empty-'));
   const result = spawnSync(process.execPath, ['bench/real/compare.mjs', dir], { encoding: 'utf8' });

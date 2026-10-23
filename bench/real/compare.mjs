@@ -32,6 +32,12 @@ function mean(values) {
 
 function isUnavailable(run) {
   if (run?.availability === 'unavailable') return true;
+  // Some older retained artifacts marked the run as `ran` even though the
+  // provider rejected the request before the first model turn. Keep those
+  // readiness failures out of quality and latency denominators as well.
+  const diagnostics = [run?.unavailableReason, run?.error, run?.detail, ...(run?.diagnostics ?? [])]
+    .filter(Boolean).join('\n');
+  if (!run?.pass && Number(run?.tokensIn ?? 0) === 0 && Number(run?.tokensOut ?? 0) === 0 && Number(run?.toolCalls ?? 0) === 0 && /(provider auth failure|http\s*401|unauthori[sz]ed|user not found|not logged in|authentication required)/i.test(diagnostics)) return true;
   // Older artifacts predate the availability field. Preserve their meaning:
   // a zero-token, zero-tool, failed run is an adapter/readiness failure, not a
   // model-quality observation.

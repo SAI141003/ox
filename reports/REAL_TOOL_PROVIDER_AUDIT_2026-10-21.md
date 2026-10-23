@@ -993,6 +993,18 @@ failed** in **621.7 s**. It launches each test in a clean comparison and checks
 that the repository remains unchanged, closing the release-gate gap intentionally
 excluded from the ordinary `npm test` command.
 
+## Comparison denominator correction — 2026-10-22
+
+The retained comparison was audited against the raw OpenRouter artifact. Two
+older files labelled the request `ran`, but both had zero provider tokens, zero
+tool calls, and the diagnostic `provider auth failure: HTTP 401 Unauthorized:
+User not found`. The comparison utility now reclassifies that shape as
+**unavailable**, removes its latency from model-quality aggregates, and keeps
+the NVIDIA result as the only measured provider sample currently passing:
+**3/3**, 44,869 input / 764 output tokens, mean agent latency 26.9 s, p95 62.1
+s, with cost unknown. The correction is covered by a dedicated regression test
+and `node --test test/bench-real-compare.test.js` now passes **4/4**.
+
 ## Reference parity pass — 2026-10-22
 
 The supplied Coucou/Windows recording was reviewed at sampled five-second
