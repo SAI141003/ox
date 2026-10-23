@@ -278,11 +278,20 @@ export const STANDARD_SCAFFOLD = {
 export async function runStandardized({ model, task, scaffold = STANDARD_SCAFFOLD }) {
   const messages = [{ role: 'system', content: scaffold.system }, { role: 'user', content: typeof scaffold.question === 'function' ? scaffold.question(task) : scaffold.question }];
   const trajectory = [];
+  const startedAt = Date.now();
+  let firstOutputAt = null;
   for await (const event of runAgent({ target: { model }, messages, ctx: { cwd: task.cwd || process.cwd() }, maxIterations: scaffold.maxIterations || 20, signal: task.signal })) {
+    if (firstOutputAt == null && (event.type === 'text-delta' || event.type === 'assistant-turn' || event.type === 'tool-start')) firstOutputAt = Date.now();
     trajectory.push(event);
-    if (event.type === 'final' || event.type === 'error') break;
+    if (event.type === 'error' || event.type === 'usage-total') break;
   }
-  return { model, taskId: task.id, trajectory, scaffold: 'standardized' };
+  const metrics = summarizeTrajectoryMetrics(trajectory, {
+    estimatedInputTokens: estimateTokens(JSON.stringify(messages)),
+    startedAt,
+    firstOutputAt,
+    model,
+  });
+  return { model, taskId: task.id, trajectory, scaffold: 'standardized', tokens: metrics.estimatedInputTokens, ...metrics };
 }
 
 export async function standardizedEval({ models, tasks }) {
@@ -300,7 +309,7 @@ export async function standardizedEval({ models, tasks }) {
         const final = r.trajectory.filter((e) => e.type === 'final').pop();
         const text = final?.message?.content || '';
         const pass = task?.expectations ? task.expectations.every((e) => new RegExp(e, 'i').test(text)) : text.length > 10;
-        results[model].push({ model, taskId: task.id, pass, tokens: estimateTokens(JSON.stringify([{ role: 'system', content: STANDARD_SCAFFOLD.system }, { role: 'user', content: typeof STANDARD_SCAFFOLD.question === 'function' ? STANDARD_SCAFFOLD.question(task) : STANDARD_SCAFFOLD.question }])), text: text.slice(0, 500) });
+        results[model].push({ model, taskId: task.id, pass, tokens: r.estimatedInputTokens, text: text.slice(0, 500), inputTokens: r.inputTokens, outputTokens: r.outputTokens, totalTokens: r.totalTokens, costUsd: r.costUsd, latencyMs: r.latencyMs, timeToFirstOutputMs: r.timeToFirstOutputMs, turns: r.turns, toolCalls: r.toolCalls, usageMeasured: r.usageMeasured });
         running--;
       }));
     }
