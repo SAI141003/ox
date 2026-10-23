@@ -292,7 +292,11 @@ export function kimiSessions({ home = os.homedir(), now = Date.now() } = {}) {
   // labelled idle rather than pretending there is an active conversation.
   const running = runningApp('Kimi') || runningApp('Kimi Code');
   try { st = fs.statSync(file); row = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {
-    return running ? [{ ...session, tool: 'Kimi', model: '', state: 'idle', doing: '', idleSec: 0, updated: now, appRunning: true }] : [];
+    // A caller asking about a different home (tests, a migrated profile, or a
+    // paired machine snapshot) must not inherit this Mac's GUI-app fallback.
+    // Only Kimi state actually under that home is evidence of its session.
+    const realHome = path.resolve(home) === path.resolve(os.homedir());
+    return running && realHome ? [{ ...session, tool: 'Kimi', model: '', state: 'idle', doing: '', idleSec: 0, updated: now, appRunning: true }] : [];
   }
   const updated = Date.parse(row.updatedAt ?? '') || st.mtimeMs;
   const turns = Array.isArray(row.activeKernelTurns) ? row.activeKernelTurns : [];
@@ -507,12 +511,58 @@ const sending = new Set();
 // result rather than treating enqueueing as delivery.
 const deliveries = new Map(); // ticket -> { id, state, at, result? }
 const DELIVERY_TTL = 60 * 60_000;
-function newTicket() { return `delivery_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`; }
-function pruneDeliveries(now = Date.now()) {
-  for (const [ticket, row] of deliveries) if (now - row.at > DELIVERY_TTL) deliveries.delete(ticket);
+const deliveryHomes = new Set();
+const deliveryFile = (home) => path.join(home, '.ox', 'agent-deliveries.json');
+
+// A local server restart must not turn “queued until this agent is idle” into
+// a lost message. Keep only the small delivery ledger and queued turn payload
+// under ~/.ox (the same local, user-owned store as Ox's other session state).
+// This is not written into another vendor's private conversation store.
+function saveDeliveryState(home = os.homedir()) {
+  try {
+    const queued = Object.fromEntries([...queue].filter(([, rows]) => rows.length).map(([id, rows]) => [id, rows.map(({ text, at, ticket, model }) => ({ text, at, ticket, ...(model ? { model } : {}) }))]));
+    const completed = Object.fromEntries([...deliveries].map(([ticket, row]) => [ticket, row]));
+    const dir = path.dirname(deliveryFile(home));
+    fs.mkdirSync(dir, { recursive: true });
+    const temp = `${deliveryFile(home)}.${process.pid}.tmp`;
+    fs.writeFileSync(temp, `${JSON.stringify({ version: 1, queued, deliveries: completed })}\n`, { mode: 0o600 });
+    fs.renameSync(temp, deliveryFile(home));
+  } catch { /* Delivery persistence must never take down the session board. */ }
 }
-export function deliveryStatus(ticket) {
-  pruneDeliveries();
+
+function restoreDeliveryState(home = os.homedir()) {
+  const key = path.resolve(home);
+  if (deliveryHomes.has(key)) return;
+  deliveryHomes.add(key);
+  let saved = null;
+  try { saved = JSON.parse(fs.readFileSync(deliveryFile(home), 'utf8')); } catch {}
+  if (!saved || typeof saved !== 'object') return;
+  const now = Date.now();
+  for (const [ticket, row] of Object.entries(saved.deliveries ?? {})) {
+    if (!row || typeof row !== 'object' || typeof row.id !== 'string' || now - Number(row.at || 0) > DELIVERY_TTL) continue;
+    deliveries.set(ticket, { ...row, at: Number(row.at) || now });
+  }
+  for (const [id, rows] of Object.entries(saved.queued ?? {})) {
+    if (!Array.isArray(rows)) continue;
+    const safe = rows.filter((row) => row && typeof row.text === 'string' && row.text.trim() && typeof row.ticket === 'string')
+      .map((row) => ({ text: row.text, at: Number(row.at) || now, ticket: row.ticket, model: typeof row.model === 'string' ? row.model : '' }));
+    if (!safe.length) continue;
+    queue.set(id, safe);
+    for (const row of safe) if (!deliveries.has(row.ticket)) deliveries.set(row.ticket, { id, state: 'queued', at: row.at });
+    waitAndSend(id, home);
+  }
+  pruneDeliveries(now, home);
+}
+
+function newTicket() { return `delivery_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`; }
+function pruneDeliveries(now = Date.now(), home = os.homedir()) {
+  let changed = false;
+  for (const [ticket, row] of deliveries) if (now - row.at > DELIVERY_TTL) { deliveries.delete(ticket); changed = true; }
+  if (changed) saveDeliveryState(home);
+}
+export function deliveryStatus(ticket, { home = os.homedir() } = {}) {
+  restoreDeliveryState(home);
+  pruneDeliveries(Date.now(), home);
   const row = deliveries.get(String(ticket ?? ''));
   if (!row) return { found: false };
   return { found: true, ticket: String(ticket), id: row.id, state: row.state, ...(row.result ?? {}) };
@@ -524,6 +574,7 @@ export function deliveryStatus(ticket) {
  * never written to at the same time: the message waits until it is idle.
  */
 export async function sendToSession(id, text, { home = os.homedir(), run = null, model = '' } = {}) {
+  restoreDeliveryState(home);
   const key = String(id).replace(/^ext:/, '');
   const [tool, ...rest] = key.split(':');
   const sid = rest.join(':');
@@ -542,7 +593,8 @@ export async function sendToSession(id, text, { home = os.homedir(), run = null,
   if ((live && live.state !== 'idle') || sending.has(key)) {
     const ticket = newTicket();
     deliveries.set(ticket, { id: key, state: 'queued', at: Date.now() });
-    queue.set(key, [...(queue.get(key) ?? []), { text: msg, at: Date.now(), ticket }]);
+    queue.set(key, [...(queue.get(key) ?? []), { text: msg, at: Date.now(), ticket, model }]);
+    saveDeliveryState(home);
     waitAndSend(key, home, run, model);
     return { queued: true, ticket, why: `${live?.tool ?? tool} is working on this session now; your message goes in as soon as it is idle` };
   }
@@ -581,20 +633,24 @@ function waitAndSend(key, home, run, model = '') {
   const started = Date.now();
   const tick = async () => {
     const q = queue.get(key) ?? [];
-    if (!q.length || Date.now() - started > 30 * 60_000) { waiting.delete(key); return; }
+    if (!q.length || Date.now() - started > 30 * 60_000) { waiting.delete(key); saveDeliveryState(home); return; }
     const live = liveAgents({ home, fresh: true }).find((s) => s.id === key);
     if ((live && live.state !== 'idle') || sending.has(key)) { setTimeout(tick, 5000).unref?.(); return; }
     const next = q.shift();
     queue.set(key, q);
+    saveDeliveryState(home);
     const [tool, ...rest] = key.split(':');
-    const result = await runTurn(key, tool, rest.join(':'), next.text, live?.cwd || null, home, run, model);
-    if (next.ticket) deliveries.set(next.ticket, { id: key, state: 'done', at: Date.now(), result });
+    const result = await runTurn(key, tool, rest.join(':'), next.text, live?.cwd || null, home, run, next.model ?? model);
+    if (next.ticket) { deliveries.set(next.ticket, { id: key, state: 'done', at: Date.now(), result }); saveDeliveryState(home); }
     setTimeout(tick, 1000).unref?.();
   };
   setTimeout(tick, 5000).unref?.();
 }
 
-export const queuedFor = (id) => (queue.get(String(id).replace(/^ext:/, '')) ?? []).length;
+export const queuedFor = (id, { home = os.homedir() } = {}) => {
+  restoreDeliveryState(home);
+  return (queue.get(String(id).replace(/^ext:/, '')) ?? []).length;
+};
 
 /** Create a redacted, project-local handoff for moving a chat between agents.
  * Native CLI targets are started by the transfer layer; desktop-only Cline and
