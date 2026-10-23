@@ -43,6 +43,9 @@
   .mod { border:1px solid rgba(255,255,255,.1); border-radius:10px; padding:7px; min-width:0; background:rgba(255,255,255,.035); }
   .mod b,.mod small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .mod small { color:var(--muted); font-size:10px; margin-top:2px; }
+  .system-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:7px; margin-top:8px; }
+  .system-card { border:1px solid rgba(255,255,255,.1); border-radius:10px; padding:8px; background:rgba(255,255,255,.035); }
+  .system-card b,.system-card small { display:block; } .system-card small { color:var(--muted); margin-top:2px; }
   .file { cursor: pointer; } .file.sel .who { color: var(--text); } .file:not(.sel) .who { color: var(--muted); font-weight: 500; }
   .x { background: none; border: 0; color: var(--dim); cursor: pointer; }
   .big { font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -68,7 +71,7 @@ const el = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const COLORS = ['#7AA2F7', '#F7768E', '#9ECE6A', '#E0AF68', '#BB9AF7', '#2AC3DE'];
 
-let state = { runs: [], shelf: [], mods: [] };
+let state = { runs: [], shelf: [], mods: [], system: {} };
 let tab = null;            // null | 'runs' | 'shelf' | 'focus'
 let hovering = false;
 let selected = null;       // shelf file name
@@ -101,7 +104,7 @@ function render() {
   el('dots').innerHTML = state.runs.slice(0, 5).map((r, i) => `<span class="dot" style="background:${COLORS[i % COLORS.length]}"></span>`).join('');
   const h = headline();
   const s = el('status'); s.textContent = h.text; s.className = `status ${h.tone}`;
-  el('tabs').innerHTML = [['runs', 'Runs'], ['mods', 'Mods'], ['shelf', 'Shelf'], ['focus', 'Focus']]
+  el('tabs').innerHTML = [['runs', 'Runs'], ['mods', 'Mods'], ['system', 'System'], ['shelf', 'Shelf'], ['focus', 'Focus']]
     .map(([k, t]) => `<button class="tab ${tab === k ? 'on' : ''}" data-tab="${k}">${t}</button>`).join('');
   const p = el('panel');
   const ap = pending();
@@ -116,6 +119,10 @@ function render() {
   } else if (tab === 'mods') {
     p.className = 'panel';
     p.innerHTML = `<div class="row"><span class="who">Mods</span><span class="act">presentation presets for bots and Island</span></div><div class="mods">${(state.mods || []).map((m) => `<div class="mod"><b>${esc(m.name)}</b><small>${esc(m.islandLabel)} · ${esc(m.description)}</small></div>`).join('') || '<div class="muted small">No mods available</div>'}</div>`;
+  } else if (tab === 'system') {
+    p.className = 'panel';
+    const s = state.system || {}, b = s.battery;
+    p.innerHTML = `<div class="row"><span class="who">System</span><span class="act">live utility status</span></div><div class="system-grid"><div class="system-card"><b>🔋 Battery</b><small>${b?.percent != null ? `${esc(b.percent)}%${b.charging ? ' · charging' : ''}` : 'unavailable on this OS'}</small></div><div class="system-card"><b>🔊 Volume</b><small>${s.volume != null ? `${esc(s.volume)}%` : 'use the host controls'}</small></div><div class="system-card"><b>🎵 Media</b><small>${s.media?.spotify ? 'Spotify detected' : 'No Spotify session detected'}</small></div><div class="system-card"><b>▣ Tray</b><small>${s.tray ? 'Island utility tray active' : 'unavailable'}</small></div></div>`;
   } else if (tab === 'shelf') {
     p.className = 'panel';
     const files = state.shelf;

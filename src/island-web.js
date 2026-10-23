@@ -28,6 +28,33 @@ const OX_CLI = path.join(HERE, '..', 'bin', 'ox.js');
 const PAGE = path.join(HERE, 'web', 'island.html');
 export const SHELF_DIR = () => path.join(os.homedir(), '.ox', 'island', 'shelf');
 
+// Small, read-only system snapshot for the Island's compact utility tiles.
+// Each platform is best-effort: an unavailable OS API is represented as null,
+// never as a guessed value.
+export function systemSnapshot({ platform = process.platform, spawn = spawnSync } = {}) {
+  const run = (cmd, args) => {
+    try { const r = spawn(cmd, args, { encoding: 'utf8', timeout: 1500, windowsHide: true }); return r.status === 0 ? String(r.stdout ?? '').trim() : ''; } catch { return ''; }
+  };
+  let battery = null;
+  if (platform === 'darwin') {
+    const text = run('pmset', ['-g', 'batt']);
+    const m = /([0-9]+)%/.exec(text); if (m) battery = { percent: Number(m[1]), charging: /AC Power|charging/i.test(text) };
+  } else if (platform === 'win32') {
+    const text = run('powershell', ['-NoProfile', '-Command', '(Get-CimInstance Win32_Battery | Select-Object EstimatedChargeRemaining,BatteryStatus | ConvertTo-Json -Compress)']);
+    try { const b = JSON.parse(text); if (b?.EstimatedChargeRemaining != null) battery = { percent: Number(b.EstimatedChargeRemaining), charging: [2,3,6,7,8,9].includes(Number(b.BatteryStatus)) }; } catch {}
+  } else {
+    const text = run('sh', ['-c', 'for f in /sys/class/power_supply/BAT*/capacity; do [ -r "$f" ] && cat "$f" && break; done']);
+    if (/^\d+$/.test(text)) battery = { percent: Number(text), charging: null };
+  }
+  let volume = null;
+  if (platform === 'darwin') { const m = /volume:(\d+)/i.exec(run('osascript', ['-e', 'output volume of (get volume settings)'])); if (m) volume = Number(m[1]); }
+  else if (platform === 'win32') { volume = null; }
+  else { const m = /\[(\d+)%\]/.exec(run('amixer', ['get', 'Master'])); if (m) volume = Number(m[1]); }
+  const mediaText = platform === 'win32' ? run('tasklist', ['/FI', 'IMAGENAME eq Spotify.exe']) : platform === 'darwin' ? run('pgrep', ['-x', 'Spotify']) : run('pgrep', ['-x', 'spotify']);
+  const media = platform === 'win32' ? /Spotify\.exe/i.test(mediaText) : Boolean(mediaText);
+  return { battery, volume, media: { spotify: media }, tray: true };
+}
+
 // One run, as the island shows it.
 export function summarize(sock, st) {
   const tool = currentTool(st);
@@ -125,7 +152,7 @@ export function createIslandServer({
         let files = [];
         try { files = fs.readdirSync(shelf).map((n) => ({ name: n, path: path.join(shelf, n) })); } catch {}
         const { listMods } = await import('./mods.js');
-        return send(200, { runs: watcher.snapshot(), shelf: files, mods: listMods(), platform: process.platform });
+        return send(200, { runs: watcher.snapshot(), shelf: files, mods: listMods(), system: systemSnapshot(), platform: process.platform });
       }
       if (req.method === 'POST' && url.pathname === '/api/answer') {
         const b = JSON.parse((await readBody(req, 4096)).toString('utf8') || '{}');

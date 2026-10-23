@@ -9,7 +9,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { createIslandServer, createRunWatcher } from '../src/island-web.js';
+import { createIslandServer, createRunWatcher, systemSnapshot } from '../src/island-web.js';
 import { listIpcSockets, socketPathFor } from '../src/ipc.js';
 
 const OX = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
@@ -21,6 +21,19 @@ test('sockets are named pipes on Windows and files elsewhere', () => {
   fs.writeFileSync(path.join(dir, 'ox-ipc-a.sock'), '');
   fs.writeFileSync(path.join(dir, 'other.sock'), '');
   assert.deepEqual(listIpcSockets(dir, 'linux'), [path.join(dir, 'ox-ipc-a.sock')]);
+});
+
+test('system snapshot is read-only and does not invent unavailable values', () => {
+  const calls = [];
+  const snap = systemSnapshot({ platform: 'win32', spawn: (cmd, args) => {
+    calls.push([cmd, args]);
+    return { status: 0, stdout: cmd === 'powershell' ? '{"EstimatedChargeRemaining":42,"BatteryStatus":2}' : cmd === 'tasklist' ? 'Spotify.exe' : '' };
+  }});
+  assert.deepEqual(snap.battery, { percent: 42, charging: true });
+  assert.equal(snap.volume, null);
+  assert.equal(snap.media.spotify, true);
+  assert.equal(snap.tray, true);
+  assert.ok(calls.every(([cmd]) => ['powershell', 'tasklist'].includes(cmd)));
 });
 
 // A model that wants to write a file: the run parks on an approval.
