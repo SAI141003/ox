@@ -119,7 +119,6 @@ export const BUILTIN_SCHEMAS = [
   ...INSTALL_SKILL_SCHEMAS,
   ...CODE_GRAPH_TOOL_SCHEMAS,
   ...BOT_TOOL_SCHEMAS,
-  ...SESSION_RECALL_TOOL_SCHEMAS,
   {
     name: 'brain',
     description: "Your long-term notes (ox brain, markdown that opens in Obsidian). action \"search\": what is known about something (decisions, facts about the user and projects, past research), current facts first, at most ~1,500 tokens. action \"note\": save something worth keeping; when it replaces an older note, name it in supersedes (the old one is kept as history).",
@@ -339,6 +338,12 @@ export function listToolSchemas(ctx = {}, strictSchemas = false) {
   for (const s of CANVAS_TOOL_SCHEMAS) if (!schemas.some((x) => x.name === s.name)) schemas.push(s);
   // The task board, only for an agent started for a task (ox task run).
   if (currentTaskId(ctx)) for (const s of TASK_BOARD_TOOL_SCHEMAS) if (!schemas.some((x) => x.name === s.name)) schemas.push(s);
+  // Historical transcript access is useful only when the user asks about
+  // earlier work. Keeping it out of ordinary turns avoids paying schema tokens
+  // for a tool that cannot help with the current request.
+  if (ctx.enableSessionRecall === true) {
+    for (const s of SESSION_RECALL_TOOL_SCHEMAS) if (!schemas.some((x) => x.name === s.name)) schemas.push(s);
+  }
   // Wave 6b: subagent tool — available unless explicitly disabled for this ctx.
   if (ctx.enableSubagents !== false && !schemas.some((x) => x.name === 'subagent')) {
     schemas.push(subagentToolSchema());

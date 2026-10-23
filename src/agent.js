@@ -1308,8 +1308,13 @@ async function* runAgentLoop(opts = {}) {
     config?.strictSchemas ?? config?.tools?.strictSchemas ?? ctx?.strictSchemas;
   const strictSchemas =
     configuredStrictSchemas === true || isSmallModel(model, window);
+  const latestUserText = [...messages].reverse().find((m) => m?.role === 'user' && typeof m?.content === 'string')?.content ?? '';
+  // Session recall is a local-history capability, not a default tax on every
+  // turn. Offer it when the user clearly refers to earlier work/history, or
+  // when a caller explicitly asks to keep it available.
+  const offerSessionRecall = ctx.enableSessionRecall === true || /\b(previous|prior|earlier|last time|remember|history|old session|our session|what did we|we discussed)\b/i.test(latestUserText);
   let tools = pruneToolSchemas(
-    listToolSchemas(ctx, strictSchemas),
+    listToolSchemas({ ...ctx, enableSessionRecall: offerSessionRecall }, strictSchemas),
     Math.max(TOOL_SCHEMA_BUDGET_FLOOR, window),
     strictSchemas
   );
