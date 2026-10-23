@@ -33,6 +33,7 @@ import { createMediaTool, MEDIA_TOOL_SCHEMAS, MEDIA_TOOLS, MEDIA_KEYWORDS } from
 import { editVideoTool, VIDEO_TOOL_SCHEMAS } from './video.js';
 import { installSkillTool, INSTALL_SKILL_SCHEMAS, INSTALL_SKILL_TOOLS, INSTALL_SKILL_KEYWORDS } from './install-skill.js';
 import { codeGraphTool, CODE_GRAPH_TOOL_SCHEMAS, CODE_GRAPH_TOOLS, CODE_GRAPH_KEYWORDS } from './code-graph.js';
+import { withWriteLock } from '../write-lock.js';
 
 export const TOOL_IMPLS = {
   read_file: readFileTool,
@@ -825,7 +826,17 @@ export async function dispatchTool(name, args, ctx = {}) {
         isError: true,
       };
     }
-    const result = await impl(args ?? {}, ctx ?? {});
+    // Subagents may run concurrently in the shared workspace. Serialize only
+    // mutations targeting the same argument path; unrelated files remain
+    // concurrent. The filesystem tool still performs the authoritative path
+    // resolution and approval checks inside the lock.
+    const mutatesFile = name === 'write_file' || name === 'edit_file';
+    const lockPath = mutatesFile
+      ? path.resolve(String(ctx?.cwd ?? process.cwd()), String(args?.path ?? ''))
+      : null;
+    const result = mutatesFile
+      ? await withWriteLock(lockPath, () => impl(args ?? {}, ctx ?? {}))
+      : await impl(args ?? {}, ctx ?? {});
     if (result && typeof result === 'object' && !Array.isArray(result)) {
       const out = { content: String(result.content ?? '') };
       if (result.isError === true) out.isError = true;

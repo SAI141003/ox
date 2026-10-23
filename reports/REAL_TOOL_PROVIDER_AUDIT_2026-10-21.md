@@ -852,3 +852,14 @@ alias rather than silently mixing estimates with provider usage.
 The follow-up accounting gate passed **56/56** on 2026-10-23 across benchmark event
 retention, cost classification and budget stops, measured benchmark metrics, and
 parallel-subagent scheduling. No test treats estimated tokens as provider usage.
+
+## Shared-workspace write safety — 2026-10-23
+
+The remaining isolation gap was narrowed without overstating it. `write_file` and
+`edit_file` now use a keyed async lock on their resolved target path: concurrent
+agents can still work on different files, while same-file mutations serialize
+through the existing read/approval/backup/write path. A regression test proves
+two concurrent writes leave one complete file and release the lock; the focused
+suite is **20/20**, and `npm run verify:quick` is **562 syntax files + 6 smoke entry
+points**. This does **not** provide isolated worktrees, merge planning, or safety
+for arbitrary `bash` commands that mutate files; those remain explicit gaps.
