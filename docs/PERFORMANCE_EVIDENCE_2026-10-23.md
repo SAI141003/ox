@@ -7,6 +7,38 @@ network, provider queueing, and hardware all materially affect these numbers.
 
 ## What was measured
 
+### Fresh regression check: NVIDIA Nemotron after hosted schema-pruning repair
+
+On 2026-10-23, a real `read-and-report` run was repeated after fixing a
+hosted-provider runtime error in `pruneToolSchemas`:
+
+```sh
+node bench/real/runner.mjs \
+  --model nvidia:nvidia/nemotron-3-ultra-550b-a55b \
+  --task read-and-report --timeout 90000
+```
+
+The first attempt failed before an inference request with
+`TOOL_SCHEMA_BUDGET_FLOOR is not defined`.  That was an Ox code defect, not
+provider latency or model quality.  The repaired run completed the actual
+workspace task: it read the live configuration and wrote the expected `7314`
+to `answer.txt`.
+
+| Metric | Observed result |
+|---|---:|
+| Runs / passes | 1 / 1 |
+| End-to-end time | 7.092 s |
+| First output text | 6.815 s |
+| Tool calls | 2 (`read_file`, `write_file`) |
+| Mean tool execution | 10 ms |
+| Input / output tokens | 13,202 / 272 |
+| Cost | Unknown — this provider response did not supply price data |
+
+This is one warm-path sample, not a provider leaderboard or a cost quote.
+The complete captured result is kept outside the repository at
+`/tmp/ox-real-nvidia-nemotron-read-after-floor-fix.json` for the current
+machine session.
+
 ### Real tool-use task: NVIDIA Nemotron
 
 `bench/results/2026-10-22T15-45-00-live-nvidia/nemotron-read.json` recorded
