@@ -978,6 +978,14 @@ so cost remains **unknown**. The retained comparison now has this model at **2/2
 passes**, with nearest-rank p95 agent latency **9.3 s**. Artifact:
 `bench/results/2026-10-25T-live-nvidia/nemotron-read.json`.
 
+A third capped NVIDIA repeat on 2026-10-26 also passed, but took **62.1 s wall**
+with first text at **43.1 s** (14,967 input / 210 output tokens). The retained
+three-run aggregate is now **3/3 passes**, **44,869 input / 764 output tokens**,
+mean agent time **26.9 s**, and p95 agent time **62.1 s**. This variance is why
+the comparison reports tail latency rather than presenting the earlier ~9 s runs
+as a stable speed claim. Artifact:
+`bench/results/2026-10-26T-live-nvidia/nemotron-read.json`.
+
 ## Repository-mutation guard — 2026-10-24
 
 The separate expensive guard completed with **260/260 guarded tests passed, 0

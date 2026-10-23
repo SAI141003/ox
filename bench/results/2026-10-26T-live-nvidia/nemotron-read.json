@@ -1,0 +1,179 @@
+{
+  "suite": "bench/real",
+  "date": "2026-10-23T02:18:26.104Z",
+  "model": "nvidia:nvidia/nemotron-3-ultra-550b-a55b",
+  "provider": "nvidia",
+  "modelId": "nvidia/nemotron-3-ultra-550b-a55b",
+  "priced": false,
+  "repeats": 1,
+  "env": {
+    "node": "22.22.3",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "suiteMs": 62125,
+  "results": [
+    {
+      "id": "read-and-report",
+      "name": "Read a buried config value and write it down",
+      "category": "read",
+      "prompt": "A staging incident opened earlier: replicas were lagging and the runbook says we\nalert on `replicaLagToleranceMs`. Find the CURRENT value of `replicaLagToleranceMs`\nrecorded in this project's deployment tuning config, then write ONLY that integer\n(digits only, no units, no prose, no quotes, one line, trailing newline is fine) to a\nnew file called `answer.txt` in the project root.\n\nUse the live config, not the historical backup.",
+      "passCount": 1,
+      "repeats": 1,
+      "measuredRuns": 1,
+      "unavailableRuns": 0,
+      "passRate": 1,
+      "ms": {
+        "mean": 62124,
+        "stddev": 0,
+        "n": 1,
+        "p95": 62124
+      },
+      "agentMs": {
+        "mean": 62103.934541999995,
+        "stddev": 0,
+        "n": 1,
+        "p95": 62103.934541999995
+      },
+      "firstTextMs": {
+        "mean": 43114.632333,
+        "stddev": 0,
+        "n": 1,
+        "p95": 43114.632333
+      },
+      "firstToolMs": {
+        "mean": 43195.056167,
+        "stddev": 0,
+        "n": 1,
+        "p95": 43195.056167
+      },
+      "toolDurationMs": {
+        "mean": 11.272874999998749,
+        "stddev": 0,
+        "n": 1,
+        "p95": 11.272874999998749
+      },
+      "toolCalls": {
+        "mean": 2,
+        "stddev": 0,
+        "n": 1
+      },
+      "turns": {
+        "mean": 3,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensIn": {
+        "mean": 14967,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensOut": {
+        "mean": 210,
+        "stddev": 0,
+        "n": 1
+      },
+      "redundantCalls": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "costUsd": {
+        "mean": null,
+        "stddev": null,
+        "n": 0,
+        "unknown": true
+      },
+      "runs": [
+        {
+          "pass": true,
+          "availability": "ran",
+          "unavailableReason": null,
+          "detail": "found and wrote 7314",
+          "checks": [
+            {
+              "name": "live tuning file exposes exactly one replicaLagToleranceMs",
+              "ok": true,
+              "detail": "grep -> \"replicaLagToleranceMs: 7314\\n\""
+            },
+            {
+              "name": "answer.txt exists",
+              "ok": true,
+              "detail": ""
+            },
+            {
+              "name": "answer.txt contains exactly 7314",
+              "ok": true,
+              "detail": "got \"7314\" (4 chars)"
+            },
+            {
+              "name": "answer.txt holds one integer and nothing else",
+              "ok": true,
+              "detail": "got \"7314\""
+            }
+          ],
+          "ms": 62124,
+          "agentMs": 62103.934541999995,
+          "firstTextMs": 43114.632333,
+          "firstToolMs": 43195.056167,
+          "toolDurationMs": 11.272874999998749,
+          "timedTools": 2,
+          "exitCode": 0,
+          "timedOut": false,
+          "toolCalls": 2,
+          "uniqueCalls": 2,
+          "redundantCalls": 0,
+          "tools": [
+            "read_file",
+            "write_file"
+          ],
+          "perTool": {
+            "read_file": 1,
+            "write_file": 1
+          },
+          "turns": 3,
+          "errorEvents": 0,
+          "toolErrors": 0,
+          "retryEvents": 0,
+          "tokensIn": 14967,
+          "tokensOut": 210,
+          "costUsd": null,
+          "usageTurns": [
+            {
+              "turn": 1,
+              "aux": false,
+              "inputTokens": 4871,
+              "outputTokens": 71
+            },
+            {
+              "turn": 2,
+              "aux": false,
+              "inputTokens": 5017,
+              "outputTokens": 74
+            },
+            {
+              "turn": 3,
+              "aux": false,
+              "inputTokens": 5079,
+              "outputTokens": 65
+            }
+          ],
+          "eventsFile": null,
+          "timingsFile": null,
+          "eventsKept": 0,
+          "diagnostics": [],
+          "finalText": "Done. The current value from `deploy/tuning.yaml` is `7314`.",
+          "sandbox": null
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "totalRuns": 1,
+    "totalMeasured": 1,
+    "totalUnavailable": 0,
+    "totalPass": 1,
+    "passRatePercent": 100,
+    "suiteMs": 62125
+  }
+}
