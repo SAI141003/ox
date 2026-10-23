@@ -406,11 +406,21 @@ export async function sessionMessages(id, { home = os.homedir(), limit = 12 } = 
     return { tool, id: sid, messages: msgs.slice(-limit).map((m) => ({ ...m, text: m.text.slice(0, 1200) })), canSend: false, why: "Copilot's agent has no command to continue a session from outside" };
   }
   const T = await import('./session-transfer.js');
-  if (!['claude', 'codex', 'hermes'].includes(tool)) return { tool, id: sid, messages: [], canSend: false, why: `${tool} keeps its conversation where ox cannot read it; open it in ${tool}` };
-  const entry = T.listSessions({ home, tools: [tool], limit: 200 }).find((x) => String(x.id) === sid);
+  // External editors do not expose a safe resume/send API, but their local
+  // transcripts are readable. Showing that transcript is important: a live
+  // Kimi/Cline session must not look empty merely because Ox cannot continue
+  // it. Kimi's live-board row uses the stable `main` id; resolve it to the
+  // newest real conversation before reading.
+  const readable = ['claude', 'codex', 'hermes', 'cline', 'kimi'];
+  if (!readable.includes(tool)) return { tool, id: sid, messages: [], canSend: false, why: `${tool} keeps its conversation where ox cannot read it; open it in ${tool}` };
+  const entries = T.listSessions({ home, tools: [tool], limit: 200 });
+  const entry = (tool === 'kimi' && (!sid || sid === 'main'))
+    ? entries[0]
+    : entries.find((x) => String(x.id) === sid) ?? entries.find((x) => String(x.id).startsWith(sid));
   if (!entry) throw new Error(`no ${tool} session ${sid}`);
   const s = T.readSession(entry, { home });
-  return { tool, id: sid, cwd: s.cwd, model: s.model, title: s.title, messages: s.messages.slice(-limit).map((m) => ({ role: m.role, text: String(m.text ?? '').slice(0, 1200), tools: (m.tools ?? []).slice(-3).map((t) => describeCall(t.name, { command: t.input, file_path: t.input })) })), canSend: true };
+  const canSend = ['claude', 'codex', 'hermes'].includes(tool);
+  return { tool, id: entry.id, cwd: s.cwd, model: s.model, title: s.title, messages: s.messages.slice(-limit).map((m) => ({ role: m.role, text: String(m.text ?? '').slice(0, 1200), tools: (m.tools ?? []).slice(-3).map((t) => describeCall(t.name, { command: t.input, file_path: t.input })) })), canSend, ...(canSend ? {} : { why: `${tool} transcript is readable in Ox, but ${tool} does not expose a safe external resume/send API; use Transfer or open ${tool} to continue.` }) };
 }
 
 /** How each tool continues a session with one message (its own resume, headless). */
