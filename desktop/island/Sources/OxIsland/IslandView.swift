@@ -81,7 +81,22 @@ struct IslandRoot: View {
         // Top-centred, like the notch. Every child is laid out in the island's
         // own width; the shape both paints the black and clips the content.
         ZStack(alignment: .top) {
-            Color.black
+            // Keep the panel transparent outside the island, but give the
+            // island itself a restrained glass surface instead of a flat black
+            // slab. This makes the expanded cards readable without covering the
+            // user's desktop with an opaque rectangle.
+            RoundedRectangle(cornerRadius: s.corner, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    LinearGradient(
+                        colors: [Color(hex: "#171A22").opacity(0.98), Color(hex: "#0D1016").opacity(0.98)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: s.corner, style: .continuous)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                )
                 .contentShape(Rectangle())
                 .onTapGesture { bridge.pinnedOpen.toggle() }
 

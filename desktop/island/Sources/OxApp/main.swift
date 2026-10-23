@@ -110,7 +110,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     func load() {
         if !usedEnvURL, let s = ProcessInfo.processInfo.environment["OX_APP_URL"], let u = URL(string: s) {
-            web.load(URLRequest(url: u))
+            // `ox app` may have handed this process a URL from an older server.
+            // Loading it blindly leaves the native window on a permanent blank
+            // / "Starting ox…" page when that port has since been recycled.
+            // Verify the endpoint first; if it is stale, ask ox for the current
+            // server instead of waiting for WebKit's provisional navigation to
+            // fail (which is not reliable for an about:blank startup page).
+            showMessage("Connecting to ox…")
+            var req = URLRequest(url: u.appendingPathComponent("health"))
+            req.timeoutInterval = 1.5
+            URLSession.shared.dataTask(with: req) { [weak self] _, response, _ in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
+                        self.web.load(URLRequest(url: u))
+                    } else {
+                        self.usedEnvURL = true
+                        self.load()
+                    }
+                }
+            }.resume()
             return
         }
         showMessage("Starting ox…")
