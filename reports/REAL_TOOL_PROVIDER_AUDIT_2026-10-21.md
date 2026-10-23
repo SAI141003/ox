@@ -833,3 +833,15 @@ an already-dispatched tool/provider request may finish. Ordinary peer mail still
 requires `agent_observe`. The matrix and source comment now reflect that boundary;
 the remaining competitive gap is per-agent workspace isolation, not an absent steer
 or cancel mechanism.
+
+## Benchmark measurement correction — 2026-10-23
+
+The benchmark runner previously exposed only an estimated input size from the
+initial prompt. That was insufficient evidence for token, latency, or spend
+comparisons. `src/benchmark.js` now retains the run through `usage-total`, prefers
+provider-reported totals over per-request events (avoiding retry double-counting),
+and records input/output/cache tokens, total tokens, wall latency, time to first
+output, turn count, tool-call count, and measured cost. If the provider reports no
+usage or the model has no pricing row, those fields remain `null`; the estimate is
+kept separately as `estimatedInputTokens`. The new regression tests pass **2/2**,
+and `npm run verify:quick` passes **560 syntax files + 6 smoke entry points**.
