@@ -30,6 +30,16 @@ function mean(values) {
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 }
 
+function isUnavailable(run) {
+  if (run?.availability === 'unavailable') return true;
+  // Older artifacts predate the availability field. Preserve their meaning:
+  // a zero-token, zero-tool, failed run is an adapter/readiness failure, not a
+  // model-quality observation.
+  return run?.availability == null && !run?.pass &&
+    Number(run?.tokensIn ?? 0) === 0 && Number(run?.tokensOut ?? 0) === 0 &&
+    Number(run?.toolCalls ?? 0) === 0;
+}
+
 function load(file) {
   try {
     const value = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -53,7 +63,7 @@ function aggregate(records) {
     group.files.push(file);
     for (const task of value.results ?? []) for (const run of task.runs ?? []) {
       group.runs++;
-      if (run.availability === 'unavailable') { group.unavailable++; continue; }
+      if (isUnavailable(run)) { group.unavailable++; continue; }
       group.measured++;
       if (run.pass) group.passed++;
       if (Number.isFinite(run.tokensIn)) group.tokensIn += run.tokensIn;
@@ -100,7 +110,7 @@ function main(argv) {
   if (jsonOut) { fs.mkdirSync(path.dirname(path.resolve(jsonOut)), { recursive: true }); fs.writeFileSync(path.resolve(jsonOut), `${JSON.stringify(output, null, 2)}\n`); }
   console.log('| Provider | Model | Pass | Runs | Tokens in/out | Cost | Agent mean / p95 | Wall mean / p95 |');
   console.log('|---|---|---:|---:|---:|---:|---:|---:|');
-  for (const r of rows) console.log(`| ${r.provider} | ${r.model} | ${r.passed}/${r.measured || r.runs} | ${r.runs} | ${r.tokensIn}/${r.tokensOut} | ${r.costKnown ? `$${fmt(r.costUsd, 6)}` : 'unknown'} | ${fmt(r.agentMsMean)}/${fmt(r.agentMsP95)} ms | ${fmt(r.wallMsMean)}/${fmt(r.wallMsP95)} ms |`);
+  for (const r of rows) console.log(`| ${r.provider} | ${r.model} | ${r.passed}/${r.runs} | ${r.runs} | ${r.tokensIn}/${r.tokensOut} | ${r.costKnown ? `$${fmt(r.costUsd, 6)}` : 'unknown'} | ${fmt(r.agentMsMean)}/${fmt(r.agentMsP95)} ms | ${fmt(r.wallMsMean)}/${fmt(r.wallMsP95)} ms |`);
   if (!rows.length) console.error('No bench/real artifacts found. Run a real benchmark first.');
 }
 

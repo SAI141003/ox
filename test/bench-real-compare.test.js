@@ -22,3 +22,13 @@ test('real benchmark comparison aggregates pass, tokens, latency and unknown cos
     files: ['fixture.json'],
   });
 });
+
+test('comparison recognizes legacy zero-token readiness failures as unavailable', () => {
+  const [row] = aggregate([{
+    file: 'legacy.json',
+    value: { suite: 'bench/real', provider: 'subscription', modelId: 'claude-plan', results: [{ runs: [{ pass: false, tokensIn: 0, tokensOut: 0, toolCalls: 0 }] }] },
+  }]);
+  assert.equal(row.measured, 0);
+  assert.equal(row.unavailable, 1);
+  assert.equal(row.passRate, null);
+});
