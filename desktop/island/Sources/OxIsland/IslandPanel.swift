@@ -80,7 +80,9 @@ enum IslandLayout {
         case .launch: return (launchSize.width, launchSize.height, 30, -ear)
         case .hidden: return (m.width, m.height, 10, 0)
         case .compact: return tickerOn ? (max(m.width + 2 * wing + 2 * ear, tickerRows > 1 ? 470 : 380), m.height + tickerHeight * CGFloat(tickerRows) + (tickerRows > 1 ? 4 : 0), 16, -ear) : (m.width + 2 * wing + 2 * ear, m.height, 12, -ear)
-        case .expanded: return (expanded.width, expanded.height + (office ? (officeOpen && trayOpen ? officeTall + 36 : cardOpen || trayOpen ? panelExtra : officeHeight) + 8 : 0), 22, -ear)
+        // Expanded is a regular rounded card. The concave ear cut-outs belong
+        // only to the compact notch shape.
+        case .expanded: return (expanded.width, expanded.height + (office ? (officeOpen && trayOpen ? officeTall + 36 : cardOpen || trayOpen ? panelExtra : officeHeight) + 8 : 0), 22, 0)
         }
     }
 }
