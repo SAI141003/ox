@@ -754,7 +754,10 @@ final class OxBridge: ObservableObject {
     struct SessionCard: Equatable {
         let id: String            // the island's session id
         var lines: [CardLine] = []
-        var canSend = true
+        // An external card starts read-only until its own endpoint confirms a
+        // working resume path.  Starting true briefly exposed Send for Kimi,
+        // Cline, or a broken CLI while the transcript request was in flight.
+        var canSend = false
         var note = ""
         var busy = false
         /// A native OX run streams over its socket.  Keep that partial reply
