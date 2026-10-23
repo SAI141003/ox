@@ -396,6 +396,10 @@ export const TOOL_PRUNE_PRIORITY = Object.freeze([
 
 const PRUNE_DESC_CAP = 160;
 const PRUNE_SHARE = 0.25;
+// Keep the historic 8k normal-window floor local to this module.  The agent
+// owns its compaction threshold, while tool pruning must be usable directly by
+// every provider path (including hosted models) without reaching into agent.js.
+const TOOL_SCHEMA_BUDGET_FLOOR = 8_000;
 
 
 // Apply strict mode to a schema without changing which fields are required.
