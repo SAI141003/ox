@@ -419,7 +419,7 @@ export async function sessionMessages(id, { home = os.homedir(), limit = 12 } = 
   // Kimi/Cline session must not look empty merely because Ox cannot continue
   // it. Kimi's live-board row uses the stable `main` id; resolve it to the
   // newest real conversation before reading.
-  const readable = ['claude', 'codex', 'hermes', 'cline', 'kimi'];
+  const readable = ['claude', 'codex', 'hermes', 'cline', 'kimi', 'kilo'];
   if (!readable.includes(tool)) return { tool, id: sid, messages: [], canSend: false, why: `${tool} keeps its conversation where ox cannot read it; open it in ${tool}` };
   const entries = T.listSessions({ home, tools: [tool], limit: 200 });
   const entry = (tool === 'kimi' && (!sid || sid === 'main'))

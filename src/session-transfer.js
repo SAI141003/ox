@@ -324,13 +324,56 @@ const kimi = {
   },
 };
 
+// Kilo Code keeps its transcript in the same local SQLite database used by
+// its desktop and VS Code views.  This is deliberately read-only: Ox can show
+// and hand off context, but it must not inject messages into Kilo's private
+// store or pretend that it resumed Kilo's vendor-native turn.
+const kilo = {
+  label: 'Kilo',
+  db: (home) => path.join(home, '.local', 'share', 'kilo', 'kilo.db'),
+  list(home) {
+    const rows = sqliteJson(this.db(home), 'select id,title,directory,model,time_updated from session order by time_updated desc limit 100') ?? [];
+    return rows.map((r) => {
+      let model = null; try { model = JSON.parse(r.model ?? '{}').id ?? null; } catch { model = r.model ?? null; }
+      return { tool: 'kilo', id: r.id, cwd: r.directory || null, title: r.title || 'Kilo session', model, updatedAt: Number(r.time_updated) || 0, ref: `${this.db(home)}::${r.id}` };
+    });
+  },
+  read(home, ref) {
+    const raw = String(ref), sep = raw.indexOf('::');
+    const db = sep >= 0 ? raw.slice(0, sep) : raw, id = sep >= 0 ? raw.slice(sep + 2) : '';
+    const safe = id.replace(/'/g, "''");
+    const meta = (sqliteJson(db, `select id,title,directory,model,time_created,time_updated from session where id='${safe}' limit 1`) ?? [])[0];
+    if (!meta) throw new Error(`no Kilo session ${id}`);
+    let model = null; try { model = JSON.parse(meta.model ?? '{}').id ?? null; } catch { model = meta.model ?? null; }
+    const s = base('kilo', meta.id, ref);
+    Object.assign(s, { cwd: meta.directory || null, title: meta.title || 'Kilo session', model, startedAt: Number(meta.time_created) ? new Date(Number(meta.time_created)).toISOString() : null, updatedAt: Number(meta.time_updated) ? new Date(Number(meta.time_updated)).toISOString() : null });
+    // Bound to the latest 100 messages; Kilo's reasoning/tool parts can be
+    // large, while Island and a handoff need recent usable conversation.
+    const rows = sqliteJson(db, `select m.id,m.time_created,m.data as message,p.data as part from (select id,time_created,time_updated,data from message where session_id='${safe}' order by time_updated desc limit 100) m left join part p on p.message_id=m.id order by m.time_created asc,p.time_created asc`) ?? [];
+    const messages = new Map();
+    for (const row of rows) {
+      let m; try { m = JSON.parse(row.message ?? '{}'); } catch { m = {}; }
+      const existing = messages.get(row.id) ?? { role: m.role === 'user' ? 'user' : 'assistant', text: [] };
+      if (row.part) {
+        let p; try { p = JSON.parse(row.part); } catch { p = {}; }
+        // Visible text is useful context; omit hidden/internal reasoning and
+        // step metadata from the transcript and handoff.
+        if (p.type === 'text' && !p.ignored && typeof p.text === 'string') existing.text.push(p.text);
+      }
+      messages.set(row.id, existing);
+    }
+    for (const m of messages.values()) push(s, m.role, m.text.join('\n'));
+    return finish(s);
+  },
+};
+
 // Targets only: these keep their sessions where ox does not read them, but
 // they can be handed a session through their command line.
 const gemini = { label: 'Gemini CLI', start: (prompt) => ['gemini', ['-i', prompt]] };
 const cursor = { label: 'Cursor', start: (prompt) => ['cursor-agent', [prompt]], resume: (id) => ['cursor-agent', ['--resume', id]] };
 
-export const TOOLS = Object.freeze({ claude, codex, hermes, ox, cline, kimi, gemini, cursor });
-export const SOURCES = Object.freeze(['claude', 'codex', 'hermes', 'ox', 'cline', 'kimi']);
+export const TOOLS = Object.freeze({ claude, codex, hermes, ox, cline, kimi, kilo, gemini, cursor });
+export const SOURCES = Object.freeze(['claude', 'codex', 'hermes', 'ox', 'cline', 'kimi', 'kilo']);
 export const TARGETS = Object.freeze(['claude', 'codex', 'hermes', 'ox', 'gemini', 'cursor', 'cline', 'kilo', 'kimi', 'paperclip', 'file']);
 const ALIASES = { 'claude-code': 'claude', cc: 'claude', chatgpt: 'codex', openai: 'codex', 'cursor-agent': 'cursor', 'gemini-cli': 'gemini' };
 export const toolName = (s) => { const n = String(s ?? '').toLowerCase(); return ALIASES[n] ?? n; };
@@ -453,8 +496,16 @@ export function handoffMarkdown(s, { budget = 24_000, git = gitState(s.cwd) } = 
 }
 
 /** Write the handoff into the project (.agent/handoff/) and return its paths. */
-export function writeHandoff(s, { dir = s.cwd && fs.existsSync(s.cwd) ? s.cwd : process.cwd(), ...opts } = {}) {
-  const out = path.join(dir, HANDOFF_DIR);
+export function writeHandoff(s, { dir = null, home = os.homedir(), ...opts } = {}) {
+  const requested = dir ?? (s.cwd && fs.existsSync(s.cwd) ? s.cwd : process.cwd());
+  const root = path.parse(path.resolve(requested)).root;
+  let target = requested;
+  // Some editors persist `/` or a vanished scratch directory as their session
+  // folder.  Never try to create `/.agent` (nor fail a transfer): keep the
+  // redacted handoff in Ox's local data instead and report that exact folder.
+  try { fs.accessSync(target, fs.constants.W_OK); } catch { target = ''; }
+  if (!target || path.resolve(target) === root) target = path.join(home, '.ox', 'handoffs', `${s.tool}-${String(s.id).slice(0, 16)}`);
+  const out = path.join(target, HANDOFF_DIR);
   fs.mkdirSync(out, { recursive: true });
   // Never an untracked surprise in someone's repository: the folder ignores
   // itself, and the project's own .gitignore is left alone.
@@ -466,7 +517,7 @@ export function writeHandoff(s, { dir = s.cwd && fs.existsSync(s.cwd) ? s.cwd : 
   fs.writeFileSync(md, handoffMarkdown(s, opts));
   const { ref, ...rest } = s;
   fs.writeFileSync(json, redactSecrets(JSON.stringify({ ...rest, source: { tool: s.tool, id: s.id }, transferredAt: new Date().toISOString() }, null, 2)).text);
-  return { md, json, dir, rel: path.relative(dir, md) };
+  return { md, json, dir: target, rel: path.relative(target, md) };
 }
 
 // ---------------------------------------------------------------- delivery
