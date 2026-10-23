@@ -40,6 +40,7 @@ import { fileURLToPath } from 'node:url';
 import { resolveTurnMode } from './modes.js';
 import { listAgents, loadAgent, agentBotSpec, agentPersonaBlock } from './agents.js';
 import { parseBackendSpec } from './docker-backend.js';
+import { createMemoryApi } from './memory.js';
 import { readConfigDoc, saveConfigDoc } from './config.js';
 import * as UI_LANG from './ui-lang.js';
 import { classifyTurn, warmSystem1 } from './system1.js';
@@ -851,11 +852,18 @@ async function handleChatCompletions(req, res) {
   // nothing learned, no usage record, memory writes refused.
   const incognito = body.ox_incognito === true || process.env.OX_INCOGNITO === '1';
   let memoryBlock = '';
+  // The prompt block alone is not a memory implementation.  App-originated
+  // chats also need the same dispatcher the CLI receives, otherwise a bot can
+  // see project memory but every memory_* call fails as "unavailable".
+  // Keep the instance request-local so its project root is the active app
+  // workspace rather than whichever directory started the HTTP server.
+  let memory = null;
   if (!tool.noMemory && !incognito && process.env.OX_MEMORY !== '0')
   try {
     const { loadMemoryBlock } = await import('./memory.js');
     const { memoryPromptBlock } = await import('./memory-graph.js');
     memoryBlock = [loadMemoryBlock(process.cwd()), memoryPromptBlock({ cwd: process.cwd(), task: lastText })].filter(Boolean).join('\n\n');
+    memory = createMemoryApi(process.cwd());
   } catch {}
   // `ox_ui: 'live'` is sent by ox's own app, which can run interactive answers.
   // About 600 tokens: sent only when the message asks for something to use.
@@ -877,6 +885,7 @@ async function handleChatCompletions(req, res) {
     mode: turnMode.mode,
     surface: 'app',
     memoryBlock,
+    ...(memory ? { memory } : {}),
     ...(incognito ? { incognito: true } : {}),
     ...(agentDef || liveUi || howTo ? { personaBlock: [agentDef ? agentPersonaBlock(agentDef) : '', liveUi, howTo].filter(Boolean).join('\n\n') } : {}),
     ...(agentDef ? { agentName: agentDef.name } : {}),
