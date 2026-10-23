@@ -124,7 +124,8 @@ test('the CLI refuses an unknown backend before doing anything', () => {
 });
 
 // A real engine, when one is running: the container really is separate.
-const realDocker = spawnSync('docker', ['version', '--format', '{{.Server.Version}}'], { encoding: 'utf8', timeout: 10_000 }).status === 0;
+const realDockerProbe = spawnSync('docker', ['version', '--format', '{{.Server.Version}}'], { encoding: 'utf8', timeout: 10_000 });
+const realDocker = realDockerProbe.status === 0 && String(realDockerProbe.stdout ?? '').trim().length > 0;
 test('real Docker: commands run in the container, files are shared', { skip: !realDocker && 'Docker engine not running' }, async () => {
   delete process.env.OX_DOCKER_BIN;
   const backend = parseBackendSpec('docker:alpine', {});

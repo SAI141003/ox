@@ -47,7 +47,12 @@ export function parseBackendSpec(spec, env = process.env) {
 export function dockerProblem(env = process.env) {
   const r = spawnSync(dockerBin(env), ['version', '--format', '{{.Server.Version}}'], { encoding: 'utf8', timeout: 15_000 });
   if (r.error?.code === 'ENOENT') return 'Docker is not installed (install Docker Desktop, or set OX_DOCKER_BIN)';
-  if (r.status !== 0) return `the Docker engine is not running: start Docker Desktop (${String(r.stderr || r.stdout).trim().split('\n').pop()})`;
+  // Docker Desktop's client has been observed to exit 0 while it writes
+  // "Cannot connect to the Docker daemon" to stderr and leaves Server.Version
+  // blank. A zero client exit is not a usable isolation engine.
+  const version = String(r.stdout ?? '').trim();
+  const detail = String(r.stderr || r.stdout || r.error?.message || '').trim().split('\n').pop();
+  if (r.status !== 0 || !version || /cannot connect|is the docker daemon running/i.test(detail)) return `the Docker engine is not running: start Docker Desktop (${detail || 'no server version returned'})`;
   return null;
 }
 
