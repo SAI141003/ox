@@ -681,10 +681,15 @@ export async function openInTerminal(id, { home = os.homedir(), dryRun = false }
   // A Codex desktop transcript belongs to the already-running desktop app.
   // Focusing it preserves the user's native conversation; opening a terminal
   // resume is a fallback, not a second copy of their work.
-  if (tool === 'codex' && runningApp('Codex')) {
-    if (dryRun || process.platform !== 'darwin') return { line: 'open -a "Codex"', app: 'Codex' };
-    const r = spawnSync('open', ['-a', 'Codex'], { encoding: 'utf8', timeout: 10000 });
-    if (r.status === 0) return { opened: true, focused: true, app: 'Codex', line: 'open -a "Codex"' };
+  if (tool === 'codex') {
+    // Codex can be hosted by the standalone app or by the ChatGPT desktop
+    // app's Codex surface.  Prefer whichever one is already running.
+    const app = ['Codex', 'ChatGPT'].find(runningApp);
+    if (app) {
+      if (dryRun || process.platform !== 'darwin') return { line: `open -a "${app}"`, app };
+      const r = spawnSync('open', ['-a', app], { encoding: 'utf8', timeout: 10000 });
+      if (r.status === 0) return { opened: true, focused: true, app, line: `open -a "${app}"` };
+    }
   }
   // Cline/Kimi/Kilo are editor/desktop sessions, not resumable terminal
   // processes. Activate the owning app instead of spawning a second Ox or a
