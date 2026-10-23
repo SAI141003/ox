@@ -103,6 +103,10 @@ export function classifyProviderError(message) {
   if (/does not support tools|tools? (are|is) not supported|tool[_ ]?(use|calling|choice).{0,30}not supported/.test(low)) {
     return 'no-tools';
   }
+  // Some small local OpenAI-compatible models accept a tool payload yet emit
+  // an empty completion. Treat that as an inability to work with this offer,
+  // not as a successful blank answer or a transport failure worth repeating.
+  if (/empty response with tools/.test(low)) return 'no-tools';
   if (/not found|no such model/.test(low) || hasStatus(404)) return 'not-found';
   if (/\bhttp\s*5\d\d\b/.test(low)) return 'server';
   // Any other 400 is a malformed request: resending it byte-identical cannot help.

@@ -275,7 +275,19 @@ export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
     }
     for (const ev of parser.end(dec.decode())) { if (ev.type === 'done') { done = ev; continue; } yield seen(ev); }
     if (!sawText && !sawCall && outTokens > 0 && body.tools) {
-      yield* recoverSwallowed({ name, baseUrl, headers, body, signal });
+      // First recover the Ollama streaming quirk.  If its non-streaming retry
+      // is empty too, this is not a successful assistant answer.  Throw a
+      // classified failure so the agent loop retries once without tools and
+      // tells the user that code actions were not available on this model.
+      let recoveredMeaningful = false;
+      for await (const ev of recoverSwallowed({ name, baseUrl, headers, body, signal })) {
+        if (ev.type === 'text-delta' && ev.text) recoveredMeaningful = true;
+        if (ev.type === 'tool-call') recoveredMeaningful = true;
+        yield ev;
+      }
+      if (!recoveredMeaningful) {
+        throw new Error(`ox[${name}]: empty response with tools from ${model}`);
+      }
       return;
     }
     if (done) yield done;
