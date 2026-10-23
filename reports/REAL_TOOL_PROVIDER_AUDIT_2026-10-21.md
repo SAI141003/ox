@@ -963,3 +963,7 @@ cost-known state. A local adapter's placeholder `costUsd: 0` is treated as
 run (1/1, 14,951/268 tokens, 9.1 s agent time), failed/unavailable OpenRouter and
 Claude samples, and failed local Qwen/SmolLM samples; this is a sample summary,
 not a market-wide ranking.
+
+The aggregator also recognizes pre-availability-field artifacts: zero-token,
+zero-tool readiness failures are classified as **unavailable**, so an old
+subscription-provider record cannot dilute the measured pass-rate denominator.
