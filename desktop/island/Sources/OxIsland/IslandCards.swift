@@ -64,6 +64,7 @@ final class MailCenter: ObservableObject {
         let id: String
         let mailID: String
         let account: String
+        let mailbox: String
         let address: String
         let sender: String
         let subject: String
@@ -122,7 +123,7 @@ final class MailCenter: ObservableObject {
                       set c to content of m
                       if (length of c) > 220 then set c to text 1 thru 220 of c
                     end try
-                    set out to out & (message id of m) & tab & accountName & tab & accountAddress & tab & (sender of m) & tab & (subject of m) & tab & (read status of m is false) & tab & secs & tab & c & linefeed & "␞" & linefeed
+                    set out to out & (message id of m) & tab & accountName & tab & boxName & tab & accountAddress & tab & (sender of m) & tab & (subject of m) & tab & (read status of m is false) & tab & secs & tab & c & linefeed & "␞" & linefeed
                   end repeat
                 end repeat
               end repeat
@@ -133,13 +134,13 @@ final class MailCenter: ObservableObject {
             let raw = NSAppleScript(source: script)?.executeAndReturnError(&err).stringValue ?? ""
             let msgs = raw.components(separatedBy: "\n␞\n").compactMap { chunk -> Message? in
                 let f = chunk.components(separatedBy: "\t")
-                guard f.count >= 7, !f[0].isEmpty else { return nil }
-                let secs = Int(Double(f[6].trimmingCharacters(in: .whitespaces)) ?? 0)
+                guard f.count >= 8, !f[0].isEmpty else { return nil }
+                let secs = Int(Double(f[7].trimmingCharacters(in: .whitespaces)) ?? 0)
                 let ago = secs < 3600 ? "\(max(1, secs / 60))m" : secs < 86400 ? "\(secs / 3600)h" : "\(secs / 86400)d"
-                let sender = f[3].replacingOccurrences(of: #"\s*<.*>$"#, with: "", options: .regularExpression)
+                let sender = f[4].replacingOccurrences(of: #"\s*<.*>$"#, with: "", options: .regularExpression)
                 let account = f[1].isEmpty ? "Mail account" : f[1]
-                let excerpt = f.count > 7 ? f[7...].joined(separator: " ").replacingOccurrences(of: "\n", with: " ") : ""
-                return Message(id: "\(account)|\(f[0])", mailID: f[0], account: account, address: f[2], sender: sender, subject: f[4], ago: ago, unread: f[5].lowercased() == "true", excerpt: excerpt)
+                let excerpt = f.count > 8 ? f[8...].joined(separator: " ").replacingOccurrences(of: "\n", with: " ") : ""
+                return Message(id: "\(account)|\(f[2])|\(f[0])", mailID: f[0], account: account, mailbox: f[2], address: f[3], sender: sender, subject: f[5], ago: ago, unread: f[6].lowercased() == "true", excerpt: excerpt)
             }
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -162,18 +163,21 @@ final class MailCenter: ObservableObject {
         }
     }
     private func q(_ id: String) -> String { id.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") }
+    private func messageRef(_ m: Message) -> String {
+        "first message of mailbox \"\(q(m.mailbox))\" of account \"\(q(m.account))\" whose message id is \"\(q(m.mailID))\""
+    }
 
     func markRead(_ m: Message) {
-        run("set read status of (first message of inbox whose message id is \"\(q(m.mailID))\") to true") { [weak self] in
+        run("set read status of (\(messageRef(m))) to true") { [weak self] in
             self?.messages.removeAll { $0 == m }
         }
     }
     func openInMail(_ m: Message) {
-        run("open (first message of inbox whose message id is \"\(q(m.mailID))\")\nactivate")
+        run("open (\(messageRef(m)))\nactivate")
     }
     /// A reply draft opens in Mail; you read it and press Send there.
     func reply(_ m: Message) {
-        run("set r to reply (first message of inbox whose message id is \"\(q(m.mailID))\") opening window yes\nactivate")
+        run("set r to reply (\(messageRef(m))) opening window yes\nactivate")
         note = "A reply draft is open in Mail. Press Send there."
     }
 
