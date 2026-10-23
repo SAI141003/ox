@@ -814,3 +814,10 @@ Island rebuild, protection of local tracked edits, benchmark sandbox isolation,
 per-request token accounting, unavailable-auth classification, unknown-cost handling,
 provider-model resolution, and exact budget-stop behavior. No provider request was
 made by this focused run.
+
+The comparison checklist was corrected to avoid an overclaim: Ox does **not**
+currently implement cryptographic release-signature verification. Its verified update
+boundary is the official HTTPS remote, fast-forward ancestry, clean tracked tree,
+JavaScript load checks, native Island rebuild, and rollback on failure. A signed and
+notarized distribution channel remains a separate release gap requiring signing
+credentials and is not counted as complete here.
