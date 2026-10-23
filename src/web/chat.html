@@ -1876,6 +1876,11 @@
   }
 
   async function send(queued = null, sessionId = current) {
+    // DOM event handlers pass the click Event as their first argument.  Treat
+    // it as an ordinary composer send, never as a queued message object.  The
+    // old direct `onclick = send` binding made `pics` undefined and threw
+    // before a new chat could leave the composer.
+    if (queued && !(Object.hasOwn(queued, 'text') || Object.hasOwn(queued, 'files') || Object.hasOwn(queued, 'pics'))) queued = null;
     const input = $('input');
     const activeController = runningControllers.get(sessionId);
     if (activeController && !queued) {
@@ -2156,7 +2161,7 @@
       if (last) { e.preventDefault(); $('input').value = last.content; resize(); }
     }
   });
-  $('send').onclick = send;
+  $('send').onclick = () => send();
   try { $('mode').value = store.get('ox.mode', null) || store.get('ox.prefs', {}).defaultMode || 'auto'; } catch {}
   $('mode').onchange = () => { store.set('ox.mode', $('mode').value); showMode(); };
 
