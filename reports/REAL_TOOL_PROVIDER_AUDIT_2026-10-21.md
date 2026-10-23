@@ -804,3 +804,13 @@ This prevents a live keyless backend from being displayed with the contradictory
 instruction to configure another keyed backend. The focused capability suite passed
 **19/19**, and the complete regression gate after the change passed **2,235/2,492**
 tests (**0 failed, 257 skipped**) in **227.49 s**.
+
+## Dedicated updater and accounting regression — 2026-10-23
+
+The focused suite for the two most consequential audit surfaces passed **43/43** in
+2.72 s. It covers trusted-repository enforcement, explicit automatic-update opt-in,
+fast-forward-only application, rollback on invalid JavaScript, rollback on failed
+Island rebuild, protection of local tracked edits, benchmark sandbox isolation,
+per-request token accounting, unavailable-auth classification, unknown-cost handling,
+provider-model resolution, and exact budget-stop behavior. No provider request was
+made by this focused run.
