@@ -106,14 +106,14 @@ Updated October 21 2026.
 | 8.3 | Live transcript as you speak (Pixie) | ~ | Was marked missing, wrongly: hold ⌃⌥Space and your words show live in the buddy panel (on-device speech, punctuation). Not in the collapsed notch itself |
 | 8.14 | The island's buddy speaks in ox's natural voice (Kokoro), not the system voice | ~ | Built: it runs `ox speak … --out`, plays it, the mouth follows the voice's loudness; system voice only as fallback; switch in the island menu. The command is proven (Kokoro WAV, 3.3 s); the island itself not heard yet, it needs `ox island restart` |
 | 8.15 | The island shows the app's runs (chats, bots, helpers), not only terminal runs | ~ | Built: the app server writes ~/.ox/serve.json, the island reads /ox/live every 1.5 s; voice questions still go only to runs with a socket. Island builds; not watched live yet |
-| 8.4 | Inbox card in the notch: unread list, open, Reply, Mark as read (Coucou video 1) | ✗ | Mail tool exists; no notch card |
+| 8.4 | Inbox card in the notch: unread list, open, Reply, Mark as read (Coucou video 1) | ~ | Mail remains a safe, visible-draft connector; unread/reply card is not claimed until the native card is implemented |
 | 8.5 | Widget gallery for the island, incl. an AI usage meter (video 2) | ✗ | Usage is recorded; not shown in the island |
-| 8.6 | Draft-then-send email card with Send / Cancel from voice (video 4) | ✗ | Mail tool drafts; no notch card |
+| 8.6 | Draft-then-send email card with Send / Cancel from voice (video 4) | ~ | Voice/chat can create a visible Mail draft; sending remains explicit approval-gated; native Island card is still a gap |
 | 8.7 | Service cards: Stripe payments today, Vercel, GitHub (video 4) | ✗ | |
 | 8.8 | Wake word ("OK ox") (video 4) | ✗ | |
 | 8.9 | Agent question cards with option chips; live view of the file being read (video 5) | ✗ | Approvals with Allow / Deny work |
 | 8.10 | Approvals on the phone lock screen (Live Activity) (video 5) | ~ | Built: the iPhone companion (desktop/ios) shows approvals in the app and as a Live Activity on the lock screen, over your own network; Telegram buttons as the backup. Not yet run on a physical iPhone here |
-| 8.11 | Now-playing music card; read Reminders (Pixie, video 7) | ✗ | Can open apps only |
+| 8.11 | Now-playing music card; read Reminders (Pixie, video 7) | ~ | Offline voice router supports music, volume and Reminders on macOS; the full native card is still a gap |
 | 8.12 | Draw on the screen to explain (Pixie, video 7) | ✗ | |
 | 8.13 | Personal dictionary for dictation; call notes with speakers and to-dos (Coucou screenshot) | ✗ | Hold-to-talk dictation exists |
 

@@ -44,11 +44,11 @@ with the reason. Nothing here is marked done without a test or a real run.
 | Coucou — other agents in the notch with Allow / Deny | Claude Code, Codex, Gemini, Cursor, Copilot | **done** — `ox hooks install <agent>` |
 | Coucou — questions with option chips, live diff +N −M | Answer questions and see edits from the notch | **not yet** |
 | Coucou — plan-usage gauges | Claude / Codex limits | **not yet** (needs your go-ahead: changes Claude Code's status line) |
-| Coucou — mail widget, Stripe/Vercel/GitHub cards | Services at a glance | **partial** — mail tool; no service cards |
-| Coucou / Glance (Murmure) — hold a key, speak, words pasted anywhere; dictionary; offline | Dictation everywhere | **not yet** (needs Accessibility + microphone permission, ~650 MB model) |
+| Coucou — mail widget, Stripe/Vercel/GitHub cards | Services at a glance | **partial** — Mail is exposed as a verified macOS connector/draft path; service cards still need individual connectors |
+| Coucou / Glance (Murmure) — hold a key, speak, words pasted anywhere; dictionary; offline | Dictation everywhere | **partial** — hold-to-talk and transcript path exist; live hardware permission/voice-action acceptance still needs a physical run |
 | Coucou — Notetaker | Call notes, speakers, summary | **not yet** |
 | Coucou — "OK Coucou" wake word | Hands-free | **not yet** |
-| Coucou — phone app / lock-screen approvals | Approve from the phone | **partial** — Telegram/Discord buttons |
+| Coucou — phone app / lock-screen approvals | Approve from the phone | **partial** — Telegram/Discord buttons; connector status is explicit in Settings |
 | Pixie (video) — shows your words live as you speak | Live transcript in the island | **not yet** |
 | Pixie — plays music, opens Reminders, draws on screen to explain | Real-world tasks + on-screen annotation | **partial** — Mac control tools; on-screen drawing **not yet** |
 | Kodemon | Pet battles | **no** — a game, not an agent feature |
