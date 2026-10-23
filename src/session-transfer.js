@@ -163,15 +163,26 @@ const codex = {
     const files = walkFiles(path.join(home, '.codex', 'sessions'), /^rollout-.*\.jsonl$/, 4).sort((a, b) => mtime(b) - mtime(a)).slice(0, MAX_FILES_SCANNED);
     return files.map((f) => {
       const head = readHead(f);
+      // Codex desktop transcripts can be hundreds of MB.  The session meta is
+      // at the head, while the useful title is normally at the tail; never
+      // read the whole JSONL just to populate Island/Office.
+      const tail = readTail(f);
       const meta = head.find((o) => o.type === 'session_meta')?.payload ?? {};
-      const users = head.filter((o) => o.type === 'response_item' && o.payload?.type === 'message' && o.payload.role === 'user').map((o) => textOfParts(o.payload.content));
+      const users = (tail.length ? tail : head).filter((o) => o.type === 'response_item' && o.payload?.type === 'message' && o.payload.role === 'user').map((o) => textOfParts(o.payload.content));
       const hasImage = users.some((u) => /<image\b/i.test(u));
       return { tool: 'codex', id: meta.id ?? meta.session_id ?? path.basename(f, '.jsonl'), cwd: meta.cwd ?? null, title: firstUserText(users) ?? (hasImage ? '(an image)' : null), updatedAt: mtime(f), ref: f };
     });
   },
   read(home, ref) {
-    const rows = readLines(ref);
-    const meta = rows.find((o) => o.type === 'session_meta')?.payload ?? {};
+    // `fs.readFileSync(..., 'utf8')` throws for very large desktop transcripts
+    // (ERR_STRING_TOO_LONG), which used to turn a real active Codex chat into
+    // an empty Island card.  Read metadata from the head and recent turns from
+    // a bounded tail instead.  The handoff/UI deliberately uses recent context,
+    // not an unbounded vendor-native transcript.
+    const head = readHead(ref);
+    const tail = readTail(ref, 512 * 1024);
+    const meta = head.find((o) => o.type === 'session_meta')?.payload ?? {};
+    const rows = tail.length ? tail : head;
     const s = base('codex', meta.id ?? meta.session_id ?? path.basename(ref, '.jsonl'), ref);
     s.cwd = meta.cwd ?? null;
     s.branch = meta.git?.branch ?? null;

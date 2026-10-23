@@ -427,8 +427,8 @@ export async function sessionMessages(id, { home = os.homedir(), limit = 12 } = 
     : entries.find((x) => String(x.id) === sid) ?? entries.find((x) => String(x.id).startsWith(sid));
   if (!entry) throw new Error(`no ${tool} session ${sid}`);
   const s = T.readSession(entry, { home });
-  const canSend = ['claude', 'codex', 'hermes'].includes(tool);
-  return { tool, id: entry.id, cwd: s.cwd, model: s.model, title: s.title, messages: s.messages.slice(-limit).map((m) => ({ role: m.role, text: String(m.text ?? '').slice(0, 1200), tools: (m.tools ?? []).slice(-3).map((t) => describeCall(t.name, { command: t.input, file_path: t.input })) })), canSend, ...(canSend ? {} : { why: `${tool} transcript is readable in Ox, but ${tool} does not expose a safe external resume/send API; use Transfer or open ${tool} to continue.` }) };
+  const capability = await resumeCapability(tool, T);
+  return { tool, id: entry.id, cwd: s.cwd, model: s.model, title: s.title, messages: s.messages.slice(-limit).map((m) => ({ role: m.role, text: String(m.text ?? '').slice(0, 1200), tools: (m.tools ?? []).slice(-3).map((t) => describeCall(t.name, { command: t.input, file_path: t.input })) })), canSend: capability.canSend, ...(capability.canSend ? {} : { why: capability.why }) };
 }
 
 /** How each tool continues a session with one message (its own resume, headless). */
@@ -439,6 +439,37 @@ export function sendCommand(tool, sid, text, bin = (t, f) => f, { modelArgs = ()
   if (tool === 'codex') { const b = bin('codex', 'codex'); return [b, ['exec', 'resume', ...(model ? ['--model', model] : modelArgs(b)), sid, text]]; }
   if (tool === 'hermes') return ['hermes', ['chat', '-q', text, '--resume', sid, '-Q', ...(model ? ['--model', model] : [])]];
   return null;
+}
+
+// Seeing a vendor transcript does not mean its command-line resume entry point
+// works.  In particular, an npm launcher can remain on PATH after its bundled
+// native executable has gone missing.  Probe only `--version` (never a turn)
+// and cache the answer briefly so Island/Office do not advertise a false Send
+// button or repeatedly start a slow broken launcher.
+const resumeCapabilityCache = new Map();
+const RESUME_CAPABILITY_TTL = 60_000;
+export function resumeCapability(tool, T, { now = Date.now() } = {}) {
+  if (!['claude', 'codex', 'hermes'].includes(tool)) {
+    return { canSend: false, why: `${tool} transcript is readable in Ox, but ${tool} does not expose a safe external resume/send API; use Transfer or open ${tool} to continue.` };
+  }
+  const cached = resumeCapabilityCache.get(tool);
+  if (cached && now - cached.at < RESUME_CAPABILITY_TTL) return cached.value;
+  const label = tool === 'codex' ? 'Codex' : tool === 'claude' ? 'Claude' : 'Hermes';
+  const command = sendCommand(tool, 'capability-check', '', T.binaryFor);
+  const bin = command?.[0];
+  let value;
+  if (!bin) {
+    value = { canSend: false, why: `${label} does not expose a command-line resume command on this Mac. Open ${label} to continue this session.` };
+  } else {
+    const probe = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 5000 });
+    if (probe.error || probe.status !== 0) {
+      value = { canSend: false, why: `${label}'s command-line launcher cannot start on this Mac. Repair or reinstall its CLI, then reopen Ox.` };
+    } else {
+      value = { canSend: true, why: '' };
+    }
+  }
+  resumeCapabilityCache.set(tool, { at: now, value });
+  return value;
 }
 
 const queue = new Map(); // id -> [{ text, at, ticket }]
@@ -471,6 +502,12 @@ export async function sendToSession(id, text, { home = os.homedir(), run = null,
   const msg = String(text ?? '').trim();
   if (!msg) throw new Error('nothing to send');
   const T = await import('./session-transfer.js');
+  // Tests can inject a runner without needing a locally installed vendor CLI.
+  // Real sends must pass the same non-mutating launcher probe used by the UI.
+  if (!run) {
+    const capability = resumeCapability(tool, T);
+    if (!capability.canSend) throw new Error(capability.why);
+  }
   const cmd = sendCommand(tool, sid, msg, T.binaryFor);
   if (!cmd) throw new Error(`ox cannot send to a ${tool} session; open it in ${tool}`);
   const live = liveAgents({ home, fresh: true }).find((s) => s.id === key);
