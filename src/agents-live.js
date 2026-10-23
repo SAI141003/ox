@@ -351,6 +351,11 @@ function runningApp(name) {
   try { return spawnSync('pgrep', ['-x', name], { encoding: 'utf8', timeout: 1500 }).status === 0; } catch { return false; }
 }
 
+function installedMacApp(name) {
+  if (process.platform !== 'darwin') return false;
+  return [path.join('/Applications', `${name}.app`), path.join(os.homedir(), 'Applications', `${name}.app`)].some((p) => fs.existsSync(p));
+}
+
 function defaultAppRoots(home) {
   if (process.platform === 'darwin') return ['/Applications', path.join(home, 'Applications')];
   if (process.platform === 'win32') return [process.env.ProgramFiles, process.env.LOCALAPPDATA, process.env.APPDATA].filter(Boolean);
@@ -694,7 +699,7 @@ export async function openInTerminal(id, { home = os.homedir(), dryRun = false }
   if (tool === 'codex') {
     // Codex can be hosted by the standalone app or by the ChatGPT desktop
     // app's Codex surface.  Prefer whichever one is already running.
-    const app = ['Codex', 'ChatGPT'].find(runningApp);
+    const app = ['Codex', 'ChatGPT'].find((name) => runningApp(name) && (name !== 'Codex' || installedMacApp(name)));
     if (app) {
       if (dryRun || process.platform !== 'darwin') return { line: `open -a "${app}"`, app };
       const r = spawnSync('open', ['-a', app], { encoding: 'utf8', timeout: 10000 });
