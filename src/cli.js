@@ -6704,6 +6704,7 @@ async function runSubcommand(cmd, args) {
         console.log(`${c.bold('ox awake')} — keep the computer awake for your agents`);
         console.log(c.dim('  ox already keeps it awake while it works (a -p run, ox auto, a chat turn). OX_NO_AWAKE=1 turns that off.'));
         console.log(c.dim('  ox awake 2h | 30m | 1d   hold it awake for a while, even with no ox running'));
+        console.log(c.dim('  ox awake status          show the active timed hold'));
         console.log(c.dim('  ox awake off             let it sleep again'));
         console.log(c.dim('  ox awake --lid           how to keep running with the lid closed'));
         return;
@@ -6711,6 +6712,15 @@ async function runSubcommand(cmd, args) {
       if (a === '--lid' || a === 'lid') { for (const l of aw.lidHelp()) console.log(l); return; }
       if (a === 'off' || a === 'stop') {
         console.log(aw.stopTimed() ? c.green('ok — the computer can sleep again') : c.dim('nothing was being held'));
+        return;
+      }
+      // `ox awake` already showed this with no argument, but accepting the
+      // explicit status spelling keeps scripts and Island diagnostics from
+      // accidentally treating "status" as a duration.
+      if (a === 'status' || a === '--status') {
+        const st = aw.status();
+        console.log(st.timed ? `awake until ${st.timed.until.toLocaleString()}` : c.dim('no timed hold — ox still keeps the computer awake while it works'));
+        if (st.lidSleepDisabled) console.log(c.yellow('sleep is disabled system-wide (pmset disablesleep 1): turn it back on with  sudo pmset -a disablesleep 0'));
         return;
       }
       if (a) {
