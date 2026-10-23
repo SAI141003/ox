@@ -72,6 +72,7 @@ Each machine decides what its paired machines may ask of it:
 | `infer` | off | model calls on its local models, or its API keys (the keys never leave it; it makes the call and returns the answer) |
 | `tasks` | off | running an ox task in a folder on that machine, under that machine's own approval settings |
 | `files` | off, and per folder | sending a file's contents across |
+| `files-write` | off, and per folder | atomically writing one selected small file into an existing shared folder; never included in a preset |
 
 `ox mesh allow <machine> infer` on the machine that gives. Nothing is on by
 default except status.
@@ -157,16 +158,19 @@ Overload and credits are watched; nothing happens without the owner's say.
 | status | `stats` | live health (load, memory, heat, battery, disk, models, plans) |
 | infer | `infer` | model calls on its models or keys (`mesh:<machine>/<model>`) |
 | tasks | `run` | an ox task in a folder there, under that machine's approvals |
-| files | `ls`, `pull`, `push` | browse, copy from, copy to: only inside the folders that machine allows (default: its home) |
-| agents | `agents`, `agent-read`, `agent-send` | the agent sessions running there (any tool), read one, message one |
+| files | `ls`, `pull` | browse and copy one file from an explicitly shared folder |
+| files-write | `push` | atomically copy one selected file (maximum 8 MB) into an existing shared folder. It requires its own grant and explicit overwrite; it does not sync folders, delete, or create directory trees. |
+| agents | `agents`, `agent-read`, `agent-send`, `agent-delivery` | list/read sessions and ask a supported CLI-backed session to resume. A readable transcript is not treated as sendable; queued and failed delivery remain visible. |
 | control | `control-list`, `control-click`, `control-type`, `control-key` | macOS accessibility controls: inspect controls, click safe controls, type text, or press a safe key. Send/Pay/Delete and Return/Enter are refused. |
 | screen | `screen` | a current screenshot from the paired macOS machine |
 
 ### How it looks
 
-- **Terminal:** `ox mesh machines` lists them with health; `ox mesh shell
-  "Gaming laptop"` is a terminal on that laptop; `ox mesh exec studio -- npm
-  test` runs one command there; `ox mesh pull studio:~/report.pdf .`.
+- **Terminal:** `ox mesh` lists paired machines with health; `ox mesh run
+  "Gaming laptop" "run the tests and report the result" --in <folder>` starts
+  an approval-governed Ox task there; `ox mesh pull studio:~/report.pdf .` and
+  `ox mesh push ./report.pdf studio:~/shared/report.pdf` transfer one file.
+  There is no unrestricted remote shell/exec command.
 - **Chat:** "run the tests on the gaming laptop", "what is the studio Mac
   doing?", "copy the build from studio": ox calls its `mesh` tool (each call
   approval-gated like a local command).
@@ -179,7 +183,7 @@ Overload and credits are watched; nothing happens without the owner's say.
 
 | Service | State |
 |---|---|
-| describe, agents, agent-read, ls, pull, share, audit, lockdown, presets | ✓ built and checked: two machines' homes on one Mac, real CLI (makeup, live agent session, shared-folder copy, /etc refused, audit rows) |
+| describe, agents, agent-read, agent-send/delivery, ls, pull, push, share, audit, lockdown, presets | ✓ built and checked: two isolated nodes exercised locally (makeup, supported session reply, shared-root pull/push, overwrite refusal, /etc refused, audit rows). A physical second-machine acceptance run remains required. |
 | island machine pills (up/down, load ring) | ✓ built |
 | `screen`, `control-list`, `control-click`, `control-type`, `control-key` | ✓ built for paired macOS machines. They require the controlled Mac to grant `screen`/`control` (or the explicit `desktop` preset); every request is audited and dangerous actions are refused. |
 | Beam-style native-window pull / “Bring It Back”, Windows/Linux remote-input backend | not built. Ox has screenshot + guarded macOS accessibility control, not virtual native-window transport. |

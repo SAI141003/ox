@@ -39,6 +39,35 @@ The complete captured result is kept outside the repository at
 `/tmp/ox-real-nvidia-nemotron-read-after-floor-fix.json` for the current
 machine session.
 
+### Current live confirmation: NVIDIA Nemotron
+
+The same live task was run again on 2026-10-23 after the subsequent routing
+and session-delivery repairs:
+
+```sh
+node bench/real/runner.mjs \
+  --model nvidia:nvidia/nemotron-3-ultra-550b-a55b \
+  --task read-and-report --timeout 90000 \
+  --json /tmp/ox-live-nvidia-2026-10-23.json
+```
+
+The run passed the real agent task; it produced text and made two tools calls.
+The captured result was written locally to the path in the command.
+
+| Metric | Observed result |
+|---|---:|
+| Runs / passes | 1 / 1 |
+| End-to-end time | 6.564 s |
+| First output text | 2.989 s |
+| Tool calls | 2 |
+| Mean tool execution | 6 ms |
+| Input / output tokens | 13,221 / 207 |
+| Cost | Unknown — this provider response did not supply price data |
+
+This independently confirms a current successful hosted tool-use path. It is
+still one run: it cannot establish a typical latency, reliability rate, or
+provider cost.
+
 ### Real tool-use task: NVIDIA Nemotron
 
 `bench/results/2026-10-22T15-45-00-live-nvidia/nemotron-read.json` recorded

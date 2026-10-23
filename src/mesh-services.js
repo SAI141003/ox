@@ -3,8 +3,9 @@
 // machine. Nothing here runs a command or changes a file on this machine:
 //
 //   status   describe: its makeup (hardware, system, agent tools, models)
-//   agents   agents: the sessions of any agent tool here; agent-read: one's messages
-//   files    ls and pull, only inside the folders this machine shares
+//   agents      sessions, transcript reads, and supported session sends
+//   files       ls and pull, only inside the folders this machine shares
+//   files-write safe, separately granted small-file pushes
 //
 // Every request is written to ~/.ox/mesh/audit.jsonl on this machine.
 import fs from 'node:fs';
@@ -12,8 +13,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-export const OP_GRANT = Object.freeze({ describe: 'status', agents: 'agents', 'agent-read': 'agents', ls: 'files', pull: 'files', 'dev-start': 'dev', 'dev-stop': 'dev', 'dev-list': 'dev', http: 'dev', screen: 'screen', 'control-list': 'control', 'control-click': 'control', 'control-type': 'control', 'control-key': 'control' });
+export const OP_GRANT = Object.freeze({ describe: 'status', agents: 'agents', 'agent-read': 'agents', 'agent-send': 'agents', 'agent-delivery': 'agents', ls: 'files', pull: 'files', push: 'files-write', 'dev-start': 'dev', 'dev-stop': 'dev', 'dev-list': 'dev', http: 'dev', screen: 'screen', 'control-list': 'control', 'control-click': 'control', 'control-type': 'control', 'control-key': 'control' });
 const CHUNK = 48 * 1024;
+const MAX_PUSH_BYTES = 8 * 1024 * 1024;
 const b64 = (b) => Buffer.from(b).toString('base64');
 const expand = (p) => String(p ?? '').replace(/^~(?=$|\/)/, os.homedir());
 
@@ -66,8 +68,27 @@ export function inside(target, roots) {
   return null;
 }
 
+// Resolve an upload destination through its existing parent so a symlink cannot
+// turn a permitted root into a write outside it. New directory trees are not
+// created remotely; the receiving machine owner chooses its shared folders.
+function writeInside(target, roots) {
+  const requested = path.resolve(expand(target));
+  const parent = inside(path.dirname(requested), roots);
+  if (!parent) return null;
+  const name = path.basename(requested);
+  if (!name || name === '.' || name === path.sep) return null;
+  const destination = path.join(parent, name);
+  try {
+    const st = fs.lstatSync(destination);
+    if (!st.isFile() || !inside(destination, roots)) return null;
+  } catch (e) {
+    if (e?.code !== 'ENOENT') return null;
+  }
+  return destination;
+}
+
 /** One read-only request from a paired machine. Returns true when `msg.op` is one of these. */
-export async function serveOp({ ch, peer, msg, grants, roots, home, ollamaUrl, meName, remoteControl = null }) {
+export async function serveOp({ ch, peer, msg, grants, roots, home, ollamaUrl, meName, remoteControl = null, agentRun = null }) {
   const op = msg.op;
   const need = OP_GRANT[op];
   if (!need) return false;
@@ -100,7 +121,15 @@ export async function serveOp({ ch, peer, msg, grants, roots, home, ollamaUrl, m
     reply({ sessions: A.liveAgents({ fresh: true }).map((s) => ({ id: s.id, tool: s.tool, project: s.project, state: s.state, doing: s.doing, idleSec: s.idleSec, model: s.model })) });
     return true;
   }
-  if (op === 'agent-read') { const A = await import('./agents-live.js'); reply(await A.sessionMessages(String(a.id ?? ''))); return true; }
+  if (op === 'agent-read') { const A = await import('./agents-live.js'); reply(await A.sessionMessages(String(a.id ?? ''), { home })); return true; }
+  if (op === 'agent-send') {
+    // A transcript being readable is not enough: sendToSession independently
+    // verifies the target CLI's safe resume capability before starting a turn.
+    const A = await import('./agents-live.js');
+    reply(await A.sendToSession(String(a.id ?? ''), String(a.text ?? ''), { home, run: agentRun, model: String(a.model ?? '') }));
+    return true;
+  }
+  if (op === 'agent-delivery') { const A = await import('./agents-live.js'); reply(A.deliveryStatus(String(a.ticket ?? ''), { home })); return true; }
   if (op === 'ls') {
     const d = inside(a.path ?? '~', roots);
     if (!d) { refuse(`${a.path ?? '~'} is outside the folders ${meName} shares, or does not exist`); return true; }
@@ -140,6 +169,25 @@ export async function serveOp({ ch, peer, msg, grants, roots, home, ollamaUrl, m
     rs.on('data', (d) => ch.send({ t: 'chunk', rid: msg.rid, data: b64(d) }));
     rs.on('end', () => reply({ size: st.size, name: path.basename(f) }));
     rs.on('error', (e) => refuse(e.message));
+    return true;
+  }
+  if (op === 'push') {
+    const encoded = String(a.data ?? '');
+    if (!encoded || encoded.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) { refuse('upload data is not valid base64'); return true; }
+    const data = Buffer.from(encoded, 'base64');
+    if (!data.length || data.length > MAX_PUSH_BYTES) { refuse(`uploads must be between 1 byte and ${MAX_PUSH_BYTES / 1024 / 1024} MB`); return true; }
+    const destination = writeInside(a.path, roots);
+    if (!destination) { refuse(`${a.path ?? '(no destination)'} is not a regular file location inside folders ${meName} shares`); return true; }
+    if (fs.existsSync(destination) && !a.overwrite) { refuse(`${destination} already exists; explicit overwrite is required`); return true; }
+    const temp = path.join(path.dirname(destination), `.${path.basename(destination)}.ox-upload-${process.pid}-${Date.now()}`);
+    try {
+      fs.writeFileSync(temp, data, { mode: 0o600, flag: 'wx' });
+      fs.renameSync(temp, destination);
+      reply({ ok: true, path: destination, size: data.length, overwritten: !!a.overwrite });
+    } catch (e) {
+      try { fs.rmSync(temp, { force: true }); } catch {}
+      refuse(`upload failed: ${e.message}`);
+    }
     return true;
   }
   return false;

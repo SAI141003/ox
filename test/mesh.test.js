@@ -213,7 +213,7 @@ test('v2: describe, agents, shared folders (no escaping them), audit, presets an
     // Presets, set on B for A.
     M.setGrant(M.identity({ home: ha }).name, 'full', true, { home: hb });
     const g = Object.values(M.readPeers({ home: hb }))[0].grants;
-    assert.deepEqual(g, { status: true, infer: true, tasks: true, files: true, agents: true, dev: true, screen: false, control: false });
+    assert.deepEqual(g, { status: true, infer: true, tasks: true, files: true, 'files-write': false, agents: true, dev: true, screen: false, control: false });
     assert.ok(Array.isArray((await A.ask('Laptop B', 'agents', {}, { timeoutMs: 20_000 })).sessions));
 
     // Files only inside what B shares; a symlink out of it does not count.

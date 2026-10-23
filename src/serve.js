@@ -2092,6 +2092,30 @@ const ROUTES = [
     });
     return { ...result, output: chunks.join('').slice(-80_000) };
   }) },
+  // A paired machine owns the actual vendor CLI and decides whether a session
+  // can be resumed. This route only transports a user-authored message through
+  // the encrypted mesh channel; it never claims that a queued turn was sent.
+  { method: 'POST', pattern: /^\/ox\/mesh\/agent\/send\/?$/, handler: appRoute(async (body) => {
+    const machine = String(body?.machine ?? '').trim();
+    const id = String(body?.id ?? '').trim();
+    const text = String(body?.text ?? '').trim();
+    if (!machine || !id || !text) throw new Error('choose a machine, session and message');
+    return (await meshUp()).ask(machine, 'agent-send', { id, text, model: String(body?.model ?? '') }, { timeoutMs: 0 });
+  }) },
+  { method: 'POST', pattern: /^\/ox\/mesh\/agent\/delivery\/?$/, handler: appRoute(async (body) => {
+    const machine = String(body?.machine ?? '').trim();
+    const ticket = String(body?.ticket ?? '').trim();
+    if (!machine || !ticket) throw new Error('choose a machine and delivery ticket');
+    return (await meshUp()).ask(machine, 'agent-delivery', { ticket }, { timeoutMs: 20_000 });
+  }) },
+  { method: 'POST', pattern: /^\/ox\/mesh\/push\/?$/, handler: appRoute(async (body) => {
+    const machine = String(body?.machine ?? '').trim();
+    const target = String(body?.path ?? '').trim();
+    const data = String(body?.data ?? '');
+    if (!machine || !target || !data) throw new Error('choose a machine, destination and file');
+    // The peer repeats validation and enforces the actual write boundary.
+    return (await meshUp()).ask(machine, 'push', { path: target, data, overwrite: body?.overwrite === true }, { timeoutMs: 60_000 });
+  }) },
   { method: 'POST', pattern: /^\/ox\/mesh\/(invite|name|allow|deny|forget|choose)\/?$/, handler: appRoute(async (body, m) => {
     const M = await import('./mesh.js');
     switch (m[1]) {

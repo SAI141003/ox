@@ -565,10 +565,11 @@ function usageAll() {
     '  ox mesh name <name>               name this machine ("Studio Mac")',
     '  ox mesh invite                    show a one-time code (10 min) for another machine to join',
     '  ox mesh join <code> [--name N] [--at host:port]   pair this machine (--at: across networks, e.g. Tailscale)',
-    '  ox mesh allow|deny <machine> <grant|preset>   what that machine may ask of THIS one: status, infer, tasks, files, agents, dev, screen, control; presets viewer, helper, full, desktop',
+    '  ox mesh allow|deny <machine> <grant|preset>   what that machine may ask of THIS one: status, infer, tasks, files, files-write, agents, dev, screen, control; presets viewer, helper, full, desktop',
     '  ox mesh describe <machine>        its makeup: chip, cores, memory, GPU, disks, OS, agent tools, models, keys (names)',
-    '  ox mesh agents <machine> [read <id>]   the agent sessions running there, and what one said',
+    '  ox mesh agents <machine> [read <id>|send <id> <message>|delivery <ticket>]   its shared agent sessions',
     '  ox mesh ls <machine>[:<folder>] · ox mesh pull <machine>:<file> [<here>]   its shared folders',
+    '  ox mesh push <local file> <machine>:<destination> [--overwrite]   copy a small file there (requires files-write)',
     '  ox mesh share <machine> <folder>…  which folders of THIS machine that one may browse (default: home)',
     '  ox mesh audit · ox mesh lockdown  what other machines asked here · every machine back to status only',
     '  ox mesh forget <machine>          unpair',
@@ -3795,12 +3796,20 @@ async function cmdMesh(args = []) {
       return;
     }
     if (sub === 'agents') {
-      if (!args[1]) throw new Error('usage: ox mesh agents <machine> [read <session id>]');
+      if (!args[1]) throw new Error('usage: ox mesh agents <machine> [read <id>|send <id> <message>|delivery <ticket>]');
       const node = await oneShot();
       try {
         if (args[2] === 'read' && args[3]) {
           const r = await node.ask(args[1], 'agent-read', { id: args[3] }, { timeoutMs: 20_000 });
           for (const m of (r.messages ?? []).slice(-12)) console.log(`${c.bold(m.role)}: ${String(m.text).slice(0, 400)}`);
+        } else if (args[2] === 'send' && args[3] && args[4]) {
+          const r = await node.ask(args[1], 'agent-send', { id: args[3], text: args.slice(4).join(' '), model: flag('--model') ?? '' }, { timeoutMs: 0 });
+          if (r.queued) console.log(`${c.yellow('queued')} ${r.ticket} — ${r.why}`);
+          else if (r.ok) console.log(`${c.green('✓ delivered')}${r.reply ? `\n${r.reply}` : ''}`);
+          else console.log(`${c.red('delivery failed')}: ${r.error ?? 'the remote agent did not accept the message'}`);
+        } else if (args[2] === 'delivery' && args[3]) {
+          const r = await node.ask(args[1], 'agent-delivery', { ticket: args[3] }, { timeoutMs: 20_000 });
+          console.log(r.found ? `${r.state}${r.ok === false ? `: ${r.error ?? 'failed'}` : ''}` : 'no such delivery ticket');
         } else {
           const r = await node.ask(args[1], 'agents', {}, { timeoutMs: 20_000 });
           if (!r.sessions.length) console.log(c.dim('no agent sessions there'));
@@ -3873,6 +3882,20 @@ async function cmdMesh(args = []) {
         if (got !== r.size) { fs.rmSync(tmp, { force: true }); throw new Error(`incomplete copy (${got} of ${r.size} bytes)`); }
         fs.renameSync(tmp, dest);
         console.log(`${c.green('✓')} ${dest} ${c.dim(`(${got} bytes from ${who})`)}`);
+      } finally { await node.close(); }
+      return;
+    }
+    if (sub === 'push') {
+      const source = path.resolve(args[1] ?? '');
+      const [who, remote] = target(args[2]);
+      if (!args[1] || !who || !remote) throw new Error('usage: ox mesh push <local file> <machine>:<destination> [--overwrite]');
+      const st = fs.statSync(source);
+      if (!st.isFile()) throw new Error(`${source} is not a regular file`);
+      if (st.size < 1 || st.size > 8 * 1024 * 1024) throw new Error('mesh push accepts files from 1 byte through 8 MB');
+      const node = await oneShot();
+      try {
+        const r = await node.ask(who, 'push', { path: remote, data: fs.readFileSync(source).toString('base64'), overwrite: args.includes('--overwrite') }, { timeoutMs: 60_000 });
+        console.log(`${c.green('✓')} ${source} → ${r.path} ${c.dim(`(${r.size} bytes${r.overwritten ? ', replaced' : ''})`)}`);
       } finally { await node.close(); }
       return;
     }
@@ -3952,7 +3975,7 @@ async function cmdMesh(args = []) {
         throw new Error('remote control action is one of list, click, type, key');
       } finally { await node.close(); }
     }
-    console.error('usage: ox mesh [status|name|invite|join|allow|deny|forget|up|models|run|screen|control|describe|agents|ls|pull|share|audit|lockdown] — ox help for details');
+    console.error('usage: ox mesh [status|name|invite|join|allow|deny|forget|up|models|run|screen|control|describe|agents|ls|pull|push|share|audit|lockdown] — ox help for details');
     process.exitCode = 1;
   } catch (e) {
     console.error(c.red(e.message));

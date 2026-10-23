@@ -4349,17 +4349,56 @@ files: [src/billing/**]
           try {
             const r = await getJson(`/ox/mesh/peer?machine=${encodeURIComponent(machine)}`);
             const d = r.describe;
-            const agentList = r.agents?.length ? r.agents.map((a) => `<div class="card"><span class="dot ${a.state === 'idle' ? '' : 'run'}"></span><span class="t"><div class="n">${esc(a.project || a.id)}</div><div class="d">${esc(a.tool || 'agent')} · ${esc(a.doing || a.state || '')}</div></span></div>`).join('') : `<div class="small muted">${esc(r.agentsError || 'No coding sessions shared by this machine yet. On that machine: ox mesh allow "${M.me?.name || "this Mac"}" agents')}</div>`;
+            const agentList = r.agents?.length ? r.agents.map((a) => `<div class="card mesh-agent-card"><span class="dot ${a.state === 'idle' ? '' : 'run'}"></span><span class="t"><div class="n">${esc(a.project || a.id)}</div><div class="d">${esc(a.tool || 'agent')} · ${esc(a.doing || a.state || '')}${a.model ? ` · ${esc(a.model)}` : ''}</div><div style="display:flex;gap:6px;margin-top:8px"><input class="field small" data-od-agent-message="${esc(a.id)}" placeholder="Message this session" aria-label="Message ${esc(a.project || a.id)}"><button class="btn ghost small" data-od-agent-send="${esc(a.id)}">Send</button></div><div class="small muted od-agent-status" style="margin-top:5px"></div></span></div>`).join('') : `<div class="small muted">${esc(r.agentsError || 'No coding sessions shared by this machine yet. On that machine: ox mesh allow "${M.me?.name || "this Mac"}" agents')}</div>`;
             box.innerHTML = `<div class="section-cap cap" style="margin-top:18px">${esc(machine)}</div>
               ${d ? `<div class="chipline"><span class="badge">${esc(d.os || '')}</span><span class="badge">${esc(String(d.cores || '?'))} cores</span><span class="badge">${esc(String(d.memGb || '?'))} GB</span><span class="badge">${esc(String(d.sessions || 0))} live sessions</span></div><p class="small muted" style="margin:8px 0">${esc(d.models?.join(', ') || 'No local models reported')}</p>` : `<div class="small muted">${esc(r.describeError || 'Machine details unavailable')}</div>`}
               <div class="section-cap cap" style="margin-top:14px">Coding sessions</div><div class="cards">${agentList}</div>
+              <div class="section-cap cap" style="margin-top:14px">Copy a file to this machine</div><p class="small muted">The remote owner must separately allow <code>files-write</code>. Ox writes one file atomically inside a shared folder; uploads are limited to 8 MB and never overwrite without your explicit choice.</p><input class="field" id="od-push-file" type="file"><input class="field" id="od-push-path" placeholder="Destination path inside a shared folder on ${esc(machine)}" style="margin-top:8px"><div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn ghost" id="od-push">Copy file</button><label class="small muted"><input type="checkbox" id="od-push-overwrite"> Replace an existing file</label><span class="small muted" id="od-push-state"></span></div>
               <div class="section-cap cap" style="margin-top:14px">Run an Ox task there</div><p class="small muted">The other computer must first allow this Mac to run tasks. Ox will apply that computer’s own approval policy; this is not a raw shell.</p><textarea class="field" id="od-task" rows="3" placeholder="Run tests, inspect the failure, fix it, and report what changed."></textarea><input class="field" id="od-cwd" placeholder="Optional folder on ${esc(machine)}" style="margin-top:8px"><div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn primary" id="od-run">Run task</button><span class="small muted" id="od-run-state"></span></div><pre class="box mono small" id="od-run-output" style="display:none;max-height:240px;overflow:auto;white-space:pre-wrap"></pre>`;
+            $('od-push').onclick = async () => {
+              const file = $('od-push-file').files?.[0], destination = $('od-push-path').value.trim(), state = $('od-push-state');
+              if (!file || !destination) return toast('Choose a file and destination first');
+              if (file.size < 1 || file.size > 8 * 1024 * 1024) return toast('Mesh copy accepts files from 1 byte through 8 MB');
+              if (!(await askSure(`Copy ${file.name} to ${machine}? The remote machine will enforce its own shared-folder and overwrite rules.`, 'Copy file'))) return;
+              $('od-push').disabled = true; state.textContent = 'Reading file…';
+              try {
+                const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('Could not read that file')); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.readAsDataURL(file); });
+                state.textContent = 'Copying through the encrypted mesh…';
+                const out = await postJson('/ox/mesh/push', { machine, path: destination, data, overwrite: $('od-push-overwrite').checked });
+                state.textContent = `Copied ${out.size} bytes to ${out.path}${out.overwritten ? ' (replaced)' : ''}.`;
+              } catch (e) { state.textContent = e.message; } finally { $('od-push').disabled = false; }
+            };
             $('od-run').onclick = async () => {
               const prompt = $('od-task').value.trim(); if (!prompt) return toast('Describe the task first');
               if (!(await askSure(`Run this task on ${machine}? Its own approvals still apply.`, 'Run task'))) return;
               const run = $('od-run'); run.disabled = true; $('od-run-state').textContent = 'Running on ' + machine + '…';
               try { const out = await postJson('/ox/mesh/run', { machine, prompt, cwd: $('od-cwd').value.trim() }); $('od-run-state').textContent = out.code === 0 ? 'Finished' : `Stopped (exit ${out.code})`; $('od-run-output').style.display = ''; $('od-run-output').textContent = out.output || 'No output returned.'; } catch (e) { $('od-run-state').textContent = e.message; } finally { run.disabled = false; }
             };
+            box.querySelectorAll('[data-od-agent-send]').forEach((send) => (send.onclick = async () => {
+              const id = send.dataset.odAgentSend;
+              const input = box.querySelector(`[data-od-agent-message="${CSS.escape(id)}"]`);
+              const state = send.closest('.mesh-agent-card')?.querySelector('.od-agent-status');
+              const text = input?.value.trim(); if (!text) return;
+              send.disabled = true; input.disabled = true; if (state) state.textContent = 'Sending to the remote session…';
+              try {
+                const out = await postJson('/ox/mesh/agent/send', { machine, id, text });
+                input.value = '';
+                if (out.queued && out.ticket) {
+                  if (state) state.textContent = `Queued — waiting for the session to become idle (${out.ticket}).`;
+                  const poll = async (left = 360) => {
+                    try {
+                      const delivery = await postJson('/ox/mesh/agent/delivery', { machine, ticket: out.ticket });
+                      if (delivery.found && delivery.state === 'done') { if (state) state.textContent = delivery.ok ? `Delivered. ${delivery.reply || 'The remote tool completed its turn.'}` : `Delivery failed: ${delivery.error || 'the remote tool returned an error'}`; return; }
+                    } catch (e) { if (state) state.textContent = e.message; return; }
+                    if (left > 0 && box.isConnected) setTimeout(() => poll(left - 1), 5000);
+                  };
+                  setTimeout(() => poll(), 1500);
+                } else if (out.ok) {
+                  if (state) state.textContent = `Delivered. ${out.reply || 'The remote tool completed its turn.'}`;
+                } else if (state) state.textContent = `Delivery failed: ${out.error || 'the remote tool did not accept the message'}`;
+              } catch (e) { if (state) state.textContent = e.message; }
+              finally { send.disabled = false; input.disabled = false; }
+            }));
           } catch (e) { box.innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; }
         }));
       } else if (sec === 'voice') {

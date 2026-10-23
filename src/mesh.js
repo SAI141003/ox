@@ -84,7 +84,9 @@ export function setName(name, o = {}) {
 
 // ---------------------------------------------------------------- paired machines
 
-const DEFAULT_GRANTS = { status: true, infer: false, tasks: false, files: false, agents: false, dev: false, screen: false, control: false };
+// `files` remains read-only. A peer must receive a second, explicit grant
+// before it can write anything into a shared folder.
+const DEFAULT_GRANTS = { status: true, infer: false, tasks: false, files: false, 'files-write': false, agents: false, dev: false, screen: false, control: false };
 export const GRANTS = Object.keys(DEFAULT_GRANTS);
 // Presets for `ox mesh allow <machine> <preset>`.
 // Screen and control are deliberately not part of `full`: the controlled Mac's
@@ -430,7 +432,7 @@ export async function startNode(o = {}) {
     // The machine's makeup, its agent sessions, its shared folders (src/mesh-services.js).
     const S = await import('./mesh-services.js');
     const roots = readPeers(o)[peer.id]?.roots ?? [os.homedir()];
-    if (await S.serveOp({ ch, peer, msg, grants, roots, home: home(o), ollamaUrl, meName: me.name, remoteControl: o.remoteControl })) return;
+    if (await S.serveOp({ ch, peer, msg, grants, roots, home: home(o), ollamaUrl, meName: me.name, remoteControl: o.remoteControl, agentRun: o.agentRun })) return;
     refuse(`unknown request ${msg.op}`);
   }
 
