@@ -845,3 +845,6 @@ output, turn count, tool-call count, and measured cost. If the provider reports 
 usage or the model has no pricing row, those fields remain `null`; the estimate is
 kept separately as `estimatedInputTokens`. The new regression tests pass **2/2**,
 and `npm run verify:quick` passes **560 syntax files + 6 smoke entry points**.
+The parallel `runStandardized`/`standardizedEval` path now emits the same measured
+fields, preserving the old `tokens` estimate as a clearly named compatibility
+alias rather than silently mixing estimates with provider usage.
