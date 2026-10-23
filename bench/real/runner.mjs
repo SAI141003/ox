@@ -386,6 +386,16 @@ function meanStd(samples) {
   return { mean, stddev: Math.sqrt(variance), n: xs.length };
 }
 
+// Tail latency matters for an interactive agent: a fast average can hide a
+// stalled turn. Use the nearest-rank definition so this remains deterministic
+// for small repeat counts and never invents a value when no timing was emitted.
+export function latencyStats(samples) {
+  const base = meanStd(samples);
+  const xs = samples.filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+  const p95 = xs.length ? xs[Math.min(xs.length - 1, Math.ceil(xs.length * 0.95) - 1)] : null;
+  return { ...base, p95 };
+}
+
 // A missing price is not a zero-dollar run. In particular, local inference has
 // no metered provider bill but still consumes hardware and electricity, while a
 // remote model can be unpriced because the catalog has not been audited yet.
@@ -408,11 +418,11 @@ function summariseRepeats(runs) {
     unavailableRuns: runs.length - measured.length,
     passCount,
     passRate: rate,
-    ms: meanStd(measured.map((r) => r.ms)),
-    agentMs: meanStd(measured.map((r) => r.agentMs)),
-    firstTextMs: meanStd(measured.map((r) => r.firstTextMs)),
-    firstToolMs: meanStd(measured.map((r) => r.firstToolMs)),
-    toolDurationMs: meanStd(measured.map((r) => r.toolDurationMs)),
+    ms: latencyStats(measured.map((r) => r.ms)),
+    agentMs: latencyStats(measured.map((r) => r.agentMs)),
+    firstTextMs: latencyStats(measured.map((r) => r.firstTextMs)),
+    firstToolMs: latencyStats(measured.map((r) => r.firstToolMs)),
+    toolDurationMs: latencyStats(measured.map((r) => r.toolDurationMs)),
     toolCalls: meanStd(measured.map((r) => r.toolCalls)),
     turns: meanStd(measured.map((r) => r.turns)),
     tokensIn: meanStd(measured.map((r) => r.tokensIn)),
@@ -550,11 +560,11 @@ export async function main(argv = process.argv.slice(2)) {
   if (opts.repeats > 1) {
     console.log('');
     console.log('VARIANCE (sample stddev across independent repeats)');
-    console.log(`${fmtCell('TASK', W.id)}  ${fmtCell('PASS', 6)}  ${fmtCell('AGENT_MS', 18)}  ${fmtCell('TOOLS', 16)}  ${fmtCell('TURNS', 14)}`);
+    console.log(`${fmtCell('TASK', W.id)}  ${fmtCell('PASS', 6)}  ${fmtCell('AGENT_MS mean ± std / p95', 26)}  ${fmtCell('TOOLS', 16)}  ${fmtCell('TURNS', 14)}`);
     for (const { task, stats } of rows) {
       console.log(
         `${fmtCell(task.id, W.id)}  ${fmtCell(stats.measuredRuns ? `${stats.passCount}/${stats.measuredRuns}` : 'n/a', 6)}  ` +
-        `${fmtCell(`${stats.agentMs.mean.toFixed(0)} ± ${stats.agentMs.stddev.toFixed(0)}`, 18)}  ` +
+        `${fmtCell(`${stats.agentMs.mean.toFixed(0)} ± ${stats.agentMs.stddev.toFixed(0)} / ${stats.agentMs.p95 == null ? 'n/a' : stats.agentMs.p95.toFixed(0)}`, 26)}  ` +
         `${fmtCell(`${stats.toolCalls.mean.toFixed(1)} ± ${stats.toolCalls.stddev.toFixed(1)}`, 16)}  ` +
         `${fmtCell(`${stats.turns.mean.toFixed(1)} ± ${stats.turns.stddev.toFixed(1)}`, 14)}`
       );

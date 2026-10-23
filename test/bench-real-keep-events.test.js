@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { benchmarkExecutionEnv, benchmarkExecutionSpec, costFor, costStats, renderUsageLines, resolveBenchmarkTarget, runOnce, unavailableReason } from '../bench/real/runner.mjs';
+import { benchmarkExecutionEnv, benchmarkExecutionSpec, costFor, costStats, latencyStats, renderUsageLines, resolveBenchmarkTarget, runOnce, unavailableReason } from '../bench/real/runner.mjs';
 import { EVENTS_FILE, TIMINGS_FILE, summarizeEvents, writeTimingsFile } from '../bench/real/lib.mjs';
 
 const CANNED_NDJSON = [
@@ -226,6 +226,14 @@ test('latency metrics are absent rather than fabricated when event timestamps ar
   assert.equal(summary.firstToolMs, null);
   assert.equal(summary.toolDurationMs, null);
   assert.equal(summary.timedTools, 0);
+});
+
+test('latencyStats reports nearest-rank p95 without fabricating missing timings', () => {
+  const stats = latencyStats([10, 20, 30, 40]);
+  assert.equal(stats.mean, 25);
+  assert.equal(stats.n, 4);
+  assert.equal(stats.p95, 40);
+  assert.equal(latencyStats([null, Number.NaN]).p95, null);
 });
 
 test('timing sidecar is a payload-free, sanitized event timeline', () => {

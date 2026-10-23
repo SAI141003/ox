@@ -889,3 +889,19 @@ remaining in Ox's existing local JSON/activity store. New tests cover ownership,
 durability, handoff, liveness, pause/resume, and links. This is an Ox-native
 compatibility layer, not a claim of importing Hermes' SQLite database or running
 untrusted external worker plugins.
+
+## Tail-latency and local-model evidence — 2026-10-22
+
+The real benchmark runner now reports nearest-rank p95 for wall time, agent time,
+time-to-first-text, first-tool latency, and tool duration. The JSON artifact keeps
+the mean, sample standard deviation, sample count, and p95 together; missing event
+timestamps remain missing rather than becoming fabricated zeroes. The focused
+benchmark/accounting suite passed **57/57** after this change.
+
+The retained local Qwen 2.5 3B run is useful as a limitation, not a success claim:
+two attempts of `read-and-report` took **114.9 s** and **152.7 s** (nearest-rank
+p95 **152.7 s**), averaged **14,478 input / 379 output tokens**, and passed **0/2**.
+The adapter was local and unpriced, so the report must not call it “free”; hardware
+cost was not available from the run. Its failures included malformed file writes
+and redundant retries. This is why provider comparisons distinguish measured remote
+billing from unpriced local inference and include pass rate alongside latency.
