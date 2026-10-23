@@ -39,6 +39,10 @@
   .drop.hot { border-color: var(--text); color: var(--text); }
   input[type=text] { flex: 1; background: rgba(255,255,255,.07); border: 0; border-radius: 8px; padding: 6px 9px; color: var(--text); font: inherit; font-size: 12px; outline: none; }
   .answer { margin-top: 8px; white-space: pre-wrap; max-height: 110px; overflow: auto; color: rgba(245,246,248,.9); font-size: 12px; user-select: text; }
+  .mods { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-top:8px; }
+  .mod { border:1px solid rgba(255,255,255,.1); border-radius:10px; padding:7px; min-width:0; background:rgba(255,255,255,.035); }
+  .mod b,.mod small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mod small { color:var(--muted); font-size:10px; margin-top:2px; }
   .file { cursor: pointer; } .file.sel .who { color: var(--text); } .file:not(.sel) .who { color: var(--muted); font-weight: 500; }
   .x { background: none; border: 0; color: var(--dim); cursor: pointer; }
   .big { font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -64,7 +68,7 @@ const el = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const COLORS = ['#7AA2F7', '#F7768E', '#9ECE6A', '#E0AF68', '#BB9AF7', '#2AC3DE'];
 
-let state = { runs: [], shelf: [] };
+let state = { runs: [], shelf: [], mods: [] };
 let tab = null;            // null | 'runs' | 'shelf' | 'focus'
 let hovering = false;
 let selected = null;       // shelf file name
@@ -97,7 +101,7 @@ function render() {
   el('dots').innerHTML = state.runs.slice(0, 5).map((r, i) => `<span class="dot" style="background:${COLORS[i % COLORS.length]}"></span>`).join('');
   const h = headline();
   const s = el('status'); s.textContent = h.text; s.className = `status ${h.tone}`;
-  el('tabs').innerHTML = [['runs', 'Runs'], ['shelf', 'Shelf'], ['focus', 'Focus']]
+  el('tabs').innerHTML = [['runs', 'Runs'], ['mods', 'Mods'], ['shelf', 'Shelf'], ['focus', 'Focus']]
     .map(([k, t]) => `<button class="tab ${tab === k ? 'on' : ''}" data-tab="${k}">${t}</button>`).join('');
   const p = el('panel');
   const ap = pending();
@@ -109,6 +113,9 @@ function render() {
       <div class="btns"><button class="pill" data-ans="deny">Deny</button><button class="pill primary" data-ans="allow">Allow</button>
       <span class="muted small" style="align-self:center">or answer in the terminal</span></div>`;
     p.dataset.sock = run.socket; p.dataset.id = a.id;
+  } else if (tab === 'mods') {
+    p.className = 'panel';
+    p.innerHTML = `<div class="row"><span class="who">Mods</span><span class="act">presentation presets for bots and Island</span></div><div class="mods">${(state.mods || []).map((m) => `<div class="mod"><b>${esc(m.name)}</b><small>${esc(m.islandLabel)} · ${esc(m.description)}</small></div>`).join('') || '<div class="muted small">No mods available</div>'}</div>`;
   } else if (tab === 'shelf') {
     p.className = 'panel';
     const files = state.shelf;
