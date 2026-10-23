@@ -304,7 +304,7 @@ ox is a line-oriented REPL, not an alt-screen TUI, which makes it *relatively* t
 | Works with zero API key | **Y** — local Ollama; `ox doctor` reports `✓ ollama: no API key needed`^2^ | N | Y (ChatGPT login) | P | P | P | Y (`/login` optional)^14^ | N | Y (free tier) | Y | N | N |
 | REPL quality | P (line-oriented, no full-screen) | P | Y (full-screen TUI) | Y | **Y** (Bubble Tea) | N (not a REPL) | Y (pi-based TUI) | Y | N (Slack/web) | P | Y | N (voice) |
 | Progress visibility | P | Y | Y | Y | Y | P | Y | Y | Y | Y | Y | Y | P |
-| Multi-agent visibility | **P** — `/agents` live tree + `ox agents` running/idle/saved, but only ever one subagent^2^ | Y | Y | Y | P | N | Y | Y | Y | Y | Y | P | N |
+| Multi-agent visibility | **P** — `/agents` live tree + `ox agents` running/idle/saved, with bounded parallel batches (default 3, ceiling 8); no mid-flight steering or isolated worktrees^1^ | Y | Y | Y | P | N | Y | Y | Y | Y | Y | P | N |
 | Approval UX | **Y** — TTY prompt, `--yolo`, `--strict-approvals`, 5 trust levels, IPC, silence⇒decline^2^ | Y | Y | Y | Y | P | ? | Y | P | Y | Y | ? | N |
 | Failure recovery | **P** — 3 retries with the same honest error; `--rewind`, `/fork`, `--resume`; corrupt transcripts warn and continue rather than hard-fail | P | P | P | P | P | ? | P | P | P | P | ? | N |
 | Resume UX | **Y** — `--resume <id\|path>`, `-c`, `ox sessions resume <prefix>`, `/rewind`, `/fork`; `--no-replay` on attach^2^ | Y | Y | Y | Y | P | Y (reattach)^14^ | Y | Y | Y | Y | Y | N |

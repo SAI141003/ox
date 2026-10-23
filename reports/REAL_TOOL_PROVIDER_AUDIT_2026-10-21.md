@@ -821,3 +821,8 @@ boundary is the official HTTPS remote, fast-forward ancestry, clean tracked tree
 JavaScript load checks, native Island rebuild, and rollback on failure. A signed and
 notarized distribution channel remains a separate release gap requiring signing
 credentials and is not counted as complete here.
+
+The competitive matrix also had one stale sentence saying Ox had “only ever one
+subagent.” That was inconsistent with the shipped scheduler and its 17-test parallel
+batch proof. The row now records the measured default/ceiling (3/8) and the actual
+remaining gaps: mid-flight steering and per-agent isolated worktrees.
