@@ -314,6 +314,14 @@ final class FocusTimer: ObservableObject {
     }
 
     func start() {
+        // Tie the visible focus period to Ox's OS-level sleep inhibitor.
+        // The hold is independent of the Island process and expires at the
+        // same deadline; stopping/resetting explicitly releases it.
+        let holdSeconds = max(1, Int(ceil(pausedLeft ?? TimeInterval(max(1, minutes) * 60))))
+        OxRunner.run(["awake", "\(holdSeconds)s"], cwd: FileManager.default.homeDirectoryForCurrentUser) { code, output in
+            if code != 0 { IslandLog.write("focus awake hold failed: \(output.prefix(240))") }
+            else { IslandLog.write("focus awake hold started for \(holdSeconds) seconds") }
+        }
         endsAt = Date().addingTimeInterval(pausedLeft ?? TimeInterval(minutes * 60))
         pausedLeft = nil
         finishedAt = nil
@@ -325,12 +333,20 @@ final class FocusTimer: ObservableObject {
 
     func pause() {
         guard let e = endsAt else { return }
+        OxRunner.run(["awake", "off"], cwd: FileManager.default.homeDirectoryForCurrentUser) { code, output in
+            if code != 0 { IslandLog.write("focus awake hold release failed: \(output.prefix(240))") }
+            else { IslandLog.write("focus awake hold released on pause") }
+        }
         pausedLeft = max(0, e.timeIntervalSinceNow)
         endsAt = nil
         ticker?.invalidate()
     }
 
     func reset() {
+        OxRunner.run(["awake", "off"], cwd: FileManager.default.homeDirectoryForCurrentUser) { code, output in
+            if code != 0 { IslandLog.write("focus awake hold release failed: \(output.prefix(240))") }
+            else { IslandLog.write("focus awake hold released") }
+        }
         endsAt = nil
         pausedLeft = nil
         ticker?.invalidate()

@@ -272,19 +272,27 @@ export function kiloSessions({ home = os.homedir(), now = Date.now() } = {}) {
 export function kimiSessions({ home = os.homedir(), now = Date.now() } = {}) {
   const file = path.join(home, 'Library', 'Application Support', 'kimi-desktop', 'daimon-share', 'daimon', 'agents', 'main', 'runner.state.json');
   let st, row;
-  try { st = fs.statSync(file); row = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return []; }
+  // Kimi keeps its desktop daemon alive after it has finished a turn, and can
+  // leave runner.state.json untouched for hours.  Do not make a visibly
+  // running Kimi disappear from Ox just because that *activity* file is old.
+  // A process only proves the app is running, so the fallback is deliberately
+  // labelled idle rather than pretending there is an active conversation.
+  const running = runningApp('Kimi') || runningApp('Kimi Code');
+  try { st = fs.statSync(file); row = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {
+    return running ? [{ id: 'kimi:main', tool: 'Kimi', project: 'Kimi', cwd: '', model: '', state: 'idle', doing: '', idleSec: 0, updated: now, appRunning: true }] : [];
+  }
   const updated = Date.parse(row.updatedAt ?? '') || st.mtimeMs;
   const turns = Array.isArray(row.activeKernelTurns) ? row.activeKernelTurns : [];
   const tools = Array.isArray(row.activeKernelToolCalls) ? row.activeKernelToolCalls : [];
-  if (now - updated > SHOW_MS) return [];
+  if (now - updated > SHOW_MS && !running) return [];
   const activeTurn = turns.length || tools.length || Number(row.kernel?.activeTurnCount ?? 0) > 0;
   const age = Math.max(0, now - updated);
   return [{ id: 'kimi:main', tool: 'Kimi', project: 'Kimi', cwd: '', model: row.kernel?.providerModel?.model ?? '',
     // Kimi keeps the runner state file fresh even between turns. Keep that
     // session visible as idle instead of making it vanish from the Island;
     // active turns/tools still get the stronger working state.
-    state: activeTurn ? (tools.length || Number(row.kernel?.activeToolCallCount ?? 0) ? 'tool' : 'thinking') : 'idle',
-    doing: tools.length ? 'using a tool' : '', idleSec: activeTurn ? 0 : Math.round(age / 1000), updated }];
+    state: activeTurn && age <= SHOW_MS ? (tools.length || Number(row.kernel?.activeToolCallCount ?? 0) ? 'tool' : 'thinking') : 'idle',
+    doing: activeTurn && age <= SHOW_MS && tools.length ? 'using a tool' : '', idleSec: activeTurn && age <= SHOW_MS ? 0 : Math.round(age / 1000), updated: age > SHOW_MS ? now : updated, appRunning: running }];
 }
 
 // ---------------------------------------------------------------- installed tools
@@ -433,8 +441,23 @@ export function sendCommand(tool, sid, text, bin = (t, f) => f, { modelArgs = ()
   return null;
 }
 
-const queue = new Map(); // id -> [{ text, at }]
+const queue = new Map(); // id -> [{ text, at, ticket }]
 const sending = new Set();
+// A queued turn has no HTTP response left open while an agent works.  Keep a
+// small, explicit delivery record so Island/Office can show the *real* later
+// result rather than treating enqueueing as delivery.
+const deliveries = new Map(); // ticket -> { id, state, at, result? }
+const DELIVERY_TTL = 60 * 60_000;
+function newTicket() { return `delivery_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`; }
+function pruneDeliveries(now = Date.now()) {
+  for (const [ticket, row] of deliveries) if (now - row.at > DELIVERY_TTL) deliveries.delete(ticket);
+}
+export function deliveryStatus(ticket) {
+  pruneDeliveries();
+  const row = deliveries.get(String(ticket ?? ''));
+  if (!row) return { found: false };
+  return { found: true, ticket: String(ticket), id: row.id, state: row.state, ...(row.result ?? {}) };
+}
 
 /**
  * Send a message to a session from the island. It runs one turn of that
@@ -452,9 +475,11 @@ export async function sendToSession(id, text, { home = os.homedir(), run = null,
   if (!cmd) throw new Error(`ox cannot send to a ${tool} session; open it in ${tool}`);
   const live = liveAgents({ home, fresh: true }).find((s) => s.id === key);
   if ((live && live.state !== 'idle') || sending.has(key)) {
-    queue.set(key, [...(queue.get(key) ?? []), { text: msg, at: Date.now() }]);
+    const ticket = newTicket();
+    deliveries.set(ticket, { id: key, state: 'queued', at: Date.now() });
+    queue.set(key, [...(queue.get(key) ?? []), { text: msg, at: Date.now(), ticket }]);
     waitAndSend(key, home, run, model);
-    return { queued: true, why: `${live?.tool ?? tool} is working on this session now; your message goes in as soon as it is idle` };
+    return { queued: true, ticket, why: `${live?.tool ?? tool} is working on this session now; your message goes in as soon as it is idle` };
   }
   return runTurn(key, tool, sid, msg, live?.cwd || null, home, run, model);
 }
@@ -497,7 +522,8 @@ function waitAndSend(key, home, run, model = '') {
     const next = q.shift();
     queue.set(key, q);
     const [tool, ...rest] = key.split(':');
-    await runTurn(key, tool, rest.join(':'), next.text, live?.cwd || null, home, run, model);
+    const result = await runTurn(key, tool, rest.join(':'), next.text, live?.cwd || null, home, run, model);
+    if (next.ticket) deliveries.set(next.ticket, { id: key, state: 'done', at: Date.now(), result });
     setTimeout(tick, 1000).unref?.();
   };
   setTimeout(tick, 5000).unref?.();

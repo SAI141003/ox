@@ -176,6 +176,14 @@ final class MailCenter: ObservableObject {
         run("set r to reply (first message of inbox whose message id is \"\(q(m.mailID))\") opening window yes\nactivate")
         note = "A reply draft is open in Mail. Press Send there."
     }
+
+    /// macOS Automation grants are per application.  A successful Terminal
+    /// AppleScript does not grant the Island permission, so give the user a
+    /// direct recovery path instead of leaving an unexplained empty inbox.
+    func openAutomationSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") else { return }
+        NSWorkspace.shared.open(url)
+    }
 }
 
 struct MailView: View {
@@ -232,6 +240,13 @@ struct MailView: View {
                         }
                     }
                 }
+            }
+            if mail.note.localizedCaseInsensitiveContains("needs approval") {
+                HStack(spacing: 8) {
+                    Button(T("Open Automation Settings")) { mail.openAutomationSettings() }
+                    Button(T("Try again")) { mail.refresh() }
+                }
+                .buttonStyle(.plain).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Color(hex: "#60A5FA"))
             }
             if !mail.note.isEmpty {
                 Text(mail.note).font(.system(size: 10.5)).foregroundStyle(mail.note.hasPrefix("Mail access") ? Color(hex: "#FBBF24") : Ink.dim).lineLimit(3)

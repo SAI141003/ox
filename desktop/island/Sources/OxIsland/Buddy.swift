@@ -74,6 +74,10 @@ final class Buddy: NSObject, ObservableObject {
     private var recording: AVAudioFile?
     private var recordingURL: URL?
     private var finalHeard = false
+    /// Distinguish a recognizer miss from a microphone that delivered silence.
+    /// The old flow reported both as “I didn't catch that”, which made the
+    /// actionable device/permission failure look like a routing failure.
+    private var peakInputLevel: Double = 0
 
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private let audio = AVAudioEngine()
@@ -179,6 +183,7 @@ final class Buddy: NSObject, ObservableObject {
         if recognizer.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }
         request = req
         finalHeard = false
+        peakInputLevel = 0
         let input = audio.inputNode
         let format = input.outputFormat(forBus: 0)
         // Keep the audio too: whisper on the ox side hears more than the live preview.
@@ -195,7 +200,10 @@ final class Buddy: NSObject, ObservableObject {
             var sum: Float = 0
             for i in 0..<n { sum += ch[i] * ch[i] }
             let rms = Double(sqrt(sum / Float(max(n, 1))))
-            DispatchQueue.main.async { self?.level = min(1, rms * 12) }
+            DispatchQueue.main.async {
+                self?.peakInputLevel = max(self?.peakInputLevel ?? 0, rms)
+                self?.level = min(1, rms * 12)
+            }
         }
         task = recognizer.recognitionTask(with: req) { [weak self] result, _ in
             guard let result else { return }
@@ -235,7 +243,7 @@ final class Buddy: NSObject, ObservableObject {
             self.task = nil
             self.request = nil
             let text = self.heard.trimmingCharacters(in: .whitespacesAndNewlines)
-            IslandLog.write("voice heard: \"\(text)\" (final: \(self.finalHeard), recording: \(audioPath != nil))")
+            IslandLog.write("voice heard: \"\(text)\" (final: \(self.finalHeard), recording: \(audioPath != nil), peak: \(String(format: "%.4f", self.peakInputLevel)))")
             // Nothing heard live but there is a recording: whisper on this Mac listens to it again.
             if text.isEmpty, let audioPath, let port = Dictation.serverPort, let u = URL(string: "http://127.0.0.1:\(port)/ox/voice/transcribe") {
                 var req = URLRequest(url: u, timeoutInterval: 30)
@@ -247,7 +255,13 @@ final class Buddy: NSObject, ObservableObject {
                     let again = ((data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] })?["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     DispatchQueue.main.async {
                         IslandLog.write("voice heard again from the recording: \"\(again)\"")
-                        guard !again.isEmpty, !again.hasPrefix("[") else { self.phase = .idle; self.show("I didn't catch that. Hold ⌃⌥Space, or click the mic, and talk."); return }
+                        guard !again.isEmpty, !again.hasPrefix("[") else {
+                            self.phase = .idle
+                            self.show(self.peakInputLevel < 0.001
+                                ? "No microphone signal reached OX Island. Select the right input in System Settings › Sound › Input, then try again."
+                                : "I couldn't transcribe that. Hold ⌃⌥Space, or click the mic, and talk again.")
+                            return
+                        }
                         self.heard = again
                         guard self.send?(again, self.shot.map { [$0] } ?? [], audioPath) == true else { self.show("I can't find ox on this Mac. Open the OX app once, then ask me again."); return }
                         self.gesture = .think
@@ -256,7 +270,12 @@ final class Buddy: NSObject, ObservableObject {
                 return
             }
             // Nothing heard at all: say so (an empty request used to end as "can't find ox").
-            guard !text.isEmpty else { self.show("I didn't catch that. Hold ⌃⌥Space, or click the mic, and talk."); return }
+            guard !text.isEmpty else {
+                self.show(self.peakInputLevel < 0.001
+                    ? "No microphone signal reached OX Island. Select the right input in System Settings › Sound › Input, then try again."
+                    : "I couldn't transcribe that. Hold ⌃⌥Space, or click the mic, and talk again.")
+                return
+            }
             guard self.send?(text, self.shot.map { [$0] } ?? [], audioPath) == true else {
                 IslandLog.write("voice: nobody took it (ox not found)")
                 self.show("I can't find ox on this Mac. Open the OX app once, then ask me again.")

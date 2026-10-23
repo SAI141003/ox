@@ -742,6 +742,11 @@ final class OxBridge: ObservableObject {
         var canSend = true
         var note = ""
         var busy = false
+        /// A native OX run streams over its socket.  Keep that partial reply
+        /// on the card until the run reaches a real terminal event rather than
+        /// claiming delivery as soon as the message is put on the socket.
+        var awaitingReply = false
+        var streamingReply = ""
     }
     /// The session the home card shows (tap a pill to change it; nil = the most urgent).
     @Published var focusId: String?
@@ -877,7 +882,12 @@ final class OxBridge: ObservableObject {
             // ox's own run: straight into it over its socket.
             if let conn = connections[c.id] {
                 conn.send(["type": "user-message", "text": text, "imagePaths": [String](), "voice": false])
-                c.note = "Sent. Its answer shows here and in its run."
+                c.busy = true
+                c.awaitingReply = true
+                c.streamingReply = ""
+                c.note = "Delivered to this run — waiting for its response…"
+            } else {
+                c.note = "This run is no longer connected; open it in the OX app."
             }
             card = c
             return
@@ -891,13 +901,48 @@ final class OxBridge: ObservableObject {
             guard let self, self.card?.id == c.id else { return }
             self.card?.busy = false
             if let err = (j?["error"] as? [String: Any])?["message"] as? String { self.card?.note = err; return }
-            if (j?["queued"] as? Bool) == true { self.card?.note = j?["why"] as? String ?? "Waiting for it to be idle."; return }
+            if (j?["queued"] as? Bool) == true {
+                self.card?.busy = true
+                self.card?.note = j?["why"] as? String ?? "Waiting for it to be idle."
+                if let ticket = j?["ticket"] as? String, !ticket.isEmpty { self.waitForQueuedDelivery(ticket, cardID: c.id) }
+                return
+            }
             let reply = (j?["reply"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if (j?["ok"] as? Bool) == true {
                 self.card?.lines.append(CardLine(mine: false, text: reply.isEmpty ? "Done." : reply))
                 self.card?.note = ""
             } else {
                 self.card?.note = "It stopped: \(j?["error"] as? String ?? "no answer")"
+            }
+        }
+    }
+
+    /// A queued external-agent send has no open HTTP response to carry its
+    /// eventual answer.  Poll the explicit delivery ticket until the worker
+    /// reports a real result; never turn a queued request into a fake success.
+    private func waitForQueuedDelivery(_ ticket: String, cardID: String, attempt: Int = 0) {
+        guard attempt < 900, card?.id == cardID else { return } // 30 minutes at 2 s
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self, self.card?.id == cardID else { return }
+            self.post("/ox/agents/delivery", ["ticket": ticket]) { [weak self] j in
+                guard let self, self.card?.id == cardID else { return }
+                guard let j, (j["found"] as? Bool) == true else {
+                    self.card?.busy = false
+                    self.card?.note = "The queued delivery record expired before Ox received a result. Open the agent to check it."
+                    return
+                }
+                if (j["state"] as? String) != "done" {
+                    self.waitForQueuedDelivery(ticket, cardID: cardID, attempt: attempt + 1)
+                    return
+                }
+                self.card?.busy = false
+                if (j["ok"] as? Bool) == true {
+                    let reply = (j["reply"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    self.card?.lines.append(CardLine(mine: false, text: reply.isEmpty ? "Done." : reply))
+                    self.card?.note = ""
+                } else {
+                    self.card?.note = "It stopped: \(j["error"] as? String ?? "no answer")"
+                }
             }
         }
     }
@@ -921,7 +966,14 @@ final class OxBridge: ObservableObject {
 
     /// Take over in Terminal: the session continued by its own tool.
     func openCardInTerminal() {
-        guard let c = card, let ext = Self.externalId(c.id) else { return }
+        guard let c = card, let session = sessions.first(where: { $0.id == c.id }) else { return }
+        openSessionInApp(session)
+    }
+
+    /// Focus the app/session selected in the Island.  This takes the session
+    /// explicitly so a double-click cannot race the single-click card opening.
+    func openSessionInApp(_ session: AgentSession) {
+        guard let ext = Self.externalId(session.id) else { return }
         // Its own tab first (where it already runs); a new Terminal only when there is none.
         post("/ox/agents/focus", ["id": ext]) { [weak self] f in
             if (f?["focused"] as? Bool) == true {
@@ -929,7 +981,11 @@ final class OxBridge: ObservableObject {
                 return
             }
             self?.post("/ox/agents/open", ["id": ext]) { j in
-                self?.card?.note = (j?["opened"] as? Bool) == true ? "Opened in Terminal." : ((j?["error"] as? [String: Any])?["message"] as? String ?? "Could not open it.")
+                let note = (j?["opened"] as? Bool) == true
+                    ? "Opened \(j?["app"] as? String ?? "the session app")."
+                    : ((j?["error"] as? [String: Any])?["message"] as? String ?? "Could not open it.")
+                if self?.card?.id == session.id { self?.card?.note = note }
+                else { self?.showTicker(note, done: true, session: session.id) }
             }
         }
     }
@@ -1088,8 +1144,16 @@ final class OxBridge: ObservableObject {
             switch type {
             case "text-delta":
                 if s.buddyAsk { s.buddyReply += ev["text"] as? String ?? "" }
-                let t = (s.lastText + (ev["text"] as? String ?? ""))
+                let delta = ev["text"] as? String ?? ""
+                let t = (s.lastText + delta)
                 s.lastText = String(t.suffix(240))
+                // The session-card chat is a real view of this connection,
+                // not a local echo.  Only attach deltas for a message the
+                // Island itself is awaiting, and preserve the response until
+                // a terminal event commits it as a chat line.
+                if self.card?.id == path, self.card?.awaitingReply == true {
+                    self.card?.streamingReply += delta
+                }
                 if s.pending == nil { s.mood = .thinking; s.activity = "thinking" }
             case "tool-start":
                 if (ev["narrate"] as? Bool) == true, let text = ev["argsPreview"] as? String { DispatchQueue.main.async { self.showTicker(text, done: false, session: path) } }
@@ -1165,6 +1229,34 @@ final class OxBridge: ObservableObject {
                 s.agents[i].endedAt = Date()
             default:
                 break
+            }
+        }
+        // Commit the streamed response only when the run says that its turn
+        // actually ended.  This prevents the old false-success state where
+        // the card said "Sent" even though no agent response was visible.
+        if self.card?.id == path, self.card?.awaitingReply == true {
+            let terminal: Bool
+            if type == "turn-end" {
+                let stop = ev["stopReason"] as? String ?? ""
+                terminal = !["tool_calls", "tool_use"].contains(stop)
+            } else {
+                terminal = type == "final" || type == "error"
+            }
+            if terminal {
+                var c = self.card!
+                c.busy = false
+                c.awaitingReply = false
+                let reply = c.streamingReply.trimmingCharacters(in: .whitespacesAndNewlines)
+                c.streamingReply = ""
+                if type == "error" {
+                    c.note = "This run failed: \(ev["error"] as? String ?? "unknown error")"
+                } else if !reply.isEmpty {
+                    c.lines.append(CardLine(mine: false, text: reply))
+                    c.note = ""
+                } else {
+                    c.note = "The run ended without a text response. Check its activity for tool output or an approval."
+                }
+                self.card = c
             }
         }
         // A spoken question's turn is over: the avatar says the answer.

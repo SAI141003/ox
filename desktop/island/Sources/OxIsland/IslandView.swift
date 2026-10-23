@@ -523,7 +523,7 @@ struct RunRow: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { bridge.openCard(session) }
-        .simultaneousGesture(TapGesture(count: 2).onEnded { bridge.openCardInTerminal() })
+        .simultaneousGesture(TapGesture(count: 2).onEnded { bridge.openSessionInApp(session) })
         .help("Open this session: read it, message it, open it in Terminal")
     }
 
@@ -707,6 +707,13 @@ struct SessionCardView: View {
                                 .background(RoundedRectangle(cornerRadius: 9).fill(l.mine ? Ink.text : Color.white.opacity(0.07)))
                                 .frame(maxWidth: .infinity, alignment: l.mine ? .trailing : .leading)
                                 .id(l.id)
+                        }
+                        if card.awaitingReply, !card.streamingReply.isEmpty {
+                            Text(card.streamingReply + " ▍").font(.system(size: 11.5)).foregroundStyle(Ink.text.opacity(0.9))
+                                .lineLimit(6).textSelection(.enabled)
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.07)))
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         if card.busy { ActivityDots(count: 1).padding(.leading, 6) }
                     }
