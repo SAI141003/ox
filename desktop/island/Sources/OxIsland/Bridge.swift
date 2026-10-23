@@ -117,6 +117,8 @@ final class OxBridge: ObservableObject {
     let player = NowPlaying()
     /// Unread mail from the Mail app (Coucou's mail in the notch).
     let mail = MailCenter()
+    /// Read-only visible WhatsApp chat text from the installed Mac app.
+    let whatsapp = WhatsAppCenter()
     /// Dictation anywhere (⌃⌥D), « OK ox », call notes.
     let dictation: Dictation = MainActor.assumeIsolated { Dictation() }
     let wake: WakeWord = MainActor.assumeIsolated { WakeWord() }

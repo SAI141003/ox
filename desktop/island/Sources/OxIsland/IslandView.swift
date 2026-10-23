@@ -307,10 +307,10 @@ struct ExpandedContent: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
         } else if bridge.tray != nil {
             VStack(spacing: 6) {
-                if [.shelf, .focus, .clips, .mail, .recap, .office, .controls].contains(bridge.tray) {
+                if [.shelf, .focus, .clips, .mail, .whatsapp, .recap, .office, .controls].contains(bridge.tray) {
                     // The + tab: files dropped on the notch, the focus timer, what you copied.
                     HStack(spacing: 5) {
-                        ForEach([TrayTab.shelf, .focus, .clips, .mail, .recap, .office, .controls]) { t in
+                        ForEach([TrayTab.shelf, .focus, .clips, .mail, .whatsapp, .recap, .office, .controls]) { t in
                             TabCapsule(icon: t.icon, on: bridge.tray == t, label: t.title) { bridge.tray = t }
                         }
                         Spacer()

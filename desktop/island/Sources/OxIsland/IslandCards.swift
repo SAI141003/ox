@@ -1,6 +1,59 @@
 import AppKit
 import SwiftUI
 
+/// Read-only view of the WhatsApp desktop window already on this Mac. WhatsApp
+/// has no supported local history API; we therefore read only visible
+/// accessibility text after the user opens/selects a chat, never scrape its
+/// private database or claim that Cloud API messages are personal messages.
+final class WhatsAppCenter: ObservableObject {
+    struct Line: Identifiable, Equatable { let id = UUID(); let text: String }
+    @Published private(set) var lines: [Line] = []
+    @Published private(set) var note = ""
+
+    private var open: Bool { NSWorkspace.shared.runningApplications.contains { ($0.localizedName ?? "").lowercased().contains("whatsapp") } }
+    func refresh() {
+        if !open {
+            note = "Opening WhatsApp… select a chat, then refresh."
+            NSWorkspace.shared.launchApplication(withBundleIdentifier: "net.whatsapp.WhatsApp", options: [], additionalEventParamDescriptor: nil, launchIdentifier: nil)
+            return
+        }
+        note = "Reading the visible WhatsApp chat…"
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let script = ##"""
+tell application "System Events" to tell process "WhatsApp"
+if exists front window then
+  set xs to value of every static text of front window
+  return xs as text
+else
+  return ""
+end if
+end tell
+"""##
+            var err: NSDictionary?
+            let raw = NSAppleScript(source: script)?.executeAndReturnError(&err).stringValue ?? ""
+            let values = raw.components(separatedBy: ", ").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { $0.count > 1 }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.lines = values.suffix(12).map { Line(text: $0) }
+                if let err { self.note = "WhatsApp access needs Accessibility permission: \((err[NSAppleScript.errorMessage] as? String) ?? "allow OX Island")" }
+                else if self.lines.isEmpty { self.note = "Open a WhatsApp chat, then press refresh; only visible text is available." }
+                else { self.note = "Visible chat text only · WhatsApp does not expose personal history to Ox." }
+            }
+        }
+    }
+}
+
+struct WhatsAppView: View {
+    @ObservedObject var whatsapp: WhatsAppCenter
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack { Image(systemName: "message").foregroundStyle(Ink.muted); Text("WhatsApp · on this Mac").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Ink.text); Spacer(); Button { whatsapp.refresh() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(Ink.dim) }
+            ScrollView { VStack(alignment: .leading, spacing: 3) { ForEach(whatsapp.lines) { Text($0.text).font(.system(size: 11)).foregroundStyle(Ink.text).lineLimit(3).padding(.vertical, 2) } } }
+            if !whatsapp.note.isEmpty { Text(whatsapp.note).font(.system(size: 10)).foregroundStyle(Ink.dim).lineLimit(3) }
+        }.onAppear { whatsapp.refresh() }
+    }
+}
+
 // Cards under the + tab: mail from the Mail app (Coucou's mail in the notch)
 // and the week at a glance (Coucou's weekly recap). Mail access stays local
 // to the user's Mail app; the Island can open Mail to refresh, while replies
