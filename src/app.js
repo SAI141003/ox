@@ -162,7 +162,12 @@ export async function openApp({ cwd = process.cwd(), log = console.log } = {}) {
   if (process.platform === 'darwin') {
     const app = buildMacApp();
     if (app) {
-      spawnSync('open', ['-n', app, '--env', `OX_APP_URL=${st.url}`, '--env', `OX_NODE=${process.execPath}`, '--env', `OX_CLI=${OX_CLI}`], { stdio: 'ignore' });
+      // Do not force a second OX.app instance.  `-n` made every Island/session
+      // open look like a different copy of Ox even though both windows pointed
+      // at the same local server.  LaunchServices focuses the existing runtime
+      // app for this fixed bundle id; the server state remains the source of
+      // truth for the workspace and sessions.
+      spawnSync('open', [app, '--env', `OX_APP_URL=${st.url}`, '--env', `OX_NODE=${process.execPath}`, '--env', `OX_CLI=${OX_CLI}`], { stdio: 'ignore' });
       log(`ox is open in its own window — working in ${cwd}`);
       return { how: 'mac-app', url: st.url };
     }
