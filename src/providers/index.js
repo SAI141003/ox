@@ -104,6 +104,7 @@ export function getProvider(name) {
 // change mid-run, and re-asking every turn would add a round trip to each call.
 const LOCAL_MODEL_CACHE = new Map();
 const OLLAMA_CONTEXT_CACHE = new Map();
+const OLLAMA_CONTEXT_CACHE_MS = 30_000;
 
 // The OpenAI-compatible endpoint does not expose the *loaded* context size.
 // Ollama does expose it from its local /api/ps endpoint, though.  Reading it
@@ -116,7 +117,8 @@ export async function discoverOllamaContextWindow(baseUrl, model, signal) {
   const origin = String(baseUrl ?? '').replace(/\/v1\/?$/, '').replace(/\/+$/, '');
   if (!/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(?::\d+)?$/i.test(origin)) return null;
   const key = `${origin}|${String(model ?? '')}`;
-  if (OLLAMA_CONTEXT_CACHE.has(key)) return OLLAMA_CONTEXT_CACHE.get(key);
+  const cached = OLLAMA_CONTEXT_CACHE.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.contextLength;
   let contextLength = null;
   try {
     const res = await fetch(`${origin}/api/ps`, { signal });
@@ -130,7 +132,10 @@ export async function discoverOllamaContextWindow(baseUrl, model, signal) {
       if (Number.isFinite(n) && n >= 512) contextLength = Math.floor(n);
     }
   } catch { /* model discovery is an optimization, never a transport failure */ }
-  OLLAMA_CONTEXT_CACHE.set(key, contextLength);
+  // Users can change Ollama's context slider or reload a model while Ox stays
+  // open. Cache the probe briefly to avoid per-turn latency without preserving
+  // an obsolete context limit for the rest of the process.
+  OLLAMA_CONTEXT_CACHE.set(key, { contextLength, expiresAt: Date.now() + OLLAMA_CONTEXT_CACHE_MS });
   return contextLength;
 }
 
