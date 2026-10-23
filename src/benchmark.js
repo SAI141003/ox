@@ -4,6 +4,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { runAgent } from './agent.js';
 import { estimateTokens } from './context.js';
+import { costOf } from './cost.js';
 
 const BENCH_DIR = process.env.OX_BENCHMARK_DIR || path.join(os.homedir(), '.ox', 'benchmarks');
 const JUDGE_MODEL = process.env.OX_JUDGE_MODEL || null;
@@ -53,12 +54,59 @@ async function runSingleTask(task, agentConfig, options) {
   const scaffold = options.scaffold || STANDARD_SCAFFOLD;
   const messages = buildMessages(task, scaffold, options.modality || 'text');
   const trajectory = [];
+  const startedAt = Date.now();
+  let firstOutputAt = null;
   for await (const event of runAgent({ target: agentConfig, messages, ctx: { cwd: task.cwd || process.cwd() }, maxIterations: options.maxIterations || 20, signal: options.signal })) {
+    if (firstOutputAt == null && (event.type === 'text-delta' || event.type === 'assistant-turn' || event.type === 'tool-start')) firstOutputAt = Date.now();
     trajectory.push(event);
-    if (event.type === 'final' || event.type === 'error') break;
+    // Keep consuming after `final`: runAgent emits its authoritative
+    // `usage-total` at the end of the run, and stopping on final would silently
+    // turn a measured benchmark back into an estimate-only result.
+    if (event.type === 'error' || event.type === 'usage-total') break;
   }
   const pass = evaluateTrajectory(task, trajectory, options);
-  return { taskId: task.id, pass, trajectory, tokens: estimateTokens(JSON.stringify(messages)), modality: options.modality || 'text' };
+  const metrics = summarizeTrajectoryMetrics(trajectory, {
+    estimatedInputTokens: estimateTokens(JSON.stringify(messages)),
+    startedAt,
+    firstOutputAt,
+    model: typeof agentConfig === 'string' ? agentConfig : (agentConfig?.model || agentConfig?.modelId || null),
+  });
+  return { taskId: task.id, pass, trajectory, modality: options.modality || 'text', ...metrics };
+}
+
+// Keep benchmark numbers tied to what the provider actually reported. A
+// prompt-size estimate is useful as a fallback diagnostic, but it must never be
+// presented as measured spend. `runAgent` emits per-request usage and a final
+// usage-total; prefer the latter so retries/fallbacks are included exactly once.
+export function summarizeTrajectoryMetrics(trajectory = [], { estimatedInputTokens = 0, startedAt = Date.now(), firstOutputAt = null, model = null } = {}) {
+  const events = Array.isArray(trajectory) ? trajectory : [];
+  const total = [...events].reverse().find((e) => e?.type === 'usage-total');
+  const usageEvents = events.filter((e) => e?.type === 'usage');
+  const usage = total
+    ? { inputTokens: Number(total.inputTokens) || 0, outputTokens: Number(total.outputTokens) || 0, cacheReadTokens: Number(total.cacheReadTokens) || 0, cacheWriteTokens: Number(total.cacheWriteTokens) || 0 }
+    : usageEvents.reduce((sum, e) => ({
+      inputTokens: sum.inputTokens + (Number(e.inputTokens) || 0),
+      outputTokens: sum.outputTokens + (Number(e.outputTokens) || 0),
+      cacheReadTokens: sum.cacheReadTokens + (Number(e.cacheReadTokens) || 0),
+      cacheWriteTokens: sum.cacheWriteTokens + (Number(e.cacheWriteTokens) || 0),
+    }), { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+  const hasMeasuredUsage = Boolean(total || usageEvents.length);
+  const costUsd = hasMeasuredUsage && model ? costOf(model, usage) : null;
+  const endedAt = Date.now();
+  return {
+    estimatedInputTokens,
+    inputTokens: hasMeasuredUsage ? usage.inputTokens : null,
+    outputTokens: hasMeasuredUsage ? usage.outputTokens : null,
+    cacheReadTokens: hasMeasuredUsage ? usage.cacheReadTokens : null,
+    cacheWriteTokens: hasMeasuredUsage ? usage.cacheWriteTokens : null,
+    totalTokens: hasMeasuredUsage ? usage.inputTokens + usage.outputTokens : null,
+    costUsd,
+    latencyMs: Math.max(0, endedAt - startedAt),
+    timeToFirstOutputMs: firstOutputAt == null ? null : Math.max(0, firstOutputAt - startedAt),
+    turns: events.filter((e) => e?.type === 'turn-end').length,
+    toolCalls: events.filter((e) => e?.type === 'tool-start').length,
+    usageMeasured: hasMeasuredUsage,
+  };
 }
 
 function buildMessages(task, scaffold, modality) {
