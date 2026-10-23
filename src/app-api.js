@@ -367,13 +367,17 @@ export async function messagingView(env = process.env) {
       'Bot scopes chat:write and im:history; Event Subscriptions: message.im; Interactivity on; App Home: allow messages. Install it and copy the Bot token (xoxb-…).',
       'Run: ox gateway slack --app-token xapp-… --bot-token xoxb-…, then DM the app "pair <code>" with the code ox shows. It answers DMs only.',
     ]), slashless: true },
-    { id: 'email', label: 'Email · Mail', configured: process.platform === 'darwin', tokenFrom: null, paired: false, pairing: false,
+    // macOS being present is not proof that this server (or Island) has
+    // Automation permission, that Mail has an enabled account, or that inbox
+    // retrieval works.  Keep the connector discoverable but unverified until
+    // an explicit Mail-account check succeeds.
+    { id: 'email', label: 'Email · Mail', available: process.platform === 'darwin', configured: false, reachable: false, needsPermission: process.platform === 'darwin', tokenFrom: null, paired: false, pairing: false,
       command: 'mail_compose', how: process.platform === 'darwin'
-        ? ['Ox is connected to the local Mail app.', 'Voice and chat can create a visible draft after selecting an exact From account.', 'Sending is never automatic: review the draft and approve Send in Mail.']
+        ? ['Open Mail once, then allow Ox or OX Island in System Settings › Privacy & Security › Automation.', 'Use “check my email” or mail_accounts to verify enabled accounts before drafting.', 'Voice and chat can create a visible draft after selecting an exact From account. Sending is never automatic: review the draft and approve Send in Mail.']
         : ['The Mail-app connector is macOS-only.', 'On Windows or Linux, connect Gmail or Outlook through an MCP connector in Settings › Connectors.', 'Ox will show the connector as ready only after its health check passes.'], mail: true },
     { id: 'whatsapp', label: 'WhatsApp', configured: wa.configured, reachable: wa.reachable, tokenFrom: wa.configured ? 'environment' : null, paired: false, pairing: false,
       command: 'whatsapp_send', how: ['Official WhatsApp Cloud API is supported for outbound messages.', 'Set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID, then run the connector health check.', 'Every send is approval-gated. Personal-account scraping and unofficial bridges remain blocked.'], experimental: !wa.configured, health: wa },
-    { id: 'imessage', label: 'SMS / iMessage', configured: process.platform === 'darwin', reachable: process.platform === 'darwin', paired: false, pairing: false,
+    { id: 'imessage', label: 'SMS / iMessage', available: process.platform === 'darwin', configured: false, reachable: false, needsPermission: process.platform === 'darwin', paired: false, pairing: false,
       command: 'messages_send', how: process.platform === 'darwin' ? ['Uses the local Messages app through macOS Automation.', 'The first send requires Automation permission and explicit approval.', 'Ox reports failure instead of pretending delivery.'] : ['Requires macOS Messages; no native transport is available on this OS.'], sms: true },
   ];
 }
