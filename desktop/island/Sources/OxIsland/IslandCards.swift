@@ -138,12 +138,13 @@ final class MailCenter: ObservableObject {
                     set m to item i of ms
                     set d to date received of m
                     set secs to (current date) - d
+                    set isUnread to (read status of m is false)
                     set c to ""
                     try
                       set c to content of m
                       if (length of c) > 220 then set c to text 1 thru 220 of c
                     end try
-                    set out to out & (message id of m) & tab & accountName & tab & boxName & tab & accountAddress & tab & (sender of m) & tab & (subject of m) & tab & (read status of m is false) & tab & secs & tab & c & linefeed & "␞" & linefeed
+                    set out to out & (message id of m) & tab & accountName & tab & boxName & tab & accountAddress & tab & (sender of m) & tab & (subject of m) & tab & (isUnread as text) & tab & secs & tab & c & linefeed & "␞" & linefeed
                   end repeat
                 end repeat
               end repeat
