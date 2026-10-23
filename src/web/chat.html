@@ -3565,7 +3565,7 @@ files: [src/billing/**]
           <div class="sc-where dim small"></div>
           <div class="sc-now"></div>
           <div class="sc-body">…</div>
-          <div class="sc-send"><input class="field sc-in" placeholder="Message this session" style="flex:1"><button class="btn primary small sc-go">Send</button></div>`;
+          <div class="sc-send"><input class="field sc-in" placeholder="Checking whether this session can receive messages…" style="flex:1" disabled><button class="btn primary small sc-go" disabled>Send</button></div>`;
         board.appendChild(t);
         // Drag by the header; the place is remembered.
         const head = t.querySelector('.sc-head');
@@ -3577,8 +3577,33 @@ files: [src/billing/**]
         };
         t.querySelector('.sc-go').onclick = async () => {
           const inp = t.querySelector('.sc-in'); const text = inp.value.trim(); if (!text) return;
-          inp.value = ''; toast('Sent');
-          try { await postJson('/ox/agents/send', { id: x.id, text }); } catch (e) { toast(e.message); }
+          const go = t.querySelector('.sc-go');
+          inp.disabled = true; go.disabled = true;
+          try {
+            const sent = await postJson('/ox/agents/send', { id: x.id, text });
+            inp.value = '';
+            if (sent.queued && sent.ticket) {
+              toast('Queued until this agent is idle — not delivered yet');
+              const poll = async (left = 360) => {
+                try {
+                  const status = await postJson('/ox/agents/delivery', { ticket: sent.ticket });
+                  if (status.found && status.state === 'done') {
+                    toast(status.ok ? 'Delivered — reply received' : `Delivery failed: ${status.error || 'agent returned an error'}`);
+                    loadSessionsCanvas();
+                    return;
+                  }
+                } catch {}
+                if (left > 0 && view === 'canvas') setTimeout(() => poll(left - 1), 5000);
+              };
+              setTimeout(() => poll(), 1500);
+            } else if (sent.ok) {
+              toast('Delivered — reply received');
+              loadSessionsCanvas();
+            } else {
+              toast(`Delivery failed: ${sent.error || 'agent did not accept the message'}`);
+            }
+          } catch (e) { toast(e.message); }
+          finally { inp.disabled = false; go.disabled = false; }
         };
       }
       const m = mood(x), mins = Math.round((x.idleSec || 0) / 60);
@@ -3592,6 +3617,17 @@ files: [src/billing/**]
         const body = t.querySelector('.sc-body');
         const lines = (r.messages || []).filter((m) => String(m.text || '').trim()).slice(-3).map((m) => `${m.role === 'user' ? 'You' : x.tool}: ${String(m.text).trim().slice(0, 240)}`);
         body.textContent = lines.join('\n\n') || '(no messages yet)';
+        const inp = t.querySelector('.sc-in'), go = t.querySelector('.sc-go');
+        if (r.canSend) {
+          inp.disabled = false; go.disabled = false;
+          inp.placeholder = `Message ${x.tool}`;
+          inp.title = '';
+        } else {
+          inp.disabled = true; go.disabled = true;
+          inp.placeholder = r.why || `Open ${x.tool} to continue this session`;
+          inp.title = r.why || '';
+          go.title = r.why || '';
+        }
         flow();
       }).catch(() => {});
     });
