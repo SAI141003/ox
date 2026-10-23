@@ -952,3 +952,14 @@ After the final provider, benchmark, and documentation changes, a clean `npm tes
 completed with **2,241 passed, 0 failed, 259 skipped, 2,500 total** in **232.4 s**.
 The skipped cases are conditional/environment-specific tests reported by the
 runner; no test was cancelled or failed.
+
+## Offline retained-run comparison — 2026-10-24
+
+`node bench/real/compare.mjs` now aggregates all retained `bench/real` artifacts
+without making another provider request. It reports pass rate, measured versus
+unavailable runs, input/output tokens, mean and nearest-rank p95 latency, and
+cost-known state. A local adapter's placeholder `costUsd: 0` is treated as
+**unknown**, not free. The current retained sample contains one successful NVIDIA
+run (1/1, 14,951/268 tokens, 9.1 s agent time), failed/unavailable OpenRouter and
+Claude samples, and failed local Qwen/SmolLM samples; this is a sample summary,
+not a market-wide ranking.
