@@ -297,13 +297,35 @@ final class Shelf: ObservableObject {
 // MARK: - Focus
 
 final class FocusTimer: ObservableObject {
+    private static let endsAtKey = "focus.endsAt"
+    private static let pausedLeftKey = "focus.pausedLeft"
     @Published private(set) var endsAt: Date?
     @Published private(set) var pausedLeft: TimeInterval?
-    @Published var minutes: Int = UserDefaults.standard.integer(forKey: "focus.minutes") == 0 ? 25 : UserDefaults.standard.integer(forKey: "focus.minutes") {
+    @Published var minutes: Int {
         didSet { UserDefaults.standard.set(minutes, forKey: "focus.minutes") }
     }
     @Published private(set) var finishedAt: Date?
     private var ticker: Timer?
+
+    init() {
+        let defaults = UserDefaults.standard
+        let savedMinutes = defaults.integer(forKey: "focus.minutes")
+        minutes = savedMinutes == 0 ? 25 : savedMinutes
+        let savedEnd = defaults.double(forKey: Self.endsAtKey)
+        if savedEnd > Date().timeIntervalSince1970 {
+            endsAt = Date(timeIntervalSince1970: savedEnd)
+            pausedLeft = nil
+        } else {
+            endsAt = nil
+            let savedPause = defaults.double(forKey: Self.pausedLeftKey)
+            pausedLeft = savedPause > 0 ? savedPause : nil
+            // A stale completed deadline must not look like a running timer
+            // after the next launch. Its timed caffeinate process has already
+            // expired as well.
+            if savedEnd > 0 { defaults.removeObject(forKey: Self.endsAtKey) }
+        }
+        if endsAt != nil { installTicker() }
+    }
 
     var running: Bool { endsAt != nil }
     var active: Bool { endsAt != nil || pausedLeft != nil }
@@ -325,10 +347,23 @@ final class FocusTimer: ObservableObject {
         endsAt = Date().addingTimeInterval(pausedLeft ?? TimeInterval(minutes * 60))
         pausedLeft = nil
         finishedAt = nil
+        saveState()
+        installTicker()
+    }
+
+    private func installTicker() {
         ticker?.invalidate()
         let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(t, forMode: .common)
         ticker = t
+    }
+
+    private func saveState() {
+        let defaults = UserDefaults.standard
+        if let endsAt { defaults.set(endsAt.timeIntervalSince1970, forKey: Self.endsAtKey) }
+        else { defaults.removeObject(forKey: Self.endsAtKey) }
+        if let pausedLeft, pausedLeft > 0 { defaults.set(pausedLeft, forKey: Self.pausedLeftKey) }
+        else { defaults.removeObject(forKey: Self.pausedLeftKey) }
     }
 
     func pause() {
@@ -340,6 +375,7 @@ final class FocusTimer: ObservableObject {
         pausedLeft = max(0, e.timeIntervalSinceNow)
         endsAt = nil
         ticker?.invalidate()
+        saveState()
     }
 
     func reset() {
@@ -350,6 +386,7 @@ final class FocusTimer: ObservableObject {
         endsAt = nil
         pausedLeft = nil
         ticker?.invalidate()
+        saveState()
     }
 
     private func tick() {
