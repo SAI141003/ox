@@ -863,3 +863,14 @@ two concurrent writes leave one complete file and release the lock; the focused
 suite is **20/20**, and `npm run verify:quick` is **562 syntax files + 6 smoke entry
 points**. This does **not** provide isolated worktrees, merge planning, or safety
 for arbitrary `bash` commands that mutate files; those remain explicit gaps.
+
+## Verification-runner lifecycle — 2026-10-23
+
+The first full-suite attempt appeared hung because `repo-mutation-guard.test.js`
+intentionally launches every other test file itself; including that guard in the
+ordinary suite recursively runs the suite twice. The runner now defaults the
+expensive sweep off for `npm test`, and exposes it explicitly as
+`npm run test:guard`. The bounded full suite then completed **2,238 passed, 0
+failed, 259 skipped, 2,497 total** in **234.97 s**. This changes no product
+behavior and keeps the repository-mutation detector available as a separate
+release gate.

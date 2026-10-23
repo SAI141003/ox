@@ -29,6 +29,11 @@ const env = {
   OX_MEMORY_HOME: isolated('.ox', 'memory'),
   OX_NO_BUILTIN_SKILLS: '1',
   OX_NO_PLUGINS: '1',
+  // The repository-mutation guard intentionally launches every other test
+  // file and is a separate release gate. Keeping it out of the ordinary suite
+  // avoids recursively running the suite twice and making `npm test` appear
+  // hung. Run `npm run test:guard` when that expensive sweep is required.
+  OX_SKIP_REPO_GUARD: process.env.OX_SKIP_REPO_GUARD ?? '1',
 };
 const requested = process.argv.slice(2);
 const files = requested.length ? requested : fs.readdirSync(path.join(ROOT, 'test'))
