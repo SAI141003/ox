@@ -336,7 +336,13 @@ struct RightCard: View {
                 BrowseCard(run: run)
             } else if !others.isEmpty {
                 LazyVGrid(columns: cols, spacing: 4) {
-                    ForEach(others.prefix(4)) { s in AgentPill(session: s) { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { bridge.focusId = s.id } } }
+                    ForEach(others.prefix(4)) { s in
+                        AgentPill(
+                            session: s,
+                            onTap: { withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { bridge.focusId = s.id } },
+                            onOpen: { bridge.openSessionInApp(s) }
+                        )
+                    }
                 }
                 if others.count > 4 {
                     Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { page += 1 } } label: {
@@ -507,6 +513,9 @@ struct MachineStrip: View {
 struct AgentPill: View {
     let session: AgentSession
     let onTap: () -> Void
+    /// A second click leaves the compact Island and returns to the app that
+    /// owns this session. A single click remains a safe way to inspect/chat.
+    let onOpen: () -> Void
     @State private var hover = false
     var body: some View {
         let c = Color(hex: session.color)
@@ -532,6 +541,7 @@ struct AgentPill: View {
             }
         }
         .buttonStyle(.plain)
+        .simultaneousGesture(TapGesture(count: 2).onEnded(onOpen))
         .scaleEffect(hover ? 1.04 : 1)
         .onHover { h in withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) { hover = h } }
         .help("\(session.project) · \(session.tool) · \(session.activity)\(session.tokensIn + session.tokensOut > 0 ? " · last message \(session.tokensIn) tokens in, \(session.tokensOut) out" : "")")

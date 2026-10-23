@@ -485,6 +485,9 @@
   .cmd code { flex: 1; overflow-x: auto; white-space: nowrap; }
   .cards { display: flex; flex-direction: column; gap: 8px; }
   .card { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 12px 14px; }
+  .market-logo { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; overflow: hidden; color: white; font-weight: 800; font-size: 14px; border: 1px solid color-mix(in srgb, white 10%, transparent); }
+  .market-logo img { width: 26px; height: 26px; object-fit: contain; }
+  .market-card { min-height: 66px; }
   .card .t { flex: 1; min-width: 0; }
   .card .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .d { font-size: 12px; color: var(--dim); display: flex; gap: 8px; flex-wrap: wrap; }
@@ -3231,9 +3234,25 @@ files: [src/billing/**]
     $('mk-cats').innerHTML = mkTab === 'plugins' && cats.length ? ['', ...cats].map((c) => `<button class="badge" data-cat="${esc(c)}" style="cursor:pointer;${mkCat === c ? 'color:var(--text);border-color:var(--muted)' : ''}">${esc(c || 'all')}</button>`).join('') : '';
     $('mk-cats').querySelectorAll('[data-cat]').forEach((b) => (b.onclick = () => { mkCat = b.dataset.cat; renderMarket(); }));
     const btn = (installed, attrs) => installed ? '<span class="badge ok"><span class="dot ok"></span>installed</span>' : `<button class="btn primary" ${attrs}>Install</button>`;
+    // The logo is visual metadata only. Connection/install state still comes
+    // from the live marketplace and is never inferred from a familiar name.
+    const marketLogo = (name, source = '') => {
+      const key = `${name} ${source}`.toLowerCase();
+      const known = [
+        ['github', 'github', '#181717'], ['google', 'google', '#4285F4'], ['gmail', 'gmail', '#EA4335'],
+        ['slack', 'slack', '#4A154B'], ['notion', 'notion', '#111111'], ['figma', 'figma', '#F24E1E'],
+        ['linear', 'linear', '#5E6AD2'], ['stripe', 'stripe', '#635BFF'], ['dropbox', 'dropbox', '#0061FF'],
+        ['vercel', 'vercel', '#111111'], ['openai', 'openai', '#10A37F'], ['anthropic', 'anthropic', '#D97757'],
+        ['huggingface', 'huggingface', '#FF9D00'], ['supabase', 'supabase', '#3ECF8E'], ['cloudflare', 'cloudflare', '#F6821F'],
+      ].find(([needle]) => key.includes(needle));
+      const letters = String(name || '?').split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase().slice(0, 2) || '?';
+      if (!known) return `<span class="market-logo" style="background:linear-gradient(145deg,#363b4b,#20232c)" aria-hidden="true">${esc(letters)}</span>`;
+      const [, slug, color] = known;
+      return `<span class="market-logo" style="background:${color}" title="${esc(name)} logo"><img src="https://cdn.simpleicons.org/${slug}/ffffff" alt="" loading="lazy" onerror="this.remove()"><span style="position:absolute;clip:rect(0 0 0 0);clip-path:inset(50%);width:1px;height:1px;overflow:hidden">${esc(letters)}</span></span>`;
+    };
     const list = mkTab === 'plugins'
-      ? d.plugins.filter((p) => !mkCat || p.category === mkCat).map((p) => `<div class="card"><span class="t"><div class="n">${esc(p.name)} ${p.category ? `<span class="badge">${esc(p.category)}</span>` : ''}</div><div class="d"><span>${esc(p.description)}</span></div><div class="d"><span>${esc(p.author || '')}</span><span class="mono">${esc(p.catalog)}</span>${p.skills ? `<span>skills: ${esc(p.skills.join(', '))}</span>` : ''}</div></span>${btn(p.installed, `data-inst-name="${esc(p.name)}" data-inst-cat="${esc(p.catalog)}"`)}</div>`)
-      : d.repos.map((r) => `<div class="card"><span class="t"><div class="n"><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" style="color:inherit">${esc(r.repo)}</a></div><div class="d"><span>${esc(r.description)}</span></div><div class="d"><span>★ ${Number(r.stars).toLocaleString()}</span>${r.license ? `<span>${esc(r.license)}</span>` : ''}<span>updated ${esc(String(r.updated || '').slice(0, 10))}</span></div></span>${btn(r.installed, `data-inst-repo="${esc(r.repo)}"`)}</div>`);
+      ? d.plugins.filter((p) => !mkCat || p.category === mkCat).map((p) => `<div class="card market-card">${marketLogo(p.name, `${p.catalog} ${p.author || ''}`)}<span class="t"><div class="n">${esc(p.name)} ${p.category ? `<span class="badge">${esc(p.category)}</span>` : ''}</div><div class="d"><span>${esc(p.description)}</span></div><div class="d"><span>${esc(p.author || '')}</span><span class="mono">${esc(p.catalog)}</span>${p.skills ? `<span>skills: ${esc(p.skills.join(', '))}</span>` : ''}</div></span>${btn(p.installed, `data-inst-name="${esc(p.name)}" data-inst-cat="${esc(p.catalog)}"`)}</div>`)
+      : d.repos.map((r) => `<div class="card market-card">${marketLogo(r.repo, r.repo)}<span class="t"><div class="n"><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" style="color:inherit">${esc(r.repo)}</a></div><div class="d"><span>${esc(r.description)}</span></div><div class="d"><span>★ ${Number(r.stars).toLocaleString()}</span>${r.license ? `<span>${esc(r.license)}</span>` : ''}<span>updated ${esc(String(r.updated || '').slice(0, 10))}</span></div></span>${btn(r.installed, `data-inst-repo="${esc(r.repo)}"`)}</div>`);
     $('mk-list').innerHTML = list.join('') || '<div class="box muted small">Nothing matches.</div>';
     if (d.errors.length) $('mk-list').insertAdjacentHTML('afterbegin', `<div class="alert">${icon('info')}${esc(d.errors.join(' · '))}</div>`);
     $('mk-catalogs').innerHTML = d.catalogs.map((c) => `<span class="badge mono" style="margin:0 6px 6px 0">${esc(c)}</span>`).join('');
@@ -3877,6 +3896,7 @@ files: [src/billing/**]
 
   // ---------- settings
   const SECTIONS = [
+    ['group', 'Personal'],
     ['general', 'General', 'gear', 'name rename call it default model mode send enter agents'],
     ['instructions', 'Instructions', 'wand', 'custom instructions personal preferences how to respond style tone about me rules system prompt'],
     ['appearance', 'Appearance', 'palette', 'theme dark light text size width motion'],
@@ -3887,23 +3907,23 @@ files: [src/billing/**]
     ['mini', 'Mini & Pets', 'bot', 'mini pets companion mascot avatar focus hide customize create codex dewey fireball hoots rocky seedy stacky bsod null signal'],
     ['memory', 'Memory', 'brain', 'remember forget profile facts preferences'],
     ['usage', 'Usage', 'chart', 'tokens cost spend models agents billing'],
-    ['gap'],
-    ['projects', 'Projects', 'folder', 'folders repos workspaces recent'],
-    ['worktrees', 'Worktrees', 'branch', 'git worktree branches parallel race remove'],
-    ['gap'],
+    ['data', 'Data & privacy', 'shield', 'export download delete all chats privacy telemetry data where stored'],
+    ['group', 'Integrations'],
+    ['connectors', 'Plugins & connectors', 'blocks', 'plugins extensions marketplace install installed disable remove skills mcp servers tools connectors integrations github slack notion database'],
+    ['messaging', 'Messaging', 'chat', 'telegram discord slack phone'],
     ['providers', 'Providers', 'bolt', 'models connect popular'],
     ['accounts', 'Accounts', 'user', 'subscription claude chatgpt plan', true],
     ['keys', 'API keys', 'key', 'api key keys token secret provider add connect anthropic openai xai gemini openrouter search web tavily brave serper images video fal', true],
     ['endpoints', 'Custom endpoints', 'globe', 'openai compatible vllm llama.cpp gateway url server azure bedrock proxy base url self-hosted', true],
+    ['group', 'Coding'],
+    ['projects', 'Projects', 'folder', 'folders repos workspaces recent'],
+    ['worktrees', 'Worktrees', 'branch', 'git worktree branches parallel race remove'],
     ['local', 'Local models', 'cpu', 'ollama lm studio offline ram hugging face', true],
     ['models', 'Models', 'mode', 'model picker show hide list enable disable'],
     ['personal-model', 'Personal model', 'brain', 'train fine tune lora adapter learn preferences approved chats studio recipes evaluation'],
-    ['connectors', 'Plugins', 'blocks', 'plugins extensions marketplace install installed disable remove skills mcp servers tools connectors integrations github slack notion database'],
-    ['messaging', 'Messaging', 'chat', 'telegram discord slack phone'],
     ['shortcuts', 'Keyboard shortcuts', 'keyboard', 'keys hotkeys'],
     ['archived', 'Archived chats', 'archive', 'archive restore'],
-    ['data', 'Data & privacy', 'shield', 'export download delete all chats privacy telemetry data where stored'],
-    ['gap'],
+    ['group', 'System'],
     ['server', 'Server', 'server', 'port pid address url uptime restart local server'],
     ['about', 'About', 'info', 'version'],
   ];
@@ -3931,7 +3951,7 @@ files: [src/billing/**]
     if (f && !providerIndex) getJson('/ox/providers').then((k) => { providerIndex = k; if ($('sq')?.value.toLowerCase().trim() === f) renderSnav(filter); }).catch(() => {});
     const provHits = f && providerIndex ? providerIndex.filter((k) => hit(`${k.label} ${k.id} ${k.aliases ?? ''} ${k.env}`)).slice(0, 6) : [];
     const secHtml = SECTIONS.map(([id, label, ic, kw, sub]) => {
-      if (id === 'gap') return f ? '' : '<div class="gap"></div>';
+      if (id === 'group') return f ? '' : `<div class="section-cap cap" style="padding:14px 10px 5px">${esc(label)}</div>`;
       if (f && !hit(`${label} ${kw}`)) return '';
       return `<button data-sec="${id}" class="${sec === id ? 'on' : ''}${sub ? ' sub' : ''}">${icon(ic)}${esc(label)}</button>`;
     }).join('');
