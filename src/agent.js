@@ -989,6 +989,24 @@ async function* runAgentLoop(opts = {}) {
   let history;
   const cwd = resolveRunCwd(opts);
   const toolCtx = ctx && typeof ctx === 'object' ? { ...ctx, signal } : { signal };
+  const model = target?.model;
+  // Learn a local runner's *loaded* context before assembling the static
+  // workspace context.  The advertised model maximum is not enough: Ollama
+  // may be actively running it at 4k.  Explicit user choices remain in force.
+  const hasWindowOverride = [ctx?.modelWindow, config?.modelWindow, process.env.OX_MODEL_WINDOW]
+    .some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
+  if (!hasWindowOverride && target?.provider === 'ollama') {
+    const loadedWindow = await discoverOllamaContextWindow(target.baseUrl ?? 'http://localhost:11434/v1', model, signal);
+    if (loadedWindow) toolCtx.modelWindow = loadedWindow;
+  }
+  const initialWindow = modelWindow(toolCtx, model, config);
+  // Instructions are always retained.  On a constrained model, however, a
+  // generated tree is a convenience rather than authority and should not use
+  // a quarter of the entire runtime window before the user task and tools fit.
+  // File-discovery tools remain available for the paths the short tree omits.
+  const contextBudgetTokens = initialWindow < 12_000
+    ? Math.max(768, Math.floor(initialWindow * 0.3))
+    : 8_000;
   // One turn id per run: the file tools record each change under it, so /undo
   // can put back exactly this turn's changes (src/undo.js).
   if (!toolCtx.turnId) toolCtx.turnId = (await import('./undo.js')).newTurnId();
@@ -1077,16 +1095,6 @@ async function* runAgentLoop(opts = {}) {
     return { decision: 'allow', outputs: [], errors: [] };
   };
   const verifier = verify ? createVerifier(cwd, { ctx: toolCtx, execute: dispatchTool }) : null;
-  const model = target?.model;
-  // Local Ollama exposes the context size of the model it has actually loaded.
-  // Its model metadata can say 32k while the current runner accepts 4k.  Use
-  // that runtime fact unless the caller intentionally set a window themselves.
-  const hasWindowOverride = [ctx?.modelWindow, config?.modelWindow, process.env.OX_MODEL_WINDOW]
-    .some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
-  if (!hasWindowOverride && target?.provider === 'ollama') {
-    const loadedWindow = await discoverOllamaContextWindow(target.baseUrl ?? 'http://localhost:11434/v1', model, signal);
-    if (loadedWindow) toolCtx.modelWindow = loadedWindow;
-  }
   // G1 auxiliary routing: cheap calls (compaction summarizer, goal verifier,
   // max-mode planning) go to the aux bot when one is resolvable, else to the
   // main target. Explicit auxTarget=null disables lookup for the run.
@@ -1145,7 +1153,7 @@ async function* runAgentLoop(opts = {}) {
       : instructionScopesFromText(originalUserText);
   // `let`, not `const`: compaction re-reads the project instructions from disk
   // (see below) and rebuilds the system prompt around the fresh block.
-  let contextParts = buildContext({ cwd, scopedPaths });
+  let contextParts = buildContext({ cwd, scopedPaths, budgetTokens: contextBudgetTokens });
   const memoryBlock = ctx.memoryBlock ?? '';
   const skillIndex = ctx.skillIndex ?? '';
   const personaBlock = [ctx.personaBlock, modeBlock(ctx.mode)].filter(Boolean).join('\n\n');
@@ -1581,7 +1589,7 @@ async function* runAgentLoop(opts = {}) {
             // mid-session edit to AGENTS.md must take effect, and the block is
             // cheap next to the summary it rides with. The system message is
             // rebuilt, never re-summarized, so instructions stay verbatim.
-            contextParts = buildContext({ cwd, scopedPaths });
+            contextParts = buildContext({ cwd, scopedPaths, budgetTokens: contextBudgetTokens });
             const freshSystem = await systemText();
             const rebuiltHead = head.map((m) =>
               m?.role === 'system' ? { role: 'system', content: freshSystem } : m
