@@ -26,9 +26,11 @@ const TERMINAL_TOOLS = new Set(['reply', 'finish', 'report_result']);
 // gating it would mean a confirmation prompt per steering note and no usable path
 // at all in `-p` mode, where approvals decline. The brakes that make that
 // proportionate are elsewhere and all still hold — the body is screened by
-// screenPersistText before it is stored, and delivery is opt-in on the receiving
-// side: nothing pulls a message into another agent's context until that agent
-// itself calls agent_observe. A note left in a mailbox steers nobody.
+// screenPersistText before it is stored. Ordinary peer mail is opt-in on the
+// receiving side: nothing pulls it into another agent's context until that
+// agent calls agent_observe. Operator steering is the explicit exception:
+// steerSubagent marks a note and the subagent loop drains marked notes at its
+// next turn boundary. This is queued next-turn steering, not an interrupt.
 const MAILBOX_TOOLS = new Set(['agent_message.send', 'agent_observe']);
 
 // `todo_write` was left unclassified, i.e. `unknown`, which agent.js rejects with

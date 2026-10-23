@@ -822,7 +822,14 @@ JavaScript load checks, native Island rebuild, and rollback on failure. A signed
 notarized distribution channel remains a separate release gap requiring signing
 credentials and is not counted as complete here.
 
-The competitive matrix also had one stale sentence saying Ox had “only ever one
-subagent.” That was inconsistent with the shipped scheduler and its 17-test parallel
-batch proof. The row now records the measured default/ceiling (3/8) and the actual
-remaining gaps: mid-flight steering and per-agent isolated worktrees.
+The competitive matrix also had stale control claims. The current implementation
+has per-agent `steerSubagent` and `cancelSubagent` controls: steering is screened,
+queued in the target mailbox, and rendered before the target's next provider turn;
+cancellation is isolated and reported as `cancelled`. The focused regression pass
+on 2026-10-22 was **39/39** across `serve-web-chat`, `subagent-cancel`, and
+`parallel-subagents`, including two independent app sessions, steer isolation,
+per-agent cancellation isolation, and resource cleanup. This is not an interrupt:
+an already-dispatched tool/provider request may finish. Ordinary peer mail still
+requires `agent_observe`. The matrix and source comment now reflect that boundary;
+the remaining competitive gap is per-agent workspace isolation, not an absent steer
+or cancel mechanism.
