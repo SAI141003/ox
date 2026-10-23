@@ -2185,7 +2185,9 @@ const ROUTES = [
   // optimistic “sent” label.
   { method: 'POST', pattern: /^\/ox\/agents\/delivery\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).deliveryStatus(body?.ticket)) },
   { method: 'POST', pattern: /^\/ox\/agents\/transfer\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).transferSession(body?.id, body?.target)) },
-  { method: 'POST', pattern: /^\/ox\/agents\/open\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).openInTerminal(body?.id)) },
+  // Preserve `dryRun` for Island/Office diagnostics.  Previously the route
+  // silently discarded it, so a capability check could bring an app forward.
+  { method: 'POST', pattern: /^\/ox\/agents\/open\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).openInTerminal(body?.id, { dryRun: body?.dryRun === true })) },
   // Jump to the exact terminal tab the session runs in (Coucou); the island falls back to opening one.
   { method: 'POST', pattern: /^\/ox\/agents\/focus\/?$/, handler: appRoute(async (body) => (await import('./agents-live.js')).focusTerminal(body?.id)) },
   { method: 'GET', pattern: /^\/ox\/live\/?$/, handler: async (req, res) => { if (!authorized(req)) return unauthorized(res); sendJson(res, 200, (await import('./live-board.js')).liveBoard()); } },
