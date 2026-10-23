@@ -371,7 +371,10 @@ async function runLocalBudgetCli(t, { args = [], config = {}, env = {} } = {}) {
 
 test('--max-cost does not abort a run against a keyless local endpoint', async t => {
   for (const cap of ['0.0000001', '100']) {
-    const r = await runLocalBudgetCli(t, { args: ['-p', 'hello', '--json', '--max-cost', cap, '--bot', 'ox-ollama'] });
+    // Pin the model here: this test's loopback OpenAI-compatible stub does not
+    // implement Ollama /models discovery, and the default preset is deliberately
+    // `auto` on real machines.
+    const r = await runLocalBudgetCli(t, { args: ['-p', 'hello', '--json', '--max-cost', cap, '--bot', 'ox-ollama:qwen2.5:0.5b'] });
     assert.equal(r.code, 0, r.stdout + r.stderr);
     assert.ok(r.calls.length > 0, `cap ${cap}: provider was actually called`);
     assert.ok(!r.events.some(ev => ev.t === 'budget-stop'), `cap ${cap}: no budget stop`);

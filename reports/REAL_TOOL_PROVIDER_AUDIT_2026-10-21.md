@@ -917,3 +917,8 @@ five discovered models without the stale-preset warning. The provider-routing,
 local-discovery, and model-registry regression set passes **63/63**; routing tests
 were also isolated from the user's real `~/.ox` trust record so live approvals no
 longer make pure unit tests nondeterministic.
+
+The cost-budget regression gate then passed **25/25** after its loopback fixture
+was made explicit about the model it is testing. This keeps the fixture's intended
+budget assertion separate from real `auto` discovery, which requires an Ollama
+`/models` response.
