@@ -322,7 +322,10 @@ const kimi = {
     // genuinely repeated prompts separated by an assistant turn are retained.
     let previous = null;
     const append = (role, raw) => {
-      const text = textOfParts(raw).trim();
+      // Kimi's desktop wire log prefixes some user messages with a private
+      // routing envelope. It is not text the person wrote and should never
+      // leak into the Island/Office transcript or a transfer handoff.
+      const text = textOfParts(raw).replace(/^\s*<meta\b[^>]*\/>\s*/i, '').trim();
       if (previous?.role === role && previous.text === text) return;
       push(s, role, text);
       if (text) previous = { role, text };
