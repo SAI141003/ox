@@ -111,7 +111,10 @@ function main(argv) {
   console.log('| Provider | Model | Pass | Runs | Tokens in/out | Cost | Agent mean / p95 | Wall mean / p95 |');
   console.log('|---|---|---:|---:|---:|---:|---:|---:|');
   for (const r of rows) console.log(`| ${r.provider} | ${r.model} | ${r.passed}/${r.runs} | ${r.runs} | ${r.tokensIn}/${r.tokensOut} | ${r.costKnown ? `$${fmt(r.costUsd, 6)}` : 'unknown'} | ${fmt(r.agentMsMean)}/${fmt(r.agentMsP95)} ms | ${fmt(r.wallMsMean)}/${fmt(r.wallMsP95)} ms |`);
-  if (!rows.length) console.error('No bench/real artifacts found. Run a real benchmark first.');
+  if (!rows.length) {
+    console.error('No bench/real artifacts found. Run a real benchmark first.');
+    process.exitCode = 2;
+  }
 }
 
 export { aggregate, load };

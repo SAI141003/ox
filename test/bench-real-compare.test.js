@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { aggregate } from '../bench/real/compare.mjs';
 
 test('real benchmark comparison aggregates pass, tokens, latency and unknown cost honestly', () => {
@@ -31,4 +35,12 @@ test('comparison recognizes legacy zero-token readiness failures as unavailable'
   assert.equal(row.measured, 0);
   assert.equal(row.unavailable, 1);
   assert.equal(row.passRate, null);
+});
+
+test('empty comparison fails closed instead of exiting green', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-compare-empty-'));
+  const result = spawnSync(process.execPath, ['bench/real/compare.mjs', dir], { encoding: 'utf8' });
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /No bench\/real artifacts found/);
 });
