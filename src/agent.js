@@ -995,7 +995,18 @@ async function* runAgentLoop(opts = {}) {
   // may be actively running it at 4k.  Explicit user choices remain in force.
   const hasWindowOverride = [ctx?.modelWindow, config?.modelWindow, process.env.OX_MODEL_WINDOW]
     .some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
-  if (!hasWindowOverride && target?.provider === 'ollama') {
+  // A custom OpenAI-compatible endpoint may be labelled "ollama" by a saved
+  // target even when it is not an Ollama daemon.  Do not send an undocumented
+  // /api/ps request to that endpoint: besides adding latency, stateful
+  // compatible services can treat it as a real request.  Probe the standard
+  // local Ollama endpoint automatically; custom endpoints can opt in when
+  // their owner knows they are genuine Ollama servers.
+  const ollamaOrigin = String(target?.baseUrl ?? 'http://localhost:11434/v1')
+    .replace(/\/v1\/?$/, '')
+    .replace(/\/+$/, '');
+  const trustedDefaultOllama = /^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):11434$/i.test(ollamaOrigin);
+  const explicitOllamaProbe = config?.ollamaContextProbe === true || process.env.OX_OLLAMA_CONTEXT_PROBE === '1';
+  if (!hasWindowOverride && target?.provider === 'ollama' && (trustedDefaultOllama || explicitOllamaProbe)) {
     const loadedWindow = await discoverOllamaContextWindow(target.baseUrl ?? 'http://localhost:11434/v1', model, signal);
     if (loadedWindow) toolCtx.modelWindow = loadedWindow;
   }

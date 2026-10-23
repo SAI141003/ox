@@ -111,8 +111,9 @@ const OLLAMA_CONTEXT_CACHE_MS = 30_000;
 // before prompt assembly prevents Ox from filling a 4k runtime with schemas
 // based on the model's advertised (often much larger) maximum window.
 //
-// This is deliberately best-effort: an explicit Ox context override remains
-// authoritative and a non-Ollama endpoint must never lose a turn to a probe.
+// This is deliberately best-effort. Callers must only use it for a trusted
+// Ollama endpoint (or an explicit user opt-in): an arbitrary
+// OpenAI-compatible service must never lose a turn to this probe.
 export async function discoverOllamaContextWindow(baseUrl, model, signal) {
   const origin = String(baseUrl ?? '').replace(/\/v1\/?$/, '').replace(/\/+$/, '');
   if (!/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(?::\d+)?$/i.test(origin)) return null;
