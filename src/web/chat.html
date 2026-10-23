@@ -485,8 +485,8 @@
   .cmd code { flex: 1; overflow-x: auto; white-space: nowrap; }
   .cards { display: flex; flex-direction: column; gap: 8px; }
   .card { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 12px 14px; }
-  .market-logo { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; overflow: hidden; color: white; font-weight: 800; font-size: 14px; border: 1px solid color-mix(in srgb, white 10%, transparent); }
-  .market-logo img { width: 26px; height: 26px; object-fit: contain; }
+  .market-logo { position: relative; flex: 0 0 40px; width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; overflow: hidden; color: white; font-weight: 800; font-size: 14px; border: 1px solid color-mix(in srgb, white 10%, transparent); }
+  .market-logo img { position: absolute; inset: 7px; width: 26px; height: 26px; object-fit: contain; }
   .market-card { min-height: 66px; }
   .card .t { flex: 1; min-width: 0; }
   .card .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3248,7 +3248,7 @@ files: [src/billing/**]
       const letters = String(name || '?').split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase().slice(0, 2) || '?';
       if (!known) return `<span class="market-logo" style="background:linear-gradient(145deg,#363b4b,#20232c)" aria-hidden="true">${esc(letters)}</span>`;
       const [, slug, color] = known;
-      return `<span class="market-logo" style="background:${color}" title="${esc(name)} logo"><img src="https://cdn.simpleicons.org/${slug}/ffffff" alt="" loading="lazy" onerror="this.remove()"><span style="position:absolute;clip:rect(0 0 0 0);clip-path:inset(50%);width:1px;height:1px;overflow:hidden">${esc(letters)}</span></span>`;
+      return `<span class="market-logo" style="background:${color}" title="${esc(name)} logo"><span aria-hidden="true">${esc(letters)}</span><img src="https://cdn.simpleicons.org/${slug}/ffffff" alt="" loading="lazy" onerror="this.remove()"></span>`;
     };
     const list = mkTab === 'plugins'
       ? d.plugins.filter((p) => !mkCat || p.category === mkCat).map((p) => `<div class="card market-card">${marketLogo(p.name, `${p.catalog} ${p.author || ''}`)}<span class="t"><div class="n">${esc(p.name)} ${p.category ? `<span class="badge">${esc(p.category)}</span>` : ''}</div><div class="d"><span>${esc(p.description)}</span></div><div class="d"><span>${esc(p.author || '')}</span><span class="mono">${esc(p.catalog)}</span>${p.skills ? `<span>skills: ${esc(p.skills.join(', '))}</span>` : ''}</div></span>${btn(p.installed, `data-inst-name="${esc(p.name)}" data-inst-cat="${esc(p.catalog)}"`)}</div>`)
