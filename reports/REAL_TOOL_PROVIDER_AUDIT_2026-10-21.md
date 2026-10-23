@@ -922,3 +922,13 @@ The cost-budget regression gate then passed **25/25** after its loopback fixture
 was made explicit about the model it is testing. This keeps the fixture's intended
 budget assertion separate from real `auto` discovery, which requires an Ollama
 `/models` response.
+
+## OpenRouter live-provider probe — 2026-10-24
+
+The real comparable OpenRouter run was attempted with the configured key and
+`nvidia/nemotron-3-super-120b-a12b:free`. It failed before a model turn: HTTP **401**
+(`User not found`), **0 tool calls**, **0 provider tokens**, and **483 ms** wall time.
+This is an authentication/readiness failure, not a model-quality score. The result
+is retained at `bench/results/2026-10-24T-live-openrouter/nemotron-free-read.json`.
+`ox doctor` now says `configured (not live-validated)` for present API keys so a
+credential's presence cannot be mistaken for a successful provider connection.

@@ -1347,7 +1347,7 @@ async function cmdDoctor(args = []) {
   for (const p of PROVIDERS) {
     const ke = KEY_ENV[p];
     if (!ke) add(true, `${p}: no API key needed`);
-    else add(Boolean(process.env[ke]), `${p}: ${ke} ${process.env[ke] ? 'set' : 'MISSING'}`);
+    else add(Boolean(process.env[ke]), `${p}: ${ke} ${process.env[ke] ? 'configured (not live-validated)' : 'MISSING'}`);
   }
   // Local model discovery. This probe used to be `res.ok` on /api/version, which
   // passes for any process that answers 200 on 11434 — including one that is not
