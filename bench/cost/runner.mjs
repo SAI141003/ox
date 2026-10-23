@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { COST_DIR, REPO_ROOT } from './lib.mjs';
-import { CREDIT_NOTE, measureAll } from './measure.mjs';
+import { CREDIT_NOTE, measureAll, OLLAMA_MODEL } from './measure.mjs';
 
 const RESULTS_MD = path.join(COST_DIR, 'RESULTS.md');
 
@@ -35,7 +35,7 @@ function parseArgs(argv) {
   return out;
 }
 
-export const OLLAMA_MODEL_NAME = 'qwen2.5:0.5b';
+export const OLLAMA_MODEL_NAME = OLLAMA_MODEL;
 
 const USAGE = `usage: node bench/cost/runner.mjs [--quick] [--json <path>] [--explain <metric>]`;
 
@@ -228,7 +228,7 @@ function renderMarkdown(report) {
       L.push(`| lookupModel('m') with NO override | \`${mdCell(JSON.stringify(o.lookupModelWithoutOverride))}\` |`);
       L.push(`| resolveModelWindow('m', with override) | ${mdCell(o.resolveModelWindowWithOverride)} |`);
       L.push(`| resolveModelWindow('m', no override) | ${mdCell(o.resolveModelWindowWithoutOverride)} |`);
-      L.push(`| costOf('m', 1000in/100out) — no overrides parameter exists | ${mdCell(o.costOfWithOverrideName)} |`);
+      L.push(`| costOf('m', 1000in/100out, overrides) | ${mdCell(o.costOfWithOverrideName)} |`);
       L.push(`| lookupModel('${u.model}') | \`${mdCell(JSON.stringify(u.lookupModel))}\` |`);
       L.push(`| **costOf('${u.model}', 1000in/100out)** | **${u.isNullNotZero ? '`null` (not 0)' : mdCell(u.costOf)}** |`);
       L.push(`| control costOf('${u.pricedModelControl.model}', 1000in/100out) | ${mdCell(u.pricedModelControl.costOf)} |`);

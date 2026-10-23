@@ -47,7 +47,10 @@ const { classifyTargetCost } = await import('../../src/agent.js');
 const { listToolSchemas } = await import('../../src/tools/index.js');
 export const OLLAMA_BASE = 'http://localhost:11434/v1';
 export const OLLAMA_ORIGIN = 'http://localhost:11434';
-export const OLLAMA_MODEL = 'qwen2.5:0.5b';
+// Keep the local live probe explicit and overridable. A 1.5B Qwen model is a
+// practical default for a developer laptop; callers with a different catalog
+// must name it rather than silently comparing a different model.
+export const OLLAMA_MODEL = process.env.OX_COST_BENCH_OLLAMA_MODEL?.trim() || 'qwen2.5:1.5b';
 
 // Credit status is an environment fact, not a measurement of a model.
 export const CREDIT_NOTE =
@@ -204,6 +207,7 @@ export async function measureOverheadRatioVsRealOutput({ timeoutMs = 240_000 } =
     return {
       metric: 'overheadRatioVsRealOutput',
       status: typeof ratio === 'number' ? 'measured' : 'unmeasured',
+      ...(typeof ratio === 'number' ? {} : { reason: ratio.reason }),
       provenance: {
         floor: provenance([`request[${req.seq}].json captured via loopback proxy in front of ${OLLAMA_BASE}`, 'messages[role=system] + tools', 'estimateTokens']),
         outputTokens: provenance(['usage-total event', 'outputTokens']),
@@ -526,9 +530,9 @@ export function measureModelOverrides() {
     lookupModelWithoutOverride: lookupModel('m'),
     resolveModelWindowWithOverride: resolveModelWindow({ model: 'm', overrides, env: {} }),
     resolveModelWindowWithoutOverride: resolveModelWindow({ model: 'm', overrides: null, env: {} }),
-    costOfWithOverrideName: costOf('m', { inputTokens: 1000, outputTokens: 100 }),
+    costOfWithOverrideName: costOf('m', { inputTokens: 1000, outputTokens: 100 }, overrides),
     note:
-      'lookupModel()/resolveModelWindow() take an overrides argument and honour it. costOf(model, usage) has NO overrides parameter (src/cost.js:143), so an OX_MODEL_OVERRIDE price row never reaches costOf; model_overrides in/out reach classifyTargetCost(target, config.modelOverrides), which is what cost-HONEST ROUTING reads.',
+      'lookupModel(), resolveModelWindow(), and costOf() accept the same model_overrides table. Passing config.modelOverrides makes a user-declared in/out price row participate in exact per-run cost accounting; omitting overrides deliberately leaves an unknown model unpriced rather than inventing a price.',
   };
 
   const unknownModel = 'ox-cost-bench-no-such-model';

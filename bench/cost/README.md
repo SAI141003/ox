@@ -53,9 +53,10 @@ additionally shows the `cost-cap` path for a model that *does* ship a price row.
   `lookupModel('m', overrides)` and `resolveModelWindow({overrides})`.
 - A model with no price row yields `costOf(...) === null`, **not 0**, and
   `budget.snapshot().costUsd === null` whenever any model in the run is unpriced.
-- The report also states plainly where an override does *not* reach: `costOf()` has
-  no overrides parameter, so an override price row feeds cost-honest *routing*
-  (`classifyTargetCost`), not the spend arithmetic.
+- The report verifies that `costOf(model, usage, overrides)` consumes the same
+  per-model override table as cost-honest routing (`classifyTargetCost`). A
+  declared input/output price therefore reaches the arithmetic ledger; without
+  an override, an unknown model still remains unpriced rather than being guessed.
 
 ## What it does NOT measure
 
@@ -100,6 +101,9 @@ cd /Users/saiyaganti/ox && node bench/cost/runner.mjs
 # quick: skips the three live fixture runs (mock-only + in-process probes)
 node bench/cost/runner.mjs --quick
 
+# choose a different installed local model for the real local probe
+OX_COST_BENCH_OLLAMA_MODEL=qwen2.5:3b node bench/cost/runner.mjs --quick
+
 # machine-readable result tree
 node bench/cost/runner.mjs --json /tmp/ox-cost-results.json
 
@@ -111,6 +115,12 @@ node /tmp/ox-cost-selftest.mjs
 ```
 
 Output: `bench/cost/RESULTS.md` (rewritten every run).
+
+The real local probe defaults to `qwen2.5:1.5b`. It does not silently select a
+different model: set `OX_COST_BENCH_OLLAMA_MODEL` explicitly when that model is
+not installed. If a model is unavailable or does not provide usage, the result
+is reported as unmeasured with its actual reason, not a synthetic latency or
+cost figure.
 
 All sandboxes are `mkdtemp` dirs under `$TMPDIR` with `HOME` and every XDG dir
 redirected inside them. The repo and the developer's real `~/.ox` are never written.
