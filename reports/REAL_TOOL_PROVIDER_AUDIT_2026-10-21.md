@@ -968,6 +968,16 @@ The aggregator also recognizes pre-availability-field artifacts: zero-token,
 zero-tool readiness failures are classified as **unavailable**, so an old
 subscription-provider record cannot dilute the measured pass-rate denominator.
 
+## Fresh capped NVIDIA repeat — 2026-10-25
+
+After resuming the audit, `nvidia:nvidia/nemotron-3-ultra-550b-a55b` was still
+reachable and a fresh single `read-and-report` run passed the executable grader:
+**9.3 s wall**, **9.3 s agent**, first text at **8.4 s**, 2 tool calls, and
+**14,951 input / 286 output tokens**. NVIDIA did not expose a per-request price,
+so cost remains **unknown**. The retained comparison now has this model at **2/2
+passes**, with nearest-rank p95 agent latency **9.3 s**. Artifact:
+`bench/results/2026-10-25T-live-nvidia/nemotron-read.json`.
+
 ## Repository-mutation guard — 2026-10-24
 
 The separate expensive guard completed with **260/260 guarded tests passed, 0
