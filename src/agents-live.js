@@ -278,7 +278,9 @@ export function kimiSessions({ home = os.homedir(), now = Date.now() } = {}) {
   const [conversation] = sqliteRows(conversationDB, 'select conversation_key,title,workspace_path,updated_at,updated_at_ms from conversations order by updated_at_ms desc limit 1');
   const session = conversation ? {
     id: `kimi:${conversation.conversation_key}`,
-    project: projectName(conversation.workspace_path) || conversation.title || 'Kimi',
+    // Kimi's task folder is often a timestamp/hash, which is not a useful
+    // Island label. Prefer the conversation title while retaining its real cwd.
+    project: conversation.title || projectName(conversation.workspace_path) || 'Kimi',
     cwd: conversation.workspace_path || '',
     title: conversation.title || 'Kimi session',
   } : { id: 'kimi:main', project: 'Kimi', cwd: '', title: 'Kimi' };
