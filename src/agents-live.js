@@ -271,6 +271,17 @@ export function kiloSessions({ home = os.homedir(), now = Date.now() } = {}) {
  * token, conversations, or browser profile. */
 export function kimiSessions({ home = os.homedir(), now = Date.now() } = {}) {
   const file = path.join(home, 'Library', 'Application Support', 'kimi-desktop', 'daimon-share', 'daimon', 'agents', 'main', 'runner.state.json');
+  const conversationDB = path.join(home, 'Library', 'Application Support', 'kimi-desktop', 'daimon-share', 'daimon', 'agents', 'main', 'sessions', 'hosted-logical', 'conversations.sqlite');
+  // The runner state tells us whether Kimi is working, but it does not expose
+  // the conversation id.  The local index does, so use it read-only to make
+  // the Island row point at the actual session rather than a fake `main` id.
+  const [conversation] = sqliteRows(conversationDB, 'select conversation_key,title,workspace_path,updated_at,updated_at_ms from conversations order by updated_at_ms desc limit 1');
+  const session = conversation ? {
+    id: `kimi:${conversation.conversation_key}`,
+    project: projectName(conversation.workspace_path) || conversation.title || 'Kimi',
+    cwd: conversation.workspace_path || '',
+    title: conversation.title || 'Kimi session',
+  } : { id: 'kimi:main', project: 'Kimi', cwd: '', title: 'Kimi' };
   let st, row;
   // Kimi keeps its desktop daemon alive after it has finished a turn, and can
   // leave runner.state.json untouched for hours.  Do not make a visibly
@@ -279,7 +290,7 @@ export function kimiSessions({ home = os.homedir(), now = Date.now() } = {}) {
   // labelled idle rather than pretending there is an active conversation.
   const running = runningApp('Kimi') || runningApp('Kimi Code');
   try { st = fs.statSync(file); row = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {
-    return running ? [{ id: 'kimi:main', tool: 'Kimi', project: 'Kimi', cwd: '', model: '', state: 'idle', doing: '', idleSec: 0, updated: now, appRunning: true }] : [];
+    return running ? [{ ...session, tool: 'Kimi', model: '', state: 'idle', doing: '', idleSec: 0, updated: now, appRunning: true }] : [];
   }
   const updated = Date.parse(row.updatedAt ?? '') || st.mtimeMs;
   const turns = Array.isArray(row.activeKernelTurns) ? row.activeKernelTurns : [];
@@ -287,7 +298,7 @@ export function kimiSessions({ home = os.homedir(), now = Date.now() } = {}) {
   if (now - updated > SHOW_MS && !running) return [];
   const activeTurn = turns.length || tools.length || Number(row.kernel?.activeTurnCount ?? 0) > 0;
   const age = Math.max(0, now - updated);
-  return [{ id: 'kimi:main', tool: 'Kimi', project: 'Kimi', cwd: '', model: row.kernel?.providerModel?.model ?? '',
+  return [{ ...session, tool: 'Kimi', model: row.kernel?.providerModel?.model ?? '',
     // Kimi keeps the runner state file fresh even between turns. Keep that
     // session visible as idle instead of making it vanish from the Island;
     // active turns/tools still get the stronger working state.
