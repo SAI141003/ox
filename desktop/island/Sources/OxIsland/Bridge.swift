@@ -503,6 +503,21 @@ final class OxBridge: ObservableObject {
     @Published private(set) var meshMachines: [MeshMachine] = []
     @Published var meshNote: String?
     private var meshPolledAt = Date.distantPast
+    // Dismissed alerts stay quiet while the server continues reporting the
+    // same condition. They become eligible again after the condition clears.
+    private var dismissedMeshAlerts: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "mesh.dismissedAlerts") ?? [])
+
+    private func saveDismissedMeshAlerts() {
+        UserDefaults.standard.set(Array(dismissedMeshAlerts), forKey: "mesh.dismissedAlerts")
+    }
+
+    func dismissMesh(_ alert: MeshAlert) {
+        dismissedMeshAlerts.insert(alert.id)
+        saveDismissedMeshAlerts()
+        meshAlerts.removeAll { $0.id == alert.id }
+        meshPolledAt = Date()
+        IslandLog.write("mesh alert dismissed: \(alert.id)")
+    }
 
     private func pollMesh(port: Int) {
         guard Date().timeIntervalSince(meshPolledAt) > 10, let url = URL(string: "http://127.0.0.1:\(port)/ox/mesh") else { return }
@@ -528,10 +543,16 @@ final class OxBridge: ObservableObject {
             }
             DispatchQueue.main.async {
                 let had = Set(self?.meshAlerts.map(\.id) ?? [])
-                self?.meshAlerts = alerts
+                let currentIDs = Set(alerts.map(\.id))
+                // Forget old suppressions once the backend no longer reports
+                // them, allowing a genuinely new occurrence to notify again.
+                self?.dismissedMeshAlerts = self?.dismissedMeshAlerts.filter { currentIDs.contains($0) } ?? []
+                self?.saveDismissedMeshAlerts()
+                let visible = alerts.filter { !(self?.dismissedMeshAlerts.contains($0.id) ?? false) }
+                self?.meshAlerts = visible
                 self?.meshMachines = machines
                 // A new alert is a decision for you: the island opens for it.
-                if alerts.contains(where: { !had.contains($0.id) }) { self?.peek(for: 8); IslandSound.play("pop") }
+                if visible.contains(where: { !had.contains($0.id) }) { self?.peek(for: 8); IslandSound.play("pop") }
             }
         }.resume()
     }
@@ -610,11 +631,13 @@ final class OxBridge: ObservableObject {
         var o: [String: Any] = ["label": option.label, "action": option.action]
         if let m = option.model { o["model"] = m }
         if let t = option.to { o["to"] = t }
-        meshAlerts.removeAll { $0.id == alert.id }
+        // Choosing an action is also a dismissal. Do not immediately poll and
+        // redisplay the same heavy-load warning before the action can work.
+        dismissMesh(alert)
         post("/ox/mesh/choose", ["alert": alert.id, "option": o]) { [weak self] out in
             let said = (out?["done"] as? String) ?? (out?["note"] as? String) ?? (out?["error"] as? [String: Any])?["message"] as? String
             IslandLog.write("mesh choice on \(alert.id): \(option.label) → \(said ?? "?")")
-            DispatchQueue.main.async { self?.meshNote = said; self?.meshPolledAt = .distantPast }
+            DispatchQueue.main.async { self?.meshNote = said }
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) { self?.meshNote = nil }
         }
     }

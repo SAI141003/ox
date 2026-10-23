@@ -69,7 +69,10 @@ struct HomeHeader: View {
                     HeaderIcon(name: bridge.buddy.isListeningOrStarting ? "stop.circle.fill" : "mic.fill", active: bridge.buddyActive, help: bridge.buddy.isListeningOrStarting ? "Stop listening" : "Talk to \(OxName.current) (hold ⌃⌥Space)") { MainActor.assumeIsolated { bridge.buddy.toggle() } }
                     HeaderIcon(name: bridge.pinnedOpen ? "pin.fill" : "pin", active: bridge.pinnedOpen, help: bridge.pinnedOpen ? "Unpin" : "Keep open") { bridge.pinnedOpen.toggle() }
                     if bridge.pendingSession == nil {
-                        HeaderIcon(name: "xmark", active: false, help: "Close") { bridge.pinnedOpen = false; bridge.tray = nil; bridge.card = nil; bridge.hovering = false }
+                        HeaderIcon(name: "xmark", active: false, help: "Close") {
+                            if let alert = bridge.meshAlerts.first { bridge.dismissMesh(alert) }
+                            bridge.pinnedOpen = false; bridge.tray = nil; bridge.card = nil; bridge.hovering = false
+                        }
                     }
                 }
             }

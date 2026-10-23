@@ -7,6 +7,11 @@ const runs = new Map();
 const KEEP_DONE_MS = 15_000;
 let seq = 0;
 
+// Load the read-only session adapters synchronously at module evaluation time.
+// A lazy import used to race the first /ox/live request, so external tools
+// (notably Kimi) were missing from the Island until a later reload.
+import * as agentsLive from './agents-live.js';
+
 const clip = (s, n = 80) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 
 export function startRun({ who, title, kind = 'chat', model = null } = {}) {
@@ -61,12 +66,9 @@ export function endRun(runId, { failed = false } = {}) {
 export function liveBoard(now = Date.now(), { others = true } = {}) {
   for (const [id, r] of runs) if (r.ended && now - r.ended > KEEP_DONE_MS) runs.delete(id);
   const own = [...runs.values()].map((r) => ({ ...r, seconds: Math.round(((r.ended ?? now) - r.started) / 1000) }));
-  // Claude Code and Codex sessions on this Mac (src/agents-live.js), read-only.
+  // Claude Code, Kimi, Codex, and other detected sessions (read-only).
   return { at: now, runs: others ? [...own, ...otherAgents(now)] : own };
 }
-
-let agentsLive = null;
-import('./agents-live.js').then((m) => { agentsLive = m; }).catch(() => {});
 function otherAgents(now) {
   if (!agentsLive || process.env.OX_OTHER_AGENTS === '0') return [];
   try { return agentsLive.asBoardRows(agentsLive.liveAgents({ now }), now); } catch { return []; }
