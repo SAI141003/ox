@@ -4182,6 +4182,7 @@ files: [src/billing/**]
         const P = await getJson('/ox/personal-model');
         const S = P.state;
         const plan = P.plan;
+        const approvedSources = [['preferences', 'Preferences'], ['approved_chats', 'Approved chats'], ['studio_recipes', 'Studio recipes']].filter(([key]) => S.sources[key]);
         const blockers = plan.blockers?.length ? `<ul class="small muted" style="margin:8px 0 0;padding-left:18px">${plan.blockers.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<p class="small ok">Ready to prepare a local adapter dataset.</p>';
         el.innerHTML = `${mobileBack}<div class="shead">${icon('brain')}Personal model</div><p class="sdesc">Create a private <b>LoRA adapter</b> for an open-weight model. Ox never silently trains on chats, screen activity, or Studio media. You select sources, approve every example, evaluate on held-out examples, then manually promote or reject a version.</p>
           <div class="sblock"><div class="section-cap cap">Collection</div>
@@ -4194,6 +4195,13 @@ files: [src/billing/**]
             <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn primary" id="pm-save">Save collection settings</button></div>
           </div>
           <div class="sblock"><div class="section-cap cap">Training readiness</div><p class="small muted">${esc(plan.method)}</p><p class="small muted">${esc(plan.runtime.detail)}</p><div class="chipline"><span class="badge">${esc(String(plan.dataset.examples))} approved examples</span><span class="badge">${plan.dataset.heldOutRecommended ? `${esc(String(plan.dataset.heldOutRecommended))} held out recommended` : '50 minimum before training'}</span><span class="badge">${esc(S.status)}</span></div>${blockers}</div>
+          <div class="sblock"><div class="section-cap cap">Add one approved example</div><p class="small muted">Review both fields before saving. This is the only way Ox adds training text; enabling a source never imports history automatically.</p>
+            ${approvedSources.length ? `<label class="small muted">Source<select class="field" id="pm-example-source">${approvedSources.map(([key, label]) => `<option value="${esc(key)}">${esc(label)}</option>`).join('')}</select></label>
+              <label class="small muted" style="display:block;margin-top:8px">User input<textarea class="field" id="pm-example-input" rows="3" maxlength="12000" placeholder="The request or preference you want the adapter to learn"></textarea></label>
+              <label class="small muted" style="display:block;margin-top:8px">Preferred response<textarea class="field" id="pm-example-output" rows="3" maxlength="12000" placeholder="The response or behavior you approve"></textarea></label>
+              <label class="small muted" style="display:flex;gap:8px;align-items:flex-start;margin-top:10px"><input type="checkbox" id="pm-example-approved">I reviewed this exact example and approve adding it to this local dataset.</label>
+              <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn" id="pm-add-example" ${S.enabled ? '' : 'disabled'}>Add approved example</button></div>` : '<p class="small muted">Choose and save at least one source above before adding an example.</p>'}
+          </div>
           <div class="sblock"><div class="section-cap cap">Safety boundary</div><p class="small muted">A personal adapter can suggest work, but it cannot update Ox, Studio, prompts, code, or itself. Every training run and promotion requires an explicit later action; automatic self-modification is not available.</p></div>`;
         $('pm-save').onclick = async () => {
           const enabled = $('pm-enabled').checked;
@@ -4203,6 +4211,13 @@ files: [src/billing/**]
             toast(enabled ? 'Personal model collection is armed' : 'Personal model collection is off'); renderSection();
           } catch (e) { toast(e.message); }
         };
+        $('pm-add-example')?.addEventListener('click', async () => {
+          if (!$('pm-example-approved').checked) { toast('Review and approve this exact example first.'); return; }
+          try {
+            await postJson('/ox/personal-model', { action: 'add-example', source: $('pm-example-source').value, input: $('pm-example-input').value, output: $('pm-example-output').value, approved: true });
+            toast('Approved example saved locally.'); renderSection();
+          } catch (e) { toast(e.message); }
+        });
       } else if (sec === 'server') {
         const W = await getJson('/ox/workspace');
         const S = W.server;
