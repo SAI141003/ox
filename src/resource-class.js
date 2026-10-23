@@ -144,9 +144,10 @@ export const BATCH_REJECT_APPROVAL = 'approval-gated tools must run solo (batch 
 //                 bounded scheduler: the loop may run the group concurrently
 //   reject     -- refuse the WHOLE turn, before anything executes
 //
-// A mixed batch runs serially. Each consequential call still reaches runOne
-// and its own approval decision; serial execution simply avoids discarding an
-// otherwise valid model turn before the user can see or decide on any action.
+// A MIXED batch stays rejected even when the gated tool is scheduler-backed.
+// [subagent, read_file] would have to promise a single gate over two classes of
+// side effect, and the mixed case is where "the user approved this" quietly
+// stops meaning what it says.
 export function batchPlan(calls) {
   const list = Array.isArray(calls) ? calls : [];
   const groups = groupCalls(list);
@@ -159,12 +160,13 @@ export function batchPlan(calls) {
   // through its own approval in runOne, exactly as if they had come in
   // separate turns. Refusing the whole turn instead cost a round trip every
   // time a model batched (measured: ox 11 requests vs Claude Code's 4 on the
-  // same task, bench/h2h) and taught the model nothing.  A mixed subagent
-  // batch follows that same serial path: it is not safe to parallelize, but it
-  // is safe to individually approve and run in its declared order.
+  // same task, bench/h2h) and taught the model nothing. Only `subagent`, the
+  // one tool whose batch is gated as a batch, keeps the no-mixing rule.
   const gatedNames = new Set(gated.flatMap((g) => g.calls.map((c) => String(c?.function?.name ?? ''))));
   if (![...gatedNames].some(isConcurrentlyBatchable)) return { mode: 'serial', tool: firstName, groups, reason: null };
-  if (gated.length > 1 || groups.length > 1) return { mode: 'serial', tool: firstName, groups, reason: null };
+  if (gated.length > 1 || groups.length > 1) {
+    return { mode: 'reject', tool: firstName, groups, reason: BATCH_REJECT_APPROVAL };
+  }
   const names = new Set(gated[0].calls.map((c) => String(c?.function?.name ?? '')));
   const only = [...names][0] ?? '';
   if (names.size !== 1 || !isConcurrentlyBatchable(only)) {
