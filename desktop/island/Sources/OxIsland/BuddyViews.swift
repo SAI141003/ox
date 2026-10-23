@@ -194,6 +194,12 @@ struct IslandControlsView: View {
                         Text("Close in 15s").tag(15.0)
                         Text("Stay open").tag(0.0)
                     }.labelsHidden().frame(width: 128)
+                    HStack(spacing: 4) {
+                        Text("seconds").font(.system(size: 10)).foregroundStyle(Ink.dim)
+                        TextField("6", value: $autoClose, format: .number)
+                            .textFieldStyle(.roundedBorder).frame(width: 48)
+                            .help("Set 0 to keep the Island open")
+                    }
                     Toggle("Hide in full screen", isOn: $hideFullscreen).font(.system(size: 10.5)).toggleStyle(.checkbox)
                 }
                 Spacer(minLength: 0)

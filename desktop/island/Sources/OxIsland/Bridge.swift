@@ -777,8 +777,14 @@ final class OxBridge: ObservableObject {
     /// Friday", "type a good follow-up prompt": text to paste where you type.
     static func writeIntent(_ raw: String) -> WriteKind? {
         let t = raw.lowercased()
-        // "write an email to Camille, tell her…": a Mail draft (the offline router), not a paste.
-        if t.range(of: #"\b(?:e-?mail|mail)\s+to\s+\S"#, options: .regularExpression) != nil { return nil }
+        // Email/message delivery is an action, not "write this into the
+        // focused box". The old matcher caught phrases such as "write an
+        // email, then send it to Sam" and silently pasted text instead of
+        // routing it to the approved mail/message tool.
+        if t.range(of: #"\b(?:e-?mail|mail)\b"#, options: .regularExpression) != nil,
+           t.range(of: #"\b(?:to|send|draft|compose|from|subject|recipient)\b"#, options: .regularExpression) != nil { return nil }
+        if t.range(of: #"\b(?:text|message|sms|imessage|whatsapp)\b"#, options: .regularExpression) != nil,
+           t.range(of: #"\b(?:to|send|contact|recipient)\b"#, options: .regularExpression) != nil { return nil }
         if t.range(of: #"^(?:please\s+)?(?:can you\s+)?(?:write|type|draft|give me)\s+(?:me\s+)?(?:a\s+|the\s+)?(?:good\s+|better\s+)?(?:follow[- ]?up\s+)?prompt\b"#, options: .regularExpression) != nil { return .prompt }
         if t.range(of: #"^(?:please\s+)?(?:can you\s+)?(?:write|draft|compose|type)\s+(?:me\s+)?(?:a|an|the|my)?\s*(?:quick\s+|short\s+|polite\s+)?(?:reply|response|answer|email|message|comment|tweet|post|text|one[- ]liner|caption|bio)\b"#, options: .regularExpression) != nil { return .text }
         return nil

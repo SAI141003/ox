@@ -15,7 +15,16 @@ final class MailCenter: ObservableObject {
     private var mailOpen: Bool { NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.apple.mail" } }
 
     func refresh() {
-        guard mailOpen else { messages = []; note = "Open the Mail app to see your unread mail here."; return }
+        // Coucou-style mail cards should work from the Island itself. Launch
+        // Mail on first use, then query it after the app has finished opening;
+        // an unopened Mail app was the reason this card appeared permanently
+        // empty even when an account had unread mail.
+        if !mailOpen {
+            note = "Opening Mail…"
+            NSWorkspace.shared.launchApplication(withBundleIdentifier: "com.apple.mail", options: [.withoutActivation, .default], additionalEventParamDescriptor: nil, launchIdentifier: nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in self?.refresh() }
+            return
+        }
         note = "Reading Mail…"
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let script = """
