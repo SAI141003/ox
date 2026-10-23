@@ -76,7 +76,10 @@ enum VoiceServer {
     /// anything else comes back unhandled, for the live run to take.
     static func ask(_ text: String, offlineOnly: Bool = false, done: @escaping (Result?) -> Void) {
         guard let u = url() else { done(nil); return }
-        var req = URLRequest(url: u, timeoutInterval: offlineOnly ? 5 : 75)
+        // This endpoint is the local, no-model fast path. A dead/stale server
+        // must never hold the Island chat bar for five seconds before it can
+        // hand the message to the already-connected run.
+        var req = URLRequest(url: u, timeoutInterval: offlineOnly ? 1.2 : 75)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "content-type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text, "offlineOnly": offlineOnly])
@@ -686,12 +689,13 @@ final class IslandChat: ObservableObject {
         // A coding run is open: errands are still done offline first, the rest goes to that run.
         if bridge.hasLiveRun {
             busy = true
+            lines.append(Line(mine: false, text: "Checking the fast path…"))
             VoiceServer.ask(text, offlineOnly: true) { [weak self] r in
                 guard let self else { return }
                 self.busy = false
                 if let r, r.handled { IslandLog.write("offline (live run open): \(r.say ?? "")"); self.reply(r.say ?? "Done.", who: nil); return }
                 if bridge.ask(text, imagePaths: [], audioPath: nil, voice: false) {
-                    self.lines.append(Line(mine: false, text: "Sent to your ox run. Its answer shows in the island."))
+                    self.lines.append(Line(mine: false, text: "Sent to your active ox run — the answer will appear here."))
                     self.onReply = nil
                 } else { self.start(text, bridge: bridge, onReply: self.onReply, echo: false) }
             }
