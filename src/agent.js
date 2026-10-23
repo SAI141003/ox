@@ -18,7 +18,7 @@ function rememberOffer(sid, names) {
   if (SESSION_OFFER.size > 200) SESSION_OFFER.delete(SESSION_OFFER.keys().next().value);
 }
 import { alreadyLiveBroadcast, noteSubagentBatch, noteSubagentLive } from './subagent-registry.js';
-import { getProvider, streamVia } from './providers/index.js';
+import { discoverOllamaContextWindow, getProvider, streamVia } from './providers/index.js';
 import { batchPlan, resolveSubagentConcurrency } from './resource-class.js';
 import { assertCostBudget, costOf, currentCostBudget, lookupModel, resolveModelWindow } from './cost.js';
 import { writeSessionNote } from './memory.js';
@@ -1074,6 +1074,15 @@ async function* runAgentLoop(opts = {}) {
   };
   const verifier = verify ? createVerifier(cwd, { ctx: toolCtx, execute: dispatchTool }) : null;
   const model = target?.model;
+  // Local Ollama exposes the context size of the model it has actually loaded.
+  // Its model metadata can say 32k while the current runner accepts 4k.  Use
+  // that runtime fact unless the caller intentionally set a window themselves.
+  const hasWindowOverride = [ctx?.modelWindow, config?.modelWindow, process.env.OX_MODEL_WINDOW]
+    .some((value) => Number.isFinite(Number(value)) && Number(value) > 0);
+  if (!hasWindowOverride && target?.provider === 'ollama') {
+    const loadedWindow = await discoverOllamaContextWindow(target.baseUrl ?? 'http://localhost:11434/v1', model, signal);
+    if (loadedWindow) toolCtx.modelWindow = loadedWindow;
+  }
   // G1 auxiliary routing: cheap calls (compaction summarizer, goal verifier,
   // max-mode planning) go to the aux bot when one is resolvable, else to the
   // main target. Explicit auxTarget=null disables lookup for the run.
@@ -1303,7 +1312,7 @@ async function* runAgentLoop(opts = {}) {
   const DOOM_GUIDANCE =
     'You have issued this exact same call three times. It is not working. Change approach fundamentally or report the blocker.';
   let guidanceKey = null;
-  const window = modelWindow(ctx, model, config);
+  const window = modelWindow(toolCtx, model, config);
   const configuredStrictSchemas =
     config?.strictSchemas ?? config?.tools?.strictSchemas ?? ctx?.strictSchemas;
   const strictSchemas =
@@ -1315,7 +1324,7 @@ async function* runAgentLoop(opts = {}) {
   const offerSessionRecall = ctx.enableSessionRecall === true || /\b(previous|prior|earlier|last time|remember|history|old session|our session|what did we|we discussed)\b/i.test(latestUserText);
   let tools = pruneToolSchemas(
     listToolSchemas({ ...ctx, enableSessionRecall: offerSessionRecall }, strictSchemas),
-    Math.max(TOOL_SCHEMA_BUDGET_FLOOR, window),
+    window,
     strictSchemas
   );
   const { compactAt, keepTurns } = compactionKnobs(config);

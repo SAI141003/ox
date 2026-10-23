@@ -103,6 +103,36 @@ export function getProvider(name) {
 // One lookup per endpoint per process: a local server's loaded model does not
 // change mid-run, and re-asking every turn would add a round trip to each call.
 const LOCAL_MODEL_CACHE = new Map();
+const OLLAMA_CONTEXT_CACHE = new Map();
+
+// The OpenAI-compatible endpoint does not expose the *loaded* context size.
+// Ollama does expose it from its local /api/ps endpoint, though.  Reading it
+// before prompt assembly prevents Ox from filling a 4k runtime with schemas
+// based on the model's advertised (often much larger) maximum window.
+//
+// This is deliberately best-effort: an explicit Ox context override remains
+// authoritative and a non-Ollama endpoint must never lose a turn to a probe.
+export async function discoverOllamaContextWindow(baseUrl, model, signal) {
+  const origin = String(baseUrl ?? '').replace(/\/v1\/?$/, '').replace(/\/+$/, '');
+  if (!/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(?::\d+)?$/i.test(origin)) return null;
+  const key = `${origin}|${String(model ?? '')}`;
+  if (OLLAMA_CONTEXT_CACHE.has(key)) return OLLAMA_CONTEXT_CACHE.get(key);
+  let contextLength = null;
+  try {
+    const res = await fetch(`${origin}/api/ps`, { signal });
+    if (res.ok) {
+      const wanted = String(model ?? '').trim();
+      const models = (await res.json())?.models;
+      const loaded = Array.isArray(models)
+        ? models.find((entry) => entry?.name === wanted || entry?.model === wanted)
+        : null;
+      const n = Number(loaded?.context_length);
+      if (Number.isFinite(n) && n >= 512) contextLength = Math.floor(n);
+    }
+  } catch { /* model discovery is an optimization, never a transport failure */ }
+  OLLAMA_CONTEXT_CACHE.set(key, contextLength);
+  return contextLength;
+}
 
 export async function discoverLocalModel(baseUrl, signal) {
   const key = String(baseUrl).replace(/\/+$/, '');

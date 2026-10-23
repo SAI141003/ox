@@ -429,7 +429,14 @@ export function pruneToolSchemas(schemas, budgetTokens, strict = false) {
   const list = schemas.filter((s) => s && typeof s === 'object');
   const budget = Number(budgetTokens);
   if (list.length === 0 || !Number.isFinite(budget) || budget <= 0) return schemas;
-  const cap = Math.max(8_000, Math.floor(budget)) * PRUNE_SHARE;
+  // Do not let the historical 8k floor overflow a genuinely small, loaded
+  // local context window.  A 4k Ollama runner needs room for system guidance,
+  // the task, history and output; schemas get a bounded share, with a small
+  // practical floor so an essential tool can still be described.
+  const normalizedBudget = Math.floor(budget);
+  const cap = normalizedBudget < 8_000
+    ? Math.max(512, Math.floor(normalizedBudget * PRUNE_SHARE))
+    : Math.max(TOOL_SCHEMA_BUDGET_FLOOR, normalizedBudget) * PRUNE_SHARE;
   if (estimateTokens(JSON.stringify(list)) <= cap) return schemas;
 
   // Stage 1: short descriptions + required-only properties.
