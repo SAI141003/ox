@@ -763,7 +763,23 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
   // Applied only once the cut itself is allowed; a subagent's own offer and a
   // task run's board (offered only to a run started for a task) are never trimmed.
   // Orchestrate's whole job is handing work out: it always keeps them.
-  if (!isSubagentOffer && mode !== 'orchestrate' && String(message).length < 220 && !PLANNING_SIGNAL.test(message)) {
+  // A long incident description can still end in one concrete output: "write
+  // this value to a new file".  Planning/delegation adds no capability there,
+  // but a small model may batch subagent with the required write and correctly
+  // hit the approval-batch safety gate.  Remove those planning tools for this
+  // narrow, unambiguous shape; all file discovery and write tools remain.
+  const explicitNewFile = /\b(?:new|create)\s+(?:a\s+)?file\b|\bwrite\b[\s\S]{0,80}\bnew\s+file\b/i.test(String(message));
+  // This intentionally excludes broad words such as "project" and "then".
+  // They occur in otherwise one-output incident reports and should not turn a
+  // single-file write into an orchestration request.  Real multi-step planning
+  // language still keeps delegation available.
+  // Research/review language may describe the input to one file, not a request
+  // to delegate it. Keep delegation only for language that actually expands the
+  // output surface or explicitly asks for orchestration.
+  const explicitMultiStepPlan = /\b(plan|planning|steps?|step by step|refactor|migrate|migration|across|every|all (?:the )?files|several|multiple|many|feature|implement|build|parallel|subagents?|delegate|todo|checklist)\b/i.test(String(message));
+  const concreteSingleOutput = explicitNewFile && !explicitMultiStepPlan;
+  const shortNonPlanningTask = String(message).length < 220 && !PLANNING_SIGNAL.test(message);
+  if (!isSubagentOffer && mode !== 'orchestrate' && (shortNonPlanningTask || concreteSingleOutput)) {
     for (let i = filtered.length - 1; i >= 0; i--) if (filtered[i].name === 'todo_write' || filtered[i].name === 'subagent') filtered.splice(i, 1);
   }
   const saved =
