@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   addTask, getTask, claimTask, releaseTask, completeTask, approveTask, rejectTask,
   nextTask, readyTasks, goalChain, taskBrief, addSpend, taskActivity, taskOwner, listTasks,
+  commentTask, heartbeatTask, blockTask, unblockTask, linkTask,
 } from '../src/tasks.js';
 
 const fresh = () => ({ dir: fs.mkdtempSync(path.join(os.tmpdir(), 'ox-board-')), actor: 'tester' });
@@ -173,6 +174,27 @@ test('a CLI claim (no process) holds for its lease, then lapses', () => {
   fs.writeFileSync(lock, JSON.stringify({ ...rec, at: new Date(Date.now() - rec.leaseMs - 1000).toISOString() }));
   assert.equal(taskOwner(t.id, o), null);
   assert.equal(claimTask(t.id, { ...o, owner: 'mira', pid: null }).ok, true);
+});
+
+test('Hermes-style worker lifecycle persists comments, heartbeats, blockers and artifacts', () => {
+  const o = fresh();
+  const t = addTask({ title: 'worker lane', review: true, workerLane: 'reviewer', completionContract: 'local-only' }, o);
+  assert.equal(claimTask(t.id, { ...o, owner: 'reviewer' }).ok, true);
+  assert.equal(commentTask(t.id, 'research complete; handing off to implementation', { ...o, owner: 'reviewer' }).ok, true);
+  assert.equal(heartbeatTask(t.id, { ...o, owner: 'reviewer' }).ok, true);
+  assert.equal(linkTask(t.id, { url: 'https://github.com/example/repo/pull/7', kind: 'pr', label: 'draft PR' }, { ...o, owner: 'reviewer' }).ok, true);
+  assert.equal(blockTask(t.id, 'waiting for CI credentials', { ...o, owner: 'reviewer' }).ok, true);
+  assert.equal(getTask(t.id, o).status, 'blocked');
+  assert.equal(unblockTask(t.id, o).ok, true);
+  const after = getTask(t.id, o);
+  assert.equal(after.status, 'pending');
+  assert.equal(after.workerLane, 'reviewer');
+  assert.equal(after.completionContract, 'local-only');
+  assert.equal(after.links[0].url, 'https://github.com/example/repo/pull/7');
+  assert.match(after.comments[0].text, /research complete/);
+  assert.ok(after.heartbeatAt);
+  const actions = taskActivity({ ...o, id: t.id }).map((e) => e.action);
+  for (const action of ['created', 'commented', 'heartbeat', 'linked', 'blocked', 'unblocked']) assert.ok(actions.includes(action), action);
 });
 
 // Windows refuses a rename onto a file another process holds open (EPERM,

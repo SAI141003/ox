@@ -874,3 +874,18 @@ expensive sweep off for `npm test`, and exposes it explicitly as
 failed, 259 skipped, 2,497 total** in **234.97 s**. This changes no product
 behavior and keeps the repository-mutation detector available as a separate
 release gate.
+
+## Hermes Kanban worker lifecycle — 2026-10-23
+
+I compared Ox's task board with the current upstream Hermes Kanban reference. Hermes
+uses a durable shared board, named worker lanes, liveness heartbeats, comments and
+handoffs, explicit blocked/unblocked states, artifact attachments/links, and a
+review gate before a worker's output is considered done. Ox already had atomic
+claims, blockers, goals, budgets, review, activity and org assignment. The parity
+implementation adds the missing worker-facing actions to `task_board`: `comment`,
+`heartbeat`, `block`, `unblock`, and `link`. Task records now preserve lane and
+completion-contract metadata, last heartbeat, and auditable artifact links while
+remaining in Ox's existing local JSON/activity store. New tests cover ownership,
+durability, handoff, liveness, pause/resume, and links. This is an Ox-native
+compatibility layer, not a claim of importing Hermes' SQLite database or running
+untrusted external worker plugins.

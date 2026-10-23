@@ -50,6 +50,12 @@ function normalize(t) {
     spentUsd: 0,
     review: false,
     comments: [],
+    links: [],
+    attachments: [],
+    heartbeatAt: null,
+    workerLane: null,
+    completionContract: null,
+    attempt: 0,
     ...t,
   };
 }
@@ -142,6 +148,10 @@ function addTask(task, opts = {}) {
     assignee: task.assignee ?? null,
     budgetUsd: task.budgetUsd ?? null,
     review: task.review === true,
+    links: Array.isArray(task.links) ? task.links : [],
+    attachments: Array.isArray(task.attachments) ? task.attachments : [],
+    workerLane: task.workerLane ?? null,
+    completionContract: task.completionContract ?? null,
   });
   writeTask(full, dir);
   logActivity(dir, { task: id, by: actor(opts), action: 'created', title: full.title });
@@ -325,6 +335,83 @@ function completeTask(id, opts = {}) {
   return { ok: true, task: out };
 }
 
+/** Add a durable, attributed handoff/comment without changing task state. */
+function commentTask(id, text, opts = {}) {
+  const t = getTask(id, opts);
+  const body = String(text ?? '').trim();
+  if (!t) return { ok: false, reason: 'not-found' };
+  if (!body) return { ok: false, reason: 'comment is empty' };
+  const by = opts.owner ?? actor(opts);
+  const held = taskOwner(id, opts);
+  if (held && held.owner !== by && !opts.force) return { ok: false, reason: `claimed by ${held.owner}` };
+  const comment = { by, at: new Date().toISOString(), text: body.slice(0, 2000) };
+  const out = updateTask(id, { comments: [...t.comments, comment] }, { ...opts, actor: by });
+  logActivity(dirOf(opts), { task: id, by, action: 'commented', text: comment.text });
+  return { ok: true, task: out, comment };
+}
+
+/** Refresh the worker's liveness marker and lease without changing ownership. */
+function heartbeatTask(id, opts = {}) {
+  const t = getTask(id, opts);
+  if (!t) return { ok: false, reason: 'not-found' };
+  const by = opts.owner ?? actor(opts);
+  const held = taskOwner(id, opts);
+  if (!held) return { ok: false, reason: 'task is not claimed' };
+  if (held.owner !== by && !opts.force) return { ok: false, reason: `claimed by ${held.owner}` };
+  const at = new Date().toISOString();
+  const lock = path.join(lockDir(dirOf(opts)), `${id}.lock`);
+  try {
+    const rec = JSON.parse(fs.readFileSync(lock, 'utf8'));
+    const tmp = `${lock}.${process.pid}.heartbeat.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ ...rec, at, heartbeatAt: at }));
+    renameWithRetry(tmp, lock);
+  } catch { return { ok: false, reason: 'claim disappeared' }; }
+  const out = updateTask(id, { heartbeatAt: at }, { ...opts, actor: by });
+  logActivity(dirOf(opts), { task: id, by, action: 'heartbeat' });
+  return { ok: true, task: out, heartbeatAt: at };
+}
+
+/** Pause work explicitly; blocked tasks can be resumed by an operator. */
+function blockTask(id, reason, opts = {}) {
+  const t = getTask(id, opts);
+  const why = String(reason ?? '').trim();
+  if (!t) return { ok: false, reason: 'not-found' };
+  if (!why) return { ok: false, reason: 'block reason is required' };
+  const by = opts.owner ?? actor(opts);
+  const held = taskOwner(id, opts);
+  if (held && held.owner !== by && !opts.force) return { ok: false, reason: `claimed by ${held.owner}` };
+  const out = updateTask(id, { status: 'blocked', blockedReason: why.slice(0, 1000) }, { ...opts, actor: by });
+  try { fs.unlinkSync(path.join(lockDir(dirOf(opts)), `${id}.lock`)); } catch {}
+  logActivity(dirOf(opts), { task: id, by, action: 'blocked', reason: why.slice(0, 1000) });
+  return { ok: true, task: out };
+}
+
+/** Put a blocked task back into the ready queue after its blocker is resolved. */
+function unblockTask(id, opts = {}) {
+  const t = getTask(id, opts);
+  if (!t) return { ok: false, reason: 'not-found' };
+  if (t.status !== 'blocked') return { ok: false, reason: `task is ${t.status}, not blocked` };
+  const by = opts.owner ?? actor(opts);
+  const out = updateTask(id, { status: 'pending', blockedReason: null, assignee: null }, { ...opts, actor: by });
+  logActivity(dirOf(opts), { task: id, by, action: 'unblocked' });
+  return { ok: true, task: out };
+}
+
+/** Attach an auditable external artifact (PR, issue, document, or URL). */
+function linkTask(id, link, opts = {}) {
+  const t = getTask(id, opts);
+  const url = typeof link === 'string' ? link.trim() : String(link?.url ?? '').trim();
+  if (!t) return { ok: false, reason: 'not-found' };
+  if (!url || !/^https?:\/\//i.test(url)) return { ok: false, reason: 'link must be an http(s) URL' };
+  const by = opts.owner ?? actor(opts);
+  const held = taskOwner(id, opts);
+  if (held && held.owner !== by && !opts.force) return { ok: false, reason: `claimed by ${held.owner}` };
+  const entry = { url, label: String(link?.label ?? '').slice(0, 200), kind: String(link?.kind ?? 'artifact').slice(0, 40), by, at: new Date().toISOString() };
+  const out = updateTask(id, { links: [...(t.links ?? []), entry] }, { ...opts, actor: by });
+  logActivity(dirOf(opts), { task: id, by, action: 'linked', url });
+  return { ok: true, task: out, link: entry };
+}
+
 function approveTask(id, opts = {}) {
   const t = getTask(id, opts);
   if (!t) return { ok: false, reason: 'not-found' };
@@ -465,6 +552,11 @@ export {
   claimTask,
   releaseTask,
   completeTask,
+  commentTask,
+  heartbeatTask,
+  blockTask,
+  unblockTask,
+  linkTask,
   approveTask,
   rejectTask,
   taskOwner,

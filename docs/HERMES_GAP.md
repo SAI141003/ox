@@ -51,6 +51,7 @@ still contain the prompt and code/context needed to answer.
 | LSP semantic diagnostics | Ox has repository maps and language-aware analysis, but no general language-server manager comparable to Hermes' documented post-write semantic diagnostics. | Consider an opt-in local LSP diagnostic adapter with explicit server installation/launch controls and safe workspace scoping. |
 | Mixture of Agents, delegated execution, model gateway | Ox has parallel subagents, agent teams, model routing, and provider adapters. | Validate provider/model feature combinations and cancellation/steering; avoid claiming parity with all Hermes backends or orchestration modes. |
 | Cross-platform deployment and terminal UI | Ox ships macOS app/island plus CLI/web/server surfaces and is actively tested across targets. Hermes documents Linux/macOS/Windows/Termux and container/SSH/cloud terminal backends. | Linux desktop and signed distribution items remain separate release gaps; use the CI matrix for platform proof. |
+| Durable Kanban collaboration and worker lanes | Ox's local board already had atomic claims, blockers, goals, budgets, review gates, activity, org assignment and a web board. The Hermes parity pass adds durable attributed comments, worker heartbeats, explicit block/unblock transitions, worker-lane metadata, completion-contract metadata, and auditable HTTP artifact links through the existing task files/activity log. | Ox still uses its JSON task store and `ox task run`/org beats rather than Hermes' SQLite dispatcher and external non-Hermes lane plugin API. It does not claim drop-in compatibility with `~/.hermes/kanban.db`; the task-board API is the supported boundary. |
 
 ## Priorities from this review
 
@@ -69,6 +70,29 @@ still contain the prompt and code/context needed to answer.
 4. **Benchmark semantic diagnostics and external memory providers separately.** LSP
    can be local; provider adapters can incur external data egress and extra model/API
    costs. Keep opt-in, consent, pricing, and failure behavior explicit.
+
+## Hermes Kanban parity pass — 2026-10-23
+
+The current Hermes reference defines Kanban as a durable SQLite-backed board shared
+by named profiles, with a canonical lifecycle (`ready` → `running` → `review`,
+`blocked`, `done`, `archived`), explicit worker lanes, liveness heartbeats,
+comments/handoffs, dependency links, attachments, and reviewer-gated completion.
+Hermes workers report through `kanban_*` tools while operators use the CLI or
+dashboard; neither surface is allowed to become a second source of truth.
+
+Ox now covers the worker-facing lifecycle without introducing an unreviewed second
+store: `task_board` supports `comment`, `heartbeat`, `block`, `unblock`, and
+`link` in addition to its existing brief/add/done/next actions. Task records carry
+`workerLane`, `completionContract`, `heartbeatAt`, `links`, and `attachments`
+defaults for forward-compatible board data. Tests prove ownership checks, durable
+handoffs, liveness, pause/resume, and artifact links. The implementation does not
+import Hermes' database or silently spawn arbitrary workers; Ox's existing claims,
+approvals, budgets, review gate and local-only persistence remain the security
+boundary.
+
+Primary evidence: [Hermes Kanban reference](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/kanban.md),
+[worker-lane contract](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/kanban-worker-lanes.md),
+and [Hermes desktop plugin](https://github.com/NousResearch/hermes-agent/blob/main/apps/desktop/src/plugins/kanban/plugin.tsx).
 
 ## Verification and honesty
 

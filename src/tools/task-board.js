@@ -6,7 +6,10 @@
 // review). It never claims other people's work: `next` only runs when the
 // agent's own task is finished.
 
-import { addTask, completeTask, getTask, nextTask, taskBrief, updateTask } from '../tasks.js';
+import {
+  addTask, blockTask, commentTask, completeTask, getTask, heartbeatTask, linkTask,
+  nextTask, taskBrief, unblockTask, updateTask,
+} from '../tasks.js';
 
 export const TASK_BOARD_TOOLS = ['task_board'];
 
@@ -17,12 +20,16 @@ export const TASK_BOARD_TOOL_SCHEMAS = [
       'Your task on the ox task board. action "brief": your task, the goals above it and recent notes. ' +
       '"note": add a progress note. "add": file a follow-up task (title; it goes under your task). ' +
       '"done": finish your task with a summary note (it goes to review if review is required). ' +
+      '"comment": leave an attributed handoff note, "heartbeat": report liveness, ' +
+      '"block"/"unblock": pause or resume with a reason, "link": attach an http(s) artifact, ' +
       '"next": after done, take the next ready task.',
     input_schema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['brief', 'note', 'add', 'done', 'next'] },
-        text: { type: 'string', description: 'The note, the summary for done, or the title for add.' },
+        action: { type: 'string', enum: ['brief', 'note', 'add', 'done', 'comment', 'heartbeat', 'block', 'unblock', 'link', 'next'] },
+        text: { type: 'string', description: 'The note, summary, block reason, or title for add.' },
+        url: { type: 'string', description: 'http(s) artifact URL for action link.' },
+        label: { type: 'string', description: 'Optional label for action link.' },
       },
       required: ['action'],
     },
@@ -51,6 +58,26 @@ export async function taskBoardTool(args = {}, ctx = {}) {
       updateTask(id, { comments: [...task.comments, { by: owner, at: new Date().toISOString(), text: text.slice(0, 1000) }] }, opts);
       return { content: 'noted' };
     }
+    case 'comment': {
+      const r = commentTask(id, text, opts);
+      return r.ok ? { content: 'commented' } : err(r.reason);
+    }
+    case 'heartbeat': {
+      const r = heartbeatTask(id, opts);
+      return r.ok ? { content: `heartbeat ${r.heartbeatAt}` } : err(r.reason);
+    }
+    case 'block': {
+      const r = blockTask(id, text, opts);
+      return r.ok ? { content: 'blocked; the task is available for an operator to unblock' } : err(r.reason);
+    }
+    case 'unblock': {
+      const r = unblockTask(id, opts);
+      return r.ok ? { content: 'unblocked; task returned to ready queue' } : err(r.reason);
+    }
+    case 'link': {
+      const r = linkTask(id, { url: args.url ?? text, label: args.label }, opts);
+      return r.ok ? { content: `linked ${r.link.url}` } : err(r.reason);
+    }
     case 'add': {
       if (!text) return err('add needs a title in text.');
       const t = addTask({ title: text.slice(0, 200), parentId: id }, opts);
@@ -70,6 +97,6 @@ export async function taskBoardTool(args = {}, ctx = {}) {
       return { content: taskBrief(t.id, opts) };
     }
     default:
-      return err('action must be brief, note, add, done or next.');
+      return err('action must be brief, note, add, done, comment, heartbeat, block, unblock, link or next.');
   }
 }

@@ -54,6 +54,21 @@ test('brief, note, add, done (with review) and next work on the run\'s own task'
   assert.equal(listTasks({ dir }).find((t) => t.title === 'Rate-limit signup').status, 'pending', 'still waiting for someone');
 });
 
+test('worker lifecycle actions expose Hermes-style handoffs safely', async () => {
+  const dir = fresh();
+  const task = addTask({ title: 'lane work' }, { dir });
+  claimTask(task.id, { dir, owner: 'ox-run' });
+  const ctx = { taskId: task.id, taskDir: dir, agentName: 'ox-run' };
+  assert.equal((await taskBoardTool({ action: 'comment', text: 'ready for review' }, ctx)).content, 'commented');
+  assert.match((await taskBoardTool({ action: 'heartbeat' }, ctx)).content, /^heartbeat /);
+  assert.equal((await taskBoardTool({ action: 'link', url: 'https://example.com/artifact', label: 'artifact' }, ctx)).content, 'linked https://example.com/artifact');
+  assert.equal((await taskBoardTool({ action: 'block', text: 'waiting on input' }, ctx)).content, 'blocked; the task is available for an operator to unblock');
+  assert.equal((await taskBoardTool({ action: 'unblock' }, ctx)).content, 'unblocked; task returned to ready queue');
+  const after = getTask(task.id, { dir });
+  assert.equal(after.status, 'pending');
+  assert.equal(after.links[0].label, 'artifact');
+});
+
 test('a run without a task gets a clear error, not a crash', async () => {
   const saved = process.env.OX_TASK_ID;
   delete process.env.OX_TASK_ID;
