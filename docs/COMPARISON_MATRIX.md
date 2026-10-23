@@ -4,6 +4,25 @@
 
 **This document is docs-only.** No `src/` or `test/` file was created, modified, or deleted while producing it.
 
+## Current inventory regrade — 2026-10-24
+
+The historical rows below were written against an earlier Ox build. The live source inventory now supersedes any older count in those rows:
+
+```text
+28 named bot presets
+35 provider integrations in KEY_ENV
+```
+
+Measured directly with:
+
+```sh
+node --input-type=module -e "import {BOTS,KEY_ENV} from './src/bots.js'; console.log(Object.keys(BOTS).length, Object.keys(KEY_ENV).length)"
+```
+
+The 28 presets are `ox-grok`, `ox-grok-fast`, `ox-claude`, `ox-opus`, `ox-haiku`, `ox-fable`, `ox-gpt`, `ox-gpt-luna`, `ox-gpt-sol`, `ox-gpt-astra`, `ox-gemini`, `ox-flash`, `ox-groq`, `ox-deepseek`, `ox-ollama`, `ox-openrouter`, `ox-lmstudio`, `ox-llamacpp`, `ox-vllm`, `ox-mistral`, `ox-backboard`, `ox-glm`, `ox-glm-turbo`, `ox-kimi`, `ox-baichuan`, `ox-minimax`, `ox-yi`, and `ox-stepfun`. The 35 configured provider keys include the six local/API families (`ollama`, `lmstudio`, `llamacpp`, `vllm`, `custom`, and `nvidia`) plus hosted targets such as Anthropic, OpenAI, xAI, Gemini, OpenRouter, DeepSeek, Mistral, Moonshot/Kimi, Zhipu/GLM, MiniMax, Baichuan, Yi, StepFun, and others.
+
+These counts describe supported configuration surfaces, not live availability. `ox doctor` is the authority for whether a key is merely configured or has been live-validated; provider auth, quotas, model availability, and network access still determine what can run. This distinction is intentional so the matrix does not turn a growing adapter registry into an unsupported claim that every provider is currently usable.
+
 ---
 
 ## How to read this document
