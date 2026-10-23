@@ -3325,7 +3325,7 @@ files: [src/billing/**]
     if (B.mine.some((b) => b.character === 'mochi')) await ensureMochiAvatar();
     botCharacters = Object.fromEntries(B.mine.map((b) => [b.name, b.character || 'ox']));
     botColorways = Object.fromEntries(B.mine.map((b) => [b.name, b.colorway || 'matcha']));
-    const sel = botSel === '+new' ? { name: '', description: '', bot: '', mode: 'code', tools: null, instructions: '', character: 'ox', color: null, colorway: 'matcha' } : B.mine.find((b) => b.name === botSel) ?? null;
+    const sel = botSel === '+new' ? { name: '', description: '', bot: '', mode: 'code', tools: null, instructions: '', backend: null, character: 'ox', color: null, colorway: 'matcha' } : B.mine.find((b) => b.name === botSel) ?? null;
     const runs = (k) => B.runsOn.filter((r) => r.kind === k);
     const opt = (r) => `<option value="${esc(r.id)}">${esc(r.id)}${r.ready ? '' : ' (not ready)'}</option>`;
     el.innerHTML = `<div class="shead" style="margin-bottom:4px"><span class="bot-head-icon">${botHeaderMark()}</span>Bots</div>
@@ -3355,6 +3355,8 @@ files: [src/billing/**]
               <optgroup label="Models">${runs('model').map(opt).join('')}</optgroup></select></label>
             <label class="small muted">Mode<select class="field" id="b-mode">${B.modes.map((m) => `<option value="${m}">${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}</select></label>
           </div>
+          <label class="small muted">Commands run in<select class="field" id="b-backend"><option value="local">Local host (default)</option><option value="docker">Isolated Docker command environment</option><option value="docker:node:22-bookworm:offline">Isolated Docker command environment · offline network</option></select></label>
+          <p class="small muted" style="margin-top:-4px">Docker isolates shell commands for this run. It is not a persistent desktop computer; Ox checks that Docker is available when the bot starts.</p>
           <div class="small muted">Tools it may use <span class="dim">(none ticked: everything its mode allows)</span></div>
           <div class="bot-tools">${B.tools.map((t) => `<label><input type="checkbox" value="${esc(t)}" ${sel.tools?.includes(t) ? 'checked' : ''}> ${esc(t)}</label>`).join('')}</div>
           <label class="small muted">Instructions<textarea class="field" id="b-ins" rows="7" placeholder="You review diffs. Cite file:line for every problem. Never edit files.">${esc(sel.instructions)}</textarea></label>
@@ -3410,12 +3412,13 @@ files: [src/billing/**]
     hero();
     $('b-bot').value = sel.bot || '';
     $('b-mode').value = sel.mode || 'code';
+    $('b-backend').value = sel.backend || 'local';
     const st = (t) => ($('b-state').textContent = t);
     $('b-save').onclick = async () => {
       const tools = [...el.querySelectorAll('.bot-tools input:checked')].map((i) => i.value);
       const name = $('b-name').value.trim();
       try {
-        await postJson('/ox/bots', { name, from: botSel === '+new' ? null : sel.name, description: $('b-desc').value, bot: $('b-bot').value || null, mode: $('b-mode').value, tools, instructions: $('b-ins').value, shape: pickedShape, color: pickedColor === 'mono' ? null : pickedColor, character: pickedCharacter, colorway: pickedColorway });
+        await postJson('/ox/bots', { name, from: botSel === '+new' ? null : sel.name, description: $('b-desc').value, bot: $('b-bot').value || null, mode: $('b-mode').value, tools, instructions: $('b-ins').value, backend: $('b-backend').value, shape: pickedShape, color: pickedColor === 'mono' ? null : pickedColor, character: pickedCharacter, colorway: pickedColorway });
         botSel = name; toast('Saved'); caps = null; loadModels(); loadBots();
       } catch (e) { st(e.message); }
     };

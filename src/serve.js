@@ -39,6 +39,7 @@ import { stat, unlink } from 'fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolveTurnMode } from './modes.js';
 import { listAgents, loadAgent, agentBotSpec, agentPersonaBlock } from './agents.js';
+import { parseBackendSpec } from './docker-backend.js';
 import { readConfigDoc, saveConfigDoc } from './config.js';
 import * as UI_LANG from './ui-lang.js';
 import { classifyTurn, warmSystem1 } from './system1.js';
@@ -879,6 +880,7 @@ async function handleChatCompletions(req, res) {
     ...(incognito ? { incognito: true } : {}),
     ...(agentDef || liveUi || howTo ? { personaBlock: [agentDef ? agentPersonaBlock(agentDef) : '', liveUi, howTo].filter(Boolean).join('\n\n') } : {}),
     ...(agentDef ? { agentName: agentDef.name } : {}),
+    ...(agentDef?.backend ? { backend: parseBackendSpec(agentDef.backend) } : {}),
     ...(Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools }
       // A drawn answer searches only when web search is switched on: "price" in
       // "compare phones in a table" sent a 3B model off to the YouTube tool.

@@ -33,6 +33,15 @@ export function loadAgent(name) {
   }
 }
 
+// Docker here isolates shell commands for a run. It is not a persistent GUI
+// desktop or host takeover, so the saved setting deliberately uses “backend”.
+export function normalizeAgentBackend(value) {
+  const backend = String(value ?? '').trim();
+  if (!backend || backend === 'local') return null;
+  if (!/^docker(?::[\w./:@-]+)?$/i.test(backend)) throw new Error('agent backend must be local, docker, or docker:<image>');
+  return backend;
+}
+
 export function saveAgent(name, agent) {
   ensureAgentsDir();
   const file = agentFile(name);
@@ -43,6 +52,7 @@ export function saveAgent(name, agent) {
     // older provider/model pair, which is kept for agents saved before it.
     bot: agent.bot ?? null,
     mode: agent.mode ?? null,
+    backend: normalizeAgentBackend(agent.backend),
     // The tools this agent may use; null means everything its mode allows.
     tools: Array.isArray(agent.tools) ? agent.tools : null,
     provider: agent.provider ?? null,

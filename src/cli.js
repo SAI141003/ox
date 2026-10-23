@@ -138,7 +138,7 @@ import {
 import { banner as oxBanner, intro as oxIntro } from './logo.js';
 import { dispatchTool, listToolSchemas } from './tools/index.js';
 import {handlePowerCommand} from './cmd-power.js';
-import { listAgents, loadAgent, saveAgent, deleteAgent, resolveAgent, agentBotSpec, AGENT_NAME, renameAgent } from './agents.js';
+import { listAgents, loadAgent, saveAgent, deleteAgent, resolveAgent, agentBotSpec, normalizeAgentBackend, AGENT_NAME, renameAgent } from './agents.js';
 import { MODES, MODE_NAMES, normalizeMode, resolveTurnMode } from './modes.js';
 import { holdAwake } from './awake.js';
 import { importAll } from './import.js';
@@ -2230,7 +2230,7 @@ async function cmdAgent(args = []) {
 }
 
 function cmdAgentNew(args = []) {
-  const usage = 'usage: ox agent new <name> [--bot <bot>] [--mode <mode>] [--tools a,b,mcp__github__*|all] [--prompt "<instructions>" | --prompt-file <f>] [--description "<d>"]';
+  const usage = 'usage: ox agent new <name> [--bot <bot>] [--mode <mode>] [--backend local|docker[:image]] [--tools a,b,mcp__github__*|all] [--prompt "<instructions>" | --prompt-file <f>] [--description "<d>"]';
   const name = args[0] && !String(args[0]).startsWith('-') ? args[0] : null;
   if (!name) { process.stderr.write(`${usage}\n`); process.exitCode = 3; return; }
   if (!AGENT_NAME.test(name)) { process.stderr.write(`${c.red(`✗ agent names are letters, digits, - and _ (got '${name}')`)}\n`); process.exitCode = 3; return; }
@@ -2238,7 +2238,7 @@ function cmdAgentNew(args = []) {
   for (let i = 1; i < args.length; i++) {
     const a = args[i];
     const v = args[i + 1];
-    if (['--bot', '--mode', '--prompt', '--prompt-file', '--description', '--tools'].includes(a) && v === undefined) {
+    if (['--bot', '--mode', '--backend', '--prompt', '--prompt-file', '--description', '--tools'].includes(a) && v === undefined) {
       process.stderr.write(`${c.red(`✗ ${a} needs a value`)}\n`); process.exitCode = 3; return;
     }
     if (a === '--bot') { def.bot = v; i++; }
@@ -2253,6 +2253,10 @@ function cmdAgentNew(args = []) {
       i++;
     }
     else if (a === '--description') { def.description = v; i++; }
+    else if (a === '--backend') {
+      try { def.backend = normalizeAgentBackend(v); } catch (e) { process.stderr.write(`${c.red(`✗ ${e.message}`)}\n`); process.exitCode = 3; return; }
+      i++;
+    }
     else if (a === '--tools') {
       const list = v.split(',').map((t) => t.trim()).filter(Boolean);
       def.tools = list.length && !(list.length === 1 && list[0] === 'all') ? list : null;
@@ -2326,6 +2330,7 @@ function cmdAgentUse(args = []) {
   console.log(`  runs on: ${agentBotSpec(merged) ?? 'the default bot'}`);
   console.log(`  mode:    ${merged.mode ?? 'code'}`);
   console.log(`  tools:   ${Array.isArray(merged.tools) ? merged.tools.join(', ') : 'everything its mode allows'}`);
+  console.log(`  commands: ${merged.backend ?? 'local host'}`);
   if (merged.baseUrl) console.log(`  url:     ${merged.baseUrl}`);
   if (merged.systemPrompt) console.log(`  prompt:  ${truncate(merged.systemPrompt, 80)}`);
   console.log(c.dim(`  run it: ox --agent ${name}   or   ox --agent ${name} -p "<task>"`));
@@ -9828,6 +9833,7 @@ export async function main(argv = []) {
     config.agentDef = agentDef;
     if (!flags.bot && !flags.model) flags.bot = agentBotSpec(agentDef) ?? undefined;
     if (!flags.mode && agentDef.mode) flags.mode = normalizeMode(agentDef.mode) ?? undefined;
+    if (!flags.backend && agentDef.backend) config.backend = agentDef.backend;
   }
   config.repoMap = flags.repoMap || config.repoMap;
   const trustResolved = resolveTrustLevel({ config, env: process.env, flags });
