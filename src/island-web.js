@@ -151,8 +151,7 @@ export function createIslandServer({
       if (req.method === 'GET' && url.pathname === '/api/state') {
         let files = [];
         try { files = fs.readdirSync(shelf).map((n) => ({ name: n, path: path.join(shelf, n) })); } catch {}
-        const { listMods } = await import('./mods.js');
-        return send(200, { runs: watcher.snapshot(), shelf: files, mods: listMods(), system: systemSnapshot(), platform: process.platform });
+        return send(200, { runs: watcher.snapshot(), shelf: files, system: systemSnapshot(), platform: process.platform });
       }
       if (req.method === 'POST' && url.pathname === '/api/answer') {
         const b = JSON.parse((await readBody(req, 4096)).toString('utf8') || '{}');

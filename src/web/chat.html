@@ -245,14 +245,6 @@
   .bot-character-note { border-left:2px solid #8eb3c8; padding:8px 10px; line-height:1.5; }
   .bot-head-icon { display:inline-grid; place-items:center; width:38px; height:38px; margin-right:8px; border-radius:12px; background:color-mix(in srgb,#7397ff 14%,var(--panel)); }
   .bot-head-icon svg { width:30px; height:30px; }
-  .bot-mods { margin-top:14px; }
-  .mod-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-top:10px; }
-  .mod-card { display:flex; gap:9px; align-items:flex-start; text-align:left; border:1px solid var(--line2); border-radius:14px; padding:10px; background:var(--panel); color:var(--text); cursor:pointer; transition:border-color .15s,transform .15s; }
-  .mod-card:hover,.mod-card:focus-visible { border-color:var(--mod-accent); transform:translateY(-1px); outline:none; }
-  .mod-glyph { flex:none; width:24px; height:24px; border-radius:8px; display:grid; place-items:center; color:var(--mod-accent); background:color-mix(in srgb,var(--mod-accent) 18%,transparent); font-size:14px; }
-  .mod-card b,.mod-card small,.mod-card em { display:block; }
-  .mod-card small { color:var(--muted); font-size:11px; line-height:1.35; margin-top:3px; }
-  .mod-card em { color:var(--mod-accent); font-size:10px; font-style:normal; margin-top:6px; }
   .bot-hero { display:grid; place-items:center; min-height:214px; overflow:hidden; position:relative; border:1px solid color-mix(in srgb,#8caeff 22%,var(--line2)); border-radius:18px; background:radial-gradient(ellipse at 50% 65%,color-mix(in srgb,#82a6ff 24%,transparent),transparent 54%),linear-gradient(145deg,color-mix(in srgb,#263657 52%,var(--panel)),var(--panel) 72%); }
   .bot-hero:before { content:""; position:absolute; inset:16px; border:1px solid color-mix(in srgb,#fff 5%,transparent); border-radius:13px; pointer-events:none; }
   .bot-hero .mochi-face { width:170px!important; height:170px!important; filter:drop-shadow(0 14px 20px rgba(54,91,190,.32)); }
@@ -3324,7 +3316,6 @@ files: [src/billing/**]
 
   // ---------- bots: your own, and what they run on
     let botSel = null;
-  let modDraft = null;
   const botHeaderMark = () => `<svg class="bot-header-mark" viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="bot-mark-gradient" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8db5ff"/><stop offset="1" stop-color="#625de8"/></linearGradient></defs><path fill="url(#bot-mark-gradient)" d="M24 3a4 4 0 0 1 4 4v2h6a8 8 0 0 1 8 8v15a8 8 0 0 1-8 8H14a8 8 0 0 1-8-8V17a8 8 0 0 1 8-8h6V7a4 4 0 0 1 4-4Z"/><path fill="#182338" d="M13 18h22v14H13z"/><path fill="#eaf4ff" d="M17 22h4v5h-4zm10 0h4v5h-4zM20 29h8v2h-8z"/><path fill="#b9d4ff" d="M3 22h3v8H3zm39 0h3v8h-3zM17 40h5v5h-5zm9 0h5v5h-5z"/></svg>`;
   async function loadBots() {
     const el = $('bots');
@@ -3334,12 +3325,11 @@ files: [src/billing/**]
     if (B.mine.some((b) => b.character === 'mochi')) await ensureMochiAvatar();
     botCharacters = Object.fromEntries(B.mine.map((b) => [b.name, b.character || 'ox']));
     botColorways = Object.fromEntries(B.mine.map((b) => [b.name, b.colorway || 'matcha']));
-    const sel = botSel === '+new' ? { name: '', description: modDraft ? `${modDraft.name}: ${modDraft.description}` : '', bot: modDraft?.bot || '', mode: 'code', tools: null, instructions: modDraft ? `Use the ${modDraft.name} presentation: ${modDraft.description} Keep the work precise and explain decisions.` : '', character: 'ox', color: modDraft?.color || null, colorway: 'matcha' } : B.mine.find((b) => b.name === botSel) ?? null;
+    const sel = botSel === '+new' ? { name: '', description: '', bot: '', mode: 'code', tools: null, instructions: '', character: 'ox', color: null, colorway: 'matcha' } : B.mine.find((b) => b.name === botSel) ?? null;
     const runs = (k) => B.runsOn.filter((r) => r.kind === k);
     const opt = (r) => `<option value="${esc(r.id)}">${esc(r.id)}${r.ready ? '' : ' (not ready)'}</option>`;
     el.innerHTML = `<div class="shead" style="margin-bottom:4px"><span class="bot-head-icon">${botHeaderMark()}</span>Bots</div>
       <p class="sdesc">A bot is a name with a model, a mode, the tools it may use and its own instructions. Talk to one in a chat, call it from the terminal (<code>ox --agent &lt;name&gt;</code>) or from your phone. It answers to its name.</p>
-      <div class="box bot-mods"><div class="section-cap cap">Mods · presentation presets</div><p class="small muted">Inspired by the reference companions, these are Ox-owned presets. They change the bot’s identity and Island status—not its provider, permissions or tools.</p><div class="mod-grid">${(B.mods || []).map((m) => `<button class="mod-card" data-mod="${esc(m.id)}" style="--mod-accent:${esc(m.color)}"><span class="mod-glyph" aria-hidden="true">●</span><span><b>${esc(m.name)}</b><small>${esc(m.description)}</small><em>${esc(m.islandLabel)}</em></span></button>`).join('')}</div></div>
       <div class="bots-grid${B.mine.length ? '' : ' empty'}">
         <div class="cards">
           ${B.mine.length ? `<button class="card bot-new" data-bot="+new">${icon('plus')}<span class="t"><div class="n">New bot</div><div class="d">Pick a model, a mode and what it may do</div></span></button>` : ''}
@@ -3382,7 +3372,6 @@ files: [src/billing/**]
     paintIcons();
     botShapes = Object.fromEntries(B.mine.map((b) => [b.name, b.shape])); botColors = Object.fromEntries(B.mine.map((b) => [b.name, b.color]));
     el.querySelectorAll('[data-bot]').forEach((b) => (b.onclick = () => { botSel = b.dataset.bot; loadBots(); }));
-    el.querySelectorAll('[data-mod]').forEach((b) => (b.onclick = () => { modDraft = (B.mods || []).find((m) => m.id === b.dataset.mod) || null; botSel = '+new'; loadBots(); }));
     if ($('b-group')) $('b-group').onclick = () => {
       const box = document.createElement('div');
       box.className = 'box bot-groupnew';
@@ -3427,7 +3416,7 @@ files: [src/billing/**]
       const name = $('b-name').value.trim();
       try {
         await postJson('/ox/bots', { name, from: botSel === '+new' ? null : sel.name, description: $('b-desc').value, bot: $('b-bot').value || null, mode: $('b-mode').value, tools, instructions: $('b-ins').value, shape: pickedShape, color: pickedColor === 'mono' ? null : pickedColor, character: pickedCharacter, colorway: pickedColorway });
-        botSel = name; modDraft = null; toast('Saved'); caps = null; loadModels(); loadBots();
+        botSel = name; toast('Saved'); caps = null; loadModels(); loadBots();
       } catch (e) { st(e.message); }
     };
     if ($('b-del')) $('b-del').onclick = async () => { if (!(await askSure(`Delete the bot ${sel.name}?`))) return; try { await postJson('/ox/bots', { action: 'delete', name: sel.name }); botSel = null; caps = null; loadModels(); loadBots(); } catch (e) { st(e.message); } };
