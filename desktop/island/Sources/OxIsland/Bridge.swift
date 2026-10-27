@@ -126,9 +126,11 @@ final class OxBridge: ObservableObject {
     private var traySinks = Set<AnyCancellable>()
 
     var pendingSession: AgentSession? { sessions.first { $0.pending != nil } }
-    /// A team at work is the moment the office exists for, so it opens by itself.
+    /// A team at work supplies the compact session status.  It must not by itself
+    /// keep the Island expanded: that made the panel permanently open whenever
+    /// an agent was active, defeating the configured mouse-leave timeout.
     var teamWorking: Bool { sessions.contains { $0.closedAt == nil && $0.agents.contains { $0.endedAt == nil } } }
-    var expanded: Bool { hovering || pinnedOpen || pendingSession != nil || proposedHire != nil || peeking || teamWorking || buddyActive }
+    var expanded: Bool { hovering || pinnedOpen || pendingSession != nil || proposedHire != nil || peeking || buddyActive }
     var buddyActive: Bool { MainActor.assumeIsolated { buddy.active } }
 
     /// The face the notch shows: the most urgent state across all runs.

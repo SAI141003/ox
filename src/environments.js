@@ -21,7 +21,7 @@ export function environmentInventory(env = process.env) {
     docker: {
       state: docker ? 'unavailable' : 'available',
       title: 'Disposable Docker shell',
-      detail: docker || 'Available for command isolation. Containers mount the selected workspace and are removed when the Ox process exits.',
+      detail: docker || 'Docker engine is reachable. A run still needs its selected image to start successfully; Ox reports image or container creation errors directly.',
       caveat: 'This is command isolation, not a persistent desktop computer.',
     },
     cua: {
