@@ -317,7 +317,10 @@ export function kimiSessions({ home = os.homedir(), now = Date.now() } = {}) {
 // A detected extension or app is not automatically an active conversation.
 // Discovery can safely show what is available; a live-session adapter must
 // understand the tool's local state format before it says a session is active.
-const CODING_TOOL_WORDS = /\b(agent|ai|assistant|copilot|claude|cline|kilo|kimi|cursor|codex|continue|aider|gemini|hermes|opencode)\b/i;
+// "Grok Bot" is an installed developer-tool app on this Mac.  It does not
+// expose a documented local session store, so discovery may show/focus the
+// app but must not invent a native session or a resumable transcript for it.
+const CODING_TOOL_WORDS = /\b(agent|ai|assistant|copilot|claude|cline|kilo|kimi|cursor|codex|continue|aider|gemini|hermes|opencode|grok)\b/i;
 const KNOWN_CODING_EXTENSIONS = new Set([
   'github.copilot', 'github.copilot-chat', 'anthropic.claude-code',
   'saoudrizwan.claude-dev', 'kilocode.kilo-code', 'moonshot-ai.kimi-code',
