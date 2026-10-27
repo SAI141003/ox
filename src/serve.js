@@ -2284,6 +2284,10 @@ const ROUTES = [
     ];
     return { roots, report: auditSkills(roots) };
   }) },
+  // A runtime check, rather than a marketing catalogue: it lets the desktop
+  // explain exactly whether an isolation engine can be used before an agent is
+  // sent into it.
+  { method: 'GET', pattern: /^\/ox\/environments\/?$/, handler: appRoute(async () => (await import('./environments.js')).environmentInventory()) },
   { method: 'GET', pattern: /^\/ox\/messaging\/?$/, handler: appRoute(async () => (await appApi()).messagingView()) },
   { method: 'GET', pattern: /^\/ox\/flows\/?$/, handler: appRoute(async () => { const F = await import('./flows.js'); return { flows: F.listFlows(), runs: F.flowRuns({ limit: 40 }), steps: F.FLOW_STEP_TYPES, triggers: F.FLOW_TRIGGERS }; }) },
   { method: 'POST', pattern: /^\/ox\/flows\/?$/, handler: appRoute(flowsRoute) },

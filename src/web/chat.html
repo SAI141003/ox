@@ -3919,6 +3919,7 @@ files: [src/billing/**]
     ['group', 'Coding'],
     ['projects', 'Projects', 'folder', 'folders repos workspaces recent'],
     ['worktrees', 'Worktrees', 'branch', 'git worktree branches parallel race remove'],
+    ['environments', 'Agent environments', 'monitor', 'isolated computer docker cua space sandbox virtual machine container'],
     ['local', 'Local models', 'cpu', 'ollama lm studio offline ram hugging face', true],
     ['models', 'Models', 'mode', 'model picker show hide list enable disable'],
     ['personal-model', 'Personal model', 'brain', 'train fine tune lora adapter learn preferences approved chats studio recipes evaluation'],
@@ -4256,6 +4257,12 @@ files: [src/billing/**]
           <div class="sblock"><div class="section-cap cap">Signals</div>${kinds.length ? kinds.map(([kind, hits]) => `<div class="srow"><div class="l"><b>${esc(kind)}</b><span>${hits.map((h) => `${esc(h.skill)} (${esc(h.hits.join(', '))})`).join(' · ')}</span></div><span class="badge err">${hits.length}</span></div>`).join('') : '<p class="small ok">No capability signals found in the scanned skill documents.</p>'}</div>
           <div class="sblock"><div class="section-cap cap">Installed skills</div>${report.skills.length ? report.skills.map((s) => `<div class="srow"><div class="l"><b>${esc(s.id)}</b><span class="mono">${esc(s.path)}</span></div><span class="badge ${s.hasDoc ? 'ok' : 'err'}">${s.hasDoc ? (flagged.has(s.id) ? 'review signals' : 'documented') : 'no SKILL.md'}</span></div>`).join('') : '<p class="small muted">No skill folders were found in the local scan roots.</p>'}</div>`;
         $('skill-audit-refresh').onclick = () => renderSection();
+      } else if (sec === 'environments') {
+        const E = await getJson('/ox/environments');
+        const badge = (state) => state === 'available' ? 'ok' : state === 'needs-auth' ? '' : 'err';
+        const stateLabel = (state) => state === 'available' ? 'available' : state === 'needs-auth' ? 'setup required' : 'unavailable';
+        const item = (x) => `<div class="srow"><div class="l"><b>${esc(x.title)}</b><span>${esc(x.detail)}</span>${x.caveat ? `<span class="small muted">${esc(x.caveat)}</span>` : ''}</div><span class="badge ${badge(x.state)}">${esc(stateLabel(x.state))}</span></div>`;
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('monitor')}Agent environments</div><p class="sdesc">Where an agent can actually run. Ox does not call a workspace folder, browser profile, or installed app a separate computer.</p><div class="sblock"><div class="section-cap cap">Runtime availability</div>${item(E.local)}${item(E.docker)}${item(E.cua)}</div><div class="sblock"><div class="section-cap cap">Isolation boundary</div><p class="small muted">Use a Docker backend for disposable command isolation when Docker is available. A persistent GUI machine requires a configured external runtime such as Cua; it is not simulated by this settings page.</p></div>`;
       } else if (sec === 'personal-model') {
         const P = await getJson('/ox/personal-model');
         const S = P.state;
