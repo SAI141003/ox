@@ -60,7 +60,11 @@ export function destroySandbox(sb) {
 // (OX_BASE_URL / OX_MODEL / OX_API_KEY) are cleared so a run can never be
 // silently redirected at a mock. Same idiom as bench/harness.mjs liveEnv().
 export function agentEnv({ home, extra = {} } = {}) {
-  const env = { ...process.env, NO_COLOR: '1', OX_NO_BACKUPS: '1' };
+  // A real benchmark must not inherit the operator's connector catalog.  Those
+  // servers can require personal credentials, fail during startup, or change
+  // the offered-tool set, all of which measures local configuration rather
+  // than the selected model.  The fixtures exercise Ox's built-in tools only.
+  const env = { ...process.env, NO_COLOR: '1', OX_NO_BACKUPS: '1', OX_MCP: '0' };
   delete env.OX_BASE_URL;
   delete env.OX_MODEL;
   delete env.OX_API_KEY;
