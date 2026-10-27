@@ -31,9 +31,12 @@ they do not expose a service protocol or prove end-to-end reliability.
 
 ## Evidence and safe product decisions
 
-* Current local probes found Docker's client but no reachable Docker daemon.
-  Attempting a Docker-backed agent must therefore surface the actionable engine
-  error; it must not claim a separate computer started.
+* Docker Desktop was started during this review and its engine reported version
+  `27.5.1`.  A real `node:22-bookworm:offline` isolation attempt then failed
+  before a container started because Docker could not read a content blob
+  (`input/output error` under Desktop's containerd content store).  Attempting
+  a Docker-backed agent must surface that actionable engine/image error; it
+  must not claim a separate computer started.
 * Cua Spaces requires Cua installation plus account authentication.  Ox should
   offer it only as a configured external backend, never as a decorative bot
   option.
