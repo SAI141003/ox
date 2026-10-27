@@ -456,6 +456,40 @@ export function openAiDecider({ env = process.env, model = env.OX_FAST_BROWSER_M
   };
 }
 
+/**
+ * Local counterpart to openAiDecider.  The CLI accepts `ox-ollama:model` in
+ * `ox browse --model`, but previously passed that literal model name to
+ * OpenRouter.  That made a locally installed model look like a broken cloud
+ * credential.  Ollama's chat API can return JSON without exposing browser
+ * controls to the model; the same validation and commit gate below still own
+ * every action.
+ */
+export function ollamaDecider({ env = process.env, model, base = env.OLLAMA_HOST || 'http://127.0.0.1:11434', fetchImpl = globalThis.fetch } = {}) {
+  const chosen = String(model ?? env.OX_FAST_BROWSER_MODEL ?? '').replace(/^ox-ollama:/, '').trim();
+  if (!chosen) return null;
+  return async ({ system, user }) => {
+    let r;
+    try {
+      r = await fetchImpl(`${base.replace(/\/$/, '')}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: chosen, stream: false, format: 'json', options: { temperature: 0 }, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }),
+        signal: AbortSignal.timeout(45_000),
+      });
+    } catch (e) {
+      throw new Error(`the local Ollama model could not be reached: ${e.message}; nothing was done`);
+    }
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(`the local Ollama model answered ${r.status}: ${data.error ?? 'unknown error'}; nothing was done`);
+    return { text: data.message?.content ?? '', model: `ox-ollama:${chosen}`, usage: data.eval_count == null ? null : { completion_tokens: data.eval_count, prompt_tokens: data.prompt_eval_count ?? null } };
+  };
+}
+
+export function browserDecider({ env = process.env, model = env.OX_FAST_BROWSER_MODEL, fetchImpl = globalThis.fetch } = {}) {
+  if (String(model ?? '').startsWith('ox-ollama:')) return ollamaDecider({ env, model, fetchImpl });
+  return openAiDecider({ env, model, fetchImpl });
+}
+
 // ------------------------------------------------------------- live state
 
 /** Where the run shows itself (OX Island's browser card, the app, `ox browse --watch`). */
@@ -486,7 +520,7 @@ export const chip = (h) => String(h.text ?? h.label.replace(/^Open /, '').split(
 export async function runGoal(goal, opts = {}) {
   const task = String(goal ?? '').trim();
   if (!task) throw new Error('give the browser a goal');
-  const decide = opts.decide ?? openAiDecider({ env: opts.env });
+  const decide = opts.decide ?? browserDecider({ env: opts.env });
   if (!decide) throw new Error('the fast browser needs a model: set OPENROUTER_API_KEY (or OX_FAST_BROWSER_KEY with OX_FAST_BROWSER_BASE)');
   const maxActions = opts.maxActions ?? MAX_ACTIONS, maxDecisions = opts.maxDecisions ?? MAX_DECISIONS;
   const browser = opts.browser ?? (await Browser.open(opts.url ?? 'about:blank', { headless: opts.headless ?? true, env: opts.env }));
