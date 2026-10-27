@@ -2271,6 +2271,19 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/capabilities\/?$/, handler: appRoute(async () => (await appApi()).capabilitiesView()) },
   { method: 'POST', pattern: /^\/ox\/plugins\/?$/, handler: appRoute(async (b) => (await appApi()).pluginAction(b)) },
   { method: 'GET', pattern: /^\/ox\/skills\/([^/]+)$/, handler: appRoute(async (_, m) => (await appApi()).skillBody(decodeURIComponent(m[1]))) },
+  // Read-only, local skill inspection. This complements the install-time
+  // denylist: it gives people an evidence view of skills already on disk
+  // without sending their instructions or code to a third party.
+  { method: 'GET', pattern: /^\/ox\/skill-audit\/?$/, handler: appRoute(async () => {
+    const { auditSkills } = await import('./aas-cli.js');
+    const roots = [
+      join(homedir(), '.ox', 'skills'),
+      join(homedir(), '.agents', 'skills'),
+      join(homedir(), '.claude', 'skills'),
+      join(process.cwd(), '.agents', 'skills'),
+    ];
+    return { roots, report: auditSkills(roots) };
+  }) },
   { method: 'GET', pattern: /^\/ox\/messaging\/?$/, handler: appRoute(async () => (await appApi()).messagingView()) },
   { method: 'GET', pattern: /^\/ox\/flows\/?$/, handler: appRoute(async () => { const F = await import('./flows.js'); return { flows: F.listFlows(), runs: F.flowRuns({ limit: 40 }), steps: F.FLOW_STEP_TYPES, triggers: F.FLOW_TRIGGERS }; }) },
   { method: 'POST', pattern: /^\/ox\/flows\/?$/, handler: appRoute(flowsRoute) },

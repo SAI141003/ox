@@ -198,6 +198,12 @@ export function parseIntent(text) {
   }
   if (/^(?:previous|last|go back)(?: the)?(?: song| track)$/i.test(low)) return { intent: 'music', command: 'previous track' };
   if (/^(?:take (?:a )?)?screenshot$|^capture (?:the )?screen$/i.test(low)) return { intent: 'screenshot' };
+  // Keep these local and read-only. They are the useful parts of the desktop
+  // helper shown in the supplied Windows reference: answer what is *currently*
+  // on the clipboard or in the power state. Ox deliberately does not pretend
+  // to retain a system-wide clipboard history it did not capture itself.
+  if (/^(?:what(?:'s| is| did) (?:on|in|from) (?:my |the )?clipboard|what did i copy|(?:show|read) (?:my |the )?clipboard|copied something earlier)\??$/i.test(low)) return { intent: 'clipboard' };
+  if (/^(?:what(?:'s| is) )?(?:my |the )?(?:battery|battery level|power status)(?: level)?\??$|^how much battery(?: do i have)?\??$/i.test(low)) return { intent: 'battery' };
   if (/^(?:what(?:'s| is) the )?time(?: is it)?(?: now)?$|^what time is it$/i.test(low)) return { intent: 'time' };
   if (/^(?:what(?:'s| is) )?(?:the |today'?s )?date(?: today)?$|^what day is it$/i.test(low)) return { intent: 'date' };
   if ((m = /^(?:volume|set volume(?: to)?)\s+(\d{1,3})%?$/i.exec(low))) return { intent: 'volume', level: Math.min(100, Number(m[1])) };
@@ -469,6 +475,44 @@ function setVolume({ level, delta }) {
   return { ok: false, err: 'volume control is macOS and Linux only for now' };
 }
 
+/** Read the current clipboard only. There is intentionally no hidden history. */
+function readClipboard() {
+  const cmd = process.platform === 'darwin'
+    ? ['pbpaste']
+    : process.platform === 'win32'
+      ? ['powershell', '-NoProfile', '-Command', 'Get-Clipboard -Raw']
+      : ['sh', '-lc', 'command -v wl-paste >/dev/null 2>&1 && wl-paste -n || xclip -selection clipboard -o'];
+  const r = spawnSync(cmd[0], cmd.slice(1), { encoding: 'utf8', timeout: 15_000, windowsHide: true });
+  if (r.status !== 0) return { ok: false, err: 'could not read the clipboard on this computer' };
+  const text = String(r.stdout ?? '').replace(/\r\n/g, '\n').trim();
+  if (!text) return { ok: true, text: '' };
+  // Never echo an accidentally copied secret or a full private document into
+  // an Island card. The user can explicitly paste it where they choose.
+  const compact = text.replace(/\s+/g, ' ');
+  return { ok: true, text: compact.slice(0, 500), truncated: compact.length > 500 };
+}
+
+/** A best-effort OS reading; an unavailable command is reported rather than guessed. */
+function batteryStatus() {
+  if (process.platform === 'darwin') {
+    const r = spawnSync('pmset', ['-g', 'batt'], { encoding: 'utf8', timeout: 15_000, windowsHide: true });
+    const out = String(r.stdout ?? '');
+    const m = /(\d+)%/.exec(out);
+    if (r.status !== 0 || !m) return { ok: false, err: 'macOS did not provide battery status' };
+    const source = /AC Power/i.test(out) ? 'charging' : /Battery Power/i.test(out) ? 'on battery' : 'power source unknown';
+    return { ok: true, message: `battery ${m[1]}% · ${source}` };
+  }
+  if (process.platform === 'linux') {
+    const r = spawnSync('sh', ['-lc', 'upower -e | grep battery | head -n 1 | xargs -r upower -i'], { encoding: 'utf8', timeout: 15_000, windowsHide: true });
+    const out = String(r.stdout ?? '');
+    const m = /percentage:\s*(\d+)%/i.exec(out);
+    const state = /state:\s*(\w+)/i.exec(out)?.[1];
+    if (r.status !== 0 || !m) return { ok: false, err: 'battery status is unavailable (install upower or use a device with a battery)' };
+    return { ok: true, message: `battery ${m[1]}%${state ? ` · ${state}` : ''}` };
+  }
+  return { ok: false, err: 'battery status is not implemented on this operating system yet' };
+}
+
 const fmt = (n) => (Number.isInteger(n) ? n.toLocaleString() : String(n));
 
 // Carry out one parsed intent. Returns { ok, message }.
@@ -551,6 +595,15 @@ export function perform(it) {
       const out = path.join(os.homedir(), 'Desktop', `ox-screenshot-${Date.now()}.png`);
       const r = run(osCmd('screenshot', out));
       return r.ok ? { ok: true, message: `screenshot saved: ${out}` } : { ok: false, message: `screenshot failed: ${r.err}` };
+    }
+    case 'clipboard': {
+      const r = readClipboard();
+      if (!r.ok) return { ok: false, message: r.err };
+      return r.text ? { ok: true, message: `clipboard now: ${r.text}${r.truncated ? '…' : ''}` } : { ok: true, message: 'the clipboard is empty or does not contain text' };
+    }
+    case 'battery': {
+      const r = batteryStatus();
+      return r.ok ? { ok: true, message: r.message } : { ok: false, message: r.err };
     }
     case 'search': {
       const url = `https://www.google.com/search?q=${encodeURIComponent(it.query)}`;
