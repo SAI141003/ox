@@ -99,6 +99,10 @@ final class OxBridge: ObservableObject {
     @Published var pinnedOpen = false
 
     private var connections: [String: SocketConnection] = [:]
+    /// Typed messages sent from the general Island chat still travel through a
+    /// live run's socket.  Keep their completion handler until the run emits a
+    /// terminal event; accepting a socket frame is not a delivered answer.
+    private var sessionReplyHandlers: [String: (String) -> Void] = [:]
     private var timer: Timer?
 
     /// OX Buddy: voice in, avatar talking out. Its changes redraw the island.
@@ -1163,7 +1167,7 @@ final class OxBridge: ObservableObject {
         update(path) { s in
             switch type {
             case "text-delta":
-                if s.buddyAsk { s.buddyReply += ev["text"] as? String ?? "" }
+                if s.buddyAsk || self.sessionReplyHandlers[path] != nil { s.buddyReply += ev["text"] as? String ?? "" }
                 let delta = ev["text"] as? String ?? ""
                 let t = (s.lastText + delta)
                 s.lastText = String(t.suffix(240))
@@ -1279,15 +1283,21 @@ final class OxBridge: ObservableObject {
                 self.card = c
             }
         }
-        // A spoken question's turn is over: the avatar says the answer.
+        // A general Island-chat message only becomes successful when its run
+        // actually finishes.  This fixes the former "Sent" state that never
+        // put the session's real answer back into the chat.
         if type == "turn-end" || type == "final" || type == "error",
-           let i = sessions.firstIndex(where: { $0.id == path }), sessions[i].buddyAsk {
+           let i = sessions.firstIndex(where: { $0.id == path }) {
             let stop = ev["stopReason"] as? String ?? ""
             if type != "turn-end" || !["tool_calls", "tool_use"].contains(stop) {
                 let reply = type == "error" ? "Sorry, that run hit an error: \(ev["error"] as? String ?? "unknown")." : sessions[i].buddyReply
+                if let handler = sessionReplyHandlers.removeValue(forKey: path) {
+                    handler(reply.isEmpty ? "The run ended without a text response. Check its activity for tool output or an approval." : reply)
+                }
+                let shouldSpeak = sessions[i].buddyAsk
                 sessions[i].buddyAsk = false
                 sessions[i].buddyReply = ""
-                MainActor.assumeIsolated { buddy.speak(reply) }
+                if shouldSpeak { MainActor.assumeIsolated { buddy.speak(reply) } }
             }
         }
         // A fresh canvas is something the agent wants you to see: open for it.
@@ -1301,6 +1311,9 @@ final class OxBridge: ObservableObject {
 
     private func closed(path: String) {
         connections[path] = nil
+        if let handler = sessionReplyHandlers.removeValue(forKey: path) {
+            handler("The connected Ox run ended before it returned a response. Reopen that session and try again.")
+        }
         update(path) { s in
             s.pending = nil
             if case .error = s.mood {} else { s.mood = .done }
@@ -1365,7 +1378,7 @@ final class OxBridge: ObservableObject {
     /// An ox run with a socket that can take a message now.
     var hasLiveRun: Bool { sessions.contains { $0.closedAt == nil && $0.pending == nil && connections[$0.id] != nil } }
 
-    func ask(_ text: String, imagePaths: [String], audioPath: String? = nil, voice: Bool = true) -> Bool {
+    func ask(_ text: String, imagePaths: [String], audioPath: String? = nil, voice: Bool = true, onReply: ((String) -> Void)? = nil) -> Bool {
         // Only a run with a socket can take a question (the app's runs are shown, not driven).
         guard let s = sessions.last(where: { $0.closedAt == nil && $0.pending == nil && connections[$0.id] != nil }), let conn = connections[s.id] else { return false }
         var msg: [String: Any] = ["type": "user-message", "text": text, "imagePaths": imagePaths, "voice": voice]
@@ -1377,6 +1390,7 @@ final class OxBridge: ObservableObject {
             s.buddyReply = ""
             s.activity = "you asked: \(Self.shortLabel(text))"
         }
+        if let onReply { sessionReplyHandlers[s.id] = onReply }
         return true
     }
 

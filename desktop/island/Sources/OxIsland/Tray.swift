@@ -758,9 +758,13 @@ final class IslandChat: ObservableObject {
                 guard let self else { return }
                 self.busy = false
                 if let r, r.handled { IslandLog.write("offline (live run open): \(r.say ?? "")"); self.reply(r.say ?? "Done.", who: nil); return }
-                if bridge.ask(text, imagePaths: [], audioPath: nil, voice: false) {
-                    self.lines.append(Line(mine: false, text: "Sent to your active ox run — the answer will appear here."))
-                    self.onReply = nil
+                if bridge.ask(text, imagePaths: [], audioPath: nil, voice: false, onReply: { [weak self] answer in
+                    guard let self else { return }
+                    self.busy = false
+                    self.reply(answer, who: nil)
+                }) {
+                    self.busy = true
+                    self.lines.append(Line(mine: false, text: "Delivered to your active Ox run — waiting for its response…"))
                 } else { self.start(text, bridge: bridge, onReply: self.onReply, echo: false) }
             }
             return
