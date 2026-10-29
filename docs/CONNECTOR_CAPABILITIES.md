@@ -21,3 +21,21 @@ opening an unrelated app and pretending the action completed.
 The app’s Messaging page is backed by `GET /ox/messaging`, including the
 Cloud API health result and the Messages availability flag. The model tools
 are `mail_accounts`, `mail_compose`, `whatsapp_send`, and `messages_send`.
+
+## WhatsApp incoming messages
+
+Ox accepts official Cloud API callbacks at `GET` and `POST`
+`/webhooks/whatsapp`. Configure the same public HTTPS callback in Meta and set
+`WHATSAPP_WEBHOOK_VERIFY_TOKEN` plus `WHATSAPP_APP_SECRET`. The GET request
+is checked against the verification token; POST payloads are checked against
+Meta's `X-Hub-Signature-256` HMAC before any message is retained. Recent
+incoming messages are stored owner-locally at `~/.ox/whatsapp/inbox.json` and
+shown as a separate **Cloud API inbox** in Island. This is intentionally
+separate from Accessibility text read from a visible desktop WhatsApp window:
+Accessibility cannot synchronize a personal-account inbox or prove delivery.
+
+The local Ox server must be reachable through an operator-managed, TLS-secured
+public callback for Meta to deliver webhooks. Ox does not open a public port or
+create a tunnel automatically. The Cloud API does not provide a general
+personal-account contact-history sync; recipients remain a phone number or a
+contact supplied by the business integration.

@@ -312,7 +312,9 @@ export async function capabilitiesView(cwd = process.cwd()) {
         mcpServers: Object.keys(plugin?.mcpServers ?? {}), hasHooks: Boolean(plugin?.hasHooks) };
     });
   } catch {}
-  return { skills, tools, mcp, agents, plugins };
+  let cua = null;
+  try { cua = (await import('./cua.js')).cuaStatus(); } catch {}
+  return { skills, tools, mcp, agents, plugins, cua };
 }
 
 /** Change one installed plugin using the same registry actions as `ox plugin`. */

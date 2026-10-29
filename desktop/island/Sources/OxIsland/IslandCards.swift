@@ -8,8 +8,24 @@ import SwiftUI
 /// private database or claim that Cloud API messages are personal messages.
 final class WhatsAppCenter: ObservableObject {
     struct Line: Identifiable, Equatable { let id = UUID(); let text: String }
+    /// Messages received through the user's configured official Cloud API
+    /// callback. This intentionally stays separate from the Accessibility
+    /// view: the two sources have different accounts and permissions.
+    struct CloudMessage: Codable, Identifiable, Equatable {
+        let id: String
+        let from: String
+        let contact: String?
+        let type: String
+        let text: String
+        let timestamp: Int?
+        let receivedAt: String?
+    }
+    private struct CloudHealth: Codable { let configured: Bool; let reachable: Bool; let inboundReady: Bool?; let reason: String? }
+    private struct CloudInbox: Codable { let health: CloudHealth; let messages: [CloudMessage] }
     @Published private(set) var lines: [Line] = []
     @Published private(set) var note = ""
+    @Published private(set) var cloudMessages: [CloudMessage] = []
+    @Published private(set) var cloudNote = ""
 
     private var open: Bool { NSWorkspace.shared.runningApplications.contains { ($0.localizedName ?? "").lowercased().contains("whatsapp") } }
     var accessibilityAllowed: Bool { AXIsProcessTrusted() }
@@ -19,6 +35,7 @@ final class WhatsAppCenter: ObservableObject {
         NSWorkspace.shared.open(url)
     }
     func refresh() {
+        refreshCloud()
         guard accessibilityAllowed else {
             lines = []
             note = "Allow OX Island under Privacy & Security › Accessibility, then open a WhatsApp chat and refresh."
@@ -53,6 +70,40 @@ end tell
             }
         }
     }
+
+    /// The local server announces its loopback port only when it has no API
+    /// key. If it is not announced, we show setup rather than guessing at a
+    /// port or exposing an unauthenticated network endpoint.
+    func refreshCloud() {
+        let config = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/serve.json")
+        guard let data = try? Data(contentsOf: config),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let port = json["port"] as? Int,
+              let url = URL(string: "http://127.0.0.1:\(port)/ox/whatsapp/inbox") else {
+            cloudNote = "Cloud inbox is unavailable until the local Ox server is running."
+            return
+        }
+        cloudNote = "Reading official Cloud API inbox…"
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard error == nil, let data, let inbox = try? JSONDecoder().decode(CloudInbox.self, from: data) else {
+                    self.cloudNote = "Could not read the Cloud API inbox from this Ox server."
+                    return
+                }
+                self.cloudMessages = inbox.messages.prefix(12).map { $0 }
+                if !inbox.health.configured {
+                    self.cloudNote = "Cloud API is not configured. Set its access token and phone number in Ox."
+                } else if inbox.health.inboundReady != true {
+                    self.cloudNote = "Cloud sending is configured; add webhook verification token and App Secret for incoming messages."
+                } else if self.cloudMessages.isEmpty {
+                    self.cloudNote = "Cloud API inbox is connected. No received messages have arrived yet."
+                } else {
+                    self.cloudNote = "Official Cloud API messages · separate from the visible desktop chat."
+                }
+            }
+        }.resume()
+    }
 }
 
 struct WhatsAppView: View {
@@ -61,6 +112,21 @@ struct WhatsAppView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack { Image(systemName: "message").foregroundStyle(Ink.muted); Text("WhatsApp · on this Mac").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Ink.text); Spacer(); Button { whatsapp.refresh() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).foregroundStyle(Ink.dim) }
             ScrollView { VStack(alignment: .leading, spacing: 3) { ForEach(whatsapp.lines) { Text($0.text).font(.system(size: 11)).foregroundStyle(Ink.text).lineLimit(3).padding(.vertical, 2) } } }
+            if !whatsapp.cloudMessages.isEmpty || !whatsapp.cloudNote.isEmpty {
+                Divider().overlay(Ink.dim.opacity(0.35))
+                HStack {
+                    Text("Cloud API inbox").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Ink.muted)
+                    Spacer()
+                    Button { whatsapp.refreshCloud() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 9)) }.buttonStyle(.plain).foregroundStyle(Ink.dim)
+                }
+                ForEach(whatsapp.cloudMessages) { message in
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(message.contact?.isEmpty == false ? message.contact! : message.from).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Ink.text).lineLimit(1)
+                        Text(message.text).font(.system(size: 10.5)).foregroundStyle(Ink.muted).lineLimit(2)
+                    }
+                }
+                if !whatsapp.cloudNote.isEmpty { Text(whatsapp.cloudNote).font(.system(size: 9.5)).foregroundStyle(Ink.dim).lineLimit(2) }
+            }
             if !whatsapp.note.isEmpty {
                 HStack(spacing: 6) {
                     Text(whatsapp.note).font(.system(size: 10)).foregroundStyle(Ink.dim).lineLimit(3)

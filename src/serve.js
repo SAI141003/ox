@@ -83,6 +83,23 @@ function parseBody(req) {
   });
 }
 
+// Webhook providers sign the exact bytes they send. JSON parsing first would
+// destroy that evidence, so this small bounded reader is used only by the
+// public WhatsApp callback below.
+function parseRawBody(req, limit = 1_000_000) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > limit) { reject(new Error('request body is too large')); req.destroy(); return; }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
 function sendJson(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(body));
@@ -1951,6 +1968,27 @@ let studioOpen = null;
 const SERVER_STARTED = new Date().toISOString();
 let localSetup = { running: false, step: null, error: null };
 const ROUTES = [
+  // Official Meta callback. Unlike normal app routes, this is called by
+  // WhatsApp rather than the local UI, so signature verification in
+  // `receiveWhatsappWebhook` is its authentication. It is deliberately the
+  // only path exempt from the loopback/origin gate below.
+  { method: 'GET', pattern: /^\/webhooks\/whatsapp\/?$/, handler: async (req, res) => {
+    const W = await import('./tools/whatsapp.js');
+    const url = new URL(req.url, 'http://callback.invalid');
+    const q = Object.fromEntries(url.searchParams.entries());
+    const result = W.whatsappWebhookChallenge(q);
+    if (!result.ok) { sendError(res, result.status, result.error, 'authentication_error', 'webhook_verification_failed', null); return; }
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(result.challenge);
+  } },
+  { method: 'POST', pattern: /^\/webhooks\/whatsapp\/?$/, handler: async (req, res) => {
+    const W = await import('./tools/whatsapp.js');
+    let raw;
+    try { raw = await parseRawBody(req); } catch (e) { sendError(res, 413, String(e?.message ?? e), 'invalid_request_error', 'webhook_body_too_large', null); return; }
+    const result = W.receiveWhatsappWebhook(raw, String(req.headers['x-hub-signature-256'] ?? ''));
+    if (!result.ok) { sendError(res, result.status, result.error, 'authentication_error', 'webhook_signature_invalid', null); return; }
+    sendJson(res, 200, { received: result.received });
+  } },
   // Pull requests (src/dev-flow.js): Open a PR in one click, its CI and reviews, one fix round.
   { method: 'GET', pattern: /^\/ox\/pr\/?$/, handler: appRoute(async (_, __, req) => {
     const D = await import('./dev-flow.js');
@@ -2265,6 +2303,11 @@ const ROUTES = [
   { method: 'POST', pattern: /^\/ox\/instructions\/?$/, handler: appRoute(async (b) => (await appApi()).saveInstructions(b.text ?? '')) },
   { method: 'GET', pattern: /^\/ox\/connectors\/?$/, handler: appRoute(async () => (await appApi()).connectorsView()) },
   { method: 'POST', pattern: /^\/ox\/connectors\/?$/, handler: appRoute(async (b) => (await appApi()).saveConnector(b)) },
+  { method: 'GET', pattern: /^\/ox\/whatsapp\/inbox\/?$/, handler: appRoute(async () => {
+    const W = await import('./tools/whatsapp.js');
+    const health = await W.whatsapp_health();
+    return { health, messages: W.readWhatsappInbox() };
+  }) },
   { method: 'GET', pattern: /^\/ox\/accounts\/?$/, handler: appRoute(async (_, __, req) => { const id = new URL(req.url, 'http://x').searchParams.get('id'); return (await appApi()).accountsView(process.env, id); }) },
   { method: 'POST', pattern: /^\/ox\/accounts\/connect\/?$/, handler: appRoute(async (b) => (await appApi()).connectAccount(b.id)) },
   { method: 'GET', pattern: /^\/ox\/local\/?$/, handler: appRoute(async () => (await appApi()).localView()) },
@@ -2579,7 +2622,11 @@ export function requestGuard(req, bound = boundHost) {
 let busyRequests = 0;
 async function handleRequest(req, res) {
   if (req.method === 'POST') { busyRequests++; res.once('close', () => { busyRequests--; }); }
-  const refused = requestGuard(req);
+  // Meta cannot present a loopback Host/Origin. The narrow signed callback is
+  // authenticated by its App Secret in the route handler; all other routes
+  // retain the normal local-only request guard.
+  const publicWhatsappWebhook = /^\/webhooks\/whatsapp\/?(?:\?|$)/.test(req.url ?? '');
+  const refused = publicWhatsappWebhook ? null : requestGuard(req);
   if (refused) {
     sendError(res, 403, refused, 'invalid_request_error', 'forbidden_origin', null);
     return;
