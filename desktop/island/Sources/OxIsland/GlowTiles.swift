@@ -248,7 +248,7 @@ struct TurnClock: View {
     }
     static func text(_ s: AgentSession?, now: Date) -> String {
         guard let start = s?.turnStartedAt else { return "0:00" }
-        let n = Int(max(0, now.timeIntervalSince(start)))
+        let n = Int(max(0, (s?.turnEndedAt ?? now).timeIntervalSince(start)))
         return n >= 3600 ? String(format: "%d:%02d:%02d", n / 3600, n / 60 % 60, n % 60) : String(format: "%d:%02d", n / 60, n % 60)
     }
 }

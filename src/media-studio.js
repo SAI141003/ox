@@ -269,12 +269,12 @@ async function download(url, dest, fetchImpl) {
 }
 
 // The whole run: submit, wait, download, record. Returns the finished record.
-export async function create({ model, prompt = '', settings = {}, media = {}, client, fetchImpl = globalThis.fetch, onStatus = () => {}, wait } = {}) {
+export async function create({ model, prompt = '', settings = {}, media = {}, client, fetchImpl = globalThis.fetch, onStatus = () => {}, wait, run = process.env.OX_RUN_ID } = {}) {
   const m = getModel(model);
   const { path: p, body } = toPlatform({ model, prompt, settings, media });
   const c = client ?? createClient({ fetchImpl });
   const id = crypto.randomBytes(5).toString('hex');
-  const recipe = { id, at: Date.now(), model: m.id, label: m.label, surface: m.surface, prompt, settings: parseSettings(m, settings), media };
+  const recipe = { id, at: Date.now(), model: m.id, label: m.label, surface: m.surface, prompt, settings: parseSettings(m, settings), media, ...(run ? { run: String(run) } : {}) };
   const queued = await c.submit(p, body);
   note({ ...recipe, requestId: queued.requestId, status: 'queued' });
   const done = await waitFor(c, queued.requestId, { onStatus, ...(wait ?? {}) });
@@ -389,9 +389,9 @@ async function jsonFetch(fetchImpl, url, init = {}) {
 const writeB64 = (dir, i, b64, ext) => { const f = path.join(dir, `${i + 1}.${ext}`); fs.writeFileSync(f, Buffer.from(b64, 'base64')); return f; };
 
 // One run on any provider. Higgsfield goes through create(); the others here.
-export async function generate({ provider = 'higgsfield', model, prompt = '', settings = {}, media: mediaIn = {}, fetchImpl = globalThis.fetch, onStatus = () => {}, wait, env = process.env } = {}) {
+export async function generate({ provider = 'higgsfield', model, prompt = '', settings = {}, media: mediaIn = {}, fetchImpl = globalThis.fetch, onStatus = () => {}, wait, env = process.env, run = env.OX_RUN_ID } = {}) {
   let media = { ...mediaIn };
-  if (provider === 'higgsfield') return create({ model, prompt, settings, media, fetchImpl, onStatus, wait });
+  if (provider === 'higgsfield') return create({ model, prompt, settings, media, fetchImpl, onStatus, wait, run });
   const P = PROVIDERS[provider];
   if (!P) throw new Error(`unknown provider '${provider}' (${Object.keys(PROVIDERS).join(', ')})`);
   // Upscale, cutout and lip sync work from media alone.
@@ -400,7 +400,7 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
   if (P.key && !key) throw new Error(`no ${P.label} key. Set ${P.key} (Settings › API keys)`);
   const id = crypto.randomBytes(5).toString('hex');
   const dir = path.join(MEDIA_DIR(), id);
-  const recipe = { id, at: Date.now(), provider, model, label: model, surface: 'image', prompt, settings, media };
+  const recipe = { id, at: Date.now(), provider, model, label: model, surface: 'image', prompt, settings, media, ...(run ? { run: String(run) } : {}) };
   note({ ...recipe, status: 'queued' });
   let files = []; let urls = []; let surface = 'image'; let status = 'completed'; let error = null;
   try {

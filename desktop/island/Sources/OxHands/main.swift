@@ -130,8 +130,30 @@ func activate(_ name: String) -> NSRunningApplication? {
 }
 
 func targetApp() -> NSRunningApplication? {
-    if let name = opt("app"), !name.isEmpty { return activate(name) }
-    return frontApp()
+    let app: NSRunningApplication?
+    if let name = opt("app"), !name.isEmpty { app = activate(name) } else { app = frontApp() }
+    if let app { openUp(app) }
+    return app
+}
+
+/// Keys and typing go to whatever app is in front, so with --app they wait until
+/// that app really is (up to 1.5 s) and refuse otherwise: never into another app.
+func frontOrRefuse(_ app: NSRunningApplication) throws {
+    guard app.activationPolicy == .regular else { return }
+    for _ in 0..<30 { if frontPid() == app.processIdentifier { return }; usleep(50_000) }
+    try emit(["error": "\(app.localizedName ?? "the app") did not come to the front, so nothing was typed or pressed (it would have gone into another app)"])
+}
+
+/// Electron and Chromium apps (Claude, Slack, VS Code, Chrome) build their
+/// Accessibility tree only when asked: without this their text boxes and
+/// buttons are invisible and nothing can be focused or pressed by name.
+var openedUp = Set<pid_t>()
+func openUp(_ app: NSRunningApplication) {
+    guard !openedUp.contains(app.processIdentifier) else { return }
+    openedUp.insert(app.processIdentifier)
+    let ax = AXUIElementCreateApplication(app.processIdentifier)
+    if AXUIElementSetAttributeValue(ax, "AXManualAccessibility" as CFString, kCFBooleanTrue) == .success { usleep(250_000) }
+    _ = AXUIElementSetAttributeValue(ax, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
 }
 
 // MARK: reading controls
@@ -358,7 +380,28 @@ func handle(_ args: [String]) -> [String: Any] {
         case "type":
             guard argv.count > 1 else { try emit(["error": "type <text>"]) }
             let text = argv[1]
-            if opt("app") != nil { guard targetApp() != nil else { try emit(["error": "\(opt("app")!) is not an app on this Mac"]) } }
+            if opt("app") != nil { guard let a = targetApp() else { try emit(["error": "\(opt("app")!) is not an app on this Mac"]) }; try frontOrRefuse(a) }
+            // --keys: typed as key events carrying the characters, no clipboard. Some
+            // apps (Electron chat boxes) read the clipboard late and pasted what was
+            // there before; typed keys always land as the words. Newlines are skipped
+            // (a Return could send).
+            if argv.contains("--keys") {
+                let src = CGEventSource(stateID: .hidSystemState)
+                let chars = Array(text.replacingOccurrences(of: "\n", with: " ").utf16)
+                var i = 0
+                while i < chars.count {
+                    let chunk = Array(chars[i..<min(i + 16, chars.count)])
+                    let d = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: true)
+                    let u = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: false)
+                    chunk.withUnsafeBufferPointer { b in
+                        d?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: b.baseAddress)
+                        u?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: b.baseAddress)
+                    }
+                    post(d); usleep(4_000); post(u); usleep(12_000)
+                    i += 16
+                }
+                try emit(["done": "typed", "chars": text.count, "ms": ms()])
+            }
             // Pasted (any language, emoji, several lines; a paste never presses Return), the clipboard put back after.
             let pb = NSPasteboard.general
             let saved: [[NSPasteboard.PasteboardType: Data]] = (pb.pasteboardItems ?? []).map { item in
@@ -376,9 +419,17 @@ func handle(_ args: [String]) -> [String: Any] {
             }
             try emit(["done": "typed", "chars": text.count, "ms": ms()])
 
+        case "focused":
+            // What has the keyboard in an app now, and what it holds: a typed step checks itself with this.
+            guard let app = targetApp() else { try emit(["error": "no app in front"]) }
+            let ax = AXUIElementCreateApplication(app.processIdentifier)
+            guard let f = attr(ax, kAXFocusedUIElementAttribute), CFGetTypeID(f) == AXUIElementGetTypeID() else { try emit(["app": app.localizedName ?? "", "role": "", "value": ""]) }
+            let el = f as! AXUIElement
+            try emit(["app": app.localizedName ?? "", "role": str(attr(el, kAXRoleAttribute)), "value": String(str(attr(el, kAXValueAttribute)).suffix(4000)), "ms": ms()])
+
         case "key":
             guard argv.count > 1, let code = UInt16(argv[1]) else { try emit(["error": "key <code>"]) }
-            if opt("app") != nil { _ = targetApp() }
+            if opt("app") != nil { guard let a = targetApp() else { try emit(["error": "\(opt("app")!) is not an app on this Mac"]) }; try frontOrRefuse(a) }
             var flags: CGEventFlags = []
             for m in (opt("mods") ?? "").split(separator: ",") {
                 switch m { case "cmd": flags.insert(.maskCommand); case "shift": flags.insert(.maskShift); case "option": flags.insert(.maskAlternate); case "ctrl": flags.insert(.maskControl); default: break }

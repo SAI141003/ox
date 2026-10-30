@@ -74,15 +74,17 @@ export async function createMediaTool(args = {}, ctx = {}) {
   // Small models name a provider at random ("higgsfield" with no key), which
   // only ever failed: a named provider with no key here is dropped for one that works.
   const usable = (p) => !p || p === 'local' || (PROVIDERS[p] && (!PROVIDERS[p].key || !!env[PROVIDERS[p].key]));
-  const named = usable(args.provider) ? args.provider : undefined;
-  const choice = pick({ kind, provider: named, model: named ? args.model : undefined, edit: !!args.edit_image }, env);
+  // Only a provider that was named and rejected takes its model with it; a model
+  // asked for with the provider left automatic is kept.
+  const rejected = !!args.provider && !usable(args.provider);
+  const choice = pick({ kind, provider: rejected ? undefined : args.provider, model: rejected ? undefined : args.model, edit: !!args.edit_image }, env);
   if (choice.error) return err(`create_media: ${choice.error}`);
   const media = {};
   if (args.start_image_url) media.start = [String(args.start_image_url)];
   if (args.edit_image) media.edit = [String(args.edit_image).replace(/^~(?=\/)/, process.env.HOME ?? '')];
   if (Array.isArray(args.reference_urls) && args.reference_urls.length) media.reference = args.reference_urls.map(String);
   try {
-    const r = await generate({ provider: choice.provider, model: choice.model, prompt, settings: args.settings && typeof args.settings === 'object' ? args.settings : {}, media, env: ctx.env ?? process.env });
+    const r = await generate({ provider: choice.provider, model: choice.model, prompt, settings: args.settings && typeof args.settings === 'object' ? args.settings : {}, media, env: ctx.env ?? process.env, ...(ctx.runId ? { run: ctx.runId } : {}) });
     if (r.status !== 'completed') return err(`create_media: ${choice.provider}/${choice.model} finished as ${r.status}${r.error ? ` — ${r.error}` : ''}.`);
     return ok(`Made with ${choice.provider}/${choice.model}:\n${r.files.map((f) => `- ${f}`).join('\n') || r.urls.join('\n')}\n(also in the app's Studio gallery; reuse it with: ox create --history)`);
   } catch (e) {

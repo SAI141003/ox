@@ -56,7 +56,7 @@ struct HomeHeader: View {
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 5) {
-                tab("house.fill", on: bridge.tray == nil && bridge.card == nil, label: "Home") { bridge.tray = nil; bridge.card = nil }
+                tab("house.fill", on: bridge.tray == nil && bridge.card == nil && bridge.glowId == nil, label: "Home") { bridge.tray = nil; bridge.card = nil; bridge.glowId = nil }
                 tab("bubble.left.fill", on: bridge.tray == .chat, label: "Chat with \(OxName.current)") { bridge.card = nil; bridge.tray = bridge.tray == .chat ? nil : .chat }
                 tab("plus", on: [.shelf, .focus, .clips, .mail, .recap, .office, .controls].contains(bridge.tray), label: "Shelf, focus, clips, mail, recap, office and Island controls") { bridge.card = nil; bridge.tray = [.shelf, .focus, .clips, .mail, .recap, .office, .controls].contains(bridge.tray) ? nil : .shelf }
             }
