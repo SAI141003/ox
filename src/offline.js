@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { osCmd } from './tools/operator.js';
 import { codeChanges as codeChangesSync } from './usage-log.js';
+import { parseControl, performControl, protectTyped } from './voice-control.js';
 
 // ---- arithmetic without eval: + - * / ^ % ( ) and "x% of y" ----
 
@@ -83,7 +84,7 @@ export function installedApps(dirs = ['/Applications', '/Applications/Utilities'
   if (arguments.length === 0) appNames = names;
   return names;
 }
-const APP_ALIASES = { outlook: 'Microsoft Outlook', word: 'Microsoft Word', excel: 'Microsoft Excel', powerpoint: 'Microsoft PowerPoint', teams: 'Microsoft Teams', onenote: 'Microsoft OneNote', 'vs code': 'Visual Studio Code', vscode: 'Visual Studio Code', code: 'Visual Studio Code', chrome: 'Google Chrome', 'google chrome': 'Google Chrome', mail: 'Mail', email: 'Mail', settings: 'System Settings', 'system preferences': 'System Settings', whatsapp: 'WhatsApp', terminal: 'Terminal' };
+const APP_ALIASES = { 'claude code': 'Claude', 'claude app': 'Claude', 'chat gpt': 'ChatGPT', outlook: 'Microsoft Outlook', word: 'Microsoft Word', excel: 'Microsoft Excel', powerpoint: 'Microsoft PowerPoint', teams: 'Microsoft Teams', onenote: 'Microsoft OneNote', 'vs code': 'Visual Studio Code', vscode: 'Visual Studio Code', code: 'Visual Studio Code', chrome: 'Google Chrome', 'google chrome': 'Google Chrome', mail: 'Mail', email: 'Mail', settings: 'System Settings', 'system preferences': 'System Settings', whatsapp: 'WhatsApp', terminal: 'Terminal' };
 
 // Off macOS there is no app list to check against, so a name is trusted only
 // when it reads as one app's name: a few words, no "and" / "then" / comma, and
@@ -137,6 +138,9 @@ export function parseIntent(text) {
   const t = String(text ?? '').trim().replace(/[.!?]+$/, '').replace(namePrefix(), '').trim();
   const low = t.toLowerCase();
   let m;
+  // Typing, pressing and clicking by voice (src/voice-control.js).
+  const control = parseControl(t);
+  if (control) return control;
   if ((m = /^(?:set (?:a )?)?(?:timer|countdown)(?: for)? (\d+(?:\.\d+)?)\s*(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)\b(?:\s+(?:for|to|called)\s+(.+))?$/i.exec(low))) {
     return { intent: 'timer', secs: seconds(m[1], m[2]), label: m[3] ?? 'timer' };
   }
@@ -648,6 +652,7 @@ export function perform(it) {
       const r = process.platform === 'darwin' ? run(['osascript', '-e', `set volume ${it.on ? 'with' : 'without'} output muted`]) : process.platform === 'linux' ? run(['pactl', 'set-sink-mute', '@DEFAULT_SINK@', it.on ? '1' : '0']) : { ok: false, err: 'not supported here' };
       return r.ok ? { ok: true, message: it.on ? 'muted' : 'unmuted' } : { ok: false, message: r.err };
     }
+    case 'type': case 'send': case 'key': case 'click': return performControl(it, { app: it.app ?? null });
     default: return { ok: false, message: 'not a small task' };
   }
 }
@@ -657,12 +662,16 @@ export function perform(it) {
 // followed by a site opens the site in that browser; "open chrome and youtube"
 // reads the bare second part as another open.
 export function parseChain(text) {
-  const t = String(text ?? '').trim().replace(/[.!?]+$/, '').replace(namePrefix(), '');
+  const raw = String(text ?? '').trim().replace(/[.!?]+$/, '').replace(namePrefix(), '');
+  // The words after "type" are the text, "and"s included: kept whole through the split.
+  const typed = protectTyped(raw);
+  const t = typed.text;
   const parts = t.split(/\s*(?:,\s*(?:and\s+)?(?:then\s+)?|\s+and then\s+|\s+then\s+|\s+and\s+)\s*/i).filter(Boolean);
   if (parts.length < 2 || parts.length > 5) return null;
   const out = [];
   let verb = '';
-  for (const part of parts) {
+  for (const rawPart of parts) {
+    const part = typed.restore(rawPart);
     let it = parseIntent(part);
     if (!it && verb) it = parseIntent(`${verb} ${part}`);
     if (!it) return null;
@@ -672,6 +681,8 @@ export function parseChain(text) {
       out[out.length - 1] = { ...it, browser: prev.name };
       continue;
     }
+    // Typing, pressing and clicking happen in the app opened earlier in the request.
+    if (['type', 'send', 'key', 'click'].includes(it.intent)) { const opened = [...out].reverse().find((x) => x.intent === 'app'); if (opened) it = { ...it, app: opened.name, ...(it.intent === 'type' && out.at(-1) === opened ? { fresh: true } : {}) }; }
     out.push(it);
   }
   return out.length >= 2 || out[0]?.browser ? out : null;
@@ -683,7 +694,9 @@ export function doOffline(text, { dryRun = false } = {}) {
     const chain = parseChain(text);
     if (chain) {
       if (dryRun) return { handled: true, intent: { intent: 'chain', steps: chain }, message: `would ${chain.map((x) => x.intent).join(', then ')}` };
-      const done = chain.map((step) => perform(step));
+      // In order, stopping at the first that fails: never "press send" after typing went wrong.
+      const done = [];
+      for (const step of chain) { const d = perform(step); done.push(d); if (d.ok === false) { if (done.length < chain.length) d.message += ` (stopped here; ${chain.length - done.length} step${chain.length - done.length > 1 ? 's' : ''} not done)`; break; } }
       const ok = done.every((d) => d.ok !== false);
       return { handled: true, intent: { intent: 'chain', steps: chain }, ok, message: done.map((d) => d.message).join('; ') };
     }

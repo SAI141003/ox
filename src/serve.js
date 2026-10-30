@@ -1726,6 +1726,16 @@ export async function voiceTurn(body) {
     return { route: 'offline', handled: true, ok: true, say: T.spoken(b), brief: b, ms: Date.now() - started };
   }
   const { doOffline } = await import('./offline.js');
+  // Typing, pressing and clicking take a second or two of waiting on the app:
+  // done in a child (`ox do`), so the server keeps answering meanwhile.
+  const plan = doOffline(text, { dryRun: true });
+  const steps = plan.intent?.intent === 'chain' ? plan.intent.steps : plan.intent ? [plan.intent] : [];
+  if (plan.handled && body?.dryRun !== true && steps.some((x) => ['type', 'send', 'key', 'click'].includes(x.intent))) {
+    const { execFile } = await import('node:child_process');
+    const bin = fileURLToPath(new URL('../bin/ox.js', import.meta.url));
+    const out = await new Promise((resolve) => execFile(process.execPath, [bin, 'do', '--json', text], { timeout: 60_000, env: process.env }, (err, stdout) => resolve(err && !stdout ? { ok: false, message: String(err.message).slice(0, 200) } : (() => { try { return JSON.parse(String(stdout).trim().split('\n').pop()); } catch { return { ok: false, message: String(stdout).trim().slice(0, 200) }; } })())));
+    return { route: 'offline', handled: true, ok: out.ok !== false, say: out.message ?? 'done', ms: Date.now() - started };
+  }
   const done = doOffline(text, { dryRun: body?.dryRun === true });
   if (done.handled) return { route: 'offline', handled: true, ok: done.ok !== false, say: done.message, ms: Date.now() - started };
   // The island asks this first while a coding run is open: an errand ("play

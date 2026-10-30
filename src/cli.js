@@ -6714,6 +6714,7 @@ async function runSubcommand(cmd, args) {
         console.log(c.dim('  ox do "timer 25 minutes"     ox do "remind me in 10 minutes to stretch"'));
         console.log(c.dim('  ox do "note buy milk"        ox do "what is 18% of 240"'));
         console.log(c.dim('  ox do "screenshot"           ox do "volume 30"   ox do "mute"   ox do "time"'));
+        console.log(c.dim('  ox do "open claude and type make an army image and press send"   ox do "click New Note"'));
         console.log(c.dim('  anything bigger needs a model: ox -p "..."'));
         if (!text) process.exitCode = 3;
         return;
