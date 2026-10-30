@@ -247,9 +247,23 @@ function renderFeed(events) {
   const rows = events.slice(-30).reverse().map((e) => { const st = storyOf(e); return st ? `<div><time>${ago(e.at)}</time><span>${esc(st.text)}</span></div>` : ''; }).join('');
   $('feed').innerHTML = rows || '<div class="empty">No activity yet. Every run, every new memory and every sleep shows up here.</div>';
 }
+// The server may require its key: the app keeps it in sessionStorage as ox.key
+// (shared with this page when it is embedded in Settings); opened on its own,
+// a 401 asks for it once.
+let oxKey = (() => { try { return sessionStorage.getItem('ox.key') || ''; } catch { return ''; } })();
+async function oxFetch(path, opts = {}) {
+  const headers = { ...(opts.headers ?? {}), ...(oxKey ? { Authorization: `Bearer ${oxKey}` } : {}) };
+  const res = await fetch(path, { cache: 'no-store', ...opts, headers });
+  if (res.status === 401 && !opts.retried) {
+    const k = window.prompt('This ox server needs its API key (Settings › Data & privacy):');
+    if (k) { oxKey = k.trim(); try { sessionStorage.setItem('ox.key', oxKey); } catch {} return oxFetch(path, { ...opts, retried: true }); }
+  }
+  if (!res.ok) throw new Error(`ox answered ${res.status}`);
+  return res;
+}
 async function load() {
   let s;
-  try { s = await (await fetch('/ox/memory/layer', { cache: 'no-store' })).json(); } catch { $('now').textContent = 'Could not reach ox.'; return; }
+  try { s = await (await oxFetch('/ox/memory/layer')).json(); } catch { $('now').textContent = 'Could not reach ox.'; return; }
   if (!s?.store) { $('now').textContent = s?.error?.message ?? 'Could not read memory.'; return; }
   snap = s;
   renderPanels(s);
@@ -262,7 +276,7 @@ async function load() {
 }
 $('sleep-now').onclick = async () => {
   const b = $('sleep-now'); b.disabled = true;
-  try { await fetch('/ox/memory', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'sleep' }) }); await load(); } finally { b.disabled = false; }
+  try { await oxFetch('/ox/memory', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'sleep' }) }); await load(); } catch (e) { $('now').textContent = e.message; } finally { b.disabled = false; }
 };
 load();
 setInterval(load, 4000);

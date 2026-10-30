@@ -18,7 +18,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { load, memoryFile, profile, tokens, KINDS } from './memory-graph.js';
+import { load, memoryFile, profile, tokens, entities, KINDS } from './memory-graph.js';
+import { screenPersistText } from './memory.js';
 import { memoryHome, noteMemoryEvent, readMemoryEvents } from './memory-events.js';
 
 const DAY = 86_400_000;
@@ -47,6 +48,21 @@ function overlap(a, b) {
   return n / Math.max(A.size, B.size);
 }
 
+// Two memories are the same one only when they are about the same things:
+// the same names (Payments vs Analytics are different facts however alike the
+// words), the same numbers and values, and for events the same day.
+const NUMS = (t) => [...String(t ?? '').matchAll(/\d+(?:[.:,]\d+)*/g)].map((m) => m[0]).sort().join(' ');
+const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
+const dayOf = (ms) => (ms == null ? null : Math.floor(ms / DAY));
+export function compatible(a, b) {
+  if (a.kind !== b.kind) return false;
+  if (a.slot && b.slot && a.slot !== b.slot) return false;
+  if (!sameSet(entities(a.text), entities(b.text))) return false;
+  if (NUMS(a.text) !== NUMS(b.text)) return false;
+  if (a.kind === 'event' && (dayOf(a.validFrom) !== dayOf(b.validFrom) || dayOf(a.expiresAt) !== dayOf(b.expiresAt))) return false;
+  return true;
+}
+
 /** How much of a memory is left: importance × strength, halved every half-life since last seen. */
 export function retention(m, now = Date.now()) {
   const days = (now - (m.lastSeen ?? m.createdAt ?? now)) / DAY;
@@ -64,12 +80,7 @@ export function sleep({ file, home, now = Date.now(), recalls = null, dry = fals
   const did = { merged: 0, expired: 0, reinforced: 0, dormant: 0, promoted: 0 };
 
   // Reinforce what the read path used since the last sleep.
-  const since = readLayerMeta({ home }).lastSleep ?? 0;
-  const counts = recalls ?? (() => {
-    const c = new Map();
-    for (const e of readMemoryEvents({ home, since })) if (e.type === 'read') for (const id of e.ids ?? []) c.set(id, (c.get(id) ?? 0) + 1);
-    return c;
-  })();
+  const counts = recalls ?? pendingRecalls({ home });
   for (const m of all) {
     const n = counts.get(m.id);
     if (!n || !live(m)) continue;
@@ -90,7 +101,7 @@ export function sleep({ file, home, now = Date.now(), recalls = null, dry = fals
     if (gone.has(pool[i].id)) continue;
     for (let j = i + 1; j < pool.length; j++) {
       const a = cur(pool[i]), b = pool[j];
-      if (gone.has(b.id) || a.kind !== b.kind || (a.slot && b.slot && a.slot !== b.slot)) continue;
+      if (gone.has(b.id) || !compatible(a, b)) continue;
       if (overlap(a.text, b.text) < MERGE_AT) continue;
       put({ ...a, strength: (a.strength ?? 1) + (b.strength ?? 1), lastSeen: Math.max(a.lastSeen ?? 0, b.lastSeen ?? 0), importance: Math.max(a.importance ?? 5, b.importance ?? 5) });
       put({ ...b, state: 'merged', mergedInto: a.id, mergedAt: now });
@@ -121,8 +132,12 @@ export function sleep({ file, home, now = Date.now(), recalls = null, dry = fals
 
 /** A lesson from something that went wrong. It is replayed as a lesson, and becomes a procedure once verified. */
 export function recordLesson(text, { file, now = Date.now(), source = 'run' } = {}) {
-  const statement = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 600);
+  const statement = String(text ?? '').replace(/\s+/g, ' ').trim();
   if (!statement) return null;
+  // The same screen as every other memory write: no credentials, no instructions to the model.
+  if (statement.length > 600) return { op: 'refused', reason: 'too long to be one lesson (600 characters at most)' };
+  const refusal = screenPersistText(statement, 'lesson', 'ox memory');
+  if (refusal) return { op: 'refused', reason: refusal };
   const existing = load(file).find((m) => live(m) && ['lesson', 'procedure'].includes(m.kind) && overlap(m.text, statement) >= MERGE_AT);
   if (existing) return existing;
   const m = {
@@ -183,13 +198,29 @@ export function layerSnapshot({ home = os.homedir(), cwd = process.cwd(), now = 
   };
 }
 
+/** Recalls logged since the last sleep, by memory id. */
+export function pendingRecalls({ home } = {}) {
+  const since = readLayerMeta({ home }).lastSleep ?? 0;
+  const c = new Map();
+  for (const e of readMemoryEvents({ home, since })) if (e.type === 'read') for (const id of e.ids ?? []) c.set(id, (c.get(id) ?? 0) + 1);
+  return c;
+}
+
+/** Sleep this project's graph and the user graph with the same recall counts,
+ *  read once before either pass moves the shared "last sleep" cursor. */
+export function sleepAll({ home = os.homedir(), cwd = process.cwd(), now = Date.now() } = {}) {
+  const recalls = pendingRecalls({ home });
+  const proj = memoryFile('project', { cwd });
+  let project = null;
+  if (fs.existsSync(proj)) project = sleep({ file: proj, home, now, recalls, record: false });
+  const user = sleep({ file: memoryFile('user', { home }), home, now, recalls });
+  return { user, project };
+}
+
 /** Sleep the user graph (and this project's) now and every few hours, off the request path. */
 export function startSleepCycle({ home = os.homedir(), cwd = process.cwd(), everyMs = 6 * 3600_000 } = {}) {
   if (process.env.NODE_TEST_CONTEXT || process.env.OX_MEMORY === '0') return () => {};
-  const run = () => {
-    try { sleep({ file: memoryFile('user', { home }), home }); } catch {}
-    try { if (fs.existsSync(memoryFile('project', { cwd }))) sleep({ file: memoryFile('project', { cwd }), home, recalls: new Map(), record: false }); } catch {}
-  };
+  const run = () => { try { sleepAll({ home, cwd }); } catch {} };
   const first = setTimeout(run, 30_000); first.unref?.();
   const t = setInterval(run, everyMs); t.unref?.();
   return () => { clearTimeout(first); clearInterval(t); };

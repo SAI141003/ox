@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { wantsMediaMade, madeMedia } from '../src/serve.js';
 
 test('asking for a picture or clip to be made is a media request', () => {
-  for (const s of ['create an image of a dog', 'Generate a picture of a red panda on a branch', 'make me a logo for my bakery', 'draw a cat wearing a hat', 'can you make a short video of waves', 'paint a sunset over Vancouver']) {
+  for (const s of ['create an image of a dog', 'Generate a picture of a red panda on a branch', 'make me a logo for my bakery', 'draw a cat wearing a hat', 'can you make a short video of waves', 'paint a sunset over Vancouver', 'draw a cat sitting on a table', 'make an image of a page from an old book']) {
     assert.equal(wantsMediaMade(s), true, s);
   }
 });

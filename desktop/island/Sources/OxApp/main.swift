@@ -108,6 +108,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }.resume()
     }
 
+    /// The ox server this window was pointed at: the only origin given the microphone.
+    private var oxOrigin: (scheme: String, host: String, port: Int)?
+
+    private func loadOx(_ url: URL) {
+        if let host = url.host, let scheme = url.scheme {
+            oxOrigin = (scheme, host, url.port ?? (scheme == "https" ? 443 : 80))
+        }
+        web.load(URLRequest(url: url))
+    }
+
     func load() {
         if !usedEnvURL, let s = ProcessInfo.processInfo.environment["OX_APP_URL"], let u = URL(string: s) {
             // `ox app` may have handed this process a URL from an older server.
@@ -123,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
                 DispatchQueue.main.async {
                     guard let self else { return }
                     if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
-                        self.web.load(URLRequest(url: u))
+                        self.loadOx(u)
                     } else {
                         self.usedEnvURL = true
                         self.load()
@@ -138,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             // The island comes with ox: started here when it is switched on (Settings).
             _ = Self.ox(["island", "start"])
             DispatchQueue.main.async {
-                if let url { self.web.load(URLRequest(url: url)) }
+                if let url { self.loadOx(url) }
                 else { self.showMessage(Self.oxPaths() == nil ? "ox is not on this Mac yet. Download OX for Mac from github.com/SAI141003/ox/releases and open it from there." : "ox did not start. Open OX again; if it still does not start, run  ox doctor  in a terminal to see why.") }
             }
         }
@@ -156,7 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             DispatchQueue.global().async {
                 let url = Self.askOxForURL(cwd: dir)
                 DispatchQueue.main.async {
-                    if let url { self.web.load(URLRequest(url: url)) }
+                    if let url { self.loadOx(url) }
                     self.window.title = "ox — \((dir as NSString).lastPathComponent)"
                 }
             }
@@ -304,12 +314,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         decisionHandler(.allow)
     }
 
-    // The chat's microphone: ox's own loopback page may use it (macOS still asks
-    // the person once, through the app's NSMicrophoneUsageDescription). Any other
-    // origin is refused. Without this WebKit answered "not-allowed" every time.
+    // The chat's microphone: only ox's own page (the exact scheme, loopback host
+    // and port this window loaded) may use it; macOS still asks the person once,
+    // through NSMicrophoneUsageDescription. Another local service on a different
+    // port is a different origin and is refused, as is everything else.
     func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-        let local = origin.host == "127.0.0.1" || origin.host == "localhost" || origin.host == "::1"
-        decisionHandler(local && type == .microphone ? .grant : .deny)
+        let loopback = ["127.0.0.1", "localhost", "::1"].contains(origin.host)
+        let port = origin.port == 0 ? (origin.protocol == "https" ? 443 : 80) : origin.port
+        let ours = oxOrigin.map { $0.scheme == origin.protocol && $0.host == origin.host && $0.port == port } ?? false
+        decisionHandler(loopback && ours && type == .microphone ? .grant : .deny)
     }
 
     // The chat's attach button: a real file picker.

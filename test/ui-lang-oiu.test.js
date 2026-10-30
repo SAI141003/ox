@@ -36,9 +36,9 @@ test('study and page pieces evaluate and draw in the terminal', () => {
 });
 
 test('date functions work in UTC days', () => {
-  const { ev } = run(['a = @AddDays("2026-02-27", 3)', 'b = @AddMonths("2026-01-31", 1)', 'c = @DaysBetween("2026-10-01", "2026-10-30")', 'd = @StartOf("2026-10-30", "week")', 'e = @FormatDate("2026-10-30", "long")', 'f = @MonthsBetween("2026-01-15", "2026-10-14")',
-    'root = Text(a + " " + b + " " + c + " " + d + " " + e + " " + f)'].join('\n'));
-  assert.equal(ev.root.props.text, '2026-03-02 2026-02-28 29 2026-10-26 Friday, October 30, 2026 8');
+  const { ev } = run(['a = @AddDays("2026-02-27", 3)', 'b = @AddMonths("2026-01-31", 1)', 'c = @DaysBetween("2026-10-01", "2026-10-30")', 'd = @StartOf("2026-10-30", "week")', 'e = @FormatDate("2026-10-30", "long")', 'f = @MonthsBetween("2026-01-15", "2026-10-14")', 'g = @MonthsBetween("2026-10-14", "2026-01-15")', 'h = @MonthsBetween("2026-01-15", "2026-01-14")',
+    'root = Text(a + " " + b + " " + c + " " + d + " " + e + " " + f + " " + g + " " + h)'].join('\n'));
+  assert.equal(ev.root.props.text, '2026-03-02 2026-02-28 29 2026-10-26 Friday, October 30, 2026 8 -8 0');
 });
 
 test('list and data functions', () => {

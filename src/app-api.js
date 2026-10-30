@@ -191,7 +191,7 @@ export async function saveConnector(body = {}) {
   const { saveConfigDoc, readConfigDoc } = await import('./config.js');
   const name = String(body.name ?? '').trim();
   if (!CONNECTOR_NAME.test(name)) throw new Error('name: letters, numbers, - and _ (up to 40)');
-  if (body.action === 'remove') { saveConfigDoc((doc) => { if (doc.mcpServers) delete doc.mcpServers[name]; }); return connectorsView(); }
+  if (body.action === 'remove') { saveConfigDoc((doc) => { if (doc.mcpServers) delete doc.mcpServers[name]; if (doc.mcpPolicy?.[name] !== undefined) { const next = { ...doc.mcpPolicy }; delete next[name]; doc.mcpPolicy = next; } }); return connectorsView(); }
   if (body.action === 'policy') {
     const policy = String(body.policy ?? '').toLowerCase();
     if (!['ask', 'allow', 'deny'].includes(policy)) throw new Error('permission must be ask, allow or deny');
@@ -232,11 +232,14 @@ export async function addGalleryConnector(body = {}) {
   const { saveConfigDoc, readConfigDoc } = await import('./config.js');
   const { galleryEntry } = await import('./connector-gallery.js');
   const { name, entry } = galleryEntry(String(body.id ?? ''));
+  // A connector's permission goes with it: removing it clears its policy, and a
+  // fresh add starts at Ask every call (no policy entry means ask), never at an
+  // Allow left over from before.
+  const dropPolicy = (doc) => { if (doc.mcpPolicy && Object.prototype.hasOwnProperty.call(doc.mcpPolicy, name)) { const next = { ...doc.mcpPolicy }; delete next[name]; doc.mcpPolicy = next; } };
   if (body.action === 'remove') {
-    saveConfigDoc((doc) => { if (doc.mcpServers) delete doc.mcpServers[name]; });
+    saveConfigDoc((doc) => { if (doc.mcpServers) delete doc.mcpServers[name]; dropPolicy(doc); });
   } else if (!Object.prototype.hasOwnProperty.call(readConfigDoc().mcpServers ?? {}, name)) {
-    // New connectors start at Ask every call (no policy entry means ask).
-    saveConfigDoc((doc) => { doc.mcpServers = { ...(doc.mcpServers ?? {}), [name]: entry }; });
+    saveConfigDoc((doc) => { doc.mcpServers = { ...(doc.mcpServers ?? {}), [name]: entry }; dropPolicy(doc); });
   }
   return connectorGalleryView();
 }
@@ -528,9 +531,7 @@ export async function memoryAction(body = {}, cwd = process.cwd()) {
     if (!mg.forget(id, { file: mg.memoryFile('user') }) && !mg.forget(id, { file: mg.memoryFile('project', { cwd }) })) throw new Error(`no memory ${id}`);
   } else if (body.action === 'sleep') {
     const ml = await import('./memory-layer.js');
-    ml.sleep({ file: mg.memoryFile('user') });
-    const proj = mg.memoryFile('project', { cwd });
-    if ((await import('node:fs')).existsSync(proj)) ml.sleep({ file: proj, recalls: new Map(), record: false });
+    ml.sleepAll({ cwd });
   } else {
     throw new Error("action must be 'add', 'forget' or 'sleep'");
   }

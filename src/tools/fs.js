@@ -13,9 +13,10 @@ import { recordBefore, recordAfter } from '../undo.js';
 // lets a session opt out.
 const AUTO_OPEN_EXTS = new Set(['.html', '.htm']);
 
-function autoOpenCmd(platform, target) {
+export function autoOpenCmd(platform, target) {
   if (platform === 'darwin') return ['open', [target]];
-  if (platform === 'win32') return ['cmd', ['/c', 'start', '""', target]];
+  // No cmd.exe: a filename like a&calc&b.html must stay a path, never become commands.
+  if (platform === 'win32') return ['rundll32.exe', ['url.dll,FileProtocolHandler', target]];
   return ['xdg-open', [target]];
 }
 

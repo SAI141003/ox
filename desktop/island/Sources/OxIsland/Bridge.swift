@@ -72,6 +72,8 @@ struct AgentSession: Identifiable, Equatable {
     /// When the current turn started working (the tile's running clock), and
     /// how far it got: 1 reading, 2 making changes, 3 testing, 4 done.
     var turnStartedAt: Date?
+    /// When the turn finished (done, stopped, your turn): the clock stops there.
+    var turnEndedAt: Date?
     var stage = 0
 
     static func busy(_ m: Mood?) -> Bool {
@@ -88,7 +90,12 @@ struct AgentSession: Identifiable, Equatable {
     }
 
     mutating func trackTurn(from old: AgentSession?) {
-        if Self.busy(mood), !Self.busy(old?.mood) { turnStartedAt = Date(); stage = 1 }
+        // A new turn starts when work begins after a finish; coming back from an
+        // approval (.needsYou) is the same turn, so its clock and steps carry on.
+        if Self.busy(mood), !Self.busy(old?.mood), old?.mood != .needsYou || turnStartedAt == nil {
+            turnStartedAt = Date(); turnEndedAt = nil; stage = 1
+        }
+        if turnStartedAt != nil, turnEndedAt == nil, !Self.busy(mood), mood != .needsYou { turnEndedAt = closedAt ?? Date() }
         if Self.busy(mood), let s = steps.last, s != old?.steps.last { stage = max(stage, Self.stage(of: s)) }
         if mood == .done, stage > 0 { stage = 4 }
     }
@@ -133,7 +140,7 @@ final class OxBridge: ObservableObject {
     private var buddySink: AnyCancellable?
 
     /// The tray under the island (Tray.swift): which tool is open, and the tools.
-    @Published var tray: TrayTab? { didSet { IslandLayout.trayOpen = tray != nil; IslandLayout.officeOpen = tray == .office } }
+    @Published var tray: TrayTab? { didSet { IslandLayout.trayOpen = tray != nil; IslandLayout.officeOpen = tray == .office; if tray != nil { glowId = nil } } }
     /// Set by the panel: typing needs the panel to take keyboard focus.
     var trayChanged: ((TrayTab?) -> Void)?
     var cardChanged: ((Bool) -> Void)?
@@ -447,7 +454,7 @@ final class OxBridge: ObservableObject {
         }
     }
 
-    @Published var orgCard: String?
+    @Published var orgCard: String? { didSet { if orgCard != nil { glowId = nil } } }
 
     // MARK: the fast browser (ox browse, web_task): the live run, read from ~/.ox/browse/live.json
 
@@ -821,7 +828,7 @@ final class OxBridge: ObservableObject {
         return sessions.min { (rank($0), -($0.steps.count)) < (rank($1), -($1.steps.count)) }
     }
 
-    @Published var card: SessionCard? { didSet { IslandLayout.cardOpen = card != nil } }
+    @Published var card: SessionCard? { didSet { IslandLayout.cardOpen = card != nil; if card != nil { glowId = nil } } }
     /// A session opened from its tile: the island takes its colour and shows its turn.
     @Published var glowId: String? { didSet { IslandLayout.glowOpen = glowId != nil } }
     var glowSession: AgentSession? { glowId.flatMap { id in sessions.first { $0.id == id } } }

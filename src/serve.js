@@ -606,11 +606,18 @@ export function madeMedia(event) {
   return [...new Set(out)].slice(0, 8);
 }
 
-export async function mediaMadeSince(since, { history } = {}) {
+// What this turn made in Studio. A job tagged with the turn's run is its own;
+// another run's job never is. An untagged job (a plan CLI's `ox create`) counts
+// only if it started in this turn and its prompt shares a word with the request,
+// so two chats making pictures at once do not get each other's.
+const MEDIA_WORDS = (t) => new Set(String(t ?? '').toLowerCase().match(/[a-z\p{L}]{4,}/gu) ?? []);
+export async function mediaMadeSince(since, { history, run = null, said = '' } = {}) {
   try {
     const rows = history ? history() : (await import('./media-studio.js')).history({ limit: 40 });
+    const asked = MEDIA_WORDS(said);
+    const ours = (r) => (r.run ? r.run === run : Number(r.at ?? 0) >= since && (!asked.size || [...MEDIA_WORDS(r.prompt)].some((w) => asked.has(w))));
     return rows
-      .filter((r) => r.status === 'completed' && Array.isArray(r.files) && r.files.length && Number(r.doneAt ?? r.at ?? 0) >= since)
+      .filter((r) => r.status === 'completed' && Array.isArray(r.files) && r.files.length && Number(r.doneAt ?? r.at ?? 0) >= since && ours(r))
       .sort((a, b) => Number(a.doneAt ?? a.at) - Number(b.doneAt ?? b.at))
       .flatMap((r) => r.files.map((f) => `/ox/media/${encodeURIComponent(r.id)}/${encodeURIComponent(basename(f))}`))
       .slice(0, 8);
@@ -720,7 +727,10 @@ const TOUCHES_CODE = /\b(file|files|repo|repository|project|codebase|function|cl
 // Asking for a new picture or clip to be made (not found, not a page that has pictures in it).
 const MEDIA_MADE = /\b(?:generate|create|make|draw|render|paint|design|produce|imagine|sketch)\b(?:\s+me)?[^.?!\n]{0,50}?\b(?:image|images|picture|pictures|pic|photo|photos|illustration|poster|logo|wallpaper|artwork|drawing|painting|sketch|icon|video|clip|animation)\b/i;
 const MEDIA_ART = /^\s*(?:(?:can|could|would) you\s+|please\s+)?(?:draw|paint|sketch)\b/i;
-const MEDIA_NOT = /\b(?:website|web ?page|webpage|page|site|app|html|css|component|slides?|deck|chart|graph|diagram|table|repo|repository|codebase|function|class|module|src|file|files)\b|[\w-]+\.(?:js|ts|tsx|jsx|py|go|rs|html|css|json|md)\b/i;
+// Not a picture when the thing being made is a page, app, chart or code ("make a
+// chart", "create a React component that shows an image"), or a file is named.
+// Scene words after a drawing request ("draw a cat on a table") do not count.
+const MEDIA_NOT = /\b(?:build|create|make|write|generate|design|code|scaffold)\b(?:\s+[\w'-]+){0,3}?\s+(?:website|web ?page|webpage|page|site|app|html|css|component|slides?|deck|chart|graph|diagram|table|repo|repository|codebase|function|class|module|script|file|files)\b|[\w-]+\.(?:js|ts|tsx|jsx|py|go|rs|html|css|json|md)\b/i;
 export function wantsMediaMade(text, lastUser = null) {
   const t = String(text ?? '');
   if (Array.isArray(lastUser?.images) && lastUser.images.length) return false;
@@ -965,6 +975,7 @@ async function handleChatCompletions(req, res) {
   const turnStarted = Date.now();
   const runId = board.startRun({ who: agentDef?.name ?? autoPick?.id ?? String(targetModel), title: incognito ? 'Incognito chat' : lastText || '(no text)', model: target?.model ?? null });
   ctx.ipcBroadcast = board.boardBroadcaster(runId);
+  ctx.runId = runId;
   // App chats are not mined for long-term memory unless the user explicitly
   // opts in via Data & privacy. Manual memory tools remain explicit actions.
   if (body.ox_remember_preferences === true && process.env.OX_LEARN !== '0' && lastText && !incognito && !tool.noMemory) {
@@ -1065,7 +1076,7 @@ async function handleChatCompletions(req, res) {
       // A plan CLI (Claude, Codex) makes the picture through `ox create`, and its
       // tool events carry no path: what this turn added to Studio is shown here.
       if (wantsMedia) {
-        const media = await mediaMadeSince(turnStarted);
+        const media = await mediaMadeSince(turnStarted, { run: runId, said });
         if (media.length) sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'media', media } });
       }
       sendSSE(res, createChatCompletionChunk(targetModel, '', true, totalUsage));
@@ -2722,17 +2733,27 @@ async function handleRequest(req, res) {
     } catch (e) { sendError(res, 413, String(e.message), 'invalid_request_error', 'too_large', null); return; }
     if (!size) { sendError(res, 400, 'no audio', 'invalid_request_error', 'bad_request', null); return; }
     const { tmpdir } = await import('node:os');
-    const { writeFileSync, rmSync } = await import('node:fs');
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
     const ct = String(req.headers['content-type'] ?? '');
-    const f = join(tmpdir(), `ox-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${/ogg/.test(ct) ? 'ogg' : /wav/.test(ct) ? 'wav' : /mp4|m4a|aac/.test(ct) ? 'm4a' : 'webm'}`);
-    writeFileSync(f, Buffer.concat(chunks));
+    // An owner-only folder (0700): the recording and its transcript are never readable by other users.
+    const dir = mkdtempSync(join(tmpdir(), 'ox-voice-'));
+    const f = join(dir, `voice.${/ogg/.test(ct) ? 'ogg' : /wav/.test(ct) ? 'wav' : /mp4|m4a|aac/.test(ct) ? 'm4a' : 'webm'}`);
+    writeFileSync(f, Buffer.concat(chunks), { mode: 0o600 });
     try {
-      const tr = (await import('./video-edit.js')).transcribe(f);
-      sendJson(res, 200, { text: tr.segments.map((x) => x.text).join(' ').replace(/\s+/g, ' ').trim() });
+      // Transcription runs ffmpeg and the speech model synchronously: in a child
+      // process, so the server keeps answering chats, approvals and health checks.
+      const { execFile } = await import('node:child_process');
+      const mod = new URL('./video-edit.js', import.meta.url).href;
+      const script = `const m = await import(${JSON.stringify(mod)}); const t = m.transcribe(process.argv[1]); process.stdout.write(JSON.stringify(t.segments.map((x) => x.text)));`;
+      const out = await new Promise((resolve, reject) => execFile(process.execPath, ['--input-type=module', '-e', script, f],
+        { timeout: 30 * 60_000, maxBuffer: 16 * 1024 * 1024, env: process.env },
+        (err, stdout, stderr) => (err ? reject(new Error(String(stderr || err.message).trim().split('\n').pop())) : resolve(stdout))));
+      const parts = JSON.parse(String(out || '[]'));
+      sendJson(res, 200, { text: parts.join(' ').replace(/\s+/g, ' ').trim() });
     } catch (e) {
       sendError(res, 500, String(e?.message ?? e), 'server_error', 'transcribe_failed', null);
     } finally {
-      for (const x of [f, f.replace(/\.\w+$/, '.transcript.srt')]) { try { rmSync(x, { force: true }); } catch {} }
+      try { rmSync(dir, { recursive: true, force: true }); } catch {}
     }
     return;
   }
