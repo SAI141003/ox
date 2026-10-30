@@ -136,7 +136,8 @@ async function waitFor(read, predicate, what, { timeout = 20000 } = {}) {
 // ends with a prompt" test is not enough: it is true before the turn even
 // begins, and waiting on it is how this test got flaky in the first place.
 const REPL_PROMPT = '\u276f';
-const TURN_OVER = (s) => /tokens \u00b7 \$\d/.test(s) && s.trimEnd().endsWith(REPL_PROMPT);
+// A model with no known price shows "unpriced" in the status line, not $0.00.
+const TURN_OVER = (s) => /tokens \u00b7 (?:\$\d|unpriced)/.test(s) && s.trimEnd().endsWith(REPL_PROMPT);
 
 // The literal the REPL writes for a line it refused because a turn was in
 // flight. Scoped to the bytes produced since a line was sent -- `busy` says

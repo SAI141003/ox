@@ -69,6 +69,22 @@ export const LIBRARY = {
   Line: { params: [['x1', 'num'], ['y1', 'num'], ['x2', 'num'], ['y2', 'num'], ['stroke', 'str', true], ['width', 'num', true]], desc: 'drawing line', inner: true },
   Polygon: { params: [['points', 'str'], ['fill', 'str', true], ['stroke', 'str', true]], desc: 'drawing polygon ("x,y x,y …")', inner: true },
   SvgText: { params: [['text', 'any'], ['x', 'num'], ['y', 'num'], ['size', 'num', true], ['fill', 'str', true], ['anchor', 'start|middle|end', true]], desc: 'drawing label', inner: true },
+  Ellipse: { params: [['cx', 'num'], ['cy', 'num'], ['rx', 'num'], ['ry', 'num'], ['fill', 'str', true], ['stroke', 'str', true]], desc: 'drawing ellipse', inner: true },
+  Polyline: { params: [['points', 'str'], ['stroke', 'str', true], ['width', 'num', true]], desc: 'drawing open line through points ("x,y x,y …")', inner: true },
+  Path: { params: [['d', 'str'], ['fill', 'str', true], ['stroke', 'str', true], ['width', 'num', true]], desc: 'drawing path (SVG path data: M L C Q A Z)', inner: true },
+  // More of open-intelligent-ui's ideas, written here from scratch.
+  TextArea: { params: [['label', 'str'], ['value', 'any'], ['rows', 'num', true]], desc: 'multi-line text bound to a $var' },
+  DatePicker: { params: [['label', 'str'], ['value', 'any']], desc: 'date ("YYYY-MM-DD") bound to a $var' },
+  RadioGroup: { params: [['value', 'any'], ['options', 'list'], ['label', 'str', true]], desc: 'one-of choice as radio buttons, bound to a $var' },
+  Timer: { params: [['minutes', 'num'], ['label', 'str', true]], desc: 'countdown in minutes (0.5 = 30 seconds) with start, pause and reset' },
+  Flashcard: { params: [['front', 'any'], ['back', 'any']], desc: 'card that flips to show the answer' },
+  Carousel: { params: [['children', 'nodes']], desc: 'one item at a time with previous / next' },
+  Quote: { params: [['text', 'any'], ['cite', 'str', true]], desc: 'quotation' },
+  Link: { params: [['label', 'str'], ['url', 'str']], desc: 'link that opens a web page (https)' },
+  Image: { params: [['src', 'str'], ['alt', 'str', true], ['aspect', 'num', true]], desc: 'a picture ox made or has (/ox/media/… path); for a photo of a real thing use SearchImage' },
+  Math: { params: [['expr', 'str'], ['block', 'bool', true]], desc: 'a formula, shown typeset (x^2, sqrt(), pi, <=, >=)' },
+  Popover: { params: [['label', 'str'], ['children', 'nodes']], desc: 'reveal more on click (a hint, the answer, details)' },
+  Celebration: { params: [['text', 'str', true]], desc: 'confetti when something is done' },
 };
 
 // Named colours an answer may use (the app maps them to its palette; any #hex works too).
@@ -137,7 +153,44 @@ const BUILTINS = {
     const s = [...a].sort((x, y) => (k(x) > k(y) ? 1 : k(x) < k(y) ? -1 : 0));
     return dir === 'desc' ? s.reverse() : s;
   },
+  // Dates ("YYYY-MM-DD" in, "YYYY-MM-DD" out, in UTC so a day never shifts).
+  Now: () => new Date().toISOString().slice(0, 16).replace('T', ' '),
+  AddDays: (d, n) => { const t = day(d); return t == null ? null : iso(t + Number(n || 0) * 86_400_000); },
+  AddMonths: (d, n) => { const t = day(d); if (t == null) return null; const x = new Date(t); const want = x.getUTCMonth() + Number(n || 0); x.setUTCDate(1); x.setUTCMonth(want); const last = new Date(Date.UTC(x.getUTCFullYear(), x.getUTCMonth() + 1, 0)).getUTCDate(); x.setUTCDate(Math.min(new Date(t).getUTCDate(), last)); return iso(x.getTime()); },
+  DaysBetween: (a, b) => { const x = day(a), y = day(b); return x == null || y == null ? null : Math.round((y - x) / 86_400_000); },
+  MonthsBetween: (a, b) => { const x = day(a), y = day(b); if (x == null || y == null) return null; const A = new Date(x), B = new Date(y); return (B.getUTCFullYear() - A.getUTCFullYear()) * 12 + B.getUTCMonth() - A.getUTCMonth() - (B.getUTCDate() < A.getUTCDate() ? 1 : 0); },
+  StartOf: (d, unit = 'month') => { const t = day(d); if (t == null) return null; const x = new Date(t); if (unit === 'year') return iso(Date.UTC(x.getUTCFullYear(), 0, 1)); if (unit === 'week') return iso(t - ((x.getUTCDay() + 6) % 7) * 86_400_000); return iso(Date.UTC(x.getUTCFullYear(), x.getUTCMonth(), 1)); },
+  FormatDate: (d, style = 'medium') => { const t = day(d); if (t == null) return ''; const o = { short: { month: 'short', day: 'numeric' }, medium: { month: 'short', day: 'numeric', year: 'numeric' }, long: { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }, weekday: { weekday: 'long' }, month: { month: 'long', year: 'numeric' } }[style]; return o ? new Date(t).toLocaleDateString('en-US', { ...o, timeZone: 'UTC' }) : iso(t); },
+  // Lists.
+  Take: (a, n) => (Array.isArray(a) ? a.slice(0, Math.max(0, Number(n) || 0)) : []),
+  Slice: (a, s, e) => (Array.isArray(a) ? a.slice(Number(s) || 0, e == null ? undefined : Number(e)) : String(a ?? '').slice(Number(s) || 0, e == null ? undefined : Number(e))),
+  Reverse: (a) => (Array.isArray(a) ? [...a].reverse() : String(a ?? '').split('').reverse().join('')),
+  Unique: (a, field = null) => { if (!Array.isArray(a)) return []; const seen = new Set(); return a.filter((r) => { const k = JSON.stringify(field == null ? r : r?.[field]); if (seen.has(k)) return false; seen.add(k); return true; }); },
+  Chunk: (a, n) => { const s = Math.max(1, Number(n) || 1), out = []; for (let i = 0; Array.isArray(a) && i < a.length && out.length < 500; i += s) out.push(a.slice(i, i + s)); return out; },
+  Flatten: (a) => (Array.isArray(a) ? a.flat(1).slice(0, 5000) : []),
+  Prepend: (a, v) => [v, ...(Array.isArray(a) ? a : [])],
+  RemoveAt: (a, i) => (Array.isArray(a) ? a.filter((_, k) => k !== Number(i)) : []),
+  Update: (a, i, v) => (Array.isArray(a) ? a.map((x, k) => (k === Number(i) ? v : x)) : []),
+  Find: (a, field, value) => (Array.isArray(a) ? a.find((r) => (field == null ? r : r?.[field]) == value) ?? null : null), // eslint-disable-line eqeqeq
+  Pick: (a, field) => (Array.isArray(a) ? a.map((r) => r?.[field] ?? null) : []),
+  Shuffle: (a) => { const s = Array.isArray(a) ? [...a] : []; for (let i = s.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [s[i], s[j]] = [s[j], s[i]]; } return s; },
+  // Data.
+  Between: (n, lo, hi) => Number(n) >= Number(lo) && Number(n) <= Number(hi),
+  Change: (from, to) => (Number(from) ? Math.round(((Number(to) - Number(from)) / Math.abs(Number(from))) * 1000) / 10 : 0),
+  Cumulative: (a) => { let s = 0; return nums(a).map((v) => (s += v)); },
+  MovingAvg: (a, n = 3) => { const v = nums(a), w = Math.max(1, Number(n) || 1); return v.map((_, i) => { const win = v.slice(Math.max(0, i - w + 1), i + 1); return Math.round((win.reduce((x, y) => x + y, 0) / win.length) * 100) / 100; }); },
+  Stats: (a) => { const v = nums(a).sort((x, y) => x - y); if (!v.length) return { count: 0, sum: 0, avg: 0, min: 0, max: 0, median: 0 }; const sum = v.reduce((x, y) => x + y, 0), mid = v.length >> 1; return { count: v.length, sum, avg: sum / v.length, min: v[0], max: v[v.length - 1], median: v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2 }; },
+  Top: (a, field, n = 5) => (Array.isArray(a) ? [...a].sort((x, y) => Number(y?.[field]) - Number(x?.[field])).slice(0, Math.max(0, Number(n) || 0)) : []),
+  Histogram: (a, bins = 5) => { const v = nums(a), b = Math.max(1, Math.min(50, Number(bins) || 5)); if (!v.length) return []; const lo = Math.min(...v), hi = Math.max(...v), w = (hi - lo) / b || 1; const out = Array.from({ length: b }, (_, i) => ({ label: `${Math.round((lo + i * w) * 100) / 100}–${Math.round((lo + (i + 1) * w) * 100) / 100}`, value: 0 })); for (const x of v) out[Math.min(b - 1, Math.floor((x - lo) / w))].value++; return out; },
+  MixColor: (a, b, t = 0.5) => { const p = (h) => (/^#[0-9a-f]{6}$/i.test(String(h)) ? [1, 3, 5].map((i) => parseInt(String(h).slice(i, i + 2), 16)) : null); const x = p(a), y = p(b); if (!x || !y) return String(a ?? ''); const k = Math.max(0, Math.min(1, Number(t))); return `#${x.map((c, i) => Math.round(c + (y[i] - c) * k).toString(16).padStart(2, '0')).join('')}`; },
 };
+function day(d) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d ?? ''));
+  if (!m) return null;
+  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isFinite(t) ? t : null;
+}
+const iso = (t) => new Date(t).toISOString().slice(0, 10);
 const ACTION_STEPS = new Set(['Run', 'Set', 'Reset', 'ToAssistant', 'OpenUrl']);
 
 // "$80.00", "1,200", "15%": numbers as a reader sees them, for arithmetic.
@@ -748,6 +801,8 @@ export function evaluate(program, env = {}) {
     if (n.name === 'Select' && n.args[1]?.k === 'state') props.bind = n.args[1].name;
     if ((n.name === 'Input' || n.name === 'Slider' || n.name === 'Checkbox') && n.args[1]?.k === 'state') props.bind = n.args[1].name;
     if (n.name === 'Segmented' && n.args[0]?.k === 'state') props.bind = n.args[0].name;
+    if ((n.name === 'TextArea' || n.name === 'DatePicker') && n.args[1]?.k === 'state') props.bind = n.args[1].name;
+    if (n.name === 'RadioGroup' && n.args[0]?.k === 'state') props.bind = n.args[0].name;
     if (n.name === 'Flow') return flowNode(props);
     if (n.name === 'Explainer') return explainerNode(props, id);
     return { type: n.name, props };
@@ -825,7 +880,7 @@ export function languageSpec() {
   return [
     'Write OX Canvas: one `name = Expression` per line, `root = ...` renders. Positional args only.',
     'Values: "str" 12 true null [a, b] {k: v}, refs to other lines (forward refs ok), a.b plucks a field from every row, cond ? a : b, + - * / == != > < && ||.',
-    'Compose like a page: Title, a short Text, then blocks; Grid/Row/Col for layout; colours by name (ink muted surface info success warning danger purple pink chart1 chart2 chart3 chart4 chart5 chart6) or #hex in Badge tone, Text color, Chart and Svg fills. steps[$step] indexes a list. $var = default declares state; Input("Amount", $amount, "number") and Slider("Rate %", $rate, 0, 20, 0.1) let the user change it and every line using it recomputes. @Pow(b, e) @Sqrt @Abs @Floor @Ceil @Clamp(n, lo, hi) @Default(v, d) @Format(n, "currency|percent|compact") @Plural(n, "item") @Percent(a, b) @Range(0, n) @Includes @Toggle @Append @Remove @GroupBy(rows, key, field) @Today @Count @Sum @Avg @Min @Max @First @Last @Round(n, digits) @Join @Filter(rows, field, op, value) @Sort(rows, field, "desc") @Each(rows, "r", Text(r.x)).',
+    'Compose like a page: Title, a short Text, then blocks; Grid/Row/Col for layout; colours by name (ink muted surface info success warning danger purple pink chart1 chart2 chart3 chart4 chart5 chart6) or #hex in Badge tone, Text color, Chart and Svg fills. steps[$step] indexes a list. $var = default declares state; Input("Amount", $amount, "number") and Slider("Rate %", $rate, 0, 20, 0.1) let the user change it and every line using it recomputes. @Pow(b, e) @Sqrt @Abs @Floor @Ceil @Clamp(n, lo, hi) @Default(v, d) @Format(n, "currency|percent|compact") @Plural(n, "item") @Percent(a, b) @Range(0, n) @Includes @Toggle @Append @Remove @GroupBy(rows, key, field) @Today @Count @Sum @Avg @Min @Max @First @Last @Round(n, digits) @Join @Filter(rows, field, op, value) @Sort(rows, field, "desc") @Each(rows, "r", Text(r.x)). Dates: @AddDays(d, n) @AddMonths(d, n) @DaysBetween(a, b) @MonthsBetween(a, b) @StartOf(d, "week|month|year") @FormatDate(d, "short|medium|long|weekday|month") @Now(). Lists: @Take @Slice @Reverse @Unique @Chunk @Flatten @Prepend @RemoveAt @Update @Find(rows, field, v) @Pick(rows, field) @Shuffle. Data: @Stats @Cumulative @MovingAvg(l, n) @Change(from, to) @Between(n, lo, hi) @Top(rows, field, n) @Histogram(l, bins) @MixColor(#a, #b, t).',
     `Live data: d = Query("${[...QUERY_TOOLS].join('|')}", {args}, {defaults}); d is the tool result ({text, lines} or parsed JSON).`,
     'Buttons: Button("Label", Action([@Set($v, 1), @Run(d), @ToAssistant("msg"), @OpenUrl("u")])). m = Mutation("tool", {args}) runs only via @Run(m) from a Button.',
     'Edit an existing canvas with patch: true and send only changed or new lines.',
@@ -923,7 +978,10 @@ function draw(node, w, actions) {
     }
     case 'Column':
     case 'Pressable':
+    case 'Carousel':
       return draw({ type: 'Stack', props: { children: p.children ?? [] } }, w, actions);
+    case 'Popover':
+      return [paint.dim(`▸ ${p.label ?? 'More'}`), ...draw({ type: 'Stack', props: { children: p.children ?? [] } }, w, actions)];
     case 'Grid': {
       // Rows of `cols` cells, each drawn like a Row.
       const kids = (p.children ?? []).filter(Boolean), n = Math.max(1, Number(p.cols) || 2), out = [];
@@ -1050,6 +1108,16 @@ function draw(node, w, actions) {
     case 'Segmented': return [(p.options ?? []).map((o) => (String(o) === String(p.value) ? `[${o}]` : ` ${o} `)).join(' ')];
     case 'Svg': return [paint.dim('[drawing: open it in the app]')];
     case 'SearchImage': return [paint.dim(`[photo: ${p.query}]`)];
+    case 'Image': return [paint.dim(`[picture: ${p.alt || p.src}]`)];
+    case 'TextArea': return [`${p.label}:`, ...String(p.value ?? '').split('\n').slice(0, 6).map((l) => `  ${l}`)];
+    case 'DatePicker': return [`${p.label}: ${p.value || '(pick a date)'}`];
+    case 'RadioGroup': return [...(p.label ? [String(p.label)] : []), ...(p.options ?? []).map((o) => `${String(o) === String(p.value) ? '◉' : '○'} ${o}`)];
+    case 'Timer': { const s = Math.max(0, Math.round((Number(p.minutes) || 0) * 60)); return [`⏱ ${p.label ? `${p.label} ` : ''}${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`]; }
+    case 'Flashcard': return [`Q: ${p.front}`, paint.dim(`A: ${p.back}`)];
+    case 'Quote': return [`“${p.text}”`, ...(p.cite ? [paint.dim(`— ${p.cite}`)] : [])];
+    case 'Link': return [`${p.label} → ${p.url}`];
+    case 'Math': return [String(p.expr ?? '')];
+    case 'Celebration': return [`🎉 ${p.text ?? ''}`.trim()];
     case 'Chart': {
       const vals = (p.values ?? []).map(Number), max = Math.max(1e-9, ...vals.map(Math.abs));
       return [...(p.title ? [String(p.title)] : []), ...vals.map((v, k) => `${String(p.labels?.[k] ?? '').padEnd(12).slice(0, 12)} ${'█'.repeat(Math.max(1, Math.round((Math.abs(v) / max) * 24)))} ${v}`)];

@@ -803,3 +803,36 @@ test('8. with no ctx.cwd at all, a relative path still resolves against the proc
   );
   assert.doesNotMatch(res.content, /ABSOLUTE/, 'the removed contract is not reachable any more');
 });
+
+test('9. write_file auto-opens .html in the browser when interactive, stays quiet in tests/opt-out', async (t) => {
+  const savedCtx = process.env.NODE_TEST_CONTEXT;
+  t.after(() => { if (savedCtx === undefined) delete process.env.NODE_TEST_CONTEXT; else process.env.NODE_TEST_CONTEXT = savedCtx; delete process.env.OX_NO_AUTO_OPEN; });
+  const { writeFileTool } = await import('../src/tools/fs.js');
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-fsauto-'));
+  const htmlPath = path.join(cwd, 'auto.html');
+  // Test runner: NODE_TEST_CONTEXT=1 is set, so no browser is spawned, and no
+  // "opened in your default browser" trailer appears in the summary.
+  process.env.NODE_TEST_CONTEXT = '1';
+  const inTest = await writeFileTool({ path: htmlPath, content: '<p>hi</p>' }, { cwd, yolo: true });
+  assert.equal(inTest.isError, undefined, inTest.content);
+  assert.doesNotMatch(inTest.content, /opened in your default browser/);
+
+  // Opt-out: even without the test guard, OX_NO_AUTO_OPEN=1 suppresses the open.
+  delete process.env.NODE_TEST_CONTEXT;
+  process.env.OX_NO_AUTO_OPEN = '1';
+  const htmlPath2 = path.join(cwd, 'optout.html');
+  const optOut = await writeFileTool({ path: htmlPath2, content: '<p>hi</p>' }, { cwd, yolo: true });
+  assert.equal(optOut.isError, undefined, optOut.content);
+  assert.doesNotMatch(optOut.content, /opened in your default browser/);
+  delete process.env.OX_NO_AUTO_OPEN;
+
+  // Non-html files never trigger the open path.
+  process.env.NODE_TEST_CONTEXT = '1';
+  const txt = await writeFileTool({ path: path.join(cwd, 'readme.txt'), content: 'hello' }, { cwd, yolo: true });
+  assert.doesNotMatch(txt.content, /opened in your default browser/);
+
+  // Headless flag suppresses the open even when the other gates would allow it.
+  delete process.env.NODE_TEST_CONTEXT;
+  const headless = await writeFileTool({ path: path.join(cwd, 'headless.html'), content: '<p>hi</p>' }, { cwd, yolo: true, headless: true });
+  assert.doesNotMatch(headless.content, /opened in your default browser/);
+});

@@ -128,7 +128,9 @@ export function makeApprover({ mode = 'default', yolo = false, sandbox = null, m
         process.stdout.write(`${c.dim(`(denied by IPC client ${who})`)}\n`);
         return false;
       }
-      // 'ask' / unrecognised / no answer at all => fall through to (4).
+      // 'ask' / unrecognised / no answer at all => decline. Said as what it
+      // was: the island was asked and did not answer, not "no terminal".
+      process.stdout.write(`${c.dim(`(no answer from ${String(answer?.clientId ?? '').trim() ? `IPC client ${String(answer.clientId).trim()}` : 'OX Island'} in time for ${name}: declined, nothing was done)`)}\n`);
     }
 
     // 4. No TTY and nobody answered: decline, exactly as before IPC existed.

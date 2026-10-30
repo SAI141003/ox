@@ -105,21 +105,96 @@ final class DesktopPetController: NSObject, ObservableObject {
         let size = max(32, min(144, petSize))
         let frame = NSRect(x: 0, y: 0, width: size + 20, height: size + 48)
         panel.setFrame(frame, display: true)
+        // Where the person put it last, if that spot is still on a screen.
+        if let saved = defaults.array(forKey: "ox.desktopPet.origin") as? [Double], saved.count == 2 {
+            let p = NSPoint(x: saved[0], y: saved[1])
+            if NSScreen.screens.contains(where: { $0.visibleFrame.insetBy(dx: -frame.width / 2, dy: -frame.height / 2).contains(NSPoint(x: p.x + frame.width / 2, y: p.y + frame.height / 2)) }) {
+                panel.setFrameOrigin(p)
+                return
+            }
+        }
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
         panel.setFrameOrigin(NSPoint(x: screen.maxX - frame.width - 24, y: screen.minY + 24))
     }
 
+    // MARK: moving the pet by hand
+    // A press that moves more than a few points is a drag (the pet follows the
+    // pointer, on any screen); one that does not is a tap (open chat). Let go
+    // near a corner and it settles into that corner. Once placed it stays put.
+    private var dragFrom: (mouse: NSPoint, origin: NSPoint)?
+    @Published private(set) var dragging = false
+    var placed: Bool { defaults.bool(forKey: "ox.desktopPet.placed") }
+
+    func dragChanged() {
+        guard let panel else { return }
+        let m = NSEvent.mouseLocation
+        if dragFrom == nil { dragFrom = (m, panel.frame.origin) }
+        guard let from = dragFrom else { return }
+        let dx = m.x - from.mouse.x, dy = m.y - from.mouse.y
+        if !dragging && hypot(dx, dy) > 4 { dragging = true }
+        if dragging { panel.setFrameOrigin(NSPoint(x: from.origin.x + dx, y: from.origin.y + dy)) }
+    }
+
+    func dragEnded() {
+        defer { dragFrom = nil; dragging = false }
+        guard dragging, let panel else { onOpenChat?(); return }
+        let screen = (panel.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let f = panel.frame, margin: CGFloat = 16, reach: CGFloat = 120
+        var x = f.minX, y = f.minY
+        // Keep it on the screen, then snap to a corner when it is close to one.
+        x = min(max(x, screen.minX), screen.maxX - f.width)
+        y = min(max(y, screen.minY), screen.maxY - f.height)
+        let nearLeft = x - screen.minX < reach, nearRight = screen.maxX - (x + f.width) < reach
+        let nearBottom = y - screen.minY < reach, nearTop = screen.maxY - (y + f.height) < reach
+        if (nearLeft || nearRight) && (nearBottom || nearTop) {
+            x = nearLeft ? screen.minX + margin : screen.maxX - f.width - margin
+            y = nearBottom ? screen.minY + margin : screen.maxY - f.height - margin
+        }
+        place(NSPoint(x: x, y: y))
+    }
+
+    enum Corner { case topLeft, topRight, bottomLeft, bottomRight }
+    func move(to corner: Corner) {
+        guard let panel else { return }
+        let screen = (panel.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let f = panel.frame, m: CGFloat = 16
+        let x = (corner == .topLeft || corner == .bottomLeft) ? screen.minX + m : screen.maxX - f.width - m
+        let y = (corner == .bottomLeft || corner == .bottomRight) ? screen.minY + m : screen.maxY - f.height - m
+        place(NSPoint(x: x, y: y))
+    }
+
+    private func place(_ p: NSPoint) {
+        guard let panel else { return }
+        // The window's own frame animation: an animator() origin change on this
+        // borderless panel was not applied (measured), so the pet stayed where
+        // it was dropped even though the corner had been saved.
+        panel.setFrame(NSRect(origin: p, size: panel.frame.size), display: true, animate: true)
+        defaults.set([Double(p.x), Double(p.y)], forKey: "ox.desktopPet.origin")
+        defaults.set(true, forKey: "ox.desktopPet.placed")
+        objectWillChange.send()
+    }
+
+    /// Keep it where it is now.
+    func stayHere() {
+        guard let panel else { return }
+        place(panel.frame.origin)
+    }
+
+    /// Back to strolling around the screen on its own.
+    func letWander() {
+        defaults.set(false, forKey: "ox.desktopPet.placed")
+        objectWillChange.send()
+        wander()
+    }
+
     func wander() {
+        guard !placed, !dragging else { return }
         guard let panel, panel.isVisible, NSEvent.pressedMouseButtons == 0 else { return }
         let screen = (panel.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
         let frame = panel.frame
         let x = CGFloat.random(in: (screen.minX + 20)...max(screen.minX + 21, screen.maxX - frame.width - 20))
         let y = CGFloat.random(in: (screen.minY + 20)...max(screen.minY + 21, screen.maxY - frame.height - 20))
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 2.8
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            panel.animator().setFrameOrigin(NSPoint(x: x, y: y))
-        }
+        panel.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: frame.size), display: true, animate: true)
     }
 }
 
@@ -130,7 +205,7 @@ private struct DesktopPetView: View {
 
     var body: some View {
         VStack(spacing: 1) {
-            Button { controller.onOpenChat?() } label: {
+            Group {
                 TimelineView(.animation(minimumInterval: 0.12, paused: false)) { timeline in
                     let time = timeline.date.timeIntervalSinceReferenceDate
                     let blink = sin(time * 0.72) > 0.992
@@ -174,11 +249,31 @@ private struct DesktopPetView: View {
                     }
                     .frame(width: controller.petSize, height: controller.petSize)
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Open Ox chat with \(controller.petName), \(controller.isWorking ? "working" : controller.petExpression)")
-            .help("Open Ox chat")
+            // On top of the artwork (a web view, which would swallow the mouse):
+            // tap opens chat, drag moves the pet.
+            .overlay(
+                Color.white.opacity(0.001)
+                    .contentShape(Rectangle())
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                        .onChanged { _ in controller.dragChanged() }
+                        .onEnded { _ in controller.dragEnded() })
+            )
+            .contextMenu {
+                Button("Top left corner") { controller.move(to: .topLeft) }
+                Button("Top right corner") { controller.move(to: .topRight) }
+                Button("Bottom left corner") { controller.move(to: .bottomLeft) }
+                Button("Bottom right corner") { controller.move(to: .bottomRight) }
+                Divider()
+                Button(controller.placed ? "Wander around" : "Stay here") {
+                    if controller.placed { controller.letWander() } else { controller.stayHere() }
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(controller.petName), \(controller.isWorking ? "working" : controller.petExpression). Tap to open chat, drag to move.")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { controller.onOpenChat?() }
+            .help("Tap to open chat · drag to move · right-click for corners")
 
             if hovered {
                 HStack(spacing: 0) {

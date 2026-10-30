@@ -83,7 +83,7 @@ export function installedApps(dirs = ['/Applications', '/Applications/Utilities'
   if (arguments.length === 0) appNames = names;
   return names;
 }
-const APP_ALIASES = { 'vs code': 'Visual Studio Code', vscode: 'Visual Studio Code', code: 'Visual Studio Code', chrome: 'Google Chrome', 'google chrome': 'Google Chrome', mail: 'Mail', email: 'Mail', settings: 'System Settings', 'system preferences': 'System Settings', whatsapp: 'WhatsApp', terminal: 'Terminal' };
+const APP_ALIASES = { outlook: 'Microsoft Outlook', word: 'Microsoft Word', excel: 'Microsoft Excel', powerpoint: 'Microsoft PowerPoint', teams: 'Microsoft Teams', onenote: 'Microsoft OneNote', 'vs code': 'Visual Studio Code', vscode: 'Visual Studio Code', code: 'Visual Studio Code', chrome: 'Google Chrome', 'google chrome': 'Google Chrome', mail: 'Mail', email: 'Mail', settings: 'System Settings', 'system preferences': 'System Settings', whatsapp: 'WhatsApp', terminal: 'Terminal' };
 
 // Off macOS there is no app list to check against, so a name is trusted only
 // when it reads as one app's name: a few words, no "and" / "then" / comma, and
@@ -146,6 +146,13 @@ export function parseIntent(text) {
   if ((m = /^(?:make|take|add|write|new)(?: a)? note(?: that| saying| to)?[:\s]+(.+)$/i.exec(t)) || (m = /^note[:\s]+(.+)$/i.exec(t)) || (m = /^(?:write|jot|note) (?:this )?down[:\s]+(.+)$/i.exec(t)) || (m = /^(?:write|jot) down (.+)$/i.exec(t))) {
     return { intent: 'note', text: m[1].trim() };
   }
+  // WhatsApp, never sent from here: the chat opens in WhatsApp for Mac with the
+  // message typed in, and the person presses Enter.
+  if ((m = /^(?:send |write )?(?:an? )?whats ?app(?: message)?\s+to\s+(.+?)\s*(?:,|:|\s(?:saying|that says|telling (?:him|her|them)|that))\s+(.+)$/i.exec(t))
+    || (m = /^(?:message|text)\s+(.+?)\s+on whats ?app\s*(?:,|:|\s(?:saying|that says|that))?\s+(.+)$/i.exec(t))
+    || (m = /^whats ?app\s+(.+?)\s*(?:,|:|\s(?:saying|that says|that))\s+(.+)$/i.exec(t))) {
+    return { intent: 'whatsapp', to: m[1].trim().replace(/^(?:my)\s+/i, ''), text: m[2].trim() };
+  }
   // Email, never sent from here: a draft opens in your mail app for you to send.
   // "… from gmail" / "from my work account" names the sending account (Mail asks otherwise).
   // Only before the message itself: "…saying it came from mom" is the message, not an account.
@@ -204,8 +211,8 @@ export function parseIntent(text) {
   // to retain a system-wide clipboard history it did not capture itself.
   if (/^(?:what(?:'s| is| did) (?:on|in|from) (?:my |the )?clipboard|what did i copy|(?:show|read) (?:my |the )?clipboard|copied something earlier)\??$/i.test(low)) return { intent: 'clipboard' };
   if (/^(?:what(?:'s| is) )?(?:my |the )?(?:battery|battery level|power status)(?: level)?\??$|^how much battery(?: do i have)?\??$/i.test(low)) return { intent: 'battery' };
-  if (/^(?:what(?:'s| is) the )?time(?: is it)?(?: now)?$|^what time is it$/i.test(low)) return { intent: 'time' };
-  if (/^(?:what(?:'s| is) )?(?:the |today'?s )?date(?: today)?$|^what day is it$/i.test(low)) return { intent: 'date' };
+  if (/^(?:what(?:'?s| is) the )?time(?: is it)?(?: now)?$|^what time is it(?: now)?$/i.test(low)) return { intent: 'time' };
+  if (/^(?:what(?:'?s| is) )?(?:the |today'?s )?date(?: (?:of |for )?today)?$|^what day is it(?: today)?$|^what(?:'?s| is) today(?:'?s date)?$/i.test(low)) return { intent: 'date' };
   if ((m = /^(?:volume|set volume(?: to)?)\s+(\d{1,3})%?$/i.exec(low))) return { intent: 'volume', level: Math.min(100, Number(m[1])) };
   if (/^(?:volume up|louder|turn it up)$/i.test(low)) return { intent: 'volume', delta: 10 };
   if (/^(?:volume down|quieter|turn it down)$/i.test(low)) return { intent: 'volume', delta: -10 };
@@ -217,7 +224,7 @@ export function parseIntent(text) {
   if ((m = /^(?:open|go to|visit|show me|pull up|launch)\s+(?:the\s+)?(.+?)(?:\s+(?:in|on|with|using)\s+(chrome|google chrome|safari|arc|firefox|brave|edge|microsoft edge|opera))?$/i.exec(t))) {
     const name = m[1].trim().toLowerCase().replace(/\.com$/, '');
     const browser = m[2] ? BROWSERS[m[2].toLowerCase()] : '';
-    if (SITE_NAMES[name] && (browser || !installedApps().has(String(m[1]).trim().toLowerCase()))) return { intent: 'url', url: SITE_NAMES[name], ...(browser ? { browser } : {}) };
+    if (SITE_NAMES[name] && (browser || !resolveApp(String(m[1]).trim()))) return { intent: 'url', url: SITE_NAMES[name], ...(browser ? { browser } : {}) };
     if (browser && SITE.test(m[1].trim())) return { intent: 'url', url: /^https?:\/\//i.test(m[1].trim()) ? m[1].trim() : `https://${m[1].trim()}`, browser };
   }
   // Opening an app: only an app that is on this Mac, named on its own. Anything
@@ -572,6 +579,20 @@ export function perform(it) {
       }
       const r = openWith(mailtoUrl(it));
       return r.ok ? { ok: true, message: it.to ? `draft to ${it.to} is open in your mail app: check it and press Send (ox never sends it)` : `draft to ${it.name} is open in your mail app: add their address and press Send (ox never sends it)` } : { ok: false, message: r.err };
+    }
+    case 'whatsapp': {
+      // A number goes straight to that chat; a name is looked up in Contacts;
+      // otherwise WhatsApp opens with the text ready and you pick the chat.
+      let phone = /^[+\d][\d\s().-]{5,}$/.test(it.to) ? it.to.replace(/[^\d]/g, '') : '';
+      if (!phone && process.platform === 'darwin' && !process.env.NODE_TEST_CONTEXT) {
+        const r = spawnSync('osascript', ['-e', 'on run argv', '-e', 'tell application "Contacts" to set ps to (every person whose name contains (item 1 of argv))', '-e', 'if ps is {} then return ""', '-e', 'tell application "Contacts" to set phs to value of phones of (item 1 of ps)', '-e', 'if phs is {} then return ""', '-e', 'return item 1 of phs', '-e', 'end run', it.to], { encoding: 'utf8', timeout: 8000 });
+        phone = r.status === 0 ? String(r.stdout).replace(/[^\d]/g, '') : '';
+      }
+      const url = `whatsapp://send?${phone ? `phone=${phone}&` : ''}text=${encodeURIComponent(it.text)}`;
+      if (process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1') return { ok: true, message: `dry run: would open ${url}` };
+      const r = run(process.platform === 'darwin' ? ['open', url] : null);
+      if (!r.ok) return { ok: false, message: `WhatsApp did not open: ${r.err}. Is WhatsApp for Mac installed?` };
+      return { ok: true, message: phone ? `WhatsApp is open with your message to ${it.to} typed in: press Enter to send it (ox never sends it)` : `WhatsApp is open with your message typed in: pick ${it.to}'s chat and press Enter (ox never sends it)` };
     }
     case 'unread': {
       if (process.platform !== 'darwin') return { ok: false, message: 'reading Mail is macOS only for now' };

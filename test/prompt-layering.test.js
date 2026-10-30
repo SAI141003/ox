@@ -254,7 +254,9 @@ test('the prompt did not get longer: the reorder is byte-neutral, not merely sma
   // depends on where the suite runs (a worktree path is longer than a checkout).
   // Pin everything else -- the text a change to ox can actually grow.
   const envBytes = Buffer.byteLength(layers.find((l) => l.name === 'environment').text);
-  assert.equal(sum.totalBytes - envBytes, 1927, 'pinned: the reorder is byte-neutral');
+  // 1927 -> 2110: the 183 bytes are exactly the create_media rule (fbe768e:
+  // "generate, make, render, draw, or create an image, use create_media…").
+  assert.equal(sum.totalBytes - envBytes, 2110, 'pinned: the reorder is byte-neutral');
 
   // The pinned number alone would still pass if a line were added AND another
   // dropped. Rebuild the exact byte sequence the flat string used to emit -- the

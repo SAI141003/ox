@@ -27,7 +27,11 @@ final class WakeWord: ObservableObject {
     /// « OK ox », « hey Pixie », or the name on its own when it is long
     /// enough not to be heard by accident (four letters or more: "Pixie, …").
     static var phrase: NSRegularExpression {
-        let name = NSRegularExpression.escapedPattern(for: OxName.current)
+        // "ox" is one short sound: Apple's recognizer writes it as "box", "ax",
+        // "oaks"… A short name still needs "ok / hey / hi" in front, so these
+        // sound-alikes do not fire on ordinary speech.
+        let alike: [String: String] = ["ox": "(?:ox|oks|ocks|oaks|ax|aux|box|x)"]
+        let name = alike[OxName.current.lowercased()] ?? NSRegularExpression.escapedPattern(for: OxName.current)
         let lead = OxName.current.count >= 4 ? #"(?:(?:ok(?:ay)?|hey|hi)[\s,]+)?"# : #"(?:ok(?:ay)?|hey|hi)[\s,]+"#
         return try! NSRegularExpression(pattern: #"\b"# + lead + name + #"\b[\s,.:!]*"#, options: [.caseInsensitive])
     }
@@ -50,6 +54,8 @@ final class WakeWord: ObservableObject {
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
         req.requiresOnDeviceRecognition = true
+        // Tell the recognizer what to listen for, so the name is written as the name.
+        req.contextualStrings = ["OK \(OxName.current)", "hey \(OxName.current)", "hi \(OxName.current)", OxName.current]
         request = req
         let input = audio.inputNode
         input.removeTap(onBus: 0)

@@ -596,11 +596,33 @@ export function toolFile(event) {
   return m ? m[1].replace(/\\(.)/g, '$1') : null;
 }
 
+// Files create_media saved (~/.ox/media/<id>/<file>) as the app's /ox/media URLs.
+export function madeMedia(event) {
+  if (event.type !== 'tool-end' || event.isError || !/^(create_media|ox_create_media)$/.test(String(event.name ?? ''))) return [];
+  const out = [];
+  for (const m of String(event.content ?? '').matchAll(/[/\\]\.ox[/\\]media[/\\]([A-Za-z0-9_-]+)[/\\]([^\s/\\]+\.(?:png|jpe?g|webp|gif|mp4|mov|webm))/gi)) {
+    out.push(`/ox/media/${encodeURIComponent(m[1])}/${encodeURIComponent(m[2])}`);
+  }
+  return [...new Set(out)].slice(0, 8);
+}
+
+export async function mediaMadeSince(since, { history } = {}) {
+  try {
+    const rows = history ? history() : (await import('./media-studio.js')).history({ limit: 40 });
+    return rows
+      .filter((r) => r.status === 'completed' && Array.isArray(r.files) && r.files.length && Number(r.doneAt ?? r.at ?? 0) >= since)
+      .sort((a, b) => Number(a.doneAt ?? a.at) - Number(b.doneAt ?? b.at))
+      .flatMap((r) => r.files.map((f) => `/ox/media/${encodeURIComponent(r.id)}/${encodeURIComponent(basename(f))}`))
+      .slice(0, 8);
+  } catch { return []; }
+}
+
 function oxToolEvent(event) {
   const file = event.type === 'tool-start' ? toolFile(event) : null;
+  const media = madeMedia(event);
   return event.type === 'tool-start'
     ? { type: 'tool-start', id: event.id ?? null, name: String(event.name ?? 'tool'), preview: String(event.argsPreview ?? '').slice(0, 120), ...(Array.isArray(event.plan) ? { plan: event.plan } : {}), ...(file ? { file: file.slice(0, 300) } : {}), ...(Array.isArray(event.files) && event.files.length ? { files: event.files.slice(0, 50).map((f) => String(f).slice(0, 300)) } : {}) }
-    : { type: 'tool-end', id: event.id ?? null, name: String(event.name ?? 'tool'), isError: event.isError === true, ...(event.meta?.canvas?.tree ? { canvas: event.meta.canvas.tree } : {}) };
+    : { type: 'tool-end', id: event.id ?? null, name: String(event.name ?? 'tool'), isError: event.isError === true, ...(event.meta?.canvas?.tree ? { canvas: event.meta.canvas.tree } : {}), ...(media.length ? { media } : {}) };
 }
 
 function textDelta(event) {
@@ -695,7 +717,16 @@ const TOUCHES_CODE = /\b(file|files|repo|repository|project|codebase|function|cl
 // Prefer a useful, native interactive answer for requests whose natural shape
 // is something to explore (not just a paragraph). Keep this intent-based so
 // ordinary questions and small talk stay fast and don't get wrapped in UI.
-export const WANTS_UI = /\b(calculat\w*|convert\w*|compar\w*|table|chart|graph|plot|slider|interactive|estimat\w*|budget|breakdown|checklist|options|pros and cons|form|dashboard|visuali[sz]\w*|diagram|flow(?:chart)?|timeline|roadmap|itinerar\w*|schedule|planner|plan (?:out|a|an|the|my|our|your)|step(?:s|[- ]by[- ]step)?|walk me through|explain how|how does .{1,50} work|decision matrix|help me choose|which (?:one|option|model|tool)|recommend(?:ation)?\s+(?:for|between)|track(?:er|ing)?|calculator|quiz|poll|rank(?:ing)?|scorecard|status|progress|report|summar(?:y|i[sz]\w*)|organize|organise)\b/i;
+// Asking for a new picture or clip to be made (not found, not a page that has pictures in it).
+const MEDIA_MADE = /\b(?:generate|create|make|draw|render|paint|design|produce|imagine|sketch)\b(?:\s+me)?[^.?!\n]{0,50}?\b(?:image|images|picture|pictures|pic|photo|photos|illustration|poster|logo|wallpaper|artwork|drawing|painting|sketch|icon|video|clip|animation)\b/i;
+const MEDIA_ART = /^\s*(?:(?:can|could|would) you\s+|please\s+)?(?:draw|paint|sketch)\b/i;
+const MEDIA_NOT = /\b(?:website|web ?page|webpage|page|site|app|html|css|component|slides?|deck|chart|graph|diagram|table|repo|repository|codebase|function|class|module|src|file|files)\b|[\w-]+\.(?:js|ts|tsx|jsx|py|go|rs|html|css|json|md)\b/i;
+export function wantsMediaMade(text, lastUser = null) {
+  const t = String(text ?? '');
+  if (Array.isArray(lastUser?.images) && lastUser.images.length) return false;
+  return (MEDIA_MADE.test(t) || MEDIA_ART.test(t)) && !MEDIA_NOT.test(t);
+}
+export const WANTS_UI =/\b(calculat\w*|convert\w*|compar\w*|table|chart|graph|plot|slider|interactive|estimat\w*|budget|breakdown|checklist|options|pros and cons|form|dashboard|visuali[sz]\w*|diagram|flow(?:chart)?|timeline|roadmap|itinerar\w*|schedule|planner|plan (?:out|a|an|the|my|our|your)|step(?:s|[- ]by[- ]step)?|walk me through|explain how|how does .{1,50} work|decision matrix|help me choose|which (?:one|option|model|tool)|recommend(?:ation)?\s+(?:for|between)|track(?:er|ing)?|calculator|quiz|poll|rank(?:ing)?|scorecard|status|progress|report|summar(?:y|i[sz]\w*)|organize|organise|flash ?cards?|study (?:cards?|set|guide)|timer|countdown|stopwatch|pomodoro|carousel|date picker|practice (?:questions|test)|memori[sz]e)\b/i;
 // OpenUI Lang (thesysdev/openui), the way OpenUI does it: the prompt is built
 // from the component library itself, so what the model is told and what the
 // page can draw never drift apart.
@@ -709,6 +740,7 @@ export const LIVE_UI_GUIDE = [
   'Rules: one statement per line, `something = value`. The last line is `root = ...`. State the user can change is `$name = default` (always give the default). Arguments are positional: write Input("Amount", $amount, "number"), never type="number". Strings in double quotes. A negative number is 0 - x. Use only the components and @functions listed; no other words.',
   `Components: ${Object.keys(UI_LANG.LIBRARY).map(UI_LANG.signature).join(' ')}`,
   'Functions: @Pow(b, e) @Sqrt(x) @Abs(x) @Round(n, digits) @Format(n, "currency") @Format(n, "percent") @Sum(list) @Avg(list) @Min(list) @Max(list) @Count(list) @Clamp(n, lo, hi) @Range(0, n) @Each(rows, "r", Text(r.name)). Buttons: Button("Label", @Set($v, 1)).',
+  'More functions: dates @Today() @AddDays(d, n) @DaysBetween(a, b) @FormatDate(d, "long") @StartOf(d, "week"); lists @Take(l, n) @Slice(l, a, b) @Reverse(l) @Unique(l) @Chunk(l, n) @Pick(rows, "field") @Find(rows, "field", v); data @Stats(l) @Cumulative(l) @MovingAvg(l, 3) @Change(from, to) @Top(rows, "field", 5) @Histogram(l, 5).',
   'Example, a calculator:',
   '```openui',
   '$amount = 300000',
@@ -869,6 +901,11 @@ async function handleChatCompletions(req, res) {
     turnMode = { mode: 'ask', routed: true, reason: turnMode.mode === 'ask' ? turnMode.reason : SMALL_TALK.test(said) ? 'small talk' : 'a question', answerOnly: true };
   }
   if (tool.web || tool.research) turnMode = { mode: 'ask', routed: true, reason: tool.research ? 'deep research' : 'web search', answerOnly: true };
+  // "Create an image of a dog" read as a question ran with no tools, and the
+  // drawn-answer guide's SearchImage put a Wikipedia photo where a generated
+  // one belonged. A request to make a picture or clip gets create_media only.
+  const wantsMedia = !agentDef && !tool.web && !tool.research && wantsMediaMade(said, lastUser);
+  if (wantsMedia) turnMode = { mode: 'code', routed: true, reason: 'make an image or video', answerOnly: false, media: true };
   // The same memory a terminal run starts with: the project's MEMORY.md, what ox
   // remembers about the user, and what bears on this message.
   const lastText = typeof lastUser?.content === 'string' ? lastUser.content : '';
@@ -891,7 +928,7 @@ async function handleChatCompletions(req, res) {
   } catch {}
   // `ox_ui: 'live'` is sent by ox's own app, which can run interactive answers.
   // About 600 tokens: sent only when the message asks for something to use.
-  const liveUi = body.ox_ui === 'live' && (tool.canvas || wantsUi) ? LIVE_UI_GUIDE : '';
+  const liveUi = body.ox_ui === 'live' && (tool.canvas || wantsUi) && !wantsMedia ? LIVE_UI_GUIDE : '';
   const howTo = [
     tool.research ? RESEARCH_BRIEF : tool.web ? 'Search the web for this and answer from what you find, naming each source.' : '',
     tool.think ? 'Think this through carefully before answering: weigh the alternatives, check your working, then give the answer.' : '',
@@ -915,6 +952,7 @@ async function handleChatCompletions(req, res) {
     ...(agentDef ? { agentName: agentDef.name } : {}),
     ...(agentDef?.backend ? { backend: parseBackendSpec(agentDef.backend) } : {}),
     ...(Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools }
+      : turnMode.media ? { onlyTools: ['create_media'] }
       // A drawn answer searches only when web search is switched on: "price" in
       // "compare phones in a table" sent a 3B model off to the YouTube tool.
       : turnMode.answerOnly ? (tool.web || tool.research || (needsWeb && !liveUi) || /youtube\.com|youtu\.be/i.test(lastText) ? { onlyTools: /youtube\.com|youtu\.be/i.test(lastText) ? ['web_search', 'web_fetch', 'youtube_transcript'] : ['web_search', 'web_fetch'] } : { noTools: true })
@@ -924,6 +962,7 @@ async function handleChatCompletions(req, res) {
   };
   // The Office: this run, and any helper it starts, is shown at a desk.
   const board = await import('./live-board.js');
+  const turnStarted = Date.now();
   const runId = board.startRun({ who: agentDef?.name ?? autoPick?.id ?? String(targetModel), title: incognito ? 'Incognito chat' : lastText || '(no text)', model: target?.model ?? null });
   ctx.ipcBroadcast = board.boardBroadcaster(runId);
   // App chats are not mined for long-term memory unless the user explicitly
@@ -1022,6 +1061,12 @@ async function handleChatCompletions(req, res) {
       if (route === 'ui' && fullContent) {
         const mended = await mendUi({ text: fullContent, target, pickedName, messages, ctx, config, usage: totalUsage });
         if (mended) { fullContent = mended.text; sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'replace', content: mended.text, why: mended.by ? `the first drawing did not load, so ${mended.by} redrew it` : 'the first drawing did not load, so it was redrawn' } }); }
+      }
+      // A plan CLI (Claude, Codex) makes the picture through `ox create`, and its
+      // tool events carry no path: what this turn added to Studio is shown here.
+      if (wantsMedia) {
+        const media = await mediaMadeSince(turnStarted);
+        if (media.length) sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'media', media } });
       }
       sendSSE(res, createChatCompletionChunk(targetModel, '', true, totalUsage));
       sendSSEDone(res);
@@ -2301,6 +2346,8 @@ const ROUTES = [
   } },
   { method: 'GET', pattern: /^\/ox\/instructions\/?$/, handler: appRoute(async () => (await appApi()).instructionsView()) },
   { method: 'POST', pattern: /^\/ox\/instructions\/?$/, handler: appRoute(async (b) => (await appApi()).saveInstructions(b.text ?? '')) },
+  { method: 'GET', pattern: /^\/ox\/connectors\/gallery\/?$/, handler: appRoute(async () => (await appApi()).connectorGalleryView()) },
+  { method: 'POST', pattern: /^\/ox\/connectors\/gallery\/?$/, handler: appRoute(async (b) => (await appApi()).addGalleryConnector(b)) },
   { method: 'GET', pattern: /^\/ox\/connectors\/?$/, handler: appRoute(async () => (await appApi()).connectorsView()) },
   { method: 'POST', pattern: /^\/ox\/connectors\/?$/, handler: appRoute(async (b) => (await appApi()).saveConnector(b)) },
   { method: 'GET', pattern: /^\/ox\/whatsapp\/inbox\/?$/, handler: appRoute(async () => {
@@ -2365,6 +2412,8 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/sessions\/([^/]+)$/, handler: appRoute(async (_, m) => (await appApi()).sessionView(decodeURIComponent(m[1]))) },
   { method: 'GET', pattern: /^\/ox\/memory\/?$/, handler: appRoute(async () => (await appApi()).memoryView()) },
   { method: 'POST', pattern: /^\/ox\/memory\/?$/, handler: appRoute(async (b) => (await appApi()).memoryAction(b)) },
+  { method: 'GET', pattern: /^\/ox\/memory\/layer\/?$/, handler: appRoute(async () => (await appApi()).memoryLayerView()) },
+  { method: 'GET', pattern: /^\/ox\/memory\/layer\/?$/, handler: appRoute(async () => (await appApi()).memoryLayerView()) },
   { method: 'GET', pattern: /^\/ox\/market\/?$/, handler: appRoute(async (_, __, req) => (await import('./market.js')).search(new URL(req.url, 'http://x').searchParams.get('q') ?? '')) },
   { method: 'POST', pattern: /^\/ox\/market\/install\/?$/, handler: appRoute(async (b) => (await import('./market.js')).install({ name: b.name, catalog: b.catalog, repo: b.repo })) },
   { method: 'POST', pattern: /^\/ox\/market\/catalogs\/?$/, handler: appRoute(async (b) => ({ catalogs: await (await import('./market.js')).addCatalog(String(b.repo ?? '')) })) },
@@ -2663,6 +2712,38 @@ async function handleRequest(req, res) {
     await serveChatPage(res);
     return;
   }
+  // The chat's microphone when the page has no speech recognition of its own
+  // (OX.app's web view): the recording is transcribed on this machine and removed.
+  if (req.method === 'POST' && path === '/ox/voice/dictate') {
+    if (!authorized(req)) { unauthorized(res); return; }
+    const chunks = []; let size = 0;
+    try {
+      for await (const c of req) { size += c.length; if (size > 25 * 1024 * 1024) throw new Error('recording too long'); chunks.push(c); }
+    } catch (e) { sendError(res, 413, String(e.message), 'invalid_request_error', 'too_large', null); return; }
+    if (!size) { sendError(res, 400, 'no audio', 'invalid_request_error', 'bad_request', null); return; }
+    const { tmpdir } = await import('node:os');
+    const { writeFileSync, rmSync } = await import('node:fs');
+    const ct = String(req.headers['content-type'] ?? '');
+    const f = join(tmpdir(), `ox-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${/ogg/.test(ct) ? 'ogg' : /wav/.test(ct) ? 'wav' : /mp4|m4a|aac/.test(ct) ? 'm4a' : 'webm'}`);
+    writeFileSync(f, Buffer.concat(chunks));
+    try {
+      const tr = (await import('./video-edit.js')).transcribe(f);
+      sendJson(res, 200, { text: tr.segments.map((x) => x.text).join(' ').replace(/\s+/g, ' ').trim() });
+    } catch (e) {
+      sendError(res, 500, String(e?.message ?? e), 'server_error', 'transcribe_failed', null);
+    } finally {
+      for (const x of [f, f.replace(/\.\w+$/, '.transcript.srt')]) { try { rmSync(x, { force: true }); } catch {} }
+    }
+    return;
+  }
+  // The memory layer drawn as a house: write desk, read desk, vault, sleep room.
+  if (req.method === 'GET' && path === '/memory') {
+    const page = await readFile(new URL('./web/memory.html', import.meta.url));
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': page.length, 'Cache-Control': 'no-store',
+      'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'" });
+    res.end(page);
+    return;
+  }
   // The 3D office (the-delegation): every live agent at the desk of what it is doing.
   if (req.method === 'GET' && path === '/office') {
     // The pixel office (lumiomac's, top-down); ?view=3d keeps the 3D room.
@@ -2780,6 +2861,8 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       console.log(`[serve] listening on http://${host}:${actualPort}`);
       console.log(`[serve] web chat: http://${host.includes(':') ? `[${host}]` : host}:${actualPort}/`);
       const announced = announceServer(actualPort, host, !!(config.apiKey ?? apiKey()));
+      // The memory layer's sleep pass: 30 s after start, then every 6 hours, off the request path.
+      import('./memory-layer.js').then((ml) => ml.startSleepCycle()).catch(() => {});
       // The app's server steps aside when ox's code changes under it (a pull, an
       // update), once nothing is being worked on; the app page notices and the
       // app starts a fresh server (src/app.js ensureServer). A plain `ox serve` stays.

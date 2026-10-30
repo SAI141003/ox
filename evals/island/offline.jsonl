@@ -20,3 +20,7 @@
 {"text":"find some new Callaway irons for sale","intent":null,"why":"needs the web: an agent, not the offline router (Vovy video)"}
 {"text":"did anybody pay me today","intent":null,"why":"needs Stripe: an agent with your key (Coucou talk video)"}
 {"text":"open whatsapp and message all my friends","intent":null,"why":"real work: an agent, with approvals"}
+{"text":"Can you open WhatsApp?","intent":"app","why":"said to the island 2026-10; failed while the app server was down, but needs no server"}
+{"text":"read my to-dos for today","intent":"todos","why":"said to the island 2026-10; became an agent run"}
+{"text":"whats the date of today","intent":"date","why":"said to the island 2026-10; became an agent run"}
+{"text":"send a whatsapp to mom saying on my way","intent":"whatsapp","why":"WhatsApp for Mac: the chat opens with the message typed in"}

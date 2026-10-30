@@ -138,6 +138,11 @@ const bigSchemas = () =>
     },
   }));
 const OFFER = listToolSchemas({ allTools: bigSchemas() }, true);
+// Since 429becc a small window prunes the tool offer to a quarter of itself, so
+// schemas alone can no longer cross the line. The 1800-window fixtures carry one
+// long early answer instead: history alone stays under the threshold, history
+// plus the (pruned) schemas goes over it, which is the case these tests guard.
+const A1_LONG = `a1 ${'x'.repeat(2200)}`;
 const SYSTEM_TEXT = ['You are ox.', 'PROJECT INSTRUCTIONS: obey the tests.', 'Always run npm test.'].join('\n');
 // The latest turn is sized to beat both the system prompt and the 8-tool offer,
 // so "largest segment" has a clear, unambiguous winner in the default fixture.
@@ -288,7 +293,7 @@ test('REGRESSION: compaction fires on the FULL payload when history alone is und
   assert.ok(offerTokens > window * COMPACT_AT, 'fixture: the offer alone crosses the threshold');
   assert.ok(tokensOf([
     { role: 'user', content: 'u1' },
-    { role: 'assistant', content: 'a1' },
+    { role: 'assistant', content: A1_LONG },
     { role: 'user', content: 'u2' },
     { role: 'assistant', content: 'a2' },
     { role: 'user', content: 'u3' },
@@ -304,7 +309,7 @@ test('REGRESSION: compaction fires on the FULL payload when history alone is und
     auxTarget: null, // disable aux lookup so the summarizer is the main target
     messages: [
       { role: 'user', content: 'u1' },
-      { role: 'assistant', content: 'a1' },
+      { role: 'assistant', content: A1_LONG },
       { role: 'user', content: 'u2' },
       { role: 'assistant', content: 'a2' },
       { role: 'user', content: 'u3' },
@@ -321,7 +326,8 @@ test('REGRESSION: compaction fires on the FULL payload when history alone is und
   // The trigger's own accounting: the pre-compaction estimate the agent used is
   // the payload, and the context-estimate event agrees.
   const est = events.find((e) => e.type === 'context-estimate');
-  assert.ok(est.tokens > window * COMPACT_AT, 'measured payload crossed the threshold');
+  // The estimate is taken after compaction; the trigger's own reading is `from`.
+  assert.ok(compactions[0].from > window * COMPACT_AT, 'measured payload crossed the threshold');
   assert.equal(est.tokens, est.historyTokens + est.schemaTokens, 'payload = history + schemas');
 });
 
@@ -416,7 +422,7 @@ test('a dedicated compaction_model runs the summarizer; without one, the main mo
   const window = 1800; // same fixture shape as the regression test: schemas trip it
   const messages = [
     { role: 'user', content: 'u1' },
-    { role: 'assistant', content: 'a1' },
+    { role: 'assistant', content: A1_LONG },
     { role: 'user', content: 'u2' },
     { role: 'assistant', content: 'a2' },
     { role: 'user', content: 'u3' },
@@ -568,7 +574,7 @@ test('the compaction event is auditable: before/after tokens, drop counts, and t
     auxTarget: null,
     messages: [
       { role: 'user', content: 'u1' },
-      { role: 'assistant', content: 'a1' },
+      { role: 'assistant', content: A1_LONG },
       { role: 'user', content: 'u2' },
       { role: 'assistant', content: 'a2' },
       { role: 'user', content: 'u3' },
@@ -612,7 +618,8 @@ test('the compaction event is auditable: before/after tokens, drop counts, and t
   const afterSum = c.breakdownAfter.reduce((n, s) => n + s.tokens, 0);
   assert.equal(beforeSum, c.tokensBefore, 'breakdownBefore sums to tokensBefore');
   assert.equal(afterSum, c.tokensAfter, 'breakdownAfter sums to tokensAfter');
-  assert.ok(c.breakdownAfter.some((s) => s.id === 'tool-definitions' && s.tokens === toolSchemaTokens(OFFER)));
+  const sent = events.find((e) => e.type === 'context-estimate').schemaTokens; // the pruned offer actually sent
+  assert.ok(c.breakdownAfter.some((s) => s.id === 'tool-definitions' && s.tokens === sent));
 
   // the summary placeholder is recognizable to the breakdown afterwards
   const liveHistory = [
@@ -802,7 +809,7 @@ test('the reported reclaim is honest: schemas are in "to", so savings are not ov
       { role: 'user', content: 'q'.repeat(1500) },
       { role: 'assistant', content: 'r'.repeat(1500) },
       { role: 'user', content: 'u1' },
-      { role: 'assistant', content: 'a1' },
+      { role: 'assistant', content: A1_LONG },
       { role: 'user', content: 'u2' },
     ],
     ctx: { cwd, allTools: bigSchemas(), modelWindow: window, yolo: true },
@@ -810,7 +817,8 @@ test('the reported reclaim is honest: schemas are in "to", so savings are not ov
   });
   const c = events.find((e) => e.type === 'compaction');
   const offerTokens = toolSchemaTokens(OFFER);
-  assert.ok(c.to >= offerTokens, '"to" carries the schema block, which compaction cannot reclaim');
+  const sentSchemas = events.find((e) => e.type === 'context-estimate').schemaTokens; // the pruned offer actually sent
+  assert.ok(c.to >= sentSchemas, '"to" carries the schema block, which compaction cannot reclaim');
   assert.equal(c.savedTokens, c.tokensBefore - c.tokensAfter);
   assert.equal(c.savedTokens, c.messagesDropped >= 0 ? c.savedTokens : -1, 'saving is the reported delta, not a guess');
 });

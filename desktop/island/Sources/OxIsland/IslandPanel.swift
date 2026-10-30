@@ -75,6 +75,12 @@ enum IslandLayout {
     /// A race shows one row per lane (lumiomac's two timelines).
     static var tickerRows = 1
     static var trayOpen = false
+    /// A session's turn, opened from its tile.
+    static var glowOpen = false
+    static let glowExtra: CGFloat = 104
+    /// The glowing tiles under the cards (`defaults write dev.ox.island island.home classic` hides them).
+    static var tilesRow: Bool { UserDefaults.standard.string(forKey: "island.home") != "classic" }
+    static let tilesHeight: CGFloat = 92
     static func shape(_ phase: Phase, _ m: NotchMetrics, office: Bool = false, idle: Bool = false) -> (w: CGFloat, h: CGFloat, corner: CGFloat, top: CGFloat) {
         switch phase {
         case .launch: return (launchSize.width, launchSize.height, 30, -ear)
@@ -82,7 +88,7 @@ enum IslandLayout {
         case .compact: return tickerOn ? (max(m.width + 2 * wing + 2 * ear, tickerRows > 1 ? 470 : 380), m.height + tickerHeight * CGFloat(tickerRows) + (tickerRows > 1 ? 4 : 0), 16, -ear) : (m.width + 2 * wing + 2 * ear, m.height, 12, -ear)
         // Expanded is a regular rounded card. The concave ear cut-outs belong
         // only to the compact notch shape.
-        case .expanded: return (expanded.width, expanded.height + (office ? (officeOpen && trayOpen ? officeTall + 36 : cardOpen || trayOpen ? panelExtra : officeHeight) + 8 : 0), 22, 0)
+        case .expanded: return (expanded.width, expanded.height + (!office && tilesRow ? tilesHeight + 8 : 0) + (office ? (officeOpen && trayOpen ? officeTall + 36 : cardOpen || trayOpen ? panelExtra : glowOpen ? glowExtra : officeHeight) + 8 : 0), 22, 0)
         }
     }
 }
@@ -96,6 +102,8 @@ final class IslandPanel: NSPanel {
     private var pollInterval: TimeInterval = 0
     private var leaveWork: DispatchWorkItem?
     private var awaySince: Date?
+    private var hoverSince: Date?
+    static var hoverDelay: TimeInterval { UserDefaults.standard.object(forKey: "island.hoverDelay") as? Double ?? 0.4 }
     private var cancellables = Set<AnyCancellable>()
     private var clickMonitor: Any?
     /// The notch geometry, refreshed when displays change (not 60 times a second).
@@ -186,8 +194,9 @@ final class IslandPanel: NSPanel {
 
         // Opened by a click (or a tool), it closes on its own once the pointer
         // has been away a few seconds, unless an answer is coming or ox waits on you.
+        if !inside { hoverSince = nil }
         if inside { awaySince = nil }
-        else if bridge.pinnedOpen || bridge.tray != nil || bridge.card != nil {
+        else if bridge.pinnedOpen || bridge.tray != nil || bridge.card != nil || bridge.glowId != nil {
             if awaySince == nil { awaySince = Date() }
             let wait = IslandLayout.autoClose
             if wait > 0, let since = awaySince, Date().timeIntervalSince(since) > wait,
@@ -199,6 +208,7 @@ final class IslandPanel: NSPanel {
                 bridge.pinnedOpen = false
                 bridge.tray = nil
                 bridge.card = nil
+                bridge.glowId = nil
                 awaySince = nil
             }
         }
@@ -206,7 +216,13 @@ final class IslandPanel: NSPanel {
         if inside {
             leaveWork?.cancel()
             leaveWork = nil
-            if !bridge.hovering { bridge.hovering = true }
+            // With the eyes in the notch, the island opens once the pointer rests
+            // on it for a moment, so it can be poked first (each poke restarts the wait).
+            if hoverSince == nil { hoverSince = Date() }
+            let now = Date()
+            let rested = !EyeBrain.enabled || now.timeIntervalSince(hoverSince!) >= Self.hoverDelay
+                && now.timeIntervalSinceReferenceDate - EyeBrain.shared.lastPoke >= 1.2
+            if !bridge.hovering && rested { bridge.hovering = true }
         } else if bridge.hovering, leaveWork == nil {
             // Debounced: the island shrinking under the pointer must not flicker.
             let work = DispatchWorkItem { [weak self] in

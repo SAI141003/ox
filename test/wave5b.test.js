@@ -220,8 +220,9 @@ test('runAgent emits exactly one tool-narrowing event and sends the narrowed off
   });
   const narrows = events.filter((e) => e.type === 'tool-narrowing');
   assert.equal(narrows.length, 1, 'one narrowing event per turn');
-  // 7 mcp + 31 builtin (incl. 11 operator: the 7 plus ui_elements, click, press_key, draw; 2 mail, web_fetch/web_search/critique, create_media, edit_video, install_skill, code_graph, youtube_transcript, current_page, social_research, library, brain) + show_ui + 1 subagent = 43.
-  assert.equal(narrows[0].total, 43);
+  // 7 mcp + 34 builtin (incl. 11 operator: the 7 plus ui_elements, click, press_key, draw; 2 mail, messages_send, whatsapp_send, web_fetch/web_search/critique, create_media, edit_video, install_skill, code_graph, create_bot, youtube_transcript, current_page, social_research, library, brain) + show_ui + 1 subagent = 46.
+  // 43 -> 46: messages_send and whatsapp_send (44caac1, approval-gated messaging) and create_bot.
+  assert.equal(narrows[0].total, 46);
   // core nine + two declared db tools + load_tools (the withheld ones stay one call away)
   assert.equal(narrows[0].offered, 12, 'core nine + two declared db tools + load_tools');
   const wireNames = (bodies[0]?.tools ?? []).map((x) => x.function?.name);
@@ -245,7 +246,7 @@ test('runAgent emits exactly one tool-narrowing event and sends the narrowed off
   });
   assert.equal(events2.some((e) => e.type === 'tool-narrowing'), false);
   const disabledBody = bodies[bodies.length - 1];
-  assert.equal((disabledBody?.tools ?? []).length, 43, 'full offer (incl. show_ui and subagent) sent when disabled');
+  assert.equal((disabledBody?.tools ?? []).length, 46, 'full offer (incl. show_ui and subagent) sent when disabled');
 });
 
 // ---------------------------------------------------------------------------

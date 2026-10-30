@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ox memory</title>
+<style>
+  :root { --bg: #0d0f13; --panel: #15181e; --line: #262a33; --ink: #e9ebf0; --dim: #8b919d; --accent: #7dd3fc;
+    --fact: #6ea8fe; --preference: #f4a261; --event: #e9c46a; --lesson: #c084fc; --procedure: #34d399; --derived: #94a3b8; --old: #4b5059; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 14px 16px 40px; }
+  header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  header h1 { font-size: 16px; margin: 0; }
+  header .grow { flex: 1; }
+  .chip { background: #1b1e24; color: #aeb3bd; border-radius: 999px; padding: 2px 10px; font-weight: 600; font-size: 12px; white-space: nowrap; }
+  .chip b { color: var(--ink); }
+  button { all: unset; cursor: pointer; background: #2b3040; color: #fff; border-radius: 8px; padding: 5px 12px; font-weight: 600; font-size: 12px; }
+  button:hover { background: #38405a; } button:disabled { opacity: .5; cursor: default; }
+  .stage { position: relative; width: 100%; aspect-ratio: 320 / 200; border-radius: 10px; overflow: hidden; background: #000; box-shadow: 0 0 0 1px var(--line); }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
+  .lbl { position: absolute; transform: translate(-50%, 0); background: rgba(13,15,19,.82); color: #fff; font-size: clamp(9px, 1.4vw, 12px); font-weight: 700; padding: 1px 7px; border-radius: 999px; pointer-events: none; white-space: nowrap; }
+  .lbl small { font-weight: 500; color: #aeb3bd; margin-left: 4px; }
+  .pop { position: absolute; transform: translate(-50%, -100%); font-size: clamp(9px, 1.3vw, 11px); font-weight: 800; padding: 1px 6px; border-radius: 6px; color: #0d0f13; pointer-events: none; transition: opacity .6s, top .6s; white-space: nowrap; }
+  .now { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); background: rgba(13,15,19,.88); color: #e9ebf0; font-size: clamp(10px, 1.5vw, 12px); padding: 3px 10px; border-radius: 999px; max-width: 92%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin: 12px 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .card h3 { margin: 0 0 4px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  .card h3 i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+  .card p { margin: 0 0 6px; color: var(--dim); font-size: 12px; }
+  .big { font-size: 22px; font-weight: 800; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: #aeb3bd; }
+  .row b { color: var(--ink); }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin: 18px 0 8px; }
+  .list { display: flex; flex-direction: column; gap: 6px; }
+  .mem { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+  .mem .dot { width: 10px; height: 10px; border-radius: 3px; }
+  .mem .t { overflow-wrap: anywhere; }
+  .mem .meta { color: var(--dim); font-size: 11px; text-align: right; white-space: nowrap; }
+  .bar { height: 5px; background: #23272f; border-radius: 3px; overflow: hidden; margin-top: 4px; grid-column: 2 / 4; }
+  .bar span { display: block; height: 100%; border-radius: 3px; }
+  .feed { font-size: 12px; color: #c7cbd3; }
+  .feed div { padding: 5px 0; border-bottom: 1px dashed var(--line); display: flex; gap: 8px; }
+  .feed time { color: var(--dim); min-width: 62px; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: #aeb3bd; margin-top: 8px; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .empty { color: var(--dim); font-size: 12px; padding: 8px 0; }
+  .how { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; color: #c7cbd3; font-size: 12.5px; }
+  .how ol { margin: 4px 0; padding-left: 18px; } .how li { margin: 3px 0; }
+  body.embed .wrap { padding: 8px; } body.embed header h1 { font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Memory layer</h1>
+    <span class="chip">remembered <b id="c-live">–</b></span>
+    <span class="chip">kept as history <b id="c-hist">–</b></span>
+    <span class="chip">≈<b id="c-tok">–</b> tokens per run</span>
+    <span class="grow"></span>
+    <button id="sleep-now" title="Run the consolidation pass now">Sleep now</button>
+  </header>
+
+  <div class="stage" id="stage">
+    <canvas id="c" width="320" height="200" aria-label="The memory house: new things arrive at the write desk and are filed in the vault; before each run the read desk carries what matters to the model; at night the sleep room tidies the vault."></canvas>
+    <div class="lbl" style="left:22%;top:3%">① Write desk<small>new things are filed</small></div>
+    <div class="lbl" style="left:76%;top:3%">② Read desk<small>what goes to the model</small></div>
+    <div class="lbl" style="left:22%;top:52%">③ Vault<small>everything kept</small></div>
+    <div class="lbl" style="left:76%;top:52%">④ Sleep room<small>tidies while idle</small></div>
+    <div class="now" id="now">Loading…</div>
+  </div>
+  <div class="legend" id="legend"></div>
+
+  <div class="grid">
+    <div class="card"><h3><i style="background:var(--preference)"></i>① Write: when you say something</h3><p>Each new statement is checked against what ox already knows: a new fact is <b>added</b>, a change <b>replaces</b> the old one (kept as history), a repeat makes it <b>stronger</b>.</p><div class="row" id="w-ops"></div></div>
+    <div class="card"><h3><i style="background:var(--fact)"></i>② Read: before every run</h3><p>Only a short profile and the few memories that match the task go to the model, never your whole history.</p><div class="big" id="r-avg">–</div><div class="row" id="r-row"></div></div>
+    <div class="card"><h3><i style="background:var(--procedure)"></i>③ Vault: what is kept</h3><p>Stored on this Mac as plain lines you can read. Nothing is deleted: old versions and faded facts stay, out of the way.</p><div class="row" id="v-row"></div></div>
+    <div class="card"><h3><i style="background:var(--lesson)"></i>④ Sleep: while you are away</h3><p>Merges duplicates, retires past events, strengthens what keeps being used, lets unused facts fade, and turns lessons that worked twice into procedures.</p><div class="row" id="s-row"></div></div>
+  </div>
+
+  <div class="how"><b>How one message flows</b>
+    <ol>
+      <li>You say “I prefer pnpm”. The <b>write desk</b> finds no older package-manager fact, so it files a new <i>preference</i> card in the vault.</li>
+      <li>Later you say “I use bun now”. Same slot, new value: the new card replaces the old one, which moves to history with the date it stopped being true.</li>
+      <li>You ask ox to install dependencies. The <b>read desk</b> takes your profile plus the matching card (bun) to the model, a few hundred tokens instead of every past chat.</li>
+      <li>At night the <b>sleep room</b> notes the bun card was used, so it gets stronger and stays near the top.</li>
+    </ol>
+  </div>
+
+  <h2>What ox knows about you</h2>
+  <div class="list" id="profile"></div>
+  <h2>Strongest memories and how fast they fade</h2>
+  <div class="list" id="strong"></div>
+  <h2>Recent activity</h2>
+  <div class="feed" id="feed"></div>
+</div>
+<script>
+const KIND = { fact: '#6ea8fe', preference: '#f4a261', event: '#e9c46a', lesson: '#c084fc', procedure: '#34d399', derived: '#94a3b8' };
+const OLD = '#4b5059';
+const W = 320, H = 200;
+const cv = document.getElementById('c'), g = cv.getContext('2d');
+const stage = document.getElementById('stage');
+if (new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed');
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const px = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(Math.round(x), Math.round(y), w, h); };
+const ago = (t) => { const s = Math.max(0, (Date.now() - t) / 1000); return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; };
+$('legend').innerHTML = Object.entries(KIND).map(([k, c]) => `<span><i style="background:${c}"></i>${k}</span>`).join('') + `<span><i style="background:${OLD}"></i>history / faded</span>`;
+
+// ---------------------------------------------------------------- the house
+const P = {
+  write: { x: 52, y: 52 }, read: { x: 214, y: 52 }, vault: { x: 70, y: 150 }, bed: { x: 238, y: 150 },
+  inbox: { x: 6, y: 52 }, model: { x: 314, y: 52 }, hall: { x: 160, y: 100 },
+};
+let snap = null, sleeping = 0;
+function room(t) {
+  px(0, 0, W, H, '#2b2e34');
+  px(2, 2, 156, 96, '#d8d4cb'); px(162, 2, 156, 96, '#cfd8dc'); px(2, 102, 156, 96, '#c9c2b2'); px(162, 102, 156, 96, '#3a3f5c');
+  for (let x = 2; x < 158; x += 12) px(x, 2, 1, 96, '#ccc8bf');
+  for (let x = 162; x < 318; x += 12) px(x, 2, 1, 96, '#c3ccd0');
+  // Doors: in from the left (what you say), out to the right (to the model), the hall between.
+  px(0, 40, 3, 22, '#7a5a3c'); px(317, 40, 3, 22, '#7dd3fc');
+  px(156, 40, 8, 22, '#d8d4cb'); px(156, 140, 8, 22, '#c9c2b2'); px(110, 96, 22, 8, '#d8d4cb'); px(196, 96, 22, 8, '#cfd8dc');
+  // Write desk: three trays.
+  px(36, 58, 56, 14, '#7a5a3c'); px(36, 70, 56, 2, '#5c4129');
+  [['#34d399', 40], ['#f4a261', 58], ['#94a3b8', 76]].forEach(([c, x]) => { px(x, 54, 12, 5, '#e8e8e6'); px(x + 1, 55, 10, 3, c); });
+  // Read desk: a monitor that glows while a run is being prepared.
+  px(196, 58, 56, 14, '#7a5a3c'); px(196, 70, 56, 2, '#5c4129');
+  const lit = active.some((a) => a.kind === 'read');
+  px(214, 44, 20, 14, '#c9cdd2'); px(215, 45, 18, 11, lit ? '#0f1a14' : '#16181c');
+  if (lit) for (let i = 0; i < 4; i++) px(217, 46 + i * 2.5, 4 + ((Math.floor(t * 4) + i * 3) % 11), 1, i % 2 ? '#7dd3a7' : '#e6edf0');
+  // Vault shelves: one card per live memory (by kind), grey for history.
+  const shelves = [114, 130, 146, 162, 178];
+  shelves.forEach((y) => { px(10, y + 9, 140, 3, '#5c4129'); });
+  const cards = [];
+  if (snap) {
+    for (const [k, n] of Object.entries(snap.store.user.byKind)) for (let i = 0; i < n; i++) cards.push(KIND[k] ?? KIND.derived);
+    for (const [k, n] of Object.entries(snap.store.project.byKind)) for (let i = 0; i < n; i++) cards.push(KIND[k] ?? KIND.derived);
+    const hist = snap.store.user.total - snap.store.user.live + snap.store.project.total - snap.store.project.live;
+    for (let i = 0; i < hist; i++) cards.push(OLD);
+  }
+  const PER = 15;
+  cards.slice(0, 5 * PER).forEach((c, i) => { const s = Math.floor(i / PER), x = 12 + (i % PER) * 9; px(x, shelves[s] - 3, 7, 12, c); px(x, shelves[s] - 3, 7, 2, 'rgba(255,255,255,.35)'); px(x + 1, shelves[s] + 2, 5, 1, 'rgba(0,0,0,.25)'); px(x + 1, shelves[s] + 5, 4, 1, 'rgba(0,0,0,.25)'); });
+  if (cards.length > 5 * PER) { px(136, 104, 16, 7, '#0d0f13'); g.fillStyle = '#fff'; g.font = '6px monospace'; g.fillText(`+${cards.length - 5 * PER}`, 137, 110); }
+  // Sleep room: window with the moon, a bed, a lamp.
+  px(276, 108, 30, 20, '#1d2240'); px(278, 110, 26, 16, '#0b1030'); px(296, 113, 5, 5, '#f3e3b8'); px(298, 112, 4, 4, '#0b1030');
+  for (let i = 0; i < 6; i++) px(281 + i * 4, 112 + (i * 7) % 12, 1, 1, '#fff');
+  px(224, 140, 44, 30, '#6b5b95'); px(224, 140, 44, 8, '#e9e4f5'); px(224, 168, 44, 3, '#4b3f6d');
+  px(272, 160, 8, 10, '#5c4129'); px(273, 154, 6, 6, sleeping > 0 ? '#ffe9a8' : '#8a8070');
+}
+
+// ---------------------------------------------------------------- people
+const SPR = ['..hhhh..', '.hhhhhh.', '.hssssh.', '.sesses.', '..ssss..', '.cccccc.', 'cccccccc', 's.cccc.s', '..pppp..', '..p..p..', '.kk..kk.'];
+function person(x, y, shirt, t, walking, lying = false) {
+  const col = { h: '#3b2a20', s: '#f1c9a5', e: '#1f2125', c: shirt, p: '#2f3a55', k: '#1f2125' };
+  if (lying) { px(x - 2, y - 2, 10, 5, col.s); px(x - 4, y - 3, 4, 6, col.h); return; }
+  const bob = walking ? Math.round(Math.sin(t * 14)) : 0;
+  SPR.forEach((r, j) => { for (let i = 0; i < r.length; i++) { const c = col[r[i]]; if (c) px(x - 4 + i, y - 11 + j + (j > 8 ? 0 : bob), 1, 1, c); } });
+}
+const clerks = { write: { home: P.write, x: P.write.x, y: P.write.y + 24, shirt: '#f4a261' }, read: { home: P.read, x: P.read.x, y: P.read.y + 24, shirt: '#6ea8fe' }, keeper: { home: P.vault, x: 140, y: 150, shirt: '#c084fc' } };
+
+// ---------------------------------------------------------------- the story
+// Each logged event becomes a small trip a card takes through the house.
+const queue = [];
+let active = [];
+const OPS = { add: ['ADD', '#34d399'], extend: ['ADD + LINK', '#34d399'], update: ['REPLACES OLD', '#f4a261'], noop: ['SAID AGAIN · STRONGER', '#94a3b8'], forget: ['FORGET', '#f87171'] };
+function storyOf(e) {
+  if (e.type === 'write') {
+    const [label, col] = OPS[e.op] ?? [String(e.op ?? 'write').toUpperCase(), '#94a3b8'];
+    return { kind: 'write', label, col, card: KIND[e.kind] ?? '#fff', path: [P.inbox, { x: P.write.x, y: P.write.y + 12 }, P.hall, { x: P.vault.x, y: P.vault.y - 10 }], text: `Write desk: ${label.toLowerCase()} · a ${e.kind ?? ''} ${e.scope === 'project' ? 'about this project' : 'about you'}`, at: e.at };
+  }
+  if (e.type === 'read') return { kind: 'read', label: `${e.tokens ?? 0} tokens`, col: '#7dd3fc', card: KIND.fact, n: Math.max(1, Math.min(6, (e.profile ?? 0) + (e.relevant ?? 0))), path: [{ x: P.vault.x, y: P.vault.y - 10 }, P.hall, { x: P.read.x, y: P.read.y + 12 }, P.model], text: `Read desk: ${e.profile ?? 0} profile + ${e.relevant ?? 0} matching memories went to the model (≈${e.tokens ?? 0} tokens)`, at: e.at };
+  if (e.type === 'sleep') return { kind: 'sleep', label: `merged ${e.merged ?? 0} · faded ${e.dormant ?? 0} · stronger ${e.reinforced ?? 0}`, col: '#c084fc', card: KIND.lesson, path: [{ x: P.vault.x, y: P.vault.y - 10 }, { x: 160, y: 150 }, { x: P.bed.x, y: P.bed.y - 4 }], text: `Sleep: ${e.merged ?? 0} merged, ${e.expired ?? 0} past events retired, ${e.reinforced ?? 0} strengthened, ${e.dormant ?? 0} faded, ${e.promoted ?? 0} lessons became procedures`, at: e.at };
+  return null;
+}
+function pop(x, y, text, col) {
+  const d = document.createElement('div');
+  d.className = 'pop'; d.textContent = text; d.style.background = col;
+  d.style.left = `${(x / W) * 100}%`; d.style.top = `${(y / H) * 100}%`;
+  stage.append(d);
+  requestAnimationFrame(() => { d.style.top = `${((y - 14) / H) * 100}%`; });
+  setTimeout(() => { d.style.opacity = '0'; }, 1600); setTimeout(() => d.remove(), 2300);
+}
+function startNext() {
+  const s = queue.shift();
+  if (!s) return;
+  s.t0 = performance.now(); s.seg = 0; s.done = false;
+  active.push(s);
+  $('now').textContent = `${s.text} · ${ago(s.at)}`;
+  if (s.kind === 'sleep') sleeping = 260;
+}
+function along(path, f) {
+  const n = path.length - 1, i = Math.min(n - 1, Math.floor(f * n)), u = f * n - i;
+  return { x: path[i].x + (path[i + 1].x - path[i].x) * u, y: path[i].y + (path[i + 1].y - path[i].y) * u };
+}
+
+// ---------------------------------------------------------------- loop
+let last = performance.now();
+function frame(now) {
+  const t = now / 1000;
+  room(t);
+  for (const s of active) {
+    const dur = s.kind === 'sleep' ? 2600 : 2200;
+    const f = Math.min(1, (now - s.t0) / dur);
+    const who = s.kind === 'write' ? clerks.write : s.kind === 'read' ? clerks.read : clerks.keeper;
+    const p = along(s.path, f);
+    who.x = p.x; who.y = p.y + 4;
+    for (let k = 0; k < (s.n ?? 1); k++) px(p.x + 4 + k * 2, p.y - 8 - k, 5, 7, s.card);
+    if (f >= 1 && !s.done) {
+      s.done = true;
+      pop(p.x, p.y - 8, s.label, s.col);
+      setTimeout(() => { active = active.filter((x) => x !== s); startNext(); }, 500);
+    }
+  }
+  for (const c of Object.values(clerks)) {
+    const busy = active.some((s) => (s.kind === 'write' && c === clerks.write) || (s.kind === 'read' && c === clerks.read) || (s.kind === 'sleep' && c === clerks.keeper));
+    if (!busy) { c.x += (c.home.x - c.x) * 0.08; c.y += (c.home.y + 24 - c.y) * 0.08; }
+    const atBed = c === clerks.keeper && sleeping > 0 && !busy;
+    person(atBed ? P.bed.x + 10 : c.x, atBed ? P.bed.y - 4 : c.y, c.shirt, t, busy, atBed);
+  }
+  if (sleeping > 0) { sleeping--; const z = Math.floor(t * 2) % 3; for (let i = 0; i <= z; i++) { g.fillStyle = '#e9e4f5'; g.font = '6px monospace'; g.fillText('z', P.bed.x + 18 + i * 5, P.bed.y - 14 - i * 5); } }
+  if (!active.length && queue.length) startNext();
+  last = now;
+  requestAnimationFrame(frame);
+}
+
+// ---------------------------------------------------------------- data
+let lastAt = 0;
+function renderPanels(s) {
+  const u = s.store.user, pr = s.store.project;
+  $('c-live').textContent = u.live + pr.live;
+  $('c-hist').textContent = (u.total - u.live) + (pr.total - pr.live);
+  $('c-tok').textContent = s.read.runs ? s.read.avgTokens : 0;
+  const ops = s.write.ops;
+  $('w-ops').innerHTML = [['add', 'added'], ['extend', 'added + linked'], ['update', 'replaced'], ['noop', 'said again'], ['forget', 'forgotten']].map(([k, l]) => `<span><b>${ops[k] ?? 0}</b> ${l}</span>`).join('');
+  $('r-avg').textContent = s.read.runs ? `≈${s.read.avgTokens} tokens` : 'no runs yet';
+  $('r-row').innerHTML = `<span><b>${s.read.runs}</b> runs</span><span><b>${s.read.avgRecalled}</b> matching memories on average</span>`;
+  $('v-row').innerHTML = `<span><b>${u.live}</b> about you</span><span><b>${pr.live}</b> this project</span><span><b>${u.superseded + pr.superseded}</b> older versions</span><span><b>${(u.byState.dormant ?? 0) + (u.byState.expired ?? 0)}</b> faded / past</span>${s.store.legacyRows ? `<span><b>${s.store.legacyRows}</b> in the older notes store</span>` : ''}`;
+  const L = s.sleep.last;
+  $('s-row').innerHTML = s.sleep.lastAt ? `<span>last <b>${ago(s.sleep.lastAt)}</b></span><span><b>${L?.merged ?? 0}</b> merged</span><span><b>${L?.reinforced ?? 0}</b> stronger</span><span><b>${L?.dormant ?? 0}</b> faded</span><span><b>${L?.promoted ?? 0}</b> promoted</span>` : '<span>has not run yet (it runs 30 s after ox starts, then every 6 h)</span>';
+  const prof = [...s.profile.stable.map((m) => ({ ...m, w: 'always' })), ...s.profile.lately.map((m) => ({ ...m, w: 'lately' }))];
+  $('profile').innerHTML = prof.length ? prof.map((m) => `<div class="mem"><span class="dot" style="background:${KIND[m.kind] ?? '#fff'}"></span><span class="t">${esc(m.text)}</span><span class="meta">${esc(m.kind)} · ${m.w}</span></div>`).join('') : '<div class="empty">Nothing yet. Tell ox something about yourself, like “I prefer pnpm”, or add it in Settings › Memory.</div>';
+  const top = Math.max(1, ...s.strongest.map((m) => m.retention));
+  $('strong').innerHTML = s.strongest.length ? s.strongest.slice(0, 12).map((m) => `<div class="mem"><span class="dot" style="background:${KIND[m.kind] ?? '#fff'}"></span><span class="t">${esc(m.text)}</span><span class="meta">${m.strength > 1 ? `×${Math.round(m.strength * 10) / 10} · ` : ''}${m.recalled ? `used ${m.recalled}× · ` : ''}half-life ${m.halfLife} d</span><div class="bar"><span style="width:${Math.max(3, (m.retention / top) * 100)}%;background:${KIND[m.kind] ?? '#fff'}"></span></div></div>`).join('') : '<div class="empty">No memories yet.</div>';
+}
+function renderFeed(events) {
+  const rows = events.slice(-30).reverse().map((e) => { const st = storyOf(e); return st ? `<div><time>${ago(e.at)}</time><span>${esc(st.text)}</span></div>` : ''; }).join('');
+  $('feed').innerHTML = rows || '<div class="empty">No activity yet. Every run, every new memory and every sleep shows up here.</div>';
+}
+async function load() {
+  let s;
+  try { s = await (await fetch('/ox/memory/layer', { cache: 'no-store' })).json(); } catch { $('now').textContent = 'Could not reach ox.'; return; }
+  if (!s?.store) { $('now').textContent = s?.error?.message ?? 'Could not read memory.'; return; }
+  snap = s;
+  renderPanels(s);
+  const events = [...s.read.recent.map((e) => ({ ...e, type: 'read' })), ...s.write.recent.map((e) => ({ ...e, type: 'write' })), ...s.sleep.recent.map((e) => ({ ...e, type: 'sleep' }))].sort((a, b) => a.at - b.at);
+  renderFeed(events);
+  const fresh = lastAt ? events.filter((e) => e.at > lastAt) : events.slice(-8);
+  for (const e of fresh) { const st = storyOf(e); if (st) queue.push(st); }
+  if (events.length) lastAt = events.at(-1).at;
+  if (!events.length && !active.length) $('now').textContent = 'Quiet. Say something about yourself or start a run, and watch the cards move.';
+}
+$('sleep-now').onclick = async () => {
+  const b = $('sleep-now'); b.disabled = true;
+  try { await fetch('/ox/memory', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'sleep' }) }); await load(); } finally { b.disabled = false; }
+};
+load();
+setInterval(load, 4000);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

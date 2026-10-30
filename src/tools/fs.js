@@ -1,10 +1,44 @@
 import { constants as fsConstants, promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { redactSecrets } from '../memory.js';
 import { secretMatch } from '../oxignore.js';
 import { recordBefore, recordAfter } from '../undo.js';
+
+// A webpage the model just wrote is only visible to the user when something
+// opens it. We open .html files in the user's default browser after a
+// successful write_file inside the workspace. Honors the same dry-run gate as
+// the operator tools so tests never touch the real machine, and OX_NO_AUTO_OPEN
+// lets a session opt out.
+const AUTO_OPEN_EXTS = new Set(['.html', '.htm']);
+
+function autoOpenCmd(platform, target) {
+  if (platform === 'darwin') return ['open', [target]];
+  if (platform === 'win32') return ['cmd', ['/c', 'start', '""', target]];
+  return ['xdg-open', [target]];
+}
+
+function autoOpenAllowed(ctx) {
+  if (process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1') return false;
+  if (process.env.OX_NO_AUTO_OPEN === '1') return false;
+  if (ctx?.headless === true) return false;
+  return true;
+}
+
+function tryAutoOpenHtml(p, ctx) {
+  try {
+    if (!AUTO_OPEN_EXTS.has(path.extname(p).toLowerCase())) return null;
+    const cwd = typeof ctx?.cwd === 'string' && ctx.cwd ? path.resolve(ctx.cwd) : null;
+    if (!cwd || !withinDir(p, cwd)) return null;
+    if (!autoOpenAllowed(ctx)) return null;
+    const [cmd, args] = autoOpenCmd(process.platform, p);
+    const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+    child.on('error', () => {});
+    child.unref();
+    return 'opened in your default browser';
+  } catch { return null; }
+}
 
 const MAX_READ_CHARS = 100_000;
 const MAX_LIST_ENTRIES = 500;
@@ -621,7 +655,9 @@ export async function writeFileTool(args = {}, ctx = {}) {
     return err(`write_file: failed to write ${p} — ${e?.message ?? e}`);
   }
   const verb = existed ? 'Wrote' : 'Created';
-  const summary = `${verb} ${displayPath(p, ctx)} (${Buffer.byteLength(content, 'utf8')} bytes)`;
+  const openedNote = tryAutoOpenHtml(p, ctx);
+  const summaryBase = `${verb} ${displayPath(p, ctx)} (${Buffer.byteLength(content, 'utf8')} bytes)`;
+  const summary = openedNote ? `${summaryBase} — ${openedNote}` : summaryBase;
   return withSyntaxAdvisory(touched(ok(diff.trim() ? `${summary}\n${diff}` : summary), p, ctx), p, ctx);
 }
 

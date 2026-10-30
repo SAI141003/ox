@@ -102,9 +102,12 @@ const list = (v) => (Array.isArray(v) ? v : String(v ?? '').split(/[,;]/)).map((
 
 export async function mail_accounts(_args = {}, ctx = {}) {
   const { accounts, error } = await readAccounts(ctx);
-  if (error) return err(`mail_accounts: ${error}`);
-  if (!accounts.length) return { content: 'Mail has no enabled accounts with an address. Add one in Mail › Settings › Accounts.' };
-  return { content: `Mail can send from:\n${listText(accounts)}\nPass one of these exactly as "from".` };
+  let outlook = false;
+  try { outlook = !!(ctx.detectApps ?? (await import('../desktop-apps.js')).detectDesktopApps)().outlook?.installed; } catch {}
+  const alt = outlook ? '\nMicrosoft Outlook is also installed: mail_compose with app:"outlook" opens a draft there.' : '';
+  if (error) return outlook ? { content: `The Mail app could not be read (${error}).${alt}` } : err(`mail_accounts: ${error}`);
+  if (!accounts.length) return { content: `Mail has no enabled accounts with an address. Add one in Mail › Settings › Accounts.${alt}` };
+  return { content: `Mail can send from:\n${listText(accounts)}\nPass one of these exactly as "from".${alt}` };
 }
 
 // Every check that does not need Mail, in one place so it can be tested.
@@ -138,7 +141,28 @@ export function checkMail(args = {}, accounts = [], cwd = process.cwd()) {
   };
 }
 
+// Microsoft Outlook: a draft opened through mailto:, never sent by ox. The
+// person sees the account Outlook chose and presses Send there.
+async function outlookDraft(args, ctx) {
+  const { detectDesktopApps, mailtoLink } = await import('../desktop-apps.js');
+  const app = (ctx.detectApps ?? detectDesktopApps)().outlook;
+  if (!app?.installed) return err('mail_compose: Microsoft Outlook is not installed on this Mac. Use the Mail app (leave app out) instead.');
+  const to = list(args.to), cc = list(args.cc);
+  if (!to.length) return err('mail_compose: "to" is required');
+  const bad = [...to, ...cc].filter((a) => !EMAIL.test(a));
+  if (bad.length) return err(`mail_compose: not an email address: ${bad.join(', ')}`);
+  if (list(args.attachments).length) return err('mail_compose: Outlook drafts opened by ox cannot carry attachments. Make the draft without them and attach in Outlook, or use the Mail app.');
+  const link = mailtoLink({ to, cc, subject: String(args.subject ?? ''), body: String(args.body ?? '') });
+  const summary = [`To:      ${to.join(', ')}`, ...(cc.length ? [`Cc:      ${cc.join(', ')}`] : []), `Subject: ${String(args.subject ?? '') || '(none)'}`].join('\n');
+  if (process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1') return { content: `Draft (dry run) would open in Outlook: ${link}\n${summary}` };
+  const { spawnSync } = await import('node:child_process');
+  const r = (ctx.openLink ?? ((u) => spawnSync('open', ['-b', app.bundle ?? 'com.microsoft.Outlook', u], { timeout: 10_000 })))(link);
+  if (r?.status !== 0) return err(`mail_compose: Outlook did not open (${String(r?.stderr ?? '').trim() || 'open failed'})`);
+  return { content: `Draft open in Outlook, not sent. Check the From account there and press Send.\n${summary}` };
+}
+
 export async function mail_compose(args = {}, ctx = {}) {
+  if (String(args.app ?? '').toLowerCase() === 'outlook') return outlookDraft(args, ctx);
   const { accounts, error } = await readAccounts(ctx);
   if (error) return err(`mail_compose: ${error}`);
   const m = checkMail(args, accounts, ctx?.cwd ?? process.cwd());
@@ -178,7 +202,7 @@ export const MAIL_TOOL_SCHEMAS = [
   },
   {
     name: 'mail_compose',
-    description: 'Write an email in the Mail app (macOS), with attachments. Makes a visible draft by default; send:true sends only after the person approves. "from" must be exactly one of the addresses mail_accounts lists: never guess it, ask.',
+    description: 'Write an email in the Mail app (macOS), with attachments. Makes a visible draft by default; send:true sends only after the person approves. "from" must be exactly one of the addresses mail_accounts lists: never guess it, ask. app:"outlook" opens the draft in Microsoft Outlook instead (no from, no attachments; the person sends it there).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -188,9 +212,10 @@ export const MAIL_TOOL_SCHEMAS = [
         subject: { type: 'string' },
         body: { type: 'string' },
         attachments: { type: 'array', items: { type: 'string' }, description: 'File paths, e.g. a PDF' },
-        send: { type: 'boolean', description: 'true to send after approval; default false (draft)' },
+        send: { type: 'boolean', description: 'true to send after approval; default false (draft). Mail app only.' },
+        app: { type: 'string', enum: ['mail', 'outlook'], description: 'Which app: mail (default) or outlook' },
       },
-      required: ['from', 'to'],
+      required: ['to'],
     },
   },
 ];

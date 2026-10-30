@@ -98,10 +98,10 @@ export async function whatsapp_health({ env = process.env, fetchImpl = fetch } =
 
 export async function whatsapp_send(args = {}, ctx = {}) {
   const c = whatsappConfig(ctx.env ?? process.env);
-  if (!c.token || !c.phoneNumberId) return { content: 'whatsapp_send: configure the official WhatsApp Cloud API first (WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID).', isError: true };
   const to = String(args.to ?? '').replace(/[^\d+]/g, '');
   const body = String(args.body ?? '').trim();
-  if (!to || !body) return { content: 'whatsapp_send: both to and body are required.', isError: true };
+  if (!to || !body) return { content: 'whatsapp_send: both to (a phone number with country code) and body are required.', isError: true };
+  if (!c.token || !c.phoneNumberId) return whatsappDesktopSend(to, body, ctx);
   if (typeof ctx.requestApproval !== 'function') return { content: 'whatsapp_send: sending requires explicit approval; nothing was sent.', isError: true };
   if (!await ctx.requestApproval('whatsapp_send', { to, body }, `Send this WhatsApp message?\nTo: ${to}\n\n${body}`)) return { content: 'whatsapp_send: declined; nothing was sent.', isError: false };
   const r = await (ctx.fetchImpl ?? fetch)(`${API}/${encodeURIComponent(c.phoneNumberId)}/messages`, { method: 'POST', headers: { Authorization: `Bearer ${c.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body } }), signal: AbortSignal.timeout(15_000) });
@@ -110,4 +110,21 @@ export async function whatsapp_send(args = {}, ctx = {}) {
   return { content: `WhatsApp message accepted for ${to}. Message id: ${data.messages?.[0]?.id ?? 'unknown'}.`, isError: false };
 }
 
-export const WHATSAPP_TOOL_SCHEMAS = [{ name: 'whatsapp_send', description: 'Send a WhatsApp message through the official Cloud API. Requires credentials and explicit approval.', inputSchema: { type: 'object', properties: { to: { type: 'string' }, body: { type: 'string' } }, required: ['to', 'body'] } }];
+// No Cloud API: the person's own WhatsApp for Mac. The chat opens with the
+// message typed in; they press Enter, so ox never sends on its own and never
+// reads WhatsApp's private store.
+async function whatsappDesktopSend(to, body, ctx) {
+  const { detectDesktopApps, whatsappDesktopLink } = await import('../desktop-apps.js');
+  const app = (ctx.detectApps ?? detectDesktopApps)().whatsapp;
+  if (!app?.installed) return { content: 'whatsapp_send: WhatsApp for Mac is not installed and the Cloud API is not set up (WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID). Install WhatsApp from the App Store, or set up the Cloud API.', isError: true };
+  if (typeof ctx.requestApproval !== 'function') return { content: 'whatsapp_send: opening a WhatsApp message needs your approval; nothing was opened.', isError: true };
+  if (!await ctx.requestApproval('whatsapp_send', { to, body }, `Open this message in WhatsApp for you to send?\nTo: ${to}\n\n${body}`)) return { content: 'whatsapp_send: declined; nothing was opened.', isError: false };
+  const link = whatsappDesktopLink(to, body);
+  if (process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1') return { content: `WhatsApp (dry run): would open ${link}`, isError: false };
+  const { spawnSync } = await import('node:child_process');
+  const r = (ctx.openLink ?? ((u) => spawnSync('open', ['-b', app.bundle ?? 'net.whatsapp.WhatsApp', u], { timeout: 10_000 })))(link);
+  if (r?.status !== 0) return { content: `whatsapp_send: WhatsApp did not open (${String(r?.stderr ?? '').trim() || 'open failed'}).`, isError: true };
+  return { content: `Opened WhatsApp with the message to ${to} typed in. It is NOT sent yet: press Enter in WhatsApp to send it.`, isError: false };
+}
+
+export const WHATSAPP_TOOL_SCHEMAS = [{ name: 'whatsapp_send', description: 'Send a WhatsApp message. With the official Cloud API set up it sends after approval; otherwise it opens the chat in WhatsApp for Mac with the message typed in, and the person presses Enter. "to" is a phone number with country code.', inputSchema: { type: 'object', properties: { to: { type: 'string' }, body: { type: 'string' } }, required: ['to', 'body'] } }];

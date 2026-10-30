@@ -81,17 +81,27 @@ struct IslandRoot: View {
         // Top-centred, like the notch. Every child is laid out in the island's
         // own width; the shape both paints the black and clips the content.
         ZStack(alignment: .top) {
+        if let glow = edgeGlow(phase) {
+            IslandEdgeGlow(width: s.w, height: s.h, corner: s.corner, top: s.top, colour: glow)
+                .frame(width: IslandLayout.panel.width, height: IslandLayout.panel.height, alignment: .top)
+                .transition(.opacity)
+        }
+        ZStack(alignment: .top) {
             // Keep the panel transparent outside the island. Coucou's reference
             // uses a single black island surface; the cards inside carry the
             // hierarchy and colour, so the desktop never becomes a black slab.
+            // A session opened from its tile tints the whole island its colour.
             IslandShape(width: s.w, height: s.h, corner: s.corner, top: s.top)
-                .fill(Color.black)
+                .fill(islandFill(phase))
                 .overlay(
                     IslandShape(width: s.w, height: s.h, corner: s.corner, top: s.top)
                         .stroke(Color.white.opacity(0.10), lineWidth: 1)
                 )
                 .contentShape(Rectangle())
-                .onTapGesture { bridge.pinnedOpen.toggle() }
+                .onTapGesture {
+                    // Closed, a tap pokes the eyes (holding the pointer still opens it).
+                    if phase == .compact && EyeBrain.enabled { EyeBrain.shared.poke() } else { bridge.pinnedOpen.toggle() }
+                }
 
             Group {
                 switch phase {
@@ -115,6 +125,8 @@ struct IslandRoot: View {
         }
         .frame(width: IslandLayout.panel.width, height: IslandLayout.panel.height, alignment: .top)
         .clipShape(IslandShape(width: s.w, height: s.h, corner: s.corner, top: s.top))
+        }
+        .frame(width: IslandLayout.panel.width, height: IslandLayout.panel.height, alignment: .top)
         .contextMenu { IslandMenu(buddy: bridge.buddy, bridge: bridge) }
         // Drop files on the notch: they land on the shelf.
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
@@ -138,6 +150,26 @@ struct IslandRoot: View {
     }
 }
 
+extension IslandRoot {
+    /// Gold along the edge while a run waits on you, violet while ox listens.
+    func edgeGlow(_ phase: IslandLayout.Phase) -> Color? {
+        guard phase == .compact || phase == .expanded else { return nil }
+        if bridge.pendingSession != nil || bridge.headlineMood == .needsYou { return EyeInk.amber }
+        if MainActor.assumeIsolated({ bridge.buddy.isListeningOrStarting }) { return Color(hex: "#8B7CFF") }
+        return nil
+    }
+
+    func islandFill(_ phase: IslandLayout.Phase) -> AnyShapeStyle {
+        guard phase == .expanded, let g = bridge.glowSession else { return AnyShapeStyle(Color.black) }
+        let p = TilePalette.agent(g)
+        return AnyShapeStyle(LinearGradient(stops: [
+            .init(color: .black, location: 0.18),
+            .init(color: p.mid, location: 0.55),
+            .init(color: p.bottom.opacity(0.85), location: 1),
+        ], startPoint: .top, endPoint: .bottom))
+    }
+}
+
 /// Where a point inside the island sits in panel coordinates (for the gaze).
 private func panelPoint(islandWidth: CGFloat, x: CGFloat, y: CGFloat) -> CGPoint {
     CGPoint(x: (IslandLayout.panel.width - islandWidth) / 2 + x, y: y)
@@ -156,7 +188,14 @@ struct CompactBar: View {
         HStack(spacing: 0) {
             // Keep the compact Island quiet: status, approvals, and a chosen
             // pet are useful here; the permanent orange Ox head was not.
-            Spacer().frame(width: max(0, (w - metrics.width) / 2 - lead))
+            HStack(spacing: 5) {
+                if bridge.player.track?.playing == true { MiniArt(player: bridge.player, size: 16) }
+                if EyeBrain.enabled {
+                    NotchEyes(mood: bridge.headlineMood, dancing: bridge.player.track?.playing == true, height: metrics.height)
+                        .frame(width: 30)
+                }
+            }
+            .frame(width: max(0, (w - metrics.width) / 2 - lead))
             Spacer(minLength: 0)
             if let pet = IslandPetKind(rawValue: petKind), pet != .none {
                 IslandPet(kind: pet, mood: bridge.headlineMood, height: metrics.height * 0.82)
@@ -179,6 +218,8 @@ struct CompactBar: View {
                 // Coucou's compact mini grid: one small character per session, two by two.
                 MiniGrid(sessions: Array(bridge.sessions.prefix(4)))
                     .frame(width: 40, height: 28)
+            } else if bridge.player.track?.playing == true {
+                MusicBars().frame(width: 24, height: 9).frame(width: 30)
             } else {
                 StatusGlyph(bridge: bridge)
                     .frame(width: 26)
@@ -287,6 +328,15 @@ struct ExpandedContent: View {
             .padding(.horizontal, 10)
             .transition(.opacity.combined(with: .scale(scale: 0.97)))
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: bridge.pendingSession?.pending?.id)
+            if IslandLayout.tilesRow && !bridge.hasExtraPanel {
+                // Under the session cards (the ox, the herd, the other runs, your day):
+                // the glowing tiles for the run's clock, the music and focus.
+                GlowTilesHome(bridge: bridge, player: bridge.player, focus: bridge.focus)
+                    .frame(height: IslandLayout.tilesHeight)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 8)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
             extraPanel
                 .padding(.horizontal, 10)
                 .padding(.top, 8)
@@ -296,7 +346,11 @@ struct ExpandedContent: View {
     }
 
     @ViewBuilder private var extraPanel: some View {
-        if let id = bridge.orgCard, let a = bridge.org.first(where: { $0.id == id }) {
+        if let g = bridge.glowSession {
+            GlowSessionPanel(bridge: bridge, session: g)
+                .frame(height: IslandLayout.glowExtra)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        } else if let id = bridge.orgCard, let a = bridge.org.first(where: { $0.id == id }) {
             OrgAgentCard(bridge: bridge, agent: a)
                 .frame(height: 110)
                 .transition(.opacity.combined(with: .move(edge: .top)))

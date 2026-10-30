@@ -70,7 +70,12 @@ export async function createMediaTool(args = {}, ctx = {}) {
   const prompt = String(args.prompt ?? '').trim();
   if (!prompt) return err('create_media: a prompt is required.');
   const kind = args.kind === 'video' ? 'video' : (args.model && MODELS.find((m) => m.id === args.model)?.surface) || 'image';
-  const choice = pick({ kind, provider: args.provider, model: args.model, edit: !!args.edit_image }, ctx.env ?? process.env);
+  const env = ctx.env ?? process.env;
+  // Small models name a provider at random ("higgsfield" with no key), which
+  // only ever failed: a named provider with no key here is dropped for one that works.
+  const usable = (p) => !p || p === 'local' || (PROVIDERS[p] && (!PROVIDERS[p].key || !!env[PROVIDERS[p].key]));
+  const named = usable(args.provider) ? args.provider : undefined;
+  const choice = pick({ kind, provider: named, model: named ? args.model : undefined, edit: !!args.edit_image }, env);
   if (choice.error) return err(`create_media: ${choice.error}`);
   const media = {};
   if (args.start_image_url) media.start = [String(args.start_image_url)];

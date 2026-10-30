@@ -61,6 +61,7 @@ struct HomeHeader: View {
                 tab("plus", on: [.shelf, .focus, .clips, .mail, .recap, .office, .controls].contains(bridge.tray), label: "Shelf, focus, clips, mail, recap, office and Island controls") { bridge.card = nil; bridge.tray = [.shelf, .focus, .clips, .mail, .recap, .office, .controls].contains(bridge.tray) ? nil : .shelf }
             }
             .padding(.leading, 14)
+            if GlowTilesHome.on { HeaderClock().padding(.leading, 8) }
             Spacer(minLength: notchWidth + 8)
             HStack(spacing: 8) {
                 VoiceStatusChip(bridge: bridge)
@@ -71,7 +72,7 @@ struct HomeHeader: View {
                     if bridge.pendingSession == nil {
                         HeaderIcon(name: "xmark", active: false, help: "Close") {
                             if let alert = bridge.meshAlerts.first { bridge.dismissMesh(alert) }
-                            bridge.pinnedOpen = false; bridge.tray = nil; bridge.card = nil; bridge.hovering = false
+                            bridge.pinnedOpen = false; bridge.tray = nil; bridge.card = nil; bridge.glowId = nil; bridge.hovering = false
                         }
                     }
                 }
@@ -666,7 +667,7 @@ struct HomeButton: View {
     @State private var hover = false
     var body: some View {
         Button(action: action) {
-            Text(title).font(.system(size: 11.5, weight: .semibold)).lineLimit(1).truncationMode(.middle)
+            Text(title).font(.system(size: 11.5, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8).truncationMode(.middle)
                 .padding(.horizontal, 12).padding(.vertical, 5)
                 .foregroundStyle(style == .primary ? Color.black : HomeInk.text)
                 .background(Capsule().fill(style == .primary ? HomeInk.text : Color.white.opacity(hover ? 0.14 : 0.08)))

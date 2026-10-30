@@ -18,7 +18,7 @@ test('messages send never sends without approval', async () => {
 });
 
 test('WhatsApp health is explicit when credentials are absent', async () => {
-  assert.deepEqual(await whatsapp_health({ env: {} }), { configured: false, reachable: false, reason: 'Set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID.' });
+  assert.deepEqual(await whatsapp_health({ env: {} }), { configured: false, reachable: false, inboundReady: false, reason: 'Set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID.' });
 });
 
 test('WhatsApp send posts to the official Cloud API after approval', async () => {

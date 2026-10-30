@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { parseIntent, calc, doOffline, mailtoUrl, resolveApp } from '../src/offline.js';
+import { parseIntent, calc, doOffline, mailtoUrl, resolveApp, perform } from '../src/offline.js';
 
 const OX = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
 
@@ -147,4 +147,17 @@ test('email: "from gmail" / "from my work account" names the sending account; a 
   assert.equal(inBody.from, undefined);
   assert.equal(inBody.body, 'it came from mom');
   assert.equal(parseIntent('email bob@example.com saying hi').from, undefined, 'no account named: Mail is asked which');
+});
+
+test('WhatsApp by voice: who and what, never sent by ox', () => {
+  assert.deepEqual(parseIntent('send a whatsapp to mom saying on my way'), { intent: 'whatsapp', to: 'mom', text: 'on my way' });
+  assert.deepEqual(parseIntent('message Sam on whatsapp saying the build is done'), { intent: 'whatsapp', to: 'Sam', text: 'the build is done' });
+  assert.deepEqual(parseIntent('whatsapp +1 604 555 0100: running late'), { intent: 'whatsapp', to: '+1 604 555 0100', text: 'running late' });
+  assert.match(perform(parseIntent('whatsapp +1 604 555 0100: running late')).message, /phone=16045550100&text=running%20late/);
+});
+
+test('an installed app wins over its website by alias ("open outlook" → Microsoft Outlook)', () => {
+  const apps = new Map([['microsoft outlook', 'Microsoft Outlook']]);
+  assert.equal(resolveApp('outlook', apps, 'darwin'), 'Microsoft Outlook');
+  assert.equal(resolveApp('word', new Map(), 'darwin'), null);
 });

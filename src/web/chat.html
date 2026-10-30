@@ -305,6 +305,16 @@
   .cv-row .cv-spacer, .cv-spacer { flex: 1; }
   .cv-row:has(.cv-spacer) { display: flex; align-items: center; gap: 8px; }
   .cv-press { border: 1px solid var(--line2); border-radius: 12px; padding: 8px; cursor: pointer; } .cv-press.on { border-color: var(--text); } .cv-press:hover { background: var(--hover); }
+  .cv-radio { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; } .cv-radio legend { font-size: 13px; color: var(--muted); margin-bottom: 4px; } .cv-radio label { display: flex; gap: 8px; align-items: center; font-size: 14px; cursor: pointer; } .cv-radio input { accent-color: var(--text); }
+  .ui-field textarea { width: 100%; resize: vertical; font: inherit; background: var(--raise); color: var(--text); border: 0; border-radius: 8px; padding: 8px; }
+  .cv-timer { display: flex; align-items: center; gap: 10px; } .cv-timer b { font: 600 28px/1 ui-monospace, SFMono-Regular, Menlo, monospace; min-width: 4.5ch; } .cv-timer.done b { color: #10B981; }
+  .cv-flash { all: unset; cursor: pointer; display: grid; place-items: center; min-height: 110px; padding: 18px; border-radius: 14px; background: var(--raise); text-align: center; font-size: 16px; position: relative; } .cv-flash .b { display: none; } .cv-flash.on .f { display: none; } .cv-flash.on .b { display: block; } .cv-flash small { position: absolute; bottom: 6px; right: 10px; color: var(--muted); font-size: 11px; }
+  .cv-carousel .cv-car-nav { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; color: var(--muted); font-size: 12px; }
+  .cv-quote { margin: 4px 0; padding: 6px 14px; border-left: 3px solid var(--line2, #444); font-style: italic; } .cv-quote cite { display: block; font-style: normal; color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .cv-link { text-decoration: underline; text-underline-offset: 3px; }
+  .cv-math { font-family: "Times New Roman", Georgia, serif; font-style: italic; font-size: 1.08em; } .cv-math.block { display: block; text-align: center; font-size: 1.3em; padding: 6px 0; }
+  .cv-pop summary { cursor: pointer; color: var(--muted); font-size: 13px; } .cv-pop[open] summary { margin-bottom: 6px; }
+  .cv-party { position: relative; height: 70px; overflow: hidden; display: grid; place-items: center; } .cv-party b { font-size: 18px; } .cv-party i { position: absolute; top: -10px; left: var(--x); width: 6px; height: 10px; background: var(--c); border-radius: 2px; animation: cvfall 1.6s var(--d) ease-in forwards; } @keyframes cvfall { to { transform: translateY(90px) rotate(540deg); opacity: 0; } } @media (prefers-reduced-motion: reduce) { .cv-party i { animation: none; display: none; } }
   .cv-check { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; } .cv-check input { accent-color: var(--text); width: 16px; height: 16px; }
   .cv-seg { display: inline-flex; background: var(--raise); border-radius: 9px; padding: 3px; gap: 2px; } .cv-seg button { padding: 5px 12px; border-radius: 7px; font-size: 13px; color: var(--muted); } .cv-seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
   .cv-chart { border: 1px solid var(--line2); border-radius: 12px; padding: 12px; background: var(--panel); }
@@ -449,6 +459,7 @@
   .round { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); }
   .round:hover { background: var(--hover); color: var(--text); }
   .round.live { background: var(--red); color: #fff; }
+  .round.busy { opacity: .55; animation: micbusy 1s ease-in-out infinite alternate; } @keyframes micbusy { to { opacity: .25; } }
   .send { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--btn); color: var(--btn-ink); }
   .send:disabled { opacity: .3; cursor: default; }
   .hint { font-size: 11.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -484,6 +495,20 @@
   .cmd { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 9px 12px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); font: 12.5px var(--mono); }
   .cmd code { flex: 1; overflow-x: auto; white-space: nowrap; }
   .cards { display: flex; flex-direction: column; gap: 8px; }
+  .conn-list { display: flex; flex-direction: column; gap: 10px; }
+  .conn { background: var(--raise); border-radius: 22px; padding: 16px 18px; display: grid; grid-template-columns: 48px 1fr auto; grid-template-areas: "logo name act" "desc desc desc"; column-gap: 14px; row-gap: 10px; align-items: center; }
+  .conn .logo { grid-area: logo; width: 48px; height: 48px; border-radius: 12px; background: #fff; border: 1px solid rgba(0,0,0,.08); display: grid; place-items: center; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .conn .logo svg { width: 28px; height: 28px; }
+  .conn .nm { grid-area: name; min-width: 0; }
+  .conn .nm b { display: block; font-size: 16px; font-weight: 600; color: var(--text); }
+  .conn .nm span { font-size: 12.5px; color: var(--dim); }
+  .conn .ds { grid-area: desc; font-size: 14px; color: var(--muted); line-height: 1.4; }
+  .conn .act { grid-area: act; }
+  .conn .go { background: var(--btn); color: var(--btn-ink); border: 0; border-radius: 999px; padding: 9px 18px; font: 600 14px var(--sans); cursor: pointer; }
+  .conn .go:disabled { opacity: .5; cursor: default; }
+  .conn .on { color: #3FA34D; font-weight: 600; font-size: 14px; background: none; border: 0; cursor: pointer; font-family: var(--sans); }
+  .conn .on.local { color: var(--text); }
+  .conn .need { font-size: 12.5px; color: var(--dim); text-align: right; max-width: 180px; }
   .card { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 12px 14px; }
   .market-logo { position: relative; flex: 0 0 40px; width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; overflow: hidden; color: white; font-weight: 800; font-size: 14px; border: 1px solid color-mix(in srgb, white 10%, transparent); }
   .market-logo img { position: absolute; inset: 7px; width: 26px; height: 26px; object-fit: contain; }
@@ -1091,7 +1116,7 @@
   // ---------- api
   let key = (() => { try { return sessionStorage.getItem('ox.key') || ''; } catch { return ''; } })();
   async function api(path, opts = {}) {
-    const headers = { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) };
+    const headers = { 'Content-Type': 'application/json', ...(opts.headers ?? {}), ...(key ? { Authorization: `Bearer ${key}` } : {}) };
     const res = await fetch(path, { ...opts, headers });
     if (res.status === 401) {
       if (await askKey()) return api(path, opts);
@@ -1454,6 +1479,9 @@
       case 'Line': return `<line x1="${num(p.x1)}" y1="${num(p.y1)}" x2="${num(p.x2)}" y2="${num(p.y2)}" stroke="${col(p.stroke)}" stroke-width="${num(p.width) || 1.5}" stroke-linecap="round"/>`;
       case 'Polygon': return `<polygon points="${esc(String(p.points ?? '').replace(/[^0-9.,\s-]/g, ''))}" fill="${col(p.fill, 'var(--text)')}" stroke="${col(p.stroke, 'none')}"/>`;
       case 'SvgText': return `<text x="${num(p.x)}" y="${num(p.y)}" font-size="${num(p.size) || 11}" fill="${col(p.fill, 'var(--muted)')}" text-anchor="${['start', 'middle', 'end'].includes(p.anchor) ? p.anchor : 'start'}">${esc(p.text ?? '')}</text>`;
+      case 'Ellipse': return `<ellipse cx="${num(p.cx)}" cy="${num(p.cy)}" rx="${num(p.rx)}" ry="${num(p.ry)}" fill="${col(p.fill, 'var(--text)')}" stroke="${col(p.stroke, 'none')}"/>`;
+      case 'Polyline': return `<polyline points="${esc(String(p.points ?? '').replace(/[^0-9.,\s-]/g, ''))}" fill="none" stroke="${col(p.stroke)}" stroke-width="${num(p.width) || 1.5}" stroke-linejoin="round" stroke-linecap="round"/>`;
+      case 'Path': return `<path d="${esc(String(p.d ?? '').replace(/[^MmLlHhVvCcSsQqTtAaZz0-9.,\s-]/g, ''))}" fill="${col(p.fill, 'none')}" stroke="${col(p.stroke)}" stroke-width="${num(p.width) || 1.5}" stroke-linejoin="round" stroke-linecap="round"/>`;
       default: return '';
     }
   }
@@ -1520,6 +1548,18 @@
       case 'Select': return `<label class="ui-field"><span>${esc(p.name ?? '')}</span><select ${cx && p.bind ? `data-cv-bind="${esc(p.bind)}"` : 'disabled'}>${(p.options ?? []).map((o) => { const q = o.props ?? o; return `<option value="${esc(q.value)}" ${String(q.value) === String(p.value) ? 'selected' : ''}>${esc(q.label ?? q.value)}</option>`; }).join('')}</select></label>`;
       case 'Input': return `<label class="ui-field"><span>${esc(p.label ?? '')}</span><input type="${p.type === 'text' ? 'text' : 'number'}" step="any" value="${esc(p.value ?? '')}" ${cx && p.bind ? `data-cv-bind="${esc(p.bind)}"` : 'disabled'}></label>`;
       case 'Slider': return `<label class="ui-field"><span>${esc(p.label ?? '')} <b class="cv-val">${esc(fmtNum(Number(p.value)))}</b></span><input type="range" min="${esc(p.min)}" max="${esc(p.max)}" step="${esc(p.step ?? 'any')}" value="${esc(p.value)}" ${cx && p.bind ? `data-cv-bind="${esc(p.bind)}"` : 'disabled'}></label>`;
+      case 'TextArea': return `<label class="ui-field"><span>${esc(p.label ?? '')}</span><textarea rows="${Math.max(2, Math.min(12, Number(p.rows) || 4))}" ${cx && p.bind ? `data-cv-bind="${esc(p.bind)}"` : 'disabled'}>${esc(p.value ?? '')}</textarea></label>`;
+      case 'DatePicker': return `<label class="ui-field"><span>${esc(p.label ?? '')}</span><input type="date" value="${esc(/^\d{4}-\d{2}-\d{2}$/.test(String(p.value ?? '')) ? p.value : '')}" ${cx && p.bind ? `data-cv-bind="${esc(p.bind)}"` : 'disabled'}></label>`;
+      case 'RadioGroup': { const nm = `r${Math.random().toString(36).slice(2, 8)}`; return `<fieldset class="cv-radio">${p.label ? `<legend>${esc(p.label)}</legend>` : ''}${(p.options ?? []).map((o) => { const i = cx && p.bind ? cx.actions.push({ steps: [{ step: 'set', name: p.bind, value: o }] }) - 1 : null; return `<label><input type="radio" name="${nm}" ${String(o) === String(p.value) ? 'checked' : ''} ${i != null ? `data-cv-act="${i}"` : 'disabled'}><span>${esc(o)}</span></label>`; }).join('')}</fieldset>`; }
+      case 'Timer': { const sec = Math.max(1, Math.min(86400, Math.round((Number(p.minutes) || 1) * 60))); return `<div class="cv-timer" data-timer="${sec}">${p.label ? `<span>${esc(p.label)}</span>` : ''}<b>${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}</b><button class="chip" data-tm="go">Start</button><button class="chip" data-tm="reset">Reset</button></div>`; }
+      case 'Flashcard': return `<button class="cv-flash" data-flip><span class="f">${typeof p.front === 'object' ? canvasNode(p.front, cx) : inline(String(p.front ?? ''))}</span><span class="b">${typeof p.back === 'object' ? canvasNode(p.back, cx) : inline(String(p.back ?? ''))}</span><small>tap to flip</small></button>`;
+      case 'Carousel': { const items = (Array.isArray(p.children) ? p.children : [p.children]).filter(Boolean); return `<div class="cv-carousel" data-car="0">${items.map((x, i) => `<div class="cv-slide"${i ? ' hidden' : ''}>${canvasNode(x, cx)}</div>`).join('')}<div class="cv-car-nav"><button class="chip" data-car-go="-1" aria-label="Previous">‹</button><span>1 / ${items.length}</span><button class="chip" data-car-go="1" aria-label="Next">›</button></div></div>`; }
+      case 'Quote': return `<blockquote class="cv-quote">${inline(String(p.text ?? ''))}${p.cite ? `<cite>— ${esc(p.cite)}</cite>` : ''}</blockquote>`;
+      case 'Link': return /^https:\/\//.test(String(p.url ?? '')) ? `<a class="cv-link" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${esc(p.label || p.url)} ↗</a>` : `<span class="cv-link">${esc(p.label ?? '')}</span>`;
+      case 'Image': { const src = String(p.src ?? ''); const ok = /^\/ox\/media\/[\w-]+\/[\w.-]+\.(png|jpe?g|webp|gif)$/i.test(src) || /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(src); const ar = Math.max(0.4, Math.min(3, Number(p.aspect) || 1)); return ok ? `<figure class="cv-img" style="aspect-ratio:${ar}"><img alt="${esc(p.alt ?? '')}" src="${esc(src)}">${p.alt ? `<figcaption>${esc(p.alt)}</figcaption>` : ''}</figure>` : `<div class="ui-box muted small">${esc(p.alt || 'picture')}</div>`; }
+      case 'Math': { const t = esc(String(p.expr ?? '')).replace(/sqrt\(/g, '√(').replace(/\bpi\b/g, 'π').replace(/&lt;=/g, '≤').replace(/&gt;=/g, '≥').replace(/!=/g, '≠').replace(/\*/g, '·').replace(/\^\(([^)]{1,20})\)|\^([\w.]{1,8})/g, (_, a, b) => `<sup>${a ?? b}</sup>`).replace(/_([\w]{1,6})/g, '<sub>$1</sub>'); return p.block ? `<div class="cv-math block">${t}</div>` : `<span class="cv-math">${t}</span>`; }
+      case 'Popover': return `<details class="cv-pop"><summary>${esc(p.label ?? 'More')}</summary><div class="cv-stack">${kids(p.children)}</div></details>`;
+      case 'Celebration': return `<div class="cv-party" data-party>${Array.from({ length: 18 }, (_, i) => `<i style="--x:${(i * 37) % 100}%;--d:${(i % 6) * 0.08}s;--c:${['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'][i % 6]}"></i>`).join('')}<b>${esc(p.text || 'Done!')}</b></div>`;
       default: return p.children ? kids(p.children) : '';
     }
   }
@@ -1549,6 +1589,31 @@
   async function olQuery(tool, args) {
     return postJson('/ox/canvas/query', { tool, args });
   }
+  // Pieces that act on the page alone (a timer, a flashcard, a carousel): no
+  // canvas state, so a redraw starts them fresh rather than half-way.
+  function uiLocalClick(e) {
+    const flip = e.target.closest('[data-flip]');
+    if (flip) { flip.classList.toggle('on'); return true; }
+    const go = e.target.closest('[data-car-go]');
+    if (go) {
+      const car = go.closest('.cv-carousel'), slides = [...car.querySelectorAll(':scope > .cv-slide')];
+      const i = (Number(car.dataset.car) + Number(go.dataset.carGo) + slides.length) % slides.length;
+      car.dataset.car = i; slides.forEach((s, k) => (s.hidden = k !== i));
+      car.querySelector('.cv-car-nav span').textContent = `${i + 1} / ${slides.length}`;
+      return true;
+    }
+    const tm = e.target.closest('[data-tm]');
+    if (tm) {
+      const box = tm.closest('.cv-timer'), shown = box.querySelector('b'), total = Number(box.dataset.timer);
+      const draw = (s) => { shown.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+      if (tm.dataset.tm === 'reset') { clearInterval(box._t); box._t = null; box._left = total; box.classList.remove('done'); draw(total); box.querySelector('[data-tm=go]').textContent = 'Start'; return true; }
+      if (box._t) { clearInterval(box._t); box._t = null; tm.textContent = 'Resume'; return true; }
+      box._left ??= total; tm.textContent = 'Pause';
+      box._t = setInterval(() => { box._left = Math.max(0, box._left - 1); draw(box._left); if (!box._left) { clearInterval(box._t); box._t = null; box.classList.add('done'); tm.textContent = 'Start'; box._left = total; } }, 1000);
+      return true;
+    }
+    return false;
+  }
   function bindOpenUI(root) {
     root.querySelectorAll('[data-ol]').forEach((el) => {
       const c = canvases.get(el.dataset.ol);
@@ -1562,7 +1627,7 @@
       }
       el.addEventListener('input', (e) => {
         const b = e.target.closest('[data-cv-bind]'); if (!b) return;
-        const v = b.type === 'checkbox' ? b.checked : b.type === 'text' ? b.value : b.tagName === 'SELECT' ? (isNaN(Number(b.value)) ? b.value : Number(b.value)) : Number(b.value);
+        const v = b.type === 'checkbox' ? b.checked : ['text', 'textarea', 'date'].includes(b.type) ? b.value : b.tagName === 'SELECT' ? (isNaN(Number(b.value)) ? b.value : Number(b.value)) : Number(b.value);
         c.canvas.state[b.dataset.cvBind] = v;
         c.canvas.evaluate();
         // Keep the control being used; refresh everything else.
@@ -1572,6 +1637,7 @@
         else { const nb = el.querySelector(`[data-cv-bind="${CSS.escape(b.dataset.cvBind)}"][type=range]`); nb?.focus(); }
       });
       el.addEventListener('click', async (e) => {
+        if (uiLocalClick(e)) return;
         const b = e.target.closest('[data-cv-act]'); if (!b) return;
         const out = await c.canvas.act(c.actions[Number(b.dataset.cvAct)], olQuery);
         if (out.rerender) redraw();
@@ -1686,12 +1752,15 @@
       ? `<div class="worklog"><div class="cap" style="margin-bottom:6px">Plan · ${msg.plan.filter((t) => t.status === 'completed').length}/${msg.plan.length} done</div>${msg.plan.map((t) => `<div class="wl ${t.status}"><span class="dot ${PI[t.status]?.[0] ?? ''}"></span><span>${esc(t.content)}</span></div>`).join('')}</div>`
       : '';
     const canv = (msg.canvases || []).map((c) => `<div class="ui cv">${canvasNode(c.tree)}</div>`).join('');
+    const made = (msg.media || []).filter((u) => /^\/ox\/media\/[^/]+\/[^/]+$/.test(u)).map((u) => /\.(mp4|mov|webm)$/i.test(u)
+      ? `<video class="made" src="${esc(u)}" controls playsinline preload="metadata" style="max-width:min(100%,520px);border-radius:12px;display:block;margin:8px 0;background:#000"></video>`
+      : `<a href="${esc(u)}" target="_blank" rel="noopener"><img class="made" src="${esc(u)}" alt="made by ox" style="max-width:min(100%,520px);border-radius:12px;display:block;margin:8px 0"></a>`).join('');
     // "Write: /path" is shown as Write and the path.
     const askWhat = (a) => { const p = String(a.preview || ''), t = `${a.tool}: `; return p.startsWith(t) ? p.slice(t.length) : p; };
     const asks = (msg.asks || []).map((a) => a.state
       ? `<div class="ask-done small dim">${a.state === 'allow' ? 'Allowed' : 'Denied'} · <b>${esc(a.tool)}</b> <span class="mono">${esc(askWhat(a))}</span></div>`
       : `<div class="ask-card" data-ask-id="${esc(a.id)}"><div class="cap">Waiting for your OK</div><div><b>${esc(a.tool)}</b> <span class="mono small">${esc(askWhat(a))}</span></div><div class="ask-btns"><button class="btn primary small" data-ask-answer="allow">Allow</button><button class="btn ghost small" data-ask-answer="deny">Deny</button></div></div>`).join('');
-    body.innerHTML = routed + plan + (steps ? `<div class="steps${prefs.activity === 'detailed' ? ' detailed' : ''}">${steps}</div>` : '') + asks + canv + text + changedHtml + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : '');
+    body.innerHTML = routed + plan + (steps ? `<div class="steps${prefs.activity === 'detailed' ? ' detailed' : ''}">${steps}</div>` : '') + asks + canv + made + text + changedHtml + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : '');
     body.querySelectorAll('[data-ask-answer]').forEach((b) => (b.onclick = () => {
       const card = b.closest('[data-ask-id]');
       const a = (msg.asks || []).find((x) => x.id === card.dataset.askId);
@@ -1983,9 +2052,10 @@
             c.context = { tokens: Number(ox.tokens) || 0, window: Number(ox.window) || 0, historyTokens: Number(ox.historyTokens) || 0, schemaTokens: Number(ox.schemaTokens) || 0, at: Date.now() };
             updateUsageMeter(c);
           }
+          if (ox?.type === 'media' && Array.isArray(ox.media)) reply.media = [...new Set([...(reply.media || []), ...ox.media])];
           if (ox?.type === 'tool-start' && Array.isArray(ox.plan)) reply.plan = ox.plan;
           else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '', ...(ox.file ? { file: ox.file } : {}), ...(ox.files ? { files: ox.files } : {}) });
-          if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; if (ox.canvas) { reply.canvases = (reply.canvases || []).filter((x) => x.id !== ox.id); reply.canvases.push({ id: ox.id, tree: ox.canvas }); } }
+          if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; if (Array.isArray(ox.media) && ox.media.length) reply.media = [...new Set([...(reply.media || []), ...ox.media])]; if (ox.canvas) { reply.canvases = (reply.canvases || []).filter((x) => x.id !== ox.id); reply.canvases.push({ id: ox.id, tree: ox.canvas }); } }
           // A step waiting on your yes (a plan's write, a command): Allow / Deny here.
           if (ox?.type === 'approval') (reply.asks ??= []).push({ id: ox.id, tool: ox.tool, preview: ox.preview, state: '' });
           if (ox?.type === 'approval-resolved') { const a = (reply.asks || []).find((x) => x.id === ox.id); if (a) a.state = ox.decision === 'allow' ? 'allow' : 'deny'; }
@@ -2766,8 +2836,45 @@
   // ---------- voice: the browser's own recognition and voices
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null;
+  // When the page's own speech recognition is missing or refused (OX.app's web
+  // view), the mic records instead and ox transcribes it on this machine.
+  let speechRefused = false, recorder = null;
+  const canRecord = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+  const MIC_HELP = 'Allow ox under System Settings › Privacy & Security › Microphone, then try again.';
+  let micStarting = false;
+  async function recordMic() {
+    if (recorder) { recorder.stop(); return; }
+    if (micStarting) return; // a second press while macOS is still asking
+    micStarting = true;
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch (e) { toast(e?.name === 'NotAllowedError' ? `The microphone is off for ox. ${MIC_HELP}` : `No microphone: ${e?.message ?? e}`); return; }
+    finally { micStarting = false; }
+    const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find((t) => MediaRecorder.isTypeSupported?.(t)) || '';
+    const chunks = [];
+    recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+    recorder.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
+    recorder.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      recorder = null; $('mic').classList.remove('live');
+      const blob = new Blob(chunks, { type: type || 'audio/webm' });
+      if (!blob.size) return;
+      $('mic').classList.add('busy');
+      try {
+        const r = await api('/ox/voice/dictate', { method: 'POST', body: blob, headers: { 'Content-Type': blob.type } });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error?.message || `HTTP ${r.status}`);
+        if (j.text) { const v = $('input').value; $('input').value = (v ? `${v} ` : '') + j.text; resize(); $('input').focus(); }
+        else toast('Nothing heard');
+      } catch (e) { toast(`Could not turn that into text: ${e.message}`); }
+      finally { $('mic').classList.remove('busy'); }
+    };
+    recorder.start();
+    $('mic').classList.add('live');
+  }
   function toggleMic() {
-    if (!Speech || readonly) return;
+    if (readonly) return;
+    if (recorder || !Speech || speechRefused) { if (canRecord) recordMic(); else toast('This window cannot use a microphone.'); return; }
     if (rec) { rec.stop(); return; }
     rec = new Speech();
     rec.interimResults = true;
@@ -2775,11 +2882,16 @@
     const start = $('input').value;
     rec.onresult = (e) => { $('input').value = (start ? `${start} ` : '') + [...e.results].map((r) => r[0].transcript).join(''); resize(); };
     rec.onend = () => { rec = null; $('mic').classList.remove('live'); $('input').focus(); };
-    rec.onerror = () => {};
+    rec.onerror = (e) => {
+      if (!['not-allowed', 'service-not-allowed'].includes(e.error)) return;
+      speechRefused = true; rec = null; $('mic').classList.remove('live');
+      if (canRecord) { toast('Using ox’s own speech-to-text'); recordMic(); } else toast(`The microphone is off for ox. ${MIC_HELP}`);
+    };
     $('mic').classList.add('live');
-    rec.start();
+    try { rec.start(); } catch { rec = null; speechRefused = true; if (canRecord) recordMic(); }
   }
-  if (Speech) { $('mic').hidden = false; $('mic').onclick = toggleMic; $('speak').onclick = startTalk; }
+  if (Speech || canRecord) { $('mic').hidden = false; $('mic').onclick = toggleMic; }
+  if (Speech) $('speak').onclick = startTalk;
   $('talk-end').onclick = endTalk;
   $('talk-quiet').onclick = () => stopSpeaking();
   $('talk-mute').onclick = () => {
@@ -2856,7 +2968,7 @@
     r.lang = prefs.lang || navigator.language || 'en-US';
     let said = '';
     r.onresult = (e) => { said = [...e.results].map((x) => x[0].transcript).join(''); talkUi('Listening', said); };
-    r.onerror = (e) => { if (e.error === 'not-allowed') { toast('The microphone is blocked for this page'); endTalk(); } };
+    r.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { toast(`Talk mode needs the microphone and speech recognition. ${MIC_HELP} The mic button next to the message box works without speech recognition.`); endTalk(); } };
     r.onend = async () => {
       if (!talk || talk.rec !== r) return;
       if (!said.trim()) { if (!talk.muted) talkListen(); return; }
@@ -2937,10 +3049,10 @@
 
   // ---------- messaging
   let msgSel = 'telegram', channels = null;
-  const CH = { telegram: { bg: 'var(--raise)', l: 'T' }, discord: { bg: 'var(--raise)', l: 'D' }, slack: { bg: 'var(--raise)', l: 'S' }, email: { bg: '#6b6', l: '@' }, whatsapp: { bg: '#159447', l: 'W' }, imessage: { bg: '#159447', l: 'i' } };
+  const CH = { telegram: { bg: 'var(--raise)', l: 'T' }, discord: { bg: 'var(--raise)', l: 'D' }, slack: { bg: 'var(--raise)', l: 'S' }, email: { bg: '#6b6', l: '@' }, whatsapp: { bg: '#159447', l: 'W' }, outlook: { bg: '#0F6CBD', l: 'O' }, imessage: { bg: '#159447', l: 'i' } };
   async function loadMessaging() {
     try { channels = await getJson('/ox/messaging'); } catch (e) { $('msg-list').innerHTML = `<div class="empty-note">${esc(e.message)}</div>`; return; }
-    const state = (c) => c.mail ? (c.needsPermission ? ['warn', 'Needs Automation approval + account check'] : c.configured ? ['ok', 'Mail verified'] : ['warn', 'Needs a mail connector']) : c.sms ? (c.needsPermission ? ['warn', 'Needs Automation approval + a test send'] : c.reachable ? ['ok', 'Messages available · approval required'] : ['warn', 'macOS Messages required']) : c.reachable === false && c.configured ? ['warn', 'Configured · health check failed'] : c.reachable ? ['ok', 'Cloud API reachable · approval required'] : c.paired ? ['ok', 'Paired'] : c.configured ? ['warn', c.pairing ? 'Waiting for /pair' : 'Token saved. Run it to pair'] : ['warn', c.experimental ? 'Connector required' : 'Needs setup'];
+    const state = (c) => c.desktop ? ['ok', 'WhatsApp for Mac found · sends after your OK'] : c.outlook ? (c.available ? ['ok', 'Outlook found · opens drafts'] : ['warn', 'Outlook not installed']) : c.mail ? (c.needsPermission ? ['warn', 'Needs Automation approval + account check'] : c.configured ? ['ok', 'Mail verified'] : ['warn', 'Needs a mail connector']) : c.sms ? (c.needsPermission ? ['warn', 'Needs Automation approval + a test send'] : c.reachable ? ['ok', 'Messages available · approval required'] : ['warn', 'macOS Messages required']) : c.reachable === false && c.configured ? ['warn', 'Configured · health check failed'] : c.reachable ? ['ok', 'Cloud API reachable · approval required'] : c.paired ? ['ok', 'Paired'] : c.configured ? ['warn', c.pairing ? 'Waiting for /pair' : 'Token saved. Run it to pair'] : ['warn', c.experimental ? 'Connector required' : 'Needs setup'];
     $('msg-list').innerHTML = `<label class="search"><span data-i="search"></span><input placeholder="Filter channels…" aria-label="Filter channels" id="msg-q"></label>` + channels.map((c) => `<button class="item${msgSel === c.id ? ' on' : ''}" data-ch="${c.id}"><span class="ch-icon" style="background:${CH[c.id]?.bg || '#555'}">${CH[c.id]?.l || '?'}</span><span class="t"><div class="n">${esc(c.label)}</div><div class="d">${esc(state(c)[1])}</div></span><span class="dot ${state(c)[0]}"></span></button>`).join('')
       + '<div class="empty-note" style="padding:12px 16px">Telegram, Discord and Slack are first-class gateways. Email drafts are available through the Mail tool on macOS; WhatsApp and iMessage require an explicitly configured connector and are never claimed as connected until their status is verified.</div>';
     paintIcons($('msg-list'));
@@ -2951,8 +3063,9 @@
     $('msg-detail').innerHTML = `
       <button class="btn ghost mback" style="margin-bottom:12px" onclick="document.getElementById('msg-split').classList.remove('show-detail')">${icon('back')}Back</button>
       <h2><span class="ch-icon" style="background:${CH[c.id]?.bg}">${CH[c.id]?.l}</span>${esc(c.label)} <span class="badge ${cls}"><span class="dot ${cls}"></span>${esc(label)}</span></h2>
-      <p class="lede">${c.mail ? 'Create a visible draft in the local Mail app. Ox never sends without your review and explicit approval.' : c.sms ? 'Send an SMS/iMessage through the local Messages app. Automation permission and explicit approval are required for every send.' : c.id === 'whatsapp' ? 'Official WhatsApp Cloud API only. Ox shows the health result and never claims a personal-account bridge is connected.' : `Drive ox from ${esc(c.label)} on your phone: send a task, approve or deny what it wants to do, get the answer back. Only the chat you pair can use it.`}</p>
+      <p class="lede">${c.mail ? 'Create a visible draft in the local Mail app. Ox never sends without your review and explicit approval.' : c.sms ? 'Send an SMS/iMessage through the local Messages app. Automation permission and explicit approval are required for every send.' : c.id === 'whatsapp' ? (c.desktop ? 'Your own WhatsApp, through WhatsApp for Mac on this computer: ox opens the chat with the message typed in and you press Enter. For a business number, the official Cloud API works too.' : 'Official WhatsApp Cloud API. Ox shows the health result and never claims a personal-account bridge is connected.') : c.outlook ? 'Write an email and open it in Microsoft Outlook as a draft. You review it and press Send.' : `Drive ox from ${esc(c.label)} on your phone: send a task, approve or deny what it wants to do, get the answer back. Only the chat you pair can use it.`}</p>
       ${c.mail && c.needsPermission ? '<div class="alert" style="color:var(--amber);border-color:color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 8%,transparent)">' + icon('info') + 'Mail is installed, but Ox has not verified Automation permission or an enabled account. It will not claim inbox or send access until you check it.</div>' : c.sms && c.needsPermission ? '<div class="alert" style="color:var(--amber);border-color:color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 8%,transparent)">' + icon('info') + 'Messages is installed, but no real send has been verified. Automation approval and an explicit recipient approval are required.</div>' : c.id === 'whatsapp' && c.reachable ? '<div class="alert ok">' + icon('shield') + 'Official Cloud API health check passed. Sending remains approval-gated.</div>' : c.paired ? '<div class="alert ok">' + icon('shield') + 'Paired with your chat.</div>' : c.configured ? '<div class="alert" style="color:var(--amber);border-color:color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 8%,transparent)">' + icon('info') + `${c.id === 'whatsapp' ? 'Credentials found, but the health check failed.' : `Bot token found (${esc(c.tokenFrom)}). Run the gateway to pair.`}` + '</div>' : '<div class="alert note">' + icon('info') + 'Not set up yet. Three steps below.</div>'}
+      ${c.app ? `<div class="box small" style="margin-bottom:10px">${icon('check')}Found on this Mac: <b>${esc(c.app.name)}</b>${c.app.version ? ` ${esc(c.app.version)}` : ''}${c.app.running ? ' · open now' : ''}</div>` : ''}
       <div class="section-cap cap">Set up</div>
       <div class="box"><ol class="steps-ol">${c.how.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>
       ${(() => { const args = c.mail || c.experimental || c.configured ? '' : c.id === 'slack' ? ' --app-token xapp-… --bot-token xoxb-…' : ' --token <token>'; return `<div class="cmd"><code>${esc(c.command + args)}</code><button data-copy-cmd="${esc(c.command + args)}">${icon('copy')}</button></div>`; })()}</div>
@@ -3934,6 +4047,35 @@ files: [src/billing/**]
   // Settings search hands a provider name to the API keys page.
   let pendingKeyQuery = '';
   let providerIndex = null;
+  // Connector logos, drawn here (no network): each service's own mark and colours.
+  const CONN_LOGOS = {
+    gdrive: '<svg viewBox="0 0 87.3 78"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>',
+    gmail: '<svg viewBox="52 42 88 66"><path fill="#4285f4" d="M58 108h14V74L52 59v43c0 3.32 2.69 6 6 6"/><path fill="#34a853" d="M120 108h14c3.32 0 6-2.69 6-6V59l-20 15"/><path fill="#fbbc04" d="M120 48v26l20-15v-8c0-7.42-8.47-11.65-14.4-7.2"/><path fill="#ea4335" d="M72 74V48l24 18 24-18v26L96 92"/><path fill="#c5221f" d="M52 51v8l20 15V48l-5.6-4.2c-5.94-4.45-14.4-.22-14.4 7.2"/></svg>',
+    gcal: '<svg viewBox="0 0 48 48"><rect x="6" y="6" width="36" height="36" rx="4" fill="#fff" stroke="#e0e0e0"/><path d="M6 14V10a4 4 0 0 1 4-4h28a4 4 0 0 1 4 4v4z" fill="#4285f4"/><path d="M34 42h4a4 4 0 0 0 4-4v-4h-8z" fill="#ea4335"/><path d="M6 34v4a4 4 0 0 0 4 4h4v-8z" fill="#188038"/><path d="M42 14v20h-8V14z" fill="#fbbc04" opacity=".9"/><text x="21" y="34" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="15" fill="#1a73e8">31</text></svg>',
+    gdocs: '<svg viewBox="0 0 48 48"><path d="M29 4H12a3 3 0 0 0-3 3v34a3 3 0 0 0 3 3h24a3 3 0 0 0 3-3V14z" fill="#4285f4"/><path d="M29 4v10h10z" fill="#a1c2fa"/><path d="M16 22h16v2.6H16zm0 5.5h16v2.6H16zm0 5.5h11v2.6H16z" fill="#fff"/></svg>',
+    gsheets: '<svg viewBox="0 0 48 48"><path d="M29 4H12a3 3 0 0 0-3 3v34a3 3 0 0 0 3 3h24a3 3 0 0 0 3-3V14z" fill="#0f9d58"/><path d="M29 4v10h10z" fill="#87ceac"/><path d="M15 21v14h18V21zm2.4 2.4h5.4v3.4h-5.4zm7.8 0h5.4v3.4h-5.4zm-7.8 5.8h5.4v3.4h-5.4zm7.8 0h5.4v3.4h-5.4z" fill="#fff"/></svg>',
+    notion: '<svg viewBox="0 0 48 48"><path d="M10.5 8.3 31.6 6.7c2.6-.2 3.2 0 4.9 1.2l6.7 4.7c1.1.8 1.5 1 1.5 1.9V40c0 1.6-.6 2.6-2.7 2.7l-24.4 1.5c-1.6.1-2.3-.2-3.1-1.2l-5-6.4c-.9-1.2-1.3-2.1-1.3-3.1V11.1c0-1.3.6-2.6 2.3-2.8z" fill="#fff" stroke="#000" stroke-width="2.4"/><path d="M17 17.5v19.6l3.2-.2V22.8l8.6 13.6 3.8-.2V16.6l-3.3.2v13.4l-8.4-13z" fill="#000"/></svg>',
+    github: '<svg viewBox="0 0 24 24"><path fill="#181717" d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.2.5-2.3 1.3-3.1-.2-.4-.6-1.6 0-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.2.8.8 1.3 1.9 1.3 3.1 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"/></svg>',
+    slack: '<svg viewBox="0 0 124 124"><path d="M26.4 78.2c0 7.1-5.8 12.9-12.9 12.9S.6 85.3.6 78.2s5.8-12.9 12.9-12.9h12.9zm6.5 0c0-7.1 5.8-12.9 12.9-12.9s12.9 5.8 12.9 12.9v32.3c0 7.1-5.8 12.9-12.9 12.9s-12.9-5.8-12.9-12.9z" fill="#e01e5a"/><path d="M45.8 26.4c-7.1 0-12.9-5.8-12.9-12.9S38.7.6 45.8.6s12.9 5.8 12.9 12.9v12.9zm0 6.5c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9H13.5C6.4 58.7.6 52.9.6 45.8s5.8-12.9 12.9-12.9z" fill="#36c5f0"/><path d="M97.6 45.8c0-7.1 5.8-12.9 12.9-12.9s12.9 5.8 12.9 12.9-5.8 12.9-12.9 12.9H97.6zm-6.5 0c0 7.1-5.8 12.9-12.9 12.9s-12.9-5.8-12.9-12.9V13.5C65.3 6.4 71.1.6 78.2.6s12.9 5.8 12.9 12.9z" fill="#2eb67d"/><path d="M78.2 97.6c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9-12.9-5.8-12.9-12.9V97.6zm0-6.5c-7.1 0-12.9-5.8-12.9-12.9s5.8-12.9 12.9-12.9h32.3c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9z" fill="#ecb22e"/></svg>',
+    outlook: '<svg viewBox="0 0 48 48"><rect x="18" y="8" width="26" height="32" rx="3" fill="#28a8ea"/><path d="M18 16h26v8H18z" fill="#0078d4"/><path d="M18 24h26v8H18z" fill="#50d9ff" opacity=".8"/><rect x="4" y="13" width="22" height="22" rx="3" fill="#0a64ad"/><ellipse cx="15" cy="24" rx="5.4" ry="6.4" fill="none" stroke="#fff" stroke-width="2.6"/></svg>',
+    mail: '<svg viewBox="0 0 48 48"><defs><linearGradient id="cm" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1e9bff"/><stop offset="1" stop-color="#0866ff"/></linearGradient></defs><rect x="2" y="2" width="44" height="44" rx="10" fill="url(#cm)"/><rect x="9" y="14" width="30" height="21" rx="3" fill="#fff"/><path d="m10 16 14 10 14-10" fill="none" stroke="#1673ff" stroke-width="2"/></svg>',
+    whatsapp: '<svg viewBox="0 0 48 48"><path d="M24 4a20 20 0 0 0-17.2 30.2L4 44l10.1-2.7A20 20 0 1 0 24 4z" fill="#25d366"/><path d="M34.6 29.6c-.5-.3-3-1.5-3.4-1.6s-.8-.3-1.1.3-1.3 1.6-1.6 1.9-.6.4-1.1.1a13.6 13.6 0 0 1-6.8-5.9c-.5-.9.5-.8 1.5-2.7.2-.3.1-.6 0-.9l-1.5-3.6c-.4-1-.8-.8-1.1-.8h-.9a1.8 1.8 0 0 0-1.3.6 5.5 5.5 0 0 0-1.7 4.1 9.6 9.6 0 0 0 2 5.1 21.9 21.9 0 0 0 8.4 7.4c3.1 1.3 4.3 1.4 5.9 1.2 1-.1 3-1.2 3.4-2.4a4.2 4.2 0 0 0 .3-2.4c-.1-.2-.5-.3-1-.5z" fill="#fff"/></svg>',
+    messages: '<svg viewBox="0 0 48 48"><defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5df777"/><stop offset="1" stop-color="#0cbd2a"/></linearGradient></defs><rect x="2" y="2" width="44" height="44" rx="10" fill="url(#cg)"/><path d="M24 11c-8.8 0-16 5.8-16 13 0 4 2.2 7.6 5.7 10-.3 2-1.4 3.8-3 5 3.3 0 5.9-1.3 7.6-2.9 1.8.6 3.7.9 5.7.9 8.8 0 16-5.8 16-13s-7.2-13-16-13z" fill="#fff"/></svg>',
+    telegram: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" fill="#29a9eb"/><path d="M11 23.4 33.6 14.7c1-.4 2 .3 1.6 1.9L31.4 34.5c-.3 1.3-1.1 1.6-2.2 1l-6-4.4-2.9 2.8c-.3.3-.6.6-1.2.6l.4-6.1 11.1-10c.5-.4-.1-.7-.7-.3L16.1 26.8l-5.9-1.8c-1.3-.4-1.3-1.3.8-1.6z" fill="#fff"/></svg>',
+    browser: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="#4285f4"/><path d="M24 4a20 20 0 0 1 17.3 10H24a10 10 0 0 0-8.7 5L9.5 9.1A20 20 0 0 1 24 4z" fill="#ea4335"/><path d="M41.3 14A20 20 0 0 1 25.4 44l8.7-15a10 10 0 0 0-.1-15z" fill="#fbbc04"/><path d="M25.4 44A20 20 0 0 1 9.5 9.1L15.3 19A10 10 0 0 0 24 34l.8 10z" fill="#34a853"/><circle cx="24" cy="24" r="8" fill="#fff"/><circle cx="24" cy="24" r="6" fill="#1a73e8"/></svg>',
+  };
+  const connSub = (c) => c.state === 'added' ? 'Added to ox' : c.state === 'connected' ? 'Connected' : c.state === 'local' ? 'On this Mac' : c.template === 'gsuite' ? 'Google Workspace' : c.template ? 'Official connector' : c.id === 'telegram' ? 'Your own bot' : 'App on your Mac';
+  function connAction(c) {
+    if (c.state === 'added') return `<button class="on" data-conn-rm="${esc(c.id)}" title="${esc(c.why)} · click to remove">Added</button>`;
+    if (c.state === 'connected') return `<span class="on" title="${esc(c.why)}">Connected</span>`;
+    if (c.state === 'local') return `<span class="on local" title="${esc(c.why)}">Found</span>`;
+    if (c.state === 'connect') return `<button class="go" data-conn-add="${esc(c.id)}" title="${esc(c.why)}">Connect</button>`;
+    return c.open ? `<button class="go" data-conn-open="${esc(c.open)}" title="${esc(c.why)}">Set up</button>` : `<span class="need">${esc(c.why)}</span>`;
+  }
+  function connGallery(list) {
+    return `<div class="conn-list">${list.map((c) => `<div class="conn"><div class="logo">${CONN_LOGOS[c.id] ?? ''}</div><div class="nm"><b>${esc(c.name)}</b><span>${esc(connSub(c))}</span></div><div class="act">${connAction(c)}</div><div class="ds">${esc(c.desc)}${c.state === 'local' || c.state === 'added' || c.state === 'connected' ? ` <span style="color:var(--dim)">· ${esc(c.why)}</span>` : ''}</div></div>`).join('')}</div>`;
+  }
+
   function openSettings(which) {
     if (which) sec = which;
     document.body.classList.add('settings-open');
@@ -3965,7 +4107,7 @@ files: [src/billing/**]
     $('snav').querySelectorAll('[data-sec-link]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); sec = a.dataset.secLink; renderSnav(); renderSection(); }));
     const sq = $('sq');
     sq.oninput = () => { renderSnav(sq.value); const s2 = $('sq'); s2.focus(); s2.setSelectionRange(s2.value.length, s2.value.length); };
-    $('snav').querySelectorAll('[data-sec]').forEach((b) => (b.onclick = () => { if (b.dataset.sec === 'connectors' && sec !== 'connectors') store.set('ox.extTab', 'plugins'); sec = b.dataset.sec; $('sheet').classList.remove('nav-open'); renderSnav(sq.value); renderSection(); }));
+    $('snav').querySelectorAll('[data-sec]').forEach((b) => (b.onclick = () => { if (b.dataset.sec === 'connectors' && sec !== 'connectors') store.set('ox.extTab', 'gallery'); sec = b.dataset.sec; $('sheet').classList.remove('nav-open'); renderSnav(sq.value); renderSection(); }));
   }
   const row = (label, desc, control) => `<div class="srow"><div class="l"><b>${label}</b>${desc ? `<span>${desc}</span>` : ''}</div>${control}</div>`;
   const sw = (id, on) => `<label class="switch"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span></span></label>`;
@@ -4423,7 +4565,7 @@ files: [src/billing/**]
       } else if (sec === 'voice') {
         const voices = ('speechSynthesis' in window) ? speechSynthesis.getVoices() : [];
         const V = await voiceStatus();
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('mic')}Voice</div><p class="sdesc">Talking to ox here uses this browser's speech recognition${Speech ? '' : '. This browser has none, so the mic is hidden'}. Answers are read in the natural voice below (Kokoro, offline); <code>ox speak</code> in a terminal uses the same voice.</p>
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('mic')}Voice</div><p class="sdesc">Talking to ox here uses this browser's speech recognition${Speech ? '' : ''}; when that is missing or refused, the mic records and ox turns it into text on this Mac (Whisper or Parakeet, nothing leaves it). Answers are read in the natural voice below (Kokoro, offline); <code>ox speak</code> in a terminal uses the same voice.</p>
           ${row('Language', 'What you speak in.', `<select id="s-lang"><option value="">Same as this browser (${esc(navigator.language)})</option>${['en-US', 'en-GB', 'en-IN', 'fr-FR', 'de-DE', 'es-ES', 'it-IT', 'pt-BR', 'hi-IN', 'zh-CN', 'ja-JP', 'ko-KR', 'ar-SA', 'ru-RU'].map((l) => `<option>${l}</option>`).join('')}</select>`)}
           ${row('Read answers aloud', 'ox says each finished answer.', sw('s-speak', prefs.speakReplies))}
           <div class="section-cap cap">How ox sounds</div>
@@ -4480,6 +4622,8 @@ files: [src/billing/**]
         const item = (m) => `<div class="card"><span class="dot ${m.kind === 'event' ? 'warn' : 'ok'}"></span><span class="t"><div class="n">${esc(m.text)}</div><div class="d"><span>${esc(m.kind)}</span><span>${new Date(m.at).toLocaleDateString()}</span>${m.strength > 1 ? `<span>said ${m.strength}×</span>` : ''}${m.replaced ? '<span>replaced an older fact</span>' : ''}${m.until ? `<span>until ${new Date(m.until).toLocaleDateString()}</span>` : ''}</div></span><button class="btn ghost danger" data-forget="${esc(m.id)}">Forget</button></div>`;
         const none = '<div class="box muted small">Nothing yet.</div>';
         el.innerHTML = `${mobileBack}<div class="shead">${icon('brain')}Memory</div><p class="sdesc">What ox has learned, kept on this machine. Tell it something new about the same thing and the new fact replaces the old one (the old one stays in its history). Things tied to a date are dropped once the date has passed. ${M.learning ? 'ox learns from what you say about yourself as you work.' : 'Learning is off (OX_LEARN=0).'}</p>
+          <div class="section-cap cap" style="display:flex;align-items:center">How memory works, live<span style="flex:1"></span><a class="btn ghost" href="/memory" target="_blank" rel="noopener" style="padding:2px 10px;font-size:12px">Open full page</a></div>
+          <iframe src="/memory?embed=1" title="The memory layer, live: write desk, read desk, vault and sleep room" loading="lazy" style="display:block;width:100%;height:min(78vh,900px);border:0;border-radius:12px;background:#0d0f13;margin-bottom:14px"></iframe>
           <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap"><input class="field" style="flex:1;min-width:220px" id="mem-new" placeholder="Tell ox something to remember, like: I prefer pnpm"><select id="mem-scope" class="field" style="width:auto"><option value="user">About me</option><option value="project">This project</option></select><button class="btn primary" id="mem-add">Remember</button></div>
           <div class="section-cap cap">About you, always</div><div class="cards">${M.user.stable.map(item).join('') || none}</div>
           <div class="section-cap cap">About you, lately</div><div class="cards">${M.user.lately.map(item).join('') || none}</div>
@@ -4771,9 +4915,30 @@ files: [src/billing/**]
         $('ins-text').oninput = count; count();
         $('ins-save').onclick = async () => { try { await postJson('/ox/instructions', { text: $('ins-text').value }); toast($('ins-text').value.trim() ? 'Instructions saved: used from the next message' : 'Instructions cleared'); } catch (e) { toast(e.message); } };
       } else if (sec === 'connectors') {
-        const extTab = store.get('ox.extTab', 'plugins');
-        const tabs = `<div class="seg" id="ext-tabs" style="margin:0 0 14px">${[['mcp', 'MCPs'], ['plugins', 'Plugins'], ['skills', 'Skills']].map(([k, l]) => `<button data-ext="${k}" class="${extTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+        const extTab = store.get('ox.extTab', 'gallery');
+        const tabs = `<div class="seg" id="ext-tabs" style="margin:0 0 14px">${[['gallery', 'Connectors'], ['mcp', 'MCPs'], ['plugins', 'Plugins'], ['skills', 'Skills']].map(([k, l]) => `<button data-ext="${k}" class="${extTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
         const bindTabs = () => el.querySelectorAll('[data-ext]').forEach((b) => (b.onclick = () => { store.set('ox.extTab', b.dataset.ext); renderSection(); }));
+        if (extTab === 'gallery') {
+          el.innerHTML = `${mobileBack}<div class="shead">${icon('blocks')}Connectors</div>${tabs}<p class="sdesc">Connect the services you use. Ox asks before every action a connector takes, and nothing is sent without you.</p><div id="conn-gallery"><div class="box muted small">Checking what is on this Mac…</div></div>`;
+          bindTabs();
+          const paint = (list) => {
+            const box = $('conn-gallery'); if (!box) return;
+            box.innerHTML = connGallery(list);
+            box.querySelectorAll('[data-conn-add]').forEach((b) => (b.onclick = async () => {
+              b.disabled = true; b.textContent = 'Adding…';
+              try { paint(await postJson('/ox/connectors/gallery', { id: b.dataset.connAdd })); toast('Added. It signs in the first time ox uses it; every action asks you first.'); }
+              catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Connect'; }
+            }));
+            box.querySelectorAll('[data-conn-rm]').forEach((b) => (b.onclick = async () => {
+              if (!(await askSure('Remove this connector? Ox stops using it from the next run.', 'Remove'))) return;
+              try { paint(await postJson('/ox/connectors/gallery', { id: b.dataset.connRm, action: 'remove' })); } catch (e) { toast(e.message); }
+            }));
+            box.querySelectorAll('[data-conn-open]').forEach((b) => (b.onclick = () => { closeSettings(); document.querySelector('[data-view="msg"]')?.click(); }));
+          };
+          getJson('/ox/connectors/gallery').then(paint).catch((e) => { const box = $('conn-gallery'); if (box) box.innerHTML = `<div class="box muted small">${esc(e.message)}</div>`; });
+          paintIcons(el);
+          return;
+        }
         if (extTab !== 'mcp') {
           if (!caps) await loadCaps().catch(() => {});
           const list = extTab === 'skills' ? (caps?.skills ?? []) : (caps?.plugins ?? []);

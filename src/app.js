@@ -128,6 +128,8 @@ export function buildMacApp({ home = os.homedir(), bundleIdentifier = 'dev.ox.ap
 \t<key>CFBundleVersion</key><string>1</string>
 \t<key>LSMinimumSystemVersion</key><string>14.0</string>
 \t<key>NSHighResolutionCapable</key><true/>
+\t<key>NSMicrophoneUsageDescription</key><string>ox listens when you press the microphone in a chat, to turn what you say into text.</string>
+\t<key>NSSpeechRecognitionUsageDescription</key><string>ox turns what you say in a chat into text.</string>
 ${icon ? '\t<key>CFBundleIconFile</key><string>AppIcon</string>\n' : ''}</dict>
 </plist>
 `);
