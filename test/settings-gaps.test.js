@@ -88,8 +88,9 @@ test('the Settings pages exist and are searchable', () => {
 
 test('Plugins are a first-class Settings destination and Mini & Pets is implemented in the app', () => {
   const html = fs.readFileSync(new URL('../src/web/chat.html', import.meta.url), 'utf8');
-  assert.match(html, /\['connectors', 'Plugins'/, 'Plugins is visible by name in Settings navigation');
-  assert.match(html, /store\.set\('ox\.extTab', 'plugins'\)/, 'opening Plugins defaults to the actual plugin list');
+  assert.match(html, /\['connectors', 'Plugins( & connectors)?'/, 'Plugins is visible by name in Settings navigation');
+  assert.match(html, /store\.set\('ox\.extTab', 'gallery'\)/, 'opening Plugins & connectors starts on the connectors gallery');
+  assert.match(html, /\['plugins', 'Plugins'\]/, 'the plugin list is still one tab away');
   assert.match(html, /Plugins, MCP servers &amp; skills/);
   assert.match(html, /\['mini', 'Mini & Pets'/, 'Mini & Pets is an independently searchable Settings section');
   assert.match(html, /sec === 'mini'/);

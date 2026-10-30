@@ -69,6 +69,29 @@ struct AgentSession: Identifiable, Equatable {
     var steps: [String] = []
     /// Which agent tool it is ("Claude Code", "Codex", "ox"…).
     var tool = "ox"
+    /// When the current turn started working (the tile's running clock), and
+    /// how far it got: 1 reading, 2 making changes, 3 testing, 4 done.
+    var turnStartedAt: Date?
+    var stage = 0
+
+    static func busy(_ m: Mood?) -> Bool {
+        guard let m else { return false }
+        if case .working = m { return true }
+        return m == .thinking
+    }
+
+    static func stage(of step: String) -> Int {
+        let s = step.lowercased()
+        if s.hasPrefix("$") && (s.contains("test") || s.contains("build") || s.contains("lint") || s.contains("check")) { return 3 }
+        if s.hasPrefix("editing") || s.hasPrefix("writing") || s.wholeMatch(of: #/.+ \+\d+ −\d+/#) != nil { return 2 }
+        return 1
+    }
+
+    mutating func trackTurn(from old: AgentSession?) {
+        if Self.busy(mood), !Self.busy(old?.mood) { turnStartedAt = Date(); stage = 1 }
+        if Self.busy(mood), let s = steps.last, s != old?.steps.last { stage = max(stage, Self.stage(of: s)) }
+        if mood == .done, stage > 0 { stage = 4 }
+    }
 
     mutating func note(_ step: String) {
         let s = step.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -799,6 +822,9 @@ final class OxBridge: ObservableObject {
     }
 
     @Published var card: SessionCard? { didSet { IslandLayout.cardOpen = card != nil } }
+    /// A session opened from its tile: the island takes its colour and shows its turn.
+    @Published var glowId: String? { didSet { IslandLayout.glowOpen = glowId != nil } }
+    var glowSession: AgentSession? { glowId.flatMap { id in sessions.first { $0.id == id } } }
 
     /// Each session's own character, the same every time (the pixel cast).
     static func character(for id: String) -> String {
@@ -1107,10 +1133,12 @@ final class OxBridge: ObservableObject {
             // the whole island, and the app poll touches each session every 1.5 s.
             var copy = sessions[i]
             change(&copy)
+            copy.trackTurn(from: sessions[i])
             if copy != sessions[i] { sessions[i] = copy }
         } else {
             var s = AgentSession(id: path)
             change(&s)
+            s.trackTurn(from: nil)
             sessions.append(s)
         }
     }
@@ -1420,7 +1448,7 @@ final class OxBridge: ObservableObject {
     }
 
     /// The office (a team at work) or a canvas extends the expanded island.
-    var hasExtraPanel: Bool { orgCard != nil || card != nil || tray != nil || officeSession != nil || canvasSession != nil }
+    var hasExtraPanel: Bool { glowSession != nil || orgCard != nil || card != nil || tray != nil || officeSession != nil || canvasSession != nil }
 
     /// Commands about the island itself, typed or said ("make the island
     /// smaller", "bigger", "stay open", "close"): done here, no model, no AI.

@@ -127,9 +127,9 @@ test('bot avatar choice and Mochi colourway persist through the Bots API', async
   assert.equal(result.mine.find((b) => b.name === 'mochi-test')?.colorway, 'ramune');
 });
 
-test('the app defaults to in-memory chats and makes local history and preference learning opt-in', async () => {
+test('the app keeps chat history on this device by default (owner decision, 60a517f) and makes preference learning opt-in', async () => {
   const html = await (await fetch(`${base}/`)).text();
-  assert.match(html, /saveChatHistory:\s*false/);
+  assert.match(html, /saveChatHistory:\s*true/);
   assert.match(html, /learnFromChats:\s*false/);
   assert.match(html, /if\s*\(!prefs\.saveChatHistory\)\s*return/);
   assert.match(html, /ox_remember_preferences:\s*prefs\.learnFromChats\s*===\s*true/);
@@ -180,7 +180,8 @@ test('the OpenAI route table is unchanged by the page', () => {
   // The OpenAI-compatible surface is the same five routes; everything the app
   // adds lives under /ox/ and is GET or POST.
   const routes = routeTable();
-  assert.equal(routes.filter((r) => !r.includes('\\/ox\\/')).length, 5, routes.join('\n'));
+  // Plus the signature-verified WhatsApp Cloud callback (GET verify, POST deliver).
+  assert.equal(routes.filter((r) => !r.includes('\\/ox\\/') && !r.includes('\\/webhooks\\/whatsapp')).length, 5, routes.join('\n'));
   assert.ok(routes.filter((r) => r.includes('\\/ox\\/')).every((r) => /^(GET|POST) \^\\\/ox\\\//.test(r)), routes.join('\n'));
 });
 

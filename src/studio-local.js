@@ -226,6 +226,16 @@ export async function upscale({ image, prompt = '', mode = 'detail', outDir, env
   const w64 = Math.round(W / 64) * 64, h64 = Math.round(H / 64) * 64;
   await runSd([...base(env, true), '-p', String(prompt || 'sharp detail, high resolution, crisp textures'), '-i', big, '--strength', '0.3', '--steps', '4', '-W', String(w64), '-H', String(h64), '--vae-tiling', '-s', '7', '-o', out], { env, onLine, timeoutMs: 15 * 60_000 });
   fs.rmSync(big, { force: true });
+  // This sd-cli build gives img2img back at the model's native 512 whatever -W
+  // says: an "upscale" that came back the same size is taken to the size asked.
+  const got = probeSize(out);
+  if (got.w < W || got.h < H) {
+    const tmp = path.join(outDir, 'detail.png');
+    fs.renameSync(out, tmp);
+    const s = spawnSync('ffmpeg', ['-y', '-v', 'error', '-i', tmp, '-vf', `scale=${W}:${H}:flags=lanczos,unsharp=3:3:0.4`, out], { encoding: 'utf8' });
+    fs.rmSync(tmp, { force: true });
+    if (s.status !== 0) throw new Error(`could not finish the upscale: ${(s.stderr ?? '').slice(-200)}`);
+  }
   return { files: [out], mode: 'detail' };
 }
 

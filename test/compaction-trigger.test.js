@@ -159,7 +159,7 @@ const mixedHistory = (oldChars, recentChars) => [
 // The regression guard: the trigger must measure history PLUS tool schemas.
 // ===========================================================================
 
-test('compaction fires on tool-schema weight alone, with history well under the threshold', async (t) => {
+test('a tool offer too heavy for a small window is pruned to fit, so schema weight alone no longer forces a compaction', async (t) => {
   const cwd = tmpDir(t, 'ox-ctrig-schemas-');
   const window = 1800; // 0.75 * 1800 = 1350 < OFFER_TOKENS
   assert.ok(OFFER_TOKENS > window * COMPACT_AT, 'fixture must put the offer over the threshold');
@@ -186,7 +186,10 @@ test('compaction fires on tool-schema weight alone, with history well under the 
     `the payload actually sent (${probe.historyTokens}+${probe.schemaTokens}) is over it — the old trigger never saw this`
   );
 
-  // Same inputs, real window: compaction must now fire.
+  // Same inputs, real window. Since 429becc a small window caps the tool offer
+  // at a quarter of the window, so schema weight alone can no longer cross the
+  // compaction line: the offer is pruned to fit instead, and the estimate the
+  // trigger reads is still the whole payload (history + the schemas sent).
   const srv = await startServer(t, (b) =>
     isSummaryBody(b) ? turn({ text: 'SCHEMA_WEIGHT_SUMMARY kept decisions' }) : turn({ text: 'SCHEMA_WEIGHT_DONE' })
   );
@@ -197,19 +200,12 @@ test('compaction fires on tool-schema weight alone, with history well under the 
     config: { tools: { narrow: false } },
     auxTarget: null,
   });
-
-  const compactions = events.filter((e) => e.type === 'compaction');
-  assert.equal(compactions.length, 1, 'compaction fires on the schema weight even though history is tiny');
-  assert.equal(
-    compactions[0].from,
-    probe.tokens,
-    'the trigger fired on the payload (history + schemas), not on history'
-  );
-  assert.ok(
-    compactions[0].to >= OFFER_TOKENS,
-    `"to" is reported as a payload too, so it cannot claim a reclaim it never made (${compactions[0].to} >= ${OFFER_TOKENS})`
-  );
-  assert.ok(srv.bodies.some(isSummaryBody), 'the summarizer actually ran');
+  const est = events.find((e) => e.type === 'context-estimate');
+  assert.ok(est.schemaTokens < probe.schemaTokens, `the heavy offer was pruned to fit (${est.schemaTokens} < ${probe.schemaTokens})`);
+  assert.equal(est.tokens, est.historyTokens + est.schemaTokens, 'the trigger reads the payload, schemas included');
+  assert.ok(est.tokens < window * COMPACT_AT, `the pruned payload fits under the line (${est.tokens} < ${window * COMPACT_AT})`);
+  assert.equal(events.filter((e) => e.type === 'compaction').length, 0, 'nothing to compact once the offer fits');
+  assert.ok(!srv.bodies.some(isSummaryBody), 'no summarizer call was spent');
   assert.ok(events.some((e) => e.type === 'final'), 'run completes');
 });
 

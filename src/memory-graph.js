@@ -33,6 +33,20 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { screenPersistText } from './memory.js';
+import { noteMemoryEvent } from './memory-events.js';
+
+// The events log lives beside the user graph; a project graph logs there too.
+// A project graph's events go to the real home only outside the test runner, so
+// tests never write the owner's files.
+const homeOf = (file) => {
+  const dir = path.dirname(file);
+  if (path.basename(dir) === 'memory' && path.basename(path.dirname(dir)) === '.ox') return path.dirname(path.dirname(dir));
+  return process.env.NODE_TEST_CONTEXT && !process.env.OX_MEMORY_HOME ? null : undefined;
+};
+function logEvent(file, type, data) {
+  const home = homeOf(file);
+  if (home !== null) noteMemoryEvent(type, { ...data, scope: file.includes(`${path.sep}.agent${path.sep}`) ? 'project' : 'user' }, { home });
+}
 
 export const KINDS = Object.freeze(['fact', 'preference', 'event', 'lesson', 'procedure', 'derived']);
 const DAY = 86_400_000;
@@ -234,6 +248,7 @@ export function remember(text, {
   if (same) {
     const bumped = { ...same, strength: (same.strength ?? 1) + 1, lastSeen: ref };
     append(file, [bumped]);
+    logEvent(file, 'write', { op: 'noop', kind: bumped.kind, id: bumped.id });
     return { op: 'noop', memory: bumped };
   }
 
@@ -262,7 +277,9 @@ export function remember(text, {
     memory.extends = live.filter((m) => m.entities?.some((e) => ents.includes(e))).slice(0, 5).map((m) => m.id);
   }
   append(file, [...changed, memory]);
-  return { op: previous ? 'update' : memory.extends.length ? 'extend' : 'add', memory, previous };
+  const op = previous ? 'update' : memory.extends.length ? 'extend' : 'add';
+  logEvent(file, 'write', { op, kind: memory.kind, id: memory.id, ...(previous ? { replaced: previous.id } : {}) });
+  return { op, memory, previous };
 }
 
 export function forget(id, { file }) {
@@ -270,6 +287,7 @@ export function forget(id, { file }) {
   if (!m) return null;
   const gone = { ...m, state: 'forgotten', forgottenAt: Date.now() };
   append(file, [gone]);
+  logEvent(file, 'write', { op: 'forget', kind: m.kind, id });
   return gone;
 }
 
@@ -367,8 +385,14 @@ export function memoryPromptBlock({ cwd = process.cwd(), home = os.homedir(), ta
   if (p.stable.length) parts.push(`About the user (always true until they say otherwise):\n${p.stable.map(line).join('\n')}`);
   if (p.lately.length) parts.push(`Lately:\n${p.lately.map(line).join('\n')}`);
   if (relevant.length) parts.push(`Remembered and relevant to this task:\n${relevant.map(line).join('\n')}`);
-  if (!parts.length) return '';
-  return `# WHAT OX REMEMBERS\nFacts you learned from this user in earlier sessions, newest version only. Use them; if one is wrong, they will tell you and you update it with memory_add.\n${parts.join('\n\n')}`;
+  const block = parts.length ? `# WHAT OX REMEMBERS\nFacts you learned from this user in earlier sessions, newest version only. Use them; if one is wrong, they will tell you and you update it with memory_add.\n${parts.join('\n\n')}` : '';
+  // The read path only reads: what it put in front of the run is logged, and
+  // the sleep pass turns those recalls into stronger memories later.
+  logEvent(userFile, 'read', {
+    profile: p.stable.length + p.lately.length, relevant: relevant.length,
+    tokens: Math.ceil(block.length / 4), ids: [...p.stable, ...p.lately, ...relevant].map((m) => m.id), total: p.total,
+  });
+  return block;
 }
 
 // ---- learning from what the user says -------------------------------------

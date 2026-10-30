@@ -1,4 +1,7 @@
 import { test } from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { join, dirname } from 'node:path';
@@ -63,8 +66,16 @@ test('setMode emits session/update carrying the ox event meta key', () => {
   });
 });
 
-test('resolveTarget fails closed with auth_required when nothing is reachable', () => {
-  const s = new AcpSession({ id: 'ses_1', cwd: '/tmp', config: {}, target: null, onNotify: () => {} });
+test('resolveTarget fails closed with auth_required when nothing is reachable', (t) => {
+  // Nothing reachable means nothing from this machine either: no provider keys
+  // in the environment and an empty trust store (a real ~/.ox may have approved
+  // a local Ollama, which is then reachable).
+  const saved = { ...process.env };
+  t.after(() => { for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k]; Object.assign(process.env, saved); });
+  for (const k of Object.keys(process.env)) if (/_API_KEY$|_TOKEN$|^OX_|^OLLAMA/.test(k)) delete process.env[k];
+  process.env.OX_NO_KEYSTORE = '1';
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-acp-empty-'));
+  const s = new AcpSession({ id: 'ses_1', cwd: '/tmp', config: { configDir }, target: null, onNotify: () => {} });
   // assert.throws RETURNS UNDEFINED — match the error in place instead of
   // reading properties off its (null) return value.
   assert.throws(() => s.resolveTarget(), {
@@ -341,7 +352,8 @@ test('prompt with no reachable provider fails with auth_required (-32000)', { ti
   const child = spawnServer({
     cwd: oxDir,
     configDefaultBot: undefined, // config = {} -> no fallback -> auth_required
-    env: { TERM: 'dumb', HOME: process.env.HOME, PATH: process.env.PATH },
+    // A fresh HOME: the owner's ~/.ox may trust a local Ollama, which would be reachable.
+    env: { TERM: 'dumb', HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'ox-acp-home-')), PATH: process.env.PATH, OX_NO_KEYSTORE: '1' },
     onLine: collector(state),
   });
   try {

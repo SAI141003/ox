@@ -220,6 +220,27 @@ export async function saveConnector(body = {}) {
   return connectorsView();
 }
 
+// Settings > Plugins & connectors > Connectors: the gallery, each with its real state.
+export async function connectorGalleryView(env = process.env) {
+  const { readConfigDoc } = await import('./config.js');
+  const { galleryView } = await import('./connector-gallery.js');
+  const apps = (await import('./desktop-apps.js')).detectDesktopApps();
+  const channels = Object.fromEntries((await messagingView(env)).map((c) => [c.id, c]));
+  return galleryView({ servers: readConfigDoc().mcpServers ?? {}, apps, channels, env });
+}
+export async function addGalleryConnector(body = {}) {
+  const { saveConfigDoc, readConfigDoc } = await import('./config.js');
+  const { galleryEntry } = await import('./connector-gallery.js');
+  const { name, entry } = galleryEntry(String(body.id ?? ''));
+  if (body.action === 'remove') {
+    saveConfigDoc((doc) => { if (doc.mcpServers) delete doc.mcpServers[name]; });
+  } else if (!Object.prototype.hasOwnProperty.call(readConfigDoc().mcpServers ?? {}, name)) {
+    // New connectors start at Ask every call (no policy entry means ask).
+    saveConfigDoc((doc) => { doc.mcpServers = { ...(doc.mcpServers ?? {}), [name]: entry }; });
+  }
+  return connectorGalleryView();
+}
+
 // Settings > About: is there a newer ox?
 export async function updateView() {
   const { updateCheck } = await import('./evolve.js');
@@ -344,8 +365,10 @@ export async function messagingView(env = process.env) {
   const sl = await import('./slack-gateway.js');
   const whatsapp = await import('./tools/whatsapp.js');
   const wa = await whatsapp.whatsapp_health({ env });
+  const apps = (await import('./desktop-apps.js')).detectDesktopApps();
+  const appOf = (id) => (apps[id]?.installed ? { name: apps[id].name, version: apps[id].version ?? null, running: !!apps[id].running } : null);
   const one = (id, label, st, tokenEnv, how) => ({
-    id, label,
+    id, label, app: appOf(id),
     configured: !!(env[tokenEnv] || st.token || (st.appToken && st.botToken)),
     tokenFrom: env[tokenEnv] ? 'environment' : st.token || st.appToken ? 'saved' : null,
     paired: !!st.owner,
@@ -373,13 +396,25 @@ export async function messagingView(env = process.env) {
     // Automation permission, that Mail has an enabled account, or that inbox
     // retrieval works.  Keep the connector discoverable but unverified until
     // an explicit Mail-account check succeeds.
-    { id: 'email', label: 'Email · Mail', available: process.platform === 'darwin', configured: false, reachable: false, needsPermission: process.platform === 'darwin', tokenFrom: null, paired: false, pairing: false,
+    { id: 'email', label: 'Email · Mail', app: appOf('mail'), available: !!apps.mail?.installed, configured: false, reachable: false, needsPermission: process.platform === 'darwin', tokenFrom: null, paired: false, pairing: false,
       command: 'mail_compose', how: process.platform === 'darwin'
         ? ['Open Mail once, then allow Ox or OX Island in System Settings › Privacy & Security › Automation.', 'Use “check my email” or mail_accounts to verify enabled accounts before drafting.', 'Voice and chat can create a visible draft after selecting an exact From account. Sending is never automatic: review the draft and approve Send in Mail.']
         : ['The Mail-app connector is macOS-only.', 'On Windows or Linux, connect Gmail or Outlook through an MCP connector in Settings › Connectors.', 'Ox will show the connector as ready only after its health check passes.'], mail: true },
     { id: 'whatsapp', label: 'WhatsApp', configured: wa.configured, reachable: wa.reachable, tokenFrom: wa.configured ? 'environment' : null, paired: false, pairing: false,
-      command: 'whatsapp_send', how: ['Official WhatsApp Cloud API is supported for outbound messages.', 'Set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID, then run the connector health check.', 'Every send is approval-gated. Personal-account scraping and unofficial bridges remain blocked.'], experimental: !wa.configured, health: wa },
-    { id: 'imessage', label: 'SMS / iMessage', available: process.platform === 'darwin', configured: false, reachable: false, needsPermission: process.platform === 'darwin', paired: false, pairing: false,
+      app: appOf('whatsapp'), desktop: !!apps.whatsapp?.installed && !wa.configured,
+      command: 'whatsapp_send', how: [
+        ...(apps.whatsapp?.installed ? [
+          `WhatsApp for Mac is installed${apps.whatsapp.version ? ` (${apps.whatsapp.version})` : ''}${apps.whatsapp.running ? ' and open' : ''}: ox uses it with no setup.`,
+          'Sending: ox opens the chat in WhatsApp with your message typed in, after you approve; you press Enter. Nothing is sent without you.',
+          'Reading: OX Island reads the chat you have open on screen (allow OX Island under Privacy & Security › Accessibility). WhatsApp keeps your history private, so older messages are not read.',
+        ] : ['WhatsApp for Mac is not installed. Install it from the App Store to send from your own account.']),
+        'For a business number with incoming messages: set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID (official WhatsApp Cloud API).',
+      ] },
+    { id: 'outlook', label: 'Email · Outlook', app: appOf('outlook'), available: !!apps.outlook?.installed, configured: false, reachable: false, tokenFrom: null, paired: false, pairing: false, mail: true, outlook: true,
+      command: 'mail_compose --app outlook', how: apps.outlook?.installed
+        ? [`Microsoft Outlook is installed${apps.outlook.version ? ` (${apps.outlook.version})` : ''}: ox writes the email and opens it in Outlook as a draft.`, 'You check it and press Send in Outlook. ox never sends from Outlook by itself.', 'Attachments are added in Outlook (a draft opened this way cannot carry files).']
+        : ['Microsoft Outlook is not installed on this Mac.', 'Use the Mail app, or connect Outlook.com through an MCP connector in Settings › Connectors.'] },
+    { id: 'imessage', label: 'SMS / iMessage', app: appOf('messages'), available: !!apps.messages?.installed, configured: false, reachable: false, needsPermission: process.platform === 'darwin', paired: false, pairing: false,
       command: 'messages_send', how: process.platform === 'darwin' ? ['Uses the local Messages app through macOS Automation.', 'The first send requires Automation permission and explicit approval.', 'Ox reports failure instead of pretending delivery.'] : ['Requires macOS Messages; no native transport is available on this OS.'], sms: true },
   ];
 }
@@ -491,10 +526,20 @@ export async function memoryAction(body = {}, cwd = process.cwd()) {
   } else if (body.action === 'forget') {
     const id = String(body.id ?? '');
     if (!mg.forget(id, { file: mg.memoryFile('user') }) && !mg.forget(id, { file: mg.memoryFile('project', { cwd }) })) throw new Error(`no memory ${id}`);
+  } else if (body.action === 'sleep') {
+    const ml = await import('./memory-layer.js');
+    ml.sleep({ file: mg.memoryFile('user') });
+    const proj = mg.memoryFile('project', { cwd });
+    if ((await import('node:fs')).existsSync(proj)) ml.sleep({ file: proj, recalls: new Map(), record: false });
   } else {
-    throw new Error("action must be 'add' or 'forget'");
+    throw new Error("action must be 'add', 'forget' or 'sleep'");
   }
   return memoryView(cwd);
+}
+
+// The memory layer as the Memory page draws it: store, read, write and sleep.
+export async function memoryLayerView(cwd = process.cwd()) {
+  return (await import('./memory-layer.js')).layerSnapshot({ cwd });
 }
 
 // OX Studio (src/media-studio.js): providers and their models, and every run.

@@ -228,7 +228,7 @@ test('small forced window clips descriptions to 160 chars and drops non-required
   // Stage 1 is tested on a fixed tool set, not on whatever ox ships today: the
   // mail tools and create_media are left out so a new builtin cannot silently push this test
   // into stage 2 (which has its own test below).
-  const schemas = listToolSchemas({}).filter((s) => !s.name.startsWith('mail_') && s.name !== 'create_media' && s.name !== 'edit_video' && s.name !== 'social_research' && s.name !== 'library' && s.name !== 'install_skill' && s.name !== 'youtube_transcript' && s.name !== 'current_page' && s.name !== 'code_graph' && s.name !== 'brain' && !['ui_elements', 'click', 'press_key', 'draw'].includes(s.name));
+  const schemas = listToolSchemas({}).filter((s) => !s.name.startsWith('mail_') && s.name !== 'create_media' && s.name !== 'edit_video' && s.name !== 'social_research' && s.name !== 'library' && s.name !== 'install_skill' && s.name !== 'youtube_transcript' && s.name !== 'current_page' && s.name !== 'code_graph' && s.name !== 'brain' && !['ui_elements', 'click', 'press_key', 'draw', 'messages_send', 'whatsapp_send', 'create_bot'].includes(s.name));
   // The prune budget floors at 8000 (cap 2000 tok) and the built-ins fit under
   // it, so pad with fat filler tools to create real pressure. Two, not three:
   // each builtin added since this was written eats into the headroom the
@@ -243,7 +243,9 @@ test('small forced window clips descriptions to 160 chars and drops non-required
     });
   }
   const originalRead = schemas.find((s) => s.name === 'read_file');
-  const out = pruneToolSchemas(schemas, 4_000);
+  // 8000, not 4000: since 429becc a window under 8k gets a quarter of itself
+  // (4000 -> 1000), not the old 2000 floor this test was built around.
+  const out = pruneToolSchemas(schemas, 8_000);
   assert.ok(out.length === schemas.length, 'stage 1 keeps all tools');
   const read = out.find((s) => s.name === 'read_file');
   assert.ok(read.description.length <= 161, `desc clipped (${read.description.length})`);

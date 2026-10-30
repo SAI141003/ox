@@ -283,6 +283,8 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
   const auxTarget = resolveAuxTarget(config);
   const assembled = await assembleCtx({ config, target, opts: { ...opts, memoryTask: prompt }, auxTarget });
   const { ctx } = assembled;
+  // -p runs (scripts, benches, daemon jobs) have no one watching a browser.
+  ctx.headless = true;
   // Mode: fixed by --mode / config, or picked per message by auto. The pick is
   // printed so a routed run can be checked, not taken on trust.
   const turnMode = resolveTurnMode(opts.mode ?? config.mode, prompt);

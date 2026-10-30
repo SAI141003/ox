@@ -304,6 +304,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         decisionHandler(.allow)
     }
 
+    // The chat's microphone: ox's own loopback page may use it (macOS still asks
+    // the person once, through the app's NSMicrophoneUsageDescription). Any other
+    // origin is refused. Without this WebKit answered "not-allowed" every time.
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        let local = origin.host == "127.0.0.1" || origin.host == "localhost" || origin.host == "::1"
+        decisionHandler(local && type == .microphone ? .grant : .deny)
+    }
+
     // The chat's attach button: a real file picker.
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
         let panel = NSOpenPanel()

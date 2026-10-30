@@ -642,7 +642,11 @@ test('serve: /v1/chat/completions with an unresolvable model name keeps its old 
 
 test('serve: the route table is exactly the documented OpenAI surface', () => {
   // ox's own app routes live under /ox/ and are checked in serve-web-chat.test.js.
-  const table = routeTable().filter((r) => !r.includes('\\/ox\\/'));
+  // The WhatsApp Cloud webhook is the one other surface: Meta calls it back
+  // (signature-verified in src/tools/whatsapp.js).
+  const all = routeTable().filter((r) => !r.includes('\\/ox\\/'));
+  assert.deepEqual(all.filter((r) => r.includes('webhooks')), ['GET ^\\/webhooks\\/whatsapp\\/?$', 'POST ^\\/webhooks\\/whatsapp\\/?$']);
+  const table = all.filter((r) => !r.includes('webhooks'));
   assert.equal(table.length, 5, `unexpected route count: ${table.join(' | ')}`);
   assert.ok(table.some(r => r.startsWith('GET') && r.includes('health')));
   assert.ok(table.some(r => r.includes('models')));

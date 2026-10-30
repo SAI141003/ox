@@ -13,7 +13,49 @@ with a named gap · **✗** missing or broken · **?** not tested.
 
 ---
 
-## 0. Latest round (October 17, late evening: v0.1.2)
+## 00. Round of October 30 (memory layer, media routing, page previews, open-intelligent-ui)
+
+| What | State | Evidence |
+|---|---|---|
+| A web page the agent writes (`write_file *.html`) opens in the default browser; not in tests (`NODE_TEST_CONTEXT` / `OX_OPERATOR_DRY`), not in `-p` runs (`ctx.headless`), opt-out `OX_NO_AUTO_OPEN=1` | ✓ | real: Chrome opened `animals-check.html`; `src/tools/fs.js`, test 9 in `test/tools-fs.test.js` |
+| "Create an image of …" in the app made a Wikipedia photo (routed as a question: no tools, the drawn-answer guide's `SearchImage`). Now `wantsMediaMade()` routes it to code mode with only `create_media`; the made file is shown in the reply (`ox: media` event, from the tool result or, for plan CLIs that run `ox create`, from what this turn added to Studio) | ✓ | real: app chat → `create_media` → SD-Turbo on this Mac → `/ox/media/2f5912a52d/1.png` shown; `test/chat-media-intent.test.js` |
+| A small model naming a provider with no key (`provider: "higgsfield"`) failed every time: `create_media` now drops an unusable named provider | ✓ | `src/tools/media.js` |
+| **Memory layer**: an events log (`~/.ox/memory/layer-events.jsonl`, ids and counts only, never text) for the read path (what went in front of a run, tokens) and write path (add / update / extend / noop / forget); a **sleep pass** (`src/memory-layer.js`): merge near-duplicates, retire past events, reinforce what was recalled (MemoryBank), let unused facts go dormant (never deleted), promote a lesson verified twice to a procedure (Voyager). Runs 30 s after the server starts, then every 6 h; "Sleep now" on the page | ✓ | `test/memory-layer.test.js` (5), all 122 memory tests green; tests never touch the real `~/.ox` |
+| **Memory page** `/memory` (and live in Settings › Memory): a pixel house in the Office's style, write desk, read desk, vault, sleep room, with workers carrying cards for each real event; live numbers, profile, decay bars, activity feed | ✓ | headless Chrome screenshot with a scratch `OX_MEMORY_HOME` |
+| The older `~/.ox/memory/memory.jsonl` (87 rows) is not in the graph: its rows are repeated generic test lines ("prefer local models for coding tasks" ×N), so they were **not** imported into the profile; the page shows the count | ~ | owner may delete or keep it |
+| **open-intelligent-ui** (ideas only, no licence): ox had 42 of ~50 components and none of its date/list/data functions. Added from scratch: TextArea, DatePicker, RadioGroup, Timer (minutes), Flashcard, Carousel, Quote, Link, Image (`/ox/media` and data: only), Math, Popover, Celebration, Ellipse, Polyline, Path; @AddDays @AddMonths @DaysBetween @MonthsBetween @StartOf @FormatDate @Now @Take @Slice @Reverse @Unique @Chunk @Flatten @Prepend @RemoveAt @Update @Find @Pick @Shuffle @Between @Change @Cumulative @MovingAvg @Stats @Top @Histogram @MixColor; terminal renderings too | ✓ | `test/ui-lang-oiu.test.js`; real app render of every one (screenshot); Map not built (the app's CSP loads no outside tiles) |
+| "Make me flashcards / a timer / help me memorize" went to code mode and wrote a .md file: those words now ask for an interactive answer | ✓ | real app run: drawn Timer |
+| Modes, real runs on scratch projects (default bot muse-glimmer-30b): all seven | ✓ | `code` wrote calc + test, green; `ask` answered, no file changed; `plan` planned, calc untouched; `debug` fixed the failing test; `data` 255.5 correct; `orchestrate` 3 subagents in parallel, 3/3 files; `auto` routed to ask |
+| **Apps on this Mac are detected** (`src/desktop-apps.js`, one Spotlight query, ~0.3 s): WhatsApp, Mail, Outlook, Messages, Telegram, Slack, Discord, with version and whether open. Messaging page shows "Found on this Mac"; new **Outlook** channel | ✓ | this Mac: WhatsApp 26.37.76, Mail, Outlook 16.113.2, Messages, Slack found; `test/desktop-apps.test.js` |
+| **WhatsApp with no Cloud API**: `whatsapp_send` opens the chat in WhatsApp for Mac with the message typed in (after approval); the person presses Enter. Voice: "send a whatsapp to mom saying on my way" (a number goes to that chat; a name is looked up in Contacts; else the text is ready and you pick the chat) | ✓ (dry) | tests; real open not exercised (it would put a draft in the owner's WhatsApp) |
+| **Outlook**: `mail_compose app:"outlook"` opens a draft in Outlook (mailto:, no attachments, never sent); "open outlook" opens the app, not outlook.live.com | ✓ | tests |
+| **Chat microphone "blocked"**: OX.app's Info.plist had no NSMicrophoneUsageDescription / NSSpeechRecognitionUsageDescription, and the web view had no media-capture handler, so WebKit answered `not-allowed`. Fixed both (loopback origin only), and the mic now falls back to recording + on-device transcription (`POST /ox/voice/dictate`, Whisper/Parakeet, file removed) when speech recognition is missing or refused | ✓ / ? | OX.app reinstalled with both keys; dictate endpoint transcribed a spoken sentence word for word (6 s); the first press after reopening OX.app shows macOS's permission prompt (not exercised: needs a person) |
+| **Studio, free on this Mac** (no key; the Higgsfield-style basics): text→image ✓ (35 s), edit ✓ (46 s), cut-out ✓ (Apple Vision, 47 s), upscale ✓ after a fix (it returned the same 512 px it was given: this sd-cli build answers img2img at 512 whatever -W says; now the result is brought to the size asked), image→video ("living picture") — see below | ✓ | `~/.ox/media/{7db2d8493c,237f4b8963,981bbed3c0}` |
+| Studio gaps vs Higgsfield, on-device: reframe / outpaint, relight, lip-sync / talking avatar (need an inpainting or lip-sync model not on this Mac; with a Higgsfield or fal key they run through those providers) | ✗ | |
+| Studio fix: **upscale and cut-out silently ran as an unprompted edit** whenever a source image was given (`editOf || model === 'mac-edit' ? 'edit' : …` precedence). Now `deviceOp()`; upscale returns 1024 px for 512 px in, cut-out a transparent PNG (Apple Vision, 1 s) | ✓ | `~/.ox/media/{8e729f5bee,52168d09ef}`; test |
+| **Desktop pet moves**: drag it anywhere (a tap still opens chat), let go near a corner and it snaps there, the spot is kept across launches and it stops wandering once placed; right-click: four corners, Stay here / Wander around. The old pet could not be dragged (a Button over a web view swallowed the mouse), reset to bottom-right on every layout, and its wander never moved it (`animator()` origin changes were not applied) | ✓ | harness on the real `DesktopPetController`: tap → chat, drag → snapped top-left [16, 758] saved, wander held, menu → bottom-right; OX.app reinstalled and relaunched |
+| **Island from real use** (`ox island learn`): "whats the date of today" went to an agent (fixed, offline); the four real phrases are eval cases now (26/26 offline, 37/37 commands). A run started from the island that got no answer said "stdin is not a TTY"; it now first says "no answer from OX Island in time for <tool>: declined, nothing was done" | ✓ | `ox island evals` |
+| Hooks for approving Claude Code / Codex / Gemini / Cursor / Copilot commands from the notch | ✓ | already installed (`ox hooks status`: all connected); relay answers in 0.2 s |
+| **Test suite** (`npm test`, the isolated runner): **2,538 tests, 0 failures**. The failures were stale tests, all owner decisions: two route tables (WhatsApp webhook), chat history now saved by default (60a517f), WhatsApp health `inboundReady`, prompt +183 B (create_media rule), +3 tools (messages_send, whatsapp_send, create_bot), cosmetic presets removed (8f207af), "Plugins & connectors" label, "unpriced" status line, the 429becc schema cap (compaction fixtures now cross the line with history + the pruned offer), and two ACP tests that read the owner's real `~/.ox` trust store and keys (now a temporary home) | ✓ | |
+| Legacy `~/.ox/memory/memory.jsonl` (87 generic rows from Sept 17, nothing writes it now) moved aside to `memory.legacy-2026-09-17.jsonl` | ✓ | |
+| **Wake word** ("OK ox"): Apple's recognizer is now told the phrase (`contextualStrings`) and "ox"'s sound-alikes (box, ax, oaks…) count after ok / hey / hi | ✓ build / ? live | island rebuilt and running; a live microphone test needs a person |
+| Full suite: 24 failures, **the same 24 on clean `main`** (pre-existing; none from this round) | ~ | compared run by run |
+
+### 00b. Island look from the owner's reels, and the connectors gallery (October 30, afternoon)
+
+| What | State | Evidence |
+|---|---|---|
+| Notch eyes (`NotchEyes.swift`): mint `#E0FBCF` glowing pills in the left wing; blink, follow the pointer; poke = red, 3 pokes = dizzy spirals; dance while music plays; doze after `island.eyes.awayAfter` s (90) with no input, hearts then ^ ^ on return; amber = needs you, red x = error, ^ ^ = done. Off: `defaults write dev.ox.island island.eyes -bool false` | ✓ render | `OxIsland --render-tiles <dir>` → eyes.png |
+| Closed notch: a tap pokes the eyes; the island opens after the pointer rests `island.hoverDelay` s (0.4) and 1.2 s after the last poke | built | `IslandPanel.tick`, `IslandRoot` tap |
+| Music in the notch: album art beside the eyes, red level bars in the right wing | built | `MiniArt`, `MusicBars` |
+| Open island = the classic cards (ox, herd, steps, other sessions, day strip: unchanged) **plus** a row of glowing tiles under them: the run's turn clock + step (Claude `#835241`, Codex, Gemini, Cursor, ox palettes), Music (`#752836`, real Spotify/Music track + play/pause), Focus (`#653486`, start/pause, right-click for minutes). `island.home classic` hides the row | ✓ live | screenshot of the real island: Claude Code 0:24 Testing, Spotify track with art |
+| Tap the agent tile: the island takes that agent's colour and shows the turn: project, big clock, "Making changes · step 2 of 4", the file being edited with + / − counts, Read·Edit·Test·Done bar, Chat (session card) and Open buttons. Chat bubble on the tile too | ✓ render | turn.png; `AgentSession.turnStartedAt/stage/trackTurn` |
+| Edge glow: gold light + sparks around the island while a run needs you, violet while it listens | built | `IslandEdgeGlow` |
+| Header clock "Fri 30 Oct 13:10" | ✓ live | screenshot |
+| Settings › Plugins & connectors › **Connectors** (default tab): Claude-style gallery with each service's logo (inline SVG, no network): Google Drive/Gmail/Calendar/Docs/Sheets (gsuite MCP), Notion, GitHub, Slack, Browser (templates), Outlook, Mail, WhatsApp, Messages (apps found on this Mac), Telegram (gateway). States are real: Connect (adds the template, Ask every call), Added (never "Connected" until it signs in), Found (app on this Mac), Connected (paired gateway only), Set up / needs X | ✓ | `src/connector-gallery.js`, `GET/POST /ox/connectors/gallery`, `test/connector-gallery.test.js` (5/5, child process with its own HOME) |
+| Not done | | the converter radial menu from the 3rd reel (drop a file → ring of formats); the Coucou "update / your stats" cards already exist as `UpdateHome`/Recap |
+
+## 0. Round of October 17, late evening (v0.1.2)
 
 | What | State | Evidence |
 |---|---|---|
@@ -390,9 +432,12 @@ feature by feature in `docs/FEATURES.md` sections 10–13.
 
 ## 11. What is broken or missing, in the order to take it
 
-1. **Island**: draw on the screen to explain (Pixie); Coucou's cards (question
-   chips, live diff, Mail/GitHub/Stripe/Vercel); approving other CLIs' commands
-   from the notch (needs the owner's OK to install hooks).
+1. **Island**: draw-on-screen marks (Buddy `MarksView`), question chips
+   (AskUserQuestion), the live diff ticker, Allow / Always / Deny and the Mail
+   card are in the code as of October 30. Still open: approving other CLIs'
+   commands from the notch (needs the owner's OK to install hooks into Claude
+   Code / Codex), and the Windows island (`test/island-web.test.js` hangs on the
+   Windows runner: the approval test spawns a real run over a named pipe).
 2. **Head-to-head benchmark**: rerun with a shared model strong enough to
    separate the agents (a 7B+ coder model, ~5 GB download, owner's OK; or an
    API key); then SWE-bench Lite / Terminal-Bench with a strong model.

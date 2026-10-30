@@ -150,3 +150,13 @@ test('polling survives one dropped round but not three, and failures are termina
   const dead = { status: async () => { throw new Error('down'); } };
   await assert.rejects(() => waitFor(dead, 'r', { interval: 1 }), /down/);
 });
+
+test('device models run their own operation even with a source image', async () => {
+  const { deviceOp } = await import('../src/media-studio.js');
+  assert.equal(deviceOp('mac-upscale', '/a.png'), 'upscale');
+  assert.equal(deviceOp('mac-cutout', '/a.png'), 'cutout');
+  assert.equal(deviceOp('mac-video', '/a.png'), 'video');
+  assert.equal(deviceOp('mac-image', '/a.png'), 'edit');
+  assert.equal(deviceOp('mac-edit'), 'edit');
+  assert.equal(deviceOp('mac-image'), 'image');
+});

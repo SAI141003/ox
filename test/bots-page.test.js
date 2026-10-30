@@ -41,12 +41,7 @@ test('what bots run on: models, plans and endpoints, each marked ready or not', 
   assert.ok(v.modes.includes('ask') && v.tools.includes('read_file'));
 });
 
-test('bots view exposes editable Ox-owned mod presets', async () => {
+test('the cosmetic bot presentation presets stay removed (8f207af)', async () => {
   const v = await botsView({});
-  assert.ok(Array.isArray(v.mods));
-  assert.deepEqual(v.mods.map((m) => m.id), ['claude', 'grok-bot', 'meta-muse', 'dots', 'claude-widget', 'ox-mods']);
-  for (const mod of v.mods) {
-    assert.ok(mod.name && mod.description && mod.bot && mod.expression && mod.islandLabel);
-    assert.match(mod.color, /^[a-z]+$/);
-  }
+  assert.equal(v.mods, undefined, 'bots view no longer carries mod presets');
 });

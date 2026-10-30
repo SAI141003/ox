@@ -430,7 +430,7 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
       if (!files.length) throw new Error(`${model || 'the model'} answered without an image${d.choices?.[0]?.message?.content ? `: ${String(d.choices[0].message.content).slice(0, 160)}` : ''}`);
     } else if (provider === 'device') {
       const L = await import('./studio-local.js');
-      const op = settings.op ?? (model === 'mac-video' ? 'video' : editOf || model === 'mac-edit' ? 'edit' : model === 'mac-upscale' ? 'upscale' : model === 'mac-cutout' ? 'cutout' : 'image');
+      const op = deviceOp(model, editOf, settings);
       // A link becomes a local file first: everything below reads files.
       let src = media.start?.[0] ?? editOf ?? null;
       if (src && /^https?:/.test(String(src))) { const img = await sourceImage(src, fetchImpl); fs.mkdirSync(dir, { recursive: true }); src = path.join(dir, `source${path.extname(img.name) || '.png'}`); fs.writeFileSync(src, img.buf); }
@@ -543,3 +543,11 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
 
 export function remove(id) { note({ id, deleted: true }); }
 export function favorite(id, on = true) { note({ id, favorite: !!on }); }
+
+// The operation a device model runs. The model names it; a source image alone
+// means "edit" only for the image models. (Written as `editOf || model ===
+// 'mac-edit' ? …` this turned every upscale and cut-out with a source into an
+// unprompted edit, labelled as the upscale or cut-out.)
+export function deviceOp(model, editOf = null, settings = {}) {
+  return settings.op ?? (model === 'mac-video' ? 'video' : model === 'mac-upscale' ? 'upscale' : model === 'mac-cutout' ? 'cutout' : (editOf || model === 'mac-edit') ? 'edit' : 'image');
+}

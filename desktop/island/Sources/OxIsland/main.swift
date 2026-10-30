@@ -552,6 +552,44 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-story"), i + 1 < Comma
     exit(0)
 }
 
+// Dev aid: `OxIsland --render-tiles <dir>`: the eyes in every look, the glowing
+// tiles home and a session's turn in its colour, from a sample board.
+if let i = CommandLine.arguments.firstIndex(of: "--render-tiles"), i + 1 < CommandLine.arguments.count {
+    let dir = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    MainActor.assumeIsolated {
+        let b = OxBridge()
+        b.previewBoard([["id": "w1", "ext": true, "who": "Claude Code", "project": "webshop", "state": "tool", "detail": "reading cart.ts"]])
+        b.previewBoard([["id": "w1", "ext": true, "who": "Claude Code", "project": "webshop", "state": "tool", "detail": "editing checkout.ts +1 −1"],
+                        ["id": "w2", "ext": true, "who": "Codex", "project": "api", "state": "idle", "detail": ""]])
+        @MainActor func save(_ v: some View, _ name: String) {
+            let r = ImageRenderer(content: v); r.scale = 2
+            if let img = r.nsImage, let tiff = img.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                try? png.write(to: dir.appendingPathComponent(name))
+            }
+        }
+        let t = Date().timeIntervalSinceReferenceDate
+        let looks: [EyeLook] = [.open, .angry, .dizzy, .sleep, .love, .happy, .alert, .error, .scan]
+        save(HStack(spacing: 6) {
+            ForEach(Array(looks.enumerated()), id: \.offset) { _, l in
+                VStack(spacing: 4) {
+                    Canvas { g, size in NotchEyes.draw(&g, size: size, look: l, t: t + 0.5, dancing: false, gaze: .zero) }
+                        .frame(width: 60, height: 32).background(Capsule().fill(Color.black))
+                    Text("\(l)").font(.system(size: 10)).foregroundStyle(.white)
+                }
+            }
+        }.padding(12).background(Color(hex: "#0B1336")), "eyes.png")
+        save(GlowTilesHome(bridge: b, player: b.player, focus: b.focus).frame(width: 620, height: 98).padding(10).background(Color.black), "tiles.png")
+        if let s = b.sessions.first {
+            let p = TilePalette.agent(s)
+            save(GlowSessionPanel(bridge: b, session: s).frame(width: 620, height: IslandLayout.glowExtra).padding(10)
+                .background(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: p.mid, location: 0.5), .init(color: p.bottom.opacity(0.85), location: 1)], startPoint: .top, endPoint: .bottom)), "turn.png")
+        }
+        print(b.sessions.map { "\($0.tool) stage \($0.stage) started \($0.turnStartedAt != nil)" })
+    }
+    exit(0)
+}
+
 /// Renders a desk as if it had just been poked `count` times (dev aid only).
 struct PokedDesk: View {
     let desk: AgentDesk
