@@ -31,8 +31,9 @@ export function parseControl(text) {
 // "type" are the text, up to the next control step: they are set aside before
 // the request is split on "and" / "then", and put back after.
 const TYPED_SPAN = /\b(type(?: in)?|enter text)\s+(.+?)(?=\s*,?\s+(?:and\s+(?:then\s+)?|then\s+)(?:press|hit|click|tap|choose|select|push|send)\b|$)/i;
-export function protectTyped(text) {
-  const m = TYPED_SPAN.exec(text);
+const SEARCH_SPAN = /\b(search(?: the web| google| online)?(?: for)?|google|look up)\s+(.+)$/i;
+export function protectTyped(text, { search = false } = {}) {
+  const m = TYPED_SPAN.exec(text) ?? (search ? SEARCH_SPAN.exec(text) : null);
   if (!m) return { text, restore: (s) => s };
   const token = '\u0001typed\u0001';
   return { text: text.slice(0, m.index) + `${m[1]} ${token}` + text.slice(m.index + m[0].length), restore: (s) => s.replace(token, m[2].replace(/^["“']|["”']$/g, '')) };
@@ -56,7 +57,7 @@ function front(app) {
     const a = hands(['activate', app]);
     if (a.error && /not an app/.test(a.error)) { wait(250); continue; }
     if (a.error) return { error: a.error };
-    if (a.already) return { ok: true, app: a.app };
+    if (a.already) { wait(120); const b = hands(['activate', app]); if (b.already) return { ok: true, app: a.app }; }
     wait(150);
   }
   return { ok: true };
@@ -73,13 +74,64 @@ function readControls(app) {
   return list;
 }
 
+/** The browser in front (or the one named): a new tab when asked, the address bar, the words, Return. */
+function browserStep(it, app) {
+  const BROWSER = /chrome|safari|arc|firefox|brave|edge|opera/i;
+  const inFront = hands(['focused']).app;
+  // The browser named, else the one in front, else Chrome.
+  const target = app ?? (inFront && BROWSER.test(inFront) ? inFront : 'Google Chrome');
+  const f = front(target);
+  if (f.error) return { ok: false, message: f.error };
+  wait(250);
+  if (it.newTab) { const t = hands(['key', '17', '--mods', 'cmd', '--app', target]); if (t.error) return { ok: false, message: t.error }; wait(350); }
+  if (!it.query) return { ok: true, message: `opened a new tab in ${target}` };
+  // The address bar: pointed at and clicked when it can be found (you see where it goes), else ⌘L.
+  const list = readControls(target);
+  const bar = (list.elements ?? []).find((e) => (role(e, 'textfield') || role(e, 'combobox')) && /address|search|url/i.test(`${e.name} ${e.description}`));
+  if (bar) hands(['press', '--app', list.app, '--path', bar.path]); else hands(['key', '37', '--mods', 'cmd', '--app', target]);
+  wait(150);
+  // Typed, then checked: a browser that was just opened can still be raising its
+  // window and take the focus away, so the words are put in again if they are not there.
+  let typedOk = false;
+  for (let attempt = 0; attempt < 3 && !typedOk; attempt++) {
+    if (attempt) { front(target); wait(300); hands(['key', '37', '--mods', 'cmd', '--app', target]); wait(150); }
+    hands(['key', '0', '--mods', 'cmd', '--app', target]);
+    const r = hands(['type', it.query, '--keys', '--app', target], 30_000);
+    if (r.error) return { ok: false, message: r.error };
+    wait(150);
+    const now = hands(['focused', '--app', target]);
+    typedOk = String(now.value ?? '').includes(it.query.slice(0, 40));
+  }
+  if (!typedOk) return { ok: false, message: `${target} did not take the words in its address bar` };
+  // Return in the address bar runs the search (it sends nothing to anyone).
+  const go = hands(['key', '36', '--app', target]);
+  return go.error ? { ok: false, message: go.error } : { ok: true, message: `searched "${it.query}" in ${target}` };
+}
+
 /** Run one control step. `app` is the app named earlier in the same request, if any. */
+/** Open or bring forward an app through Accessibility. `open -a` on a running
+ *  app with several windows re-raises them after it returns, and keys typed
+ *  next were lost (Chrome's address bar stayed empty). Null when ox-hands is not here. */
+export function activateApp(name) {
+  if (process.platform !== 'darwin' || process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1' || !handsPath()) return null;
+  const a = hands(['activate', name]);
+  if (a.error) return /not an app/.test(a.error) ? null : { ok: false, message: a.error };
+  return { ok: true, message: `opened ${a.app ?? name}` };
+}
+
+/** Is a browser the app in front? (A search said with no browser named goes there.) */
+export function browserInFront() {
+  if (process.platform !== 'darwin' || process.env.NODE_TEST_CONTEXT) return false;
+  return /chrome|safari|arc|firefox|brave|edge|opera/i.test(hands(['focused']).app ?? '');
+}
+
 export function performControl(it, { app = null, dryRun = false } = {}) {
   const where = app ? ` in ${app}` : '';
   if (dryRun || process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1') {
-    const what = it.intent === 'type' ? `type "${it.text}"` : it.intent === 'send' ? 'press send' : it.intent === 'key' ? `press ${it.key}` : `click "${it.name}"`;
+    const what = it.intent === 'type' ? `type "${it.text}"` : it.intent === 'send' ? 'press send' : it.intent === 'key' ? `press ${it.key}` : it.intent === 'browser' ? (it.query ? `search "${it.query}" in the browser${it.newTab ? ' (new tab)' : ''}` : 'open a new tab') : `click "${it.name}"`;
     return { ok: true, message: `dry run: would ${what}${where}` };
   }
+  if (it.intent === 'browser') return browserStep(it, app);
   const f = front(app);
   if (f.error) return { ok: false, message: f.error };
   if (it.intent === 'type') {

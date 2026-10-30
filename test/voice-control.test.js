@@ -36,3 +36,14 @@ test('under test nothing is pressed', () => {
   assert.equal(r.handled, true);
   assert.match(r.message, /dry run: would type "hello"/);
 });
+
+test('the owner\'s Chrome requests, as spoken', () => {
+  const a = parseChain('Hey, I want you to open Chrome and search for any new movies that are interesting and you know that they explain more about other movies');
+  assert.deepEqual(a.map((x) => x.intent), ['app', 'search']);
+  assert.equal(a[1].app, a[0].name, 'searched in the browser just opened');
+  assert.match(a[1].query, /^new movies that are interesting and that they explain more about other movies$/);
+  const b = parseIntent('Now open a new tab and search for new movies');
+  assert.deepEqual(b, { intent: 'search', query: 'new movies', newTab: true });
+  assert.deepEqual(parseIntent('open a new tab'), { intent: 'tab' });
+  assert.equal(parseIntent('can you search for ramen near me').query, 'ramen near me');
+});

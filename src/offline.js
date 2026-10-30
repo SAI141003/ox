@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { osCmd } from './tools/operator.js';
 import { codeChanges as codeChangesSync } from './usage-log.js';
-import { parseControl, performControl, protectTyped } from './voice-control.js';
+import { parseControl, performControl, protectTyped, browserInFront, activateApp } from './voice-control.js';
 
 // ---- arithmetic without eval: + - * / ^ % ( ) and "x% of y" ----
 
@@ -114,6 +114,7 @@ export const SITE_NAMES = {
   'hacker news': 'https://news.ycombinator.com', tiktok: 'https://www.tiktok.com', twitch: 'https://www.twitch.tv',
   'whatsapp web': 'https://web.whatsapp.com', outlook: 'https://outlook.live.com', notion: 'https://www.notion.so',
 };
+const BROWSER_APPS = /^(google chrome|safari|arc|firefox|brave browser|microsoft edge|opera|chrome)$/i;
 const BROWSERS = { chrome: 'Google Chrome', 'google chrome': 'Google Chrome', safari: 'Safari', arc: 'Arc', firefox: 'Firefox', brave: 'Brave Browser', edge: 'Microsoft Edge', 'microsoft edge': 'Microsoft Edge', opera: 'Opera' };
 
 const SITE = /^(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:\/\S*)?$/i;
@@ -128,9 +129,14 @@ function namePrefix() {
   if (nameCache?.name !== name) {
     const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const names = [...new Set(['ox', name.toLowerCase()])].map(esc).join('|');
-    nameCache = { name, re: new RegExp(`^(?:(?:(?:hey|ok|okay|hi)\\s+)?(?:${names})[,\\s]+|(?:please|can you|could you|would you)[,\\s]+)+`, 'i') };
+    nameCache = { name, re: new RegExp(`^(?:(?:(?:hey|ok|okay|hi)\\s+)?(?:${names})[,\\s]+|(?:hey|ok|okay|so|now|and|then|also|please|can you|could you|would you|will you|i want you to|i'd like you to|i would like you to|i need you to|go ahead and|just)[,\\s]+)+`, 'i') };
   }
   return nameCache.re;
+}
+
+// "any new movies that are interesting and you know…": spoken padding off, kept short.
+function cleanQuery(q) {
+  return String(q).replace(/\b(?:you know|like|um+|uh+|kind of|sort of)\b,?\s*/gi, '').replace(/^(?:any|some)\s+/i, '').replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 
 export function parseIntent(text) {
@@ -221,7 +227,10 @@ export function parseIntent(text) {
   if (/^(?:volume up|louder|turn it up)$/i.test(low)) return { intent: 'volume', delta: 10 };
   if (/^(?:volume down|quieter|turn it down)$/i.test(low)) return { intent: 'volume', delta: -10 };
   if (/^(?:mute|unmute)$/i.test(low)) return { intent: 'mute', on: low === 'mute' };
-  if ((m = /^(?:search(?: the web| google)?(?: for)?|google|look up)\s+(.+)$/i.exec(t))) return { intent: 'search', query: m[1].trim() };
+  // In the browser, the way a person would: a new tab, the address bar, the words, Return.
+  if (/^(?:open|make|start)\s+(?:a\s+)?new\s+tab$/i.test(t)) return { intent: 'tab' };
+  if ((m = /^(?:open|make|start)\s+(?:a\s+)?new\s+tab\s+(?:and\s+)?(?:search(?: for)?|google|look up)\s+(.+)$/i.exec(t))) return { intent: 'search', query: cleanQuery(m[1]), newTab: true };
+  if ((m = /^(?:search(?: the web| google| online)?(?: for)?|google|look up)\s+(.+)$/i.exec(t))) return { intent: 'search', query: cleanQuery(m[1]) };
   if ((m = /^(?:open|go to|visit)\s+(\S+)$/i.exec(t)) && SITE.test(m[1])) {
     return { intent: 'url', url: /^https?:\/\//i.test(m[1]) ? m[1] : `https://${m[1]}` };
   }
@@ -633,7 +642,10 @@ export function perform(it) {
       const r = batteryStatus();
       return r.ok ? { ok: true, message: r.message } : { ok: false, message: r.err };
     }
+    case 'tab': return performControl({ intent: 'browser', query: null, newTab: true }, { app: it.app ?? null });
     case 'search': {
+      // A browser is open or was just opened: type it there, visibly, like a person.
+      if (process.platform === 'darwin' && (it.app || it.inBrowser || it.newTab || browserInFront())) return performControl({ intent: 'browser', query: it.query, newTab: it.newTab ?? true }, { app: it.app ?? null });
       const url = `https://www.google.com/search?q=${encodeURIComponent(it.query)}`;
       const r = run(osCmd('open_url', url));
       return r.ok ? { ok: true, message: `searching: ${it.query}` } : { ok: false, message: r.err };
@@ -646,7 +658,7 @@ export function perform(it) {
       const r = run(osCmd('open_url', it.url));
       return r.ok ? { ok: true, message: `opened ${it.url}` } : { ok: false, message: r.err };
     }
-    case 'app': { const r = run(osCmd('open_app', it.name)); return r.ok ? { ok: true, message: `opened ${it.name}` } : { ok: false, message: `could not open "${it.name}": ${r.err}` }; }
+    case 'app': { const viaHands = activateApp(it.name); if (viaHands) return viaHands; const r = run(osCmd('open_app', it.name)); return r.ok ? { ok: true, message: `opened ${it.name}` } : { ok: false, message: `could not open "${it.name}": ${r.err}` }; }
     case 'volume': { const r = setVolume(it); return r.ok ? { ok: true, message: it.level != null ? `volume ${it.level}%` : `volume ${it.delta > 0 ? 'up' : 'down'}` } : { ok: false, message: r.err }; }
     case 'mute': {
       const r = process.platform === 'darwin' ? run(['osascript', '-e', `set volume ${it.on ? 'with' : 'without'} output muted`]) : process.platform === 'linux' ? run(['pactl', 'set-sink-mute', '@DEFAULT_SINK@', it.on ? '1' : '0']) : { ok: false, err: 'not supported here' };
@@ -664,7 +676,7 @@ export function perform(it) {
 export function parseChain(text) {
   const raw = String(text ?? '').trim().replace(/[.!?]+$/, '').replace(namePrefix(), '');
   // The words after "type" are the text, "and"s included: kept whole through the split.
-  const typed = protectTyped(raw);
+  const typed = protectTyped(raw, { search: true });
   const t = typed.text;
   const parts = t.split(/\s*(?:,\s*(?:and\s+)?(?:then\s+)?|\s+and then\s+|\s+then\s+|\s+and\s+)\s*/i).filter(Boolean);
   if (parts.length < 2 || parts.length > 5) return null;
@@ -682,6 +694,8 @@ export function parseChain(text) {
       continue;
     }
     // Typing, pressing and clicking happen in the app opened earlier in the request.
+    // A search or a new tab after a browser was opened (or a tab was) happens in that browser.
+    if (['search', 'tab'].includes(it.intent)) { const b = [...out].reverse().find((x) => x.intent === 'app' && BROWSER_APPS.test(x.name)) ?? (out.some((x) => x.intent === 'tab') ? out.find((x) => x.app) : null); if (b) it = { ...it, app: b.app ?? b.name, ...(it.intent === 'search' && out.at(-1)?.intent === 'tab' ? { newTab: false } : {}) }; else if (out.at(-1)?.intent === 'tab') it = { ...it, inBrowser: true, newTab: false }; }
     if (['type', 'send', 'key', 'click'].includes(it.intent)) { const opened = [...out].reverse().find((x) => x.intent === 'app'); if (opened) it = { ...it, app: opened.name, ...(it.intent === 'type' && out.at(-1) === opened ? { fresh: true } : {}) }; }
     out.push(it);
   }
