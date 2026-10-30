@@ -6352,10 +6352,13 @@ async function runSubcommand(cmd, args) {
         if (!text) { process.stderr.write('usage: ox system1 try "<message>"\n'); process.exitCode = 2; return; }
         if (!S.system1Enabled()) { console.log('System 1 is not installed: ox system1 install'); return; }
         const t0 = Date.now();
-        try { await S.warmSystem1(); } catch (e) { process.stderr.write(`ox: ${e.message}\n`); process.exitCode = 1; return; }
+        // The worker is unref'd (it never keeps a run alive): hold the process open while it answers.
+        const hold = setInterval(() => {}, 1000);
+        try { await S.warmSystem1(); } catch (e) { clearInterval(hold); process.stderr.write(`ox: ${e.message}\n`); process.exitCode = 1; return; }
         const loaded = Date.now() - t0;
         const r = await S.classifyTurn(text, { timeoutMs: 20000 });
         console.log(r ? `${c.bold(r.kind)}${r.confidence != null ? ` ${(r.confidence * 100).toFixed(0)}%` : ''} · needs a plan ${r.plan != null ? `${(r.plan * 100).toFixed(0)}%` : '?'} · ${r.ms} ms ${c.dim(`(model loaded in ${(loaded / 1000).toFixed(1)} s)`)}` : 'no answer');
+        clearInterval(hold);
         S.stopSystem1();
         return;
       }

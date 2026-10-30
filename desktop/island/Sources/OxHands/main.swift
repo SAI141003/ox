@@ -397,6 +397,8 @@ func handle(_ args: [String]) -> [String: Any] {
                         d?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: b.baseAddress)
                         u?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: b.baseAddress)
                     }
+                    // No modifiers: a ⌘ left over from the last shortcut turned the words into shortcuts.
+                    d?.flags = []; u?.flags = []
                     post(d); usleep(4_000); post(u); usleep(12_000)
                     i += 16
                 }

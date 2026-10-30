@@ -115,6 +115,14 @@ function parakeet(bin, file, srtPath) {
   return { segments: parseSrt(srt), srt: srtPath, model: 'parakeet' };
 }
 
+// whisper.cpp built for this chip: an Intel copy under /usr/local runs through
+// Rosetta on Apple silicon, CPU only, several times slower (7 s for 5 s of speech).
+let noGpu = false;
+export function whisperBin() {
+  const native = process.platform === 'darwin' && process.arch === 'arm64' ? ['/opt/homebrew/bin/whisper-cli'].find((p) => fs.existsSync(p)) : null;
+  return native ?? ['whisper-cli', 'whisper-cpp', 'main'].find((b) => spawnSync('which', [b]).status === 0) ?? null;
+}
+
 export function transcribe(file, { model = whisperModel(), language = null } = {}) {
   const p = probe(file);
   if (!p.audio) return { segments: [], srt: null, note: 'the file has no sound' };
@@ -126,13 +134,16 @@ export function transcribe(file, { model = whisperModel(), language = null } = {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-whisper-'));
   const wav = path.join(tmp, 'a.wav');
   ff(['-i', file, '-vn', '-ac', '1', '-ar', '16000', wav]);
-  const bin = ['whisper-cli', 'whisper-cpp', 'main'].find((b) => spawnSync('which', [b]).status === 0);
+  const bin = whisperBin();
   if (!bin) throw new Error('speech-to-text needs whisper.cpp: brew install whisper-cpp');
   // Your words as a hint (ox, names, product words), and your dictionary's fixes after.
   let dict = { replace: {} };
   try { dict = (await_dictionary()) ?? dict; } catch {}
   const hint = ['ox', 'OX Island', ...Object.values(dict.replace ?? {})].filter((w) => typeof w === 'string' && w.length < 40).slice(0, 40).join(', ');
-  const r = run(bin, ['-m', model, '-f', wav, '-osrt', '-of', path.join(tmp, 'out'), '--prompt', hint, ...(language ? ['-l', language] : []), '-np']);
+  const args = ['-m', model, '-f', wav, '-osrt', '-of', path.join(tmp, 'out'), '--prompt', hint, ...(language ? ['-l', language] : []), '-np'];
+  let r = run(bin, [...args, ...(noGpu ? ['-ng'] : [])]);
+  // Some whisper.cpp builds abort on this Mac's GPU ("cannot run the operation"): the CPU is used from then on.
+  if (!r.ok && !noGpu) { noGpu = true; r = run(bin, [...args, '-ng']); }
   if (!r.ok) throw new Error(`whisper: ${r.err.trim().split('\n').pop()}`);
   let srt = fs.readFileSync(path.join(tmp, 'out.srt'), 'utf8');
   try { if (dictMod) srt = srt.split('\n').map((l) => (/-->|^\d+$|^$/.test(l) ? l : dictMod.applyDictionary(l, dict))).join('\n'); } catch {}

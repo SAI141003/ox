@@ -80,6 +80,8 @@ final class Buddy: NSObject, ObservableObject {
     private var peakInputLevel: Double = 0
 
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private var usedOnDevice = true
+    private var emptyOnDevice = 0
     private let audio = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
@@ -180,7 +182,12 @@ final class Buddy: NSObject, ObservableObject {
         // Dictation quality: punctuation, the dictation model, on-device when possible.
         req.addsPunctuation = true
         req.taskHint = .dictation
-        if recognizer.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }
+        // On this Mac when it can, unless on-device recognition kept hearing nothing
+        // (quiet microphones): then Apple's own recognizer, which is faster than the
+        // whisper pass over the recording that an empty result falls back to.
+        let onDevice = recognizer.supportsOnDeviceRecognition && !UserDefaults.standard.bool(forKey: "voice.serverRecognition")
+        req.requiresOnDeviceRecognition = onDevice
+        usedOnDevice = onDevice
         request = req
         finalHeard = false
         peakInputLevel = 0
@@ -205,7 +212,8 @@ final class Buddy: NSObject, ObservableObject {
                 self?.level = min(1, rms * 12)
             }
         }
-        task = recognizer.recognitionTask(with: req) { [weak self] result, _ in
+        task = recognizer.recognitionTask(with: req) { [weak self] result, error in
+            if let error, result == nil { DispatchQueue.main.async { IslandLog.write("voice: recognizer error: \(error.localizedDescription)") } }
             guard let result else { return }
             let text = result.bestTranscription.formattedString
             let final = result.isFinal
@@ -243,6 +251,14 @@ final class Buddy: NSObject, ObservableObject {
             self.task = nil
             self.request = nil
             let text = self.heard.trimmingCharacters(in: .whitespacesAndNewlines)
+            // On-device heard nothing over real sound twice in a row: use Apple's recognizer from now on.
+            if self.usedOnDevice, audioPath != nil, self.peakInputLevel > 0.005 {
+                self.emptyOnDevice = text.isEmpty ? self.emptyOnDevice + 1 : 0
+                if self.emptyOnDevice >= 2 {
+                    UserDefaults.standard.set(true, forKey: "voice.serverRecognition")
+                    IslandLog.write("voice: on-device recognition heard nothing twice; Apple's recognizer is used from now on (defaults delete dev.ox.island voice.serverRecognition to undo)")
+                }
+            }
             IslandLog.write("voice heard: \"\(text)\" (final: \(self.finalHeard), recording: \(audioPath != nil), peak: \(String(format: "%.4f", self.peakInputLevel)))")
             // Nothing heard live but there is a recording: whisper on this Mac listens to it again.
             if text.isEmpty, let audioPath, let port = Dictation.serverPort, let u = URL(string: "http://127.0.0.1:\(port)/ox/voice/transcribe") {
