@@ -63,7 +63,7 @@ function front(app) {
   return { ok: true };
 }
 
-const NEW_PAGE = /^(notes|textedit|stickies)$/i;
+const NEW_PAGE = /^(notes|textedit|stickies|pages|microsoft word)$/i;
 const role = (e, r) => String(e.role ?? '').toLowerCase().includes(r);
 const label = (e) => e.name || e.description || e.identifier || '';
 
@@ -139,7 +139,15 @@ export function performControl(it, { app = null, dryRun = false } = {}) {
     // An app just opened: give its text box a moment, and put the cursor in it.
     // Notes and TextEdit get a new page first, so nothing is typed into an old one.
     wait(it.fresh ? 600 : 100);
-    if (it.fresh && NEW_PAGE.test(app ?? '')) { hands(['key', '45', '--mods', 'cmd', '--app', app]); wait(500); }
+    if (it.fresh && NEW_PAGE.test(app ?? '')) {
+      // TextEdit (and other document apps) can open on their Open dialog: its own
+      // "New Document" button, else ⌘N. Typing into the dialog lost the words.
+      const panel = readControls(app);
+      const newDoc = (panel.elements ?? []).find((e) => role(e, 'button') && /^new document$/i.test(String(e.name || e.description || '').trim()));
+      if (newDoc) hands(['press', '--app', panel.app ?? app, '--path', newDoc.path]);
+      else hands(['key', '45', '--mods', 'cmd', '--app', app]);
+      wait(600);
+    }
     // Put the cursor in the text box, unless it is already in one.
     const now = hands(['focused', ...(app ? ['--app', app] : [])]);
     if (!/textarea|textfield|combobox|searchfield/i.test(now.role ?? '')) {
