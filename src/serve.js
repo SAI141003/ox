@@ -33,7 +33,7 @@ import { BOTS, KEY_ENV, resolveBot, defaultBotSpec } from './bots.js';
 import { readFile } from 'fs/promises';
 import { join, resolve, extname, dirname, basename } from 'path';
 import os, { homedir } from 'os';
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, statSync } from 'fs';
+import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, statSync, statfsSync } from 'fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { createReadStream } from 'fs';
 import { stat, unlink } from 'fs/promises';
@@ -1588,9 +1588,14 @@ async function handleSettingsPost(req, res) {
     await cmdIsland([body.island ? 'on' : 'off'], { log: () => {}, err: () => {} });
   }
   // Restart: stop, rebuild (macOS) and start, so a new version of the island loads.
+  // Not awaited: a rebuild takes a minute, longer than the app waits for an
+  // answer, so Restart looked like it failed. The island comes back on its own.
   if (body.islandRestart === true && !process.env.NODE_TEST_CONTEXT) {
     const { cmdIsland } = await import('./island.js');
-    await cmdIsland(['restart'], { log: () => {}, err: () => {} });
+    const lines = [];
+    cmdIsland(['restart'], { log: (l) => lines.push(l), err: (l) => lines.push(l) })
+      .then((code) => { if (code) console.error(`island restart failed: ${lines.join(' ').slice(-400)}`); })
+      .catch((e) => console.error(`island restart failed: ${e.message}`));
   }
   const islandPreferenceKeys = ['size', 'autoClose', 'hideFullscreen', 'companion', 'pet'];
   if (body.islandPreferences && typeof body.islandPreferences === 'object') {
@@ -1605,7 +1610,7 @@ async function handleSettingsPost(req, res) {
     // a deliberate settings change, never in the middle of an agent run.
     if (!process.env.NODE_TEST_CONTEXT && process.platform === 'darwin') {
       const { islandRunning, cmdIsland } = await import('./island.js');
-      if (islandRunning({ env: {} })) await cmdIsland(['restart'], { log: () => {}, err: () => {} });
+      if (islandRunning({ env: {} })) cmdIsland(['restart'], { log: () => {}, err: () => {} }).catch(() => {});
     }
   }
   if (typeof body.defaultBot === 'string') {
@@ -2093,6 +2098,8 @@ const codeCache = {};
 let studioOpen = null;
 const SERVER_STARTED = new Date().toISOString();
 let localSetup = { running: false, step: null, error: null };
+// Studio extras in progress: the film library download and Craft installs, by id.
+const extrasJobs = {};
 const ROUTES = [
   // Official Meta callback. Unlike normal app routes, this is called by
   // WhatsApp rather than the local UI, so signature verification in
@@ -2506,6 +2513,32 @@ const ROUTES = [
     const S = await import('./studio-mcp.js');
     const ready = (m) => { try { return S.hostFor(m); } catch { return null; } };
     return { models: C.OPEN_MODELS.map((m) => ({ ...m, ready: ready(m), cost: C.estimateCost(m), costLine: C.costLine(m) })), camera: C.CAMERA, workflows: C.WORKFLOWS, defaults: C.DEFAULTS };
+  }) },
+  // Studio extras: film styles made in code (src/studio-films.js) and the Craft apps (src/studio-craft.js).
+  { method: 'GET', pattern: /^\/ox\/studio\/extras\/?$/, handler: appRoute(async () => {
+    const F = await import('./studio-films.js');
+    const K = await import('./studio-craft.js');
+    const st = F.filmLibStatus();
+    let freeGB = null;
+    try { const f = statfsSync(os.homedir()); freeGB = Math.round((f.bavail * f.bsize) / 2 ** 30 * 10) / 10; } catch {}
+    return { films: { ...st, styles: st.here ? F.filmStyles() : [], gallery: 'https://lemomo-ai.github.io/lemo-opuscar/' }, craft: K.craftStatus({ servers: readConfigDoc().mcpServers ?? {} }), jobs: extrasJobs, freeGB };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/studio\/extras\/?$/, handler: appRoute(async (b) => {
+    const key = b.action === 'films' ? 'films' : String(b.id ?? '');
+    if (b.action === 'open') {
+      const a = (await import('./studio-craft.js')).craftStatus().find((x) => x.id === key);
+      if (!a?.app) throw new Error('that app is not installed');
+      (await import('node:child_process')).spawn('open', [a.app], { detached: true, stdio: 'ignore' }).unref();
+      return { opened: a.app };
+    }
+    if (extrasJobs[key]?.running) return { jobs: extrasJobs };
+    const job = extrasJobs[key] = { running: true, step: 'starting', error: null };
+    const finish = (p) => p.then(() => { extrasJobs[key] = { running: false, step: 'done', error: null }; }).catch((e) => { extrasJobs[key] = { running: false, step: 'failed', error: e.message }; });
+    if (b.action === 'films') finish((await import('./studio-films.js')).setupFilmLib());
+    else if (b.action === 'install') finish((await import('./studio-craft.js')).installCraft(key, { what: ['app', 'cli', 'both'].includes(b.what) ? b.what : 'both', onStep: (l) => { job.step = l; } }));
+    else if (b.action === 'remove') finish((await import('./studio-craft.js')).removeCraft(key));
+    else { delete extrasJobs[key]; throw new Error('action: films, install or remove'); }
+    return { jobs: extrasJobs };
   }) },
   // Studio on this Mac's own chip (src/studio-local.js): what it can make, and a one-time setup with progress.
   { method: 'GET', pattern: /^\/ox\/studio\/local\/?$/, handler: appRoute(async () => ({ ...(await import('./studio-local.js')).status(), setup: localSetup })) },

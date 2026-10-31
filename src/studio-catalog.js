@@ -92,6 +92,25 @@ export const WORKFLOWS = Object.freeze({
       'Change one scene: edit its entry in scene-spec.json, then animate_script with redo set to that scene. Ask which scenes to keep for later runs (save).',
     ],
   },
+  'code-film': {
+    title: 'A short film made in code, in a named style (Lemo-Opuscar)',
+    steps: [
+      'film_styles with no style: suggest two or three that fit the topic and show the full list; the user types the name. Their own styles (My styles) come first.',
+      'film_styles with that style: its STYLE.md is fixed (look, colour, type, motion, sound); everything else is directed from the user\'s topic.',
+      'Ask once, in one message: facts you cannot decide, their own voice/music/logos/data, the language, whether they want a storyboard first. Then start.',
+      'Follow the library\'s AGENTS.md, DIRECTOR.md and TECHNIQUE.md: write TREATMENT.md (three structures, pick one) before opening the style\'s demo, render style frames with core/render/still.mjs, then voice, score, animation, mix and render.',
+      'Work in a project folder of its own, never inside the library\'s styles/. Deliver what DIRECTOR.md section 11 lists and give the paths.',
+    ],
+  },
+  'craft-edit': {
+    title: 'Edit a file in a Craft app (Photoshop, Premiere, Illustrator… rebuilt open source)',
+    steps: [
+      'craft_apps: is the app for this file on this Mac (PSD → photocraft, raw photos → lightcraft, SVG/AI → vectorcraft, IDML → designcraft, PDF → pdfcraft, a video timeline → filmcraft, motion graphics → effectcraft, audio → soundcraft)?',
+      'Not installed: say which one and that Studio › Craft apps installs it with its command-line tool, MCP server and skill.',
+      'Installed: read its skill (it lists what works and what does not; these apps are early alpha) and drive it with its MCP tools or its command-line tool, headless.',
+      'Never promise Adobe-grade fidelity. Check the output (render a preview, inspect the file) before saying it is done.',
+    ],
+  },
   'video-restyle': {
     title: 'Restyle a video, keep its motion (Genjutsu-style)',
     steps: [

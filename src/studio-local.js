@@ -84,7 +84,7 @@ function chipName() {
 
 // ------------------------------------------------------------------ install
 
-async function fetchTo(url, dest, { sha256, size, onProgress = () => {}, fetchImpl = globalThis.fetch }) {
+export async function fetchTo(url, dest, { sha256, size, onProgress = () => {}, fetchImpl = globalThis.fetch }) {
   const free = freeBytes(path.dirname(dest));
   if (free != null && free < size + 1.5 * 2 ** 30) throw new Error(`not enough disk: ${Math.round(size / 2 ** 20)} MB needed plus 1.5 GB kept free for macOS, ${Math.round(free / 2 ** 20)} MB free`);
   const r = await fetchImpl(url, { redirect: 'follow' });

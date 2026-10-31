@@ -362,6 +362,8 @@ final class OxBridge: ObservableObject {
     /// Plan usage (Coucou's gauges): the most-used window of each plan.
     struct PlanGauge: Identifiable, Equatable { let id: String; let label: String; let window: String; let percent: Double; let resetsAt: Date? }
     @Published private(set) var gauges: [PlanGauge] = []
+    /// Dev aid (--render-header): plan gauges without polling.
+    func previewGauges(_ g: [PlanGauge]) { gauges = g }
     private var gaugesPolledAt = Date.distantPast
 
     private func pollGauges(port: Int) {

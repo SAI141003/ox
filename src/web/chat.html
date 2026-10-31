@@ -420,6 +420,11 @@
   .os-model .ready { font-size: 11px; } .os-model .ready.no { color: var(--amber); }
   .os-go { display: flex; align-items: center; gap: 10px; }
   .os-h { font-weight: 600; margin: 20px 0 8px; }
+  .os-styles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin: 6px 0 14px; }
+  .os-style { text-align: left; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--panel); font-size: 13px; }
+  .os-style .s { color: var(--muted); font-size: 12px; margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .os-craft-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .os-craft-row .s { color: var(--muted); font-size: 12px; }
   .os-recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
   .os-recipe { text-align: left; border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--panel); font-size: 13.5px; }
   .os-recipe .s { color: var(--muted); font-size: 12px; margin-top: 4px; }
@@ -914,6 +919,12 @@
       </div>
       <details class="os-more os-how"><summary>How to use Studio: step-by-step recipes (product photos, thumbnails, explainer and short videos…)</summary>
       <div class="os-recipes" id="os-recipes"></div>
+      </details>
+      <details class="os-more" id="os-films-box"><summary>Film styles made in code: 66 looks (Ukiyo-e, Satellite Briefing, Pixel RPG, Silent Film…), no video model</summary>
+      <div id="os-films" class="small muted">Loading…</div>
+      </details>
+      <details class="os-more" id="os-craft-box"><summary>Craft apps: open-source Photoshop, Lightroom, Illustrator, InDesign, Acrobat, Premiere, After Effects and more</summary>
+      <div id="os-craft" class="small muted">Loading…</div>
       </details>
       <details class="os-more"><summary>Other providers: Higgsfield, OpenAI, OpenRouter, a Stable Diffusion server on this Mac</summary>
       <div class="box" id="st-composer">
@@ -3135,10 +3146,48 @@ files: [src/billing/**]
     try { osCat = await getJson('/ox/studio/catalog'); } catch (e) { $('os-models').innerHTML = `<div class="alert">${esc(e.message)}</div>`; return; }
     renderMac();
     renderOpenStudio();
+    loadExtras();
     // Recipes in plain words: the tool names agents use read as actions here.
     const plain = (t) => t.replace(/\bgenerate_image\b/g, 'make an image').replace(/\bgenerate_video\b/g, 'make a clip').replace(/\bedit_image\b/g, 'edit the image').replace(/\bremove_background\b/g, 'cut out').replace(/\bupscale\b/g, 'upscale').replace(/\bvideo_edit\b/g, 'video tools').replace(/\bexplainer_video\b/g, 'the explainer maker').replace(/\banimate_script\b/g, 'Animate a script').replace(/\brestyle_video\b/g, 'Restyle a video').replace(/\bjobs_wait\b/g, 'wait for it').replace(/\bop (\w+)/g, '$1').replace(/\b(qwen-image-edit|qwen-image|flux-kontext-dev|wan-2\.2)\b/g, (m) => osCat.models.find((x) => x.id === m)?.name ?? m);
     $('os-recipes').innerHTML = Object.entries(osCat.workflows).map(([k, w]) => `<button class="os-recipe" data-rec="${k}" aria-expanded="false"><b>${esc(w.title)}</b><div class="s">${esc(plain(w.steps[0]).slice(0, 90))}…</div><ol class="s" hidden>${w.steps.map((x) => `<li>${esc(plain(x))}</li>`).join('')}</ol></button>`).join('');
     $('os-recipes').querySelectorAll('[data-rec]').forEach((b) => (b.onclick = () => { const ol = b.querySelector('ol'), open = ol.hidden; ol.hidden = !open; b.querySelector('div').hidden = open; b.setAttribute('aria-expanded', String(open)); }));
+  }
+  // Studio extras: film styles made in code (Lemo-Opuscar) and the Craft apps (ArtCraft).
+  let extrasPoll = null;
+  async function loadExtras() {
+    let X;
+    try { X = await getJson('/ox/studio/extras'); } catch (e) { $('os-films').textContent = $('os-craft').textContent = e.message; return; }
+    const F = X.films, fj = X.jobs.films;
+    if (!F.here) {
+      $('os-films').innerHTML = `<p>A library of 66 film styles where the whole film is made in code: drawings, 3D, type, music and voice, rendered on this Mac with no video model. Pick a style, say the topic, and an agent directs and renders the film. <a href="${esc(F.gallery)}" target="_blank" rel="noopener">See every style's demo</a>. From <a href="https://github.com/lemomo-ai/lemo-opuscar" target="_blank" rel="noopener">Lemo-Opuscar</a> (MIT).</p><button class="btn primary" id="os-films-get" ${fj?.running ? 'disabled' : ''}>${fj?.running ? 'Getting the library…' : 'Get the library (about 70 MB)'}</button>${fj?.error ? `<span class="small err" style="margin-left:8px">${esc(fj.error)}</span>` : ''}`;
+    } else {
+      const by = {};
+      for (const x of F.styles) (by[x.mine ? 'My styles' : x.category] ??= []).push(x);
+      $('os-films').innerHTML = `<p>${F.styles.length} styles in ${esc(F.lib)}${F.commit ? ` (${esc(F.commit)})` : ''}. Pick one: a new session opens with an agent that asks for your topic, writes a treatment, then makes the film. <a href="${esc(F.gallery)}" target="_blank" rel="noopener">Demos</a> · <button class="btn ghost" id="os-films-get" style="padding:2px 10px;font-size:12px" ${fj?.running ? 'disabled' : ''}>${fj?.running ? 'Updating…' : 'Update'}</button></p>` + Object.entries(by).map(([c, list]) => `<div class="section-cap cap">${esc(c)}</div><div class="os-styles">${list.map((x) => `<button class="os-style" data-film="${esc(x.slug)}" title="${esc((x.uses ?? []).join(' · '))}"><b>${esc(x.name)}</b><div class="s">${esc(x.line)}</div></button>`).join('')}</div>`).join('');
+      $('os-films').querySelectorAll('[data-film]').forEach((b) => (b.onclick = () => {
+        const st = F.styles.find((x) => x.slug === b.dataset.film);
+        newConvo(); show('chat');
+        $('mode').value = 'code';
+        $('input').value = `Make a short film in the "${st.name}" style (film_styles ${st.slug}; follow workflow_instructions code-film). The topic: `;
+        $('input').dispatchEvent(new Event('input')); $('input').focus();
+      }));
+    }
+    if ($('os-films-get')) $('os-films-get').onclick = async () => { try { await postJson('/ox/studio/extras', { action: 'films' }); loadExtras(); } catch (e) { toast(e.message); } };
+    const row = (a) => {
+      const j = X.jobs[a.id];
+      const have = [a.app && 'app', a.cli && 'command-line tool', a.mcp && 'agents can drive it'].filter(Boolean);
+      const act = j?.running ? `<span class="small muted">${esc(j.step ?? '')}</span>` : a.cli || a.app
+        ? `${a.app ? `<button class="btn ghost" data-craft-open="${a.id}">Open</button>` : ''}${!a.cli ? `<button class="btn" data-craft="${a.id}" data-what="cli">Let agents use it</button>` : ''}<button class="btn ghost danger" data-craft-rm="${a.id}">Remove</button>`
+        : `<button class="btn" data-craft="${a.id}" data-what="both">Install</button>`;
+      return `<div class="os-craft-row"><div><b>${esc(a.name)}</b> <span class="muted">· for ${esc(a.replaces)}</span><div class="s">${esc(a.what)}${have.length ? ` · <span style="color:var(--green,#34d399)">${esc(have.join(', '))}</span>` : ''}${j?.error ? ` · <span class="err">${esc(j.error)}</span>` : ''}</div></div><div style="display:flex;gap:6px">${act}</div></div>`;
+    };
+    $('os-craft').innerHTML = `<p>Free, open-source, clean-room rebuilds in Rust by <a href="https://github.com/storytold" target="_blank" rel="noopener">ArtCraft</a> (Apache-2.0). Install puts the app in ~/Applications and its command-line tool in ~/.ox/craft, adds its MCP server (it asks before each call, like any new connector) and a skill, so any ox agent can edit PSDs, raw photos, vectors, PDFs and timelines with it. Early alpha: good for real work, not Adobe-perfect. Each is 30-250 MB${X.freeGB != null ? `; ${X.freeGB} GB free on this Mac` : ''}.</p>` +
+      `<div class="section-cap cap">Adobe</div>${X.craft.filter((a) => a.group === 'adobe').map(row).join('')}<div class="section-cap cap" style="margin-top:12px">Office and CAD</div>${X.craft.filter((a) => a.group !== 'adobe').map(row).join('')}`;
+    $('os-craft').querySelectorAll('[data-craft]').forEach((b) => (b.onclick = async () => { try { await postJson('/ox/studio/extras', { action: 'install', id: b.dataset.craft, what: b.dataset.what }); loadExtras(); } catch (e) { toast(e.message); } }));
+    $('os-craft').querySelectorAll('[data-craft-rm]').forEach((b) => (b.onclick = async () => { if (!(await askSure('Remove this Craft app, its command-line tool and its skill?'))) return; try { await postJson('/ox/studio/extras', { action: 'remove', id: b.dataset.craftRm }); loadExtras(); } catch (e) { toast(e.message); } }));
+    $('os-craft').querySelectorAll('[data-craft-open]').forEach((b) => (b.onclick = () => postJson('/ox/studio/extras', { action: 'open', id: b.dataset.craftOpen }).catch((e) => toast(e.message))));
+    clearTimeout(extrasPoll);
+    if (Object.values(X.jobs).some((j) => j.running)) extrasPoll = setTimeout(loadExtras, 1500);
   }
   // This Mac's own chip: what it can make with no key, and the one-time setup.
   let macPoll = null;
@@ -4240,7 +4289,7 @@ files: [src/billing/**]
     if ($('s-island')) $('s-island').onchange = async () => { const on = $('s-island').checked; try { await postJson('/ox/settings', { island: on }); toast(on ? 'OX Island on' : 'OX Island off'); renderSection(); } catch (e) { toast(e.message); $('s-island').checked = !on; } };
     el.querySelectorAll('[data-island-restart]').forEach((b) => (b.onclick = async () => {
       b.disabled = true; b.textContent = 'Restarting…';
-      try { const r = await postJson('/ox/settings', { islandRestart: true }); toast(r.island?.running ? 'OX Island restarted' : 'OX Island is starting'); } catch (e) { toast(e.message); }
+      try { const r = await postJson('/ox/settings', { islandRestart: true }); toast('OX Island is restarting: it is back in a few seconds (a minute if it has to rebuild)'); } catch (e) { toast(e.message); }
       renderSection();
     }));
     el.querySelectorAll('[data-island-pref]').forEach((input) => (input.onchange = async () => {

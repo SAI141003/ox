@@ -554,6 +554,27 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-story"), i + 1 < Comma
 
 // Dev aid: `OxIsland --render-tiles <dir>`: the eyes in every look, the glowing
 // tiles home and a session's turn in its colour, from a sample board.
+// Dev aid: `OxIsland --render-header <file.png>` draws the open island's header
+// at both panel widths with the voice chip and a plan pill showing, to check
+// nothing on the right (the close button) is cut off.
+if let i = CommandLine.arguments.firstIndex(of: "--render-header"), i + 1 < CommandLine.arguments.count {
+    MainActor.assumeIsolated {
+        let b = OxBridge()
+        b.previewGauges([.init(id: "claude", label: "Claude", window: "5 hours", percent: 86, resetsAt: nil), .init(id: "codex", label: "Codex", window: "week", percent: 41, resetsAt: nil)])
+        let view = VStack(spacing: 8) {
+            ForEach([560, 640] as [CGFloat], id: \.self) { w in
+                HomeHeader(bridge: b, notchWidth: 200).frame(width: w, height: 34)
+                    .background(Color.black).overlay(Rectangle().fill(Color.gray.opacity(0.25)).frame(width: 200, height: 34))
+            }
+        }.padding(8).background(Color(white: 0.15))
+        let r = ImageRenderer(content: view); r.scale = 2
+        if let img = r.nsImage, let tiff = img.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
+        }
+    }
+    exit(0)
+}
+
 if let i = CommandLine.arguments.firstIndex(of: "--render-tiles"), i + 1 < CommandLine.arguments.count {
     let dir = URL(fileURLWithPath: CommandLine.arguments[i + 1])
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -600,6 +621,25 @@ struct PokedDesk: View {
                             poke: .init(at: Date().timeIntervalSinceReferenceDate, count: count))
         }
         .frame(width: 84, height: 66)
+    }
+}
+
+// One island at a time: the newest wins. A restart, the ox app and a terminal
+// could each start one (from the app bundle or the build folder), and two
+// islands drew over each other in the notch. Any older OxIsland of this user is
+// stopped before this one opens.
+do {
+    let me = getpid()
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+    p.arguments = ["-x", "-U", String(getuid()), "OxIsland"]
+    let out = Pipe()
+    p.standardOutput = out
+    if (try? p.run()) != nil {
+        p.waitUntilExit()
+        let pids = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .split(separator: "\n").compactMap { pid_t($0.trimmingCharacters(in: .whitespaces)) } ?? []
+        for pid in pids where pid != me { kill(pid, SIGTERM) }
     }
 }
 
