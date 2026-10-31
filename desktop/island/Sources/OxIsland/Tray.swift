@@ -59,7 +59,22 @@ enum IslandLog {
 /// The ox server that is already running (OX.app's, or `ox serve`), asked over
 /// HTTP on this Mac: POST /ox/voice.
 enum VoiceServer {
-    struct Result: Decodable { let route: String; let handled: Bool; let say: String?; let why: String?; let model: String? }
+    struct Result: Decodable { let route: String; let handled: Bool; let say: String?; let why: String?; let model: String?; let job: String? }
+
+    /// The real outcome of a background errand (typing, clicking): polled until it is done, at most 30 s.
+    static func outcome(_ job: String, tries: Int = 60, done: @escaping (_ ok: Bool, _ say: String) -> Void) {
+        guard let base = url()?.deletingLastPathComponent(), var c = URLComponents(url: base.appendingPathComponent("voice/result"), resolvingAgainstBaseURL: false) else { return }
+        c.queryItems = [URLQueryItem(name: "job", value: job)]
+        guard let u = c.url else { return }
+        URLSession.shared.dataTask(with: u) { data, _, _ in
+            let j = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            if let j, (j["pending"] as? Bool) == false {
+                DispatchQueue.main.async { done((j["ok"] as? Bool) ?? false, j["say"] as? String ?? "") }
+            } else if tries > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { outcome(job, tries: tries - 1, done: done) }
+            }
+        }.resume()
+    }
 
     static func url() -> URL? {
         let home = NSHomeDirectory()
@@ -101,7 +116,17 @@ enum Errands {
 
     static func run(_ text: String, done: @escaping (Done) -> Void) {
         VoiceServer.ask(text, offlineOnly: true) { r in
-            if let r { done(Done(handled: r.handled, say: r.say ?? "Done.")); return }
+            if let r {
+                done(Done(handled: r.handled, say: r.say ?? "Done."))
+                // Typing and clicking finish after the answer: a failure is said, not lost.
+                if let job = r.job {
+                    VoiceServer.outcome(job) { ok, say in
+                        IslandLog.write("errand outcome: \(ok ? "ok" : "FAILED"): \(say.prefix(200))")
+                        if !ok { NotificationCenter.default.post(name: .init("ox.errand.failed"), object: say) }
+                    }
+                }
+                return
+            }
             // No answer from the server: ox's no-AI router, run directly.
             IslandLog.write("errand without the server: ox do \(text.prefix(80))")
             OxRunner.run(["do", "--json", text], cwd: FileManager.default.homeDirectoryForCurrentUser, timeout: 60) { _, out in

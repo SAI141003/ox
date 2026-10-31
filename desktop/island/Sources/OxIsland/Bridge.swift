@@ -250,6 +250,12 @@ final class OxBridge: ObservableObject {
             self?.peek(for: Double((n.object as? String) ?? "") ?? 6)
             self?.objectWillChange.send()
         }
+        // A background errand (typing, clicking) that failed after "Typing…" was said: say why.
+        NotificationCenter.default.addObserver(forName: .init("ox.errand.failed"), object: nil, queue: .main) { [weak self] n in
+            guard let self, let why = n.object as? String, !why.isEmpty else { return }
+            MainActor.assumeIsolated { self.buddy.speak(why) }
+            self.peek(for: 8)
+        }
         DistributedNotificationCenter.default().addObserver(forName: .init("dev.ox.island.say"), object: nil, queue: .main) { [weak self] n in
             guard let self, let text = n.object as? String, !text.isEmpty else { return }
             IslandLog.write("test say: \(text)")

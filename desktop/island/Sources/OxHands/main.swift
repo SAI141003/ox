@@ -35,7 +35,19 @@ func opt(_ name: String) -> String? {
 var started = Date()
 func ms() -> Int { Int(Date().timeIntervalSince(started) * 1000) }
 
-let accessHint = "macOS has not given ox Accessibility. Open System Settings › Privacy & Security › Accessibility and turn on the app ox runs in (OX Island, OX, or your terminal), then ask again."
+/// The app macOS charges this process to (who started it): the one that needs Accessibility.
+let responsibleApp: String = {
+    var pid = getppid()
+    for _ in 0..<12 {
+        if let a = NSRunningApplication(processIdentifier: pid), a.bundleURL != nil, let n = a.localizedName { return n }
+        var info = kinfo_proc(); var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, info.kp_eproc.e_ppid > 1 else { break }
+        pid = info.kp_eproc.e_ppid
+    }
+    return "OX"
+}()
+let accessHint = "macOS has not given \(responsibleApp) Accessibility, so I can't type or click. Open System Settings › Privacy & Security › Accessibility, turn on \(responsibleApp) (and OX Island), then ask again."
 
 // MARK: apps and windows
 

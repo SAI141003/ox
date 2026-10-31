@@ -1781,12 +1781,19 @@ export async function voiceTurn(body) {
     // an answer in the chat).
     const { execFile } = await import('node:child_process');
     const bin = fileURLToPath(new URL('../bin/ox.js', import.meta.url));
+    // The outcome comes back: the island asks GET /ox/voice/result?job=… and says
+    // a failure out loud. It used to be kept here and never read, so "Typing…"
+    // was all you heard even when nothing was typed.
+    const job = `v${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    voiceResults.push({ job, at: Date.now(), text, pending: true });
+    if (voiceResults.length > 40) voiceResults.shift();
     execFile(process.execPath, [bin, 'do', '--json', text], { timeout: 60_000, env: process.env }, (err, stdout) => {
       let out; try { out = JSON.parse(String(stdout).trim().split('\n').pop()); } catch { out = { ok: false, message: String(err?.message ?? stdout).slice(0, 200) }; }
-      voiceResults.push({ at: Date.now(), text, ok: out.ok !== false, say: out.message });
-      if (voiceResults.length > 20) voiceResults.shift();
+      const row = voiceResults.find((r) => r.job === job);
+      if (row) Object.assign(row, { pending: false, ok: out.ok !== false, say: out.message });
+      try { (async () => (await import('node:fs')).appendFileSync(join(homedir(), '.ox', 'island.log'), `${new Date().toISOString().replace(/\.\d+Z$/, 'Z')} errand result: ${out.ok !== false ? 'ok' : 'FAILED'}: ${String(out.message ?? '').replace(/\n/g, ' ').slice(0, 300)}\n`))(); } catch {}
     });
-    return { route: 'offline', handled: true, ok: true, say: sayPlan(steps), ms: Date.now() - started };
+    return { route: 'offline', handled: true, ok: true, say: sayPlan(steps), job, ms: Date.now() - started };
   }
   const done = doOffline(text, { dryRun: body?.dryRun === true });
   if (done.handled) return { route: 'offline', handled: true, ok: done.ok !== false, say: done.message, ms: Date.now() - started };
@@ -2532,6 +2539,13 @@ const ROUTES = [
   { method: 'POST', pattern: /^\/ox\/flows\/hook\/([a-z0-9-]{1,40})\/?$/, handler: flowHook },
   { method: 'POST', pattern: /^\/ox\/voice\/?$/, handler: appRoute(voiceTurn) },
   // The island's own recording, when live recognition heard nothing: whisper on this Mac.
+  // What a background errand really did (typing, clicking): { pending } until it finishes, then { ok, say }.
+  { method: 'GET', pattern: /^\/ox\/voice\/result\/?$/, handler: appRoute(async (_, __, req) => {
+    const job = new URL(req.url, 'http://x').searchParams.get('job');
+    const r = voiceResults.find((x) => x.job === job);
+    if (!r) throw new Error('no such errand');
+    return r;
+  }) },
   { method: 'POST', pattern: /^\/ox\/voice\/transcribe\/?$/, handler: appRoute(async (body) => {
     const { realpathSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
