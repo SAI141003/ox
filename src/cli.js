@@ -4986,6 +4986,7 @@ async function runSubcommand(cmd, args) {
           },
         });
         const secs = (r.elapsedMs / 1000).toFixed(2);
+        if (r.answer) console.log(`\n${r.answer}`);
         console.log(r.status === 'done' ? `\n${c.green(c.bold(`${secs} s`))}  ${c.dim(`done · ${r.decisions.length} decisions · ${r.title}`)}` : `\n${c.yellow(`${r.status} after ${secs} s`)}${r.reason ? `: ${r.reason}` : ''}`);
         if (r.status !== 'done') process.exitCode = 1;
       } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }

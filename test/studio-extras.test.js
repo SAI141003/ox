@@ -66,3 +66,14 @@ test('temp sweep: only ox-* entries older than a day go', async () => {
   assert.deepEqual(fs.readdirSync(dir).sort(), ['other-old', 'ox-new']);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('fast browser: a goal starts on the site it names, else a search; DONE carries the answer', async () => {
+  const F = await import('../src/fast-browser.js');
+  assert.equal(F.startUrlFor('open example.com and tell me the heading'), 'https://example.com');
+  assert.equal(F.startUrlFor('go to https://news.ycombinator.com/newest now'), 'https://news.ycombinator.com/newest');
+  assert.match(F.startUrlFor('cheapest flight to Tokyo'), /^https:\/\/duckduckgo\.com\/\?q=cheapest/);
+  const v = F.validate('{"operation":"DONE","answer":"Example Domain"}', { targets: {}, controls: {}, ops: ['DONE', 'BLOCKED'] });
+  assert.equal(v.answer, 'Example Domain');
+  const d = F.browserDecider({ env: { NVIDIA_API_KEY: 'k' }, defaultProvider: 'nvidia', fetchImpl: async (_u, o) => { const b = JSON.parse(o.body); assert.deepEqual(b.chat_template_kwargs, { enable_thinking: false }); assert.equal(b.model, F.NVIDIA_BROWSER_MODEL); return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{}' } }] }) }; } });
+  assert.equal((await d({ system: 's', user: 'u' })).text, '{}');
+});
