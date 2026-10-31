@@ -769,9 +769,17 @@ final class IslandChat: ObservableObject {
     /// What you sent while ox was busy: done next, in order (it used to be dropped).
     private var queued: [(text: String, bridge: OxBridge, onReply: ((String) -> Void)?)] = []
 
+    private var lastSent: (text: String, at: Date)?
     func send(_ raw: String, bridge: OxBridge, onReply: ((String) -> Void)? = nil, triedOffline: Bool = false) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        // The same words twice within 3 s are one request (a mic, a hotkey and a
+        // tap can all end the same utterance): done once, never two or three times.
+        if !triedOffline {
+            // Typed twice in a row by accident (Return pressed twice): sent once.
+            if let l = lastSent, l.text.caseInsensitiveCompare(text) == .orderedSame, Date().timeIntervalSince(l.at) < 3 { return }
+            lastSent = (text, Date())
+        }
         // Errands first, always: "open Notes", "open Chrome and search…" are done
         // by ox's no-AI router in a fraction of a second. They used to wait in the
         // queue behind a busy run, or go to the agent chosen for this chat (an

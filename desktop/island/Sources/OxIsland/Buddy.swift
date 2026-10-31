@@ -280,6 +280,9 @@ final class Buddy: NSObject, ObservableObject {
         endWatch?.invalidate(); endWatch = nil
         handsFree = false
         guard phase == .listening else { return }
+        // Leave "listening" at once: a second stop in the next 1.5 s (key release,
+        // end of speech, a tap) ran this again and sent the same words 2-3 times.
+        phase = .thinking
         audio.stop()
         audio.inputNode.removeTap(onBus: 0)
         request?.endAudio()

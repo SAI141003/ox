@@ -1,4 +1,7 @@
 import readline from 'node:readline';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { c, renderDiff } from './ui.js';
 import { evaluateToolPolicy, READONLY_TOOLS } from './guards.js';
 
@@ -67,6 +70,23 @@ function truncateCommand(command) {
 // anything: 'ask', an unrecognised verdict, a timeout, a disconnect, a
 // malformed frame, a throw, or no client at all all fall through to the
 // pre-existing non-TTY decline. The default posture is therefore unchanged.
+// "Always allow" that outlives one run, for tools that only open or show things
+// (an app, a link, a file, a window, a notification). A voice request is a new
+// run each time, so the island's Always allow used to be asked again every time.
+// Never for tools that write, send, pay, run code or delete.
+export const REMEMBERABLE = new Set(['open_app', 'open_url', 'open_path', 'open_window', 'notify', 'screenshot', 'current_page']);
+const ALWAYS_FILE = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'approvals-always.json');
+export function alwaysAllowed(name) {
+  if (!REMEMBERABLE.has(name)) return false;
+  try { return (JSON.parse(fs.readFileSync(ALWAYS_FILE(), 'utf8')).tools ?? []).includes(name); } catch { return false; }
+}
+export function rememberAlways(name) {
+  if (!REMEMBERABLE.has(name) || process.env.NODE_TEST_CONTEXT && !process.env.OX_HOME) return;
+  let tools = [];
+  try { tools = JSON.parse(fs.readFileSync(ALWAYS_FILE(), 'utf8')).tools ?? []; } catch {}
+  if (!tools.includes(name)) { tools.push(name); fs.mkdirSync(path.dirname(ALWAYS_FILE()), { recursive: true }); fs.writeFileSync(ALWAYS_FILE(), JSON.stringify({ tools }, null, 2)); }
+}
+
 export function makeApprover({ mode = 'default', yolo = false, sandbox = null, mcpPolicy = null, strictApprovals = false, external = null } = {}) {
   let acceptAll = false;
   let noticedNonTTY = false;
@@ -87,6 +107,7 @@ export function makeApprover({ mode = 'default', yolo = false, sandbox = null, m
       if (blocked) return false;
     }
     if (acceptAll || yolo) return true;
+    if (alwaysAllowed(name)) return true;
 
     // Monotonic guard pipeline (DeepSeek dsh pattern): deny-wins, can only tighten.
     const ctx = { approval: mode, yolo, sandbox, mcpPolicy, strictApprovals };
@@ -120,6 +141,7 @@ export function makeApprover({ mode = 'default', yolo = false, sandbox = null, m
       const decision = String(answer?.decision ?? '').trim().toLowerCase();
       if (decision === 'always') {
         acceptAll = true;
+        rememberAlways(name);
         return true;
       }
       if (decision === 'allow') return true;

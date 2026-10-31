@@ -163,6 +163,25 @@ export function parseIntent(text) {
     || (m = /^whats ?app\s+(.+?)\s*(?:,|:|\s(?:saying|that says|that))\s+(.+)$/i.exec(t))) {
     return { intent: 'whatsapp', to: m[1].trim().replace(/^(?:my)\s+/i, ''), text: m[2].trim() };
   }
+  // The ways people say it out loud (island log: "open WhatsApp and send a message hi
+  // to …" went to a screen agent for 92k tokens and opened Contacts). Text, then person.
+  {
+    const w = t.replace(/^(?:can you |could you |please |hey,? )+/i, '').replace(/[.?!]+$/, '');
+    const pairs = [
+      // send hi to Chirag on WhatsApp · open WhatsApp and send (a message) hi to Chirag
+      [/^(?:open whats ?app and )?(?:send|text|message|write)(?: an?)?(?: whats ?app)?(?: message)?(?: saying)?\s+["“]?(.+?)["”]?\s+to\s+(?:my\s+)?(.+?)(?:\s+on whats ?app)?$/i, 1, 2],
+      // send Chirag a message (on WhatsApp) saying hi · tell Chirag on WhatsApp hi
+      [/^(?:open whats ?app and )?(?:send|tell|text|message)\s+(?:my\s+)?(.+?)(?:\s+an?\s+(?:whats ?app\s+)?message)?(?:\s+on whats ?app)?\s*(?:,|:|\s(?:saying|that says|that))\s+(.+)$/i, 2, 1],
+      // whatsapp Chirag hi · message Chirag hi on WhatsApp
+      [/^(?:whats ?app|message|text)\s+(\S+(?:\s+\S+)?)\s+(.+?)\s+on whats ?app$/i, 2, 1],
+    ];
+    if (/whats ?app/i.test(w)) {
+      for (const [re, ti, pi] of pairs) {
+        const x = re.exec(w);
+        if (x && x[ti] && x[pi] && !/^(?:a|an|the)?\s*message$/i.test(x[ti])) return { intent: 'whatsapp', to: x[pi].trim(), text: x[ti].trim() };
+      }
+    }
+  }
   // Email, never sent from here: a draft opens in your mail app for you to send.
   // "… from gmail" / "from my work account" names the sending account (Mail asks otherwise).
   // Only before the message itself: "…saying it came from mom" is the message, not an account.

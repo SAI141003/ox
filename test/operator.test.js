@@ -28,7 +28,7 @@ function ctx(approval = true, yolo = false) {
 }
 
 test('operator: open_app rejects without approval', async () => {
-  const r = await import('../src/tools/operator.js').then(m => m.open_app({ name: 'Chrome' }, { yolo: false, requestApproval: null }));
+  const r = await import('../src/tools/operator.js').then(m => m.open_app({ name: 'No Such App Zz9' }, { yolo: false, requestApproval: null }));
   assert.match(r.content, /approval/);
   assert.equal(r.isError, true);
 });

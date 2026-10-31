@@ -60,7 +60,10 @@ export function osCmd(action, target) {
 export async function open_app(args = {}, ctx = {}) {
   const name = args?.name;
   if (!name) return err('operator open_app: name is required');
-  if (!ctx?.yolo) {
+  // Opening an app is not asked: it changes nothing and the voice errands already
+  // do it unasked. Only a name that is not an installed app still asks.
+  const installed = await (async () => { try { return !!(await import('../offline.js')).resolveApp(String(name)); } catch { return false; } })();
+  if (!ctx?.yolo && !installed) {
     if (ctx?.requestApproval) {
       const v = await ctx.requestApproval('open_app', { name }, `Open application "${name}"?`);
       if (!v) return { content: 'User declined open_app' };

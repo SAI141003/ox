@@ -22,10 +22,10 @@ export const CURRENT_PAGE_SIGNAL = /\b(this|the|current)\s+(video|page|tab|artic
 export function pickScript() {
   const q = (s) => `"${s}"`;
   return [
-    'set front to ""',
-    'tell application "System Events" to set front to name of first application process whose frontmost is true',
+    'set frontApp to ""',
+    'tell application "System Events" to set frontApp to name of first application process whose frontmost is true',
     `set browsers to {${BROWSERS.map(q).join(', ')}}`,
-    'if browsers contains front then return front',
+    'if browsers contains frontApp then return frontApp',
     'repeat with b in browsers',
     '  if application (b as text) is running then return (b as text)',
     'end repeat',

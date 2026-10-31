@@ -124,6 +124,8 @@ struct AgentSession: Identifiable, Equatable {
 final class OxBridge: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = [] { didSet { IslandLayout.busy = !sessions.isEmpty } }
     @Published var hovering = false
+    /// The last voice request and when: the same words again within 3 s are dropped.
+    var lastVoiceRequest: (key: String, at: Date)?
     /// True for the one launch animation at app start (LaunchScene).
     @Published var launching = true
     @Published var pinnedOpen = false
@@ -213,6 +215,14 @@ final class OxBridge: ObservableObject {
                 guard let self else { return false }
                 // "Pixie, play Billie Jean": the name is how you called it, not the request.
                 var text = Self.withoutName(raw)
+                // The same words twice within 3 s are one request (a mic, a hotkey and a tap
+                // can all end the same utterance): done once, not two or three times.
+                let key = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+                if let l = self.lastVoiceRequest, l.key == key, Date().timeIntervalSince(l.at) < 3 {
+                    IslandLog.write("duplicate dropped: \(text.prefix(80))")
+                    return true
+                }
+                self.lastVoiceRequest = (key, Date())
                 IslandLog.write("request: \"\(raw)\" → \"\(text)\" (live run: \(self.hasLiveRun))")
                 if let part = self.islandPart(text) {
                     guard let rest = part.rest else { MainActor.assumeIsolated { self.buddy.speak(part.said) }; return true }
