@@ -1738,6 +1738,14 @@ export function sayPlan(steps) {
   return s.charAt(0).toUpperCase() + s.slice(1) + '.';
 }
 
+let briefCache = null;
+export async function cachedBrief({ maxAgeMs = 5 * 60_000 } = {}) {
+  if (briefCache && Date.now() - briefCache.at < maxAgeMs) return briefCache.value;
+  const value = await (await import('./today.js')).brief();
+  briefCache = { at: Date.now(), value };
+  return value;
+}
+
 export async function voiceTurn(body) {
   const started = Date.now();
   const text = String(body?.text ?? '').trim().slice(0, 2000);
@@ -1749,7 +1757,7 @@ export async function voiceTurn(body) {
   // "Good morning", "what's my day", "morning brief": the brief (src/today.js), said short.
   if (/^(?:(?:good )?morning(?: ox)?|(?:my |the )?(?:morning )?brief(?:ing)?|what(?:'s| is) (?:my day|on today|today look like)|what needs me(?: today)?|what changed (?:since yesterday|overnight))[.!?]*$/i.test(text)) {
     const T = await import('./today.js');
-    const b = await T.brief();
+    const b = await cachedBrief();
     return { route: 'offline', handled: true, ok: true, say: T.spoken(b), brief: b, ms: Date.now() - started };
   }
   const quickSay = quickReply(text);
@@ -2184,7 +2192,9 @@ const ROUTES = [
     return { app, project: root, words: await W.wordsFor(app, { root, dictionary: loadDictionary() }) };
   }) },
   // Your morning brief (src/today.js).
-  { method: 'GET', pattern: /^\/ox\/today\/?$/, handler: appRoute(async () => (await import('./today.js')).brief()) },
+  // Cached for 5 minutes: the brief runs gh, git and Mail synchronously (11 s
+  // measured) and the server answered nothing else meanwhile.
+  { method: 'GET', pattern: /^\/ox\/today\/?$/, handler: appRoute(async () => cachedBrief()) },
   // ox updates itself from the notch (src/self-update.js): asked once, at most one notice a day.
   { method: 'GET', pattern: /^\/ox\/update\/?$/, handler: appRoute(async () => { const U = await import('./self-update.js'); const st = U.readState(); return { notice: U.notice(), allowed: st.allowed ?? null, autoApply: st.autoApply === true, available: st.available ?? null, problem: st.problem ?? null, updatedTo: st.updatedTo ?? null, applying: st.applying ?? null }; }) },
   { method: 'POST', pattern: /^\/ox\/update\/?$/, handler: appRoute(async (body) => {
