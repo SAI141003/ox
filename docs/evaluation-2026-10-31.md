@@ -49,3 +49,21 @@ critique overuse.
 7. Mini overlay: smaller by default, draggable, never over content.
 8. Voice: find unnamed controls with a screenshot when Accessibility has no name.
 9. Temp files: ox leaves thousands of `ox-*` files in the temp folder.
+
+## Round 2 (same day)
+
+| Area | Was | Now | Evidence |
+|---|---|---|---|
+| Agent tasks | B+ | A | bench/real on the new default, NVIDIA Nemotron 3 Ultra: 9/9 pass, 3–11 turns (debug-and-fix 7, was 13–25), 9–93 s per task |
+| Models | C | A− | default switched to Nemotron (answers in ~10 s, a "thinking…" line while a reasoning model reasons); `ox doctor` now tries every set key and flags the refused OpenRouter key (HTTP 401) instead of "configured" |
+| App views | A− | A | the Mini is 64 px, its buttons on hover, draggable anywhere; Code Review read the wrong field (#undefined) and called a non-git folder an error: both fixed |
+| API | A− | A | `/ox/today`, accounts and the week's git are warmed at start; accounts kept a minute; warm answers 0–10 ms |
+| Island | B | A− | one island at a time (a new one stops older ones; three were running), header fits beside the notch, Settings › Restart answers at once and only rebuilds when the code changed. Left: `ox island sign-setup` (owner) |
+| Studio | B− | A | disk checked before a run; film styles made in code (66, Lemo-Opuscar) and the Craft apps (13 open Adobe/Office rebuilds, sha256-checked installs); long lists scroll |
+| Voice control | B− | A− | a control with no Accessibility name is found by its words on screen (Vision) and clicked through the same safety checks |
+| MCP connectors | C | B+ | broken connectors say so and why in the gallery |
+| Temp files | — | A | ox-* temp entries older than a day are removed at start |
+| Web search | C | C | needs a key: Tavily's free tier in Settings › API keys (a keyless Brave page rate-limits scripts and was not used) |
+| Mac health | D | D | 1.9 GB free, swap 7.7 of 8 GB: owner action |
+
+Full suite: 2,309 pass, 0 fail after the round-2 fixes (one skill-length failure found and fixed).
