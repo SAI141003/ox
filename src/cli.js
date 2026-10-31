@@ -5166,6 +5166,9 @@ async function runSubcommand(cmd, args) {
       const rest = args.slice(1);
       const val = (f) => { const i = rest.indexOf(f); return i >= 0 ? rest[i + 1] : null; };
       try {
+        // The brain for other agents (src/brain-mcp.js): Claude Code, Cursor, Codex share it.
+        if (sub === 'mcp') { (await import('./brain-mcp.js')).serveBrainMcp(); await new Promise(() => {}); }
+        if (sub === 'connect') { console.log((await import('./brain-mcp.js')).connectText(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js'))); return; }
         if (sub === 'search' || sub === 'find') {
           const q = rest.filter((a, i) => !a.startsWith('--') && rest[i - 1] !== '--limit').join(' ');
           const hits = await B.search(q, { embed: await B.localEmbedder(), includeOld: rest.includes('--old') });

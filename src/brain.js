@@ -65,7 +65,7 @@ export function noteText(meta, body) {
 
 export const linksIn = (body) => [...new Set([...String(body).matchAll(/\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g)].map((m) => m[1].trim()))];
 
-function walk(dir) {
+export function walk(dir) {
   const out = [];
   let ents = [];
   try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
