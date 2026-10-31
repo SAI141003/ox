@@ -72,7 +72,7 @@ test('doctor exits 0 printing check rows (local discovery may find nothing)', (t
   const r = runOx(t, ['doctor']);
   assert.equal(r.status, 0, r.stderr);
   assert.ok(r.stdout.includes('✓'), 'expected at least one ✓ row');
-  assert.ok(r.stdout.includes('✗'), 'expected at least one ✗ row');
+  assert.match(r.stdout, /not set up \(optional, add a key in Settings › API keys\): .*anthropic/, 'providers without a key are one optional line, not a wall of failures');
   assert.match(r.stdout, /node >= 18/);
   // The old row was `ollama reachable at 127.0.0.1:11434`, a status-only check
   // that passed for ANY process answering 200 on that port. Discovery now

@@ -316,7 +316,8 @@ export async function livingPicture({ prompt, image = null, aspect = '16:9', cam
   let first = path.join(work, 'k0.png');
   if (image) {
     onStep('first frame', 'from your image');
-    spawnSync('ffmpeg', ['-y', '-v', 'error', '-i', image, '-vf', `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`, first]);
+    const r0 = spawnSync('ffmpeg', ['-y', '-v', 'error', '-i', image, '-vf', `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`, first], { encoding: 'utf8' });
+    if (r0.status !== 0 || !fs.existsSync(first)) throw new Error(`could not read your image: ${(r0.stderr ?? '').trim().split('\n').pop() || 'ffmpeg wrote nothing'}`);
   } else {
     onStep('first frame', prompt);
     await runSd([...base(env, false), '-p', String(prompt), '-o', first, '-W', String(width), '-H', String(height), '--steps', '4', '-s', String(s0)], { env, onLine });
@@ -330,7 +331,9 @@ export async function livingPicture({ prompt, image = null, aspect = '16:9', cam
     const x = Math.round(Math.min(width - cw, Math.max(0, cx * width - cw / 2)));
     const y = Math.round(Math.min(height - ch, Math.max(0, cy * height - ch / 2)));
     const crop = path.join(work, `c${k}.png`);
-    spawnSync('ffmpeg', ['-y', '-v', 'error', '-i', first, '-vf', `crop=${cw}:${ch}:${x}:${y},scale=${width}:${height}:flags=lanczos`, crop]);
+    const cut = spawnSync('ffmpeg', ['-y', '-v', 'error', '-i', first, '-vf', `crop=${cw}:${ch}:${x}:${y},scale=${width}:${height}:flags=lanczos`, crop], { encoding: 'utf8' });
+    // Said plainly when the crop fails (a full disk did it), not as the generator's "could not load c3.png".
+    if (cut.status !== 0 || !fs.existsSync(crop)) throw new Error(`could not cut keyframe ${k + 1}: ${(cut.stderr ?? '').trim().split('\n').pop() || 'ffmpeg wrote nothing'}${/No space left/i.test(cut.stderr ?? '') ? ' (the disk is full)' : ''}`);
     const out = path.join(work, `k${k}.png`);
     onStep('keyframe', `${k + 1}/${keyframes}`);
     await runSd([...base(env, true), '-p', String(prompt || 'the same scene, natural motion, photographic detail'), '-i', crop, '--strength', String(motion), '-o', out, '-W', String(width), '-H', String(height), '--steps', String(Math.ceil(1 / motion) + 1), '-s', String(s0 + k)], { env, onLine });

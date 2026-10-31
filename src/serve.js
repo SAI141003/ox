@@ -32,7 +32,7 @@ import { BOTS, KEY_ENV, resolveBot, defaultBotSpec } from './bots.js';
 
 import { readFile } from 'fs/promises';
 import { join, resolve, extname, dirname, basename } from 'path';
-import { homedir } from 'os';
+import os, { homedir } from 'os';
 import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, statSync } from 'fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { createReadStream } from 'fs';
@@ -1811,9 +1811,22 @@ export async function warmVoiceModel() {
     // On battery the model is let go after 5 minutes (it holds gigabytes of
     // memory); on power it stays 30 minutes and is renewed.
     const battery = onBattery();
+    // A Mac short on memory is not asked to hold 2 GB more forever: with swap
+    // past 2 GB the model is not renewed and Ollama lets it go (seen: 13 GB of
+    // swap filled the disk to 173 MB while the model was kept warm all day).
+    if (memoryTight()) return false;
     const r = await fetch(`${base}/api/generate`, { method: 'POST', body: JSON.stringify({ model, keep_alive: battery ? '5m' : '30m' }), signal: AbortSignal.timeout(60_000) });
     return r.ok;
   } catch { return false; }
+}
+
+/** Swap in use past 2 GB (macOS) or under 1 GB of free memory: no extra models held in memory. */
+export function memoryTight({ run = () => spawnSync('sysctl', ['-n', 'vm.swapusage'], { encoding: 'utf8', timeout: 3000 }).stdout ?? '', free = () => os.freemem() } = {}) {
+  try {
+    const m = /used = ([\d.]+)M/.exec(run());
+    if (m && Number(m[1]) > 2048) return true;
+  } catch {}
+  return free() < 1024 * 1024 * 1024 && process.platform !== 'darwin';
 }
 
 /** True when this Mac runs on its battery (pmset; false elsewhere or when unknown). */

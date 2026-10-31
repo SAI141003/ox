@@ -253,7 +253,12 @@ export function history({ limit = 200 } = {}) {
       try { const r = JSON.parse(l); byId.set(r.id, { ...byId.get(r.id), ...r }); } catch {}
     }
   } catch {}
-  return [...byId.values()].filter((r) => !r.deleted).sort((a, b) => b.at - a.at).slice(0, limit);
+  // A job left queued or running by a run that was stopped never finishes: after
+  // an hour it is shown as interrupted instead of waiting forever in the gallery.
+  const now = Date.now();
+  return [...byId.values()].filter((r) => !r.deleted)
+    .map((r) => (['queued', 'running', 'in_progress'].includes(r.status) && now - (r.at ?? now) > 3_600_000 ? { ...r, status: 'interrupted', error: r.error ?? 'stopped before it finished' } : r))
+    .sort((a, b) => b.at - a.at).slice(0, limit);
 }
 
 export function note(row) {

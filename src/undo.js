@@ -69,9 +69,13 @@ function prune(cwd) {
 export function undoableTurns(cwd) {
   let turns = [];
   try { turns = fs.readdirSync(DIR(cwd)).filter((t) => fs.existsSync(path.join(DIR(cwd), t, 'journal.jsonl')) && !fs.existsSync(path.join(DIR(cwd), t, 'undone'))).sort().reverse(); } catch {}
-  return turns.map((t) => {
-    const lines = fs.readFileSync(path.join(DIR(cwd), t, 'journal.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
-    return { turn: t, files: lines.map((e) => path.relative(path.resolve(cwd), e.path) || e.path), at: lines[0]?.at ?? 0 };
+  // A journal that cannot be read (a file iCloud has moved off this Mac times
+  // out with ETIMEDOUT) is left out instead of failing every undo here.
+  return turns.flatMap((t) => {
+    try {
+      const lines = fs.readFileSync(path.join(DIR(cwd), t, 'journal.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+      return [{ turn: t, files: lines.map((e) => path.relative(path.resolve(cwd), e.path) || e.path), at: lines[0]?.at ?? 0 }];
+    } catch { return []; }
   });
 }
 
@@ -88,7 +92,9 @@ export function undoTurn(cwd, turn = null) {
   const rel = (p) => path.relative(path.resolve(cwd), p) || p;
   const out = { turn: t, restored: [], removed: [], skipped: [] };
   for (const e of lines.reverse()) {
-    const now = fs.existsSync(e.path) ? hash(fs.readFileSync(e.path)) : null;
+    let now;
+    try { now = fs.existsSync(e.path) ? hash(fs.readFileSync(e.path)) : null; }
+    catch (err) { out.skipped.push({ file: rel(e.path), why: err?.code === 'ETIMEDOUT' ? 'not on this Mac right now (iCloud did not download it)' : `could not be read (${err?.code ?? err?.message})` }); continue; }
     if (e.after !== undefined && now !== e.after) { out.skipped.push({ file: rel(e.path), why: 'changed again since that turn' }); continue; }
     if (e.existed) {
       fs.mkdirSync(path.dirname(e.path), { recursive: true });

@@ -280,12 +280,17 @@ export class McpHub {
     return s;
   }
 
-  async start({ waitMs = Number(process.env.OX_MCP_START_MS) || 8000 } = {}) {
+  async start({ waitMs = Number(process.env.OX_MCP_START_MS) || 8000, limitMs = 0 } = {}) {
     if (this._started) return;
     this._started = true;
-    // `ox mcp` and other status checks wait for every server; a run (fastStart) does not.
+    // `ox mcp` and other status checks wait for every server (up to `limitMs`
+    // when given: one waiting on a browser sign-in never finishes); a run (fastStart) does not.
     if (!this.fastStart) {
-      await Promise.allSettled(Object.entries(this.config).map(([name, cfg]) => this._startServer(String(name), cfg)));
+      const all = Promise.allSettled(Object.entries(this.config).map(([name, cfg]) => this._startServer(String(name), cfg)));
+      if (!limitMs) { await all; return; }
+      let cap;
+      await Promise.race([all, new Promise((r) => { cap = setTimeout(r, limitMs); cap.unref?.(); })]);
+      clearTimeout(cap);
       return;
     }
     // All servers at once, and the run waits at most `waitMs` for them: they
