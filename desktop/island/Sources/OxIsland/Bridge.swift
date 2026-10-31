@@ -311,8 +311,43 @@ final class OxBridge: ObservableObject {
     /// starting) is tried again on each scan until it answers or its file is gone.
     private var knownSockets = Set<String>()
 
+    // Silent words (Subvox, ~/.ox/subvox/words.jsonl): an approval waiting is
+    // answered by a mouthed "yes"/"allow" (allow once) or "no"/"deny"/"stop".
+    // Only words Subvox accepted arrive here (its distance and margin gates),
+    // and only while its "Send words to ox" is on. Never "always allow".
+    private var silentOffset: UInt64?
+    static let silentAllow: Set<String> = ["yes", "allow", "approve", "ok", "okay"]
+    static let silentDeny: Set<String> = ["no", "deny", "stop", "cancel"]
+    private func readSilentWords() {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/subvox/words.jsonl")
+        guard let h = try? FileHandle(forReadingFrom: url) else { return }
+        defer { try? h.close() }
+        let end = (try? h.seekToEnd()) ?? 0
+        // Words said before the island started are history, not answers.
+        guard let from = silentOffset, from <= end else { silentOffset = end; return }
+        guard end > from else { return }
+        try? h.seek(toOffset: from)
+        let data = h.readDataToEndOfFile()
+        silentOffset = end
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+            guard let j = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any], let word = (j["word"] as? String)?.lowercased() else { continue }
+            if let at = j["at"] as? Double, Date().timeIntervalSince1970 - at > 10 { continue }
+            if let s = pendingSession, Self.silentAllow.contains(word) {
+                IslandLog.write("silent word: \(word) → allow once")
+                answer(s, .allow)
+            } else if let s = pendingSession, Self.silentDeny.contains(word) {
+                IslandLog.write("silent word: \(word) → deny")
+                answer(s, .deny)
+            } else {
+                IslandLog.write("silent word: \(word)")
+                peek(for: 2)
+            }
+        }
+    }
+
     private func scan() {
         readBrowse()
+        readSilentWords()
         knownSockets.formUnion(newSockets())
         for path in knownSockets where connections[path] == nil {
             if FileManager.default.fileExists(atPath: path) { connect(path) } else { knownSockets.remove(path) }

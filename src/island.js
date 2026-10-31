@@ -110,6 +110,40 @@ export function buildIslandApp({ bin, pkg, home = os.homedir() }) {
   return app;
 }
 
+/**
+ * "Silent words" (Subvox, github.com/joeblau/subvox, MIT) as its own small app,
+ * ~/.ox/island/Silent Words.app, so macOS asks for Motion, the microphone and
+ * speech under its own name (a binary started from a terminal is charged to the
+ * terminal). → the app's path, or null when OxSubvox is not built.
+ */
+export function buildSubvoxApp({ pkg, home = os.homedir() }) {
+  const bin = path.join(pkg, '.build', 'release', 'OxSubvox');
+  if (!fs.existsSync(bin)) return null;
+  const app = path.join(home, '.ox', 'island', 'Silent Words.app');
+  fs.rmSync(app, { recursive: true, force: true });
+  fs.mkdirSync(path.join(app, 'Contents', 'MacOS'), { recursive: true });
+  fs.mkdirSync(path.join(app, 'Contents', 'Resources'), { recursive: true });
+  fs.copyFileSync(bin, path.join(app, 'Contents', 'MacOS', 'OxSubvox'));
+  fs.chmodSync(path.join(app, 'Contents', 'MacOS', 'OxSubvox'), 0o755);
+  const icns = path.join(pkg, 'AppIcon.icns');
+  if (fs.existsSync(icns)) fs.copyFileSync(icns, path.join(app, 'Contents', 'Resources', 'AppIcon.icns'));
+  const kv = (k, v) => `\t<key>${k}</key>\n\t<string>${v}</string>`;
+  fs.writeFileSync(path.join(app, 'Contents', 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+${[['CFBundleIdentifier', 'dev.ox.silentwords'], ['CFBundleName', 'Silent Words'], ['CFBundleDisplayName', 'Silent Words'], ['CFBundleExecutable', 'OxSubvox'], ['CFBundlePackageType', 'APPL'], ['CFBundleShortVersionString', '0.1.0'], ['CFBundleVersion', '1'], ['LSMinimumSystemVersion', '14.0'],
+    ...(fs.existsSync(icns) ? [['CFBundleIconFile', 'AppIcon']] : []),
+    ['NSMotionUsageDescription', 'Silent Words reads AirPods head motion to turn silently mouthed words into text.'],
+    ['NSMicrophoneUsageDescription', 'Silent Words records microphone audio alongside motion and transcribes whispered speech for comparison.'],
+    ['NSSpeechRecognitionUsageDescription', 'Silent Words transcribes microphone audio on this Mac as a reference for the motion decoder.']].map(([k, v]) => kv(k, v)).join('\n')}
+</dict>
+</plist>
+`);
+  signApp(app, 'dev.ox.silentwords', spawnSyncImported);
+  return app;
+}
+
 export async function cmdIsland(args = [], { log = console.log, err = (s) => process.stderr.write(s) } = {}) {
   const { spawn, spawnSync } = await import('node:child_process');
   const { fileURLToPath } = await import('node:url');
@@ -190,6 +224,21 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
     log('OX Island is on');
     return cmdIsland(['start'], { log, err });
   }
+  // Silent words (Subvox): AirPods head motion → mouthed words, in its own window.
+  if (action === 'silent' || action === 'silent-words') {
+    if (process.platform !== 'darwin') { err('Silent words needs macOS 14 and AirPods with head tracking\n'); return 1; }
+    const subBin = path.join(pkg, '.build', 'release', 'OxSubvox');
+    if (!fs.existsSync(subBin)) {
+      log('building Silent words (one time)…');
+      const r = await new Promise((res) => { const p = spawn('swift', ['build', '-c', 'release', '--product', 'OxSubvox'], { cwd: pkg, stdio: 'inherit' }); p.on('error', (error) => res({ error })); p.on('close', (status) => res({ status })); });
+      if (r.error || r.status !== 0) { err('ox: swift build failed for Silent words\n'); return 1; }
+    }
+    const app = buildSubvoxApp({ pkg });
+    if (!app) { err('Silent words is not built\n'); return 1; }
+    spawnSync('open', [app], { stdio: 'ignore' });
+    log('Silent words is open: Train a few words (hold Space, mouth the word), check them with Evaluate, then Decode. Turn on "Send words to ox" to answer the island with them.');
+    return 0;
+  }
   // A fixed signature, so rebuilds stop losing Accessibility (src/sign-local.js).
   if (action === 'sign-setup') {
     try { return (await import('./sign-local.js')).createLocalIdentity({ log }) ? 0 : 1; } catch (e) { err(`ox island sign-setup: ${e.message}`); return 1; }
@@ -210,6 +259,8 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
     if (process.platform === 'darwin' && islandNeedsBuild(pkg)) {
       const b = await cmdIsland(['build'], { log, err });
       if (b !== 0) return b;
+      // Silent words rides along: a rebuilt OxSubvox replaces the old app.
+      try { buildSubvoxApp({ pkg }); } catch {}
     }
     return cmdIsland(['start'], { log, err });
   }
@@ -235,7 +286,7 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
     await new Promise(() => {}); // until SIGINT/SIGTERM
   }
   if (action !== 'start' && action !== 'build') {
-    err(`ox: unknown island action '${action}' (use start, stop, restart, on, off, status, build, web)\n`);
+    err(`ox: unknown island action '${action}' (use start, stop, restart, on, off, status, build, web, silent)\n`);
     return 3;
   }
   if (action === 'start' && !islandEnabled()) {

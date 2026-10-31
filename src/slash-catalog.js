@@ -20,6 +20,7 @@ export const COMMANDS = Object.freeze([
   { name: 'browse', usage: '/browse "<goal>" [--url <page>] [--show]', what: 'the fast browser: does a task on a website, asks before buy, pay or send', group: 'Web', app: true, slow: true },
   { name: 'research', usage: '/research "<topic>" [--on reddit,hn,youtube]', what: 'what Reddit, Hacker News and YouTube say, with links', group: 'Web', app: true, slow: true },
   { name: 'library', usage: '/library [add <link|pdf> | search <words> | read <id> | ask <id> "q"]', what: 'your saved articles and PDFs', group: 'Web', app: true },
+  { name: 'pages', usage: '/pages [open <id>]', what: 'finished reports from agents and routines, with their sources', group: 'Web', app: true },
   // Code
   { name: 'pr', usage: '/pr open [--title T] [--draft] | status | fix', what: 'branch, checks, push and a pull request; its CI and reviews', group: 'Code' },
   { name: 'env', usage: '/env [show | detect | check]', what: 'how this repo installs, lints, builds and tests', group: 'Code', app: true },
@@ -33,7 +34,8 @@ export const COMMANDS = Object.freeze([
   { name: 'org', usage: '/org [hire "<sentence>" | tell <id> "…" | team "<sentence>" | timeline]', what: 'a company of agents: hire, give work, follow it', group: 'Agents' },
   { name: 'task', usage: '/task [list | add "<title>" | done <id> | next]', what: 'the task board', group: 'Agents', app: true },
   { name: 'agents', usage: '/agents', what: 'every agent running on this Mac (Claude Code, Codex, ox…)', group: 'Agents', app: true },
-  { name: 'schedule', usage: '/schedule [add <cadence> "<text>" | list]', what: 'runs on a timer', group: 'Agents' },
+  { name: 'schedule', usage: '/schedule [add <cadence> "<text>" [--watch <source>] | suggest "<text>" | list]', what: 'runs on a timer; skipped when what it watches has not changed', group: 'Agents' },
+  { name: 'needs', usage: '/needs', what: 'what waits on you: reviews, failing checks, assigned issues, ox tasks, mail', group: 'Agents', app: true },
   { name: 'flow', usage: '/flow [list | new "<description>" | run <id> | templates | import <id>]', what: 'automations, and n8n templates turned into ox flows', group: 'Agents', app: true },
   { name: 'mesh', usage: '/mesh [describe | agents | ls machine:path | audit]', what: 'your other machines: what they have and run', group: 'Agents', app: true },
   // Skills and connections
@@ -44,7 +46,7 @@ export const COMMANDS = Object.freeze([
   // Voice and the island
   { name: 'dictation', usage: '/dictation [show | style <as-said|natural|polished> | translate <language|off>]', what: 'how dictated text is written', group: 'Voice', app: true },
   { name: 'speak', usage: '/speak "<text>"', what: 'say it out loud', group: 'Voice', app: true },
-  { name: 'island', usage: '/island [start | stop | status | sound <name>]', what: 'the notch island', group: 'Voice', app: true },
+  { name: 'island', usage: '/island [start | stop | status | sound <name> | silent]', what: 'the notch island; silent: AirPods mouthed words (Subvox)', group: 'Voice', app: true },
   // This Mac
   { name: 'doctor', usage: '/doctor', what: 'checks: keys, models, tools, permissions', group: 'System', app: true },
   { name: 'models', usage: '/models', what: 'the models ox can use right now', group: 'System', app: true },

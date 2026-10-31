@@ -37,3 +37,16 @@ test('pages: saved with sources, listed, rendered with the sources at the bottom
   assert.throws(() => P.readPage('../../etc/passwd', { env }), /no such page/);
   fs.rmSync(home, { recursive: true, force: true });
 });
+
+test('Silent words app: its own bundle with the Motion, microphone and speech reasons', async () => {
+  const { buildSubvoxApp } = await import('../src/island.js');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-silent-'));
+  const pkg = path.join(home, 'pkg');
+  assert.equal(buildSubvoxApp({ pkg, home }), null);
+  fs.mkdirSync(path.join(pkg, '.build', 'release'), { recursive: true });
+  fs.writeFileSync(path.join(pkg, '.build', 'release', 'OxSubvox'), '#!/bin/sh\n');
+  const app = buildSubvoxApp({ pkg, home });
+  const plist = fs.readFileSync(path.join(app, 'Contents', 'Info.plist'), 'utf8');
+  for (const k of ['NSMotionUsageDescription', 'NSMicrophoneUsageDescription', 'NSSpeechRecognitionUsageDescription', '<string>OxSubvox</string>', 'dev.ox.silentwords']) assert.ok(plist.includes(k), k);
+  fs.rmSync(home, { recursive: true, force: true });
+});

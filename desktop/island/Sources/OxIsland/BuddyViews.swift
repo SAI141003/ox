@@ -206,6 +206,12 @@ struct IslandControlsView: View {
                 VStack(alignment: .trailing, spacing: 4) {
                     Button(buddy.isListeningOrStarting ? "Stop voice" : "Talk") { buddy.toggle() }
                     Button(wakeOn ? "Wake word on" : "Wake word off") { wakeOn.toggle(); bridge.wake.setEnabled(wakeOn) }
+                    // Silent words (Subvox): AirPods head motion → mouthed words; "yes"/"no" answer approvals.
+                    Button("Silent words") {
+                        let app = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/island/Silent Words.app")
+                        if FileManager.default.fileExists(atPath: app.path) { NSWorkspace.shared.open(app) }
+                        else { OxRunner.run(["island", "silent"], cwd: FileManager.default.homeDirectoryForCurrentUser) { _, _ in } }
+                    }.help("Mouth words with AirPods in: train a few, then \"yes\" or \"no\" answers an approval")
                 }.font(.system(size: 10.5, weight: .semibold))
             }
             Text("The Island closes after you leave unless you are typing, speaking, or an agent needs an approval. Mail opens safely in Mail; replies stay drafts until you send them.")
