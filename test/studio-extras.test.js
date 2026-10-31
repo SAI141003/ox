@@ -54,3 +54,15 @@ test('studio tools: film_styles and craft_apps answer', async () => {
   assert.match(await s.call('craft_apps', {}), /photocraft: PhotoCraft \(Photoshop\)/);
   assert.match(await s.call('workflow_instructions', { name: 'code-film' }), /TREATMENT\.md/);
 });
+
+test('temp sweep: only ox-* entries older than a day go', async () => {
+  const { sweepTemp } = await import('../src/serve.js');
+  const dir = tmp();
+  for (const n of ['ox-old', 'ox-new', 'other-old']) fs.mkdirSync(path.join(dir, n));
+  const old = new Date(Date.now() - 2 * 86_400_000);
+  fs.utimesSync(path.join(dir, 'ox-old'), old, old);
+  fs.utimesSync(path.join(dir, 'other-old'), old, old);
+  assert.equal(sweepTemp({ dir }), 1);
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['other-old', 'ox-new']);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

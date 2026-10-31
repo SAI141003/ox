@@ -420,6 +420,9 @@
   .os-model .ready { font-size: 11px; } .os-model .ready.no { color: var(--amber); }
   .os-go { display: flex; align-items: center; gap: 10px; }
   .os-h { font-weight: 600; margin: 20px 0 8px; }
+  /* Long lists in Studio scroll inside their own box instead of stretching the page. */
+  .os-scroll { max-height: 440px; overflow-y: auto; overscroll-behavior: contain; padding-right: 6px; margin-top: 8px; border-top: 1px solid var(--line); }
+  .os-scroll .section-cap { position: sticky; top: 0; z-index: 1; background: var(--bg); padding: 8px 0 4px; margin: 0; }
   .os-styles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin: 6px 0 14px; }
   .os-style { text-align: left; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--panel); font-size: 13px; }
   .os-style .s { color: var(--muted); font-size: 12px; margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -683,6 +686,13 @@
   @media (max-width:860px) { .pet-preview { grid-template-columns:1fr; text-align:center; gap:8px; } .pet-preview-copy p { margin-inline:auto; } .pet-preview-actions { justify-content:center !important; } }
   .pet-dock { position:fixed; right:20px; bottom:72px; z-index:21; display:grid; grid-template-columns:148px 1fr; grid-template-rows:1fr auto; align-items:center; gap:0 8px; width:276px; min-height:154px; padding:8px 10px 8px 8px; border:1px solid var(--line2); border-radius:24px; background:color-mix(in srgb,var(--panel) 88%,transparent); box-shadow:0 12px 36px rgba(0,0,0,.34); backdrop-filter:blur(16px); }
   .pet-dock[hidden], .pet-mini[hidden] { display:none; }
+  /* Small by default (it covered the bottom-right of every page): the mini alone, its buttons on hover; drag it anywhere. */
+  .pet-dock.compact { display:flex; flex-direction:column-reverse; align-items:center; width:auto; min-height:0; padding:4px; gap:4px; border-radius:20px; touch-action:none; cursor:grab; }
+  .pet-dock.compact .pet-mini { width:calc(var(--pet-size,64px) + 8px); height:calc(var(--pet-size,64px) + 8px); }
+  .pet-dock.compact .pet-side { display:none; }
+  .pet-dock.compact .pet-actions { display:none; margin:0; }
+  .pet-dock.compact:hover .pet-actions, .pet-dock.compact:focus-within .pet-actions { display:flex; }
+  .pet-dock.dragging { cursor:grabbing; opacity:.85; }
   html.native-desktop-pet .pet-dock { display:none !important; }
   .pet-mini { grid-row:1 / 3; width:148px; height:138px; display:grid; place-items:center; border:0; border-radius:18px; background:transparent; cursor:pointer; }
   .pet-mini svg { width:var(--pet-size,132px); height:var(--pet-size,132px); overflow:visible; }
@@ -940,7 +950,7 @@
       </div>
       </details>
       <div class="subtabs" id="st-tabs" style="padding-left:0;margin-top:18px"></div>
-      <div id="st-gallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px"></div>
+      <div id="st-gallery" class="os-scroll" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px;max-height:640px;border-top:0;align-content:start"></div>
     </div></div></section>
 
     <section class="view" id="v-map"><div class="page"><div class="page-inner" style="max-width:1100px" id="map"></div></div></section>
@@ -3163,7 +3173,8 @@ files: [src/billing/**]
     } else {
       const by = {};
       for (const x of F.styles) (by[x.mine ? 'My styles' : x.category] ??= []).push(x);
-      $('os-films').innerHTML = `<p>${F.styles.length} styles in ${esc(F.lib)}${F.commit ? ` (${esc(F.commit)})` : ''}. Pick one: a new session opens with an agent that asks for your topic, writes a treatment, then makes the film. <a href="${esc(F.gallery)}" target="_blank" rel="noopener">Demos</a> · <button class="btn ghost" id="os-films-get" style="padding:2px 10px;font-size:12px" ${fj?.running ? 'disabled' : ''}>${fj?.running ? 'Updating…' : 'Update'}</button></p>` + Object.entries(by).map(([c, list]) => `<div class="section-cap cap">${esc(c)}</div><div class="os-styles">${list.map((x) => `<button class="os-style" data-film="${esc(x.slug)}" title="${esc((x.uses ?? []).join(' · '))}"><b>${esc(x.name)}</b><div class="s">${esc(x.line)}</div></button>`).join('')}</div>`).join('');
+      $('os-films').innerHTML = `<p>${F.styles.length} styles in ${esc(F.lib)}${F.commit ? ` (${esc(F.commit)})` : ''}. Pick one: a new session opens with an agent that asks for your topic, writes a treatment, then makes the film. <a href="${esc(F.gallery)}" target="_blank" rel="noopener">Demos</a> · <button class="btn ghost" id="os-films-get" style="padding:2px 10px;font-size:12px" ${fj?.running ? 'disabled' : ''}>${fj?.running ? 'Updating…' : 'Update'}</button></p><input class="field" id="os-films-q" placeholder="Find a style: ink, pixel, news, 3D…" aria-label="Find a film style"><div class="os-scroll" id="os-films-list">` + Object.entries(by).map(([c, list]) => `<div data-cat><div class="section-cap cap">${esc(c)}</div><div class="os-styles">${list.map((x) => `<button class="os-style" data-film="${esc(x.slug)}" data-find="${esc(`${x.name} ${x.cn} ${c} ${x.line} ${(x.uses ?? []).join(' ')}`.toLowerCase())}" title="${esc((x.uses ?? []).join(' · '))}"><b>${esc(x.name)}</b><div class="s">${esc(x.line)}</div></button>`).join('')}</div></div>`).join('') + '</div>';
+      $('os-films-q').oninput = () => { const q = $('os-films-q').value.trim().toLowerCase(); $('os-films-list').querySelectorAll('[data-cat]').forEach((g) => { let any = false; g.querySelectorAll('[data-find]').forEach((b) => { const on = !q || b.dataset.find.includes(q); b.hidden = !on; any ||= on; }); g.hidden = !any; }); };
       $('os-films').querySelectorAll('[data-film]').forEach((b) => (b.onclick = () => {
         const st = F.styles.find((x) => x.slug === b.dataset.film);
         newConvo(); show('chat');
@@ -3182,7 +3193,7 @@ files: [src/billing/**]
       return `<div class="os-craft-row"><div><b>${esc(a.name)}</b> <span class="muted">· for ${esc(a.replaces)}</span><div class="s">${esc(a.what)}${have.length ? ` · <span style="color:var(--green,#34d399)">${esc(have.join(', '))}</span>` : ''}${j?.error ? ` · <span class="err">${esc(j.error)}</span>` : ''}</div></div><div style="display:flex;gap:6px">${act}</div></div>`;
     };
     $('os-craft').innerHTML = `<p>Free, open-source, clean-room rebuilds in Rust by <a href="https://github.com/storytold" target="_blank" rel="noopener">ArtCraft</a> (Apache-2.0). Install puts the app in ~/Applications and its command-line tool in ~/.ox/craft, adds its MCP server (it asks before each call, like any new connector) and a skill, so any ox agent can edit PSDs, raw photos, vectors, PDFs and timelines with it. Early alpha: good for real work, not Adobe-perfect. Each is 30-250 MB${X.freeGB != null ? `; ${X.freeGB} GB free on this Mac` : ''}.</p>` +
-      `<div class="section-cap cap">Adobe</div>${X.craft.filter((a) => a.group === 'adobe').map(row).join('')}<div class="section-cap cap" style="margin-top:12px">Office and CAD</div>${X.craft.filter((a) => a.group !== 'adobe').map(row).join('')}`;
+      `<div class="os-scroll"><div class="section-cap cap">Adobe</div>${X.craft.filter((a) => a.group === 'adobe').map(row).join('')}<div class="section-cap cap" style="margin-top:12px">Office and CAD</div>${X.craft.filter((a) => a.group !== 'adobe').map(row).join('')}</div>`;
     $('os-craft').querySelectorAll('[data-craft]').forEach((b) => (b.onclick = async () => { try { await postJson('/ox/studio/extras', { action: 'install', id: b.dataset.craft, what: b.dataset.what }); loadExtras(); } catch (e) { toast(e.message); } }));
     $('os-craft').querySelectorAll('[data-craft-rm]').forEach((b) => (b.onclick = async () => { if (!(await askSure('Remove this Craft app, its command-line tool and its skill?'))) return; try { await postJson('/ox/studio/extras', { action: 'remove', id: b.dataset.craftRm }); loadExtras(); } catch (e) { toast(e.message); } }));
     $('os-craft').querySelectorAll('[data-craft-open]').forEach((b) => (b.onclick = () => postJson('/ox/studio/extras', { action: 'open', id: b.dataset.craftOpen }).catch((e) => toast(e.message))));
@@ -3645,10 +3656,13 @@ files: [src/billing/**]
     const cwd = convo()?.cwd;
     const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
     let status;
-    try { status = await getJson(`/ox/pr${query}`); }
+    // The route answers { status, recipe }: the PR is under status.
+    try { const r = await getJson(`/ox/pr${query}`); status = r.status ?? r; if (!status) throw new Error('no pull request for this branch yet'); }
     catch (e) {
       const noPr = /no pull request for this branch yet/i.test(e.message);
-      el.innerHTML = `<div class="shead">${icon('check')}Code Review</div><p class="sdesc">Pull request status and reviewer feedback for the current project. Review is read-only here; Ox will not edit, push, or merge from this page.</p><div class="box"><b>${noPr ? 'No pull request for this branch yet' : 'Could not load pull request status'}</b><p class="small muted">${esc(noPr ? 'Open a pull request to see its checks and review comments here.' : e.message)}</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="review-open-pr">Open a PR</button><button class="btn" id="review-retry">Try again</button></div></div>`;
+      // Not a git project: nothing to review, which is not an error.
+      const noGit = /not in a git repository/i.test(e.message);
+      el.innerHTML = `<div class="shead">${icon('check')}Code Review</div><p class="sdesc">Pull request status and reviewer feedback for the current project. Review is read-only here; Ox will not edit, push, or merge from this page.</p><div class="box"><b>${noGit ? 'This folder is not a git project' : noPr ? 'No pull request for this branch yet' : 'Could not load pull request status'}</b><p class="small muted">${esc(noGit ? 'Code Review shows the pull request of a git project. Open a session in a project folder (one with a .git), or start one there with git init.' : noPr ? 'Open a pull request to see its checks and review comments here.' : e.message)}</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="review-open-pr">Open a PR</button><button class="btn" id="review-retry">Try again</button></div></div>`;
       $('review-open-pr').onclick = () => $('open-pr').click();
       $('review-retry').onclick = loadCodeReview;
       return;
@@ -4261,7 +4275,10 @@ files: [src/billing/**]
   const paintMiniPet = () => {
     const p = miniPet(), dock = $('pet-dock'), b = $('pet-mini');
     if (!b || !dock) return;
-    const size = Number(store.get('ox.mini.size', 132));
+    const size = Number(store.get('ox.mini.size', 64));
+    dock.classList.toggle('compact', size <= 96);
+    const pos = store.get('ox.mini.pos', null);
+    if (pos && Number.isFinite(pos.right) && Number.isFinite(pos.bottom)) { dock.style.right = `${Math.max(0, Math.min(innerWidth - 60, pos.right))}px`; dock.style.bottom = `${Math.max(0, Math.min(innerHeight - 60, pos.bottom))}px`; }
     b.innerHTML = miniArt(p, size, miniExpression().id);
     b.style.setProperty('--pet-size', `${size}px`);
     dock.hidden = p.id === 'none' || !store.get('ox.mini.visible', true);
@@ -4322,7 +4339,7 @@ files: [src/billing/**]
       if (sec === 'mini') {
         const selected = store.get('ox.mini.pet', 'codex');
         const visible = store.get('ox.mini.visible', true);
-        const size = Number(store.get('ox.mini.size', 132));
+        const size = Number(store.get('ox.mini.size', 64));
         const expression = miniExpression();
         const pets = [...MINI_PETS, ...miniCustom()];
         const currentPet = pets.find((x) => x.id === selected) || MINI_PETS[1];
@@ -4349,7 +4366,7 @@ files: [src/billing/**]
           store.set('ox.mini.expression', b.dataset.miniExpression); paintMiniPet(); renderSection();
         }));
         $('pet-size').oninput = () => { const v = Number($('pet-size').value); store.set('ox.mini.size', v); $('pet-size-value').value = `${v}px`; paintMiniPet(); };
-        $('pet-size-reset').onclick = () => { store.set('ox.mini.size', 132); renderSection(); paintMiniPet(); };
+        $('pet-size-reset').onclick = () => { store.set('ox.mini.size', 64); renderSection(); paintMiniPet(); };
         $('pet-create').onclick = () => { $('pet-create-form').reset(); $('pet-emoji').value = '🐾'; $('petdlg').showModal(); $('pet-name').focus(); };
         $('pet-cancel').onclick = () => $('petdlg').close();
         $('pet-create-form').onsubmit = (e) => {
@@ -5155,6 +5172,22 @@ files: [src/billing/**]
   paintIcons();
   paintMiniPet();
   const openPetChat = () => { show('chat'); closeSettings(); requestAnimationFrame(() => $('input').focus()); };
+  // Drag the mini anywhere; a press that does not move is still a click.
+  {
+    const dock = $('pet-dock');
+    let drag = null, moved = false;
+    dock.addEventListener('pointerdown', (e) => { if (e.button !== 0 || e.target.closest('.pet-actions')) return; const r = dock.getBoundingClientRect(); drag = { x: e.clientX, y: e.clientY, right: innerWidth - r.right, bottom: innerHeight - r.bottom }; moved = false; });
+    addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!moved && Math.hypot(dx, dy) < 5) return;
+      if (!moved) { moved = true; dock.classList.add('dragging'); }
+      dock.style.right = `${Math.max(0, Math.min(innerWidth - dock.offsetWidth, drag.right - dx))}px`;
+      dock.style.bottom = `${Math.max(0, Math.min(innerHeight - dock.offsetHeight, drag.bottom - dy))}px`;
+    });
+    addEventListener('pointerup', () => { if (!drag) return; drag = null; if (moved) { dock.classList.remove('dragging'); store.set('ox.mini.pos', { right: parseFloat(dock.style.right), bottom: parseFloat(dock.style.bottom) }); } });
+    dock.addEventListener('click', (e) => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
+  }
   $('pet-mini').onclick = openPetChat;
   $('pet-chat').onclick = openPetChat;
   $('pet-talk').onclick = () => { if ($('pet-talk').disabled) { toast('Voice conversation is not supported by this browser'); return; } show('chat'); startTalk(); };

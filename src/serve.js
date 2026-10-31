@@ -33,7 +33,7 @@ import { BOTS, KEY_ENV, resolveBot, defaultBotSpec } from './bots.js';
 import { readFile } from 'fs/promises';
 import { join, resolve, extname, dirname, basename } from 'path';
 import os, { homedir } from 'os';
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, statSync, statfsSync } from 'fs';
+import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, statSync, statfsSync, readdirSync, rmSync } from 'fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { createReadStream } from 'fs';
 import { stat, unlink } from 'fs/promises';
@@ -2100,6 +2100,35 @@ const SERVER_STARTED = new Date().toISOString();
 let localSetup = { running: false, step: null, error: null };
 // Studio extras in progress: the film library download and Craft installs, by id.
 const extrasJobs = {};
+let accountsMemo = null;
+async function accountsCached() {
+  if (accountsMemo && Date.now() - accountsMemo.at < 60_000) return accountsMemo.v;
+  const v = await (await appApi()).accountsView(process.env, null);
+  accountsMemo = { at: Date.now(), v };
+  return v;
+}
+// Temp files ox runs leave behind (whisper audio, browser profiles, studio
+// scratch): anything ox-* older than a day goes when the app starts.
+export function sweepTemp({ dir = os.tmpdir(), now = Date.now(), maxAgeMs = 86_400_000 } = {}) {
+  let removed = 0;
+  let names = [];
+  try { names = readdirSync(dir); } catch { return 0; }
+  for (const n of names) {
+    if (!n.startsWith('ox-')) continue;
+    const f = join(dir, n);
+    try { if (now - statSync(f).mtimeMs > maxAgeMs) { rmSync(f, { recursive: true, force: true }); removed++; } } catch {}
+  }
+  return removed;
+}
+// The slow first answers (the brief, accounts, the week's git) made while the app starts, not when a page asks.
+function warmCaches() {
+  setTimeout(() => {
+    sweepTemp();
+    Promise.resolve().then(() => cachedBrief()).catch(() => {});
+    accountsCached().catch(() => {});
+    import('./usage-log.js').then((U) => { codeCache['code:30'] ??= { at: Date.now(), v: U.codeChanges({ days: 30 }) }; }).catch(() => {});
+  }, 1500).unref?.();
+}
 const ROUTES = [
   // Official Meta callback. Unlike normal app routes, this is called by
   // WhatsApp rather than the local UI, so signature verification in
@@ -2445,8 +2474,9 @@ const ROUTES = [
     const health = await W.whatsapp_health();
     return { health, messages: W.readWhatsappInbox() };
   }) },
-  { method: 'GET', pattern: /^\/ox\/accounts\/?$/, handler: appRoute(async (_, __, req) => { const id = new URL(req.url, 'http://x').searchParams.get('id'); return (await appApi()).accountsView(process.env, id); }) },
-  { method: 'POST', pattern: /^\/ox\/accounts\/connect\/?$/, handler: appRoute(async (b) => (await appApi()).connectAccount(b.id)) },
+  // Every account's CLI is asked (1-3 s): the whole list is kept a minute; one account is always asked fresh.
+  { method: 'GET', pattern: /^\/ox\/accounts\/?$/, handler: appRoute(async (_, __, req) => { const id = new URL(req.url, 'http://x').searchParams.get('id'); return id ? (await appApi()).accountsView(process.env, id) : accountsCached(); }) },
+  { method: 'POST', pattern: /^\/ox\/accounts\/connect\/?$/, handler: appRoute(async (b) => { accountsMemo = null; return (await appApi()).connectAccount(b.id); }) },
   { method: 'GET', pattern: /^\/ox\/local\/?$/, handler: appRoute(async () => (await appApi()).localView()) },
   { method: 'GET', pattern: /^\/ox\/capabilities\/?$/, handler: appRoute(async () => (await appApi()).capabilitiesView()) },
   { method: 'POST', pattern: /^\/ox\/plugins\/?$/, handler: appRoute(async (b) => (await appApi()).pluginAction(b)) },
@@ -2985,6 +3015,7 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       reportExposure(exposure);
       const actualPort = server.address()?.port ?? port;
       console.log(`[serve] listening on http://${host}:${actualPort}`);
+      if (!process.env.NODE_TEST_CONTEXT) warmCaches();
       console.log(`[serve] web chat: http://${host.includes(':') ? `[${host}]` : host}:${actualPort}/`);
       const announced = announceServer(actualPort, host, !!(config.apiKey ?? apiKey()));
       // The memory layer's sleep pass: 30 s after start, then every 6 hours, off the request path.
