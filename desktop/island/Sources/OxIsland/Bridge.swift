@@ -230,7 +230,7 @@ final class OxBridge: ObservableObject {
                     VoiceServer.ask(text, offlineOnly: true) { [weak self] r in
                         guard let self else { return }
                         if let r, r.handled { IslandLog.write("offline (live run open): \(r.say ?? "")"); MainActor.assumeIsolated { self.buddy.speak(r.say ?? "Done.") }; return }
-                        if !self.ask(text, imagePaths: shots, audioPath: audio) { self.chat.send(text, bridge: self) { reply in MainActor.assumeIsolated { self.buddy.speak(reply) } } }
+                        if !self.ask(text, imagePaths: shots, audioPath: audio) { self.chat.send(text, bridge: self, onReply: { reply in MainActor.assumeIsolated { self.buddy.speak(reply) } }, triedOffline: true) }
                     }
                     return true
                 }
@@ -716,6 +716,7 @@ final class OxBridge: ObservableObject {
     /// and the day strip would stay empty until someone opened OX.app, so the
     /// island starts `ox serve` itself, on a free loopback port, at most once a minute.
     private var serverStartedAt = Date.distantPast
+    private var serverMissingSince: Date?
     private func startServerIfNeeded() {
         guard Date().timeIntervalSince(serverStartedAt) > 60, let ox = OxRunner.paths() else { return }
         serverStartedAt = Date()
@@ -749,14 +750,22 @@ final class OxBridge: ObservableObject {
         // The app's server says where it is in serve.json (`ox serve`) or app.json
         // (OX.app); a file whose process is gone is skipped.
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let docs = ["serve.json", "app.json"].compactMap { name -> [String: Any]? in
+        // OX.app's server first, as the voice path asks (VoiceServer.url): both must talk to the same one.
+        let docs = ["app.json", "serve.json"].compactMap { name -> [String: Any]? in
             guard let data = try? Data(contentsOf: home.appendingPathComponent(".ox/\(name)")),
                   let doc = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
             if let pid = doc["pid"] as? Int, kill(pid_t(pid), 0) != 0 { return nil }
             return doc
         }
         guard let port = docs.compactMap({ $0["port"] as? Int }).first,
-              let url = URL(string: "http://127.0.0.1:\(port)/ox/live") else { appPort = nil; dropAppSessions(keep: []); startServerIfNeeded(); return }
+              let url = URL(string: "http://127.0.0.1:\(port)/ox/live") else {
+            appPort = nil; dropAppSessions(keep: [])
+            // Gone for a moment while the app restarts its server: wait 15 s before starting another.
+            if serverMissingSince == nil { serverMissingSince = Date() }
+            if let since = serverMissingSince, Date().timeIntervalSince(since) > 15 { startServerIfNeeded() }
+            return
+        }
+        serverMissingSince = nil
         appPort = port
         Dictation.serverPort = port
         if Dictation.contextWords.isEmpty { Dictation.refreshContextWords() }

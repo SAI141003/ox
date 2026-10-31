@@ -1,3 +1,4 @@
+import { resolveToolName, extractTextToolCalls, parseToolArgs } from './tool-repair.js';
 import { execSync } from 'node:child_process';
 import { withTrace } from './trace.js';
 import fs from 'node:fs';
@@ -1955,7 +1956,19 @@ async function* runAgentLoop(opts = {}) {
       prevHistoryForAlign = [...history];
     }
 
-    const calls = accum.finish();
+    let calls = accum.finish();
+    // Any model's tool calls, repaired (src/tool-repair.js): a name with a
+    // prefix or the wrong case is matched to the offered tool, and a call
+    // written into the reply text (local and open-weight models) is taken out
+    // of it and run, instead of being shown to the person as text.
+    {
+      const offered = tools.map((t) => t.name);
+      for (const c of calls) { const fixed = resolveToolName(c.function.name, offered); if (fixed && fixed !== c.function.name) c.function.name = fixed; }
+      if (!calls.length && text && offered.length && process.env.OX_TEXT_TOOL_CALLS !== '0') {
+        const found = extractTextToolCalls(text, offered);
+        if (found.calls.length) { calls = found.calls; text = found.text; yield { type: 'tool-calls-recovered', count: found.calls.length }; }
+      }
+    }
 
     // G3(b) LENGTH TRUNCATION: commit the partial text, ask the model to
     // continue, and keep looping on a separate continuation budget so these
@@ -2135,8 +2148,13 @@ async function* runAgentLoop(opts = {}) {
     async function* runOne(call) {
       assertCostBudget();
       const name = call.function.name;
-      const parsed = safeJsonParse(call.function.arguments || '{}');
+      // Repaired and checked against the tool's schema; what still does not fit
+      // goes back to the model as a precise error and the tool is not run.
+      const schema = tools.find((t) => t.name === name)?.input_schema;
+      const checked = schema ? parseToolArgs(call.function.arguments, schema, name) : null;
+      const parsed = checked ? (checked.args ?? null) : safeJsonParse(call.function.arguments || '{}');
       const args = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+      if (checked?.args) call.function.arguments = JSON.stringify(checked.args);
       // The plan itself (todo_write) travels with its tool-start, so a live view
       // can draw the checklist instead of a truncated JSON preview.
       const plan = name === 'todo_write' && Array.isArray(args.todos)
@@ -2167,6 +2185,8 @@ async function* runAgentLoop(opts = {}) {
       if (signal?.aborted) {
         result = { content: '[aborted]', isError: true };
         neutral = true;
+      } else if (checked?.error) {
+        result = { content: checked.error, isError: true };
       } else if (declinedThisTurn && needsApproval(name, toolCtx)) {
         // A turn can carry several gated calls (they run one after another);
         // once the user has said no to one, the rest of that turn does not run.

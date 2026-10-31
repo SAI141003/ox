@@ -1711,6 +1711,14 @@ export async function callRoute(text, body = {}, { O = null, ask = null } = {}) 
   return { ...r, agent };
 }
 
+// What a voice command is about to do, said back at once ("Opening Google Chrome, then searching new movies").
+const voiceResults = [];
+export function sayPlan(steps) {
+  const one = (x) => x.intent === 'app' ? `opening ${x.name}` : x.intent === 'search' ? `searching ${x.query}` : x.intent === 'tab' ? 'opening a new tab' : x.intent === 'type' ? `typing ${x.text}` : x.intent === 'send' ? 'sending it' : x.intent === 'key' ? `pressing ${x.key}` : x.intent === 'click' ? `clicking ${x.name}` : x.intent;
+  const s = steps.map(one).join(', then ');
+  return s.charAt(0).toUpperCase() + s.slice(1) + '.';
+}
+
 export async function voiceTurn(body) {
   const started = Date.now();
   const text = String(body?.text ?? '').trim().slice(0, 2000);
@@ -1730,11 +1738,19 @@ export async function voiceTurn(body) {
   // done in a child (`ox do`), so the server keeps answering meanwhile.
   const plan = doOffline(text, { dryRun: true });
   const steps = plan.intent?.intent === 'chain' ? plan.intent.steps : plan.intent ? [plan.intent] : [];
-  if (plan.handled && body?.dryRun !== true && steps.some((x) => ['type', 'send', 'key', 'click'].includes(x.intent))) {
+  if (plan.handled && body?.dryRun !== true && steps.some((x) => ['type', 'send', 'key', 'click', 'tab'].includes(x.intent) || (x.intent === 'search' && (x.app || x.newTab || x.inBrowser)))) {
+    // Answered at once with what is being done, then done: the island asks
+    // this with a 1.2 s limit while a run is open, and a slower answer made it
+    // hand the same request to that run too (done twice: in the app, and as
+    // an answer in the chat).
     const { execFile } = await import('node:child_process');
     const bin = fileURLToPath(new URL('../bin/ox.js', import.meta.url));
-    const out = await new Promise((resolve) => execFile(process.execPath, [bin, 'do', '--json', text], { timeout: 60_000, env: process.env }, (err, stdout) => resolve(err && !stdout ? { ok: false, message: String(err.message).slice(0, 200) } : (() => { try { return JSON.parse(String(stdout).trim().split('\n').pop()); } catch { return { ok: false, message: String(stdout).trim().slice(0, 200) }; } })())));
-    return { route: 'offline', handled: true, ok: out.ok !== false, say: out.message ?? 'done', ms: Date.now() - started };
+    execFile(process.execPath, [bin, 'do', '--json', text], { timeout: 60_000, env: process.env }, (err, stdout) => {
+      let out; try { out = JSON.parse(String(stdout).trim().split('\n').pop()); } catch { out = { ok: false, message: String(err?.message ?? stdout).slice(0, 200) }; }
+      voiceResults.push({ at: Date.now(), text, ok: out.ok !== false, say: out.message });
+      if (voiceResults.length > 20) voiceResults.shift();
+    });
+    return { route: 'offline', handled: true, ok: true, say: sayPlan(steps), ms: Date.now() - started };
   }
   const done = doOffline(text, { dryRun: body?.dryRun === true });
   if (done.handled) return { route: 'offline', handled: true, ok: done.ok !== false, say: done.message, ms: Date.now() - started };
@@ -2899,6 +2915,24 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       // app starts a fresh server (src/app.js ensureServer). A plain `ox serve` stays.
       // The island's own server (OX_ISLAND_SERVER) steps aside too; the island starts a fresh one within a minute.
       const islandServer = process.env.OX_ISLAND_SERVER === '1';
+      // The island starts its own server only while OX.app's is gone (a restart,
+      // the app quit). Once the app's is back, two servers ran side by side for
+      // good: two model workers, two sleep passes, and the island's voice and its
+      // run list talking to different servers. The island's own one steps aside.
+      if (islandServer && !process.env.NODE_TEST_CONTEXT) {
+        const appFile = join(process.env.OX_HOME || join(homedir(), '.ox'), 'app.json');
+        const yieldTimer = setInterval(() => {
+          let pid = 0;
+          try { pid = Number(JSON.parse(readFileSync(appFile, 'utf8')).pid) || 0; } catch {}
+          let alive = false;
+          try { if (pid && pid !== process.pid) { process.kill(pid, 0); alive = true; } } catch {}
+          if (!alive || busyRequests > 0) return;
+          console.log("[serve] the app's server is running: the island's own one steps aside");
+          clearInterval(yieldTimer);
+          server.close(); announced?.(); setTimeout(() => process.exit(0), 300);
+        }, 30_000);
+        yieldTimer.unref?.();
+      }
       if ((process.env.OX_APP === '1' || islandServer) && !process.env.NODE_TEST_CONTEXT) {
         const startedAt = Date.now();
         import('./code-stamp.js').then(({ codeStamp, onCodeChange }) => {

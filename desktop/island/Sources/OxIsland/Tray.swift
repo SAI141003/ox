@@ -722,9 +722,28 @@ final class IslandChat: ObservableObject {
     /// What you sent while ox was busy: done next, in order (it used to be dropped).
     private var queued: [(text: String, bridge: OxBridge, onReply: ((String) -> Void)?)] = []
 
-    func send(_ raw: String, bridge: OxBridge, onReply: ((String) -> Void)? = nil) {
+    func send(_ raw: String, bridge: OxBridge, onReply: ((String) -> Void)? = nil, triedOffline: Bool = false) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        // Errands first, always: "open Notes", "open Chrome and search…" are done
+        // by ox's no-AI router in a fraction of a second. They used to wait in the
+        // queue behind a busy run, or go to the agent chosen for this chat (an
+        // orchestrator run that took minutes, or failed, for "open Notes").
+        if !triedOffline {
+            VoiceServer.ask(text, offlineOnly: true) { [weak self] r in
+                guard let self else { return }
+                if let r, r.handled {
+                    IslandLog.write("offline: \(r.say ?? "")")
+                    // Its own answer: a run that is busy keeps its own reply handler.
+                    self.lines.append(Line(mine: true, text: text))
+                    self.lines.append(Line(mine: false, text: r.say ?? "Done."))
+                    onReply?(r.say ?? "Done.")
+                    return
+                }
+                self.send(text, bridge: bridge, onReply: onReply, triedOffline: true)
+            }
+            return
+        }
         if busy {
             queued.append((text, bridge, onReply))
             lines.append(Line(mine: true, text: text))
