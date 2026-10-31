@@ -66,4 +66,4 @@ critique overuse.
 | Web search | C | C | needs a key: Tavily's free tier in Settings › API keys (a keyless Brave page rate-limits scripts and was not used) |
 | Mac health | D | D | 1.9 GB free, swap 7.7 of 8 GB: owner action |
 
-Full suite: 2,309 pass, 0 fail after the round-2 fixes (one skill-length failure found and fixed).
+Full suite: 2,309 pass, 1 fail (the ox-studio skill went over 40 lines); fixed, and that test file re-run green.
