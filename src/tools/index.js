@@ -234,7 +234,7 @@ export const BUILTIN_SCHEMAS = [
   {
     name: 'todo_write',
     description:
-      "Maintain your ordered task list for the current session; replaces the entire list each call. Each todo needs a non-empty content string and a status; priority is optional. When the status is blocked, blockedReason must say what is blocking it. Returns the rendered checklist with progress counts. Mark an item completed only when real work demonstrates it; an item with no supporting tool call stays unverified.",
+      "Maintain your ordered task list for the current session; replaces the entire list each call. Use it only for work of three or more steps (not for a question or a one-file fix), and update it when a step is done, not after every call: each update is a whole model turn. Each todo needs a non-empty content string and a status; priority is optional. When the status is blocked, blockedReason must say what is blocking it. Returns the rendered checklist with progress counts. Mark an item completed only when real work demonstrates it; an item with no supporting tool call stays unverified.",
     input_schema: {
       type: 'object',
       properties: {
@@ -698,7 +698,9 @@ function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, web
   return false;
 }
 // Words that mean a task has several steps or parts: planning and delegation stay offered.
-const PLANNING_SIGNAL = /\b(plan|planning|steps?|step by step|refactor|migrate|migration|across|every|all (?:the )?files|several|multiple|many|feature|implement|build|project|parallel|subagents?|delegate|investigate|audit|review|then|and then|todo|checklist)\b/i;
+const PLANNING_SIGNAL = /\b(plan|planning|steps?|step by step|refactor|migrate|migration|across|every|all (?:the )?files|several|multiple|many|feature|implement|build|project|parallel|subagents?|delegate|investigate|audit|review|todo|checklist)\b/i;
+// "then" was a planning word too: "fix it, then run the tests" kept the task
+// list on offer, and a slow model spent 5 of 13 turns rewriting it for a one-line fix.
 export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, strict = false, mode = null } = {}) {
   if (!Array.isArray(schemas)) return schemas;
   if (schemas.length <= NARROW_THRESHOLD) return schemas;
@@ -787,7 +789,9 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
   const concreteSingleOutput = explicitNewFile && !explicitMultiStepPlan;
   const shortNonPlanningTask = String(message).length < 220 && !PLANNING_SIGNAL.test(message);
   if (!isSubagentOffer && mode !== 'orchestrate' && (shortNonPlanningTask || concreteSingleOutput)) {
-    for (let i = filtered.length - 1; i >= 0; i--) if (filtered[i].name === 'todo_write' || filtered[i].name === 'subagent') filtered.splice(i, 1);
+    // critique asks a second model for a review (up to 90 s): a short task is checked by running it.
+    const askedForReview = /\b(review|critique|second opinion|feedback)\b/i.test(String(message));
+    for (let i = filtered.length - 1; i >= 0; i--) if (['todo_write', 'subagent', ...(askedForReview ? [] : ['critique'])].includes(filtered[i].name)) filtered.splice(i, 1);
   }
   const saved =
     estimateTokens(JSON.stringify(schemas)) - estimateTokens(JSON.stringify(filtered));

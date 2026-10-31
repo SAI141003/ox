@@ -1,4 +1,4 @@
-import { resolveToolName, extractTextToolCalls, parseToolArgs } from './tool-repair.js';
+import { resolveToolName, extractTextToolCalls, parseToolArgs, looksLikeBrokenToolCall } from './tool-repair.js';
 import { execSync } from 'node:child_process';
 import { withTrace } from './trace.js';
 import fs from 'node:fs';
@@ -1357,6 +1357,7 @@ async function* runAgentLoop(opts = {}) {
   let iters = 0;
   let verifyRounds = 0;
   let continuedRounds = 0;
+  let brokenCallRetries = 0;
   let preCompactionMarked = false;
   let compactionsThisRun = 0;
   let compactionBudgetWarned = false;
@@ -1967,6 +1968,16 @@ async function* runAgentLoop(opts = {}) {
       if (!calls.length && text && offered.length && process.env.OX_TEXT_TOOL_CALLS !== '0') {
         const found = extractTextToolCalls(text, offered);
         if (found.calls.length) { calls = found.calls; text = found.text; yield { type: 'tool-calls-recovered', count: found.calls.length }; }
+        // A garbled call ("<x:parameter ...></x:invoke>") was the whole reply: ask
+        // for it again through the tool channel instead of ending on it (twice at most).
+        else if (looksLikeBrokenToolCall(text) && brokenCallRetries < 2) {
+          brokenCallRetries++;
+          history.push({ role: 'assistant', content: text });
+          history.push({ role: 'user', content: 'Your last reply was a tool call written as text, and it was cut off, so nothing ran. Call the tool again through the tool interface (not as text), with all its arguments.' });
+          yield { type: 'warning', text: 'the model wrote a broken tool call as text; asked it again' };
+          yield { type: 'turn-end', stopReason, iters };
+          continue outer;
+        }
       }
     }
 

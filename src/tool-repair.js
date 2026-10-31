@@ -86,6 +86,25 @@ export function coerceArgs(args, schema) {
   return out;
 }
 
+// Names models use for the same field: old_str for old_string, file_path for
+// path, contents for content, cmd for command.
+const SYNONYMS = { path: ['file_path', 'filepath', 'file', 'filename', 'target_file'], content: ['contents', 'text', 'body', 'file_text', 'data'], command: ['cmd', 'script', 'shell'], old_string: ['old_str', 'old', 'search', 'old_text', 'find'], new_string: ['new_str', 'new', 'replace', 'new_text', 'replacement'], query: ['q', 'search_query', 'term'], url: ['link', 'href', 'uri'] };
+const squash = (k) => String(k).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/** Arguments under another name than the schema's (old_str, file_path…) → the schema's names. */
+export function renameToSchema(args, schema) {
+  const props = schema?.properties;
+  if (!args || typeof args !== 'object' || Array.isArray(args) || !props) return args;
+  const out = { ...args };
+  for (const want of Object.keys(props)) {
+    if (out[want] !== undefined) continue;
+    const alts = [...(SYNONYMS[want] ?? [])];
+    const hit = Object.keys(out).find((k) => !props[k] && (alts.map(squash).includes(squash(k)) || squash(k) === squash(want)));
+    if (hit) { out[want] = out[hit]; delete out[hit]; }
+  }
+  return out;
+}
+
 /** Required fields the arguments are missing. */
 export function missingRequired(args, schema) {
   const req = Array.isArray(schema?.required) ? schema.required : [];
@@ -124,6 +143,18 @@ export function extractTextToolCalls(text, names) {
   for (const re of PATTERNS) {
     for (const m of src.matchAll(re)) { const before = calls.length; take(repairJson(m[1])); if (calls.length > before) spans.push([m.index, m.index + m[0].length]); }
   }
+  // Anthropic-style XML, with or without a namespace prefix:
+  // <invoke name="read_file"><parameter name="path">a.js</parameter></invoke>
+  for (const m of src.matchAll(/<(?:[\w-]+:)?invoke\s+name="([^"]+)"\s*>([\s\S]*?)(?:<\/(?:[\w-]+:)?invoke>|$)/g)) {
+    const args = {};
+    for (const p of m[2].matchAll(/<(?:[\w-]+:)?parameter\s+name="([^"]+)"\s*>([\s\S]*?)<\/(?:[\w-]+:)?parameter>/g)) {
+      const v = p[2].trim();
+      args[p[1]] = /^[[{]/.test(v) ? (repairJson(v) ?? v) : v;
+    }
+    const before = calls.length;
+    take({ name: m[1], arguments: args });
+    if (calls.length > before) spans.push([m.index, m.index + m[0].length]);
+  }
   for (const m of src.matchAll(/<function=([\w.:-]+)>\s*([\s\S]*?)\s*(?:<\/function>|$)/g)) {
     const before = calls.length;
     take({ name: m[1], arguments: repairJson(m[2]) ?? {} });
@@ -149,11 +180,21 @@ export function parseToolArgs(raw, schema, name) {
     const want = Array.isArray(schema?.required) && schema.required.length ? ` with ${schema.required.map((k) => `"${k}"`).join(', ')}` : '';
     return { error: `The arguments for ${name} were not a JSON object, so it was not run: ${String(raw ?? '').slice(0, 160)}. Call ${name} again with one JSON object${want}.` };
   }
-  const args = coerceArgs(fixed, schema);
+  const args = coerceArgs(renameToSchema(fixed, schema), schema);
   const missing = missingRequired(args, schema);
   if (missing.length) {
     const desc = missing.map((k) => `"${k}"${schema.properties?.[k]?.description ? ` (${String(schema.properties[k].description).slice(0, 80)})` : ''}`).join(', ');
     return { error: `${name} was not run: it needs ${desc}. Call it again with ${missing.length > 1 ? 'them' : 'it'}.` };
   }
   return { args };
+}
+
+/** The reply is tool-call markup that could not be read (a cut or garbled call):
+ *  it should be asked for again, not shown as the answer. */
+export function looksLikeBrokenToolCall(text) {
+  const t = String(text ?? '').trim();
+  if (!t || t.length > 4000) return false;
+  const marks = (t.match(/<\/?(?:[\w-]+:)?(?:invoke|function_calls|parameter|tool_call|function)\b[^>]*>/g) ?? []).length;
+  const words = t.replace(/<[^>]*>/g, ' ').replace(/[^A-Za-z]+/g, ' ').trim().split(' ').filter((w) => w.length > 2).length;
+  return marks >= 2 && words < 25;
 }

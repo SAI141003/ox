@@ -49,3 +49,21 @@ test('tool calls written into the reply are found and taken out', () => {
   assert.equal(extractTextToolCalls('Use {"name": "x"} in your config', names).calls.length, 0, 'unknown tools are not invented');
   assert.equal(extractTextToolCalls('Plain answer.', names).text, 'Plain answer.');
 });
+
+test('XML-style tool calls are read; a cut one is recognised as broken', async () => {
+  const { looksLikeBrokenToolCall } = await import('../src/tool-repair.js');
+  const xml = extractTextToolCalls('<function_calls><invoke name="read_file"><parameter name="path">a.js</parameter></invoke></function_calls>', names);
+  assert.equal(xml.calls[0].function.name, 'read_file');
+  assert.deepEqual(JSON.parse(xml.calls[0].function.arguments), { path: 'a.js' });
+  const cut = '">\n<atem:parameter name="path">.</atem:parameter>\n</atem:invoke>\n</atem:function_calls>';
+  assert.equal(extractTextToolCalls(cut, names).calls.length, 0);
+  assert.equal(looksLikeBrokenToolCall(cut), true, 'seen in an eval run: the whole reply was this');
+  assert.equal(looksLikeBrokenToolCall('Use <parameter> tags in XML config files when you describe the invoke step of a long and detailed pipeline for your team.'), false);
+});
+
+test('arguments under another name are renamed to the schema', async () => {
+  const { renameToSchema } = await import('../src/tool-repair.js');
+  const edit = { type: 'object', properties: { path: { type: 'string' }, old_string: { type: 'string' }, new_string: { type: 'string' } }, required: ['path', 'old_string', 'new_string'] };
+  assert.deepEqual(renameToSchema({ file_path: 'a.js', old_str: 'x', new_str: 'y' }, edit), { path: 'a.js', old_string: 'x', new_string: 'y' });
+  assert.deepEqual(parseToolArgs('{"filePath":"a.js","oldString":"x","newString":"y"}', edit, 'edit_file').args, { path: 'a.js', old_string: 'x', new_string: 'y' });
+});

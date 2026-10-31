@@ -9,6 +9,27 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+// A server and everything it started (its process group), then its pipes
+// closed, so nothing it left behind keeps ox from exiting.
+function killTree(proc, sig) {
+  try { if (process.platform !== 'win32' && proc.pid) process.kill(-proc.pid, sig); else proc.kill(sig); } catch { try { proc.kill(sig); } catch {} }
+  if (sig === 'SIGKILL') { for (const s of [proc.stdin, proc.stdout, proc.stderr]) { try { s?.destroy(); } catch {} } try { proc.unref(); } catch {} }
+}
+
+// Detached servers do not get the terminal's Ctrl+C or a hang-up: whatever is
+// still running when ox exits, for any reason it can catch, is stopped with it.
+const LIVE = new Set();
+let exitHooked = false;
+function trackChild(proc) {
+  LIVE.add(proc);
+  proc.once('exit', () => LIVE.delete(proc));
+  if (exitHooked) return;
+  exitHooked = true;
+  const stopAll = () => { for (const p of LIVE) { try { process.kill(-p.pid, 'SIGKILL'); } catch {} } };
+  process.once('exit', stopAll);
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.once(sig, () => { stopAll(); if (process.listenerCount(sig) === 0) process.exit(128 + ({ SIGINT: 2, SIGTERM: 15, SIGHUP: 1 })[sig]); });
+}
+
 // Which servers failed to start lately (name → when), so runs stop waiting on them.
 const MCP_HEALTH = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'mcp-health.json');
 function readMcpHealth() { try { return JSON.parse(fs.readFileSync(MCP_HEALTH(), 'utf8')) ?? {}; } catch { return {}; } }
@@ -342,7 +363,12 @@ export class McpHub {
       proc = spawn(plan.command, plan.args, {
         env: baseEnv(cfg.env, plan.backend ? this.sandbox : null),
         stdio: ['pipe', 'pipe', 'pipe'],
+        // Its own process group, so stopping it stops what it started: `npx`
+        // and `uvx` run the real server as a grandchild, which outlived a kill
+        // of npx and held ox open for minutes after its answer.
+        detached: process.platform !== 'win32',
       });
+      if (process.platform !== 'win32') trackChild(proc);
     } catch (e) {
       state.status = 'crashed';
       console.error(`ox: MCP server '${name}' failed to spawn (${cfg.command}): ${String((e && e.message) || e)}`);
@@ -879,7 +905,7 @@ export class McpHub {
     const proc = state.proc;
     if (!proc) return;
     try {
-      if (proc.exitCode === null) proc.kill('SIGKILL');
+      if (proc.exitCode === null) killTree(proc, 'SIGKILL');
     } catch {}
   }
 
@@ -905,7 +931,7 @@ export class McpHub {
       proc.once('exit', onExit);
       setTimeout(() => {
         try {
-          if (proc.exitCode === null) proc.kill('SIGKILL');
+          if (proc.exitCode === null) killTree(proc, 'SIGKILL');
         } catch {}
       }, graceMs);
       setTimeout(onExit, graceMs + 500);
@@ -913,7 +939,7 @@ export class McpHub {
         proc.stdin?.end();
       } catch {}
       try {
-        proc.kill('SIGTERM');
+        killTree(proc, 'SIGTERM');
       } catch {}
     });
   }
