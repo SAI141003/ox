@@ -1,4 +1,4 @@
 # How ox sets up and checks this repo (detected from the repo). Edit freely: every ox run, PR and org agent uses it.
-install: npm install
+install: npm ci
 test: npm test
 start: npm start

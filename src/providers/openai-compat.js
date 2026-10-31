@@ -104,6 +104,10 @@ export function createOpenAICompatParser({ name = 'openai-compat' } = {}) {
     if (finishedLatch) return;
     for (const choice of choices) {
       const delta = choice.delta ?? {};
+      // A reasoning model's thinking (reasoning_content / reasoning): never shown
+      // as the answer, but announced, so the screen is not silent for minutes.
+      const thinking = delta.reasoning_content ?? delta.reasoning;
+      if (typeof thinking === 'string' && thinking) events.push({ type: 'reasoning-delta', chars: thinking.length });
       if (typeof delta.content === 'string' && delta.content) {
         events.push({ type: 'text-delta', text: delta.content });
       }
@@ -236,12 +240,30 @@ export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
     if (maxTokens != null) body.max_tokens = maxTokens;
     const headers = { 'content-type': 'application/json' };
     if (apiKey) headers.authorization = `Bearer ${apiKey}`;
-    const res = await fetch(`${trimBase(baseUrl)}/chat/completions`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal,
-    });
+    // A stalled provider (no reply, or a stream that stops sending) used to hold
+    // a turn for five minutes before the connection gave up (seen: 330 s on a
+    // free NVIDIA endpoint). A watchdog aborts after OX_STREAM_FIRST_MS with no
+    // reply or OX_STREAM_IDLE_MS with no bytes, and the agent loop retries.
+    const firstMs = Number(process.env.OX_STREAM_FIRST_MS) || 120_000;
+    const idleMs = Number(process.env.OX_STREAM_IDLE_MS) || 90_000;
+    const watch = new AbortController();
+    let stalled = null;
+    let timer = null;
+    const arm = (ms, why) => { clearTimeout(timer); timer = setTimeout(() => { stalled = why; watch.abort(); }, ms); timer.unref?.(); };
+    const onOuter = () => watch.abort();
+    if (signal) { if (signal.aborted) watch.abort(); else signal.addEventListener('abort', onOuter, { once: true }); }
+    arm(firstMs, `no reply in ${Math.round(firstMs / 1000)} s`);
+    const stallError = (e) => (stalled && !signal?.aborted ? new Error(`ox[${name}]: stream stalled (${stalled}) from ${model}`) : e);
+    let res;
+    try {
+      res = await fetch(`${trimBase(baseUrl)}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: watch.signal,
+      });
+    } catch (e) { clearTimeout(timer); throw stallError(e); }
+    arm(idleMs, `nothing for ${Math.round(idleMs / 1000)} s`);
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`ox[${name}]: HTTP ${res.status} ${res.statusText}: ${text.slice(0, 300)}`);
@@ -270,9 +292,12 @@ export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
       else if (ev.type === 'usage') outTokens = ev.outputTokens;
       return check(ev);
     };
-    for await (const chunk of res.body) {
-      for (const ev of parser.push(dec.decode(chunk, { stream: true }))) { if (ev.type === 'done') { done = ev; continue; } yield seen(ev); }
-    }
+    try {
+      for await (const chunk of res.body) {
+        arm(idleMs, `nothing for ${Math.round(idleMs / 1000)} s`);
+        for (const ev of parser.push(dec.decode(chunk, { stream: true }))) { if (ev.type === 'done') { done = ev; continue; } yield seen(ev); }
+      }
+    } catch (e) { throw stallError(e); } finally { clearTimeout(timer); signal?.removeEventListener?.('abort', onOuter); }
     for (const ev of parser.end(dec.decode())) { if (ev.type === 'done') { done = ev; continue; } yield seen(ev); }
     if (!sawText && !sawCall && outTokens > 0 && body.tools) {
       // First recover the Ollama streaming quirk.  If its non-streaming retry

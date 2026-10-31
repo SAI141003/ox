@@ -15,10 +15,12 @@
 //   ox-hands at <x> <y>
 //   ox-hands press --app <app> --path 0.3.1
 //   ox-hands click <x> <y> [--double]
+//   ox-hands find <text> [--app <app>]   words on screen (Vision), for unnamed controls
 //   ox-hands type <text> [--app <app>]
 //   ox-hands key <code> [--mods cmd,shift,option,ctrl] [--times N] [--app <app>]
 import AppKit
 import CoreImage
+import Vision
 import ApplicationServices
 import Foundation
 
@@ -364,6 +366,36 @@ func handle(_ args: [String]) -> [String: Any] {
             guard let png = rep.representation(using: .png, properties: [:]) else { try emit(["error": "no PNG"]) }
             try png.write(to: URL(fileURLWithPath: argv[2]))
             try emit(["done": "qr", "file": argv[2], "ms": ms()])
+
+        case "find":
+            // Words on screen, for controls Accessibility has no name for (an icon
+            // with a label beside it, a web app's div): the front window is
+            // captured and read with Vision; each match comes back as a screen rect.
+            guard argv.count > 1 else { try emit(["error": "find <text> [--app <app>]"]) }
+            let want = argv[1].lowercased()
+            guard let app = targetApp(), let w = frontWindow(AXUIElementCreateApplication(app.processIdentifier)),
+                  let f = frame(pos: attr(w, kAXPositionAttribute), size: attr(w, kAXSizeAttribute)) else { try emit(["error": "no window to look in"]) }
+            let file = NSTemporaryDirectory() + "ox-find-\(getpid()).png"
+            defer { try? FileManager.default.removeItem(atPath: file) }
+            let cap = Process()
+            cap.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            cap.arguments = ["-x", "-R", "\(Int(f[0])),\(Int(f[1])),\(Int(f[2])),\(Int(f[3]))", file]
+            try? cap.run(); cap.waitUntilExit()
+            guard let img = NSImage(contentsOfFile: file)?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                try emit(["error": "could not see the screen: allow OX Island in System Settings › Privacy & Security › Screen Recording"])
+            }
+            let req = VNRecognizeTextRequest()
+            req.recognitionLevel = .accurate
+            try? VNImageRequestHandler(cgImage: img).perform([req])
+            var found: [[String: Any]] = []
+            for o in req.results ?? [] {
+                guard let c = o.topCandidates(1).first, c.string.lowercased().contains(want) else { continue }
+                // Just the words asked for, when Vision can place them inside the line.
+                let r = c.string.lowercased().range(of: want).flatMap { try? c.boundingBox(for: $0) }?.boundingBox ?? o.boundingBox
+                found.append(["text": c.string, "x": f[0] + r.minX * f[2], "y": f[1] + (1 - r.maxY) * f[3], "w": r.width * f[2], "h": r.height * f[3], "exact": c.string.lowercased() == want])
+            }
+            found.sort { ($0["exact"] as? Bool ?? false) && !($1["exact"] as? Bool ?? false) }
+            try emit(["app": app.localizedName ?? "", "matches": found, "ms": ms()])
 
         case "move":
             // Only the pointer (hover), no click.

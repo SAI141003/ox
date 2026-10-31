@@ -5,6 +5,7 @@
 // `auto` is not a mode of its own: it picks one of the others per message with
 // a deterministic classifier and says which one and why, so the routing can be
 // checked rather than taken on trust.
+import { isReadOnlyCommand } from './guards.js';
 import path from 'node:path';
 
 const READ_TOOLS = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'show_ui', 'web_search', 'web_fetch', 'mail_accounts', 'agent_status', 'code_graph'];
@@ -93,6 +94,17 @@ export function classifyMode(text) {
 }
 
 // The mode a turn actually runs in: a fixed mode, or auto's pick for this text.
+// A question to answer from what the model knows, with nothing to read, run or
+// look up: it is answered with no tools and the short answer prompt (about 100
+// tokens instead of about 1,900 with tools, the workspace tree and skills).
+const PLAIN_TOUCHES = /\b(file|files|repo|repository|project|codebase|function|class|module|component|test|tests|bug|fix|refactor|commit|branch|src|readme|this code|my code|here|folder|directory)\b|[\w-]+\.(js|ts|tsx|jsx|py|go|rs|java|rb|css|html|json|md)\b/i;
+const PLAIN_NEEDS = /\b(search|look up|google|browse|latest|today|news|price|weather|open|run|install|email|mail|send|remember|forget|schedule|remind|screenshot|download|fetch|https?:\/\/|www\.|agent|build|create|make|write|generate|edit|change|update|delete|rename|add|remove|deploy)\b/i;
+export function isPlainQuestion(text) {
+  const t = String(text ?? '').trim();
+  if (!t || t.length > 400 || t.includes('\n')) return false;
+  return !PLAIN_TOUCHES.test(t) && !PLAIN_NEEDS.test(t) && (/\?\s*$/.test(t) || /^(what|why|how|who|when|where|which|explain|define|tell me|is|are|can|does|do)\b/i.test(t));
+}
+
 export function resolveTurnMode(setting, text) {
   const m = normalizeMode(setting) ?? 'code';
   if (m !== 'auto') return { mode: m, routed: false, reason: null };
@@ -115,11 +127,15 @@ export function modeRefusal(mode, name, args = {}, cwd = process.cwd()) {
     }
     return null;
   }
+  // A shell command that only reads (git log, git show, ls, cat…) is reading:
+  // ask mode refused every bash call, so "what changed in the last commit"
+  // took 14 turns and 445 s of guessing from files instead of one `git log`.
+  const readOnlyShell = name === 'bash' && typeof args?.command === 'string' && isReadOnlyCommand(args.command);
   if (mode === 'ask') {
-    return READ_TOOLS.includes(name) ? null : `${name}: ask mode only reads; switch with /mode code to make changes.`;
+    return READ_TOOLS.includes(name) || readOnlyShell ? null : `${name}: ask mode only reads${name === 'bash' ? ' (read-only commands such as git log or ls are allowed)' : ''}; switch with /mode code to make changes.`;
   }
   if (mode === 'plan') {
-    if (READ_TOOLS.includes(name)) return null;
+    if (READ_TOOLS.includes(name) || readOnlyShell) return null;
     if (name === 'write_file' || name === 'edit_file') {
       const p = String(args?.path ?? args?.file_path ?? '');
       const abs = path.resolve(cwd, p);

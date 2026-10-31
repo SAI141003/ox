@@ -54,32 +54,49 @@ struct HomeHeader: View {
     let notchWidth: CGFloat
 
     var body: some View {
-        HStack(spacing: 0) {
-            HStack(spacing: 5) {
-                tab("house.fill", on: bridge.tray == nil && bridge.card == nil && bridge.glowId == nil, label: "Home") { bridge.tray = nil; bridge.card = nil; bridge.glowId = nil }
-                tab("bubble.left.fill", on: bridge.tray == .chat, label: "Chat with \(OxName.current)") { bridge.card = nil; bridge.tray = bridge.tray == .chat ? nil : .chat }
-                tab("plus", on: [.shelf, .focus, .clips, .mail, .recap, .office, .controls].contains(bridge.tray), label: "Shelf, focus, clips, mail, recap, office and Island controls") { bridge.card = nil; bridge.tray = [.shelf, .focus, .clips, .mail, .recap, .office, .controls].contains(bridge.tray) ? nil : .shelf }
+        // Each side gets exactly the room beside the notch. The right side drops
+        // the voice chip, then the plan pill, before it would ever clip the
+        // close button (it was cut in half when all of them were showing).
+        GeometryReader { geo in
+            let side = max(0, (geo.size.width - notchWidth) / 2 - 4)
+            HStack(spacing: 0) {
+                HStack(spacing: 5) {
+                    tab("house.fill", on: bridge.tray == nil && bridge.card == nil && bridge.glowId == nil, label: "Home") { bridge.tray = nil; bridge.card = nil; bridge.glowId = nil }
+                    tab("bubble.left.fill", on: bridge.tray == .chat, label: "Chat with \(OxName.current)") { bridge.card = nil; bridge.tray = bridge.tray == .chat ? nil : .chat }
+                    tab("plus", on: [.shelf, .focus, .clips, .mail, .recap, .office, .controls].contains(bridge.tray), label: "Shelf, focus, clips, mail, recap, office and Island controls") { bridge.card = nil; bridge.tray = [.shelf, .focus, .clips, .mail, .recap, .office, .controls].contains(bridge.tray) ? nil : .shelf }
+                    if GlowTilesHome.on { ViewThatFits(in: .horizontal) { HeaderClock().padding(.leading, 3); Color.clear.frame(width: 0) } }
+                }
+                .padding(.leading, 14)
+                .frame(width: side, alignment: .leading)
+                Spacer(minLength: 0)
+                ViewThatFits(in: .horizontal) {
+                    right(voice: true, plan: true)
+                    right(voice: false, plan: true)
+                    right(voice: false, plan: false)
+                }
+                .padding(.trailing, 16)
+                .frame(width: side, alignment: .trailing)
             }
-            .padding(.leading, 14)
-            if GlowTilesHome.on { HeaderClock().padding(.leading, 8) }
-            Spacer(minLength: notchWidth + 8)
-            HStack(spacing: 8) {
-                VoiceStatusChip(bridge: bridge)
-                if let g = bridge.gauges.max(by: { $0.percent < $1.percent }) { PlanPill(gauge: g, all: bridge.gauges) }
-                HStack(spacing: 14) {
-                    HeaderIcon(name: bridge.buddy.isListeningOrStarting ? "stop.circle.fill" : "mic.fill", active: bridge.buddyActive, help: bridge.buddy.isListeningOrStarting ? "Stop listening" : "Talk to \(OxName.current) (hold ⌃⌥Space)") { MainActor.assumeIsolated { bridge.buddy.toggle() } }
-                    HeaderIcon(name: bridge.pinnedOpen ? "pin.fill" : "pin", active: bridge.pinnedOpen, help: bridge.pinnedOpen ? "Unpin" : "Keep open") { bridge.pinnedOpen.toggle() }
-                    if bridge.pendingSession == nil {
-                        HeaderIcon(name: "xmark", active: false, help: "Close") {
-                            if let alert = bridge.meshAlerts.first { bridge.dismissMesh(alert) }
-                            bridge.pinnedOpen = false; bridge.tray = nil; bridge.card = nil; bridge.glowId = nil; bridge.hovering = false
-                        }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+    }
+
+    private func right(voice: Bool, plan: Bool) -> some View {
+        HStack(spacing: 8) {
+            if voice { VoiceStatusChip(bridge: bridge) }
+            if plan, let g = bridge.gauges.max(by: { $0.percent < $1.percent }) { PlanPill(gauge: g, all: bridge.gauges) }
+            HStack(spacing: 14) {
+                HeaderIcon(name: bridge.buddy.isListeningOrStarting ? "stop.circle.fill" : "mic.fill", active: bridge.buddyActive, help: bridge.buddy.isListeningOrStarting ? "Stop listening" : "Talk to \(OxName.current) (hold ⌃⌥Space)") { MainActor.assumeIsolated { bridge.buddy.toggle() } }
+                HeaderIcon(name: bridge.pinnedOpen ? "pin.fill" : "pin", active: bridge.pinnedOpen, help: bridge.pinnedOpen ? "Unpin" : "Keep open") { bridge.pinnedOpen.toggle() }
+                if bridge.pendingSession == nil {
+                    HeaderIcon(name: "xmark", active: false, help: "Close") {
+                        if let alert = bridge.meshAlerts.first { bridge.dismissMesh(alert) }
+                        bridge.pinnedOpen = false; bridge.tray = nil; bridge.card = nil; bridge.glowId = nil; bridge.hovering = false
                     }
                 }
             }
-            .padding(.trailing, 16)
         }
-        .frame(maxHeight: .infinity)
+        .fixedSize()
     }
 
     private func tab(_ icon: String, on: Bool, label: String = "", action: @escaping () -> Void) -> some View {

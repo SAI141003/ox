@@ -24,6 +24,7 @@
 // executes code on this machine. See authExposure() for the rule, the messages,
 // and the explicit opt-in escape hatch.
 
+import { quickReply } from './quick-reply.js';
 import { createServer } from 'http';
 import { createHash, timingSafeEqual } from 'crypto';
 import { runAgent } from './agent.js';
@@ -31,8 +32,8 @@ import { BOTS, KEY_ENV, resolveBot, defaultBotSpec } from './bots.js';
 
 import { readFile } from 'fs/promises';
 import { join, resolve, extname, dirname, basename } from 'path';
-import { homedir } from 'os';
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, statSync } from 'fs';
+import os, { homedir } from 'os';
+import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, statSync, statfsSync, readdirSync, rmSync } from 'fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { createReadStream } from 'fs';
 import { stat, unlink } from 'fs/promises';
@@ -842,6 +843,24 @@ async function handleChatCompletions(req, res) {
     sendError(res, 404, `There is no bot called ${String(targetModel).slice(6)} on this ox: it was deleted, or this chat came from another computer. Make it again in Bots, or pick another model.`, 'invalid_request_error', 'model_not_found', 'model');
     return;
   }
+  // Small talk ("hey how are you", "thanks") is answered here for 0 tokens:
+  // a model call for it carried the whole prompt to write one line (src/quick-reply.js).
+  // Only when ox picks the model (auto): a model you chose by name answers itself.
+  const quick = typeof lastUserMsg?.content === 'string' && !(lastUserMsg.images?.length) && body.ox_quick !== false && (model === 'auto' || body.ox_quick === true) ? quickReply(lastUserMsg.content) : null;
+  if (quick) {
+    const name = String(model || 'ox');
+    if (stream) {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
+      sendSSE(res, { ...createChatCompletionChunk(name, ''), ox: { type: 'mode', mode: 'ask', routed: true, reason: 'small talk, answered without a model (0 tokens)', route: 'quick' } });
+      sendSSE(res, createChatCompletionChunk(name, quick));
+      sendSSE(res, createChatCompletionChunk(name, '', true, { inputTokens: 0, outputTokens: 0 }));
+      sendSSEDone(res);
+      res.end();
+    } else {
+      sendJson(res, 200, createChatCompletionResponse(name, quick, { inputTokens: 0, outputTokens: 0 }));
+    }
+    return;
+  }
   let target;
   try {
     target = resolveBot(agentDef ? (agentBotSpec(agentDef) ?? defaultBotSpec({}, process.env) ?? 'ox-grok') : String(targetModel), { bots: readConfigDoc().bots ?? {} });
@@ -1063,6 +1082,8 @@ async function handleChatCompletions(req, res) {
           // A run that stops (missing key, provider refusal, budget) says why,
           // instead of ending as an empty reply.
           sendSSE(res, { error: { message: String(event.error), type: 'server_error' } });
+        } else if (event.type === 'thinking') {
+          sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'thinking', chars: Number(event.chars) || 0 } });
         } else if (event.type === 'tool-start' || event.type === 'tool-end') {
           // What the agent is doing, as an `ox` extension on an empty chunk:
           // OpenAI clients ignore the unknown field, the web chat draws it.
@@ -1567,9 +1588,14 @@ async function handleSettingsPost(req, res) {
     await cmdIsland([body.island ? 'on' : 'off'], { log: () => {}, err: () => {} });
   }
   // Restart: stop, rebuild (macOS) and start, so a new version of the island loads.
+  // Not awaited: a rebuild takes a minute, longer than the app waits for an
+  // answer, so Restart looked like it failed. The island comes back on its own.
   if (body.islandRestart === true && !process.env.NODE_TEST_CONTEXT) {
     const { cmdIsland } = await import('./island.js');
-    await cmdIsland(['restart'], { log: () => {}, err: () => {} });
+    const lines = [];
+    cmdIsland(['restart'], { log: (l) => lines.push(l), err: (l) => lines.push(l) })
+      .then((code) => { if (code) console.error(`island restart failed: ${lines.join(' ').slice(-400)}`); })
+      .catch((e) => console.error(`island restart failed: ${e.message}`));
   }
   const islandPreferenceKeys = ['size', 'autoClose', 'hideFullscreen', 'companion', 'pet'];
   if (body.islandPreferences && typeof body.islandPreferences === 'object') {
@@ -1584,7 +1610,7 @@ async function handleSettingsPost(req, res) {
     // a deliberate settings change, never in the middle of an agent run.
     if (!process.env.NODE_TEST_CONTEXT && process.platform === 'darwin') {
       const { islandRunning, cmdIsland } = await import('./island.js');
-      if (islandRunning({ env: {} })) await cmdIsland(['restart'], { log: () => {}, err: () => {} });
+      if (islandRunning({ env: {} })) cmdIsland(['restart'], { log: () => {}, err: () => {} }).catch(() => {});
     }
   }
   if (typeof body.defaultBot === 'string') {
@@ -1711,6 +1737,22 @@ export async function callRoute(text, body = {}, { O = null, ask = null } = {}) 
   return { ...r, agent };
 }
 
+// What a voice command is about to do, said back at once ("Opening Google Chrome, then searching new movies").
+const voiceResults = [];
+export function sayPlan(steps) {
+  const one = (x) => x.intent === 'app' ? `opening ${x.name}` : x.intent === 'search' ? `searching ${x.query}` : x.intent === 'tab' ? 'opening a new tab' : x.intent === 'type' ? `typing ${x.text}` : x.intent === 'send' ? 'sending it' : x.intent === 'key' ? `pressing ${x.key}` : x.intent === 'click' ? `clicking ${x.name}` : x.intent;
+  const s = steps.map(one).join(', then ');
+  return s.charAt(0).toUpperCase() + s.slice(1) + '.';
+}
+
+let briefCache = null;
+export async function cachedBrief({ maxAgeMs = 5 * 60_000 } = {}) {
+  if (briefCache && Date.now() - briefCache.at < maxAgeMs) return briefCache.value;
+  const value = await (await import('./today.js')).brief();
+  briefCache = { at: Date.now(), value };
+  return value;
+}
+
 export async function voiceTurn(body) {
   const started = Date.now();
   const text = String(body?.text ?? '').trim().slice(0, 2000);
@@ -1722,19 +1764,29 @@ export async function voiceTurn(body) {
   // "Good morning", "what's my day", "morning brief": the brief (src/today.js), said short.
   if (/^(?:(?:good )?morning(?: ox)?|(?:my |the )?(?:morning )?brief(?:ing)?|what(?:'s| is) (?:my day|on today|today look like)|what needs me(?: today)?|what changed (?:since yesterday|overnight))[.!?]*$/i.test(text)) {
     const T = await import('./today.js');
-    const b = await T.brief();
+    const b = await cachedBrief();
     return { route: 'offline', handled: true, ok: true, say: T.spoken(b), brief: b, ms: Date.now() - started };
   }
+  const quickSay = quickReply(text);
+  if (quickSay) return { route: 'answer', handled: true, ok: true, say: quickSay, model: 'none (0 tokens)', ms: Date.now() - started };
   const { doOffline } = await import('./offline.js');
   // Typing, pressing and clicking take a second or two of waiting on the app:
   // done in a child (`ox do`), so the server keeps answering meanwhile.
   const plan = doOffline(text, { dryRun: true });
   const steps = plan.intent?.intent === 'chain' ? plan.intent.steps : plan.intent ? [plan.intent] : [];
-  if (plan.handled && body?.dryRun !== true && steps.some((x) => ['type', 'send', 'key', 'click'].includes(x.intent))) {
+  if (plan.handled && body?.dryRun !== true && steps.some((x) => ['type', 'send', 'key', 'click', 'tab'].includes(x.intent) || (x.intent === 'search' && (x.app || x.newTab || x.inBrowser)))) {
+    // Answered at once with what is being done, then done: the island asks
+    // this with a 1.2 s limit while a run is open, and a slower answer made it
+    // hand the same request to that run too (done twice: in the app, and as
+    // an answer in the chat).
     const { execFile } = await import('node:child_process');
     const bin = fileURLToPath(new URL('../bin/ox.js', import.meta.url));
-    const out = await new Promise((resolve) => execFile(process.execPath, [bin, 'do', '--json', text], { timeout: 60_000, env: process.env }, (err, stdout) => resolve(err && !stdout ? { ok: false, message: String(err.message).slice(0, 200) } : (() => { try { return JSON.parse(String(stdout).trim().split('\n').pop()); } catch { return { ok: false, message: String(stdout).trim().slice(0, 200) }; } })())));
-    return { route: 'offline', handled: true, ok: out.ok !== false, say: out.message ?? 'done', ms: Date.now() - started };
+    execFile(process.execPath, [bin, 'do', '--json', text], { timeout: 60_000, env: process.env }, (err, stdout) => {
+      let out; try { out = JSON.parse(String(stdout).trim().split('\n').pop()); } catch { out = { ok: false, message: String(err?.message ?? stdout).slice(0, 200) }; }
+      voiceResults.push({ at: Date.now(), text, ok: out.ok !== false, say: out.message });
+      if (voiceResults.length > 20) voiceResults.shift();
+    });
+    return { route: 'offline', handled: true, ok: true, say: sayPlan(steps), ms: Date.now() - started };
   }
   const done = doOffline(text, { dryRun: body?.dryRun === true });
   if (done.handled) return { route: 'offline', handled: true, ok: done.ok !== false, say: done.message, ms: Date.now() - started };
@@ -1774,9 +1826,22 @@ export async function warmVoiceModel() {
     // On battery the model is let go after 5 minutes (it holds gigabytes of
     // memory); on power it stays 30 minutes and is renewed.
     const battery = onBattery();
+    // A Mac short on memory is not asked to hold 2 GB more forever: with swap
+    // past 2 GB the model is not renewed and Ollama lets it go (seen: 13 GB of
+    // swap filled the disk to 173 MB while the model was kept warm all day).
+    if (memoryTight()) return false;
     const r = await fetch(`${base}/api/generate`, { method: 'POST', body: JSON.stringify({ model, keep_alive: battery ? '5m' : '30m' }), signal: AbortSignal.timeout(60_000) });
     return r.ok;
   } catch { return false; }
+}
+
+/** Swap in use past 2 GB (macOS) or under 1 GB of free memory: no extra models held in memory. */
+export function memoryTight({ run = () => spawnSync('sysctl', ['-n', 'vm.swapusage'], { encoding: 'utf8', timeout: 3000 }).stdout ?? '', free = () => os.freemem() } = {}) {
+  try {
+    const m = /used = ([\d.]+)M/.exec(run());
+    if (m && Number(m[1]) > 2048) return true;
+  } catch {}
+  return free() < 1024 * 1024 * 1024 && process.platform !== 'darwin';
 }
 
 /** True when this Mac runs on its battery (pmset; false elsewhere or when unknown). */
@@ -2033,6 +2098,37 @@ const codeCache = {};
 let studioOpen = null;
 const SERVER_STARTED = new Date().toISOString();
 let localSetup = { running: false, step: null, error: null };
+// Studio extras in progress: the film library download and Craft installs, by id.
+const extrasJobs = {};
+let accountsMemo = null;
+async function accountsCached() {
+  if (accountsMemo && Date.now() - accountsMemo.at < 60_000) return accountsMemo.v;
+  const v = await (await appApi()).accountsView(process.env, null);
+  accountsMemo = { at: Date.now(), v };
+  return v;
+}
+// Temp files ox runs leave behind (whisper audio, browser profiles, studio
+// scratch): anything ox-* older than a day goes when the app starts.
+export function sweepTemp({ dir = os.tmpdir(), now = Date.now(), maxAgeMs = 86_400_000 } = {}) {
+  let removed = 0;
+  let names = [];
+  try { names = readdirSync(dir); } catch { return 0; }
+  for (const n of names) {
+    if (!n.startsWith('ox-')) continue;
+    const f = join(dir, n);
+    try { if (now - statSync(f).mtimeMs > maxAgeMs) { rmSync(f, { recursive: true, force: true }); removed++; } } catch {}
+  }
+  return removed;
+}
+// The slow first answers (the brief, accounts, the week's git) made while the app starts, not when a page asks.
+function warmCaches() {
+  setTimeout(() => {
+    sweepTemp();
+    Promise.resolve().then(() => cachedBrief()).catch(() => {});
+    accountsCached().catch(() => {});
+    import('./usage-log.js').then((U) => { codeCache['code:30'] ??= { at: Date.now(), v: U.codeChanges({ days: 30 }) }; }).catch(() => {});
+  }, 1500).unref?.();
+}
 const ROUTES = [
   // Official Meta callback. Unlike normal app routes, this is called by
   // WhatsApp rather than the local UI, so signature verification in
@@ -2134,7 +2230,9 @@ const ROUTES = [
     return { app, project: root, words: await W.wordsFor(app, { root, dictionary: loadDictionary() }) };
   }) },
   // Your morning brief (src/today.js).
-  { method: 'GET', pattern: /^\/ox\/today\/?$/, handler: appRoute(async () => (await import('./today.js')).brief()) },
+  // Cached for 5 minutes: the brief runs gh, git and Mail synchronously (11 s
+  // measured) and the server answered nothing else meanwhile.
+  { method: 'GET', pattern: /^\/ox\/today\/?$/, handler: appRoute(async () => cachedBrief()) },
   // ox updates itself from the notch (src/self-update.js): asked once, at most one notice a day.
   { method: 'GET', pattern: /^\/ox\/update\/?$/, handler: appRoute(async () => { const U = await import('./self-update.js'); const st = U.readState(); return { notice: U.notice(), allowed: st.allowed ?? null, autoApply: st.autoApply === true, available: st.available ?? null, problem: st.problem ?? null, updatedTo: st.updatedTo ?? null, applying: st.applying ?? null }; }) },
   { method: 'POST', pattern: /^\/ox\/update\/?$/, handler: appRoute(async (body) => {
@@ -2376,8 +2474,9 @@ const ROUTES = [
     const health = await W.whatsapp_health();
     return { health, messages: W.readWhatsappInbox() };
   }) },
-  { method: 'GET', pattern: /^\/ox\/accounts\/?$/, handler: appRoute(async (_, __, req) => { const id = new URL(req.url, 'http://x').searchParams.get('id'); return (await appApi()).accountsView(process.env, id); }) },
-  { method: 'POST', pattern: /^\/ox\/accounts\/connect\/?$/, handler: appRoute(async (b) => (await appApi()).connectAccount(b.id)) },
+  // Every account's CLI is asked (1-3 s): the whole list is kept a minute; one account is always asked fresh.
+  { method: 'GET', pattern: /^\/ox\/accounts\/?$/, handler: appRoute(async (_, __, req) => { const id = new URL(req.url, 'http://x').searchParams.get('id'); return id ? (await appApi()).accountsView(process.env, id) : accountsCached(); }) },
+  { method: 'POST', pattern: /^\/ox\/accounts\/connect\/?$/, handler: appRoute(async (b) => { accountsMemo = null; return (await appApi()).connectAccount(b.id); }) },
   { method: 'GET', pattern: /^\/ox\/local\/?$/, handler: appRoute(async () => (await appApi()).localView()) },
   { method: 'GET', pattern: /^\/ox\/capabilities\/?$/, handler: appRoute(async () => (await appApi()).capabilitiesView()) },
   { method: 'POST', pattern: /^\/ox\/plugins\/?$/, handler: appRoute(async (b) => (await appApi()).pluginAction(b)) },
@@ -2444,6 +2543,32 @@ const ROUTES = [
     const S = await import('./studio-mcp.js');
     const ready = (m) => { try { return S.hostFor(m); } catch { return null; } };
     return { models: C.OPEN_MODELS.map((m) => ({ ...m, ready: ready(m), cost: C.estimateCost(m), costLine: C.costLine(m) })), camera: C.CAMERA, workflows: C.WORKFLOWS, defaults: C.DEFAULTS };
+  }) },
+  // Studio extras: film styles made in code (src/studio-films.js) and the Craft apps (src/studio-craft.js).
+  { method: 'GET', pattern: /^\/ox\/studio\/extras\/?$/, handler: appRoute(async () => {
+    const F = await import('./studio-films.js');
+    const K = await import('./studio-craft.js');
+    const st = F.filmLibStatus();
+    let freeGB = null;
+    try { const f = statfsSync(os.homedir()); freeGB = Math.round((f.bavail * f.bsize) / 2 ** 30 * 10) / 10; } catch {}
+    return { films: { ...st, styles: st.here ? F.filmStyles() : [], gallery: 'https://lemomo-ai.github.io/lemo-opuscar/' }, craft: K.craftStatus({ servers: readConfigDoc().mcpServers ?? {} }), jobs: extrasJobs, freeGB };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/studio\/extras\/?$/, handler: appRoute(async (b) => {
+    const key = b.action === 'films' ? 'films' : String(b.id ?? '');
+    if (b.action === 'open') {
+      const a = (await import('./studio-craft.js')).craftStatus().find((x) => x.id === key);
+      if (!a?.app) throw new Error('that app is not installed');
+      (await import('node:child_process')).spawn('open', [a.app], { detached: true, stdio: 'ignore' }).unref();
+      return { opened: a.app };
+    }
+    if (extrasJobs[key]?.running) return { jobs: extrasJobs };
+    const job = extrasJobs[key] = { running: true, step: 'starting', error: null };
+    const finish = (p) => p.then(() => { extrasJobs[key] = { running: false, step: 'done', error: null }; }).catch((e) => { extrasJobs[key] = { running: false, step: 'failed', error: e.message }; });
+    if (b.action === 'films') finish((await import('./studio-films.js')).setupFilmLib());
+    else if (b.action === 'install') finish((await import('./studio-craft.js')).installCraft(key, { what: ['app', 'cli', 'both'].includes(b.what) ? b.what : 'both', onStep: (l) => { job.step = l; } }));
+    else if (b.action === 'remove') finish((await import('./studio-craft.js')).removeCraft(key));
+    else { delete extrasJobs[key]; throw new Error('action: films, install or remove'); }
+    return { jobs: extrasJobs };
   }) },
   // Studio on this Mac's own chip (src/studio-local.js): what it can make, and a one-time setup with progress.
   { method: 'GET', pattern: /^\/ox\/studio\/local\/?$/, handler: appRoute(async () => ({ ...(await import('./studio-local.js')).status(), setup: localSetup })) },
@@ -2890,6 +3015,7 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       reportExposure(exposure);
       const actualPort = server.address()?.port ?? port;
       console.log(`[serve] listening on http://${host}:${actualPort}`);
+      if (!process.env.NODE_TEST_CONTEXT) warmCaches();
       console.log(`[serve] web chat: http://${host.includes(':') ? `[${host}]` : host}:${actualPort}/`);
       const announced = announceServer(actualPort, host, !!(config.apiKey ?? apiKey()));
       // The memory layer's sleep pass: 30 s after start, then every 6 hours, off the request path.
@@ -2899,6 +3025,24 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       // app starts a fresh server (src/app.js ensureServer). A plain `ox serve` stays.
       // The island's own server (OX_ISLAND_SERVER) steps aside too; the island starts a fresh one within a minute.
       const islandServer = process.env.OX_ISLAND_SERVER === '1';
+      // The island starts its own server only while OX.app's is gone (a restart,
+      // the app quit). Once the app's is back, two servers ran side by side for
+      // good: two model workers, two sleep passes, and the island's voice and its
+      // run list talking to different servers. The island's own one steps aside.
+      if (islandServer && !process.env.NODE_TEST_CONTEXT) {
+        const appFile = join(process.env.OX_HOME || join(homedir(), '.ox'), 'app.json');
+        const yieldTimer = setInterval(() => {
+          let pid = 0;
+          try { pid = Number(JSON.parse(readFileSync(appFile, 'utf8')).pid) || 0; } catch {}
+          let alive = false;
+          try { if (pid && pid !== process.pid) { process.kill(pid, 0); alive = true; } } catch {}
+          if (!alive || busyRequests > 0) return;
+          console.log("[serve] the app's server is running: the island's own one steps aside");
+          clearInterval(yieldTimer);
+          server.close(); announced?.(); setTimeout(() => process.exit(0), 300);
+        }, 30_000);
+        yieldTimer.unref?.();
+      }
       if ((process.env.OX_APP === '1' || islandServer) && !process.env.NODE_TEST_CONTEXT) {
         const startedAt = Date.now();
         import('./code-stamp.js').then(({ codeStamp, onCodeChange }) => {

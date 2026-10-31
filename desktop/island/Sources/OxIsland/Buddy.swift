@@ -156,7 +156,13 @@ final class Buddy: NSObject, ObservableObject {
         starting = true
         heard = ""
         saying = ""
-        shot = Self.captureScreen()
+        // The screen is captured beside the microphone, not before it: done
+        // first, it held the mic back 0.25-0.45 s and the first words were lost.
+        shot = nil
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let s = Self.captureScreen()
+            DispatchQueue.main.async { self?.shot = s }
+        }
         SFSpeechRecognizer.requestAuthorization { status in
             DispatchQueue.main.async {
                 guard status == .authorized else {

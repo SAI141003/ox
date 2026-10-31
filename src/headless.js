@@ -1,6 +1,7 @@
 import { expandLlmsRefs } from './llms-txt.js';
 import fs from 'node:fs';
-import { resolveTurnMode } from './modes.js';
+import { resolveTurnMode, isPlainQuestion } from './modes.js';
+import { smallTalkKind } from './quick-reply.js';
 import { agentPersonaBlock } from './agents.js';
 import { holdAwake } from './awake.js';
 import path from 'node:path';
@@ -80,7 +81,7 @@ export async function assembleCtx({ config, target, opts = {}, auxTarget = null 
   const agentTeamsHandler = opts.agentTeamsHandler ?? makeAgentTeamsHandler(config.cwd);
   // A known task (one-shot runs, the island, the phone) gets the focused skill
   // index: full lines only for skills that bear on it, names for the rest.
-  const skillIndex = opts.memoryTask ? renderFocusedSkillIndex(skills, String(opts.memoryTask)) : skills.index;
+  const skillIndex = renderFocusedSkillIndex(skills, String(opts.memoryTask ?? ""));
   const systemPrompt = await buildSystemPrompt({
     cwd: config.cwd,
     contextParts: { memoryFiles: context.memoryFiles, tree: context.tree },
@@ -94,7 +95,7 @@ export async function assembleCtx({ config, target, opts = {}, auxTarget = null 
   if (config.mcpServers && Object.keys(config.mcpServers).length > 0) {
     // Wave5a A / gap #1: the session's sandbox profile governs MCP server
     // processes too, so a server cannot open sockets the profile forbids.
-    hub = new McpHub(config.mcpServers, { callTimeoutMs: 30000, sandbox: opts.sandbox ?? null });
+    hub = new McpHub(config.mcpServers, { callTimeoutMs: 30000, sandbox: opts.sandbox ?? null, fastStart: true });
     const warn = warnOnce('ox: MCP startup failed — continuing without MCP tools');
     try {
       await hub.start();
@@ -289,6 +290,13 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
   // printed so a routed run can be checked, not taken on trust.
   const turnMode = resolveTurnMode(opts.mode ?? config.mode, prompt);
   ctx.mode = turnMode.mode;
+  // Auto, and a plain question ("what is a closure in javascript"): answered
+  // with no tools and the short answer prompt, like the app does.
+  if (turnMode.routed && (smallTalkKind(prompt) || (turnMode.mode === 'ask' && isPlainQuestion(prompt))) && !initialMessages.length) {
+    turnMode.mode = 'ask'; ctx.mode = 'ask';
+    ctx.noTools = true;
+    turnMode.reason = `${turnMode.reason ?? 'a question'}, answered directly (no tools)`;
+  }
   if (turnMode.routed) {
     if (opts.json) console.log(JSON.stringify({ t: 'mode', mode: turnMode.mode, routed: true, reason: turnMode.reason }));
     else process.stderr.write(c.dim(`· auto → ${turnMode.mode} (${turnMode.reason})\n`));
@@ -570,6 +578,11 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
               break;
             case 'continuation-retry':
               console.log(c.yellow(`· stream dropped (${ev.reason}) — retry ${ev.attempt}/3`));
+              break;
+            case 'thinking':
+              // Once per stretch of reasoning, on stderr: -p output stays the answer.
+              if (!ev.chars || ev.chars < 2) break;
+              if (!opts.json) process.stderr.write(c.dim(`· thinking… (${ev.chars} characters so far)\n`));
               break;
             case 'warning':
               console.log(c.yellow(`! ${ev.text ?? ev.message}`));

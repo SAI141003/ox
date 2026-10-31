@@ -92,6 +92,28 @@ enum VoiceServer {
     }
 }
 
+/// Voice errands ("open Notes", "open Chrome and search…", "type…") on their
+/// own path: they never wait for a chat, a run or an agent. The app's server
+/// answers them in a fraction of a second; with no server (quit, restarting,
+/// stuck) the island runs `ox do` itself, so voice control never goes down.
+enum Errands {
+    struct Done { let handled: Bool; let say: String }
+
+    static func run(_ text: String, done: @escaping (Done) -> Void) {
+        VoiceServer.ask(text, offlineOnly: true) { r in
+            if let r { done(Done(handled: r.handled, say: r.say ?? "Done.")); return }
+            // No answer from the server: ox's no-AI router, run directly.
+            IslandLog.write("errand without the server: ox do \(text.prefix(80))")
+            OxRunner.run(["do", "--json", text], cwd: FileManager.default.homeDirectoryForCurrentUser, timeout: 60) { _, out in
+                let line = out.split(separator: "\n").last.map(String.init) ?? ""
+                let j = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
+                let handled = j?["handled"] as? Bool ?? false
+                DispatchQueue.main.async { done(Done(handled: handled, say: j?["message"] as? String ?? "Done.")) }
+            }
+        }
+    }
+}
+
 enum OxRunner {
     static var available: Bool { paths() != nil }
 
@@ -722,9 +744,28 @@ final class IslandChat: ObservableObject {
     /// What you sent while ox was busy: done next, in order (it used to be dropped).
     private var queued: [(text: String, bridge: OxBridge, onReply: ((String) -> Void)?)] = []
 
-    func send(_ raw: String, bridge: OxBridge, onReply: ((String) -> Void)? = nil) {
+    func send(_ raw: String, bridge: OxBridge, onReply: ((String) -> Void)? = nil, triedOffline: Bool = false) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        // Errands first, always: "open Notes", "open Chrome and search…" are done
+        // by ox's no-AI router in a fraction of a second. They used to wait in the
+        // queue behind a busy run, or go to the agent chosen for this chat (an
+        // orchestrator run that took minutes, or failed, for "open Notes").
+        if !triedOffline {
+            Errands.run(text) { [weak self] r in
+                guard let self else { return }
+                if r.handled {
+                    IslandLog.write("errand: \(r.say)")
+                    // Its own answer: a run that is busy keeps its own reply handler.
+                    self.lines.append(Line(mine: true, text: text))
+                    self.lines.append(Line(mine: false, text: r.say))
+                    onReply?(r.say)
+                    return
+                }
+                self.send(text, bridge: bridge, onReply: onReply, triedOffline: true)
+            }
+            return
+        }
         if busy {
             queued.append((text, bridge, onReply))
             lines.append(Line(mine: true, text: text))

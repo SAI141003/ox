@@ -226,7 +226,9 @@ export async function connectorGalleryView(env = process.env) {
   const { galleryView } = await import('./connector-gallery.js');
   const apps = (await import('./desktop-apps.js')).detectDesktopApps();
   const channels = Object.fromEntries((await messagingView(env)).map((c) => [c.id, c]));
-  return galleryView({ servers: readConfigDoc().mcpServers ?? {}, apps, channels, env });
+  let health = {};
+  try { health = (await import('./mcp.js')).readMcpHealth(); } catch {}
+  return galleryView({ servers: readConfigDoc().mcpServers ?? {}, apps, channels, env, health });
 }
 export async function addGalleryConnector(body = {}) {
   const { saveConfigDoc, readConfigDoc } = await import('./config.js');

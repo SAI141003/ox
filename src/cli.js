@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import net from 'node:net';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { runAgent, applySubgoal, buildSummarizePrompt, draftContract, draftTitle, parseGates } from './agent.js';
@@ -99,6 +99,7 @@ import {
   adoptSkill,
   curateSkills,
   discoverSkills,
+  renderFocusedSkillIndex,
   purgeSkill,
   readSkillBody,
   recordSkillView,
@@ -1345,10 +1346,30 @@ async function cmdDoctor(args = []) {
     homeOk = true;
   } catch {}
   add(homeOk, `~/.ox writable (${CONFIG_DIR})`);
+  // Providers you have not set up are optional, not failures: 30 red lines for
+  // keys nobody meant to add buried the checks that matter. One line lists them.
+  const notSetUp = [];
+  // Set keys are tried (in parallel, a few seconds at most): a refused key used
+  // to pass here as "configured" while every run on it failed ("User not found").
+  const { testProviderKey } = await import('./app-api.js');
+  const tried = Object.fromEntries(await Promise.all(PROVIDERS.filter((p) => KEY_ENV[p] && process.env[KEY_ENV[p]]).map(async (p) => [p, await testProviderKey(p).catch((e) => ({ ok: false, error: e.message }))])));
   for (const p of PROVIDERS) {
     const ke = KEY_ENV[p];
     if (!ke) add(true, `${p}: no API key needed`);
-    else add(Boolean(process.env[ke]), `${p}: ${ke} ${process.env[ke] ? 'configured (not live-validated)' : 'MISSING'}`);
+    else if (process.env[ke]) {
+      const t = tried[p];
+      if (t?.ok) add(true, `${p}: ${ke} works (${t.ms} ms)`);
+      else if (/refused this key/.test(t?.error ?? '')) add(false, `${p}: ${ke} is set but ${t.error}: replace it in Settings › API keys`);
+      else add(true, `${p}: ${ke} configured (${t?.error ? `not checked: ${t.error}` : 'not live-validated'})`);
+    } else notSetUp.push(p);
+  }
+  if (notSetUp.length) add(true, `not set up (optional, add a key in Settings › API keys): ${notSetUp.join(', ')}`);
+  // A workspace in iCloud Drive with "Optimize Mac Storage": files moved off this
+  // Mac time out when ox reads them (ETIMEDOUT broke undo here).
+  if (process.platform === 'darwin') {
+    const r = spawnSync('find', [process.cwd(), '-maxdepth', '3', '-flags', '+dataless'], { encoding: 'utf8', timeout: 10_000 });
+    const n = (r.stdout ?? '').split('\n').filter(Boolean).length;
+    add(n === 0, n ? `${n} file(s) here are in iCloud but not on this Mac: ox can time out reading them. In Finder choose "Keep Downloaded" for this folder, or work in a folder outside iCloud Drive` : 'workspace files are on this Mac');
   }
   // Local model discovery. This probe used to be `res.ok` on /api/version, which
   // passes for any process that answers 200 on 11434 — including one that is not
@@ -1538,7 +1559,7 @@ async function cmdPrompt(args = []) {
     cwd: config.cwd,
     contextParts: { memoryFiles: context.memoryFiles, tree: context.tree },
     memoryBlock: loadMemoryBlock(config.cwd),
-    skillIndex: discoverSkills({ cwd: config.cwd }).index,
+    skillIndex: renderFocusedSkillIndex(discoverSkills({ cwd: config.cwd }), ""),
     personaBlock: loadPersona({ cwd: config.cwd, enabled: config.soul !== false }).block,
     // A real run always installs a mailbox handler (headless.js defaults to
     // makeAgentTeamsHandler), so show the section a real prompt carries rather
@@ -1641,7 +1662,7 @@ async function cmdMcpList() {
   let startErr = null;
   try {
     hub = new McpHub(servers, { callTimeoutMs: 8000, sandbox: mcpSandboxFor(config) });
-    await hub.start();
+    await hub.start({ limitMs: 35_000 });
   } catch (err) {
     startErr = err;
     hub = null;
@@ -4081,6 +4102,8 @@ async function cmdEnv(args = []) {
 }
 
 async function cmdTask(args = []) {
+  // `ox task ls`, like `ox skill ls` and `ox library ls`.
+  if (args[0] === 'ls') args = ['list', ...args.slice(1)];
   const sub = String(args[0] ?? '').trim().toLowerCase();
   const rest = args.slice(1);
   if (sub === 'assign') {
@@ -6394,6 +6417,8 @@ async function runSubcommand(cmd, args) {
         // and -1 + 1 is 0, the goal itself (`ox evolve "<goal>"` was dropped).
         const skip = new Set([...(bi >= 0 ? [bi, bi + 1] : []), ...(mi >= 0 ? [mi, mi + 1] : [])]);
         const goal = args.filter((a, i) => !skip.has(i) && !a.startsWith('--')).join(' ');
+        // No goal: say how, instead of starting a full measuring run of the test suite.
+        if (!goal.trim()) { console.log('ox evolve "<what to make better>"   ox evolve list | failures | diff <id> | accept <id> | reject <id>'); process.exitCode = 2; return; }
         const r = await E.evolve({ goal, bot: bi >= 0 ? args[bi + 1] : null, maxCost: mi >= 0 ? Number(args[mi + 1]) || 2 : 2, log: (l) => process.stderr.write(`${c.dim(l)}\n`) });
         if (!r.id) { console.log(r.why); return; }
         console.log(r.accepted
@@ -7617,6 +7642,9 @@ async function replWithBudget(config, opts, flags, budget) {
           }
           case 'reflection':
             process.stdout.write(`${dimItalic(`  ~ ${ev.text} (attempt ${ev.count})`)}\n`);
+            break;
+          case 'thinking':
+            process.stdout.write(`${c.dim(`· thinking… (${ev.chars} characters so far)`)}\n`);
             break;
           case 'continuation-retry':
             process.stdout.write(`${c.yellow(`· stream dropped (${ev.reason}) — retry ${ev.attempt}/${3}`)}\n`);

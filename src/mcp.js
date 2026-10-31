@@ -5,6 +5,36 @@ import { expandVars } from './config.js';
 import { sanitizeEnv } from './env-sanitize.js';
 import { recordDecision } from './audit.js';
 import { prepareSandbox } from './sandbox.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+// A server and everything it started (its process group), then its pipes
+// closed, so nothing it left behind keeps ox from exiting.
+function killTree(proc, sig) {
+  try { if (process.platform !== 'win32' && proc.pid) process.kill(-proc.pid, sig); else proc.kill(sig); } catch { try { proc.kill(sig); } catch {} }
+  if (sig === 'SIGKILL') { for (const s of [proc.stdin, proc.stdout, proc.stderr]) { try { s?.destroy(); } catch {} } try { proc.unref(); } catch {} }
+}
+
+// Detached servers do not get the terminal's Ctrl+C or a hang-up: whatever is
+// still running when ox exits, for any reason it can catch, is stopped with it.
+const LIVE = new Set();
+let exitHooked = false;
+function trackChild(proc) {
+  LIVE.add(proc);
+  proc.once('exit', () => LIVE.delete(proc));
+  if (exitHooked) return;
+  exitHooked = true;
+  const stopAll = () => { for (const p of LIVE) { try { process.kill(-p.pid, 'SIGKILL'); } catch {} } };
+  process.once('exit', stopAll);
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.once(sig, () => { stopAll(); if (process.listenerCount(sig) === 0) process.exit(128 + ({ SIGINT: 2, SIGTERM: 15, SIGHUP: 1 })[sig]); });
+}
+
+// Which servers failed to start lately (name → when), so runs stop waiting on them.
+const MCP_HEALTH = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'mcp-health.json');
+function readMcpHealth() { try { return JSON.parse(fs.readFileSync(MCP_HEALTH(), 'utf8')) ?? {}; } catch { return {}; } }
+export { readMcpHealth };
+function writeMcpHealth(h) { if (process.env.NODE_TEST_CONTEXT && !process.env.OX_HOME) return; try { fs.writeFileSync(MCP_HEALTH(), JSON.stringify(h)); } catch {} }
 
 export const MCP_PROTOCOL_VERSION = '2025-11-25';
 export const MCP_CLIENT_INFO = { name: 'ox', version: '0.1.0' };
@@ -215,6 +245,17 @@ export class McpHub {
     this.allowedHosts = normalizeAllowedHosts(opts.allowedHosts);
     this.servers = new Map();
     this._started = false;
+    this.fastStart = opts.fastStart === true;
+  }
+
+  // Written as each server settles (a short run may exit before the slow ones do).
+  _noteHealth(name) {
+    const st = this.servers.get(name)?.status;
+    const next = readMcpHealth();
+    if (st === 'ok') { if (!(name in next)) return; delete next[name]; }
+    else if (['crashed', 'http-error', 'timeout'].includes(st)) next[name] = { at: Date.now(), status: st, why: (this.servers.get(name)?.stderr ?? []).join(' ').slice(-200) };
+    else return;
+    writeMcpHealth(next);
   }
 
   _state(name, cfg) {
@@ -240,12 +281,38 @@ export class McpHub {
     return s;
   }
 
-  async start() {
+  async start({ waitMs = Number(process.env.OX_MCP_START_MS) || 8000, limitMs = 0 } = {}) {
     if (this._started) return;
     this._started = true;
-    for (const [name, cfg] of Object.entries(this.config)) {
-      await this._startServer(String(name), cfg);
+    // `ox mcp` and other status checks wait for every server (up to `limitMs`
+    // when given: one waiting on a browser sign-in never finishes); a run (fastStart) does not.
+    if (!this.fastStart) {
+      const all = Promise.allSettled(Object.entries(this.config).map(([name, cfg]) => this._startServer(String(name), cfg)));
+      if (!limitMs) { await all; return; }
+      let cap;
+      await Promise.race([all, new Promise((r) => { cap = setTimeout(r, limitMs); cap.unref?.(); })]);
+      clearTimeout(cap);
+      return;
     }
+    // All servers at once, and the run waits at most `waitMs` for them: they
+    // used to start one after another, so two broken ones (an expired login,
+    // Docker not running) held every terminal run back 37 s before its first
+    // request. A slow server keeps starting and its tools are there once it is up.
+    // A server that failed to start within the last hour (an expired login,
+    // Docker off) still starts, in the background, but no run waits on it.
+    const health = readMcpHealth();
+    const now = Date.now();
+    const runs = Object.entries(this.config).map(([name, cfg]) => ({ name: String(name), p: this._startServer(String(name), cfg).catch(() => {}) }));
+    const failedAt = (h) => (typeof h === 'number' ? h : h?.at ?? 0);
+    const waited = runs.filter((r) => !(health[r.name] && now - failedAt(health[r.name]) < 3_600_000)).map((r) => r.p);
+    let timer;
+    await Promise.race([Promise.allSettled(waited), new Promise((r) => { timer = setTimeout(r, waitMs); timer.unref?.(); })]);
+    clearTimeout(timer);
+    // Still starting after the wait (one waiting on a sign-in in the browser never
+    // finishes): later runs do not wait on it either, until it starts fine once.
+    const slow = runs.filter((r) => this.servers.get(r.name)?.status === 'starting').map((r) => r.name);
+    if (slow.length) { const h = readMcpHealth(); for (const n of slow) h[n] = { at: Date.now(), status: 'slow', why: 'still starting after the wait (a sign-in in the browser?)' }; writeMcpHealth(h); }
+    for (const r of runs) r.p.then(() => this._noteHealth(r.name)).catch(() => {});
   }
 
   _warnHttpUnsupported(state, why) {
@@ -303,7 +370,12 @@ export class McpHub {
       proc = spawn(plan.command, plan.args, {
         env: baseEnv(cfg.env, plan.backend ? this.sandbox : null),
         stdio: ['pipe', 'pipe', 'pipe'],
+        // Its own process group, so stopping it stops what it started: `npx`
+        // and `uvx` run the real server as a grandchild, which outlived a kill
+        // of npx and held ox open for minutes after its answer.
+        detached: process.platform !== 'win32',
       });
+      if (process.platform !== 'win32') trackChild(proc);
     } catch (e) {
       state.status = 'crashed';
       console.error(`ox: MCP server '${name}' failed to spawn (${cfg.command}): ${String((e && e.message) || e)}`);
@@ -840,7 +912,7 @@ export class McpHub {
     const proc = state.proc;
     if (!proc) return;
     try {
-      if (proc.exitCode === null) proc.kill('SIGKILL');
+      if (proc.exitCode === null) killTree(proc, 'SIGKILL');
     } catch {}
   }
 
@@ -866,7 +938,7 @@ export class McpHub {
       proc.once('exit', onExit);
       setTimeout(() => {
         try {
-          if (proc.exitCode === null) proc.kill('SIGKILL');
+          if (proc.exitCode === null) killTree(proc, 'SIGKILL');
         } catch {}
       }, graceMs);
       setTimeout(onExit, graceMs + 500);
@@ -874,7 +946,7 @@ export class McpHub {
         proc.stdin?.end();
       } catch {}
       try {
-        proc.kill('SIGTERM');
+        killTree(proc, 'SIGTERM');
       } catch {}
     });
   }
