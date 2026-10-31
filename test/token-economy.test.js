@@ -19,7 +19,9 @@ test('a known task gets full lines only for skills that bear on it; the rest sta
   assert.match(focused, /- root-cause-debugging — Find the real cause/);
   assert.match(focused, /also: write-docs, frontend-craft, git-hygiene \(read \/home\/u\/skills\/<name>\/SKILL\.md\)/);
   assert.ok(focused.length < full.length / 2, `${focused.length} vs ${full.length}`);
-  assert.equal(renderFocusedSkillIndex(SKILLS, ''), full, 'no task: the full index');
+  assert.match(renderFocusedSkillIndex(SKILLS, ''), /^- also: root-cause-debugging, write-docs, frontend-craft, git-hygiene/, 'no task (or a greeting): the names, not every description');
+  process.env.OX_FULL_SKILL_INDEX = '1';
+  try { assert.equal(renderFocusedSkillIndex(SKILLS, ''), full, 'OX_FULL_SKILL_INDEX=1: the full index'); } finally { delete process.env.OX_FULL_SKILL_INDEX; }
 });
 
 test('a prompt cut by a small context window is reported; a normal one is not', () => {

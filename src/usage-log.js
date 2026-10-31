@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createLedger } from './ledger.js';
 
+const realHome = os.userInfo().homedir;
 export const USAGE_FILE = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'usage.jsonl');
 
 export function recordRun({ surface = 'terminal', agent = null, mode = null, cwd = process.cwd(), rows = [], at = Date.now(), file = USAGE_FILE() } = {}) {
@@ -21,6 +22,10 @@ export function recordRun({ surface = 'terminal', agent = null, mode = null, cwd
       cost: typeof r.costUsd === 'number' ? Number(r.costUsd.toFixed(6)) : null,
     }));
   if (!lines.length) return 0;
+  // A test run never lands in your real usage (65 "mock-model" rows did, from
+  // tests run outside the isolated runner): only when a test points ox at its
+  // own home or names the file.
+  if (process.env.NODE_TEST_CONTEXT && !process.env.OX_HOME && file === path.join(os.homedir(), '.ox', 'usage.jsonl') && os.homedir() === realHome) return 0;
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, `${lines.join('\n')}\n`, { mode: 0o600 });

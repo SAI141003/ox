@@ -224,21 +224,17 @@ final class OxBridge: ObservableObject {
                     self.writeForMe(w, request: text, shot: shots.first)
                     return true
                 }
-                // With a coding run open, an errand ("play Billie Jean", "volume
-                // down") is still done offline first: it never lands in that run.
-                if self.hasLiveRun {
-                    VoiceServer.ask(text, offlineOnly: true) { [weak self] r in
-                        guard let self else { return }
-                        if let r, r.handled { IslandLog.write("offline (live run open): \(r.say ?? "")"); MainActor.assumeIsolated { self.buddy.speak(r.say ?? "Done.") }; return }
-                        if !self.ask(text, imagePaths: shots, audioPath: audio) { self.chat.send(text, bridge: self, onReply: { reply in MainActor.assumeIsolated { self.buddy.speak(reply) } }, triedOffline: true) }
-                    }
-                    return true
-                }
-                // No live run: the chat takes it. Small tasks are done offline; the
-                // rest runs ox with a model, whose approvals come to this island.
-                guard OxRunner.available, !text.isEmpty else { return false }
-                self.chat.send(text, bridge: self) { [weak self] reply in
-                    MainActor.assumeIsolated { self?.buddy.speak(reply) }
+                // Errands first, on their own path (Errands): never through a
+                // chat, a live run or an agent, never queued, and still done
+                // when the app's server is down. Only what is not an errand goes on.
+                guard OxRunner.available || VoiceServer.url() != nil, !text.isEmpty else { return false }
+                let live = self.hasLiveRun
+                Errands.run(text) { [weak self] r in
+                    guard let self else { return }
+                    if r.handled { IslandLog.write("errand: \(r.say)"); MainActor.assumeIsolated { self.buddy.speak(r.say) }; return }
+                    // With a coding run open the rest goes to it; else the chat (whose approvals come to this island).
+                    if live, self.ask(text, imagePaths: shots, audioPath: audio) { return }
+                    self.chat.send(text, bridge: self, onReply: { reply in MainActor.assumeIsolated { self.buddy.speak(reply) } }, triedOffline: true)
                 }
                 return true
             }

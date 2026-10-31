@@ -99,6 +99,7 @@ import {
   adoptSkill,
   curateSkills,
   discoverSkills,
+  renderFocusedSkillIndex,
   purgeSkill,
   readSkillBody,
   recordSkillView,
@@ -1538,7 +1539,7 @@ async function cmdPrompt(args = []) {
     cwd: config.cwd,
     contextParts: { memoryFiles: context.memoryFiles, tree: context.tree },
     memoryBlock: loadMemoryBlock(config.cwd),
-    skillIndex: discoverSkills({ cwd: config.cwd }).index,
+    skillIndex: renderFocusedSkillIndex(discoverSkills({ cwd: config.cwd }), ""),
     personaBlock: loadPersona({ cwd: config.cwd, enabled: config.soul !== false }).block,
     // A real run always installs a mailbox handler (headless.js defaults to
     // makeAgentTeamsHandler), so show the section a real prompt carries rather

@@ -401,7 +401,10 @@ export function memoryPromptBlock({ cwd = process.cwd(), home = os.homedir(), ta
 // corrections, facts about themselves. Conservative on purpose: only first-
 // person or imperative "always / never / prefer" shapes, never task text.
 const LEARNABLE = [
-  /\b(?:i|we)\s+(?:always|never|usually|prefer|like|love|hate|don'?t like|want you to|use|work (?:at|on|for)|live in|am|'m)\b[^.!?\n]{3,160}/i,
+  /\b(?:i|we)\s+(?:always|never|usually|prefer|like|love|hate|don'?t like|use|work (?:at|on|for)|live in|am|'m)\b[^.!?\n]{3,160}/i,
+  // "I want you to always…" is how to work; "I want you to open Chrome…" is
+  // one request, and it was stored as a fact about the user (always true).
+  /\b(?:i|we)\s+want you to\s+(?:always|never|stop|keep|remember)\b[^.!?\n]{3,160}/i,
   /\b(?:please\s+)?(?:always|never|don'?t ever|stop)\s+(?:use|write|add|run|commit|push|call|reply|answer|ask)\b[^.!?\n]{2,160}/i,
   /\b(?:call me|my name is)\s+[A-Z][\p{L}-]{1,30}/iu,
   /\b(?:use|prefer)\s+\S+\s+(?:instead of|over|rather than)\s+[^.!?\n]{2,80}/i,
@@ -412,6 +415,8 @@ export function learnable(message) {
   for (const sentence of String(message ?? '').split(/(?<=[.!?\n])\s+/)) {
     const s = sentence.trim();
     if (s.length < 8 || s.length > 240 || /```|\bhttps?:\/\//.test(s)) continue;
+    // A question or a request is not a fact about the user.
+    if (/\?\s*$/.test(s) || /^(?:hey|hi|ok(?:ay)?|so|now)?[,\s]*(?:can|could|would|will) you\b/i.test(s)) continue;
     if (LEARNABLE.some((re) => re.test(s))) out.push(s.replace(/[.!?]+$/, ''));
   }
   return out.slice(0, 5);

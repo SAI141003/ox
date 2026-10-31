@@ -24,6 +24,7 @@
 // executes code on this machine. See authExposure() for the rule, the messages,
 // and the explicit opt-in escape hatch.
 
+import { quickReply } from './quick-reply.js';
 import { createServer } from 'http';
 import { createHash, timingSafeEqual } from 'crypto';
 import { runAgent } from './agent.js';
@@ -840,6 +841,24 @@ async function handleChatCompletions(req, res) {
   const agentDef = String(targetModel).startsWith('agent:') ? loadAgent(String(targetModel).slice(6)) : null;
   if (String(targetModel).startsWith('agent:') && !agentDef) {
     sendError(res, 404, `There is no bot called ${String(targetModel).slice(6)} on this ox: it was deleted, or this chat came from another computer. Make it again in Bots, or pick another model.`, 'invalid_request_error', 'model_not_found', 'model');
+    return;
+  }
+  // Small talk ("hey how are you", "thanks") is answered here for 0 tokens:
+  // a model call for it carried the whole prompt to write one line (src/quick-reply.js).
+  // Only when ox picks the model (auto): a model you chose by name answers itself.
+  const quick = typeof lastUserMsg?.content === 'string' && !(lastUserMsg.images?.length) && body.ox_quick !== false && (model === 'auto' || body.ox_quick === true) ? quickReply(lastUserMsg.content) : null;
+  if (quick) {
+    const name = String(model || 'ox');
+    if (stream) {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
+      sendSSE(res, { ...createChatCompletionChunk(name, ''), ox: { type: 'mode', mode: 'ask', routed: true, reason: 'small talk, answered without a model (0 tokens)', route: 'quick' } });
+      sendSSE(res, createChatCompletionChunk(name, quick));
+      sendSSE(res, createChatCompletionChunk(name, '', true, { inputTokens: 0, outputTokens: 0 }));
+      sendSSEDone(res);
+      res.end();
+    } else {
+      sendJson(res, 200, createChatCompletionResponse(name, quick, { inputTokens: 0, outputTokens: 0 }));
+    }
     return;
   }
   let target;
@@ -1733,6 +1752,8 @@ export async function voiceTurn(body) {
     const b = await T.brief();
     return { route: 'offline', handled: true, ok: true, say: T.spoken(b), brief: b, ms: Date.now() - started };
   }
+  const quickSay = quickReply(text);
+  if (quickSay) return { route: 'answer', handled: true, ok: true, say: quickSay, model: 'none (0 tokens)', ms: Date.now() - started };
   const { doOffline } = await import('./offline.js');
   // Typing, pressing and clicking take a second or two of waiting on the app:
   // done in a child (`ox do`), so the server keeps answering meanwhile.

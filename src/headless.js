@@ -80,7 +80,7 @@ export async function assembleCtx({ config, target, opts = {}, auxTarget = null 
   const agentTeamsHandler = opts.agentTeamsHandler ?? makeAgentTeamsHandler(config.cwd);
   // A known task (one-shot runs, the island, the phone) gets the focused skill
   // index: full lines only for skills that bear on it, names for the rest.
-  const skillIndex = opts.memoryTask ? renderFocusedSkillIndex(skills, String(opts.memoryTask)) : skills.index;
+  const skillIndex = renderFocusedSkillIndex(skills, String(opts.memoryTask ?? ""));
   const systemPrompt = await buildSystemPrompt({
     cwd: config.cwd,
     contextParts: { memoryFiles: context.memoryFiles, tree: context.tree },

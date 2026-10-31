@@ -178,6 +178,10 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
     log('OX Island is on');
     return cmdIsland(['start'], { log, err });
   }
+  // A fixed signature, so rebuilds stop losing Accessibility (src/sign-local.js).
+  if (action === 'sign-setup') {
+    try { return (await import('./sign-local.js')).createLocalIdentity({ log }) ? 0 : 1; } catch (e) { err(`ox island sign-setup: ${e.message}`); return 1; }
+  }
   // A new version of the island (after an update): stop it, rebuild, start it.
   if (action === 'restart') {
     if (!islandEnabled()) { log('OX Island is turned off. Turn it on with: ox island on'); return 1; }
