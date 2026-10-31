@@ -1,6 +1,6 @@
 import { expandLlmsRefs } from './llms-txt.js';
 import fs from 'node:fs';
-import { resolveTurnMode } from './modes.js';
+import { resolveTurnMode, isPlainQuestion } from './modes.js';
 import { agentPersonaBlock } from './agents.js';
 import { holdAwake } from './awake.js';
 import path from 'node:path';
@@ -94,7 +94,7 @@ export async function assembleCtx({ config, target, opts = {}, auxTarget = null 
   if (config.mcpServers && Object.keys(config.mcpServers).length > 0) {
     // Wave5a A / gap #1: the session's sandbox profile governs MCP server
     // processes too, so a server cannot open sockets the profile forbids.
-    hub = new McpHub(config.mcpServers, { callTimeoutMs: 30000, sandbox: opts.sandbox ?? null });
+    hub = new McpHub(config.mcpServers, { callTimeoutMs: 30000, sandbox: opts.sandbox ?? null, fastStart: true });
     const warn = warnOnce('ox: MCP startup failed — continuing without MCP tools');
     try {
       await hub.start();
@@ -289,6 +289,12 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
   // printed so a routed run can be checked, not taken on trust.
   const turnMode = resolveTurnMode(opts.mode ?? config.mode, prompt);
   ctx.mode = turnMode.mode;
+  // Auto, and a plain question ("what is a closure in javascript"): answered
+  // with no tools and the short answer prompt, like the app does.
+  if (turnMode.routed && turnMode.mode === 'ask' && isPlainQuestion(prompt) && !initialMessages.length) {
+    ctx.noTools = true;
+    turnMode.reason = `${turnMode.reason ?? 'a question'}, answered directly (no tools)`;
+  }
   if (turnMode.routed) {
     if (opts.json) console.log(JSON.stringify({ t: 'mode', mode: turnMode.mode, routed: true, reason: turnMode.reason }));
     else process.stderr.write(c.dim(`· auto → ${turnMode.mode} (${turnMode.reason})\n`));

@@ -295,6 +295,9 @@ export function listToolSchemas(ctx = {}, strictSchemas = false) {
     return strict ? offered.map((s) => applyStrictSchema(s, true)) : offered;
   };
 
+  // An answer-only turn gets no tools, whatever tool set the context carries
+  // (a terminal run carries ctx.allTools, which used to return before this check).
+  if (ctx.noTools === true) return [];
   // Subagent contexts pass a pre-filtered tool set via ctx.allTools or
   // ctx.subagentTools. Use it directly to avoid re-adding 'subagent' and to
   // preserve report_result injection.

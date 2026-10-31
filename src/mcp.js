@@ -5,6 +5,14 @@ import { expandVars } from './config.js';
 import { sanitizeEnv } from './env-sanitize.js';
 import { recordDecision } from './audit.js';
 import { prepareSandbox } from './sandbox.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+// Which servers failed to start lately (name → when), so runs stop waiting on them.
+const MCP_HEALTH = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'mcp-health.json');
+function readMcpHealth() { try { return JSON.parse(fs.readFileSync(MCP_HEALTH(), 'utf8')) ?? {}; } catch { return {}; } }
+function writeMcpHealth(h) { if (process.env.NODE_TEST_CONTEXT && !process.env.OX_HOME) return; try { fs.writeFileSync(MCP_HEALTH(), JSON.stringify(h)); } catch {} }
 
 export const MCP_PROTOCOL_VERSION = '2025-11-25';
 export const MCP_CLIENT_INFO = { name: 'ox', version: '0.1.0' };
@@ -215,6 +223,17 @@ export class McpHub {
     this.allowedHosts = normalizeAllowedHosts(opts.allowedHosts);
     this.servers = new Map();
     this._started = false;
+    this.fastStart = opts.fastStart === true;
+  }
+
+  // Written as each server settles (a short run may exit before the slow ones do).
+  _noteHealth(name) {
+    const st = this.servers.get(name)?.status;
+    const next = readMcpHealth();
+    if (st === 'ok') { if (!(name in next)) return; delete next[name]; }
+    else if (['crashed', 'http-error', 'timeout'].includes(st)) next[name] = Date.now();
+    else return;
+    writeMcpHealth(next);
   }
 
   _state(name, cfg) {
@@ -240,12 +259,32 @@ export class McpHub {
     return s;
   }
 
-  async start() {
+  async start({ waitMs = Number(process.env.OX_MCP_START_MS) || 8000 } = {}) {
     if (this._started) return;
     this._started = true;
-    for (const [name, cfg] of Object.entries(this.config)) {
-      await this._startServer(String(name), cfg);
+    // `ox mcp` and other status checks wait for every server; a run (fastStart) does not.
+    if (!this.fastStart) {
+      await Promise.allSettled(Object.entries(this.config).map(([name, cfg]) => this._startServer(String(name), cfg)));
+      return;
     }
+    // All servers at once, and the run waits at most `waitMs` for them: they
+    // used to start one after another, so two broken ones (an expired login,
+    // Docker not running) held every terminal run back 37 s before its first
+    // request. A slow server keeps starting and its tools are there once it is up.
+    // A server that failed to start within the last hour (an expired login,
+    // Docker off) still starts, in the background, but no run waits on it.
+    const health = readMcpHealth();
+    const now = Date.now();
+    const runs = Object.entries(this.config).map(([name, cfg]) => ({ name: String(name), p: this._startServer(String(name), cfg).catch(() => {}) }));
+    const waited = runs.filter((r) => !(health[r.name] && now - health[r.name] < 3_600_000)).map((r) => r.p);
+    let timer;
+    await Promise.race([Promise.allSettled(waited), new Promise((r) => { timer = setTimeout(r, waitMs); timer.unref?.(); })]);
+    clearTimeout(timer);
+    // Still starting after the wait (one waiting on a sign-in in the browser never
+    // finishes): later runs do not wait on it either, until it starts fine once.
+    const slow = runs.filter((r) => this.servers.get(r.name)?.status === 'starting').map((r) => r.name);
+    if (slow.length) { const h = readMcpHealth(); for (const n of slow) h[n] = Date.now(); writeMcpHealth(h); }
+    for (const r of runs) r.p.then(() => this._noteHealth(r.name)).catch(() => {});
   }
 
   _warnHttpUnsupported(state, why) {

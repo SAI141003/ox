@@ -93,6 +93,17 @@ export function classifyMode(text) {
 }
 
 // The mode a turn actually runs in: a fixed mode, or auto's pick for this text.
+// A question to answer from what the model knows, with nothing to read, run or
+// look up: it is answered with no tools and the short answer prompt (about 100
+// tokens instead of about 1,900 with tools, the workspace tree and skills).
+const PLAIN_TOUCHES = /\b(file|files|repo|repository|project|codebase|function|class|module|component|test|tests|bug|fix|refactor|commit|branch|src|readme|this code|my code|here|folder|directory)\b|[\w-]+\.(js|ts|tsx|jsx|py|go|rs|java|rb|css|html|json|md)\b/i;
+const PLAIN_NEEDS = /\b(search|look up|google|browse|latest|today|news|price|weather|open|run|install|email|mail|send|remember|forget|schedule|remind|screenshot|download|fetch|https?:\/\/|www\.|agent|build|create|make|write|generate|edit|change|update|delete|rename|add|remove|deploy)\b/i;
+export function isPlainQuestion(text) {
+  const t = String(text ?? '').trim();
+  if (!t || t.length > 400 || t.includes('\n')) return false;
+  return !PLAIN_TOUCHES.test(t) && !PLAIN_NEEDS.test(t) && (/\?\s*$/.test(t) || /^(what|why|how|who|when|where|which|explain|define|tell me|is|are|can|does|do)\b/i.test(t));
+}
+
 export function resolveTurnMode(setting, text) {
   const m = normalizeMode(setting) ?? 'code';
   if (m !== 'auto') return { mode: m, routed: false, reason: null };

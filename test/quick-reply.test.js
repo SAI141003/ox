@@ -33,3 +33,11 @@ test('a message with no telling words gets skill names, not the whole index', ()
   assert.ok(short.length < full.length / 3, `${short.length} vs ${full.length}`);
   assert.match(short, /skill-0/);
 });
+
+test('a plain question in auto mode is answered with no tools', async () => {
+  const { isPlainQuestion } = await import('../src/modes.js');
+  for (const t of ['what is a closure in javascript?', 'why is the sky blue', 'explain recursion']) assert.equal(isPlainQuestion(t), true, t);
+  for (const t of ['what does src/app.js do?', 'fix the failing test', "what's the weather today?", 'how do I install this project?', 'open chrome']) assert.equal(isPlainQuestion(t), false, t);
+  const { listToolSchemas } = await import('../src/tools/index.js');
+  assert.deepEqual(listToolSchemas({ noTools: true, allTools: [{ name: 'bash' }] }), [], 'no tools even when the context carries a tool set');
+});
