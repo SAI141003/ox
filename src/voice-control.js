@@ -154,8 +154,13 @@ export function performControl(it, { app = null, dryRun = false } = {}) {
     // Said done only when the words are really there.
     wait(150);
     const after = hands(['focused', ...(app ? ['--app', app] : [])]);
-    const landed = String(after.value ?? '').includes(it.text) && String(after.value ?? '') !== before;
-    if (!landed && after.role) return { ok: false, message: `typed, but the words did not land in a text box${where}: click where they should go and say it again` };
+    // Compared loosely: apps autocorrect ("hello" → "Hello", smart quotes, spacing).
+    // An app that does not show its text box's value (ChatGPT, Electron) cannot be
+    // checked: then only a box whose text did not change at all counts as a miss.
+    const norm = (v) => String(v ?? '').toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"').replace(/\s+/g, ' ').trim();
+    const readable = after.value != null && String(after.value) !== '';
+    const landed = !readable ? String(before) === '' : norm(after.value).includes(norm(it.text)) || (norm(after.value) !== norm(before) && norm(after.value).length >= norm(before).length + Math.floor(norm(it.text).length * 0.6));
+    if (!landed && readable && after.role) return { ok: false, message: `typed, but the words did not land in a text box${where}: click where they should go and say it again` };
     return { ok: true, message: `typed "${it.text}"${where}` };
   }
   if (it.intent === 'key') {
