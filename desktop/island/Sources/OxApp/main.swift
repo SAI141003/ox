@@ -37,6 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
                           styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                           backing: .buffered, defer: false)
         window.title = "ox"
+        // Closing hides it: a released window crashed the app when the Dock or Spotlight reopened it.
+        window.isReleasedWhenClosed = false
         window.titlebarAppearsTransparent = true
         window.backgroundColor = NSColor(red: 0.055, green: 0.059, blue: 0.071, alpha: 1)
         window.minSize = NSSize(width: 520, height: 420)
@@ -100,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     /// Opened again from the Dock or by `ox app`: if the server is gone, bring it back.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         checkServer()
-        if !window.isVisible { window.makeKeyAndOrderFront(nil) }
+        if let window, !window.isVisible { window.makeKeyAndOrderFront(nil) }
         return true
     }
     func applicationDidBecomeActive(_ notification: Notification) { checkServer() }
