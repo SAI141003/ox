@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import net from 'node:net';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { runAgent, applySubgoal, buildSummarizePrompt, draftContract, draftTitle, parseGates } from './agent.js';
@@ -1356,6 +1356,13 @@ async function cmdDoctor(args = []) {
     else notSetUp.push(p);
   }
   if (notSetUp.length) add(true, `not set up (optional, add a key in Settings › API keys): ${notSetUp.join(', ')}`);
+  // A workspace in iCloud Drive with "Optimize Mac Storage": files moved off this
+  // Mac time out when ox reads them (ETIMEDOUT broke undo here).
+  if (process.platform === 'darwin') {
+    const r = spawnSync('find', [process.cwd(), '-maxdepth', '3', '-flags', '+dataless'], { encoding: 'utf8', timeout: 10_000 });
+    const n = (r.stdout ?? '').split('\n').filter(Boolean).length;
+    add(n === 0, n ? `${n} file(s) here are in iCloud but not on this Mac: ox can time out reading them. In Finder choose "Keep Downloaded" for this folder, or work in a folder outside iCloud Drive` : 'workspace files are on this Mac');
+  }
   // Local model discovery. This probe used to be `res.ok` on /api/version, which
   // passes for any process that answers 200 on 11434 — including one that is not
   // Ollama at all. Now identification must be positive (a `version` field in an
@@ -7627,6 +7634,9 @@ async function replWithBudget(config, opts, flags, budget) {
           }
           case 'reflection':
             process.stdout.write(`${dimItalic(`  ~ ${ev.text} (attempt ${ev.count})`)}\n`);
+            break;
+          case 'thinking':
+            process.stdout.write(`${c.dim(`· thinking… (${ev.chars} characters so far)`)}\n`);
             break;
           case 'continuation-retry':
             process.stdout.write(`${c.yellow(`· stream dropped (${ev.reason}) — retry ${ev.attempt}/${3}`)}\n`);

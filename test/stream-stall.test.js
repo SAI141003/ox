@@ -27,3 +27,11 @@ test('no reply at all is cut off too', async () => {
     await assert.rejects(async () => { for await (const _ of stream) {} }, /stream stalled \(no reply in 0 s\)/);
   } finally { delete process.env.OX_STREAM_FIRST_MS; s.closeAllConnections?.(); s.close(); }
 });
+
+test('a reasoning model\'s thinking is announced, never shown as the answer', async () => {
+  const { createOpenAICompatParser } = await import('../src/providers/openai-compat.js');
+  const p = createOpenAICompatParser({ name: 't' });
+  const evs = p.push(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { reasoning_content: 'The user wants' } }] })}\n\ndata: ${JSON.stringify({ choices: [{ index: 0, delta: { content: 'ready' } }] })}\n\n`);
+  assert.deepEqual(evs.map((e) => e.type), ['reasoning-delta', 'text-delta']);
+  assert.equal(evs[1].text, 'ready');
+});

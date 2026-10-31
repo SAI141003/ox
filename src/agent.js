@@ -480,6 +480,7 @@ export function normalizeStreamEvent(raw) {
     const t = raw.text ?? raw.content ?? '';
     return t ? { kind: 'text', text: t } : null;
   }
+  if (type === 'reasoning-delta') return { kind: 'thinking', chars: Number(raw.chars) || 0 };
   if (type === 'tool-call' || type === 'tool_call' || raw.tool_call) {
     return { kind: 'call', call: raw.tool_call ?? raw.call ?? raw };
   }
@@ -1784,9 +1785,16 @@ async function* runAgentLoop(opts = {}) {
         }, false);
         yield* flushHookEvents();
         const offered = toolessTargets.has(targetLabel(activeTarget)) ? [] : tools;
+        let thinkingChars = 0, thinkingAt = Date.now();
         for await (const raw of streamVia(activeTarget, { model: am, messages: history, tools: offered, signal })) {
           const ev = normalizeStreamEvent(raw);
           if (!ev) continue;
+          if (ev.kind === 'thinking') {
+            // Announced after 2 s of reasoning, then every 2 s, with how much so far.
+            thinkingChars += ev.chars;
+            if (Date.now() - thinkingAt > 2000) { thinkingAt = Date.now(); yield { type: 'thinking', chars: thinkingChars }; }
+            continue;
+          }
           if (ev.kind === 'text') {
             text += ev.text;
             yield { type: 'text-delta', text: ev.text };

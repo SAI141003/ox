@@ -33,6 +33,7 @@ function trackChild(proc) {
 // Which servers failed to start lately (name → when), so runs stop waiting on them.
 const MCP_HEALTH = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'mcp-health.json');
 function readMcpHealth() { try { return JSON.parse(fs.readFileSync(MCP_HEALTH(), 'utf8')) ?? {}; } catch { return {}; } }
+export { readMcpHealth };
 function writeMcpHealth(h) { if (process.env.NODE_TEST_CONTEXT && !process.env.OX_HOME) return; try { fs.writeFileSync(MCP_HEALTH(), JSON.stringify(h)); } catch {} }
 
 export const MCP_PROTOCOL_VERSION = '2025-11-25';
@@ -252,7 +253,7 @@ export class McpHub {
     const st = this.servers.get(name)?.status;
     const next = readMcpHealth();
     if (st === 'ok') { if (!(name in next)) return; delete next[name]; }
-    else if (['crashed', 'http-error', 'timeout'].includes(st)) next[name] = Date.now();
+    else if (['crashed', 'http-error', 'timeout'].includes(st)) next[name] = { at: Date.now(), status: st, why: (this.servers.get(name)?.stderr ?? []).join(' ').slice(-200) };
     else return;
     writeMcpHealth(next);
   }
@@ -302,14 +303,15 @@ export class McpHub {
     const health = readMcpHealth();
     const now = Date.now();
     const runs = Object.entries(this.config).map(([name, cfg]) => ({ name: String(name), p: this._startServer(String(name), cfg).catch(() => {}) }));
-    const waited = runs.filter((r) => !(health[r.name] && now - health[r.name] < 3_600_000)).map((r) => r.p);
+    const failedAt = (h) => (typeof h === 'number' ? h : h?.at ?? 0);
+    const waited = runs.filter((r) => !(health[r.name] && now - failedAt(health[r.name]) < 3_600_000)).map((r) => r.p);
     let timer;
     await Promise.race([Promise.allSettled(waited), new Promise((r) => { timer = setTimeout(r, waitMs); timer.unref?.(); })]);
     clearTimeout(timer);
     // Still starting after the wait (one waiting on a sign-in in the browser never
     // finishes): later runs do not wait on it either, until it starts fine once.
     const slow = runs.filter((r) => this.servers.get(r.name)?.status === 'starting').map((r) => r.name);
-    if (slow.length) { const h = readMcpHealth(); for (const n of slow) h[n] = Date.now(); writeMcpHealth(h); }
+    if (slow.length) { const h = readMcpHealth(); for (const n of slow) h[n] = { at: Date.now(), status: 'slow', why: 'still starting after the wait (a sign-in in the browser?)' }; writeMcpHealth(h); }
     for (const r of runs) r.p.then(() => this._noteHealth(r.name)).catch(() => {});
   }
 

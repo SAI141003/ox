@@ -41,8 +41,9 @@ const NEEDS = { gsuite: { cmd: 'uvx', how: 'Install uv first: brew install uv' }
  *   local      the app is on this Mac and ox drives it
  *   connect    one click adds it
  *   needs      something is missing first (`why` says what)
+ *   broken     added, but it has been failing to start (`why` says why)
  */
-export function galleryView({ servers = {}, apps = {}, channels = {}, env = process.env, has = defaultHas } = {}) {
+export function galleryView({ servers = {}, apps = {}, channels = {}, env = process.env, has = defaultHas, health = {} } = {}) {
   const hasCache = new Map();
   const haveCmd = (c) => { if (!hasCache.has(c)) hasCache.set(c, has(c)); return hasCache.get(c); };
   return GALLERY.map((g) => {
@@ -50,7 +51,15 @@ export function galleryView({ servers = {}, apps = {}, channels = {}, env = proc
     const ch = g.channel ? channels[g.channel] : null;
     const app = g.app ? apps[g.app] : null;
     const base = { id: g.id, name: g.name, desc: g.desc, template: g.template ?? null };
-    if (tpl && Object.prototype.hasOwnProperty.call(servers, g.template)) return { ...base, state: 'added', why: g.template === 'gsuite' ? 'Google sign-in opens on first use' : 'Signs in on first use' };
+    if (tpl && Object.prototype.hasOwnProperty.call(servers, g.template)) {
+      // Added, but it has not been starting: say so and why, instead of a quiet "Added".
+      const h = health[g.template];
+      if (h && typeof h === 'object') {
+        const why = h.status === 'slow' ? 'never finished starting: finish its sign-in in the browser' : h.status === 'http-error' ? 'its login was refused: sign in again' : /docker/i.test(`${h.why ?? ''} ${g.template}`) || g.template === 'github' ? 'did not start: Docker is not running' : `did not start (${h.status})`;
+        return { ...base, state: 'broken', why };
+      }
+      return { ...base, state: 'added', why: g.template === 'gsuite' ? 'Google sign-in opens on first use' : 'Signs in on first use' };
+    }
     if (ch && (ch.paired || ch.reachable)) return { ...base, state: 'connected', why: ch.paired ? 'Paired' : 'Verified' };
     if (app?.installed && !tpl) return { ...base, state: 'local', why: `${app.name ?? g.name} on this Mac${app.version ? ` · ${app.version}` : ''}` };
     if (tpl) {

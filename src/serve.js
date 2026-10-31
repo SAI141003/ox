@@ -1082,6 +1082,8 @@ async function handleChatCompletions(req, res) {
           // A run that stops (missing key, provider refusal, budget) says why,
           // instead of ending as an empty reply.
           sendSSE(res, { error: { message: String(event.error), type: 'server_error' } });
+        } else if (event.type === 'thinking') {
+          sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'thinking', chars: Number(event.chars) || 0 } });
         } else if (event.type === 'tool-start' || event.type === 'tool-end') {
           // What the agent is doing, as an `ox` extension on an empty chunk:
           // OpenAI clients ignore the unknown field, the web chat draws it.

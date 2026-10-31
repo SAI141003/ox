@@ -104,6 +104,10 @@ export function createOpenAICompatParser({ name = 'openai-compat' } = {}) {
     if (finishedLatch) return;
     for (const choice of choices) {
       const delta = choice.delta ?? {};
+      // A reasoning model's thinking (reasoning_content / reasoning): never shown
+      // as the answer, but announced, so the screen is not silent for minutes.
+      const thinking = delta.reasoning_content ?? delta.reasoning;
+      if (typeof thinking === 'string' && thinking) events.push({ type: 'reasoning-delta', chars: thinking.length });
       if (typeof delta.content === 'string' && delta.content) {
         events.push({ type: 'text-delta', text: delta.content });
       }

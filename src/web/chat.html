@@ -1744,7 +1744,8 @@
     const lastReply = convo()?.messages?.at(-1) === msg;
     const changedHtml = changed.length ? `<div class="changed"><div class="cap" style="display:flex;align-items:center">Changed ${changed.length} file${changed.length === 1 ? '' : 's'}<span style="flex:1"></span>${lastReply && !msg.undone ? '<button class="btn ghost" data-undo-turn style="padding:2px 10px;font-size:12px">Undo this turn</button>' : msg.undone ? '<span class="small muted">undone</span>' : ''}</div>${changed.map((f) => `<div class="mono small">${esc(f)}</div>`).join('')}</div>` : '';
     msg.key ??= `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-    const text = msg.content ? md(msg.content, msg.key) : (msg.pending ? '<span class="typing"><i></i><i></i><i></i></span>' : '');
+    // A reasoning model thinking: said, with how much, instead of bare dots for minutes.
+    const text = msg.content ? md(msg.content, msg.key) : (msg.pending ? `<span class="typing"><i></i><i></i><i></i></span>${msg.thinking ? `<span class="muted small" style="margin-left:8px">Thinking… ${msg.thinking.toLocaleString()} characters so far</span>` : ''}` : '');
     const routed = (msg.compare ? `<span class="botname">${esc(msg.compare)}</span>` : '') + (msg.bot ? `<span class="botname">${esc(msg.bot)}</span>` : '') + (msg.routed ? `<span class="routed">${icon('mode')}${esc(msg.routed)}</span>` : '');
     if (msg.bot) { const who = body.closest('.msg')?.querySelector('.who'); if (who && !who.dataset.bot) { who.dataset.bot = msg.bot; who.classList.add('botwho'); who.innerHTML = botFace(msg.bot, botShapes[msg.bot], 26, botColors[msg.bot]); } }
     const PI = { completed: ['ok', '✓'], in_progress: ['run', '›'], blocked: ['err', '!'], pending: ['', ''] };
@@ -2052,6 +2053,7 @@
             c.context = { tokens: Number(ox.tokens) || 0, window: Number(ox.window) || 0, historyTokens: Number(ox.historyTokens) || 0, schemaTokens: Number(ox.schemaTokens) || 0, at: Date.now() };
             updateUsageMeter(c);
           }
+          if (ox?.type === 'thinking') reply.thinking = Number(ox.chars) || 0;
           if (ox?.type === 'media' && Array.isArray(ox.media)) reply.media = [...new Set([...(reply.media || []), ...ox.media])];
           if (ox?.type === 'tool-start' && Array.isArray(ox.plan)) reply.plan = ox.plan;
           else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '', ...(ox.file ? { file: ox.file } : {}), ...(ox.files ? { files: ox.files } : {}) });
@@ -4064,16 +4066,17 @@ files: [src/billing/**]
     telegram: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" fill="#29a9eb"/><path d="M11 23.4 33.6 14.7c1-.4 2 .3 1.6 1.9L31.4 34.5c-.3 1.3-1.1 1.6-2.2 1l-6-4.4-2.9 2.8c-.3.3-.6.6-1.2.6l.4-6.1 11.1-10c.5-.4-.1-.7-.7-.3L16.1 26.8l-5.9-1.8c-1.3-.4-1.3-1.3.8-1.6z" fill="#fff"/></svg>',
     browser: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="#4285f4"/><path d="M24 4a20 20 0 0 1 17.3 10H24a10 10 0 0 0-8.7 5L9.5 9.1A20 20 0 0 1 24 4z" fill="#ea4335"/><path d="M41.3 14A20 20 0 0 1 25.4 44l8.7-15a10 10 0 0 0-.1-15z" fill="#fbbc04"/><path d="M25.4 44A20 20 0 0 1 9.5 9.1L15.3 19A10 10 0 0 0 24 34l.8 10z" fill="#34a853"/><circle cx="24" cy="24" r="8" fill="#fff"/><circle cx="24" cy="24" r="6" fill="#1a73e8"/></svg>',
   };
-  const connSub = (c) => c.state === 'added' ? 'Added to ox' : c.state === 'connected' ? 'Connected' : c.state === 'local' ? 'On this Mac' : c.template === 'gsuite' ? 'Google Workspace' : c.template ? 'Official connector' : c.id === 'telegram' ? 'Your own bot' : 'App on your Mac';
+  const connSub = (c) => c.state === 'broken' ? 'Added, not working' : c.state === 'added' ? 'Added to ox' : c.state === 'connected' ? 'Connected' : c.state === 'local' ? 'On this Mac' : c.template === 'gsuite' ? 'Google Workspace' : c.template ? 'Official connector' : c.id === 'telegram' ? 'Your own bot' : 'App on your Mac';
   function connAction(c) {
     if (c.state === 'added') return `<button class="on" data-conn-rm="${esc(c.id)}" title="${esc(c.why)} · click to remove">Added</button>`;
     if (c.state === 'connected') return `<span class="on" title="${esc(c.why)}">Connected</span>`;
+    if (c.state === 'broken') return `<button class="on" style="color:var(--red)" data-conn-rm="${esc(c.id)}" title="${esc(c.why)} · click to remove">Not working</button>`;
     if (c.state === 'local') return `<span class="on local" title="${esc(c.why)}">Found</span>`;
     if (c.state === 'connect') return `<button class="go" data-conn-add="${esc(c.id)}" title="${esc(c.why)}">Connect</button>`;
     return c.open ? `<button class="go" data-conn-open="${esc(c.open)}" title="${esc(c.why)}">Set up</button>` : `<span class="need">${esc(c.why)}</span>`;
   }
   function connGallery(list) {
-    return `<div class="conn-list">${list.map((c) => `<div class="conn"><div class="logo">${CONN_LOGOS[c.id] ?? ''}</div><div class="nm"><b>${esc(c.name)}</b><span>${esc(connSub(c))}</span></div><div class="act">${connAction(c)}</div><div class="ds">${esc(c.desc)}${c.state === 'local' || c.state === 'added' || c.state === 'connected' ? ` <span style="color:var(--dim)">· ${esc(c.why)}</span>` : ''}</div></div>`).join('')}</div>`;
+    return `<div class="conn-list">${list.map((c) => `<div class="conn"><div class="logo">${CONN_LOGOS[c.id] ?? ''}</div><div class="nm"><b>${esc(c.name)}</b><span>${esc(connSub(c))}</span></div><div class="act">${connAction(c)}</div><div class="ds">${esc(c.desc)}${c.state === 'local' || c.state === 'added' || c.state === 'connected' || c.state === 'broken' ? ` <span style="color:${c.state === 'broken' ? 'var(--red)' : 'var(--dim)'}">· ${esc(c.why)}</span>` : ''}</div></div>`).join('')}</div>`;
   }
 
   function openSettings(which) {
