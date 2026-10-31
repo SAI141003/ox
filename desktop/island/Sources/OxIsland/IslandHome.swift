@@ -768,6 +768,7 @@ struct UpdateHome: View {
             case .failed: return Color(hex: "#F4505E")
             case .done: return Color(hex: "#2FA36B")
             case .ask, .available, .working: return Color(hex: "#4D8DFF")
+            case .fix: return Color(hex: "#A78BFA")
             }
         }()
         ZStack(alignment: .topLeading) {
@@ -789,6 +790,10 @@ struct UpdateHome: View {
                         HomeButton(title: "Update now", style: .primary) { bridge.updateChoose("apply") }
                         HomeButton(title: "What's new", style: .plain) { bridge.updateChoose("whatsnew") }
                         HomeButton(title: "Later", style: .plain) { bridge.updateChoose("later") }
+                    case .fix:
+                        HomeButton(title: "Apply fix", style: .primary) { bridge.updateChoose("heal-apply") }
+                        HomeButton(title: "See change", style: .plain) { bridge.updateChoose("heal-diff") }
+                        HomeButton(title: "Dismiss", style: .plain) { bridge.updateChoose("heal-dismiss") }
                     case .working:
                         EmptyView()
                     case .done, .failed:

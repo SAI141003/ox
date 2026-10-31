@@ -115,7 +115,8 @@ function browserStep(it, app) {
 export function activateApp(name) {
   if (process.platform !== 'darwin' || process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1' || !handsPath()) return null;
   const a = hands(['activate', name]);
-  if (a.error) return /not an app/.test(a.error) ? null : { ok: false, message: a.error };
+  // Opening an app needs no Accessibility: without it (a rebuild can take it away), `open -a` does it.
+  if (a.error) return /not an app/.test(a.error) || a.access === false || /Accessibility/.test(a.error) ? null : { ok: false, message: a.error };
   return { ok: true, message: `opened ${a.app ?? name}` };
 }
 

@@ -46,7 +46,7 @@ export const COMMANDS = Object.freeze([
   // Voice and the island
   { name: 'dictation', usage: '/dictation [show | style <as-said|natural|polished> | translate <language|off>]', what: 'how dictated text is written', group: 'Voice', app: true },
   { name: 'speak', usage: '/speak "<text>"', what: 'say it out loud', group: 'Voice', app: true },
-  { name: 'island', usage: '/island [start | stop | status | sound <name> | silent]', what: 'the notch island; silent: AirPods mouthed words (Subvox)', group: 'Voice', app: true },
+  { name: 'island', usage: '/island [start | stop | status | sound <name> | silent | heal]', what: 'the notch island; silent: AirPods mouthed words; heal: it fixes itself from its log', group: 'Voice', app: true },
   // This Mac
   { name: 'doctor', usage: '/doctor', what: 'checks: keys, models, tools, permissions', group: 'System', app: true },
   { name: 'models', usage: '/models', what: 'the models ox can use right now', group: 'System', app: true },

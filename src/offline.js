@@ -248,6 +248,11 @@ export function parseIntent(text) {
   if ((m = /^(?:open|launch|start)\s+(?:the\s+)?(?:app\s+)?(.+?)(?:\s+app)?$/i.exec(t))) {
     const app = resolveApp(m[1]);
     if (app) return { intent: 'app', name: app };
+    // "open Word document", "open a new Excel sheet": the app, and for "new" a new
+    // document in it (⌘N). It was answered with "which document?" (island log).
+    const doc = /^(?:a\s+)?(new\s+)?(?:blank\s+)?(.+?)\s+(?:document|doc|file|sheet|spreadsheet|presentation|deck|note|window)$/i.exec(m[1].trim());
+    const named = doc && resolveApp(doc[2]);
+    if (named) return doc[1] ? { intent: 'app', name: named, then: { intent: 'key', key: 'cmd+n' } } : { intent: 'app', name: named };
   }
   if ((m = /^(?:what is|what's|calculate|calc|compute)\s+(.+)$/i.exec(low)) && calc(m[1]) !== null) return { intent: 'calc', expr: m[1], value: calc(m[1]) };
   if (calc(low) !== null && /[+\-*/^%]/.test(low)) return { intent: 'calc', expr: low, value: calc(low) };
@@ -658,7 +663,13 @@ export function perform(it) {
       const r = run(osCmd('open_url', it.url));
       return r.ok ? { ok: true, message: `opened ${it.url}` } : { ok: false, message: r.err };
     }
-    case 'app': { const viaHands = activateApp(it.name); if (viaHands) return viaHands; const r = run(osCmd('open_app', it.name)); return r.ok ? { ok: true, message: `opened ${it.name}` } : { ok: false, message: `could not open "${it.name}": ${r.err}` }; }
+    case 'app': {
+      const viaHands = activateApp(it.name);
+      const r = viaHands ?? (() => { const o = run(osCmd('open_app', it.name)); return o.ok ? { ok: true, message: `opened ${it.name}` } : { ok: false, message: `could not open "${it.name}": ${o.err}` }; })();
+      // "open a new Word document": the app, then its New (⌘N).
+      if (r.ok && it.then) { const next = performControl({ ...it.then, app: it.name }, { app: it.name }); return next?.ok === false ? { ok: true, message: `${r.message}; a new document needs Accessibility (${next.message})` } : { ok: true, message: `${r.message} with a new document` }; }
+      return r;
+    }
     case 'volume': { const r = setVolume(it); return r.ok ? { ok: true, message: it.level != null ? `volume ${it.level}%` : `volume ${it.delta > 0 ? 'up' : 'down'}` } : { ok: false, message: r.err }; }
     case 'mute': {
       const r = process.platform === 'darwin' ? run(['osascript', '-e', `set volume ${it.on ? 'with' : 'without'} output muted`]) : process.platform === 'linux' ? run(['pactl', 'set-sink-mute', '@DEFAULT_SINK@', it.on ? '1' : '0']) : { ok: false, err: 'not supported here' };

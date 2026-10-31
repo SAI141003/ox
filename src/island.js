@@ -224,6 +224,26 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
     log('OX Island is on');
     return cmdIsland(['start'], { log, err });
   }
+  // The island fixes itself from its own log (src/island-heal.js).
+  if (action === 'heal') {
+    const H = await import('./island-heal.js');
+    const sub = args[1] ?? 'now';
+    const show = (st) => {
+      for (const e of st.env ?? []) log(`· ${e.why}${e.count > 1 ? ` (${e.count}×)` : ''}`);
+      for (const c of st.code ?? []) log(`· ${c.why}${c.count > 1 ? ` (${c.count}×)` : ''}`);
+      for (const d of st.done ?? []) log(`  fixed: ${d}`);
+      if (st.attempt) log(`  code change ${st.attempt.id ?? ''}: ${st.attempt.accepted ? 'measured better' : 'not kept'} (${st.attempt.why})`);
+      if (st.offer) log(`  ready to apply: ox island heal apply   (or: ox evolve diff ${st.offer.id})`);
+      if (st.applied) log(`  applied ${st.applied.id}: ${st.applied.ok ? 'in, island restarted' : st.applied.why}`);
+      if (!(st.env ?? []).length && !(st.code ?? []).length) log('nothing went wrong in the island log since the last look');
+    };
+    if (sub === 'status') { show(H.readState()); return 0; }
+    if (sub === 'apply') { show(await H.applyOffer()); return 0; }
+    if (sub === 'dismiss') { await H.dismissOffer(); log('the offered change was dropped'); return 0; }
+    const since = args.includes('--all') ? 0 : null;
+    show(await H.heal({ since, log: (l) => err(`${l}\n`) }));
+    return 0;
+  }
   // Silent words (Subvox): AirPods head motion → mouthed words, in its own window.
   if (action === 'silent' || action === 'silent-words') {
     if (process.platform !== 'darwin') { err('Silent words needs macOS 14 and AirPods with head tracking\n'); return 1; }
@@ -286,7 +306,7 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
     await new Promise(() => {}); // until SIGINT/SIGTERM
   }
   if (action !== 'start' && action !== 'build') {
-    err(`ox: unknown island action '${action}' (use start, stop, restart, on, off, status, build, web, silent)\n`);
+    err(`ox: unknown island action '${action}' (use start, stop, restart, on, off, status, build, web, silent, heal)\n`);
     return 3;
   }
   if (action === 'start' && !islandEnabled()) {

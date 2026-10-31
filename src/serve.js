@@ -2241,6 +2241,15 @@ const ROUTES = [
     try { const html = P.pageHtml(P.readPage(m[1])); res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:" }); res.end(html); }
     catch { res.writeHead(404, { 'content-type': 'text/plain' }); res.end('no such page'); }
   } },
+  // The island fixing itself (src/island-heal.js): what it found, an offered change, apply or dismiss.
+  { method: 'GET', pattern: /^\/ox\/island\/heal\/?$/, handler: appRoute(async () => { const H = await import('./island-heal.js'); H.maybeHealInBackground(); return H.readState(); }) },
+  { method: 'POST', pattern: /^\/ox\/island\/heal\/?$/, handler: appRoute(async (b) => {
+    const H = await import('./island-heal.js');
+    if (b.action === 'apply') { H.applyOffer().catch(() => {}); return { applying: true }; }
+    if (b.action === 'dismiss') return H.dismissOffer();
+    if (b.action === 'now') { H.heal({}).catch(() => {}); return { started: true }; }
+    throw new Error('action: apply, dismiss or now');
+  }) },
   // Needs you (src/needs-you.js): what only you can move, across GitHub, ox and Mail, with links.
   { method: 'GET', pattern: /^\/ox\/needs\/?$/, handler: appRoute(async () => (await import('./needs-you.js')).needsYou()) },
   // ox updates itself from the notch (src/self-update.js): asked once, at most one notice a day.
@@ -2531,7 +2540,7 @@ const ROUTES = [
     // Only the island's voice recordings in the temp folder.
     if (!f.startsWith(realpathSync(tmpdir())) || !/\/ox-voice-[\w.-]+$/.test(f)) throw new Error('only the island\'s own recordings');
     const V = await import('./video-edit.js');
-    const tr = V.transcribe(f);
+    const tr = V.transcribe(f, { normalize: true });
     return { text: tr.segments.map((x) => x.text).join(' ').replace(/\s+/g, ' ').trim() };
   }) },
   { method: 'GET', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksView) },

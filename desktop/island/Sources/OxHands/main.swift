@@ -263,7 +263,8 @@ func handle(_ args: [String]) -> [String: Any] {
     do {
         guard let cmd = argv.first else { try emit(["error": "usage: ox-hands serve | trusted | activate | list | at | press | click | type | key"]) }
         if cmd == "trusted" { try emit(["trusted": AXIsProcessTrusted()]) }
-        if !AXIsProcessTrusted() { try emit(["error": accessHint, "access": false]) }
+        // Bringing an app forward needs no Accessibility (NSRunningApplication / NSWorkspace).
+        if !AXIsProcessTrusted() && cmd != "activate" { try emit(["error": accessHint, "access": false]) }
         switch cmd {
         case "activate":
             let wasFront = argv.count > 1 ? (runningApp(argv[1]).map { frontPid() == $0.processIdentifier } ?? false) : false

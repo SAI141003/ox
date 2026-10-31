@@ -652,7 +652,7 @@ final class OxBridge: ObservableObject {
 
     /// What the notch says about updates: ask once, a new version, the steps while it updates, the result.
     struct UpdateCard: Equatable {
-        enum Kind: Equatable { case ask, available, working, done, failed }
+        enum Kind: Equatable { case ask, available, working, done, failed, fix }
         let kind: Kind
         let title: String
         let detail: String
@@ -694,9 +694,48 @@ final class OxBridge: ObservableObject {
         }.resume()
     }
 
+    // MARK: the island fixes itself (src/island-heal.js)
+
+    /// A change it made to its own code, measured better: offered here, applied only on Apply
+    /// (or by itself with "island": { "selfHeal": "auto" } in ~/.ox/config.json).
+    private var healPolledAt = Date.distantPast
+    private var healOfferId: String?
+    private func pollHeal(port: Int) {
+        guard Date().timeIntervalSince(healPolledAt) > 600, let url = URL(string: "http://127.0.0.1:\(port)/ox/island/heal") else { return }
+        healPolledAt = Date()
+        URLSession.shared.dataTask(with: url) { [weak self] data, resp, _ in
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let doc = data.flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }) else { return }
+            let offer = doc["offer"] as? [String: Any]
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard let offer, let id = offer["id"] as? String else {
+                    if self.updateCard?.kind == .fix { self.updateCard = nil }
+                    return
+                }
+                guard self.updateCard == nil || self.updateCard?.kind == .fix, self.healOfferId != id else { return }
+                self.healOfferId = id
+                self.updateCard = UpdateCard(kind: .fix, title: "I fixed something in myself", detail: "\(offer["why"] as? String ?? "From my own log.") Tests measured it better.")
+                self.peek(for: 10)
+            }
+        }.resume()
+    }
+
     /// Your answer on the update card: only this updates anything.
     func updateChoose(_ action: String) {
         switch action {
+        case "heal-apply":
+            updateCard = UpdateCard(kind: .working, title: "Applying my fix", detail: "A fast-forward onto the measured change, then the island restarts.")
+            post("/ox/island/heal", ["action": "apply"]) { _ in }
+        case "heal-dismiss":
+            updateCard = nil
+            post("/ox/island/heal", ["action": "dismiss"]) { _ in }
+        case "heal-diff":
+            if let id = healOfferId { OxRunner.run(["evolve", "diff", id], cwd: FileManager.default.homeDirectoryForCurrentUser) { _, out in
+                let f = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("ox-heal-\(id).diff")
+                try? out.write(to: f, atomically: true, encoding: .utf8)
+                DispatchQueue.main.async { NSWorkspace.shared.open(f) }
+            } }
         case "allow", "deny", "later", "ok", "auto":
             updateCard = nil
             post("/ox/update", ["action": action]) { _ in }
@@ -808,6 +847,7 @@ final class OxBridge: ObservableObject {
         pollOrg(port: port)
         pollMesh(port: port)
         pollUpdate(port: port)
+        pollHeal(port: port)
         pollDay(port: port)
         appPolling = true
         var req = URLRequest(url: url)
