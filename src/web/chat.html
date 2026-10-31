@@ -3632,14 +3632,24 @@ files: [src/billing/**]
     try { s = await getJson('/ox/scheduled'); } catch (e) { el.innerHTML = `<div class="empty-note">${esc(e.message)}</div>`; return; }
     el.innerHTML = `
       <div class="shead">${icon('clock')}Scheduled runs</div><p class="sdesc">ox runs these prompts on their own, on the schedule you set, with a cost cap per run. They run while the ox daemon is up (<code>ox daemon start</code>).</p>
-      <div class="box sch-new"><input class="field" id="sch-prompt" placeholder="What to do, like: summarise yesterday's commits"><input class="field" id="sch-when" placeholder="every 1d · every 30m · daily at 9:00" style="max-width:240px"><button class="btn primary" id="sch-add">Schedule</button></div>
+      <div class="box sch-new"><input class="field" id="sch-prompt" placeholder="What to do, like: summarise yesterday's commits"><input class="field" id="sch-when" placeholder="every 1d · every 30m · daily at 9:00" style="max-width:240px"><button class="btn" id="sch-suggest" title="ox suggests when, a cost cap and what to watch, each with why">Suggest</button><button class="btn primary" id="sch-add">Schedule</button></div><div class="small muted" id="sch-why" hidden></div>
       <div class="cards">${s.schedules.length ? s.schedules.map((x) => `<div class="card"><span class="dot ${x.enabled ? 'ok' : ''}"></span><span class="t"><div class="n">${esc(x.prompt)}</div><div class="d"><span>${esc(x.cadence)}</span><span>next: ${esc(x.next)}</span><span class="mono">${esc(x.id)}</span></div></span><label class="switch" title="${x.enabled ? 'On' : 'Paused'}"><input type="checkbox" data-sch="${esc(x.id)}" ${x.enabled ? 'checked' : ''} aria-label="Enabled"><span></span></label></div>`).join('')
         : `<div class="box muted small">Nothing scheduled.<div class="cmd"><code>ox schedule add "summarise yesterday's commits" --every 1d</code><button data-copy-cmd='ox schedule add "summarise yesterday&#39;s commits" --every 1d'>${icon('copy')}</button></div></div>`}</div>
       <div class="shead" style="margin-top:34px">${icon('globe')}Page watches</div><p class="sdesc">ox checks pages for you and tells you when something changes: a price drops, a word shows up. ${s.watcherRunning ? '<span class="badge ok"><span class="dot ok"></span>checker running</span>' : '<span class="badge">checker stopped</span>'}</p>
       <div class="cards">${s.watches.length ? s.watches.map((w) => `<div class="card"><span class="dot ok"></span><span class="t"><div class="n">${esc(w.label)}</div><div class="d"><span>${esc(w.what)}</span></div></span><a class="btn ghost" href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${icon('open')}Open</a></div>`).join('')
         : `<div class="box muted small">No watches.<div class="cmd"><code>ox watch https://example.com/item --price-below 50</code><button data-copy-cmd="ox watch https://example.com/item --price-below 50">${icon('copy')}</button></div></div>`}</div>`;
+    // A suggested routine: when, cap and sources to watch (a run with nothing new there is skipped).
+    let sugg = null;
+    $('sch-suggest').onclick = async () => {
+      try {
+        sugg = await postJson('/ox/scheduled', { action: 'suggest', prompt: $('sch-prompt').value });
+        $('sch-when').value = sugg.when;
+        $('sch-why').hidden = false;
+        $('sch-why').innerHTML = sugg.reasons.map((r) => `· ${esc(r)}`).join('<br>');
+      } catch (e) { toast(e.message); }
+    };
     $('sch-add').onclick = async () => {
-      try { await postJson('/ox/scheduled', { action: 'add', prompt: $('sch-prompt').value, when: $('sch-when').value }); toast('Scheduled'); loadScheduled(); }
+      try { await postJson('/ox/scheduled', { action: 'add', prompt: $('sch-prompt').value, when: $('sch-when').value, ...(sugg ? { watch: sugg.watch, maxCostUsd: sugg.maxCostUsd } : {}) }); toast('Scheduled'); loadScheduled(); }
       catch (e) { toast(e.message); }
     };
     el.querySelectorAll('[data-sch]').forEach((i) => (i.onchange = async () => {
@@ -3877,12 +3887,27 @@ files: [src/billing/**]
     }
     el.innerHTML = `<div class="shead">${icon('list')}Library</div>
       <p class="sdesc">Your saved reading and meeting context on one shelf. ox can add articles, PDFs, and a Foresight export. Open one, select any line, and ask about it.</p>
+      <div class="box" id="lib-needs"><b>Needs you</b> <span class="small muted">reading GitHub, ox and Mail…</span></div>
+      <div class="box" id="lib-pages"><b>Pages</b> <span class="small muted">loading…</span></div>`
+      + `
       <div class="box tk-new"><input class="field" id="lib-add" placeholder="Paste a link or a PDF path to save" style="flex:1"><button class="btn primary" id="lib-add-go">Save</button></div>
       <div class="box tk-new"><input class="field" id="lib-foresight" placeholder="Path to a Foresight Markdown, text, or JSON export" style="flex:1"><button class="btn ghost" id="lib-foresight-go">Import Foresight export</button></div>
       <div class="box"><div class="lib-shelf">${items.map((it) => `<div class="lib-book" data-lib="${esc(it.id)}" title="${esc(it.title)}" style="height:${90 + Math.min(60, Math.round(Math.log2(it.words + 1) * 4))}px;background:hsl(${hue(it.title)} 42% 38%)"><span>${esc(it.title)}</span></div>`).join('') || '<div class="dim small" style="padding-bottom:20px">Empty shelf. Save a link above.</div>'}</div></div>
       ${reader}`;
     libOpen = openId;
     el.querySelectorAll('[data-lib]').forEach((b) => (b.onclick = () => loadLibrary(b.dataset.lib)));
+    // Needs you (src/needs-you.js) and Pages (src/pages.js): what waits on you, and finished reports with their sources.
+    getJson('/ox/needs').then((n) => {
+      if (!$('lib-needs')) return;
+      $('lib-needs').innerHTML = `<b>Needs you</b> <span class="small muted">${n.items.length ? `${n.items.length} thing${n.items.length === 1 ? '' : 's'}` : 'nothing is waiting for you'}${n.skipped.length ? ` · not read: ${esc(n.skipped.join(', '))}` : ''}</span><div class="os-scroll" style="max-height:260px">${n.items.map((i) => `<div class="os-craft-row"><div>${esc(i.title)}<div class="s">${esc(i.source)}${i.where && i.where !== i.source ? ` · ${esc(i.where)}` : ''}</div></div><div>${i.url ? `<a class="btn ghost small" href="${esc(i.url)}" target="_blank" rel="noopener noreferrer">Open</a>` : ''}</div></div>`).join('')}</div>`;
+    }).catch((e) => { if ($('lib-needs')) $('lib-needs').innerHTML = `<b>Needs you</b> <span class="small err">${esc(e.message)}</span>`; });
+    getJson('/ox/pages').then(({ pages }) => {
+      if (!$('lib-pages')) return;
+      $('lib-pages').innerHTML = `<b>Pages</b> <span class="small muted">${pages.length ? 'finished reports from agents and routines, with their sources' : 'none yet: agents hand finished reports over as pages'}</span><div class="os-scroll" style="max-height:260px">${pages.map((p) => `<div class="os-craft-row"><div>${esc(p.title)}<div class="s">${esc(p.kind)} · ${esc(new Date(p.at).toLocaleString())} · ${p.sources} source${p.sources === 1 ? '' : 's'}</div></div><div><button class="btn ghost small" data-page="${esc(p.id)}">Open</button></div></div>`).join('')}</div><iframe id="lib-page-view" sandbox="allow-popups" style="display:none;width:100%;height:70vh;border:1px solid var(--line);border-radius:12px;margin-top:10px;background:#fff"></iframe>`;
+      $('lib-pages').querySelectorAll('[data-page]').forEach((b) => (b.onclick = async () => {
+        try { const r = await api(`/ox/pages/${encodeURIComponent(b.dataset.page)}`); const v = $('lib-page-view'); v.srcdoc = await r.text(); v.style.display = 'block'; v.scrollIntoView({ behavior: 'smooth' }); } catch (e) { toast(e.message); }
+      }));
+    }).catch(() => {});
     $('lib-add-go').onclick = async () => { const ref = $('lib-add').value.trim(); if (!ref) return; toast('Saving…'); try { const { item } = await postJson('/ox/library/add', { ref }); toast(`${item.title} is on the shelf`); loadLibrary(item.id); } catch (e) { toast(e.message); } };
     $('lib-foresight-go').onclick = async () => { const ref = $('lib-foresight').value.trim(); if (!ref) return; toast('Importing local export…'); try { const { item } = await postJson('/ox/library/foresight', { ref }); toast(`${item.title} is in your private Library`); loadLibrary(item.id); } catch (e) { toast(e.message); } };
     if (!libOpen || !$('lib-text')) return;

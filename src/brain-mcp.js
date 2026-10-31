@@ -17,6 +17,7 @@ export const BRAIN_MCP_TOOLS = [
   { name: 'list_notes', description: 'The current notes, one line each (title, type, tags).', inputSchema: { type: 'object', properties: { filter: prop('string', 'Only titles or tags containing this.') } } },
   { name: 'read_note', description: 'One note in full, by its title.', inputSchema: { type: 'object', properties: { title: prop('string', 'The note\'s title.') }, required: ['title'] } },
   { name: 'remember', description: 'Save a note. To change a fact, save the new one with supersedes: [the old title]; the old note is kept, marked no longer current.', inputSchema: { type: 'object', properties: { title: prop('string', 'A short title.'), body: prop('string', 'The note (markdown; [[links]] to other notes).'), tags: prop('array', 'Tags.', { items: { type: 'string' } }), type: prop('string', 'note, fact, decision, person, project…'), supersedes: prop('array', 'Titles this replaces.', { items: { type: 'string' } }) }, required: ['title', 'body'] } },
+  { name: 'save_page', description: 'Hand over a finished page (report, brief, handoff, weekly update) with its sources at the bottom; the owner reads it in ox under Pages. Cite as [1], [2] in the body, in the order of sources.', inputSchema: { type: 'object', properties: { title: prop('string', 'The title.'), body: prop('string', 'The page, in markdown.'), sources: prop('array', 'Links or descriptions of where the facts came from.', { items: { type: 'string' } }), kind: prop('string', 'report, brief, handoff, update…') }, required: ['title', 'body'] } },
   { name: 'retire_note', description: 'Mark a note no longer current (nothing is deleted).', inputSchema: { type: 'object', properties: { title: prop('string', 'The note\'s title.'), reason: prop('string', 'Why, or what replaces it.') }, required: ['title'] } },
 ];
 
@@ -44,6 +45,10 @@ export function createBrainTools({ dir = B.brainDir(), embed = undefined } = {})
       const r = B.remember({ title: String(a.title ?? ''), body: String(a.body ?? ''), tags: [].concat(a.tags ?? []).map(String), type: String(a.type ?? 'note'), supersedes: [].concat(a.supersedes ?? []).map(String), source: 'mcp' }, { dir });
       await B.index({ dir }).catch(() => {});
       return `saved "${r.title}"`;
+    }
+    if (name === 'save_page') {
+      const r = (await import('./pages.js')).savePage({ title: a.title, body: a.body, sources: [].concat(a.sources ?? []), kind: a.kind ? String(a.kind) : 'report', by: 'an agent over MCP' });
+      return `page saved: ${r.id} (${r.sources} sources)`;
     }
     if (name === 'retire_note') {
       const f = B.close(String(a.title ?? ''), String(a.reason ?? 'retired'), { dir });

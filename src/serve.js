@@ -2233,6 +2233,16 @@ const ROUTES = [
   // Cached for 5 minutes: the brief runs gh, git and Mail synchronously (11 s
   // measured) and the server answered nothing else meanwhile.
   { method: 'GET', pattern: /^\/ox\/today\/?$/, handler: appRoute(async () => cachedBrief()) },
+  // Pages (src/pages.js): finished reports with their sources; one as a standalone HTML page.
+  { method: 'GET', pattern: /^\/ox\/pages\/?$/, handler: appRoute(async () => ({ pages: (await import('./pages.js')).listPages() })) },
+  { method: 'GET', pattern: /^\/ox\/pages\/([0-9a-z-]+)\/?$/, handler: async (req, res, m) => {
+    if (!authorized(req)) { unauthorized(res); return; }
+    const P = await import('./pages.js');
+    try { const html = P.pageHtml(P.readPage(m[1])); res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:" }); res.end(html); }
+    catch { res.writeHead(404, { 'content-type': 'text/plain' }); res.end('no such page'); }
+  } },
+  // Needs you (src/needs-you.js): what only you can move, across GitHub, ox and Mail, with links.
+  { method: 'GET', pattern: /^\/ox\/needs\/?$/, handler: appRoute(async () => (await import('./needs-you.js')).needsYou()) },
   // ox updates itself from the notch (src/self-update.js): asked once, at most one notice a day.
   { method: 'GET', pattern: /^\/ox\/update\/?$/, handler: appRoute(async () => { const U = await import('./self-update.js'); const st = U.readState(); return { notice: U.notice(), allowed: st.allowed ?? null, autoApply: st.autoApply === true, available: st.available ?? null, problem: st.problem ?? null, updatedTo: st.updatedTo ?? null, applying: st.applying ?? null }; }) },
   { method: 'POST', pattern: /^\/ox\/update\/?$/, handler: appRoute(async (body) => {
@@ -2527,7 +2537,7 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksView) },
   { method: 'POST', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksRoute) },
   { method: 'GET', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async () => (await appApi()).scheduledView()) },
-  { method: 'POST', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async (b) => { const a = await appApi(); return b.action === 'add' ? a.scheduleAdd({ prompt: b.prompt, when: b.when, enabled: true }) : a.setScheduleEnabled(String(b.id ?? ''), b.enabled); }) },
+  { method: 'POST', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async (b) => { const a = await appApi(); return b.action === 'add' ? a.scheduleAdd({ prompt: b.prompt, when: b.when, enabled: true, watch: b.watch, maxCostUsd: b.maxCostUsd }) : b.action === 'suggest' ? a.scheduleSuggest(b.prompt) : a.setScheduleEnabled(String(b.id ?? ''), b.enabled); }) },
   { method: 'GET', pattern: /^\/ox\/sessions\/?$/, handler: appRoute(async () => (await appApi()).sessionsView()) },
   { method: 'GET', pattern: /^\/ox\/sessions\/([^/]+)$/, handler: appRoute(async (_, m) => (await appApi()).sessionView(decodeURIComponent(m[1]))) },
   { method: 'GET', pattern: /^\/ox\/memory\/?$/, handler: appRoute(async () => (await appApi()).memoryView()) },

@@ -97,6 +97,11 @@ export const TOOL_IMPLS = {
         await B.index();
         return { content: `brain: saved "${r.title}"${args.supersedes?.length ? ` (replaces ${args.supersedes.join(', ')}; kept as history)` : ''}`, isError: false };
       }
+      if (args.action === 'page') {
+        // A finished page (src/pages.js): a report, brief or update with its sources at the bottom.
+        const r = (await import('../pages.js')).savePage({ title: args.title, body: args.body, sources: Array.isArray(args.sources) ? args.sources : [], kind: args.kind ? String(args.kind) : 'report' });
+        return { content: `brain: page "${args.title}" saved (${r.sources} source${r.sources === 1 ? '' : 's'}); the owner opens it in the app under Pages or with ox pages open ${r.id}`, isError: false };
+      }
       const hits = await B.search(String(args.query ?? ''), { embed: await B.localEmbedder() });
       return { content: B.formatHits(hits), isError: false };
     } catch (e) { return { content: `brain: ${e.message}`, isError: true }; }
@@ -121,17 +126,19 @@ export const BUILTIN_SCHEMAS = [
   ...BOT_TOOL_SCHEMAS,
   {
     name: 'brain',
-    description: "Your long-term notes (ox brain, markdown that opens in Obsidian). action \"search\": what is known about something (decisions, facts about the user and projects, past research), current facts first, at most ~1,500 tokens. action \"note\": save something worth keeping; when it replaces an older note, name it in supersedes (the old one is kept as history).",
+    description: "Your long-term notes (ox brain, markdown that opens in Obsidian). action \"search\": what is known about something (decisions, facts about the user and projects, past research), current facts first, at most ~1,500 tokens. action \"note\": save something worth keeping; when it replaces an older note, name it in supersedes (the old one is kept as history). action \"page\": hand over a finished report, brief or update as a page (markdown body, cite sources as [1], [2] and list them in sources).",
     input_schema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['search', 'note'] },
+        action: { type: 'string', enum: ['search', 'note', 'page'] },
         query: { type: 'string', description: 'search: what to look up' },
         title: { type: 'string', description: 'note: a short, specific title' },
         body: { type: 'string', description: 'note: the fact, decision or finding; link related notes as [[Title]]' },
         tags: { type: 'array', items: { type: 'string' } },
         supersedes: { type: 'array', items: { type: 'string' }, description: 'note: titles of notes this replaces' },
         project: { type: 'string' },
+        sources: { type: 'array', items: { type: 'string' }, description: 'page: links or descriptions of where the facts came from, in [n] order' },
+        kind: { type: 'string', description: 'page: report, brief, handoff, update…' },
       },
       required: ['action'],
     },

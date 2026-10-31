@@ -214,7 +214,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -5155,6 +5155,30 @@ async function runSubcommand(cmd, args) {
       const r = U.undoTurn(process.cwd(), args.find((a) => !a.startsWith('--')) ?? null);
       console.log(`${r.none ? c.dim('↶') : c.green('↶')} ${U.describe(r)}`);
       if (r.skipped?.length) process.exitCode = 1;
+      return;
+    }
+    case 'pages': {
+      // Pages (src/pages.js): finished reports with their sources. ox pages | ox pages open <id>
+      const P = await import('./pages.js');
+      if (args[0] === 'open' && args[1]) {
+        const p = P.readPage(args[1]);
+        const f = path.join(os.tmpdir(), `ox-page-${p.id}.html`);
+        fs.writeFileSync(f, P.pageHtml(p));
+        execFileSync(process.platform === 'darwin' ? 'open' : 'xdg-open', [f]);
+        console.log(f);
+        return;
+      }
+      const list = P.listPages();
+      if (!list.length) { console.log(c.dim('no pages yet: agents hand finished reports over as pages')); return; }
+      for (const p of list) console.log(`${c.bold(p.title)} ${c.dim(`${p.id} · ${p.kind} · ${p.sources} source${p.sources === 1 ? '' : 's'}`)}`);
+      return;
+    }
+    case 'needs': {
+      // Needs you (src/needs-you.js): GitHub reviews, failing checks, changes requested, assigned issues, ox tasks and routines, Mail.
+      const N = await import('./needs-you.js');
+      const r = await N.needsYou();
+      if (args.includes('--json')) { console.log(JSON.stringify(r)); return; }
+      console.log(N.formatNeeds(r));
       return;
     }
     case 'brain': {

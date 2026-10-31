@@ -508,6 +508,8 @@ function normalizeSchedule(raw) {
     costCapSource: String(raw.costCapSource ?? 'default'),
     bot: raw.bot ? clip(raw.bot, 64) : null,
     model: raw.model ? clip(raw.model, 120) : null,
+    // Sources the routine depends on (src/schedule-watch.js): unchanged since the last run, the run is skipped.
+    watch: Array.isArray(raw.watch) ? raw.watch.map((w) => clip(w, 300)).filter(Boolean).slice(0, 10) : [],
     created: String(raw.created ?? new Date().toISOString()),
     updated: String(raw.updated ?? raw.created ?? new Date().toISOString()),
   };
@@ -668,6 +670,9 @@ export function addSchedule(input = {}) {
   const cad = parseCadence(input.cadence ?? input);
   if (cad.refusal) return { refusal: cad.refusal };
 
+  const badWatch = (Array.isArray(input.watch) ? input.watch : []).find((w) => !/^https?:\/\/\S+$|^(\/|~\/)|^git$|^git:(\/|~\/)|^gh:\S/.test(String(w).trim()));
+  if (badWatch) return { refusal: `--watch takes a link, a path, git, git:<path> or gh:<search>; not "${badWatch}"` };
+
   const cap = resolveScheduleCostCap({ explicit: input.maxCostUsd });
   if (cap.refusal) return { refusal: cap.refusal };
 
@@ -690,6 +695,7 @@ export function addSchedule(input = {}) {
     costCapSource: cap.costCapSource,
     bot: input.bot ?? null,
     model: input.model ?? null,
+    watch: Array.isArray(input.watch) ? input.watch : [],
     created: new Date(now).toISOString(),
     updated: new Date(now).toISOString(),
     ...(kind === 'heartbeat'

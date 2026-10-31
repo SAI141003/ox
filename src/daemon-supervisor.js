@@ -70,6 +70,7 @@ import {
   screenScheduleArgv,
   screenSchedulePrompt,
 } from './schedule.js';
+import { shouldRun as shouldRunRoutine, noteRun as noteRoutineRun } from './schedule-watch.js';
 import { loadSessionWithStatus } from './session.js';
 import { renderGoalBlock } from './goal.js';
 import {
@@ -687,6 +688,14 @@ function tickSchedules() {
     }
 
     const rec = claim.schedule;
+    // Look before running: nothing new in what it watches, no run and no cost.
+    const look = shouldRunRoutine(rec);
+    if (!look.run) {
+      recordRun(rec.id, { state: 'skipped', note: look.why });
+      appendLog(`schedule ${rec.id} skipped: ${look.why}`);
+      (outcome.skipped ??= []).push({ id: rec.id, reason: look.why });
+      continue;
+    }
     const dispatched = dispatchScheduleRun(rec, { policy, trigger: 'tick' });
     if (dispatched.error) {
       appendLog(`!! schedule ${rec.id} not dispatched: ${dispatched.error}`);
@@ -694,6 +703,7 @@ function tickSchedules() {
       continue;
     }
     inflight.add(rec.id);
+    noteRoutineRun(rec.id, look.fp);
     outcome.started.push({ id: rec.id, workerId: dispatched.workerId, pid: dispatched.pid });
     appendLog(`schedule ${rec.id} dispatched as worker ${dispatched.workerId} (pid ${dispatched.pid}, cap $${rec.maxCostUsd} ${rec.costCapSource})`);
   }
