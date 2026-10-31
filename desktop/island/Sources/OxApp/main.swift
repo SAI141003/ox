@@ -16,6 +16,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     func applicationDidFinishLaunching(_ note: Notification) {
         buildMenu()
+        // The ox server this app starts clicks and types for you (ox-hands), and macOS
+        // charges that to this app: not trusted, ask, which lists "OX" in
+        // Settings › Privacy & Security › Accessibility by itself.
+        if !AXIsProcessTrusted() {
+            _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+        }
         let config = WKWebViewConfiguration()
         config.preferences.isElementFullscreenEnabled = true
         config.userContentController.add(self, name: "oxMiniPet")

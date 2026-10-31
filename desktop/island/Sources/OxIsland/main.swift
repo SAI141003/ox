@@ -15,6 +15,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         writePresence()
+        // Not trusted for Accessibility: ask macOS once per launch, which puts
+        // "OX Island" in the Accessibility list by itself (adding it back with +
+        // and a hidden ~/.ox folder was too hard) and offers Open System Settings.
+        if !AXIsProcessTrusted() {
+            _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+            IslandLog.write("accessibility: not trusted; asked macOS to list OX Island in Settings › Privacy & Security › Accessibility")
+        }
         let buddy = bridge.buddy
         let wake = bridge.wake
         // The microphone is handed over, never shared: « OK ox » steps aside.
