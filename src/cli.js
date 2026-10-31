@@ -1349,11 +1349,19 @@ async function cmdDoctor(args = []) {
   // Providers you have not set up are optional, not failures: 30 red lines for
   // keys nobody meant to add buried the checks that matter. One line lists them.
   const notSetUp = [];
+  // Set keys are tried (in parallel, a few seconds at most): a refused key used
+  // to pass here as "configured" while every run on it failed ("User not found").
+  const { testProviderKey } = await import('./app-api.js');
+  const tried = Object.fromEntries(await Promise.all(PROVIDERS.filter((p) => KEY_ENV[p] && process.env[KEY_ENV[p]]).map(async (p) => [p, await testProviderKey(p).catch((e) => ({ ok: false, error: e.message }))])));
   for (const p of PROVIDERS) {
     const ke = KEY_ENV[p];
     if (!ke) add(true, `${p}: no API key needed`);
-    else if (process.env[ke]) add(true, `${p}: ${ke} configured (not live-validated)`);
-    else notSetUp.push(p);
+    else if (process.env[ke]) {
+      const t = tried[p];
+      if (t?.ok) add(true, `${p}: ${ke} works (${t.ms} ms)`);
+      else if (/refused this key/.test(t?.error ?? '')) add(false, `${p}: ${ke} is set but ${t.error}: replace it in Settings › API keys`);
+      else add(true, `${p}: ${ke} configured (${t?.error ? `not checked: ${t.error}` : 'not live-validated'})`);
+    } else notSetUp.push(p);
   }
   if (notSetUp.length) add(true, `not set up (optional, add a key in Settings › API keys): ${notSetUp.join(', ')}`);
   // A workspace in iCloud Drive with "Optimize Mac Storage": files moved off this

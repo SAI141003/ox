@@ -25,12 +25,8 @@ upscale, cut-outs; picked first unless a model or host is named. Say how long a 
 - A production (photoshoot, thumbnail, character sheet, explainer, short ad)
   → `workflow_instructions` first, then follow its steps.
 - Steps to explain, no model needed → `explainer_video`.
-- A film in a named look (Ukiyo-e, Satellite Briefing, Pixel RPG, Silent Film…),
-  made entirely in code, no video model → `film_styles`, then
-  `workflow_instructions` code-film.
-- Edit a PSD, raw photo, vector, PDF, page layout, video timeline or motion
-  graphics in an open-source Adobe-style app → `craft_apps`, then
-  `workflow_instructions` craft-edit.
+- A film in a named look, made in code (Ukiyo-e, Pixel RPG…) → `film_styles`, recipe code-film.
+- A PSD, raw photo, vector, PDF or timeline in an open Adobe-style app → `craft_apps`, recipe craft-edit.
 
 ## Rules
 
