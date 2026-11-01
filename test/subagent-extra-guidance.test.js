@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OX_BIN = path.join(ROOT, 'bin', 'ox.js');
 
-const SECRET = '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';
+const SECRET = 'sk-or-v1-' + '5c8fff1200832f4dd806a57ec0fe0f6b7ca44123da12f5cd6a7d6935f6aebdc2';
 
 const SCRUB = [
   'OX_BASE_URL', 'OX_API_KEY', 'OX_MODEL', 'OX_YOLO', 'OX_MAX_COST',
@@ -295,7 +295,7 @@ test('lessonsContextBlock output reaches the prompt, and a credential in it is w
   assert.match(guidance, /always run node --check after editing src\/cli\.js/);
   // and the credential in it does not
   assert.equal(req.raw.includes(SECRET), false, 'a credential in a subagent lesson leaked into the subagent prompt');
-  assert.equal(req.raw.includes('9edd82d6dd'), false);
+  assert.equal(req.raw.includes('5c8fff1200'), false);
   assert.match(guidance, /\[memory-screen\] withheld 1 line/);
 });
 

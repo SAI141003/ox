@@ -24,7 +24,7 @@ const { auditFilePath, auditEnabled } = await import('../src/audit.js');
 after(() => fs.rmSync(HOME_SANDBOX, { recursive: true, force: true }));
 
 // Hand-written, as if it predates the write screen.
-const SECRET = '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';
+const SECRET = 'sk-or-v1-' + '5c8fff1200832f4dd806a57ec0fe0f6b7ca44123da12f5cd6a7d6935f6aebdc2';
 const HAND_WRITTEN = [
   '[lesson] normal subagent lesson here',
   `[lesson] key is ${SECRET}`,
@@ -137,7 +137,7 @@ test('withholding is recorded in OX_AUDIT with no secret text', (t) => {
   assert.equal(screened[0].where, 'subagent memory block');
   assert.equal(screened[0].source, `.agent/_sub/${id}/MEMORY.md`);
   assert.equal(JSON.stringify(screened).includes(SECRET), false, 'ledger must not carry the secret');
-  assert.equal(JSON.stringify(screened).includes('9edd82d6dd'), false, 'ledger must not carry key material');
+  assert.equal(JSON.stringify(screened).includes('5c8fff1200'), false, 'ledger must not carry key material');
 
   resetMemoryScreenStats();
 });

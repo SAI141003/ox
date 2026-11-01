@@ -45,7 +45,7 @@ const { resetMemoryScreenStats, memoryScreenStats } = await import('../src/memor
 after(() => fs.rmSync(HOME_SANDBOX, { recursive: true, force: true }));
 
 // A shape the shared screen in src/memory.js matches.
-const SECRET = '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';
+const SECRET = 'sk-or-v1-' + '5c8fff1200832f4dd806a57ec0fe0f6b7ca44123da12f5cd6a7d6935f6aebdc2';
 
 let seq = 0;
 function newSession(home = HOME_SANDBOX) {

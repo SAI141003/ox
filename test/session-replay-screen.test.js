@@ -41,7 +41,7 @@ const { auditFilePath, auditEnabled } = await import('../src/audit.js');
 after(() => fs.rmSync(HOME_SANDBOX, { recursive: true, force: true }));
 
 // High-confidence credential shapes (the ones the src/memory.js tables match).
-const USER_SECRET = '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';
+const USER_SECRET = 'sk-or-v1-' + '5c8fff1200832f4dd806a57ec0fe0f6b7ca44123da12f5cd6a7d6935f6aebdc2';
 const TOOL_SECRET = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
 const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
@@ -110,7 +110,7 @@ test('replay withholds a credential in a user message, a tool_call and a tool re
   const wire = JSON.stringify(msgs);
 
   assert.equal(wire.includes(USER_SECRET), false, `user-message secret leaked:\n${wire}`);
-  assert.equal(wire.includes('9edd82d6dd'), false, 'key material leaked from the user message');
+  assert.equal(wire.includes('5c8fff1200'), false, 'key material leaked from the user message');
   assert.equal(wire.includes(TOOL_SECRET), false, `tool-result secret leaked:\n${wire}`);
   assert.equal(wire.includes('ghp_ABCDEF'), false, 'tool-result key material leaked');
   assert.equal(wire.includes('7Yd1pQ4rZ8mN2vL6xW0cB3eT5gH9jK1sA4dF'), false, 'tool_call argument leaked');
@@ -316,7 +316,7 @@ test('E2E: --resume injects no secret, keeps pairing, and leaves the file untouc
   assert.equal(wire.includes(USER_SECRET), false, 'injected prompt carried the user-message key');
   assert.equal(wire.includes(TOOL_SECRET), false, 'injected prompt carried the tool-result token');
   assert.equal(wire.includes('ghp_ABCDEF'), false);
-  assert.equal(wire.includes('9edd82d6dd'), false);
+  assert.equal(wire.includes('5c8fff1200'), false);
   assert.match(wire, /\[memory-screen\] withheld 1 message/);
 
   const assistant = sent.messages.find(

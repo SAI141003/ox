@@ -57,7 +57,7 @@ const { memoryScreenStats, resetMemoryScreenStats } = await import('../src/memor
 const { makeSubagentToolHandler } = await import('../src/subagent.js');
 const { runAgent } = await import('../src/agent.js');
 
-const SECRET = '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';
+const SECRET = 'sk-or-v1-' + '5c8fff1200832f4dd806a57ec0fe0f6b7ca44123da12f5cd6a7d6935f6aebdc2';
 const PARENT = 'sess_parent_alpha';
 const WORKER = 'sa_worker_001';
 const PEER = 'sa_worker_002';

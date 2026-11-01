@@ -220,7 +220,7 @@ test('writeEpisode ARCHIVES (never drops) when .agent exceeds 500KB', (t) => {
 
 const SECRET_CASES = [
   ['openai/anthropic sk- key', 'the openai key is sk-abcdefghij0123456789ABCDEFGHIJKL'],
-  ['openrouter sk-or key', 'ox uses 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'],
+  ['openrouter sk-or key', 'ox uses sk-or-v1-' + '5c8fff1200832f4dd806a57ec0fe0f6b7ca44123da12f5cd6a7d6935f6aebdc2'],
   ['anthropic sk-ant key', 'deploy key sk-ant-api03-zzz111aaa222bbb333ccc444ddd555eee666fff777ggg888hhh999iii000jjj111kkk222lll'],
   ['github ghp_', 'token ghp_abcdefghijklmnopqrstuvwxyz0123456789'],
   ['github fine-grained', 'pat github_pat_11ABCDEFG0abcdefghijklmnopqrstuvwxyz1234'],

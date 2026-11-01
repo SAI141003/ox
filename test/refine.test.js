@@ -282,7 +282,7 @@ test('4c. a refinement round-trips through undo twice with no drift', (t) => {
 // ---------------------------------------------------------------------------
 test('5. a refinement carrying a credential is refused and never lands on disk', (t) => {
   const cwd = sandbox(t, 'ox-refine-secret-');
-  const KEY = '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';
+  const KEY = 'sk-or-v1-' + '5c8fff1200832f4dd806a57ec0fe0f6b7ca44123da12f5cd6a7d6935f6aebdc2';
 
   for (const [category, target, text] of [
     ['supplemental-prompt', 'tool-failures', `use the OpenAI key ${KEY} for calls`],

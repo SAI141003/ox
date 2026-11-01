@@ -15,11 +15,15 @@ export function needsFingerprint(tool, detail = '') {
   return RISKY_TOOLS.has(String(tool)) || RISKY_WORDS.test(`${tool} ${detail}`);
 }
 
-const HELPER = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'bin', 'ox-keys');
+// The helper that ships with ox (built beside the island, inside the Mac app too).
+const HELPER = () => [
+  path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'desktop', 'island', '.build', 'release', 'OxKeys'),
+  path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'bin', 'ox-keys'),
+].find((p) => fs.existsSync(p)) ?? '';
 
 /** true when you confirmed. Off a Mac (or without the helper) there is no fingerprint to ask: the click stands. */
 export function confirmWithFingerprint(reason, { helper = HELPER(), platform = process.platform } = {}) {
-  if (platform !== 'darwin' || process.env.NODE_TEST_CONTEXT || !fs.existsSync(helper) || !keychainUsable()) return Promise.resolve(true);
+  if (platform !== 'darwin' || process.env.NODE_TEST_CONTEXT || !helper || !fs.existsSync(helper) || !keychainUsable()) return Promise.resolve(true);
   return new Promise((resolve) => {
     const p = spawn(helper, ['confirm', String(reason).slice(0, 150)], { stdio: 'ignore' });
     p.on('error', () => resolve(false));

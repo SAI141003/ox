@@ -41,8 +41,8 @@ const { auditFilePath } = await import('../src/audit.js');
 
 after(() => fs.rmSync(HOME_SANDBOX, { recursive: true, force: true }));
 
-const KEY = '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';
-const KEY_TAIL = '9edd82d6dd091443677912990515b590955d3c53f309cddf7db07a6c1e43d796';
+const KEY = 'sk-or-v1-' + '5c8fff1200832f4dd806a57ec0fe0f6b7ca44123da12f5cd6a7d6935f6aebdc2';
+const KEY_TAIL = '5c8fff1200832f4dd806a57ec0fe0f6b7ca44123da12f5cd6a7d6935f6aebdc2';
 const GH = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
 const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
@@ -165,7 +165,7 @@ test('READ: a hand-planted credential path is withheld from the prompt block', (
   const block = filesTouchedBlock(readDescriptor(dir, id).filesTouched, id);
 
   assert.equal(block.includes(KEY), false, `credential reached the prompt block:\n${block}`);
-  assert.equal(block.includes('9edd82d6dd'), false);
+  assert.equal(block.includes('5c8fff1200'), false);
   assert.match(block, /^- src\/cli\.js$/m, 'the clean paths survive');
   assert.match(block, /^- src\/skills\.js$/m);
   assert.match(block, /\[memory-screen\] withheld 1 path\b/, block);

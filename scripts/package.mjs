@@ -69,7 +69,14 @@ function packageMac() {
   fs.mkdirSync(path.join(islandDest, '.build', 'release'), { recursive: true });
   fs.copyFileSync(path.join(pkg, 'Info.plist'), path.join(islandDest, 'Info.plist'));
   if (fs.existsSync(path.join(pkg, 'AppIcon.icns'))) fs.copyFileSync(path.join(pkg, 'AppIcon.icns'), path.join(islandDest, 'AppIcon.icns'));
-  fs.copyFileSync(path.join(pkg, '.build', 'release', 'OxIsland'), path.join(islandDest, '.build', 'release', 'OxIsland'));
+  // The island and the programs it uses, the same set as a Mac that builds ox itself:
+  // OxHands types and clicks for you, OxKeys asks for Touch ID, OxSubvox is Silent words.
+  for (const bin of ['OxIsland', 'OxHands', 'OxKeys', 'OxSubvox']) {
+    const from = path.join(pkg, '.build', 'release', bin);
+    if (!fs.existsSync(from)) throw new Error(`${bin} was not built`);
+    fs.copyFileSync(from, path.join(islandDest, '.build', 'release', bin));
+    fs.chmodSync(path.join(islandDest, '.build', 'release', bin), 0o755);
+  }
   fs.cpSync(path.join(pkg, '.build', 'release', 'OxIsland_OxIsland.bundle'), path.join(islandDest, '.build', 'release', 'OxIsland_OxIsland.bundle'), { recursive: true });
   spawnSync('codesign', ['--force', '--deep', '-s', '-', app], { stdio: 'ignore' });
   const zip = path.join(OUT, `ox-mac-${ARCH}.zip`);

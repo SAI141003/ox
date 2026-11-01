@@ -135,14 +135,33 @@ export async function tryIt(prompt) {
 
 const freePort = () => new Promise((res) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
 
+// One server for your model, ever: its pid and port are kept here. Every ox start
+// used to launch another copy (17 of them, ~280 MB each, filled memory and disk).
+const SERVER_FILE = () => path.join(DIR(), 'server.json');
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+function runningServer() {
+  try { const s = JSON.parse(fs.readFileSync(SERVER_FILE(), 'utf8')); return s?.pid && alive(s.pid) ? s : null; } catch { return null; }
+}
+function stopStrays() {
+  // Any mlx_lm server from ox's own runtime that is not the recorded one.
+  const keep = runningServer()?.pid;
+  const r = spawnSync('pgrep', ['-f', `${RUNTIME()}/bin/python -m mlx_lm server`], { encoding: 'utf8' });
+  for (const pid of String(r.stdout ?? '').split('\n').map(Number).filter(Boolean)) if (pid !== keep) { try { process.kill(pid); } catch {} }
+}
+
 /** Serve it on this Mac and add it to ox's models as "my-model". */
-export async function useIt({ saveConfigDoc }) {
+export async function useIt({ saveConfigDoc, restart = true }) {
   const run = latestRun();
   if (!run) throw new Error('train it first');
-  if (server && server.exitCode === null) server.kill();
+  const cur = runningServer();
+  if (cur && !restart && cur.adapter === run.adapter) return { bot: 'my-model', port: cur.port };
+  if (cur) { try { process.kill(cur.pid); } catch {} }
+  fs.rmSync(SERVER_FILE(), { force: true });
+  stopStrays();
   const port = await freePort();
   server = spawn(PY(), ['-m', 'mlx_lm', 'server', '--model', run.base, '--adapter-path', run.adapter, '--host', '127.0.0.1', '--port', String(port)], { stdio: 'ignore', detached: true });
   server.unref();
+  fs.writeFileSync(SERVER_FILE(), JSON.stringify({ pid: server.pid, port, adapter: run.adapter, at: Date.now() }));
   saveConfigDoc((doc) => { doc.bots = { ...(doc.bots ?? {}), 'my-model': { provider: 'vllm', model: 'default_model', baseUrl: `http://127.0.0.1:${port}/v1`, chatOnly: true, desc: `Your own model · ${run.examples} examples · ${run.base.split('/').pop()}` } }; });
   return { bot: 'my-model', port };
 }
@@ -150,8 +169,10 @@ export async function useIt({ saveConfigDoc }) {
 /** At ox's start: "my-model" is in use but its local server is gone (a restart): serve it again. */
 export async function ensureServing({ readConfigDoc, saveConfigDoc }) {
   const bot = readConfigDoc().bots?.['my-model'];
-  if (!bot?.baseUrl || !latestRun() || !runtimeReady().ok) return false;
-  try { const r = await fetch(`${bot.baseUrl}/models`, { signal: AbortSignal.timeout(1500) }); if (r.ok) return false; } catch {}
-  await useIt({ saveConfigDoc });
+  if (!bot?.baseUrl || !latestRun()) return false;
+  // Already running (or still loading): nothing to start. Strays from before are stopped.
+  if (runningServer()) { stopStrays(); return false; }
+  if (!runtimeReady().ok) return false;
+  await useIt({ saveConfigDoc, restart: false });
   return true;
 }

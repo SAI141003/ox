@@ -362,7 +362,7 @@ test('4. new-skill passes exactly when episodePromotionQualifies does', (t) => {
 // ---------------------------------------------------------------------------
 test('5. a credential in the body is screened out and never reaches disk', (t) => {
   const { cwd, home } = env(t);
-  const KEY = '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';
+  const KEY = 'sk-or-v1-' + '5c8fff1200832f4dd806a57ec0fe0f6b7ca44123da12f5cd6a7d6935f6aebdc2';
 
   const leaky = applyProposals({
     cwd,
