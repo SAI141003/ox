@@ -29,6 +29,9 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
+      - name: Install dependencies
+        shell: bash
+        run: npm ci --omit=dev --no-audit --no-fund
       - name: Unit tests
         shell: bash
         # The suite still has known failures on Windows: report them there
@@ -46,7 +49,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "ox $GITHUB_REF_NAME" --notes "Downloads: OX.app for macOS, a zip for Windows, a tarball for Linux. See the README."
-          gh release upload "$GITHUB_REF_NAME" dist/ox-*.zip dist/ox-*.tar.gz --clobber 2>/dev/null || gh release upload "$GITHUB_REF_NAME" dist/ox-* --clobber
+          # Only the files this machine built (Windows makes no .tar.gz; a folder is never uploaded).
+          files=$(find dist -maxdepth 1 -type f \( -name 'ox-*.zip' -o -name 'ox-*.tar.gz' \))
+          test -n "$files"
+          gh release upload "$GITHUB_REF_NAME" $files --clobber
       - name: Keep the build (manual runs)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v5

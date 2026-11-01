@@ -624,3 +624,24 @@ test('20. a subagent offer keeps the mailbox even when its task text is not abou
   const leadDelegating = names(narrowToolSchemas(offer, { message: 'delegate the migration check to a subagent' }));
   for (const n of AGENT_MESSAGE_TOOLS) assert.ok(leadDelegating.includes(n), `${n} kept when the lead delegates`);
 });
+
+test('a steer from the app goes in as your message at the next step, and is shown', async (t) => {
+  const dir = sandbox(t, 'ox-steer-');
+  const inbox = [];
+  let turnNo = 0;
+  const { port, requests } = await startMock(t, () => {
+    turnNo += 1;
+    if (turnNo === 1) { inbox.push('use tabs, not spaces'); return { calls: [{ id: 'c1', name: 'list_dir', args: { path: '.' } }] }; }
+    return { text: 'done with tabs' };
+  });
+  const events = await drain(runAgent({
+    target: { provider: 'custom', baseUrl: `http://127.0.0.1:${port}/v1`, model: 'mock-model' },
+    messages: [{ role: 'user', content: 'format the file' }],
+    ctx: { cwd: dir, yolo: true, _appSteerInbox: async () => inbox.splice(0) },
+    config: {}, auxTarget: null, maxIterations: 4,
+  }));
+  assert.deepEqual(events.filter((e) => e.type === 'steer').map((e) => e.text), ['use tabs, not spaces']);
+  const second = requests[1].messages;
+  assert.equal(second.at(-1).role, 'user');
+  assert.equal(second.at(-1).content, 'use tabs, not spaces');
+});

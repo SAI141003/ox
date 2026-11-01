@@ -1,10 +1,12 @@
 // Typing, pressing and clicking by voice: the words, parsed (nothing is pressed under test).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseIntent, parseChain, doOffline } from '../src/offline.js';
+import { parseIntent, parseChain, doOffline, resolveApp } from '../src/offline.js';
 import { parseControl } from '../src/voice-control.js';
 
-test('the owner\'s example: open an app, type, press send', () => {
+test('the owner\'s example: open an app, type, press send', (t) => {
+  // Opening an app needs it installed: a fresh build machine has no Claude app.
+  if (process.platform === 'darwin' && !resolveApp('claude code')) { t.skip('the Claude app is not installed here'); return; }
   const c = parseChain('open claude code and type create an army image and press send');
   assert.deepEqual(c.map((x) => x.intent), ['app', 'type', 'send']);
   assert.equal(c[1].text, 'create an army image');

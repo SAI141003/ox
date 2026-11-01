@@ -90,13 +90,14 @@ function selfHealMode() {
  * Look, fix, and (when code is at fault) try a change with ox's own model.
  * → the new state: { at, env, code, done, attempt?: { id, accepted, why, files }, offer? }
  */
-export async function heal({ evolve = null, now = Date.now(), log = () => {}, since = null } = {}) {
+export async function heal({ evolve = null, now = Date.now(), log = () => {}, since = null, run = spawnSync } = {}) {
   const prev = readState();
   let text = '';
   try { text = fs.readFileSync(LOG(), 'utf8'); } catch {}
   const from = since ?? Math.max(prev.lookedAt ?? 0, now - DAY);
   const found = diagnose(text, { since: from });
-  const done = fixEnvironment(found.env);
+  // Never under a test: resetting permissions there reset the real island's microphone.
+  const done = fixEnvironment(found.env, { run: process.env.NODE_TEST_CONTEXT ? () => ({ status: 0 }) : run });
   const state = { lookedAt: now, env: found.env, code: found.code.map(({ id, why, count }) => ({ id, why, count })), done, offer: prev.offer ?? null };
   const goal = goalFor(found.code);
   if (goal && selfHealMode() !== 'off') {

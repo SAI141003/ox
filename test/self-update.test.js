@@ -90,6 +90,8 @@ test('self-update: tracked local edits and a failed native rebuild both leave th
   assert.equal(dirty.ok, false);
   assert.match(dirty.why, /edited tracked files/);
 
+  // The island is native to macOS: only there is it rebuilt (and rolled back when that fails).
+  if (process.platform !== 'darwin') return;
   // Start a clean checkout for the native-build rollback assertion.
   const fresh = setup();
   fresh.ship('// changed native source\n', 'native update', 'desktop/island/Sources/x.swift');

@@ -1523,6 +1523,20 @@ async function* runAgentLoop(opts = {}) {
       }
     }
 
+    // 2b. YOUR STEERS from the app (Steer now): a note you typed while ox worked.
+    //    Added to the conversation as your own message, at this safe point (after a
+    //    tool returned, before the next request), and shown in the chat. It used to
+    //    ride in the system prompt for one turn: invisible, and lost when the run was
+    //    already writing its answer.
+    if (typeof toolCtx?._appSteerInbox === 'function') {
+      let notes = [];
+      try { notes = await toolCtx._appSteerInbox(); } catch {}
+      for (const note of notes) {
+        history.push({ role: 'user', content: note });
+        yield { type: 'steer', text: note };
+      }
+    }
+
     if (iters >= maxIterations) {
       yield { type: 'error', error: `iteration budget exhausted (${maxIterations})` };
       break;

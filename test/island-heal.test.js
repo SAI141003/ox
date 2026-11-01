@@ -34,7 +34,7 @@ test('island heal: a change that measured better is offered, applied and restart
     fs.writeFileSync(path.join(home, 'island.log'), LOG.replace(/2026-10-31/g, new Date().toISOString().slice(0, 10)));
     const H = await import('../src/island-heal.js');
     const goals = [];
-    const st = await H.heal({ evolve: { evolve: async ({ goal }) => { goals.push(goal); return { id: 'a1', accepted: true, why: '+1 test', files: ['src/offline.js'] }; } } });
+    const st = await H.heal({ run: () => ({ status: 0 }), evolve: { evolve: async ({ goal }) => { goals.push(goal); return { id: 'a1', accepted: true, why: '+1 test', files: ['src/offline.js'] }; } } });
     assert.equal(goals.length, 1);
     assert.equal(st.offer.id, 'a1');
     let restarted = false;

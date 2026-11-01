@@ -1041,7 +1041,7 @@ async function handleChatCompletions(req, res) {
     const steerState = appSessionId && fromApp ? { pending: [], startedAt: Date.now() } : null;
     if (steerState) {
       appChatSteers.set(appSessionId, steerState);
-      ctx._steerInbox = async () => steerState.pending.splice(0).join('\n\n');
+      ctx._appSteerInbox = async () => steerState.pending.splice(0);
     }
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -1083,6 +1083,9 @@ async function handleChatCompletions(req, res) {
           // A run that stops (missing key, provider refusal, budget) says why,
           // instead of ending as an empty reply.
           sendSSE(res, { error: { message: String(event.error), type: 'server_error' } });
+        } else if (event.type === 'steer') {
+          // Your steer, applied: the chat shows it where it went in.
+          sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'steer', text: String(event.text ?? '') } });
         } else if (event.type === 'thinking') {
           sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'thinking', chars: Number(event.chars) || 0 } });
         } else if (event.type === 'tool-start' || event.type === 'tool-end') {
@@ -1101,6 +1104,8 @@ async function handleChatCompletions(req, res) {
         const media = await mediaMadeSince(turnStarted, { run: runId, said });
         if (media.length) sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'media', media } });
       }
+      // Steers that arrived after the last step: not lost, handed back to be sent next.
+      if (steerState?.pending.length) sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'steer-late', texts: steerState.pending.splice(0) } });
       sendSSE(res, createChatCompletionChunk(targetModel, '', true, totalUsage));
       sendSSEDone(res);
       res.end();
@@ -3076,7 +3081,9 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       reportExposure(exposure);
       const actualPort = server.address()?.port ?? port;
       console.log(`[serve] listening on http://${host}:${actualPort}`);
-      if (!process.env.NODE_TEST_CONTEXT) warmCaches();
+      // Only for the app's and the island's own server: warming asks your account CLIs
+      // (claude, codex…), which write their own files; a plain `ox serve` (scripts, tests) does not.
+      if (!process.env.NODE_TEST_CONTEXT && (process.env.OX_APP === '1' || process.env.OX_ISLAND_SERVER === '1')) warmCaches();
       console.log(`[serve] web chat: http://${host.includes(':') ? `[${host}]` : host}:${actualPort}/`);
       const announced = announceServer(actualPort, host, !!(config.apiKey ?? apiKey()));
       // The memory layer's sleep pass: 30 s after start, then every 6 hours, off the request path.

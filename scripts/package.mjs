@@ -30,7 +30,8 @@ function run(cmd, args, opts = {}) {
 // The ox engine itself: the same files `npm pack` ships.
 function copyOx(dest) {
   fs.mkdirSync(dest, { recursive: true });
-  for (const item of ['bin', 'src', 'skills', 'docs', 'README.md', 'LICENSE', 'package.json']) {
+  // node_modules: ox's runtime dependencies (the workflow installs them with npm ci --omit=dev).
+  for (const item of ['bin', 'src', 'skills', 'docs', 'evals', 'node_modules', 'README.md', 'LICENSE', 'package.json']) {
     const from = path.join(ROOT, item);
     if (fs.existsSync(from)) fs.cpSync(from, path.join(dest, item), { recursive: true });
   }

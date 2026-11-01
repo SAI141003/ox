@@ -1933,7 +1933,7 @@
       b.disabled = true;
       try {
         await postJson('/ox/chat/steer', { sessionId: c.id, text: item.text });
-        c.queued.splice(index, 1); renderQueued(); saveConvos(); toast('Steer sent · applied at the next safe step');
+        c.queued.splice(index, 1); renderQueued(); saveConvos(); toast('Steering: it appears in the chat when ox takes it, at its next step');
       } catch (e) { toast(`Could not steer: ${e.message}`); b.disabled = false; }
     }));
     syncSendButton();
@@ -2077,6 +2077,17 @@
             updateUsageMeter(c);
           }
           if (ox?.type === 'thinking') reply.thinking = Number(ox.chars) || 0;
+          // Your steer went in: it shows in the chat as yours, just before this answer.
+          if (ox?.type === 'steer' && ox.text) {
+            const at = c.messages.indexOf(reply);
+            c.messages.splice(at >= 0 ? at : c.messages.length, 0, { role: 'user', content: String(ox.text), steer: true });
+            saveConvos(); if (current === c.id) renderChat();
+          }
+          // It came after ox's last step: sent next, first in line.
+          if (ox?.type === 'steer-late' && Array.isArray(ox.texts) && ox.texts.length) {
+            c.queued = [...ox.texts.map((text) => ({ text, files: '', pics: [], model: reply.model ?? null, mode: null })), ...(c.queued || [])];
+            saveConvos(); if (current === c.id) renderQueued();
+          }
           if (ox?.type === 'media' && Array.isArray(ox.media)) reply.media = [...new Set([...(reply.media || []), ...ox.media])];
           if (ox?.type === 'tool-start' && Array.isArray(ox.plan)) reply.plan = ox.plan;
           else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '', ...(ox.file ? { file: ox.file } : {}), ...(ox.files ? { files: ox.files } : {}) });

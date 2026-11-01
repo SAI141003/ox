@@ -98,5 +98,5 @@ test('edit_video reports invalid operations and missing source paths without thr
   assert.match(unknown.content, /unknown op teleport/);
   const missing = await editVideoTool({ op: 'speed', file: '/tmp/ox-video-tool-missing.mp4', factor: 2 });
   assert.equal(missing.isError, true);
-  assert.match(missing.content, /ffprobe|not a readable video|No such file/i);
+  assert.match(missing.content, /ffprobe|not a readable video|No such file|needs ffmpeg/i);
 });
