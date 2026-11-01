@@ -1231,7 +1231,10 @@
   // Text-only chat content is kept locally so conversations survive reopening.
   // Users can opt out in Settings; incognito chats are never persisted.
   const storedConvos = () => { const rows = store.get('ox.convos', []); return Array.isArray(rows) ? rows : []; };
-  let convos = (prefs.saveChatHistory ? storedConvos() : []).map((c) => ({ at: Number(String(c.id).slice(1)) || Date.now(), ...c }));
+  // A chat saved mid-run (the page reloaded, the app restarted) is not running any
+  // more: its dot and its half-written reply used to spin forever.
+  const settle = (c) => ({ ...c, running: false, messages: (c.messages || []).map((m) => (m.pending ? { ...m, pending: false, ...(m.content ? {} : { error: 'Interrupted: ox restarted before this finished. Send it again.' }) } : m)) });
+  let convos = (prefs.saveChatHistory ? storedConvos() : []).map((c) => settle({ at: Number(String(c.id).slice(1)) || Date.now(), ...c }));
   let current = convos.find((c) => !c.archived)?.id ?? null;
   let convoSeq = 0;
   const newConvoId = () => `c${Date.now()}-${++convoSeq}`;

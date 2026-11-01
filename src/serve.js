@@ -1056,8 +1056,13 @@ async function handleChatCompletions(req, res) {
     if (body.ox_mode || autoPick || uiSwap) sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'mode', mode: turnMode.mode, routed: turnMode.routed, reason: turnMode.reason, route,
       ...(uiSwap ? { model: uiSwap.to, modelWhy: `${uiSwap.from} is too small to draw an interactive answer, so ${uiSwap.to} drew this one` } : autoPick ? { model: autoPick.id, modelWhy: autoPick.why } : {}) } });
 
+    // Stop means stop: when you press Stop (or close the page) the connection closes,
+    // and the run ends at once. It used to keep working, editing and spending, unseen.
+    const stopRun = new AbortController();
+    res.on('close', () => { if (!res.writableEnded) stopRun.abort(); });
     try {
-      for await (const event of runAgent({ target, messages, ctx, config, maxIterations: 40 })) {
+      for await (const event of runAgent({ target, messages, ctx, config, maxIterations: 40, signal: stopRun.signal })) {
+        if (stopRun.signal.aborted) break;
         const delta = textDelta(event);
         const last = delta || finalText(event, fullContent);
         if (last) {
