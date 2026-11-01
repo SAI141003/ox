@@ -292,6 +292,7 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
   ctx.mode = turnMode.mode;
   // Auto, and a plain question ("what is a closure in javascript"): answered
   // with no tools and the short answer prompt, like the app does.
+  if (target?.chatOnly) { turnMode.mode = 'ask'; ctx.mode = 'ask'; ctx.noTools = true; }
   if (turnMode.routed && (smallTalkKind(prompt) || (turnMode.mode === 'ask' && isPlainQuestion(prompt))) && !initialMessages.length) {
     turnMode.mode = 'ask'; ctx.mode = 'ask';
     ctx.noTools = true;

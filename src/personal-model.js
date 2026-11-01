@@ -175,3 +175,34 @@ export function evaluateAdapterPromotion({ baseline, candidate, safetyPassed, he
   if (!blockers.length && next < base) blockers.push('Candidate did not beat or match the baseline on held-out data.');
   return { promotable: blockers.length === 0, blockers, baseline: Number.isFinite(base) ? base : null, candidate: Number.isFinite(next) ? next : null, heldOutExamples: Number.isFinite(n) ? n : null };
 }
+
+/** Every approved example in full (input and output), for training. */
+export function approvedExamples({ home } = {}) {
+  const { dataset } = personalModelPaths({ home });
+  try { return fs.readFileSync(dataset, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; }
+}
+
+export function removeExample(id, { home } = {}) {
+  const { dataset } = personalModelPaths({ home });
+  const kept = approvedExamples({ home }).filter((r) => r.id !== id);
+  fs.writeFileSync(dataset, kept.map((r) => JSON.stringify(r)).join('\n') + (kept.length ? '\n' : ''), { mode: 0o600 });
+  return kept.length;
+}
+
+/**
+ * Many examples pasted at once, each approved by the paste itself: JSON lines
+ * ({"input","output"} or {"prompt","completion"}), or blocks of "Q: … / A: …".
+ */
+export function parseExamples(text) {
+  const out = [];
+  for (const line of String(text ?? '').split('\n')) {
+    const t = line.trim();
+    if (!t.startsWith('{')) continue;
+    try { const j = JSON.parse(t); const i = j.input ?? j.prompt ?? j.question; const o = j.output ?? j.completion ?? j.answer; if (i && o) out.push({ input: String(i), output: String(o) }); } catch {}
+  }
+  if (out.length) return out;
+  const re = /(?:^|\n)\s*(?:Q|User|Input)\s*:\s*([\s\S]*?)\n\s*(?:A|Assistant|Output)\s*:\s*([\s\S]*?)(?=\n\s*(?:Q|User|Input)\s*:|$)/gi;
+  let m;
+  while ((m = re.exec(String(text ?? ''))) !== null) if (m[1].trim() && m[2].trim()) out.push({ input: m[1].trim(), output: m[2].trim() });
+  return out;
+}

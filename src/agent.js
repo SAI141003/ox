@@ -1786,7 +1786,10 @@ async function* runAgentLoop(opts = {}) {
         yield* flushHookEvents();
         const offered = toolessTargets.has(targetLabel(activeTarget)) ? [] : tools;
         let thinkingChars = 0, thinkingAt = Date.now();
-        for await (const raw of streamVia(activeTarget, { model: am, messages: history, tools: offered, signal })) {
+        // Your own small model (chatOnly): just the conversation. ox's system prompt
+        // (folder, project, rules) pulled its answers away from what it was taught.
+        const sent = activeTarget?.chatOnly ? history.filter((m) => m.role !== 'system') : history;
+        for await (const raw of streamVia(activeTarget, { model: am, messages: sent, tools: activeTarget?.chatOnly ? [] : offered, signal })) {
           const ev = normalizeStreamEvent(raw);
           if (!ev) continue;
           if (ev.kind === 'thinking') {

@@ -91,6 +91,8 @@
   .nav button:hover .beside, .nav button:focus-visible .beside { opacity: 1; }
   .nav button .beside:hover { color: var(--text); background: var(--raise); }
   .side-top { display: flex; align-items: center; gap: 10px; padding: 14px 14px 6px; }
+  /* In the OX app the window's close, minimise and zoom buttons sit over the top-left corner: the logo row starts below them. */
+  html.native-desktop-pet .side-top { padding-top: 38px; }
   .brand { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 16px; letter-spacing: -.02em; flex: 1; }
   .brand .brand-word { width: 26px; height: 26px; }
   .brand-tile { width: 24px; height: 24px; border-radius: 7px; background: linear-gradient(180deg, #3A3A3C 0%, #1C1C1E 42%, #0B0B0C 100%); color: #FFFFFF; box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 0 0 1px rgba(255,255,255,.06); display: grid; place-items: center; flex: none; }
@@ -4125,7 +4127,7 @@ files: [src/billing/**]
     ['environments', 'Agent environments', 'monitor', 'isolated computer docker cua space sandbox virtual machine container'],
     ['local', 'Local models', 'cpu', 'ollama lm studio offline ram hugging face', true],
     ['models', 'Models', 'mode', 'model picker show hide list enable disable'],
-    ['personal-model', 'Personal model', 'brain', 'train fine tune lora adapter learn preferences approved chats studio recipes evaluation'],
+    ['personal-model', 'Your own model', 'brain', 'train fine tune lora adapter learn preferences approved chats studio recipes evaluation'],
     ['shortcuts', 'Keyboard shortcuts', 'keyboard', 'keys hotkeys'],
     ['archived', 'Archived chats', 'archive', 'archive restore'],
     ['group', 'System'],
@@ -4500,45 +4502,35 @@ files: [src/billing/**]
         const item = (x) => `<div class="srow"><div class="l"><b>${esc(x.title)}</b><span>${esc(x.detail)}</span>${x.caveat ? `<span class="small muted">${esc(x.caveat)}</span>` : ''}</div><span class="badge ${badge(x.state)}">${esc(stateLabel(x.state))}</span></div>`;
         el.innerHTML = `${mobileBack}<div class="shead">${icon('monitor')}Agent environments</div><p class="sdesc">Where an agent can actually run. Ox does not call a workspace folder, browser profile, or installed app a separate computer.</p><div class="sblock"><div class="section-cap cap">Runtime availability</div>${item(E.local)}${item(E.docker)}${item(E.cua)}</div><div class="sblock"><div class="section-cap cap">Isolation boundary</div><p class="small muted">Use a Docker backend for disposable command isolation when Docker is available. A persistent GUI machine requires a configured external runtime such as Cua; it is not simulated by this settings page.</p></div>`;
       } else if (sec === 'personal-model') {
-        const P = await getJson('/ox/personal-model');
-        const S = P.state;
-        const plan = P.plan;
-        const approvedSources = [['preferences', 'Preferences'], ['approved_chats', 'Approved chats'], ['studio_recipes', 'Studio recipes']].filter(([key]) => S.sources[key]);
-        const blockers = plan.blockers?.length ? `<ul class="small muted" style="margin:8px 0 0;padding-left:18px">${plan.blockers.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<p class="small ok">Ready to prepare a local adapter dataset.</p>';
-        el.innerHTML = `${mobileBack}<div class="shead">${icon('brain')}Personal model</div><p class="sdesc">Create a private <b>LoRA adapter</b> for an open-weight model. Ox never silently trains on chats, screen activity, or Studio media. You select sources, approve every example, evaluate on held-out examples, then manually promote or reject a version.</p>
-          <div class="sblock"><div class="section-cap cap">Collection</div>
-            ${row('Enable personal-model collection', S.enabled ? 'Armed. It still collects nothing until you add individually approved examples.' : 'Off. Turning it on requires your explicit consent.', sw('pm-enabled', S.enabled))}
-            ${row('Adapter name', 'A local name; it does not change the base model.', `<input class="field" id="pm-name" maxlength="64" value="${esc(S.name)}">`)}
-            ${row('Open-weight base model', 'Choose a compatible local/open model before preparing training. Base weights are never changed.', `<input class="field" id="pm-base" maxlength="200" placeholder="e.g. Qwen/Qwen2.5-7B-Instruct" value="${esc(S.baseModel)}">`)}
-            ${row('Preferences', 'Only examples you explicitly add from preferences.', sw('pm-preferences', !!S.sources.preferences))}
-            ${row('Approved chats', 'Only individual chat excerpts you explicitly approve — never all chat history.', sw('pm-chats', !!S.sources.approved_chats))}
-            ${row('Studio recipes', 'Only recipe metadata you explicitly add. Original media is never collected automatically.', sw('pm-studio', !!S.sources.studio_recipes))}
-            <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn primary" id="pm-save">Save collection settings</button></div>
-          </div>
-          <div class="sblock"><div class="section-cap cap">Training readiness</div><p class="small muted">${esc(plan.method)}</p><p class="small muted">${esc(plan.runtime.detail)}</p><div class="chipline"><span class="badge">${esc(String(plan.dataset.examples))} approved examples</span><span class="badge">${plan.dataset.heldOutRecommended ? `${esc(String(plan.dataset.heldOutRecommended))} held out recommended` : '50 minimum before training'}</span><span class="badge">${esc(S.status)}</span></div>${blockers}</div>
-          <div class="sblock"><div class="section-cap cap">Add one approved example</div><p class="small muted">Review both fields before saving. This is the only way Ox adds training text; enabling a source never imports history automatically.</p>
-            ${approvedSources.length ? `<label class="small muted">Source<select class="field" id="pm-example-source">${approvedSources.map(([key, label]) => `<option value="${esc(key)}">${esc(label)}</option>`).join('')}</select></label>
-              <label class="small muted" style="display:block;margin-top:8px">User input<textarea class="field" id="pm-example-input" rows="3" maxlength="12000" placeholder="The request or preference you want the adapter to learn"></textarea></label>
-              <label class="small muted" style="display:block;margin-top:8px">Preferred response<textarea class="field" id="pm-example-output" rows="3" maxlength="12000" placeholder="The response or behavior you approve"></textarea></label>
-              <label class="small muted" style="display:flex;gap:8px;align-items:flex-start;margin-top:10px"><input type="checkbox" id="pm-example-approved">I reviewed this exact example and approve adding it to this local dataset.</label>
-              <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn" id="pm-add-example" ${S.enabled ? '' : 'disabled'}>Add approved example</button></div>` : '<p class="small muted">Choose and save at least one source above before adding an example.</p>'}
-          </div>
-          <div class="sblock"><div class="section-cap cap">Safety boundary</div><p class="small muted">A personal adapter can suggest work, but it cannot update Ox, Studio, prompts, code, or itself. Every training run and promotion requires an explicit later action; automatic self-modification is not available.</p></div>`;
-        $('pm-save').onclick = async () => {
-          const enabled = $('pm-enabled').checked;
-          if (enabled && !S.enabled && !(await askSure('Turn on personal-model collection? Ox will still collect nothing until you individually approve examples.', 'Turn on'))) return;
-          try {
-            await postJson('/ox/personal-model', { action: 'save', enabled, consent: enabled ? true : undefined, name: $('pm-name').value, baseModel: $('pm-base').value, sources: { preferences: $('pm-preferences').checked, approved_chats: $('pm-chats').checked, studio_recipes: $('pm-studio').checked } });
-            toast(enabled ? 'Personal model collection is armed' : 'Personal model collection is off'); renderSection();
-          } catch (e) { toast(e.message); }
-        };
-        $('pm-add-example')?.addEventListener('click', async () => {
-          if (!$('pm-example-approved').checked) { toast('Review and approve this exact example first.'); return; }
-          try {
-            await postJson('/ox/personal-model', { action: 'add-example', source: $('pm-example-source').value, input: $('pm-example-input').value, output: $('pm-example-output').value, approved: true });
-            toast('Approved example saved locally.'); renderSection();
-          } catch (e) { toast(e.message); }
-        });
+        // Your own model in four steps (src/personal-train.js): choose, teach, train, use.
+        const V = await postJson('/ox/personal-model', { action: 'view' });
+        const base = V.state.baseModel, n = V.plan.dataset.examples, J = V.job, R = V.run;
+        const step = (num, title, done, body) => `<div class="sblock"><div class="section-cap cap" style="display:flex;gap:8px;align-items:center"><span class="badge ${done ? 'ok' : ''}">${done ? '✓' : num}</span>${title}</div>${body}</div>`;
+        const busy = J.running ? `<p class="small" style="margin:8px 0 0">${esc(J.step)}${J.progress ? ` · ${Math.round(J.progress * 100)}%` : ''}</p><div style="height:6px;border-radius:3px;background:var(--line);margin-top:6px"><div style="height:6px;border-radius:3px;background:var(--accent,#4d8dff);width:${Math.round((J.progress || 0.03) * 100)}%"></div></div>` : J.error ? `<p class="small err">${esc(J.error)}</p>` : '';
+        el.innerHTML = `${mobileBack}<div class="shead">${icon('brain')}Your own model</div><p class="sdesc">Teach a small model to answer the way you want, on this Mac. Nothing leaves it.</p>
+          ${step(1, 'Pick a base model', !!base, `<div style="display:grid;gap:6px">${V.bases.map((m) => `<label class="srow" style="cursor:pointer"><div class="l"><b>${esc(m.name)}</b><span>${esc(m.size)} · ${esc(m.note)}</span></div><input type="radio" name="pm-base" value="${esc(m.id)}" ${base === m.id ? 'checked' : ''}></label>`).join('')}</div>`)}
+          ${step(2, `Teach it · ${n} of ${V.min}+ examples`, n >= V.min, `<p class="small muted" style="margin:0 0 8px">A question, and the answer you want. Paste many at once: <code>Q: …</code> then <code>A: …</code>, or JSON lines.</p>
+            <textarea class="field" id="pm-q" rows="2" placeholder="Question"></textarea><textarea class="field" id="pm-a" rows="2" placeholder="The answer you want" style="margin-top:6px"></textarea>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px"><button class="btn ghost" id="pm-paste">Paste many…</button><button class="btn" id="pm-add">Add</button></div>
+            <div id="pm-bulk" hidden style="margin-top:8px"><textarea class="field" id="pm-bulk-t" rows="6" placeholder="Q: How do I greet a customer?&#10;A: Hi! Thanks for reaching out — how can I help?&#10;Q: …&#10;A: …"></textarea><div style="display:flex;justify-content:flex-end;margin-top:6px"><button class="btn" id="pm-bulk-add">Add all</button></div></div>
+            ${V.examples.length ? `<details style="margin-top:8px"><summary class="small muted">See your ${n} examples</summary><div class="os-scroll" style="max-height:220px">${V.examples.slice().reverse().map((x) => `<div class="srow"><div class="l"><span>${x.inputChars + x.outputChars} characters · ${esc(new Date(x.approvedAt).toLocaleDateString())}</span></div><button class="btn ghost small" data-pm-rm="${esc(x.id)}">Remove</button></div>`).join('')}</div></details>` : ''}`)}
+          ${step(3, 'Train it', !!R, !V.runtime.ok
+            ? `<p class="small muted" style="margin:0 0 8px">First time only: installs the trainer (about 250 MB).</p><button class="btn" id="pm-install" ${J.running ? 'disabled' : ''}>Install trainer</button>${J.kind === 'install' ? busy : ''}`
+            : `<p class="small muted" style="margin:0 0 8px">${R ? `Last trained ${esc(new Date(R.at).toLocaleString())} on ${R.examples} examples.` : 'A few minutes. The base model downloads the first time.'}</p><button class="btn primary" id="pm-train" ${J.running || !base || n < V.min ? 'disabled' : ''}>${R ? 'Train again' : 'Train'}</button>${!base ? '<span class="small muted" style="margin-left:8px">pick a base model first</span>' : n < V.min ? `<span class="small muted" style="margin-left:8px">${V.min - n} more examples needed</span>` : ''}${J.kind === 'train' ? busy : ''}`)}
+          ${step(4, 'Try it and use it', false, R ? `<div style="display:flex;gap:8px"><input class="field" id="pm-try-q" placeholder="Ask it something" style="flex:1"><button class="btn" id="pm-try">Try</button></div><div class="small" id="pm-try-a" style="white-space:pre-wrap;margin-top:8px"></div>
+            <div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn primary" id="pm-use">Use in ox</button></div><p class="small muted" style="margin:6px 0 0">Adds it to your models as <b>my-model</b>.</p>` : '<p class="small muted" style="margin:0">After training.</p>')}`;
+        const go = async (body, msg) => { try { const r = await postJson('/ox/personal-model', body); if (msg) toast(typeof msg === 'function' ? msg(r) : msg); renderSection(); return r; } catch (e) { toast(e.message); } };
+        el.querySelectorAll('input[name="pm-base"]').forEach((r) => (r.onchange = () => go({ action: 'choose', base: r.value }, 'Base model chosen')));
+        $('pm-add').onclick = () => { if (!$('pm-q').value.trim() || !$('pm-a').value.trim()) { toast('Write a question and its answer'); return; } go({ action: 'add-one', input: $('pm-q').value, output: $('pm-a').value }, 'Added'); };
+        $('pm-paste').onclick = () => { $('pm-bulk').hidden = !$('pm-bulk').hidden; if (!$('pm-bulk').hidden) $('pm-bulk-t').focus(); };
+        $('pm-bulk-add').onclick = () => { const t = $('pm-bulk-t').value.trim(); if (t) go({ action: 'add-many', text: t }, (r) => `${r.added} examples added`); };
+        el.querySelectorAll('[data-pm-rm]').forEach((b) => (b.onclick = () => go({ action: 'remove', id: b.dataset.pmRm }, 'Removed')));
+        if ($('pm-install')) $('pm-install').onclick = () => go({ action: 'install' });
+        if ($('pm-train')) $('pm-train').onclick = () => go({ action: 'train' });
+        if ($('pm-try')) $('pm-try').onclick = async () => { $('pm-try-a').textContent = 'Thinking…'; try { const r = await postJson('/ox/personal-model', { action: 'try', prompt: $('pm-try-q').value }); $('pm-try-a').textContent = r.answer; } catch (e) { $('pm-try-a').textContent = e.message; } };
+        if ($('pm-use')) $('pm-use').onclick = () => go({ action: 'use' }, 'my-model is in your models now');
+        // While installing or training, the page follows along.
+        if (J.running) setTimeout(() => { if (document.getElementById('pm-q')) renderSection(); }, 2000);
       } else if (sec === 'server') {
         const W = await getJson('/ox/workspace');
         const S = W.server;

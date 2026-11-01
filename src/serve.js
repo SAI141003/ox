@@ -980,7 +980,8 @@ async function handleChatCompletions(req, res) {
     ...(agentDef || liveUi || howTo ? { personaBlock: [agentDef ? agentPersonaBlock(agentDef) : '', liveUi, howTo].filter(Boolean).join('\n\n') } : {}),
     ...(agentDef ? { agentName: agentDef.name } : {}),
     ...(agentDef?.backend ? { backend: parseBackendSpec(agentDef.backend) } : {}),
-    ...(Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools }
+    ...(target?.chatOnly ? { noTools: true }
+      : Array.isArray(agentDef?.tools) ? { allowedTools: agentDef.tools }
       : turnMode.media ? { onlyTools: ['create_media'] }
       // A drawn answer searches only when web search is switched on: "price" in
       // "compare phones in a table" sent a 3B model off to the YouTube tool.
@@ -2134,6 +2135,8 @@ export function sweepTemp({ dir = os.tmpdir(), now = Date.now(), maxAgeMs = 86_4
 function warmCaches() {
   setTimeout(() => {
     sweepTemp();
+    // Your own model, served again after a restart (src/personal-train.js).
+    import('./personal-train.js').then((T) => T.ensureServing({ readConfigDoc, saveConfigDoc })).catch(() => {});
     Promise.resolve().then(() => cachedBrief()).catch(() => {});
     accountsCached().catch(() => {});
     import('./usage-log.js').then((U) => { codeCache['code:30'] ??= { at: Date.now(), v: U.codeChanges({ days: 30 }) }; }).catch(() => {});
@@ -2693,7 +2696,29 @@ const ROUTES = [
     if (b.action === 'save') return { state: P.savePersonalModelState(b), plan: P.trainingPlan(), examples: P.personalModelDataset() };
     if (b.action === 'add-example') return { example: P.addTrainingExample(b), state: P.personalModelState(), plan: P.trainingPlan(), examples: P.personalModelDataset() };
     if (b.action === 'promotion-check') return P.evaluateAdapterPromotion(b);
-    throw new Error('action: save, add-example, or promotion-check');
+    // The simple flow (src/personal-train.js): choose, add, train, try, use.
+    const T = await import('./personal-train.js');
+    const view = () => ({ state: P.personalModelState(), plan: P.trainingPlan(), examples: P.personalModelDataset(), job: T.jobState(), runtime: T.runtimeReady(), run: T.latestRun(), bases: T.BASE_MODELS, min: T.MIN_EXAMPLES });
+    if (b.action === 'view') return view();
+    if (b.action === 'choose') { P.savePersonalModelState({ enabled: true, consent: true, name: 'my-model', baseModel: String(b.base ?? ''), sources: { preferences: true, approved_chats: true, studio_recipes: false } }); return view(); }
+    if (b.action === 'add-many') {
+      const rows = P.parseExamples(b.text);
+      if (!rows.length) throw new Error('no examples found: one per line as {"input":"…","output":"…"}, or Q: … then A: …');
+      if (!P.personalModelState().enabled) P.savePersonalModelState({ enabled: true, consent: true, sources: { preferences: true, approved_chats: true, studio_recipes: false } });
+      for (const r of rows) P.addTrainingExample({ source: 'preferences', input: r.input, output: r.output, approved: true });
+      return { added: rows.length, ...view() };
+    }
+    if (b.action === 'add-one') {
+      if (!P.personalModelState().enabled) P.savePersonalModelState({ enabled: true, consent: true, sources: { preferences: true, approved_chats: true, studio_recipes: false } });
+      P.addTrainingExample({ source: 'preferences', input: b.input, output: b.output, approved: true });
+      return view();
+    }
+    if (b.action === 'remove') { P.removeExample(String(b.id ?? '')); return view(); }
+    if (b.action === 'install') { T.install(); return view(); }
+    if (b.action === 'train') { T.train({ base: P.personalModelState().baseModel, examples: P.approvedExamples() }); return view(); }
+    if (b.action === 'try') return { answer: await T.tryIt(String(b.prompt ?? '')) };
+    if (b.action === 'use') return { ...(await T.useIt({ saveConfigDoc })), ...view() };
+    throw new Error('action: view, choose, add-one, add-many, remove, install, train, try or use');
   }) },
   { method: 'POST', pattern: /^\/ox\/studio\/create\/?$/, handler: appRoute(async (b) => (await appApi()).studioCreate(b)) },
   { method: 'POST', pattern: /^\/ox\/studio\/?$/, handler: appRoute(async (b) => (await appApi()).studioAction(b)) },
