@@ -1532,7 +1532,8 @@ async function* runAgentLoop(opts = {}) {
       let notes = [];
       try { notes = await toolCtx._appSteerInbox(); } catch {}
       for (const note of notes) {
-        history.push({ role: 'user', content: note });
+        // Said plainly as a change to the task: models finished their old plan otherwise.
+        history.push({ role: 'user', content: `${note}\n\n(I added this while you were working. Change what you are doing to include it before you finish.)` });
         yield { type: 'steer', text: note };
       }
     }

@@ -643,5 +643,5 @@ test('a steer from the app goes in as your message at the next step, and is show
   assert.deepEqual(events.filter((e) => e.type === 'steer').map((e) => e.text), ['use tabs, not spaces']);
   const second = requests[1].messages;
   assert.equal(second.at(-1).role, 'user');
-  assert.equal(second.at(-1).content, 'use tabs, not spaces');
+  assert.match(second.at(-1).content, /^use tabs, not spaces\n\n\(I added this while you were working/);
 });
