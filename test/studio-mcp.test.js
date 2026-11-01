@@ -127,7 +127,7 @@ test('models_explore says what is ready; recipes and video ops are reachable', a
   assert.equal(await st.call('explainer_video', { title: 'T', steps: ['A: a', 'B: b'] }), 'explainer done: /x.mp4 (2 slides, 12 s)');
 });
 
-test('the MCP server: initialize, list 16 tools, calls answer independently', async () => {
+test('the MCP server: initialize, list 19 tools, calls answer independently', async () => {
   const input = new PassThrough(), output = new PassThrough();
   const got = [];
   output.on('data', (d) => String(d).split('\n').filter(Boolean).forEach((l) => got.push(JSON.parse(l))));
@@ -144,7 +144,7 @@ test('the MCP server: initialize, list 16 tools, calls answer independently', as
   await new Promise((r) => setTimeout(r, 30));
   const by = (id) => got.find((m) => m.id === id);
   assert.equal(by(1).result.serverInfo.name, 'ox-studio');
-  assert.equal(by(2).result.tools.length, 17);
+  assert.equal(by(2).result.tools.length, 19);
   assert.ok(by(2).result.tools.some((t) => t.name === 'compose_video'));
   assert.equal(by(3), undefined, 'the slow wait has not answered yet');
   assert.equal(by(4).result.content[0].text, 'ok models_explore');

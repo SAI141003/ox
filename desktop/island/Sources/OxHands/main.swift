@@ -15,10 +15,12 @@
 //   ox-hands at <x> <y>
 //   ox-hands press --app <app> --path 0.3.1
 //   ox-hands click <x> <y> [--double]
+//   ox-hands find <text> [--app <app>]   words on screen (Vision), for unnamed controls
 //   ox-hands type <text> [--app <app>]
 //   ox-hands key <code> [--mods cmd,shift,option,ctrl] [--times N] [--app <app>]
 import AppKit
 import CoreImage
+import Vision
 import ApplicationServices
 import Foundation
 
@@ -33,7 +35,19 @@ func opt(_ name: String) -> String? {
 var started = Date()
 func ms() -> Int { Int(Date().timeIntervalSince(started) * 1000) }
 
-let accessHint = "macOS has not given ox Accessibility. Open System Settings › Privacy & Security › Accessibility and turn on the app ox runs in (OX Island, OX, or your terminal), then ask again."
+/// The app macOS charges this process to (who started it): the one that needs Accessibility.
+let responsibleApp: String = {
+    var pid = getppid()
+    for _ in 0..<12 {
+        if let a = NSRunningApplication(processIdentifier: pid), a.bundleURL != nil, let n = a.localizedName { return n }
+        var info = kinfo_proc(); var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, info.kp_eproc.e_ppid > 1 else { break }
+        pid = info.kp_eproc.e_ppid
+    }
+    return "OX"
+}()
+let accessHint = "macOS has not given \(responsibleApp) Accessibility, so I can't type or click. Open System Settings › Privacy & Security › Accessibility, turn on \(responsibleApp) (and OX Island), then ask again."
 
 // MARK: apps and windows
 
@@ -52,13 +66,16 @@ func frontApp() -> NSRunningApplication? { frontPid().flatMap { NSRunningApplica
 func pump(_ seconds: Double = 0) { RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(seconds)) }
 
 func runningApp(_ name: String) -> NSRunningApplication? {
-    let n = name.lowercased()
+    // Names compared without invisible marks: WhatsApp calls itself "\u{200E}WhatsApp"
+    // (a left-to-right mark), so "WhatsApp" never matched and it was "not an app".
+    let clean = { (s: String?) -> String in (s ?? "").unicodeScalars.filter { !($0.properties.isDefaultIgnorableCodePoint || $0.properties.generalCategory == .format) }.map(String.init).joined().lowercased() }
+    let n = clean(name)
     // Regular apps first; a background one (OX Island, menu-bar apps) only by its name.
     let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy != .prohibited }
         .sorted { ($0.activationPolicy == .regular ? 0 : 1) < ($1.activationPolicy == .regular ? 0 : 1) }
-    return apps.first { $0.localizedName?.lowercased() == n }
+    return apps.first { clean($0.localizedName) == n }
         ?? apps.first { $0.bundleIdentifier?.lowercased() == n }
-        ?? apps.first { ($0.localizedName?.lowercased() ?? "").hasPrefix(n) }
+        ?? apps.first { clean($0.localizedName).hasPrefix(n) }
 }
 
 func attr(_ el: AXUIElement, _ a: String) -> AnyObject? {
@@ -100,7 +117,9 @@ func activate(_ name: String) -> NSRunningApplication? {
     if let a = app, a.activationPolicy != .regular { return a }
     // Already in front: nothing to wait for (the common case between two steps),
     // but a window parked by Stage Manager is brought back.
-    if let a = app, frontPid() == a.processIdentifier { raiseWindow(a); return a }
+    // In front with a window: nothing to wait for. In front with none (closed with ⌘W,
+    // like WhatsApp often is): fall through, so `open` gives it its window back.
+    if let a = app, frontPid() == a.processIdentifier, !windows(AXUIElementCreateApplication(a.processIdentifier)).isEmpty { raiseWindow(a); return a }
     let hasWindow = app.map { !windows(AXUIElementCreateApplication($0.processIdentifier)).isEmpty } ?? false
     if app == nil || !hasWindow {
         let url = app?.bundleURL ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: name)
@@ -261,7 +280,8 @@ func handle(_ args: [String]) -> [String: Any] {
     do {
         guard let cmd = argv.first else { try emit(["error": "usage: ox-hands serve | trusted | activate | list | at | press | click | type | key"]) }
         if cmd == "trusted" { try emit(["trusted": AXIsProcessTrusted()]) }
-        if !AXIsProcessTrusted() { try emit(["error": accessHint, "access": false]) }
+        // Bringing an app forward needs no Accessibility (NSRunningApplication / NSWorkspace).
+        if !AXIsProcessTrusted() && cmd != "activate" { try emit(["error": accessHint, "access": false]) }
         switch cmd {
         case "activate":
             let wasFront = argv.count > 1 ? (runningApp(argv[1]).map { frontPid() == $0.processIdentifier } ?? false) : false
@@ -364,6 +384,36 @@ func handle(_ args: [String]) -> [String: Any] {
             guard let png = rep.representation(using: .png, properties: [:]) else { try emit(["error": "no PNG"]) }
             try png.write(to: URL(fileURLWithPath: argv[2]))
             try emit(["done": "qr", "file": argv[2], "ms": ms()])
+
+        case "find":
+            // Words on screen, for controls Accessibility has no name for (an icon
+            // with a label beside it, a web app's div): the front window is
+            // captured and read with Vision; each match comes back as a screen rect.
+            guard argv.count > 1 else { try emit(["error": "find <text> [--app <app>]"]) }
+            let want = argv[1].lowercased()
+            guard let app = targetApp(), let w = frontWindow(AXUIElementCreateApplication(app.processIdentifier)),
+                  let f = frame(pos: attr(w, kAXPositionAttribute), size: attr(w, kAXSizeAttribute)) else { try emit(["error": "no window to look in"]) }
+            let file = NSTemporaryDirectory() + "ox-find-\(getpid()).png"
+            defer { try? FileManager.default.removeItem(atPath: file) }
+            let cap = Process()
+            cap.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            cap.arguments = ["-x", "-R", "\(Int(f[0])),\(Int(f[1])),\(Int(f[2])),\(Int(f[3]))", file]
+            try? cap.run(); cap.waitUntilExit()
+            guard let img = NSImage(contentsOfFile: file)?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                try emit(["error": "could not see the screen: allow OX Island in System Settings › Privacy & Security › Screen Recording"])
+            }
+            let req = VNRecognizeTextRequest()
+            req.recognitionLevel = .accurate
+            try? VNImageRequestHandler(cgImage: img).perform([req])
+            var found: [[String: Any]] = []
+            for o in req.results ?? [] {
+                guard let c = o.topCandidates(1).first, c.string.lowercased().contains(want) else { continue }
+                // Just the words asked for, when Vision can place them inside the line.
+                let r = c.string.lowercased().range(of: want).flatMap { try? c.boundingBox(for: $0) }?.boundingBox ?? o.boundingBox
+                found.append(["text": c.string, "x": f[0] + r.minX * f[2], "y": f[1] + (1 - r.maxY) * f[3], "w": r.width * f[2], "h": r.height * f[3], "exact": c.string.lowercased() == want])
+            }
+            found.sort { ($0["exact"] as? Bool ?? false) && !($1["exact"] as? Bool ?? false) }
+            try emit(["app": app.localizedName ?? "", "matches": found, "ms": ms()])
 
         case "move":
             // Only the pointer (hover), no click.

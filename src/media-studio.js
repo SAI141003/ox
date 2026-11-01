@@ -253,7 +253,12 @@ export function history({ limit = 200 } = {}) {
       try { const r = JSON.parse(l); byId.set(r.id, { ...byId.get(r.id), ...r }); } catch {}
     }
   } catch {}
-  return [...byId.values()].filter((r) => !r.deleted).sort((a, b) => b.at - a.at).slice(0, limit);
+  // A job left queued or running by a run that was stopped never finishes: after
+  // an hour it is shown as interrupted instead of waiting forever in the gallery.
+  const now = Date.now();
+  return [...byId.values()].filter((r) => !r.deleted)
+    .map((r) => (['queued', 'running', 'in_progress'].includes(r.status) && now - (r.at ?? now) > 3_600_000 ? { ...r, status: 'interrupted', error: r.error ?? 'stopped before it finished' } : r))
+    .sort((a, b) => b.at - a.at).slice(0, limit);
 }
 
 export function note(row) {
@@ -398,6 +403,15 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
   if (!String(prompt).trim() && !Object.values(media).some((l) => l?.length)) throw new Error('a prompt is needed');
   const key = P.key ? String(env[P.key] ?? '').trim() : null;
   if (P.key && !key) throw new Error(`no ${P.label} key. Set ${P.key} (Settings › API keys)`);
+  // A full disk failed a video halfway (the evaluation, 2026-10-31): check first, and say so plainly.
+  {
+    let d = MEDIA_DIR();
+    while (!fs.existsSync(d) && path.dirname(d) !== d) d = path.dirname(d);
+    let free = null;
+    try { const st = fs.statfsSync(d); free = st.bavail * st.bsize; } catch {}
+    const need = /video|clip|restyle/i.test(`${model} ${settings?.op ?? ''}`) ? 2 * 2 ** 30 : 2 ** 30;
+    if (free != null && free < need) throw new Error(`not enough disk to make this: ${Math.round(free / 2 ** 20)} MB free, ${need / 2 ** 30} GB needed. Free some space (empty the Trash, remove old downloads) and try again`);
+  }
   const id = crypto.randomBytes(5).toString('hex');
   const dir = path.join(MEDIA_DIR(), id);
   const recipe = { id, at: Date.now(), provider, model, label: model, surface: 'image', prompt, settings, media, ...(run ? { run: String(run) } : {}) };

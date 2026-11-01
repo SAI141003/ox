@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { osCmd } from './tools/operator.js';
 import { codeChanges as codeChangesSync } from './usage-log.js';
-import { parseControl, performControl, protectTyped, browserInFront, activateApp } from './voice-control.js';
+import { parseControl, performControl, protectTyped, browserInFront, activateApp, openWhatsAppChat } from './voice-control.js';
 
 // ---- arithmetic without eval: + - * / ^ % ( ) and "x% of y" ----
 
@@ -84,7 +84,7 @@ export function installedApps(dirs = ['/Applications', '/Applications/Utilities'
   if (arguments.length === 0) appNames = names;
   return names;
 }
-const APP_ALIASES = { 'claude code': 'Claude', 'claude app': 'Claude', 'chat gpt': 'ChatGPT', outlook: 'Microsoft Outlook', word: 'Microsoft Word', excel: 'Microsoft Excel', powerpoint: 'Microsoft PowerPoint', teams: 'Microsoft Teams', onenote: 'Microsoft OneNote', 'vs code': 'Visual Studio Code', vscode: 'Visual Studio Code', code: 'Visual Studio Code', chrome: 'Google Chrome', 'google chrome': 'Google Chrome', mail: 'Mail', email: 'Mail', settings: 'System Settings', 'system preferences': 'System Settings', whatsapp: 'WhatsApp', terminal: 'Terminal' };
+const APP_ALIASES = { 'claude code': 'Claude', 'claude app': 'Claude', 'chat gpt': 'ChatGPT', outlook: 'Microsoft Outlook', word: 'Microsoft Word', excel: 'Microsoft Excel', powerpoint: 'Microsoft PowerPoint', teams: 'Microsoft Teams', onenote: 'Microsoft OneNote', 'vs code': 'Visual Studio Code', vscode: 'Visual Studio Code', code: 'Visual Studio Code', chrome: 'Google Chrome', 'google chrome': 'Google Chrome', mail: 'Mail', email: 'Mail', settings: 'System Settings', 'system preferences': 'System Settings', whatsapp: 'WhatsApp', terminal: 'Terminal', 'text editor': 'TextEdit', 'text edit': 'TextEdit', notepad: 'TextEdit', 'note pad': 'TextEdit', 'notes app': 'Notes', calculator: 'Calculator', 'calendar app': 'Calendar', browser: 'Safari', 'web browser': 'Safari', 'app store': 'App Store', finder: 'Finder', 'file explorer': 'Finder', files: 'Finder', music: 'Music', spotify: 'Spotify', photos: 'Photos', messages: 'Messages', imessage: 'Messages', facetime: 'FaceTime', zoom: 'zoom.us', slack: 'Slack', discord: 'Discord', perplexity: 'Perplexity', 'chat g p t': 'ChatGPT', 'chatgpt app': 'ChatGPT' };
 
 // Off macOS there is no app list to check against, so a name is trusted only
 // when it reads as one app's name: a few words, no "and" / "then" / comma, and
@@ -162,6 +162,28 @@ export function parseIntent(text) {
     || (m = /^(?:message|text)\s+(.+?)\s+on whats ?app\s*(?:,|:|\s(?:saying|that says|that))?\s+(.+)$/i.exec(t))
     || (m = /^whats ?app\s+(.+?)\s*(?:,|:|\s(?:saying|that says|that))\s+(.+)$/i.exec(t))) {
     return { intent: 'whatsapp', to: m[1].trim().replace(/^(?:my)\s+/i, ''), text: m[2].trim() };
+  }
+  // The ways people say it out loud (island log: "open WhatsApp and send a message hi
+  // to …" went to a screen agent for 92k tokens and opened Contacts). Text, then person.
+  {
+    const w = t.replace(/^(?:can you |could you |please |hey,? )+/i, '').replace(/[.?!]+$/, '');
+    const pairs = [
+      // send hi to Chirag on WhatsApp · open WhatsApp and send (a message) hi to Chirag
+      [/^(?:open whats ?app and )?(?:send|text|message|write)(?: an?)?(?: whats ?app)?(?: message)?(?: saying)?\s+["“]?(.+?)["”]?\s+to\s+(?:my\s+)?(.+?)(?:\s+on whats ?app)?$/i, 1, 2],
+      // send Chirag a message (on WhatsApp) saying hi · tell Chirag on WhatsApp hi
+      [/^(?:open whats ?app and )?(?:send|tell|text|message)\s+(?:my\s+)?(.+?)(?:\s+an?\s+(?:whats ?app\s+)?message)?(?:\s+on whats ?app)?\s*(?:,|:|\s(?:saying|that says|that))\s+(.+)$/i, 2, 1],
+      // whatsapp Chirag hi · message Chirag hi on WhatsApp
+      [/^(?:whats ?app|message|text)\s+(\S+(?:\s+\S+)?)\s+(.+?)\s+on whats ?app$/i, 2, 1],
+    ];
+    if (/whats ?app/i.test(w)) {
+      // A person and no words yet ("open WhatsApp and send a message to Ravi"): their chat opens, you say or type the rest.
+      const only = /^(?:open whats ?app and )?(?:send|write|text)(?: an?)?(?: whats ?app)? message to\s+(?:my\s+)?(.+?)(?:\s+on whats ?app)?$|^(?:open|go to)\s+(?:my\s+)?(.+?)['’]s? (?:whats ?app )?chat(?: on whats ?app)?$|^open whats ?app (?:chat )?(?:with|for)\s+(?:my\s+)?(.+)$/i.exec(w);
+      if (only) return { intent: 'whatsapp', to: (only[1] ?? only[2] ?? only[3]).trim(), text: '' };
+      for (const [re, ti, pi] of pairs) {
+        const x = re.exec(w);
+        if (x && x[ti] && x[pi] && !/^(?:a|an|the)?\s*message$/i.test(x[ti])) return { intent: 'whatsapp', to: x[pi].trim(), text: x[ti].trim() };
+      }
+    }
   }
   // Email, never sent from here: a draft opens in your mail app for you to send.
   // "… from gmail" / "from my work account" names the sending account (Mail asks otherwise).
@@ -248,6 +270,11 @@ export function parseIntent(text) {
   if ((m = /^(?:open|launch|start)\s+(?:the\s+)?(?:app\s+)?(.+?)(?:\s+app)?$/i.exec(t))) {
     const app = resolveApp(m[1]);
     if (app) return { intent: 'app', name: app };
+    // "open Word document", "open a new Excel sheet": the app, and for "new" a new
+    // document in it (⌘N). It was answered with "which document?" (island log).
+    const doc = /^(?:a\s+)?(new\s+)?(?:blank\s+)?(.+?)\s+(?:document|doc|file|sheet|spreadsheet|presentation|deck|note|window)$/i.exec(m[1].trim());
+    const named = doc && resolveApp(doc[2]);
+    if (named) return doc[1] ? { intent: 'app', name: named, then: { intent: 'key', key: 'cmd+n' } } : { intent: 'app', name: named };
   }
   if ((m = /^(?:what is|what's|calculate|calc|compute)\s+(.+)$/i.exec(low)) && calc(m[1]) !== null) return { intent: 'calc', expr: m[1], value: calc(m[1]) };
   if (calc(low) !== null && /[+\-*/^%]/.test(low)) return { intent: 'calc', expr: low, value: calc(low) };
@@ -604,11 +631,21 @@ export function perform(it) {
         const r = spawnSync('osascript', ['-e', 'on run argv', '-e', 'tell application "Contacts" to set ps to (every person whose name contains (item 1 of argv))', '-e', 'if ps is {} then return ""', '-e', 'tell application "Contacts" to set phs to value of phones of (item 1 of ps)', '-e', 'if phs is {} then return ""', '-e', 'return item 1 of phs', '-e', 'end run', it.to], { encoding: 'utf8', timeout: 8000 });
         phone = r.status === 0 ? String(r.stdout).replace(/[^\d]/g, '') : '';
       }
-      const url = `whatsapp://send?${phone ? `phone=${phone}&` : ''}text=${encodeURIComponent(it.text)}`;
+      // Not in Contacts (WhatsApp shows names Contacts does not have): found with WhatsApp's own
+      // search instead, then the words typed in the chat, never sent.
+      if (!phone && process.platform === 'darwin' && !process.env.NODE_TEST_CONTEXT && process.env.OX_OPERATOR_DRY !== '1') {
+        const o = openWhatsAppChat(it.to);
+        if (!o.ok) return o;
+        if (!it.text) return { ok: true, message: `${it.to}'s WhatsApp chat is open: say "type …" or type your message, then press Enter` };
+        const t = performControl({ intent: 'type', text: it.text, app: 'WhatsApp' }, { app: 'WhatsApp' });
+        return t.ok === false ? { ok: false, message: `${it.to}'s chat is open, but typing failed: ${t.message}` } : { ok: true, message: `${it.to}'s WhatsApp chat is open with your message typed in: press Enter to send it (ox never sends it)` };
+      }
+      const url = `whatsapp://send?${phone ? `phone=${phone}` : ''}${it.text ? `${phone ? '&' : ''}text=${encodeURIComponent(it.text)}` : ''}`;
       if (process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1') return { ok: true, message: `dry run: would open ${url}` };
       const r = run(process.platform === 'darwin' ? ['open', url] : null);
       if (!r.ok) return { ok: false, message: `WhatsApp did not open: ${r.err}. Is WhatsApp for Mac installed?` };
-      return { ok: true, message: phone ? `WhatsApp is open with your message to ${it.to} typed in: press Enter to send it (ox never sends it)` : `WhatsApp is open with your message typed in: pick ${it.to}'s chat and press Enter (ox never sends it)` };
+      if (!it.text) return { ok: true, message: phone ? `${it.to}'s WhatsApp chat is open: say "type …" or type your message, then press Enter` : `WhatsApp is open. I couldn't find "${it.to}" in your Contacts: pick the chat, then say "type …"` };
+      return { ok: true, message: phone ? `WhatsApp is open with your message to ${it.to} typed in: press Enter to send it (ox never sends it)` : `WhatsApp is open with your message typed in. I couldn't find "${it.to}" in your Contacts: pick the chat and press Enter (ox never sends it)` };
     }
     case 'unread': {
       if (process.platform !== 'darwin') return { ok: false, message: 'reading Mail is macOS only for now' };
@@ -658,7 +695,13 @@ export function perform(it) {
       const r = run(osCmd('open_url', it.url));
       return r.ok ? { ok: true, message: `opened ${it.url}` } : { ok: false, message: r.err };
     }
-    case 'app': { const viaHands = activateApp(it.name); if (viaHands) return viaHands; const r = run(osCmd('open_app', it.name)); return r.ok ? { ok: true, message: `opened ${it.name}` } : { ok: false, message: `could not open "${it.name}": ${r.err}` }; }
+    case 'app': {
+      const viaHands = activateApp(it.name);
+      const r = viaHands ?? (() => { const o = run(osCmd('open_app', it.name)); return o.ok ? { ok: true, message: `opened ${it.name}` } : { ok: false, message: `could not open "${it.name}": ${o.err}` }; })();
+      // "open a new Word document": the app, then its New (⌘N).
+      if (r.ok && it.then) { const next = performControl({ ...it.then, app: it.name }, { app: it.name }); return next?.ok === false ? { ok: true, message: `${r.message}; a new document needs Accessibility (${next.message})` } : { ok: true, message: `${r.message} with a new document` }; }
+      return r;
+    }
     case 'volume': { const r = setVolume(it); return r.ok ? { ok: true, message: it.level != null ? `volume ${it.level}%` : `volume ${it.delta > 0 ? 'up' : 'down'}` } : { ok: false, message: r.err }; }
     case 'mute': {
       const r = process.platform === 'darwin' ? run(['osascript', '-e', `set volume ${it.on ? 'with' : 'without'} output muted`]) : process.platform === 'linux' ? run(['pactl', 'set-sink-mute', '@DEFAULT_SINK@', it.on ? '1' : '0']) : { ok: false, err: 'not supported here' };
@@ -673,8 +716,18 @@ export function perform(it) {
 // be one ox knows, or none is done (the whole goes to a model). A browser
 // followed by a site opens the site in that browser; "open chrome and youtube"
 // reads the bare second part as another open.
+const AI_CHAT = /^(chatgpt|chatgpt classic|claude|perplexity|gemini|grok|kimi|copilot|deepseek|meta ai)$/i;
+
 export function parseChain(text) {
-  const raw = String(text ?? '').trim().replace(/[.!?]+$/, '').replace(namePrefix(), '');
+  let raw = String(text ?? '').trim().replace(/[.!?]+$/, '').replace(namePrefix(), '').replace(/^(?:hey,?\s+|can you\s+|could you\s+|please\s+)+/i, '');
+  // "open ChatGPT and send a message hey, how are you": the words are typed there.
+  // An AI chat app gets them asked too (Return): that only asks a question. Any other
+  // app keeps them in the box for you to send.
+  const said = /^(open|launch|go to)\s+(.+?)\s+and\s+(?:send|write|ask)(?:\s+(?:it|him|her|them))?(?:\s+(?:a|the))?(?:\s+(?:message|prompt|question))?(?:\s*(?::|saying|that))?\s+(.+)$/i.exec(raw);
+  if (said && !/whats ?app/i.test(said[2])) {
+    const app = resolveApp(said[2]);
+    if (app) return [{ intent: 'app', name: app }, { intent: 'type', text: said[3].trim(), app, fresh: true, ...(AI_CHAT.test(app) ? { submit: true } : {}) }];
+  }
   // The words after "type" are the text, "and"s included: kept whole through the split.
   const typed = protectTyped(raw, { search: true });
   const t = typed.text;

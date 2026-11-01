@@ -97,6 +97,11 @@ export const TOOL_IMPLS = {
         await B.index();
         return { content: `brain: saved "${r.title}"${args.supersedes?.length ? ` (replaces ${args.supersedes.join(', ')}; kept as history)` : ''}`, isError: false };
       }
+      if (args.action === 'page') {
+        // A finished page (src/pages.js): a report, brief or update with its sources at the bottom.
+        const r = (await import('../pages.js')).savePage({ title: args.title, body: args.body, sources: Array.isArray(args.sources) ? args.sources : [], kind: args.kind ? String(args.kind) : 'report' });
+        return { content: `brain: page "${args.title}" saved (${r.sources} source${r.sources === 1 ? '' : 's'}); the owner opens it in the app under Pages or with ox pages open ${r.id}`, isError: false };
+      }
       const hits = await B.search(String(args.query ?? ''), { embed: await B.localEmbedder() });
       return { content: B.formatHits(hits), isError: false };
     } catch (e) { return { content: `brain: ${e.message}`, isError: true }; }
@@ -121,17 +126,19 @@ export const BUILTIN_SCHEMAS = [
   ...BOT_TOOL_SCHEMAS,
   {
     name: 'brain',
-    description: "Your long-term notes (ox brain, markdown that opens in Obsidian). action \"search\": what is known about something (decisions, facts about the user and projects, past research), current facts first, at most ~1,500 tokens. action \"note\": save something worth keeping; when it replaces an older note, name it in supersedes (the old one is kept as history).",
+    description: "Your long-term notes (ox brain, markdown that opens in Obsidian). action \"search\": what is known about something (decisions, facts about the user and projects, past research), current facts first, at most ~1,500 tokens. action \"note\": save something worth keeping; when it replaces an older note, name it in supersedes (the old one is kept as history). action \"page\": hand over a finished report, brief or update as a page (markdown body, cite sources as [1], [2] and list them in sources).",
     input_schema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['search', 'note'] },
+        action: { type: 'string', enum: ['search', 'note', 'page'] },
         query: { type: 'string', description: 'search: what to look up' },
         title: { type: 'string', description: 'note: a short, specific title' },
         body: { type: 'string', description: 'note: the fact, decision or finding; link related notes as [[Title]]' },
         tags: { type: 'array', items: { type: 'string' } },
         supersedes: { type: 'array', items: { type: 'string' }, description: 'note: titles of notes this replaces' },
         project: { type: 'string' },
+        sources: { type: 'array', items: { type: 'string' }, description: 'page: links or descriptions of where the facts came from, in [n] order' },
+        kind: { type: 'string', description: 'page: report, brief, handoff, update…' },
       },
       required: ['action'],
     },
@@ -234,7 +241,7 @@ export const BUILTIN_SCHEMAS = [
   {
     name: 'todo_write',
     description:
-      "Maintain your ordered task list for the current session; replaces the entire list each call. Each todo needs a non-empty content string and a status; priority is optional. When the status is blocked, blockedReason must say what is blocking it. Returns the rendered checklist with progress counts. Mark an item completed only when real work demonstrates it; an item with no supporting tool call stays unverified.",
+      "Maintain your ordered task list for the current session; replaces the entire list each call. Use it only for work of three or more steps (not for a question or a one-file fix), and update it when a step is done, not after every call: each update is a whole model turn. Each todo needs a non-empty content string and a status; priority is optional. When the status is blocked, blockedReason must say what is blocking it. Returns the rendered checklist with progress counts. Mark an item completed only when real work demonstrates it; an item with no supporting tool call stays unverified.",
     input_schema: {
       type: 'object',
       properties: {
@@ -295,6 +302,9 @@ export function listToolSchemas(ctx = {}, strictSchemas = false) {
     return strict ? offered.map((s) => applyStrictSchema(s, true)) : offered;
   };
 
+  // An answer-only turn gets no tools, whatever tool set the context carries
+  // (a terminal run carries ctx.allTools, which used to return before this check).
+  if (ctx.noTools === true) return [];
   // Subagent contexts pass a pre-filtered tool set via ctx.allTools or
   // ctx.subagentTools. Use it directly to avoid re-adding 'subagent' and to
   // preserve report_result injection.
@@ -695,7 +705,9 @@ function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, web
   return false;
 }
 // Words that mean a task has several steps or parts: planning and delegation stay offered.
-const PLANNING_SIGNAL = /\b(plan|planning|steps?|step by step|refactor|migrate|migration|across|every|all (?:the )?files|several|multiple|many|feature|implement|build|project|parallel|subagents?|delegate|investigate|audit|review|then|and then|todo|checklist)\b/i;
+const PLANNING_SIGNAL = /\b(plan|planning|steps?|step by step|refactor|migrate|migration|across|every|all (?:the )?files|several|multiple|many|feature|implement|build|project|parallel|subagents?|delegate|investigate|audit|review|todo|checklist)\b/i;
+// "then" was a planning word too: "fix it, then run the tests" kept the task
+// list on offer, and a slow model spent 5 of 13 turns rewriting it for a one-line fix.
 export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, strict = false, mode = null } = {}) {
   if (!Array.isArray(schemas)) return schemas;
   if (schemas.length <= NARROW_THRESHOLD) return schemas;
@@ -784,7 +796,9 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
   const concreteSingleOutput = explicitNewFile && !explicitMultiStepPlan;
   const shortNonPlanningTask = String(message).length < 220 && !PLANNING_SIGNAL.test(message);
   if (!isSubagentOffer && mode !== 'orchestrate' && (shortNonPlanningTask || concreteSingleOutput)) {
-    for (let i = filtered.length - 1; i >= 0; i--) if (filtered[i].name === 'todo_write' || filtered[i].name === 'subagent') filtered.splice(i, 1);
+    // critique asks a second model for a review (up to 90 s): a short task is checked by running it.
+    const askedForReview = /\b(review|critique|second opinion|feedback)\b/i.test(String(message));
+    for (let i = filtered.length - 1; i >= 0; i--) if (['todo_write', 'subagent', ...(askedForReview ? [] : ['critique'])].includes(filtered[i].name)) filtered.splice(i, 1);
   }
   const saved =
     estimateTokens(JSON.stringify(schemas)) - estimateTokens(JSON.stringify(filtered));

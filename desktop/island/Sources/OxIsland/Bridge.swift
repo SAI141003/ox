@@ -124,6 +124,8 @@ struct AgentSession: Identifiable, Equatable {
 final class OxBridge: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = [] { didSet { IslandLayout.busy = !sessions.isEmpty } }
     @Published var hovering = false
+    /// The last voice request and when: the same words again within 3 s are dropped.
+    var lastVoiceRequest: (key: String, at: Date)?
     /// True for the one launch animation at app start (LaunchScene).
     @Published var launching = true
     @Published var pinnedOpen = false
@@ -213,6 +215,14 @@ final class OxBridge: ObservableObject {
                 guard let self else { return false }
                 // "Pixie, play Billie Jean": the name is how you called it, not the request.
                 var text = Self.withoutName(raw)
+                // The same words twice within 3 s are one request (a mic, a hotkey and a tap
+                // can all end the same utterance): done once, not two or three times.
+                let key = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+                if let l = self.lastVoiceRequest, l.key == key, Date().timeIntervalSince(l.at) < 3 {
+                    IslandLog.write("duplicate dropped: \(text.prefix(80))")
+                    return true
+                }
+                self.lastVoiceRequest = (key, Date())
                 IslandLog.write("request: \"\(raw)\" → \"\(text)\" (live run: \(self.hasLiveRun))")
                 if let part = self.islandPart(text) {
                     guard let rest = part.rest else { MainActor.assumeIsolated { self.buddy.speak(part.said) }; return true }
@@ -224,21 +234,20 @@ final class OxBridge: ObservableObject {
                     self.writeForMe(w, request: text, shot: shots.first)
                     return true
                 }
-                // With a coding run open, an errand ("play Billie Jean", "volume
-                // down") is still done offline first: it never lands in that run.
-                if self.hasLiveRun {
-                    VoiceServer.ask(text, offlineOnly: true) { [weak self] r in
-                        guard let self else { return }
-                        if let r, r.handled { IslandLog.write("offline (live run open): \(r.say ?? "")"); MainActor.assumeIsolated { self.buddy.speak(r.say ?? "Done.") }; return }
-                        if !self.ask(text, imagePaths: shots, audioPath: audio) { self.chat.send(text, bridge: self) { reply in MainActor.assumeIsolated { self.buddy.speak(reply) } } }
-                    }
-                    return true
-                }
-                // No live run: the chat takes it. Small tasks are done offline; the
-                // rest runs ox with a model, whose approvals come to this island.
-                guard OxRunner.available, !text.isEmpty else { return false }
-                self.chat.send(text, bridge: self) { [weak self] reply in
-                    MainActor.assumeIsolated { self?.buddy.speak(reply) }
+                // Errands first, on their own path (Errands): never through a
+                // chat, a live run or an agent, never queued, and still done
+                // when the app's server is down. Only what is not an errand goes on.
+                guard OxRunner.available || VoiceServer.url() != nil, !text.isEmpty else { return false }
+                let live = self.hasLiveRun
+                Errands.run(text) { [weak self] r in
+                    guard let self else { return }
+                    if r.handled { IslandLog.write("errand: \(r.say)"); MainActor.assumeIsolated { self.buddy.speak(r.say) }; return }
+                    // A voice request is for ox's own assistant (the chat, whose approvals come to
+                    // this island), not for whatever run happens to be open: pushed into an open
+                    // coding or screen run, "send a message to Ravi" showed "Looking at your
+                    // screen…" and nothing happened. Only words addressed to that run go to it.
+                    if live, Self.addressesRun(text), self.ask(text, imagePaths: shots, audioPath: audio) { return }
+                    self.chat.send(text, bridge: self, onReply: { reply in MainActor.assumeIsolated { self.buddy.speak(reply) } }, triedOffline: true)
                 }
                 return true
             }
@@ -253,6 +262,12 @@ final class OxBridge: ObservableObject {
         DistributedNotificationCenter.default().addObserver(forName: .init("dev.ox.island.peek"), object: nil, queue: .main) { [weak self] n in
             self?.peek(for: Double((n.object as? String) ?? "") ?? 6)
             self?.objectWillChange.send()
+        }
+        // A background errand (typing, clicking) that failed after "Typing…" was said: say why.
+        NotificationCenter.default.addObserver(forName: .init("ox.errand.failed"), object: nil, queue: .main) { [weak self] n in
+            guard let self, let why = n.object as? String, !why.isEmpty else { return }
+            MainActor.assumeIsolated { self.buddy.speak(why) }
+            self.peek(for: 8)
         }
         DistributedNotificationCenter.default().addObserver(forName: .init("dev.ox.island.say"), object: nil, queue: .main) { [weak self] n in
             guard let self, let text = n.object as? String, !text.isEmpty else { return }
@@ -315,8 +330,43 @@ final class OxBridge: ObservableObject {
     /// starting) is tried again on each scan until it answers or its file is gone.
     private var knownSockets = Set<String>()
 
+    // Silent words (Subvox, ~/.ox/subvox/words.jsonl): an approval waiting is
+    // answered by a mouthed "yes"/"allow" (allow once) or "no"/"deny"/"stop".
+    // Only words Subvox accepted arrive here (its distance and margin gates),
+    // and only while its "Send words to ox" is on. Never "always allow".
+    private var silentOffset: UInt64?
+    static let silentAllow: Set<String> = ["yes", "allow", "approve", "ok", "okay"]
+    static let silentDeny: Set<String> = ["no", "deny", "stop", "cancel"]
+    private func readSilentWords() {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ox/subvox/words.jsonl")
+        guard let h = try? FileHandle(forReadingFrom: url) else { return }
+        defer { try? h.close() }
+        let end = (try? h.seekToEnd()) ?? 0
+        // Words said before the island started are history, not answers.
+        guard let from = silentOffset, from <= end else { silentOffset = end; return }
+        guard end > from else { return }
+        try? h.seek(toOffset: from)
+        let data = h.readDataToEndOfFile()
+        silentOffset = end
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+            guard let j = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any], let word = (j["word"] as? String)?.lowercased() else { continue }
+            if let at = j["at"] as? Double, Date().timeIntervalSince1970 - at > 10 { continue }
+            if let s = pendingSession, Self.silentAllow.contains(word) {
+                IslandLog.write("silent word: \(word) → allow once")
+                answer(s, .allow)
+            } else if let s = pendingSession, Self.silentDeny.contains(word) {
+                IslandLog.write("silent word: \(word) → deny")
+                answer(s, .deny)
+            } else {
+                IslandLog.write("silent word: \(word)")
+                peek(for: 2)
+            }
+        }
+    }
+
     private func scan() {
         readBrowse()
+        readSilentWords()
         knownSockets.formUnion(newSockets())
         for path in knownSockets where connections[path] == nil {
             if FileManager.default.fileExists(atPath: path) { connect(path) } else { knownSockets.remove(path) }
@@ -366,6 +416,8 @@ final class OxBridge: ObservableObject {
     /// Plan usage (Coucou's gauges): the most-used window of each plan.
     struct PlanGauge: Identifiable, Equatable { let id: String; let label: String; let window: String; let percent: Double; let resetsAt: Date? }
     @Published private(set) var gauges: [PlanGauge] = []
+    /// Dev aid (--render-header): plan gauges without polling.
+    func previewGauges(_ g: [PlanGauge]) { gauges = g }
     private var gaugesPolledAt = Date.distantPast
 
     private func pollGauges(port: Int) {
@@ -619,7 +671,7 @@ final class OxBridge: ObservableObject {
 
     /// What the notch says about updates: ask once, a new version, the steps while it updates, the result.
     struct UpdateCard: Equatable {
-        enum Kind: Equatable { case ask, available, working, done, failed }
+        enum Kind: Equatable { case ask, available, working, done, failed, fix }
         let kind: Kind
         let title: String
         let detail: String
@@ -661,9 +713,48 @@ final class OxBridge: ObservableObject {
         }.resume()
     }
 
+    // MARK: the island fixes itself (src/island-heal.js)
+
+    /// A change it made to its own code, measured better: offered here, applied only on Apply
+    /// (or by itself with "island": { "selfHeal": "auto" } in ~/.ox/config.json).
+    private var healPolledAt = Date.distantPast
+    private var healOfferId: String?
+    private func pollHeal(port: Int) {
+        guard Date().timeIntervalSince(healPolledAt) > 600, let url = URL(string: "http://127.0.0.1:\(port)/ox/island/heal") else { return }
+        healPolledAt = Date()
+        URLSession.shared.dataTask(with: url) { [weak self] data, resp, _ in
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let doc = data.flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }) else { return }
+            let offer = doc["offer"] as? [String: Any]
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard let offer, let id = offer["id"] as? String else {
+                    if self.updateCard?.kind == .fix { self.updateCard = nil }
+                    return
+                }
+                guard self.updateCard == nil || self.updateCard?.kind == .fix, self.healOfferId != id else { return }
+                self.healOfferId = id
+                self.updateCard = UpdateCard(kind: .fix, title: "I fixed something in myself", detail: "\(offer["why"] as? String ?? "From my own log.") Tests measured it better.")
+                self.peek(for: 10)
+            }
+        }.resume()
+    }
+
     /// Your answer on the update card: only this updates anything.
     func updateChoose(_ action: String) {
         switch action {
+        case "heal-apply":
+            updateCard = UpdateCard(kind: .working, title: "Applying my fix", detail: "A fast-forward onto the measured change, then the island restarts.")
+            post("/ox/island/heal", ["action": "apply"]) { _ in }
+        case "heal-dismiss":
+            updateCard = nil
+            post("/ox/island/heal", ["action": "dismiss"]) { _ in }
+        case "heal-diff":
+            if let id = healOfferId { OxRunner.run(["evolve", "diff", id], cwd: FileManager.default.homeDirectoryForCurrentUser) { _, out in
+                let f = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("ox-heal-\(id).diff")
+                try? out.write(to: f, atomically: true, encoding: .utf8)
+                DispatchQueue.main.async { NSWorkspace.shared.open(f) }
+            } }
         case "allow", "deny", "later", "ok", "auto":
             updateCard = nil
             post("/ox/update", ["action": action]) { _ in }
@@ -716,6 +807,7 @@ final class OxBridge: ObservableObject {
     /// and the day strip would stay empty until someone opened OX.app, so the
     /// island starts `ox serve` itself, on a free loopback port, at most once a minute.
     private var serverStartedAt = Date.distantPast
+    private var serverMissingSince: Date?
     private func startServerIfNeeded() {
         guard Date().timeIntervalSince(serverStartedAt) > 60, let ox = OxRunner.paths() else { return }
         serverStartedAt = Date()
@@ -749,14 +841,22 @@ final class OxBridge: ObservableObject {
         // The app's server says where it is in serve.json (`ox serve`) or app.json
         // (OX.app); a file whose process is gone is skipped.
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let docs = ["serve.json", "app.json"].compactMap { name -> [String: Any]? in
+        // OX.app's server first, as the voice path asks (VoiceServer.url): both must talk to the same one.
+        let docs = ["app.json", "serve.json"].compactMap { name -> [String: Any]? in
             guard let data = try? Data(contentsOf: home.appendingPathComponent(".ox/\(name)")),
                   let doc = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
             if let pid = doc["pid"] as? Int, kill(pid_t(pid), 0) != 0 { return nil }
             return doc
         }
         guard let port = docs.compactMap({ $0["port"] as? Int }).first,
-              let url = URL(string: "http://127.0.0.1:\(port)/ox/live") else { appPort = nil; dropAppSessions(keep: []); startServerIfNeeded(); return }
+              let url = URL(string: "http://127.0.0.1:\(port)/ox/live") else {
+            appPort = nil; dropAppSessions(keep: [])
+            // Gone for a moment while the app restarts its server: wait 15 s before starting another.
+            if serverMissingSince == nil { serverMissingSince = Date() }
+            if let since = serverMissingSince, Date().timeIntervalSince(since) > 15 { startServerIfNeeded() }
+            return
+        }
+        serverMissingSince = nil
         appPort = port
         Dictation.serverPort = port
         if Dictation.contextWords.isEmpty { Dictation.refreshContextWords() }
@@ -766,6 +866,7 @@ final class OxBridge: ObservableObject {
         pollOrg(port: port)
         pollMesh(port: port)
         pollUpdate(port: port)
+        pollHeal(port: port)
         pollDay(port: port)
         appPolling = true
         var req = URLRequest(url: url)
@@ -1411,6 +1512,12 @@ final class OxBridge: ObservableObject {
     /// Send a spoken question (and the screenshot) to the newest live run.
     /// False when no ox run is connected.
     /// An ox run with a socket that can take a message now.
+    /// Words meant for the open run ("tell the agent to …", "in this session …", "continue", "also fix …").
+    static func addressesRun(_ text: String) -> Bool {
+        let t = text.lowercased()
+        return t.range(of: #"^(tell|ask) (the |my )?(agent|run|session|claude|codex|ox run)\b|\b(this|the current|that) (run|session|task|code|repo|project|file|bug|test)\b|^(continue|keep going|go on|carry on|try again|retry|stop that|undo that)\b|^(also|and also|then) (fix|add|change|update|run|write|remove)\b"#, options: .regularExpression) != nil
+    }
+
     var hasLiveRun: Bool { sessions.contains { $0.closedAt == nil && $0.pending == nil && connections[$0.id] != nil } }
 
     func ask(_ text: String, imagePaths: [String], audioPath: String? = nil, voice: Bool = true, onReply: ((String) -> Void)? = nil) -> Bool {

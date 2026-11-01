@@ -226,7 +226,9 @@ export async function connectorGalleryView(env = process.env) {
   const { galleryView } = await import('./connector-gallery.js');
   const apps = (await import('./desktop-apps.js')).detectDesktopApps();
   const channels = Object.fromEntries((await messagingView(env)).map((c) => [c.id, c]));
-  return galleryView({ servers: readConfigDoc().mcpServers ?? {}, apps, channels, env });
+  let health = {};
+  try { health = (await import('./mcp.js')).readMcpHealth(); } catch {}
+  return galleryView({ servers: readConfigDoc().mcpServers ?? {}, apps, channels, env, health });
 }
 export async function addGalleryConnector(body = {}) {
   const { saveConfigDoc, readConfigDoc } = await import('./config.js');
@@ -442,13 +444,22 @@ export async function scheduledView() {
 
 // A new scheduled run from the app: the same screening, cost cap and refusals
 // as `ox schedule add`; the cadence in words ("every 30m", "daily at 9:00").
-export async function scheduleAdd({ prompt, when, enabled = true, cwd = process.cwd() } = {}) {
+export async function scheduleAdd({ prompt, when, enabled = true, cwd = process.cwd(), watch = [], maxCostUsd } = {}) {
   const sch = await import('./schedule.js');
   const cad = sch.parseNaturalCadence(String(when ?? ''));
   if (cad.refusal) throw new Error(cad.refusal);
-  const r = sch.addSchedule({ prompt: String(prompt ?? ''), cadence: cad.cadence, enabled: enabled === true, cwd });
+  const r = sch.addSchedule({ prompt: String(prompt ?? ''), cadence: cad.cadence, enabled: enabled === true, cwd, watch: Array.isArray(watch) ? watch.map(String) : [], ...(maxCostUsd != null ? { maxCostUsd: Number(maxCostUsd) } : {}) });
   if (r.refusal) throw new Error(r.refusal);
   return scheduledView();
+}
+
+// A routine from a description, for the Scheduled page (src/schedule-watch.js).
+export async function scheduleSuggest(text) {
+  const { suggestRoutine } = await import('./schedule-watch.js');
+  let model = null;
+  try { model = (await import('./config.js')).readConfigDoc().defaultBot ?? null; } catch {}
+  const r = suggestRoutine(String(text ?? ''), { defaultModel: model });
+  return { ...r, when: r.cadence.at ? `daily at ${r.cadence.at}` : `every ${r.cadence.every}` };
 }
 
 export async function setScheduleEnabled(id, enabled) {

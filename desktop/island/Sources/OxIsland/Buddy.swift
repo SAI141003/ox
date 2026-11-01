@@ -146,6 +146,25 @@ final class Buddy: NSObject, ObservableObject {
         }
     }
 
+    /// Why nothing was heard, and the fix. Exact digital silence is not a quiet
+    /// room: macOS hands an app zeros when its microphone permission belongs to
+    /// an older build (a rebuild changes an ad-hoc signature). Then the stale
+    /// permission is reset, so the next tap asks again and Allow takes.
+    func noSignalAdvice() -> String {
+        if peakInputLevel < 0.00001 {
+            for service in ["Microphone", "SpeechRecognition"] {
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+                p.arguments = ["reset", service, Bundle.main.bundleIdentifier ?? "dev.ox.island"]
+                try? p.run(); p.waitUntilExit()
+            }
+            IslandLog.write("voice: the microphone gave exact silence; reset OX Island's Microphone and Speech permissions so macOS asks again")
+            return "macOS gave me silence: my microphone permission was from an older build. I reset it. Tap the mic again and choose Allow. (Run ox island sign-setup once so updates keep it.)"
+        }
+        if peakInputLevel < 0.001 { return "No microphone signal reached OX Island. Select the right input in System Settings › Sound › Input, then try again." }
+        return "I couldn't transcribe that. Hold ⌃⌥Space, or click the mic, and talk again."
+    }
+
     func startListening() {
         guard phase != .listening else { return }
         // Its own voice must not be recorded: the natural voice stops too, not only the system one.
@@ -156,7 +175,13 @@ final class Buddy: NSObject, ObservableObject {
         starting = true
         heard = ""
         saying = ""
-        shot = Self.captureScreen()
+        // The screen is captured beside the microphone, not before it: done
+        // first, it held the mic back 0.25-0.45 s and the first words were lost.
+        shot = nil
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let s = Self.captureScreen()
+            DispatchQueue.main.async { self?.shot = s }
+        }
         SFSpeechRecognizer.requestAuthorization { status in
             DispatchQueue.main.async {
                 guard status == .authorized else {
@@ -199,14 +224,31 @@ final class Buddy: NSObject, ObservableObject {
         recordingURL = recording == nil ? nil : url
         let file = recording
         input.removeTap(onBus: 0)
+        // Automatic gain: a microphone with its input volume low (27% here) gave
+        // speech peaking near -34 dB, and both recognizers made up words from it.
+        // Speech is brought toward a 0.3 peak (at most ×16, never above 0.9);
+        // the gain follows the loudest recent sound and falls quickly on a shout.
+        var gain: Float = 1
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buf, _ in
+            let n = Int(buf.frameLength)
+            var rawPeak: Float = 0
+            if let chans = buf.floatChannelData {
+                for c in 0..<Int(buf.format.channelCount) { for i in 0..<n { rawPeak = max(rawPeak, abs(chans[c][i])) } }
+                if rawPeak > 0.002 {
+                    let want = min(16, max(1, 0.3 / rawPeak))
+                    gain = want < gain ? want : gain + (want - gain) * 0.05
+                }
+                if gain > 1.01 {
+                    for c in 0..<Int(buf.format.channelCount) { for i in 0..<n { chans[c][i] = max(-0.9, min(0.9, chans[c][i] * gain)) } }
+                }
+            }
             req.append(buf)
             try? file?.write(from: buf)
             guard let ch = buf.floatChannelData?[0] else { return }
-            let n = Int(buf.frameLength)
             var sum: Float = 0
             for i in 0..<n { sum += ch[i] * ch[i] }
-            let rms = Double(sqrt(sum / Float(max(n, 1))))
+            // The level shown and logged is the microphone's own (before the gain), so "no signal" stays true.
+            let rms = Double(sqrt(sum / Float(max(n, 1)))) / Double(max(gain, 1))
             DispatchQueue.main.async {
                 self?.peakInputLevel = max(self?.peakInputLevel ?? 0, rms)
                 self?.level = min(1, rms * 12)
@@ -238,6 +280,9 @@ final class Buddy: NSObject, ObservableObject {
         endWatch?.invalidate(); endWatch = nil
         handsFree = false
         guard phase == .listening else { return }
+        // Leave "listening" at once: a second stop in the next 1.5 s (key release,
+        // end of speech, a tap) ran this again and sent the same words 2-3 times.
+        phase = .thinking
         audio.stop()
         audio.inputNode.removeTap(onBus: 0)
         request?.endAudio()
@@ -260,8 +305,10 @@ final class Buddy: NSObject, ObservableObject {
                 }
             }
             IslandLog.write("voice heard: \"\(text)\" (final: \(self.finalHeard), recording: \(audioPath != nil), peak: \(String(format: "%.4f", self.peakInputLevel)))")
-            // Nothing heard live but there is a recording: whisper on this Mac listens to it again.
-            if text.isEmpty, let audioPath, let port = Dictation.serverPort, let u = URL(string: "http://127.0.0.1:\(port)/ox/voice/transcribe") {
+            // Nothing heard live, or the live recognizer never settled on its final
+            // words (a quiet microphone heard "open calculator" as "Advance"): whisper
+            // on this Mac listens to the recording again, and its words are used.
+            if text.isEmpty || !self.finalHeard, let audioPath, let port = Dictation.serverPort, let u = URL(string: "http://127.0.0.1:\(port)/ox/voice/transcribe") {
                 var req = URLRequest(url: u, timeoutInterval: 30)
                 req.httpMethod = "POST"
                 req.setValue("application/json", forHTTPHeaderField: "content-type")
@@ -272,10 +319,10 @@ final class Buddy: NSObject, ObservableObject {
                     DispatchQueue.main.async {
                         IslandLog.write("voice heard again from the recording: \"\(again)\"")
                         guard !again.isEmpty, !again.hasPrefix("[") else {
+                            // Whisper heard nothing either: the live words, if there were any.
+                            if !text.isEmpty, self.send?(text, self.shot.map { [$0] } ?? [], audioPath) == true { self.gesture = .think; return }
                             self.phase = .idle
-                            self.show(self.peakInputLevel < 0.001
-                                ? "No microphone signal reached OX Island. Select the right input in System Settings › Sound › Input, then try again."
-                                : "I couldn't transcribe that. Hold ⌃⌥Space, or click the mic, and talk again.")
+                            self.show(self.noSignalAdvice())
                             return
                         }
                         self.heard = again
@@ -287,9 +334,7 @@ final class Buddy: NSObject, ObservableObject {
             }
             // Nothing heard at all: say so (an empty request used to end as "can't find ox").
             guard !text.isEmpty else {
-                self.show(self.peakInputLevel < 0.001
-                    ? "No microphone signal reached OX Island. Select the right input in System Settings › Sound › Input, then try again."
-                    : "I couldn't transcribe that. Hold ⌃⌥Space, or click the mic, and talk again.")
+                self.show(self.noSignalAdvice())
                 return
             }
             guard self.send?(text, self.shot.map { [$0] } ?? [], audioPath) == true else {

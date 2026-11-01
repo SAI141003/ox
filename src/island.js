@@ -12,14 +12,26 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync as spawnSyncImported } from 'node:child_process';
 import { readConfigDoc, saveConfigDoc } from './config.js';
 
+const ISLAND_PKG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'desktop', 'island');
+
+/** Whether the island's sources changed since its last build (a restart only rebuilds then). */
+export function islandNeedsBuild(pkg = ISLAND_PKG) {
+  let built;
+  try { built = fs.statSync(path.join(pkg, '.build', 'release', 'OxIsland')).mtimeMs; } catch { return true; }
+  const newer = (dir) => { try { return fs.readdirSync(dir, { withFileTypes: true }).some((e) => { const f = path.join(dir, e.name); return e.isDirectory() ? newer(f) : fs.statSync(f).mtimeMs > built; }); } catch { return false; } };
+  return newer(path.join(pkg, 'Sources')) || (() => { try { return fs.statSync(path.join(pkg, 'Package.swift')).mtimeMs > built; } catch { return false; } })();
+}
+
 export const islandFile = (home = os.homedir()) => path.join(home, '.ox', 'island.json');
 
 /** PIDs of OX Island processes started from ox's own app bundle (exact path, not a name). */
 export function runningIslandPids(home = os.homedir()) {
   if (process.platform !== 'darwin') return [];
-  const exe = path.join(home, '.ox', 'island', 'OX Island.app', 'Contents', 'MacOS', 'OxIsland');
+  // The app bundle, and the build folder (an island started from there by a
+  // fallback launch or an old version): a restart must stop both, or two run.
+  const exes = [path.join(home, '.ox', 'island', 'OX Island.app', 'Contents', 'MacOS', 'OxIsland'), path.join(ISLAND_PKG, '.build', 'release', 'OxIsland'), path.join(ISLAND_PKG, '.build', 'debug', 'OxIsland')];
   const r = spawnSyncImported('ps', ['-axo', 'pid=,comm='], { encoding: 'utf8' });
-  return String(r.stdout ?? '').split('\n').map((l) => /^\s*(\d+)\s+(.+)$/.exec(l)).filter((m) => m && m[2].trim() === exe).map((m) => Number(m[1])).filter((p) => p !== process.pid);
+  return String(r.stdout ?? '').split('\n').map((l) => /^\s*(\d+)\s+(.+)$/.exec(l)).filter((m) => m && exes.includes(m[2].trim())).map((m) => Number(m[1])).filter((p) => p !== process.pid);
 }
 
 const configDir = (home) => path.join(home, '.ox');
@@ -95,6 +107,40 @@ export function buildIslandApp({ bin, pkg, home = os.homedir() }) {
   fs.writeFileSync(path.join(contents, 'Info.plist'), plist);
   // A fixed local identity when there is one, so macOS keeps the island's permissions across updates.
   signApp(app, 'dev.ox.island', spawnSyncImported);
+  return app;
+}
+
+/**
+ * "Silent words" (Subvox, github.com/joeblau/subvox, MIT) as its own small app,
+ * ~/.ox/island/Silent Words.app, so macOS asks for Motion, the microphone and
+ * speech under its own name (a binary started from a terminal is charged to the
+ * terminal). → the app's path, or null when OxSubvox is not built.
+ */
+export function buildSubvoxApp({ pkg, home = os.homedir() }) {
+  const bin = path.join(pkg, '.build', 'release', 'OxSubvox');
+  if (!fs.existsSync(bin)) return null;
+  const app = path.join(home, '.ox', 'island', 'Silent Words.app');
+  fs.rmSync(app, { recursive: true, force: true });
+  fs.mkdirSync(path.join(app, 'Contents', 'MacOS'), { recursive: true });
+  fs.mkdirSync(path.join(app, 'Contents', 'Resources'), { recursive: true });
+  fs.copyFileSync(bin, path.join(app, 'Contents', 'MacOS', 'OxSubvox'));
+  fs.chmodSync(path.join(app, 'Contents', 'MacOS', 'OxSubvox'), 0o755);
+  const icns = path.join(pkg, 'AppIcon.icns');
+  if (fs.existsSync(icns)) fs.copyFileSync(icns, path.join(app, 'Contents', 'Resources', 'AppIcon.icns'));
+  const kv = (k, v) => `\t<key>${k}</key>\n\t<string>${v}</string>`;
+  fs.writeFileSync(path.join(app, 'Contents', 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+${[['CFBundleIdentifier', 'dev.ox.silentwords'], ['CFBundleName', 'Silent Words'], ['CFBundleDisplayName', 'Silent Words'], ['CFBundleExecutable', 'OxSubvox'], ['CFBundlePackageType', 'APPL'], ['CFBundleShortVersionString', '0.1.0'], ['CFBundleVersion', '1'], ['LSMinimumSystemVersion', '14.0'],
+    ...(fs.existsSync(icns) ? [['CFBundleIconFile', 'AppIcon']] : []),
+    ['NSMotionUsageDescription', 'Silent Words reads AirPods head motion to turn silently mouthed words into text.'],
+    ['NSMicrophoneUsageDescription', 'Silent Words records microphone audio alongside motion and transcribes whispered speech for comparison.'],
+    ['NSSpeechRecognitionUsageDescription', 'Silent Words transcribes microphone audio on this Mac as a reference for the motion decoder.']].map(([k, v]) => kv(k, v)).join('\n')}
+</dict>
+</plist>
+`);
+  signApp(app, 'dev.ox.silentwords', spawnSyncImported);
   return app;
 }
 
@@ -178,6 +224,45 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
     log('OX Island is on');
     return cmdIsland(['start'], { log, err });
   }
+  // The island fixes itself from its own log (src/island-heal.js).
+  if (action === 'heal') {
+    const H = await import('./island-heal.js');
+    const sub = args[1] ?? 'now';
+    const show = (st) => {
+      for (const e of st.env ?? []) log(`· ${e.why}${e.count > 1 ? ` (${e.count}×)` : ''}`);
+      for (const c of st.code ?? []) log(`· ${c.why}${c.count > 1 ? ` (${c.count}×)` : ''}`);
+      for (const d of st.done ?? []) log(`  fixed: ${d}`);
+      if (st.attempt) log(`  code change ${st.attempt.id ?? ''}: ${st.attempt.accepted ? 'measured better' : 'not kept'} (${st.attempt.why})`);
+      if (st.offer) log(`  ready to apply: ox island heal apply   (or: ox evolve diff ${st.offer.id})`);
+      if (st.applied) log(`  applied ${st.applied.id}: ${st.applied.ok ? 'in, island restarted' : st.applied.why}`);
+      if (!(st.env ?? []).length && !(st.code ?? []).length) log('nothing went wrong in the island log since the last look');
+    };
+    if (sub === 'status') { show(H.readState()); return 0; }
+    if (sub === 'apply') { show(await H.applyOffer()); return 0; }
+    if (sub === 'dismiss') { await H.dismissOffer(); log('the offered change was dropped'); return 0; }
+    const since = args.includes('--all') ? 0 : null;
+    show(await H.heal({ since, log: (l) => err(`${l}\n`) }));
+    return 0;
+  }
+  // Silent words (Subvox): AirPods head motion → mouthed words, in its own window.
+  if (action === 'silent' || action === 'silent-words') {
+    if (process.platform !== 'darwin') { err('Silent words needs macOS 14 and AirPods with head tracking\n'); return 1; }
+    const subBin = path.join(pkg, '.build', 'release', 'OxSubvox');
+    if (!fs.existsSync(subBin)) {
+      log('building Silent words (one time)…');
+      const r = await new Promise((res) => { const p = spawn('swift', ['build', '-c', 'release', '--product', 'OxSubvox'], { cwd: pkg, stdio: 'inherit' }); p.on('error', (error) => res({ error })); p.on('close', (status) => res({ status })); });
+      if (r.error || r.status !== 0) { err('ox: swift build failed for Silent words\n'); return 1; }
+    }
+    const app = buildSubvoxApp({ pkg });
+    if (!app) { err('Silent words is not built\n'); return 1; }
+    spawnSync('open', [app], { stdio: 'ignore' });
+    log('Silent words is open: Train a few words (hold Space, mouth the word), check them with Evaluate, then Decode. Turn on "Send words to ox" to answer the island with them.');
+    return 0;
+  }
+  // A fixed signature, so rebuilds stop losing Accessibility (src/sign-local.js).
+  if (action === 'sign-setup') {
+    try { return (await import('./sign-local.js')).createLocalIdentity({ log }) ? 0 : 1; } catch (e) { err(`ox island sign-setup: ${e.message}`); return 1; }
+  }
   // A new version of the island (after an update): stop it, rebuild, start it.
   if (action === 'restart') {
     if (!islandEnabled()) { log('OX Island is turned off. Turn it on with: ox island on'); return 1; }
@@ -191,9 +276,11 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
       try { process.kill(pid, 'SIGTERM'); } catch {}
     }
     for (let i = 0; i < 30 && runningIslandPids().length; i++) await new Promise((r) => setTimeout(r, 100));
-    if (process.platform === 'darwin') {
+    if (process.platform === 'darwin' && islandNeedsBuild(pkg)) {
       const b = await cmdIsland(['build'], { log, err });
       if (b !== 0) return b;
+      // Silent words rides along: a rebuilt OxSubvox replaces the old app.
+      try { buildSubvoxApp({ pkg }); } catch {}
     }
     return cmdIsland(['start'], { log, err });
   }
@@ -219,7 +306,7 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
     await new Promise(() => {}); // until SIGINT/SIGTERM
   }
   if (action !== 'start' && action !== 'build') {
-    err(`ox: unknown island action '${action}' (use start, stop, restart, on, off, status, build, web)\n`);
+    err(`ox: unknown island action '${action}' (use start, stop, restart, on, off, status, build, web, silent, heal)\n`);
     return 3;
   }
   if (action === 'start' && !islandEnabled()) {
@@ -249,7 +336,8 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
   }
   if (!fs.existsSync(bin) || action === 'build') {
     log('building OX Island (one time, ~10s)…');
-    const r = spawnSync('swift', ['build', '-c', 'release'], { cwd: pkg, stdio: 'inherit' });
+    // Async, so a server restarting the island keeps answering while it builds.
+    const r = await new Promise((res) => { const p = spawn('swift', ['build', '-c', 'release'], { cwd: pkg, stdio: 'inherit' }); p.on('error', (error) => res({ error })); p.on('close', (status) => res({ status })); });
     if (r.error || r.status !== 0) {
       err('ox: swift build failed — install Xcode or the Command Line Tools (xcode-select --install)\n');
       return 1;

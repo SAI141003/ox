@@ -59,7 +59,22 @@ enum IslandLog {
 /// The ox server that is already running (OX.app's, or `ox serve`), asked over
 /// HTTP on this Mac: POST /ox/voice.
 enum VoiceServer {
-    struct Result: Decodable { let route: String; let handled: Bool; let say: String?; let why: String?; let model: String? }
+    struct Result: Decodable { let route: String; let handled: Bool; let say: String?; let why: String?; let model: String?; let job: String? }
+
+    /// The real outcome of a background errand (typing, clicking): polled until it is done, at most 30 s.
+    static func outcome(_ job: String, tries: Int = 60, done: @escaping (_ ok: Bool, _ say: String) -> Void) {
+        guard let base = url()?.deletingLastPathComponent(), var c = URLComponents(url: base.appendingPathComponent("voice/result"), resolvingAgainstBaseURL: false) else { return }
+        c.queryItems = [URLQueryItem(name: "job", value: job)]
+        guard let u = c.url else { return }
+        URLSession.shared.dataTask(with: u) { data, _, _ in
+            let j = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            if let j, (j["pending"] as? Bool) == false {
+                DispatchQueue.main.async { done((j["ok"] as? Bool) ?? false, j["say"] as? String ?? "") }
+            } else if tries > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { outcome(job, tries: tries - 1, done: done) }
+            }
+        }.resume()
+    }
 
     static func url() -> URL? {
         let home = NSHomeDirectory()
@@ -80,15 +95,56 @@ enum VoiceServer {
         // This endpoint is the local, no-model fast path. A dead/stale server
         // must never hold the Island chat bar for five seconds before it can
         // hand the message to the already-connected run.
-        var req = URLRequest(url: u, timeoutInterval: offlineOnly ? 1.2 : 75)
+        // 4 s: a running server answers in milliseconds, but its first request after a
+        // restart can take a second or two. A timeout used to make the island do the same
+        // errand itself while the server, which had the request, did it too (twice).
+        var req = URLRequest(url: u, timeoutInterval: offlineOnly ? 4 : 75)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "content-type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text, "offlineOnly": offlineOnly])
-        URLSession.shared.dataTask(with: req) { data, resp, _ in
+        URLSession.shared.dataTask(with: req) { data, resp, err in
             let ok = (resp as? HTTPURLResponse)?.statusCode == 200
             let r = ok ? data.flatMap { try? JSONDecoder().decode(Result.self, from: $0) } : nil
+            // Timed out: the server had it, so it is being done there. Not unreachable.
+            if r == nil, (err as? URLError)?.code == .timedOut {
+                IslandLog.write("the server took over 4 s; it has the request and is doing it")
+                DispatchQueue.main.async { done(Result(route: "offline", handled: true, say: "On it.", why: nil, model: nil, job: nil)) }
+                return
+            }
             DispatchQueue.main.async { done(r) }
         }.resume()
+    }
+}
+
+/// Voice errands ("open Notes", "open Chrome and search…", "type…") on their
+/// own path: they never wait for a chat, a run or an agent. The app's server
+/// answers them in a fraction of a second; with no server (quit, restarting,
+/// stuck) the island runs `ox do` itself, so voice control never goes down.
+enum Errands {
+    struct Done { let handled: Bool; let say: String }
+
+    static func run(_ text: String, done: @escaping (Done) -> Void) {
+        VoiceServer.ask(text, offlineOnly: true) { r in
+            if let r {
+                done(Done(handled: r.handled, say: r.say ?? "Done."))
+                // Typing and clicking finish after the answer: a failure is said, not lost.
+                if let job = r.job {
+                    VoiceServer.outcome(job) { ok, say in
+                        IslandLog.write("errand outcome: \(ok ? "ok" : "FAILED"): \(say.prefix(200))")
+                        if !ok { NotificationCenter.default.post(name: .init("ox.errand.failed"), object: say) }
+                    }
+                }
+                return
+            }
+            // No answer from the server: ox's no-AI router, run directly.
+            IslandLog.write("errand without the server: ox do \(text.prefix(80))")
+            OxRunner.run(["do", "--json", text], cwd: FileManager.default.homeDirectoryForCurrentUser, timeout: 60) { _, out in
+                let line = out.split(separator: "\n").last.map(String.init) ?? ""
+                let j = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
+                let handled = j?["handled"] as? Bool ?? false
+                DispatchQueue.main.async { done(Done(handled: handled, say: j?["message"] as? String ?? "Done.")) }
+            }
+        }
     }
 }
 
@@ -722,9 +778,36 @@ final class IslandChat: ObservableObject {
     /// What you sent while ox was busy: done next, in order (it used to be dropped).
     private var queued: [(text: String, bridge: OxBridge, onReply: ((String) -> Void)?)] = []
 
-    func send(_ raw: String, bridge: OxBridge, onReply: ((String) -> Void)? = nil) {
+    private var lastSent: (text: String, at: Date)?
+    func send(_ raw: String, bridge: OxBridge, onReply: ((String) -> Void)? = nil, triedOffline: Bool = false) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        // The same words twice within 3 s are one request (a mic, a hotkey and a
+        // tap can all end the same utterance): done once, never two or three times.
+        if !triedOffline {
+            // Typed twice in a row by accident (Return pressed twice): sent once.
+            if let l = lastSent, l.text.caseInsensitiveCompare(text) == .orderedSame, Date().timeIntervalSince(l.at) < 3 { return }
+            lastSent = (text, Date())
+        }
+        // Errands first, always: "open Notes", "open Chrome and search…" are done
+        // by ox's no-AI router in a fraction of a second. They used to wait in the
+        // queue behind a busy run, or go to the agent chosen for this chat (an
+        // orchestrator run that took minutes, or failed, for "open Notes").
+        if !triedOffline {
+            Errands.run(text) { [weak self] r in
+                guard let self else { return }
+                if r.handled {
+                    IslandLog.write("errand: \(r.say)")
+                    // Its own answer: a run that is busy keeps its own reply handler.
+                    self.lines.append(Line(mine: true, text: text))
+                    self.lines.append(Line(mine: false, text: r.say))
+                    onReply?(r.say)
+                    return
+                }
+                self.send(text, bridge: bridge, onReply: onReply, triedOffline: true)
+            }
+            return
+        }
         if busy {
             queued.append((text, bridge, onReply))
             lines.append(Line(mine: true, text: text))

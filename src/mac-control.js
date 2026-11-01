@@ -171,7 +171,18 @@ export async function click({ app, element, role, x, y, double = false } = {}, {
     if (list.error) return { isError: true, text: list.error };
     const q = String(element).trim();
     const target = /^\d+$/.test(q) && Number(q) <= list.elements.length && !findElement(list.elements, q, role) ? list.elements[Number(q) - 1] : findElement(list.elements, q, role);
-    if (!target) return { isError: true, text: `no control called "${element}" in ${list.app}. ${describeElements({ ...list, elements: list.elements.slice(0, 40) })}` };
+    if (!target) {
+      // No control with that name: look for the words on screen (an unnamed
+      // button with a visible label) and click there, through the point path,
+      // which reads what is under it and refuses Send / Pay / Delete.
+      const seen = q.length >= 2 && !/^\d+$/.test(q) ? await hands(['find', q, '--app', list.app], { timeout: 15_000 }) : null;
+      const m = seen?.matches?.[0];
+      if (m && !isRisky({ name: m.text })) {
+        const r = await click({ app: list.app, x: Math.round(m.x + m.w / 2), y: Math.round(m.y + m.h / 2), double }, { dryRun });
+        return r.isError ? r : { text: `${r.text} (found the words "${m.text}" on screen)` };
+      }
+      return { isError: true, text: `no control called "${element}" in ${list.app}${seen?.error ? ` (${seen.error})` : ''}. ${describeElements({ ...list, elements: list.elements.slice(0, 40) })}` };
+    }
     if (isRisky(target)) return { isError: true, text: `ox does not press "${target.name || target.description}": that sends, pays or deletes. It is left for you to press.` };
     if (dryRun) return { text: `would click ${named(target)} in ${list.app}` };
     const expect = target.name || target.description || target.identifier || '';

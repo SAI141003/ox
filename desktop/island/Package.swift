@@ -31,5 +31,22 @@ let package = Package(
             name: "OxApp",
             path: "Sources/OxApp"
         ),
+        // Subvox (github.com/joeblau/subvox, MIT): AirPods head motion → silently
+        // mouthed words. The library is the whole of Subvox; OxSubvox is its window.
+        .target(
+            name: "Subvox",
+            path: "Sources/Subvox",
+            exclude: ["LICENSE"]
+        ),
+        .executableTarget(
+            name: "OxSubvox",
+            dependencies: ["Subvox"],
+            path: "Sources/OxSubvox"
+        ),
+        .testTarget(
+            name: "SubvoxTests",
+            dependencies: ["Subvox"],
+            path: "Tests/SubvoxTests"
+        ),
     ]
 )

@@ -24,3 +24,6 @@
 {"text":"read my to-dos for today","intent":"todos","why":"said to the island 2026-10; became an agent run"}
 {"text":"whats the date of today","intent":"date","why":"said to the island 2026-10; became an agent run"}
 {"text":"send a whatsapp to mom saying on my way","intent":"whatsapp","why":"WhatsApp for Mac: the chat opens with the message typed in"}
+{"text":"send hi to Chirag on WhatsApp","intent":"whatsapp"}
+{"text":"Open WhatsApp and send a message hi to Chirag","intent":"whatsapp"}
+{"text":"can you send Chirag a message on WhatsApp saying are you free tonight","intent":"whatsapp"}

@@ -105,7 +105,9 @@ export function parakeetBin(env = process.env) {
 function parakeet(bin, file, srtPath) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-parakeet-'));
   const wav = path.join(tmp, 'a.wav');
-  ff(['-i', file, '-vn', '-ac', '1', '-ar', '16000', wav]);
+  // A voice note from a quiet microphone (peaks near 0.005) made whisper invent sentences:
+  // it is brought up to speech level first, low rumble cut.
+  ff(['-i', file, '-vn', ...(normalize ? ['-af', 'highpass=f=80,dynaudnorm=f=150:g=15:p=0.9'] : []), '-ac', '1', '-ar', '16000', wav]);
   const r = run(bin, [wav, '--output-format', 'srt', '--output-dir', tmp]);
   const out = path.join(tmp, 'a.srt');
   if (!r.ok || !fs.existsSync(out)) { fs.rmSync(tmp, { recursive: true, force: true }); return null; }
@@ -123,11 +125,11 @@ export function whisperBin() {
   return native ?? ['whisper-cli', 'whisper-cpp', 'main'].find((b) => spawnSync('which', [b]).status === 0) ?? null;
 }
 
-export function transcribe(file, { model = whisperModel(), language = null } = {}) {
+export function transcribe(file, { model = whisperModel(), language = null, normalize = false } = {}) {
   const p = probe(file);
   if (!p.audio) return { segments: [], srt: null, note: 'the file has no sound' };
   const srtPath = outPath(file, 'transcript', '.srt').replace(/\.transcript-\d+\.srt$/, '.transcript.srt');
-  if (fs.existsSync(srtPath) && fs.statSync(srtPath).mtimeMs > fs.statSync(file).mtimeMs) return { segments: parseSrt(fs.readFileSync(srtPath, 'utf8')), srt: srtPath, cached: true };
+  if (!normalize && fs.existsSync(srtPath) && fs.statSync(srtPath).mtimeMs > fs.statSync(file).mtimeMs) return { segments: parseSrt(fs.readFileSync(srtPath, 'utf8')), srt: srtPath, cached: true };
   const pk = !language && parakeetBin();
   if (pk) { const r = parakeet(pk, file, srtPath); if (r) return r; }
   if (!model) throw new Error('speech-to-text needs a whisper.cpp model (ggml-*.bin): put one in ~/.ox/models/whisper, or set OX_WHISPER_MODEL');

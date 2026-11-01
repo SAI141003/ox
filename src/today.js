@@ -50,8 +50,14 @@ export function brainChanges(dir, { now = Date.now() } = {}) {
 /**
  * The brief from its parts (every part optional). → { needsYou, changed, schedule, ready, text }
  */
-export function compose({ events = null, unread = null, tasks = [], agents = [], prs = null, commits = [], notes = [], name = '', now = new Date() } = {}) {
+export function compose({ events = null, unread = null, tasks = [], agents = [], prs = null, commits = [], notes = [], name = '', now = new Date(), needs = null } = {}) {
   const needsYou = [];
+  // The full list (src/needs-you.js) when it was read: GitHub reviews, failing
+  // checks, changes requested, assigned issues, failed routines, with links.
+  if (needs) {
+    for (const i of needs.items ?? []) needsYou.push(`${i.title}${i.where ? ` (${i.where})` : ''}`);
+    tasks = []; agents = []; prs = null; unread = null;
+  }
   for (const t of tasks.filter((x) => x.status === 'in_review')) needsYou.push(`Review "${t.title}" (task board)`);
   for (const t of tasks.filter((x) => x.status === 'blocked' || x.status === 'failed')) needsYou.push(`"${t.title}" is ${t.status}`);
   for (const a of agents.filter((x) => x.state === 'idle' && (x.idleSec ?? 0) < 3 * 3600)) needsYou.push(`${a.tool} in ${a.project} finished and waits for your reply`);
@@ -100,5 +106,7 @@ export async function brief({ home = os.homedir() } = {}) {
   let prs = null;
   const gh = spawnSync('gh', ['api', 'graphql', '-f', 'query=query{viewer{pullRequests(states:OPEN,first:20){nodes{commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}}'], { encoding: 'utf8', timeout: 15_000 });
   if (gh.status === 0) { try { const n = JSON.parse(gh.stdout).data.viewer.pullRequests.nodes; prs = { open: n.length, failing: n.filter((x) => ['FAILURE', 'ERROR'].includes(x.commits.nodes[0]?.commit?.statusCheckRollup?.state)).length }; } catch {} }
-  return compose({ events: todaysEvents(), unread: unreadMail(), tasks, agents, prs, commits: recentCommits(projects), notes: brainChanges(B.brainDir()) });
+  let needs = null;
+  try { needs = await (await import('./needs-you.js')).needsYou(); } catch {}
+  return compose({ events: todaysEvents(), unread: unreadMail(), tasks, agents, prs, commits: recentCommits(projects), notes: brainChanges(B.brainDir()), needs });
 }

@@ -29,7 +29,9 @@ test('the tool gate: ask reads only, plan writes only .agent/plans/*.md', () => 
   const cwd = '/repo';
   assert.equal(modeRefusal('ask', 'read_file', {}, cwd), null);
   assert.match(modeRefusal('ask', 'write_file', { path: 'a.js' }, cwd), /ask mode only reads/);
-  assert.match(modeRefusal('ask', 'bash', { command: 'ls' }, cwd), /ask mode/);
+  assert.equal(modeRefusal('ask', 'bash', { command: 'git log -1 --oneline' }, cwd), null, 'a read-only command is reading');
+  assert.match(modeRefusal('ask', 'bash', { command: 'rm -rf build' }, cwd), /ask mode only reads/);
+  assert.match(modeRefusal('ask', 'bash', { command: 'npm test' }, cwd), /ask mode/);
   assert.equal(modeRefusal('plan', 'write_file', { path: '.agent/plans/db.md' }, cwd), null);
   assert.match(modeRefusal('plan', 'write_file', { path: 'src/a.js' }, cwd), /only writes plan files/);
   assert.match(modeRefusal('plan', 'write_file', { path: '.agent/plans/../../x.md' }, cwd), /only writes plan files/);

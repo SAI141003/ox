@@ -210,7 +210,10 @@ export function renderFocusedSkillIndex(skills, task = '', { maxFull = 6 } = {})
   const list = (Array.isArray(skills) ? skills : []).slice(0, MAX_INDEX_SKILLS);
   const words = (t) => new Set(String(t ?? '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3));
   const want = words(task);
-  if (!want.size || process.env.OX_FULL_SKILL_INDEX === '1') return renderSkillIndex(list);
+  // OX_FULL_SKILL_INDEX=1 keeps every description. A task with no telling
+  // words ("hey how are you") used to get the FULL index (7 KB on every turn of
+  // a greeting); it gets the names alone now, like any skill that does not match.
+  if (process.env.OX_FULL_SKILL_INDEX === '1') return renderSkillIndex(list);
   const scored = list.map((s) => {
     const have = words(`${s.name.replace(/-/g, ' ')} ${s.description}`);
     let n = 0;

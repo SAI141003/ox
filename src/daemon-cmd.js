@@ -103,7 +103,9 @@ const has = (args, ...names) => names.some((n) => args.includes(n));
 // without it `ox schedule "morning triage" --at 07:45` yields the goal
 // "morning triage 07:45", because a flag's VALUE does not start with `-` and is
 // indistinguishable from a positional by shape alone.
-const VALUE_FLAGS = ['--every', '--at', '--max-cost', '--cwd', '--bot', '--model', '--max-runs', '--key-env', '--log-file'];
+const VALUE_FLAGS = ['--every', '--at', '--max-cost', '--cwd', '--bot', '--model', '--max-runs', '--key-env', '--log-file', '--watch'];
+// Every value of a flag that may repeat (--watch a --watch b).
+const flagAll = (args, name) => args.flatMap((a, i) => (a === name && args[i + 1] != null ? [args[i + 1]] : []));
 
 // The positional arguments of a command, with every flag and every flag's value
 // removed. `add <cadence> "<prompt>"` and `ox schedule "<goal>" --at HH:MM` are
@@ -658,6 +660,7 @@ export async function cmdSchedule(args = []) {
         maxCostUsd: maxCostRaw === null ? undefined : Number(maxCostRaw),
         bot: flagPair(rest, '--bot'),
         model: flagPair(rest, '--model'),
+        watch: flagAll(rest, '--watch'),
         enabled: has(rest, '--enable'),
         // The whole raw arg set goes through the privilege screen, so a flag ox
         // does not know about is still refused rather than quietly ignored.
@@ -678,11 +681,27 @@ export async function cmdSchedule(args = []) {
       console.log(`${c.green('✓')} schedule ${c.bold(s.id)} — ${s.cadence.description}`);
       console.log(`  prompt  ${s.prompt}`);
       console.log(`  cap     $${s.maxCostUsd} ${c.dim(`(${s.costCapSource})`)}`);
+      if (s.watch?.length) console.log(`  watch   ${s.watch.join(', ')} ${c.dim('(a run with nothing new there is skipped)')}`);
       console.log(`  state   ${s.enabled ? c.green('enabled') : c.dim('disabled — `ox schedule enable ' + s.id + '`')}`);
       const st = scheduleRunStatus(s);
       console.log(`  next    ${st.state === 'past' ? c.yellow(st.text) : c.dim(st.text)}`);
       if (st.state === 'past') console.log(c.yellow('          it was stored, but nothing will ever dispatch it'));
       if (!policy.optedIn) console.log(c.yellow('  daemon  schedules are OFF — `ox schedule opt-in` lets it run this'));
+      return;
+    }
+
+    // A routine from a description: schedule, model, cap and sources, each with why (src/schedule-watch.js).
+    case 'suggest': {
+      const { suggestRoutine } = await import('./schedule-watch.js');
+      const text = positionalOf(rest).join(' ').trim();
+      if (!text) { process.stderr.write('usage: ox schedule suggest "<what the routine should do>"\n'); process.exitCode = 3; return; }
+      let model = null;
+      try { const { readConfigDoc } = await import('./config.js'); model = readConfigDoc().defaultBot ?? null; } catch {}
+      const r = suggestRoutine(text, { defaultModel: model });
+      if (json) { console.log(JSON.stringify({ t: 'schedule-suggest', ...r })); return; }
+      for (const why of r.reasons) console.log(`  · ${why}`);
+      const q = (v) => (/[\s"']/.test(v) ? `"${v.replace(/"/g, '\\"')}"` : v);
+      console.log(`\n  ox schedule add ${q(text)}${r.cadence.every ? ` --every ${r.cadence.every}` : ''}${r.cadence.at ? ` --at ${r.cadence.at}` : ''} --max-cost ${r.maxCostUsd}${r.watch.map((w) => ` --watch ${q(w)}`).join('')} --enable`);
       return;
     }
 

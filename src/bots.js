@@ -231,6 +231,9 @@ function build({ name, provider, model, desc, baseUrlOverride, config, botDef, e
     // config model_window > pricing-table window > 128k default.
     window: resolveModelWindow({ model, configWindow: obj(config)?.modelWindow }),
     desc: desc ?? '',
+    // A small model of your own (Settings › Your own model): plain chat, no tools and
+    // no long agent prompt, which drown what it learned.
+    ...(botDef?.chatOnly === true ? { chatOnly: true } : {}),
   };
 }
 
