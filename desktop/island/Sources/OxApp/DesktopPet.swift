@@ -20,6 +20,27 @@ final class DesktopPetController: NSObject, ObservableObject {
 
     private let defaults = UserDefaults.standard
     private var panel: NSPanel?
+    /// The chat box under the pet is open: the window grows to hold it.
+    @Published var chatOpen = false { didSet { if chatOpen != oldValue { resizeKeepingPlace() } } }
+    func resizeKeepingPlace() {
+        guard let panel else { return }
+        let size = max(32, min(144, petSize))
+        let h = size + 48 + (chatOpen ? PetLayout.chatHeight : 0)
+        let f = panel.frame
+        // Grows downward from where the pet stands, so the pet does not jump.
+        panel.setFrame(NSRect(x: f.minX, y: f.maxY - h, width: max(size + 20, PetLayout.minWidth), height: h), display: true)
+        if chatOpen { panel.makeKey() }
+    }
+    /// Talk, right here: the island listens (no window opens).
+    func talkHere() {
+        DistributedNotificationCenter.default().postNotificationName(.init("dev.ox.island.listen"), object: nil, deliverImmediately: true)
+    }
+    /// Ask, right here: the island takes it (errands at once, anything else to ox) and answers.
+    func ask(_ text: String) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        DistributedNotificationCenter.default().postNotificationName(.init("dev.ox.island.say"), object: t, deliverImmediately: true)
+    }
     var onOpenChat: (() -> Void)?
     var onTalk: (() -> Void)?
     var onSettings: (() -> Void)?
@@ -38,6 +59,13 @@ final class DesktopPetController: NSObject, ObservableObject {
         super.init()
         buildPanel()
         if defaults.object(forKey: "ox.desktopPet.visible") as? Bool ?? true { panel?.orderFrontRegardless() }
+    }
+
+    /// Hidden until you show it again (Settings › Mini & Pets), and the app is told so it stays hidden.
+    func hide() {
+        chatOpen = false
+        update(["visible": false, "id": petID, "name": petName, "emoji": petEmoji, "color": petColor, "size": Double(petSize)])
+        onHide?()
     }
 
     func update(_ message: [String: Any]) {
@@ -84,9 +112,9 @@ final class DesktopPetController: NSObject, ObservableObject {
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
 
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 164, height: 184),
-                            styleMask: [.borderless, .nonactivatingPanel],
-                            backing: .buffered, defer: false)
+        let panel = PetPanel(contentRect: NSRect(x: 0, y: 0, width: 164, height: 184),
+                             styleMask: [.borderless, .nonactivatingPanel],
+                             backing: .buffered, defer: false)
         panel.contentView = hosting
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -103,7 +131,8 @@ final class DesktopPetController: NSObject, ObservableObject {
     private func resizePanel() {
         guard let panel else { return }
         let size = max(32, min(144, petSize))
-        let frame = NSRect(x: 0, y: 0, width: size + 20, height: size + 48)
+        // Wide enough for its three buttons and the chat box (they were cut off at a small size).
+        let frame = NSRect(x: 0, y: 0, width: max(size + 20, PetLayout.minWidth), height: size + 48 + (chatOpen ? PetLayout.chatHeight : 0))
         panel.setFrame(frame, display: true)
         // Where the person put it last, if that spot is still on a screen.
         if let saved = defaults.array(forKey: "ox.desktopPet.origin") as? [Double], saved.count == 2 {
@@ -201,6 +230,8 @@ final class DesktopPetController: NSObject, ObservableObject {
 private struct DesktopPetView: View {
     @ObservedObject var controller: DesktopPetController
     @State private var hovered = false
+    @State private var draft = ""
+    @FocusState private var typing: Bool
     private let stroll = Timer.publish(every: 18, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -268,6 +299,9 @@ private struct DesktopPetView: View {
                 Button(controller.placed ? "Wander around" : "Stay here") {
                     if controller.placed { controller.letWander() } else { controller.stayHere() }
                 }
+                Divider()
+                Button("Hide pet") { controller.hide() }
+                Button("Open Ox") { controller.onOpenChat?() }
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(controller.petName), \(controller.isWorking ? "working" : controller.petExpression). Tap to open chat, drag to move.")
@@ -275,24 +309,37 @@ private struct DesktopPetView: View {
             .accessibilityAction { controller.onOpenChat?() }
             .help("Tap to open chat · drag to move · right-click for corners")
 
-            if hovered {
+            if controller.chatOpen {
+                HStack(spacing: 6) {
+                    TextField("Ask ox…", text: $draft)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                        .focused($typing)
+                        .onSubmit { controller.ask(draft); draft = ""; controller.chatOpen = false }
+                    Button { controller.ask(draft); draft = ""; controller.chatOpen = false } label: { Image(systemName: "arrow.up.circle.fill").font(.system(size: 16)) }
+                        .buttonStyle(.plain).disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 7)
+                .frame(width: PetLayout.minWidth - 8)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.16), lineWidth: 1))
+                .onAppear { typing = true }
+                .onExitCommand { controller.chatOpen = false }
+            }
+            if hovered || controller.chatOpen {
                 HStack(spacing: 0) {
-                    action("bubble.left", label: "Open Ox chat", help: "Open chat", perform: controller.onOpenChat)
+                    action("bubble.left", label: "Ask Ox here", help: "Type to Ox right here") { controller.chatOpen.toggle() }
                     Divider().frame(height: 20)
-                    action("waveform", label: "Talk to Ox", help: "Start a voice conversation", perform: controller.onTalk)
+                    action("waveform", label: "Talk to Ox", help: "Talk to Ox right here (the island listens)") { controller.talkHere() }
                     Divider().frame(height: 20)
-                    action("xmark", label: "Hide desktop pet", help: "Hide pet until Ox is opened again") {
-                        controller.update(["visible": false, "id": controller.petID,
-                                           "name": controller.petName, "emoji": controller.petEmoji,
-                                           "color": controller.petColor, "size": Double(controller.petSize)])
-                    }
+                    action("xmark", label: "Hide desktop pet", help: "Hide the pet (show it again in Settings › Mini & Pets)") { controller.hide() }
                 }
                 .padding(.horizontal, 4)
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay(Capsule().stroke(Color.white.opacity(0.16), lineWidth: 1))
             }
         }
-        .frame(width: controller.petSize + 20, height: controller.petSize + 48)
+        .frame(width: max(controller.petSize + 20, PetLayout.minWidth), height: controller.petSize + 48 + (controller.chatOpen ? PetLayout.chatHeight : 0))
         .onHover { hovered = $0 }
         .onReceive(stroll) { _ in controller.wander() }
     }
@@ -354,4 +401,15 @@ private struct SVGPetArtwork: NSViewRepresentable {
     final class Coordinator {
         var lastSVG = ""
     }
+}
+
+
+enum PetLayout {
+    static let minWidth: CGFloat = 150
+    static let chatHeight: CGFloat = 44
+}
+
+/// A borderless panel that can still take typing (the chat box under the pet).
+final class PetPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
 }

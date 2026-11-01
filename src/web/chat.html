@@ -5223,6 +5223,9 @@ files: [src/billing/**]
     addEventListener('pointerup', () => { if (!drag) return; drag = null; if (moved) { dock.classList.remove('dragging'); store.set('ox.mini.pos', { right: parseFloat(dock.style.right), bottom: parseFloat(dock.style.bottom) }); } });
     dock.addEventListener('click', (e) => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
   }
+  // Hidden from the desktop pet itself (its ✕ or right-click › Hide): it stays hidden
+  // until you show it again in Settings › Mini & Pets.
+  window.addEventListener('ox:pet-hide', () => { store.set('ox.mini.visible', false); paintMiniPet(); });
   $('pet-mini').onclick = openPetChat;
   $('pet-chat').onclick = openPetChat;
   $('pet-talk').onclick = () => { if ($('pet-talk').disabled) { toast('Voice conversation is not supported by this browser'); return; } show('chat'); startTalk(); };
