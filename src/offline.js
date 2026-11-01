@@ -176,6 +176,9 @@ export function parseIntent(text) {
       [/^(?:whats ?app|message|text)\s+(\S+(?:\s+\S+)?)\s+(.+?)\s+on whats ?app$/i, 2, 1],
     ];
     if (/whats ?app/i.test(w)) {
+      // A person and no words yet ("open WhatsApp and send a message to Ravi"): their chat opens, you say or type the rest.
+      const only = /^(?:open whats ?app and )?(?:send|write|text)(?: an?)?(?: whats ?app)? message to\s+(?:my\s+)?(.+?)(?:\s+on whats ?app)?$|^(?:open|go to)\s+(?:my\s+)?(.+?)['’]s? (?:whats ?app )?chat(?: on whats ?app)?$|^open whats ?app (?:chat )?(?:with|for)\s+(?:my\s+)?(.+)$/i.exec(w);
+      if (only) return { intent: 'whatsapp', to: (only[1] ?? only[2] ?? only[3]).trim(), text: '' };
       for (const [re, ti, pi] of pairs) {
         const x = re.exec(w);
         if (x && x[ti] && x[pi] && !/^(?:a|an|the)?\s*message$/i.test(x[ti])) return { intent: 'whatsapp', to: x[pi].trim(), text: x[ti].trim() };
@@ -628,11 +631,12 @@ export function perform(it) {
         const r = spawnSync('osascript', ['-e', 'on run argv', '-e', 'tell application "Contacts" to set ps to (every person whose name contains (item 1 of argv))', '-e', 'if ps is {} then return ""', '-e', 'tell application "Contacts" to set phs to value of phones of (item 1 of ps)', '-e', 'if phs is {} then return ""', '-e', 'return item 1 of phs', '-e', 'end run', it.to], { encoding: 'utf8', timeout: 8000 });
         phone = r.status === 0 ? String(r.stdout).replace(/[^\d]/g, '') : '';
       }
-      const url = `whatsapp://send?${phone ? `phone=${phone}&` : ''}text=${encodeURIComponent(it.text)}`;
+      const url = `whatsapp://send?${phone ? `phone=${phone}` : ''}${it.text ? `${phone ? '&' : ''}text=${encodeURIComponent(it.text)}` : ''}`;
       if (process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1') return { ok: true, message: `dry run: would open ${url}` };
       const r = run(process.platform === 'darwin' ? ['open', url] : null);
       if (!r.ok) return { ok: false, message: `WhatsApp did not open: ${r.err}. Is WhatsApp for Mac installed?` };
-      return { ok: true, message: phone ? `WhatsApp is open with your message to ${it.to} typed in: press Enter to send it (ox never sends it)` : `WhatsApp is open with your message typed in: pick ${it.to}'s chat and press Enter (ox never sends it)` };
+      if (!it.text) return { ok: true, message: phone ? `${it.to}'s WhatsApp chat is open: say "type …" or type your message, then press Enter` : `WhatsApp is open. I couldn't find "${it.to}" in your Contacts: pick the chat, then say "type …"` };
+      return { ok: true, message: phone ? `WhatsApp is open with your message to ${it.to} typed in: press Enter to send it (ox never sends it)` : `WhatsApp is open with your message typed in. I couldn't find "${it.to}" in your Contacts: pick the chat and press Enter (ox never sends it)` };
     }
     case 'unread': {
       if (process.platform !== 'darwin') return { ok: false, message: 'reading Mail is macOS only for now' };

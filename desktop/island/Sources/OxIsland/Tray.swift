@@ -95,13 +95,22 @@ enum VoiceServer {
         // This endpoint is the local, no-model fast path. A dead/stale server
         // must never hold the Island chat bar for five seconds before it can
         // hand the message to the already-connected run.
-        var req = URLRequest(url: u, timeoutInterval: offlineOnly ? 1.2 : 75)
+        // 4 s: a running server answers in milliseconds, but its first request after a
+        // restart can take a second or two. A timeout used to make the island do the same
+        // errand itself while the server, which had the request, did it too (twice).
+        var req = URLRequest(url: u, timeoutInterval: offlineOnly ? 4 : 75)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "content-type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text, "offlineOnly": offlineOnly])
-        URLSession.shared.dataTask(with: req) { data, resp, _ in
+        URLSession.shared.dataTask(with: req) { data, resp, err in
             let ok = (resp as? HTTPURLResponse)?.statusCode == 200
             let r = ok ? data.flatMap { try? JSONDecoder().decode(Result.self, from: $0) } : nil
+            // Timed out: the server had it, so it is being done there. Not unreachable.
+            if r == nil, (err as? URLError)?.code == .timedOut {
+                IslandLog.write("the server took over 4 s; it has the request and is doing it")
+                DispatchQueue.main.async { done(Result(route: "offline", handled: true, say: "On it.", why: nil, model: nil, job: nil)) }
+                return
+            }
             DispatchQueue.main.async { done(r) }
         }.resume()
     }

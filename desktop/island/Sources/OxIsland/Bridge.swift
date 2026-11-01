@@ -242,8 +242,11 @@ final class OxBridge: ObservableObject {
                 Errands.run(text) { [weak self] r in
                     guard let self else { return }
                     if r.handled { IslandLog.write("errand: \(r.say)"); MainActor.assumeIsolated { self.buddy.speak(r.say) }; return }
-                    // With a coding run open the rest goes to it; else the chat (whose approvals come to this island).
-                    if live, self.ask(text, imagePaths: shots, audioPath: audio) { return }
+                    // A voice request is for ox's own assistant (the chat, whose approvals come to
+                    // this island), not for whatever run happens to be open: pushed into an open
+                    // coding or screen run, "send a message to Ravi" showed "Looking at your
+                    // screen…" and nothing happened. Only words addressed to that run go to it.
+                    if live, Self.addressesRun(text), self.ask(text, imagePaths: shots, audioPath: audio) { return }
                     self.chat.send(text, bridge: self, onReply: { reply in MainActor.assumeIsolated { self.buddy.speak(reply) } }, triedOffline: true)
                 }
                 return true
@@ -1509,6 +1512,12 @@ final class OxBridge: ObservableObject {
     /// Send a spoken question (and the screenshot) to the newest live run.
     /// False when no ox run is connected.
     /// An ox run with a socket that can take a message now.
+    /// Words meant for the open run ("tell the agent to …", "in this session …", "continue", "also fix …").
+    static func addressesRun(_ text: String) -> Bool {
+        let t = text.lowercased()
+        return t.range(of: #"^(tell|ask) (the |my )?(agent|run|session|claude|codex|ox run)\b|\b(this|the current|that) (run|session|task|code|repo|project|file|bug|test)\b|^(continue|keep going|go on|carry on|try again|retry|stop that|undo that)\b|^(also|and also|then) (fix|add|change|update|run|write|remove)\b"#, options: .regularExpression) != nil
+    }
+
     var hasLiveRun: Bool { sessions.contains { $0.closedAt == nil && $0.pending == nil && connections[$0.id] != nil } }
 
     func ask(_ text: String, imagePaths: [String], audioPath: String? = nil, voice: Bool = true, onReply: ((String) -> Void)? = nil) -> Bool {
