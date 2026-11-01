@@ -26,6 +26,11 @@ let package = Package(
             name: "OxHands",
             path: "Sources/OxHands"
         ),
+        // ox-keys: API keys in the Keychain, readable only by this signed helper (src/keystore.js).
+        .executableTarget(
+            name: "OxKeys",
+            path: "Sources/OxKeys"
+        ),
         // OX.app: the desktop app window onto the same ox (`ox app`).
         .executableTarget(
             name: "OxApp",
