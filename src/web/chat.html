@@ -1929,6 +1929,10 @@
     el.hidden = !q.length;
     const canSteer = !!currentController();
     el.innerHTML = q.map((x, i) => `<div class="q"><span class="k">${i === 0 ? 'Next' : 'Then'}</span><span class="t">${esc(x.text || (x.pics.length ? 'Photo' : 'Files'))}</span>${canSteer && x.text ? `<button class="btn ghost small" data-steer="${i}" title="Send this instruction to the active run at its next safe step">Steer now</button>` : ''}<button class="iconbtn" data-unqueue="${i}" title="Remove" aria-label="Remove queued message">${icon('x')}</button></div>`).join('');
+    // Nothing running (the page reloaded, or the run ended in an error): the queue would
+    // wait forever, so it can be sent now.
+    if (q.length && !canSteer && c && !runningControllers.has(c.id)) el.insertAdjacentHTML('beforeend', '<div class="q" style="justify-content:flex-end"><button class="btn small" id="q-send-now">Send now</button></div>');
+    $('q-send-now')?.addEventListener('click', () => drainQueue(c.id));
     el.querySelectorAll('[data-unqueue]').forEach((b) => (b.onclick = () => { c.queued.splice(Number(b.dataset.unqueue), 1); renderQueued(); saveConvos(); }));
     el.querySelectorAll('[data-steer]').forEach((b) => (b.onclick = async () => {
       const index = Number(b.dataset.steer), item = c.queued[index];
