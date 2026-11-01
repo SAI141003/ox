@@ -982,7 +982,7 @@ struct ChatView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         if chat.lines.isEmpty {
                             Text(bridge.sessions.contains { $0.closedAt == nil }
-                                 ? "Type to your ox run, or hold ⌃⌥Space to talk."
+                                 ? "Type to your ox run, or press ⌃⌥Space to talk."
                                  : "Ask anything. Small things (open an app, a timer, math) work offline; bigger ones run ox in \(chat.folderName).")
                                 .font(.system(size: 11.5)).foregroundStyle(Ink.muted)
                             // Everyday errands (Wajo): a tap writes the start of the request; you finish it and send.

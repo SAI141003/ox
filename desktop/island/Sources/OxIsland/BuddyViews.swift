@@ -93,7 +93,7 @@ struct MicButton: View {
                 .foregroundStyle(buddy.phase == .listening ? Color.black : Ink.text)
         }
         .buttonStyle(.plain)
-        .help(buddy.phase == .listening ? "Tap to stop listening" : "Talk to ox (or hold ⌃⌥Space anywhere)")
+        .help(buddy.phase == .listening ? "Tap to stop listening" : "Talk to ox (⌃⌥Space: press to start, press again to stop, or hold and let go)")
         .accessibilityLabel(buddy.phase == .listening ? "Stop listening" : "Talk to ox")
     }
 }

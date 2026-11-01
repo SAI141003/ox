@@ -25,8 +25,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let buddy = bridge.buddy
         let wake = bridge.wake
         // The microphone is handed over, never shared: « OK ox » steps aside.
-        BuddyHotKey.install(press: { MainActor.assumeIsolated { wake.stop() }; buddy.startListening() },
-                            release: { buddy.stopListening(); DispatchQueue.main.asyncAfter(deadline: .now() + 6) { MainActor.assumeIsolated { wake.start() } } })
+        // ⌃⌥Space: press once to start, press again to stop. Held down it is push-to-talk
+        // (it stops when you let go). A quick press used to start and stop at once.
+        var pressedAt = Date.distantPast
+        var startedByThisPress = false
+        BuddyHotKey.install(press: {
+            pressedAt = Date()
+            if buddy.isListeningOrStarting {
+                startedByThisPress = false
+                buddy.stopIfListening()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 6) { MainActor.assumeIsolated { wake.start() } }
+            } else {
+                startedByThisPress = true
+                MainActor.assumeIsolated { wake.stop() }
+                buddy.toggle()   // listens hands-free: ends at the end of speech, or on the next press
+            }
+        }, release: {
+            // Held for more than half a second: push-to-talk, so letting go stops.
+            if startedByThisPress, Date().timeIntervalSince(pressedAt) > 0.5 {
+                buddy.stopIfListening()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 6) { MainActor.assumeIsolated { wake.start() } }
+            }
+            startedByThisPress = false
+        })
         FnKey.install(press: { MainActor.assumeIsolated { wake.stop() }; buddy.startListening() },
                       release: { buddy.stopListening(); DispatchQueue.main.asyncAfter(deadline: .now() + 6) { MainActor.assumeIsolated { wake.start() } } })
         MainActor.assumeIsolated { bridge.dictation.install(); Capture.install(bridge); pill.attach(bridge.dictation) }

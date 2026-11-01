@@ -162,7 +162,7 @@ final class Buddy: NSObject, ObservableObject {
             return "macOS gave me silence: my microphone permission was from an older build. I reset it. Tap the mic again and choose Allow. (Run ox island sign-setup once so updates keep it.)"
         }
         if peakInputLevel < 0.001 { return "No microphone signal reached OX Island. Select the right input in System Settings › Sound › Input, then try again." }
-        return "I couldn't transcribe that. Hold ⌃⌥Space, or click the mic, and talk again."
+        return "I couldn't transcribe that. Press ⌃⌥Space, or click the mic, and talk again."
     }
 
     func startListening() {
