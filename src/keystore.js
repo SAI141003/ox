@@ -8,7 +8,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 
 export const KEYS_FILE = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'keys.json');
 
@@ -16,59 +15,10 @@ export const KEYS_FILE = () => path.join(process.env.OX_HOME || path.join(os.hom
 // file can never set PATH, NODE_OPTIONS or anything else that changes how ox runs.
 export const KEY_NAME = /^[A-Z][A-Z0-9_]{1,60}_(?:KEY|TOKEN)$/;
 
-// On a Mac the keys live in the Keychain, readable only by ox's signed helper
-// (~/.ox/bin/ox-keys, desktop/island/Sources/OxKeys): another program asking for
-// them gets a macOS prompt instead of a file it could read silently. keys.json is
-// then emptied. Tests, other systems and a missing helper keep the file.
-const HELPER = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'bin', 'ox-keys');
-const BUILT = () => path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'desktop', 'island', '.build', 'release', 'OxKeys');
-const ACCOUNT = 'ox-api-keys';
-function useKeychain(file) {
-  if (process.platform !== 'darwin' || process.env.NODE_TEST_CONTEXT || process.env.OX_NO_KEYCHAIN === '1' || file !== KEYS_FILE()) return false;
-  if (fs.existsSync(HELPER())) return true;
-  // Built but not installed yet: installed and signed once (a stable signature keeps its Keychain access).
-  try {
-    if (!fs.existsSync(BUILT())) return false;
-    fs.mkdirSync(path.dirname(HELPER()), { recursive: true });
-    fs.copyFileSync(BUILT(), HELPER()); fs.chmodSync(HELPER(), 0o755);
-    const signed = spawnSync('codesign', ['--force', '--sign', 'OX Local Signing', '--identifier', 'dev.ox.keys', HELPER()], { stdio: 'ignore', timeout: 30_000 });
-    if (signed.status !== 0) { fs.rmSync(HELPER(), { force: true }); return false; }
-    return true;
-  } catch { return false; }
-}
-function keychainRead() {
-  const r = spawnSync(HELPER(), ['get', ACCOUNT], { encoding: 'utf8', timeout: 10_000 });
-  if (r.status !== 0) return null;
-  try { return JSON.parse(r.stdout) ?? {}; } catch { return {}; }
-}
-function keychainWrite(keys) {
-  const r = spawnSync(HELPER(), ['set', ACCOUNT], { input: JSON.stringify(keys), encoding: 'utf8', timeout: 10_000 });
-  if (r.status !== 0) throw new Error(`could not save to the Keychain: ${String(r.stderr).trim()}`);
-}
 const clean = (doc) => (!doc || typeof doc !== 'object' || Array.isArray(doc) ? {} : Object.fromEntries(Object.entries(doc).filter(([k, v]) => KEY_NAME.test(k) && typeof v === 'string' && v)));
-function readFileKeys(file) { try { return clean(JSON.parse(fs.readFileSync(file, 'utf8'))); } catch { return {}; } }
 
 export function readKeys(file = KEYS_FILE()) {
-  if (useKeychain(file)) {
-    const inChain = clean(keychainRead() ?? {});
-    const inFile = readFileKeys(file);
-    // Keys still in the file move into the Keychain, and the file is emptied.
-    if (Object.keys(inFile).length) {
-      try {
-        keychainWrite({ ...inChain, ...inFile });
-        fs.writeFileSync(file, '{}\n', { mode: 0o600 });
-        return { ...inChain, ...inFile };
-      } catch { return { ...inChain, ...inFile }; }
-    }
-    return inChain;
-  }
-  try {
-    const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return {};
-    return Object.fromEntries(Object.entries(doc).filter(([k, v]) => KEY_NAME.test(k) && typeof v === 'string' && v));
-  } catch {
-    return {};
-  }
+  try { return clean(JSON.parse(fs.readFileSync(file, 'utf8'))); } catch { return {}; }
 }
 
 // Fill in what the environment does not already have. Returns the names loaded.
@@ -95,7 +45,6 @@ export function setKey(name, value, { env = process.env, file = KEYS_FILE() } = 
     if (keys[name] && env[name] === keys[name]) delete env[name];
     delete keys[name];
   }
-  if (useKeychain(file)) { keychainWrite(keys); return keys; }
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify(keys, null, 2)}\n`, { mode: 0o600 });
   try { fs.chmodSync(file, 0o600); } catch {}

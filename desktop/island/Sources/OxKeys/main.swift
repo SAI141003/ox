@@ -6,8 +6,10 @@
 //   ox-keys get <name>          the secret on stdout (exit 1 when there is none)
 //   ox-keys set <name>          the secret from stdin
 //   ox-keys delete <name>
+//   ox-keys confirm <reason>    Touch ID (or your Mac password); exit 0 only when you confirm
 import Foundation
 import Security
+import LocalAuthentication
 
 let args = CommandLine.arguments
 guard args.count >= 3 else { FileHandle.standardError.write(Data("usage: ox-keys get|set|delete <name>\n".utf8)); exit(2) }
@@ -40,6 +42,15 @@ case "set":
     if let a = onlyMe() { add[kSecAttrAccess as String] = a }
     let st = SecItemAdd(add as CFDictionary, nil)
     if st != errSecSuccess { FileHandle.standardError.write(Data("keychain error \(st)\n".utf8)); exit(3) }
+case "confirm":
+    // Before an approval that sends, pays or deletes: your fingerprint, not a click a script could fake.
+    let ctx = LAContext()
+    ctx.localizedCancelTitle = "Don't allow"
+    let done = DispatchSemaphore(value: 0)
+    var ok = false
+    ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: String(args[2].prefix(150))) { passed, _ in ok = passed; done.signal() }
+    _ = done.wait(timeout: .now() + 90)
+    exit(ok ? 0 : 1)
 case "delete":
     let st = SecItemDelete(base() as CFDictionary)
     exit(st == errSecSuccess || st == errSecItemNotFound ? 0 : 3)

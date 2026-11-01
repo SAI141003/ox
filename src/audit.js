@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { keychainUsable } from './keychain-ok.js';
 import { CONFIG_DIR } from './config.js';
 
 const CAP_BYTES = 20 * 1024 * 1024;
@@ -82,7 +83,7 @@ let anchoredAt = 0;
 const anchorName = (file = auditFilePath()) => `ox-audit-head-${sha256(path.resolve(file)).slice(0, 12)}`;
 function anchor(h, count) {
   // The newest hash, in the Keychain, at most every 30 s (a call to `security` is ~20 ms).
-  if (process.platform !== 'darwin' || process.env.NODE_TEST_CONTEXT || Date.now() - anchoredAt < 30_000) return;
+  if (!keychainUsable() || Date.now() - anchoredAt < 30_000) return;
   anchoredAt = Date.now();
   try { spawnSync('security', ['add-generic-password', '-U', '-s', anchorName(), '-a', 'ox', '-w', `${h}`], { stdio: 'ignore', timeout: 3000 }); } catch {}
 }
@@ -102,7 +103,7 @@ export function verifyAudit(file = auditFilePath()) {
     prev = r.h; last = r.h; chained++;
   }
   let anchored = null;
-  if (process.platform === 'darwin' && chained) {
+  if (keychainUsable() && chained) {
     const k = spawnSync('security', ['find-generic-password', '-s', anchorName(file), '-a', 'ox', '-w'], { encoding: 'utf8', timeout: 3000 });
     const head = String(k.stdout ?? '').trim();
     if (k.status === 0 && head) {

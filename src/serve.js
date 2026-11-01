@@ -2430,7 +2430,14 @@ const ROUTES = [
     return { ok: true, queued: state.pending.length };
   }) },
   { method: 'POST', pattern: /^\/ox\/approval\/?$/, handler: appRoute(async (body) => {
-    const decision = body?.decision === 'allow' ? 'allow' : 'deny';
+    let decision = body?.decision === 'allow' ? 'allow' : 'deny';
+    // Sends, pays, deletes: allowed only with Touch ID (src/approval-guard.js), so a script
+    // that can reach this server still cannot approve them.
+    if (decision === 'allow') {
+      const G = await import('./approval-guard.js');
+      const p = appApprovals.get(String(body?.id ?? ''));
+      if (p && G.needsFingerprint(p.tool, p.preview) && !(await G.confirmWithFingerprint(`allow ox to ${p.tool}: ${String(p.preview ?? '').slice(0, 80)}`))) decision = 'deny';
+    }
     if (!answerAppApproval(String(body?.id ?? ''), decision)) throw new Error('that approval is no longer waiting');
     return { ok: true, decision };
   }) },

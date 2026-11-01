@@ -1,4 +1,5 @@
 import AppKit
+import LocalAuthentication
 import Combine
 import Foundation
 
@@ -124,6 +125,8 @@ struct AgentSession: Identifiable, Equatable {
 final class OxBridge: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = [] { didSet { IslandLayout.busy = !sessions.isEmpty } }
     @Published var hovering = false
+    /// Approvals already confirmed with Touch ID (by their id).
+    var touchIdPassed: Set<String> = []
     /// The last voice request and when: the same words again within 3 s are dropped.
     var lastVoiceRequest: (key: String, at: Date)?
     /// True for the one launch animation at app start (LaunchScene).
@@ -1464,8 +1467,29 @@ final class OxBridge: ObservableObject {
 
     enum Decision: String { case allow, deny, always }
 
+    /// Approvals that commit something you cannot take back: allowed only after Touch ID
+    /// (or your Mac password), so a script, a web page or a stray click cannot approve them.
+    static func needsYourFingerprint(_ p: PendingApproval) -> Bool {
+        let text = "\(p.tool) \(p.preview)".lowercased()
+        if ["whatsapp_send", "mail_send", "send_email", "messages_send", "imessage_send", "delete_file", "git_push"].contains(p.tool) { return true }
+        return text.range(of: #"\b(send|pay|purchase|buy|checkout|transfer|delete|remove account|unsubscribe|rm -rf|rm -r|git push|--force|drop table|sudo)\b"#, options: .regularExpression) != nil
+    }
+
     func answer(_ session: AgentSession, _ decision: Decision) {
-        guard let p = session.pending, let conn = connections[session.id] else { return }
+        guard let p = session.pending else { return }
+        if decision != .deny, Self.needsYourFingerprint(p), !touchIdPassed.contains(p.id) {
+            let ctx = LAContext()
+            ctx.localizedCancelTitle = "Don't allow"
+            ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "allow ox to \(p.tool): \(String(p.preview.prefix(80)))") { [weak self] ok, _ in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if ok { self.touchIdPassed.insert(p.id); self.answer(session, decision) }
+                    else { IslandLog.write("approval not confirmed with Touch ID: \(p.tool)"); self.answer(session, .deny) }
+                }
+            }
+            return
+        }
+        guard let conn = connections[session.id] else { return }
         // Every answer leaves a line, so an "allow" can always be traced to a click here (or shown not to be).
         IslandLog.write("approval answered: \(decision.rawValue) · \(session.project) · \(p.tool): \(p.preview.prefix(80))")
         conn.send(["type": "approval-answer", "id": p.id, "decision": decision.rawValue])
