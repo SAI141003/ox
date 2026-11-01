@@ -1364,6 +1364,12 @@ async function cmdDoctor(args = []) {
     } else notSetUp.push(p);
   }
   if (notSetUp.length) add(true, `not set up (optional, add a key in Settings › API keys): ${notSetUp.join(', ')}`);
+  // The action log is a hash chain anchored in the Keychain (src/audit.js): any edit,
+  // removal or cut end shows here, with the row where it happened.
+  try {
+    const v = (await import('./audit.js')).verifyAudit();
+    if (v.chained) add(v.ok, v.ok ? `action log intact (${v.chained} linked entries${v.anchored ? ', matches the Keychain' : ''})` : `action log was TAMPERED with: ${v.why}${v.brokenAt ? ` (line ${v.brokenAt} of ~/.ox/audit.jsonl)` : ''}`);
+  } catch {}
   // A workspace in iCloud Drive with "Optimize Mac Storage": files moved off this
   // Mac time out when ox reads them (ETIMEDOUT broke undo here).
   if (process.platform === 'darwin') {
