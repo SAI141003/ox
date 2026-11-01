@@ -490,7 +490,7 @@ test('16. end to end in a real agent loop: the parent\'s message reaches a runni
   const subReqs = requests.filter(isSubagentRequest);
   assert.ok(subReqs.length >= 2, `the subagent ran at least two turns, got ${subReqs.length}`);
   const subTools = toolNamesIn(subReqs[0]);
-  assert.ok(subTools.includes('agent_message.send'), `subagent tool set has send: ${subTools}`);
+  assert.ok(subTools.includes('agent_message_send'), `subagent tool set has send: ${subTools}`);
   assert.ok(subTools.includes('agent_observe'), `subagent tool set has observe: ${subTools}`);
   assert.ok(subTools.includes('read_file'), 'the explicit allowlist still applies to everything else');
 

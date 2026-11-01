@@ -27,6 +27,8 @@ see `bench/h2h/RESULTS.md`), and the public benchmarks
 
 ## Get it
 
+Testing ox for us? Follow [docs/TESTING.md](docs/TESTING.md): install, allow access, five things to try, and how to report.
+
 **Mac app** (Apple Silicon): download `ox-mac-arm64.zip` from
 [Releases](https://github.com/SAI141003/ox/releases), unzip, drag **OX** to
 Applications. It brings its own runtime; nothing else to install.

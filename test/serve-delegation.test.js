@@ -53,5 +53,5 @@ test('a chat in the app delegates to a helper that really runs, and the agents c
   assert.doesNotMatch(content, /not configured/);
   assert.match(content, /LEAD-DONE after:[\s\S]*HELPER-DONE: there are 2 files/);
   const leadOffer = offers[0];
-  for (const t of ['subagent', 'agent_status', 'agent_message.send', 'agent_observe']) assert.ok(leadOffer.includes(t), `lead offered ${t}: ${leadOffer.join(',')}`);
+  for (const t of ['subagent', 'agent_status', 'agent_message_send', 'agent_observe']) assert.ok(leadOffer.includes(t), `lead offered ${t}: ${leadOffer.join(',')}`);
 });
