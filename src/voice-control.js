@@ -169,6 +169,13 @@ export function performControl(it, { app = null, dryRun = false } = {}) {
     const readable = after.value != null && String(after.value) !== '';
     const landed = !readable ? String(before) === '' : norm(after.value).includes(norm(it.text)) || (norm(after.value) !== norm(before) && norm(after.value).length >= norm(before).length + Math.floor(norm(it.text).length * 0.6));
     if (!landed && readable && after.role) return { ok: false, message: `typed, but the words did not land in a text box${where}: click where they should go and say it again` };
+    // An AI chat app asked by voice ("open ChatGPT and send a message …"): Return asks it.
+    // Only there: in a messaging app Return would send to a person, which stays yours.
+    if (it.submit && /^(chatgpt|chatgpt classic|claude|perplexity|gemini|grok|kimi|copilot|deepseek|meta ai)$/i.test(app ?? '')) {
+      wait(200);
+      const e = hands(['key', '36', ...(app ? ['--app', app] : [])]);
+      if (!e.error) return { ok: true, message: `asked ${app}: "${it.text}"` };
+    }
     return { ok: true, message: `typed "${it.text}"${where}` };
   }
   if (it.intent === 'key') {
@@ -191,4 +198,31 @@ export function performControl(it, { app = null, dryRun = false } = {}) {
   if (isRisky(target) && !/^(send|send message|submit)$/i.test(label(target))) return { ok: false, message: `ox does not press "${label(target)}": that pays or deletes. It is left for you.` };
   const r = hands(['press', '--app', list.app, '--path', target.path]);
   return r.error ? { ok: false, message: r.error } : { ok: true, message: `clicked "${label(target)}" in ${list.app}` };
+}
+
+/**
+ * Open a WhatsApp chat by the name shown in WhatsApp (a name that is not in
+ * Contacts, or is saved differently there): WhatsApp's own search, the first
+ * match opened. Never types a message and never sends.
+ */
+export function openWhatsAppChat(name) {
+  if (process.platform !== 'darwin' || process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1') return { ok: true, message: `dry run: would search WhatsApp for ${name}` };
+  const a = hands(['activate', 'WhatsApp']);
+  if (a.error) return { ok: false, message: a.error };
+  wait(900);
+  // ⌘F puts the cursor in WhatsApp's chat search, the old search text is replaced.
+  for (const k of ['cmd+f', 'cmd+a']) { const r = hands(['key', ...keyArgs(parseKey(k)), '--app', 'WhatsApp']); if (r.error) return { ok: false, message: r.error }; wait(250); }
+  const t = hands(['type', name, '--keys', '--app', 'WhatsApp'], 15_000);
+  if (t.error) return { ok: false, message: t.error };
+  wait(1500);
+  // The person is clicked in the results (Return is never pressed: in a chat it sends).
+  // The first match below the search box, read from the screen.
+  const seen = hands(['find', name, '--app', 'WhatsApp'], 15_000);
+  const hits = (seen.matches ?? []).filter((m) => m.y > 0).sort((x, y) => x.y - y.y);
+  const hit = hits.length > 1 ? hits[1] : hits[0];  // hits[0] is usually the search box itself
+  if (!hit) return { ok: false, message: `WhatsApp found no chat called "${name}": say the name as it is saved in WhatsApp` };
+  const c = hands(['click', Math.round(hit.x + hit.w / 2), Math.round(hit.y + hit.h / 2)]);
+  if (c.error) return { ok: false, message: c.error };
+  wait(600);
+  return { ok: true, message: `opened ${hit.text}'s WhatsApp chat` };
 }

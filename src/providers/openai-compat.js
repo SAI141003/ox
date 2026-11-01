@@ -191,7 +191,7 @@ export function toWireMessages(messages) {
       wire.tool_calls = m.tool_calls.map((c) => ({
         id: c.id,
         type: 'function',
-        function: { name: c.function?.name ?? '', arguments: c.function?.arguments ?? '{}' },
+        function: { name: wireToolName(c.function?.name ?? ''), arguments: c.function?.arguments ?? '{}' },
       }));
     }
     return wire;
@@ -199,6 +199,12 @@ export function toWireMessages(messages) {
 }
 
 const trimBase = (b) => String(b).replace(/\/+$/, '');
+
+// Tool names as providers accept them: letters, digits, _ and -, at most 64
+// (OpenAI's rule; NVIDIA refuses anything else, e.g. "agent_message.send", with a
+// 400 that stopped every agent run). The model sees the safe name; its calls are
+// mapped back to ox's own name before anything runs.
+export const wireToolName = (n) => String(n ?? '').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64);
 
 // OpenAI, DeepSeek and xAI cache a repeated prompt prefix on their own. Claude
 // and Gemini behind OpenRouter cache only what is marked: the system prompt
@@ -230,9 +236,11 @@ export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
     if (tools.length) {
       body.tools = tools.map((t) => ({
         type: 'function',
-        function: { name: t.name, description: t.description, parameters: t.input_schema },
+        function: { name: wireToolName(t.name), description: t.description, parameters: t.input_schema },
       }));
     }
+    const ownName = new Map(tools.map((t) => [wireToolName(t.name), t.name]));
+    const named = (ev) => (ev?.type === 'tool-call' && ev.call && ownName.has(ev.call.name) ? { ...ev, call: { ...ev.call, name: ownName.get(ev.call.name) } } : ev);
     // Ollama reports token counts when asked too (checked on 0.40); older
     // versions ignore the field, so asking costs nothing and the usage log
     // gets real numbers for local models instead of zeros.
@@ -295,10 +303,10 @@ export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
     try {
       for await (const chunk of res.body) {
         arm(idleMs, `nothing for ${Math.round(idleMs / 1000)} s`);
-        for (const ev of parser.push(dec.decode(chunk, { stream: true }))) { if (ev.type === 'done') { done = ev; continue; } yield seen(ev); }
+        for (const ev of parser.push(dec.decode(chunk, { stream: true }))) { if (ev.type === 'done') { done = ev; continue; } yield named(seen(ev)); }
       }
     } catch (e) { throw stallError(e); } finally { clearTimeout(timer); signal?.removeEventListener?.('abort', onOuter); }
-    for (const ev of parser.end(dec.decode())) { if (ev.type === 'done') { done = ev; continue; } yield seen(ev); }
+    for (const ev of parser.end(dec.decode())) { if (ev.type === 'done') { done = ev; continue; } yield named(seen(ev)); }
     if (!sawText && !sawCall && outTokens > 0 && body.tools) {
       // First recover the Ollama streaming quirk.  If its non-streaming retry
       // is empty too, this is not a successful assistant answer.  Throw a
@@ -308,7 +316,7 @@ export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
       for await (const ev of recoverSwallowed({ name, baseUrl, headers, body, signal })) {
         if (ev.type === 'text-delta' && ev.text) recoveredMeaningful = true;
         if (ev.type === 'tool-call') recoveredMeaningful = true;
-        yield ev;
+        yield named(ev);
       }
       if (!recoveredMeaningful) {
         throw new Error(`ox[${name}]: empty response with tools from ${model}`);

@@ -66,13 +66,16 @@ func frontApp() -> NSRunningApplication? { frontPid().flatMap { NSRunningApplica
 func pump(_ seconds: Double = 0) { RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(seconds)) }
 
 func runningApp(_ name: String) -> NSRunningApplication? {
-    let n = name.lowercased()
+    // Names compared without invisible marks: WhatsApp calls itself "\u{200E}WhatsApp"
+    // (a left-to-right mark), so "WhatsApp" never matched and it was "not an app".
+    let clean = { (s: String?) -> String in (s ?? "").unicodeScalars.filter { !($0.properties.isDefaultIgnorableCodePoint || $0.properties.generalCategory == .format) }.map(String.init).joined().lowercased() }
+    let n = clean(name)
     // Regular apps first; a background one (OX Island, menu-bar apps) only by its name.
     let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy != .prohibited }
         .sorted { ($0.activationPolicy == .regular ? 0 : 1) < ($1.activationPolicy == .regular ? 0 : 1) }
-    return apps.first { $0.localizedName?.lowercased() == n }
+    return apps.first { clean($0.localizedName) == n }
         ?? apps.first { $0.bundleIdentifier?.lowercased() == n }
-        ?? apps.first { ($0.localizedName?.lowercased() ?? "").hasPrefix(n) }
+        ?? apps.first { clean($0.localizedName).hasPrefix(n) }
 }
 
 func attr(_ el: AXUIElement, _ a: String) -> AnyObject? {
@@ -114,7 +117,9 @@ func activate(_ name: String) -> NSRunningApplication? {
     if let a = app, a.activationPolicy != .regular { return a }
     // Already in front: nothing to wait for (the common case between two steps),
     // but a window parked by Stage Manager is brought back.
-    if let a = app, frontPid() == a.processIdentifier { raiseWindow(a); return a }
+    // In front with a window: nothing to wait for. In front with none (closed with ⌘W,
+    // like WhatsApp often is): fall through, so `open` gives it its window back.
+    if let a = app, frontPid() == a.processIdentifier, !windows(AXUIElementCreateApplication(a.processIdentifier)).isEmpty { raiseWindow(a); return a }
     let hasWindow = app.map { !windows(AXUIElementCreateApplication($0.processIdentifier)).isEmpty } ?? false
     if app == nil || !hasWindow {
         let url = app?.bundleURL ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: name)

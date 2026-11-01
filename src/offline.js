@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { osCmd } from './tools/operator.js';
 import { codeChanges as codeChangesSync } from './usage-log.js';
-import { parseControl, performControl, protectTyped, browserInFront, activateApp } from './voice-control.js';
+import { parseControl, performControl, protectTyped, browserInFront, activateApp, openWhatsAppChat } from './voice-control.js';
 
 // ---- arithmetic without eval: + - * / ^ % ( ) and "x% of y" ----
 
@@ -631,6 +631,15 @@ export function perform(it) {
         const r = spawnSync('osascript', ['-e', 'on run argv', '-e', 'tell application "Contacts" to set ps to (every person whose name contains (item 1 of argv))', '-e', 'if ps is {} then return ""', '-e', 'tell application "Contacts" to set phs to value of phones of (item 1 of ps)', '-e', 'if phs is {} then return ""', '-e', 'return item 1 of phs', '-e', 'end run', it.to], { encoding: 'utf8', timeout: 8000 });
         phone = r.status === 0 ? String(r.stdout).replace(/[^\d]/g, '') : '';
       }
+      // Not in Contacts (WhatsApp shows names Contacts does not have): found with WhatsApp's own
+      // search instead, then the words typed in the chat, never sent.
+      if (!phone && process.platform === 'darwin' && !process.env.NODE_TEST_CONTEXT && process.env.OX_OPERATOR_DRY !== '1') {
+        const o = openWhatsAppChat(it.to);
+        if (!o.ok) return o;
+        if (!it.text) return { ok: true, message: `${it.to}'s WhatsApp chat is open: say "type …" or type your message, then press Enter` };
+        const t = performControl({ intent: 'type', text: it.text, app: 'WhatsApp' }, { app: 'WhatsApp' });
+        return t.ok === false ? { ok: false, message: `${it.to}'s chat is open, but typing failed: ${t.message}` } : { ok: true, message: `${it.to}'s WhatsApp chat is open with your message typed in: press Enter to send it (ox never sends it)` };
+      }
       const url = `whatsapp://send?${phone ? `phone=${phone}` : ''}${it.text ? `${phone ? '&' : ''}text=${encodeURIComponent(it.text)}` : ''}`;
       if (process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1') return { ok: true, message: `dry run: would open ${url}` };
       const r = run(process.platform === 'darwin' ? ['open', url] : null);
@@ -707,8 +716,18 @@ export function perform(it) {
 // be one ox knows, or none is done (the whole goes to a model). A browser
 // followed by a site opens the site in that browser; "open chrome and youtube"
 // reads the bare second part as another open.
+const AI_CHAT = /^(chatgpt|chatgpt classic|claude|perplexity|gemini|grok|kimi|copilot|deepseek|meta ai)$/i;
+
 export function parseChain(text) {
-  const raw = String(text ?? '').trim().replace(/[.!?]+$/, '').replace(namePrefix(), '');
+  let raw = String(text ?? '').trim().replace(/[.!?]+$/, '').replace(namePrefix(), '').replace(/^(?:hey,?\s+|can you\s+|could you\s+|please\s+)+/i, '');
+  // "open ChatGPT and send a message hey, how are you": the words are typed there.
+  // An AI chat app gets them asked too (Return): that only asks a question. Any other
+  // app keeps them in the box for you to send.
+  const said = /^(open|launch|go to)\s+(.+?)\s+and\s+(?:send|write|ask)(?:\s+(?:it|him|her|them))?(?:\s+(?:a|the))?(?:\s+(?:message|prompt|question))?(?:\s*(?::|saying|that))?\s+(.+)$/i.exec(raw);
+  if (said && !/whats ?app/i.test(said[2])) {
+    const app = resolveApp(said[2]);
+    if (app) return [{ intent: 'app', name: app }, { intent: 'type', text: said[3].trim(), app, fresh: true, ...(AI_CHAT.test(app) ? { submit: true } : {}) }];
+  }
   // The words after "type" are the text, "and"s included: kept whole through the split.
   const typed = protectTyped(raw, { search: true });
   const t = typed.text;
