@@ -732,7 +732,7 @@ test('8. concurrent adds from separate processes keep the log parseable and lose
   }
   // And the file is still in the mode the store promises.
   const mode = fs.statSync(scheduleEventsPath()).mode & 0o777;
-  assert.equal(mode, 0o600, `the log must stay 0600, got ${mode.toString(8)}`);
+  if (process.platform !== 'win32') assert.equal(mode, 0o600, `the log must stay 0600, got ${mode.toString(8)}`);
 });
 
 test('8b. ids stay unique when the PRNG is degenerate, so no schedule is silently lost', () => {

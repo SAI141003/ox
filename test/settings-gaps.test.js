@@ -17,7 +17,7 @@ const { planBrief } = await import('../src/subscriptions.js');
 test('your instructions are saved, then reach every prompt, quick answers and plans included', async () => {
   await api.saveInstructions('Always reply in French.');
   assert.equal(fs.readFileSync(file, 'utf8'), 'Always reply in French.\n');
-  assert.equal((fs.statSync(file).mode & 0o777).toString(8), '600');
+  if (process.platform !== 'win32') assert.equal((fs.statSync(file).mode & 0o777).toString(8), '600');
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-settings-cwd-'));
   const parts = buildContext({ cwd });
   for (const answerOnly of [false, true]) {

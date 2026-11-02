@@ -16,7 +16,7 @@ test('a pasted key is saved 0600, applied, and shown only as its last four chara
   const env = {};
   setKey('ANTHROPIC_API_KEY', 'sk-ant-secret-1234', { env, file });
   assert.equal(env.ANTHROPIC_API_KEY, 'sk-ant-secret-1234');
-  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
   const st = keyStatus('ANTHROPIC_API_KEY', env, file);
   assert.deepEqual(st, { set: true, source: 'app', hint: '…1234' });
   // Removing it clears the environment only because the value came from the file.

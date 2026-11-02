@@ -10,7 +10,7 @@ import net from 'node:net';
 import { handleHook, runRelay, toEvents, decisionOutput, withHooks, installed, planInstall, applyInstall } from '../src/agent-hooks.js';
 
 // A short dir: unix socket paths are capped near 104 bytes on macOS.
-const sockDir = () => fs.mkdtempSync(path.join('/tmp', 'oxh-'));
+const sockDir = () => fs.mkdtempSync(path.join(process.platform === 'win32' ? os.tmpdir() : '/tmp', 'oxh-'));
 
 // Plays the island: connects, says ready, records events, answers approvals.
 function island(socketPath, answer) {

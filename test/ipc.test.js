@@ -162,6 +162,11 @@ test('ipc: socketPathFor on Windows is a sanitized named pipe', () => {
     assert.ok(p.startsWith('\\\\.\\pipe\\ox-ipc-'), p);
     assert.ok(!p.slice('\\\\.\\pipe\\'.length).includes('\\'), `${evil} smuggled a separator: ${p}`);
   }
+  // Another dir is still a pipe (a socket file cannot listen there), grouped by that dir.
+  const a = socketPathFor('s1', 'C:\\tmp\\one', 'win32');
+  assert.match(a, /^\\\\\.\\pipe\\ox-ipcd-[0-9a-f]{10}-s1$/);
+  assert.equal(socketPathFor('s2', 'C:\\tmp\\one', 'win32').slice(0, -2), a.slice(0, -2));
+  assert.notEqual(socketPathFor('s1', 'C:\\tmp\\two', 'win32'), a);
 });
 
 test('ipc: defaults stagger —connect timeout is far shorter than approval timeout', () => {

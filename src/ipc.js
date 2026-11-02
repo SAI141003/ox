@@ -43,6 +43,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { EventEmitter } from 'node:events';
+import { createHash } from 'node:crypto';
 
 export const IPC_VERSION = 1;
 
@@ -119,16 +120,24 @@ export function socketPathFor(sessionId, dir = DEFAULT_SOCKET_DIR, platform = pr
   const safe = String(sessionId ?? '').replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 96) || 'default';
   // Windows has no unix socket files for Node: local IPC is a named pipe, and
   // a pipe must live in the \\.\pipe\ namespace or listen() fails outright.
-  if (platform === 'win32' && dir === DEFAULT_SOCKET_DIR) return `\\\\.\\pipe\\ox-ipc-${safe}`;
+  if (platform === 'win32') return `\\\\.\\pipe\\${pipePrefix(dir)}${safe}`;
   return path.join(dir, `ox-ipc-${safe}.sock`);
+}
+
+// A dir other than the default gets its own pipe prefix, so runs grouped
+// under one dir are listed together and never mix with the default ones.
+function pipePrefix(dir) {
+  if (dir === DEFAULT_SOCKET_DIR) return 'ox-ipc-';
+  return `ox-ipcd-${createHash('sha256').update(path.resolve(dir)).digest('hex').slice(0, 10)}-`;
 }
 
 // Every live run's socket, found the same way on each OS: socket files in the
 // temp dir, or named pipes on Windows. Used by islands that watch all runs.
 export function listIpcSockets(dir = DEFAULT_SOCKET_DIR, platform = process.platform) {
-  if (platform === 'win32' && dir === DEFAULT_SOCKET_DIR) {
+  if (platform === 'win32') {
+    const prefix = pipePrefix(dir);
     try {
-      return fs.readdirSync('\\\\.\\pipe\\').filter((n) => n.startsWith('ox-ipc-')).map((n) => `\\\\.\\pipe\\${n}`);
+      return fs.readdirSync('\\\\.\\pipe\\').filter((n) => n.startsWith(prefix)).map((n) => `\\\\.\\pipe\\${n}`);
     } catch {
       return [];
     }

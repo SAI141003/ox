@@ -39,7 +39,7 @@ test('identity: id is a hash of the key, made once, named', () => {
   assert.equal(M.identity({ home: h }).id, a.id);
   assert.equal(M.setName('Studio Mac', { home: h }), 'Studio Mac');
   assert.equal(M.identity({ home: h }).name, 'Studio Mac');
-  assert.equal((fs.statSync(a.file).mode & 0o777).toString(8), '600');
+  if (process.platform !== 'win32') assert.equal((fs.statSync(a.file).mode & 0o777).toString(8), '600');
 });
 
 test('codes: 60 bits in OX-XXXX-XXXX-XXXX, never the same twice', () => {

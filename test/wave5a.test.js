@@ -566,7 +566,7 @@ test('audit ledger: decision row pre-execution, outcome row after, ref-linked, 0
   assert.equal(rows[1].ok, false);
   assert.ok(rows[1].error.includes('boom'));
   const mode = fs.statSync(file).mode & 0o777;
-  assert.equal(mode, 0o600, `audit perms must be 0600, got ${mode.toString(8)}`);
+  if (process.platform !== 'win32') assert.equal(mode, 0o600, `audit perms must be 0600, got ${mode.toString(8)}`);
 
   const sizeBefore = fs.statSync(file).size;
   process.env.OX_AUDIT = '0';

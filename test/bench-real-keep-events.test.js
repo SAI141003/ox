@@ -12,6 +12,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { benchmarkExecutionEnv, benchmarkExecutionSpec, costFor, costStats, latencyStats, renderUsageLines, resolveBenchmarkTarget, runOnce, unavailableReason } from '../bench/real/runner.mjs';
@@ -242,7 +243,7 @@ test('latencyStats reports nearest-rank p95 without fabricating missing timings'
 });
 
 test('timing sidecar is a payload-free, sanitized event timeline', () => {
-  const root = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'ox-timing-test-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-timing-test-'));
   try {
     writeTimingsFile({ root }, [
       { t: 'text-delta', atMs: 27.4, text: 'private answer text' },

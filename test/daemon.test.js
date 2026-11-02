@@ -670,11 +670,11 @@ test('daemon 8: the control socket is 0600 in a 0700 dir, and an unsafe path is 
   const dirSt = fs.lstatSync(sb.daemon);
   const sockSt = fs.lstatSync(sock);
   assert.equal(sockSt.isSocket(), true, 'the control endpoint must be a real socket');
-  assert.equal(sockSt.mode & 0o777, 0o600, `socket mode must be 0600, got ${(sockSt.mode & 0o777).toString(8)}`);
-  assert.equal(dirSt.mode & 0o077, 0, `the daemon dir must not be group/other accessible, got ${(dirSt.mode & 0o777).toString(8)}`);
+  if (process.platform !== 'win32') assert.equal(sockSt.mode & 0o777, 0o600, `socket mode must be 0600, got ${(sockSt.mode & 0o777).toString(8)}`);
+  if (process.platform !== 'win32') assert.equal(dirSt.mode & 0o077, 0, `the daemon dir must not be group/other accessible, got ${(dirSt.mode & 0o777).toString(8)}`);
   assert.equal(sockSt.uid, os.userInfo().uid, 'the socket must be owned by this user');
   const pidSt = fs.lstatSync(path.join(sb.daemon, 'daemon.json'));
-  assert.equal(pidSt.mode & 0o777, 0o600, `pidfile mode must be 0600, got ${(pidSt.mode & 0o777).toString(8)}`);
+  if (process.platform !== 'win32') assert.equal(pidSt.mode & 0o777, 0o600, `pidfile mode must be 0600, got ${(pidSt.mode & 0o777).toString(8)}`);
 
   const { screenSocketPath, probeControl, resolveWorkerId } = await import('../src/daemon.js');
   const { attachSession } = await import('../src/daemon-attach.js');

@@ -571,7 +571,7 @@ test('ox session export CLI: --out writes 0600 file; stdout md by default; resum
   const r1 = await spawnOx(t, ['session', 'export', id, '--format', 'jsonl', '--redact', '--out', out]);
   assert.equal(r1.code, 0, `stdout: ${r1.stdout}\nstderr: ${r1.stderr}`);
   const st = fs.statSync(out);
-  assert.equal(st.mode & 0o777, 0o600, `--out must be 0600, got ${((st.mode & 0o777).toString(8))}`);
+  if (process.platform !== 'win32') assert.equal(st.mode & 0o777, 0o600, `--out must be 0600, got ${((st.mode & 0o777).toString(8))}`);
   const written = fs.readFileSync(out, 'utf8');
   assert.ok(written.includes('"t":"user"'));
   assert.ok(!written.includes('sk-live-abcdef1234567890'));

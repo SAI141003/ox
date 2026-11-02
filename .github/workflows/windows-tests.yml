@@ -1,0 +1,26 @@
+# The unit suite on Windows, on demand: lists every failing test so they can
+# be fixed without cutting a release.
+name: windows-tests
+
+on:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --omit=dev
+      - name: Unit tests
+        shell: bash
+        env:
+          OX_ISLAND: '0'
+          OX_LEARN: '0'
+          OX_NO_KEYSTORE: '1'
+          OX_USAGE_LOG: '0'
+          OX_NO_PLUGINS: '1'
+          OX_NO_BUILTIN_SKILLS: '1'
+        run: node scripts/verify.mjs --only unit

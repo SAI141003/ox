@@ -27,7 +27,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OX = path.join(ROOT, 'bin', 'ox.js');
@@ -129,6 +129,7 @@ const STAGES = {
         env: {
           HOME: testHome,
           USERPROFILE: testHome,
+          ...(process.platform === 'win32' ? { NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(path.join(ROOT, 'test', 'helpers', 'win-home.mjs')).href}`.trim() } : {}),
           XDG_CONFIG_HOME: path.join(testHome, '.config'),
           XDG_CACHE_HOME: path.join(testHome, '.cache'),
           XDG_DATA_HOME: path.join(testHome, '.local', 'share'),
@@ -156,7 +157,7 @@ const STAGES = {
       const after = r.out.slice(m.index, m.index + 4000);
       const why = /^\s*error: \|?-?\s*\n?\s*(.+)$/m.exec(after.split('\n').slice(1).join('\n'))?.[1]?.trim().replace(/^['"]|['"]$/g, '');
       return why ? `${m[1]}\n      ${why.slice(0, 300)}` : m[1];
-    }).filter((x, i, a) => a.indexOf(x) === i).slice(0, 20);
+    }).filter((x, i, a) => a.indexOf(x) === i).slice(0, process.env.CI ? 400 : 20);
     const list = failing.length ? `\n  - ${failing.join('\n  - ')}` : '';
     if (Number.isNaN(pass)) {
       // No summary: the run never finished (killed at the ceiling, or crashed).

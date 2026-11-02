@@ -32,7 +32,7 @@ test('phone: pairing makes a key shown once, stored 0600; seal and open round-tr
   const p = pairDevice('Sai iPhone', { home: h, host: '192.168.1.5', port: 47890 });
   assert.match(p.link, /^oxphone:\/\/192\.168\.1\.5:47890\/[\w-]+#[\w-]{43}$/);
   assert.equal(keyOf(p.link).length, 32);
-  assert.equal((fs.statSync(path.join(h, 'phone.json')).mode & 0o777).toString(8), '600');
+  if (process.platform !== 'win32') assert.equal((fs.statSync(path.join(h, 'phone.json')).mode & 0o777).toString(8), '600');
   const k = keyOf(p.link);
   assert.deepEqual(open(k, seal(k, { a: 1 })), { a: 1 });
   assert.throws(() => open(crypto.randomBytes(32), seal(k, { a: 1 })));
