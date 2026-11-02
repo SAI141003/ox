@@ -34,7 +34,7 @@ test('Claude Code import includes only the matching project auto-memory index an
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-claude-memory-home-'));
   const cwd = path.join(os.tmpdir(), 'ox-claude-memory-project');
   const w = (f, text) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); };
-  const memory = path.join(home, '.claude', 'projects', cwd.replace(/[\\/]/g, '-'), 'memory');
+  const memory = path.join(home, '.claude', 'projects', path.resolve(cwd).replace(/[^A-Za-z0-9]/g, '-'), 'memory');
   w(path.join(memory, 'MEMORY.md'), '# Claude memory index\n- Use pnpm.');
   w(path.join(memory, 'debugging.md'), '# Debugging\nCheck the process owner first.');
   w(path.join(home, '.claude', 'projects', '-some-other-project', 'memory', 'MEMORY.md'), 'DO NOT IMPORT THIS');
@@ -43,4 +43,13 @@ test('Claude Code import includes only the matching project auto-memory index an
   assert.ok(result.memoryFiles.find((m) => m.name.endsWith('MEMORY.md'))?.content.includes('Use pnpm'));
   assert.ok(!result.memoryFiles.some((m) => m.content.includes('DO NOT IMPORT THIS')));
   fs.rmSync(home, { recursive: true, force: true });
+});
+
+test('the Claude project folder name matches Claude Code: spaces, dots and drive colons become dashes', async () => {
+  const { claudeProjectName } = await import('../src/import.js');
+  if (process.platform !== 'win32') {
+    assert.equal(claudeProjectName('/Users/me/Ox Workspace'), '-Users-me-Ox-Workspace');
+    assert.equal(claudeProjectName('/Users/me/ox/.claude/worktrees/x'), '-Users-me-ox--claude-worktrees-x');
+  }
+  assert.doesNotMatch(claudeProjectName(process.cwd()), /[^A-Za-z0-9-]/);
 });

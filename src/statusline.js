@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { shellArgv } from './shell.js';
 
 const OX_DIR = (env = process.env) => env.OX_HOME || path.join(env.HOME || os.homedir(), '.ox');
 export const USAGE_FILE = (env = process.env) => path.join(OX_DIR(env), 'plan-usage', 'claude.json');
@@ -62,9 +63,9 @@ export function runStatusline(raw, { env = process.env, now = Date.now(), run = 
   try { prev = JSON.parse(fs.readFileSync(PREVIOUS_FILE(env), 'utf8'))?.command ?? null; } catch {}
   if (typeof prev === 'string' && prev.trim()) {
     try {
-      const r = process.platform === 'win32'
-        ? run(prev, { input: String(raw ?? ''), encoding: 'utf8', timeout: 5000, shell: true })
-        : run('/bin/sh', ['-c', prev], { input: String(raw ?? ''), encoding: 'utf8', timeout: 5000 });
+      // Claude Code runs status lines with bash (Git Bash on Windows); so does this.
+      const [shell, ...shellArgs] = process.platform === 'win32' ? shellArgv(prev, { login: false }) : ['/bin/sh', '-c', prev];
+      const r = run(shell, shellArgs, { input: String(raw ?? ''), encoding: 'utf8', timeout: 5000 });
       if (typeof r.stdout === 'string' && r.stdout) return r.stdout;
     } catch {}
   }

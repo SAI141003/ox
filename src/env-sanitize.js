@@ -33,7 +33,27 @@ const CORE_KEYS = new Set([
   'COMSPEC',
   'PATHEXT',
   'PROGRAMFILES',
+  // What Windows programs need to start and find their files; none is a secret.
+  'WINDIR',
+  'SYSTEMDRIVE',
+  'USERPROFILE',
+  'HOMEDRIVE',
+  'HOMEPATH',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'PROGRAMDATA',
+  'PROGRAMFILES(X86)',
+  'COMMONPROGRAMFILES',
+  'USERNAME',
+  'OS',
+  'PROCESSOR_ARCHITECTURE',
+  'NUMBER_OF_PROCESSORS',
 ]);
+
+// Windows environment names keep their own casing (Path, SystemRoot, ComSpec)
+// but are matched without it. Matching them exactly here dropped Path, so in
+// the default mode every command on Windows ran with no PATH (exit 127).
+const coreKey = (k, platform = process.platform) => CORE_KEYS.has(platform === 'win32' ? String(k).toUpperCase() : k);
 
 function stripProxyUserinfo(value) {
   let s = String(value ?? '');
@@ -51,6 +71,8 @@ function isSecretKey(key, include) {
   return /(KEY|SECRET|TOKEN)/.test(up) || up.startsWith('AWS_SESSION');
 }
 
+export { coreKey };
+
 export function sanitizeEnv(base = process.env, opts = {}) {
   let mode = opts.mode;
   if (process.env.OX_ENV_ALL === '1' || process.env.OX_ENV_ALL === 'true') mode = 'all';
@@ -62,12 +84,13 @@ export function sanitizeEnv(base = process.env, opts = {}) {
     if (exclude.has(k)) continue;
     if (v === undefined) continue;
     if (mode === 'none') {
-      if (k === 'PATH' || k === 'HOME' || k === 'TMPDIR') out[k] = v;
+      const u = process.platform === 'win32' ? k.toUpperCase() : k;
+      if (u === 'PATH' || u === 'HOME' || u === 'TMPDIR' || (process.platform === 'win32' && ['SYSTEMROOT', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP'].includes(u))) out[k] = v;
       continue;
     }
     if (mode === 'core') {
       const isProxy = PROXY_KEYS.has(k);
-      if (CORE_KEYS.has(k) || k.startsWith('LC_') || isProxy) {
+      if (coreKey(k) || k.startsWith('LC_') || isProxy) {
         out[k] = isProxy ? stripProxyUserinfo(v) : v;
       }
       continue;

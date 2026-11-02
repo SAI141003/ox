@@ -92,7 +92,7 @@ test('missing metadata does not invent commands; directory-only tests are report
   assert.equal(generateOnboarding(cwd, state).find(s => s.id === 'tests').action, undefined);
 });
 
-test('reports real git branch and dirty file count', t => {
+test('reports real git branch and dirty file count', { skip: process.platform === 'win32' && 'its fixture has a newline in a file name' }, t => {
   const cwd = fixture(t, { 'one.js': '', 'two\nlines.js': '' });
   const git = (...args) => execFileSync('git', ['-C', cwd, ...args], { stdio: 'pipe' });
   git('init', '--initial-branch=onboarding');

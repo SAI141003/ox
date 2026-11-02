@@ -76,7 +76,7 @@ test('learnFromSession writes a SKILL.md through the verified gate', () => {
   const result = learnFromSession({ sessionFile: file });
   assert.equal(result.ok, true);
   assert.match(result.name, /^run-read-file$/);
-  assert.ok(result.file.endsWith('run-read-file/SKILL.md'));
+  assert.ok(result.file.split(path.sep).join('/').endsWith('run-read-file/SKILL.md'));
   const skillMd = fs.readFileSync(result.file, 'utf8');
   assert.ok(skillMd.includes('name: run-read-file'));
   assert.ok(skillMd.includes('Reusable procedure for run-read-file'));

@@ -788,3 +788,10 @@ test('each gated call in a batch is approved on its own, and a denial stops the 
   assert.match(results[1], /User declined/);
   assert.match(results[2], /skipped: the user declined an earlier action in this turn/);
 });
+
+test('Windows: Path, SystemRoot and ComSpec survive the core env whatever their casing', async () => {
+  const { coreKey } = await import('../src/env-sanitize.js');
+  for (const k of ['Path', 'SystemRoot', 'ComSpec', 'PATHEXT', 'windir', 'USERPROFILE']) assert.equal(coreKey(k, 'win32'), true, k);
+  assert.equal(coreKey('Path', 'darwin'), false, 'on macOS and Linux names are exact');
+  assert.equal(coreKey('GITHUB_TOKEN', 'win32'), false);
+});

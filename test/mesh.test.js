@@ -316,6 +316,7 @@ test('dev servers on another machine: start its own dev command there, read its 
     assert.equal((await A.ask('Laptop B', 'dev-stop', { port: p.port })).stopped, true);
   } finally {
     await A.close(); await B.close();
-    fs.rmSync(site, { recursive: true, force: true }); fs.rmSync(plain, { recursive: true, force: true });
+    // Windows holds a folder a just-stopped dev server ran in for a moment.
+    fs.rmSync(site, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); fs.rmSync(plain, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });

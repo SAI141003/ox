@@ -453,3 +453,15 @@ describe('Self-improve: verified remediation with real re-verification and spec 
     assert.equal(verifier.getReport().length, 2);
   });
 });
+
+test('a locked file is matched from a Windows path too', async () => {
+  const { detectSpecDrift } = await import('../src/spec-drift.js');
+  const fsm = await import('node:fs'); const osm = await import('node:os'); const pm = await import('node:path');
+  const dir = fsm.mkdtempSync(pm.join(osm.tmpdir(), 'ox-drift-win-'));
+  fsm.mkdirSync(pm.join(dir, '.agent', 'architecture'), { recursive: true });
+  fsm.writeFileSync(pm.join(dir, '.agent', 'architecture', 'decisions.json'), JSON.stringify([{ id: 'd', title: 'Lock it', decision: 'solution.cjs must not change', files: ['solution.cjs'], locked: true }]));
+  try {
+    const r = detectSpecDrift(dir, { changedFiles: ['C:\\repo\\solution.cjs'], diffText: '-a\n+b\n' });
+    assert.equal(r.safe, false);
+  } finally { fsm.rmSync(dir, { recursive: true, force: true }); }
+});

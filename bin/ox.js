@@ -2,6 +2,12 @@
 
 import fs from 'node:fs';
 
+// Windows reads the home folder from USERPROFILE. When only HOME is given (a
+// launcher or script that sets HOME alone), use it rather than silently
+// falling back to the account's own profile. A normal Windows session always
+// has USERPROFILE, so nothing changes there.
+if (process.platform === 'win32' && !process.env.USERPROFILE && process.env.HOME) process.env.USERPROFILE = process.env.HOME;
+
 // Fast path: --version / -v must never pay the full CLI import cost.
 if (process.argv.length === 3 && (process.argv[2] === '--version' || process.argv[2] === '-v')) {
   const { version } = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));

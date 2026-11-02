@@ -456,7 +456,7 @@ test('hooksFor and fireHooks agree on what runs', async () => {
 // Env contract for the newly reachable events
 // ---------------------------------------------------------------------------
 
-test('PreLLM/PostLLM/Session* hooks receive the documented env vars', async (t) => {
+test('PreLLM/PostLLM/Session* hooks receive the documented env vars', { skip: process.platform === 'win32' && 'the hook is POSIX shell (printf, $VAR, >)' }, async (t) => {
   const dir = tmpDir();
   t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
   const out = path.join(dir, 'env.txt');

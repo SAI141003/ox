@@ -545,7 +545,8 @@ test('6. every event above is in the ledger, and the ledger NEVER contains file 
   assert.equal(raw.includes('Archived procedural patterns'), false, raw);
 
   // ...but it DOES carry the paths and the reasons, which is the point
-  assert.equal(raw.includes(capRes.result.path), true, 'the archive path is missing');
+  // The ledger is JSON: a Windows path's backslashes are escaped there.
+  assert.equal(raw.includes(JSON.stringify(capRes.result.path).slice(1, -1)), true, 'the archive path is missing');
   assert.equal(raw.includes('agent-dir-over-500KB'), true, 'the reason is missing');
 
   // A hostile caller cannot smuggle content in through an unexpected key: the

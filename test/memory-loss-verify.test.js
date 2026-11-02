@@ -272,7 +272,7 @@ test('2b. the checkpoint eviction is ANNOUNCED on stderr', (t) => {
   }
   assert.match(stderr, /ox: memory-loss: archived 1 checkpoint\(s\)/, stderr);
   assert.match(stderr, /nothing deleted/, stderr);
-  assert.match(stderr, /notes\/archive/, stderr);
+  assert.match(stderr, /notes[\\/]archive/, stderr);
 });
 
 // ===========================================================================
@@ -548,7 +548,8 @@ test('6. the ledger records every event above and contains NO file content', (t)
   }
 
   // ...but it DOES carry the paths and the reasons, which is the whole point
-  assert.equal(raw.includes(capRes.result.path), true, 'the archive path is missing');
+  // The ledger is JSON: a Windows path's backslashes are escaped there.
+  assert.equal(raw.includes(JSON.stringify(capRes.result.path).slice(1, -1)), true, 'the archive path is missing');
   assert.equal(raw.includes('agent-dir-over-500KB'), true, 'the reason is missing');
   assert.equal(raw.includes(`over-${MAX_CHECKPOINTS}`), true, 'the checkpoint reason is missing');
 });

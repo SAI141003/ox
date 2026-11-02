@@ -74,7 +74,7 @@ export function undoableTurns(cwd) {
   return turns.flatMap((t) => {
     try {
       const lines = fs.readFileSync(path.join(DIR(cwd), t, 'journal.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
-      return [{ turn: t, files: lines.map((e) => path.relative(path.resolve(cwd), e.path) || e.path), at: lines[0]?.at ?? 0 }];
+      return [{ turn: t, files: lines.map((e) => path.relative(path.resolve(cwd), e.path).split(path.sep).join('/') || e.path), at: lines[0]?.at ?? 0 }];
     } catch { return []; }
   });
 }
@@ -89,7 +89,7 @@ export function undoTurn(cwd, turn = null) {
   const dir = path.join(DIR(cwd), t);
   if (fs.existsSync(path.join(dir, 'undone'))) return { turn: t, restored: [], removed: [], skipped: [], already: true };
   const lines = fs.readFileSync(path.join(dir, 'journal.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
-  const rel = (p) => path.relative(path.resolve(cwd), p) || p;
+  const rel = (p) => path.relative(path.resolve(cwd), p).split(path.sep).join('/') || p;
   const out = { turn: t, restored: [], removed: [], skipped: [] };
   for (const e of lines.reverse()) {
     let now;

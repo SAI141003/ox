@@ -82,7 +82,9 @@ export function hire(spec = {}, opts = {}) {
     // What the agent may do unattended: read (look only), edits (change files
     // in its folder; commands are declined), all (everything, no approvals).
     approval: ['read', 'edits', 'all'].includes(spec.approval) ? spec.approval : 'edits',
-    cwd: spec.cwd ? path.resolve(String(spec.cwd)) : null,
+    // A folder on another machine is that machine's path: resolving it here
+    // turned /tmp into D:\tmp on a Windows host.
+    cwd: spec.cwd ? (spec.machine ? String(spec.cwd) : path.resolve(String(spec.cwd))) : null,
     // A paired machine its runs happen on (ox mesh), or null for this one.
     machine: spec.machine ? String(spec.machine).slice(0, 60) : null,
     status: by === 'you' ? 'active' : 'proposed',

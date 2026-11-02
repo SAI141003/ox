@@ -73,11 +73,15 @@ function readMemoryFiles(cwd, names) {
 }
 
 // Claude Code keeps auto-memory outside the repository, per project. Its
-// project directory is the absolute cwd with path separators replaced by '-'
-// (for example /Users/me/app -> -Users-me-app). Only the exact candidate is
-// considered; we never scan unrelated Claude projects or read transcripts.
+// project directory is the absolute cwd with every character but letters and
+// digits replaced by '-' (/Users/me/Ox Workspace -> -Users-me-Ox-Workspace,
+// C:\\me\\app -> C--me-app). Only the exact candidate is considered; we never
+// scan unrelated Claude projects or read transcripts.
+export function claudeProjectName(cwd) {
+  return path.resolve(cwd).replace(/[^A-Za-z0-9]/g, '-');
+}
 function claudeAutoMemory(cwd, home) {
-  const project = path.resolve(cwd).replace(/[\\/]/g, '-');
+  const project = claudeProjectName(cwd);
   const dir = path.join(home, '.claude', 'projects', project, 'memory');
   const files = [];
   const visit = (folder, relative = '', depth = 2) => {

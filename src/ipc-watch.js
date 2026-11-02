@@ -139,7 +139,8 @@ function shortPath(p, home = os.homedir()) {
   if (!s) return '';
   const h = String(home ?? '');
   const rel = h && s === h ? '~' : h && s.startsWith(h + path.sep) ? `~${s.slice(h.length)}` : s;
-  const parts = rel.split(path.sep).filter((x) => x !== '');
+  // Either separator: a session from another OS (or a forward-slash Windows path) still shortens.
+  const parts = rel.split(/[\\/]/).filter((x) => x !== '');
   return parts.length <= 3 ? rel : `…/${parts.slice(-2).join('/')}`;
 }
 

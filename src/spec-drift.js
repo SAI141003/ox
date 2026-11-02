@@ -34,13 +34,16 @@ export function loadDecisionLog(cwd) {
   return decisions;
 }
 
+// Forward slashes on both sides: a Windows path (C:\repo\solution.cjs) never
+// ended with "/solution.cjs", so a locked file there was never matched.
 function normFiles(files) {
-  return (files || []).map(f => String(f).replace(/^\.\//, ""));
+  return (files || []).map(f => String(f).replace(/\\/g, "/").replace(/^\.\//, ""));
 }
 
 function classify(decision, changed, diffText) {
   const decFiles = normFiles(decision.files);
-  const touched = decFiles.filter(f => changed.some(c => c === f || c.endsWith("/" + f)));
+  const changedNorm = normFiles(changed);
+  const touched = decFiles.filter(f => changedNorm.some(c => c === f || c.endsWith("/" + f)));
   if (!touched.length) return null;
   const diff = diffText || "";
   const removed = diff.split("\n").filter(l => l.startsWith("-") && !l.startsWith("---"));

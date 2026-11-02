@@ -128,7 +128,7 @@ test('git mirror: the second clone downloads nothing new and stands alone', () =
   assert.equal(b.mirrorCreated, false);
   assert.ok(fs.existsSync(path.join(d, 'c2', 'package.json')));
   assert.ok(!fs.existsSync(path.join(d, 'c2', '.git', 'objects', 'info', 'alternates')), 'dissociated: no link back to the mirror');
-  assert.match(D.mirrorPath('https://github.com/me/x.git'), /git-mirrors\/github\.com\/me\/x\.git$/);
+  assert.match(D.mirrorPath('https://github.com/me/x.git').split(path.sep).join('/'), /git-mirrors\/github\.com\/me\/x\.git$/);
   assert.throws(() => D.mirrorPath('https://github.com/../../etc'), /not a git remote/);
 });
 

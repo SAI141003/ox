@@ -6,6 +6,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
+// Byte-for-byte checkouts in these scratch repos: the Windows runner's git
+// turns LF into CRLF (core.autocrlf), for ox's own git calls too.
+Object.assign(process.env, { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.autocrlf', GIT_CONFIG_VALUE_0: 'false' });
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-upd-'));
 process.env.OX_HOME = path.join(home, '.ox');
 const U = await import('../src/self-update.js');

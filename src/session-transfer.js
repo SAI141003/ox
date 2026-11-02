@@ -533,7 +533,7 @@ export function writeHandoff(s, { dir = null, home = os.homedir(), ...opts } = {
   fs.writeFileSync(md, handoffMarkdown(s, opts));
   const { ref, ...rest } = s;
   fs.writeFileSync(json, redactSecrets(JSON.stringify({ ...rest, source: { tool: s.tool, id: s.id }, transferredAt: new Date().toISOString() }, null, 2)).text);
-  return { md, json, dir: target, rel: path.relative(target, md) };
+  return { md, json, dir: target, rel: path.relative(target, md).split(path.sep).join('/') };
 }
 
 // ---------------------------------------------------------------- delivery

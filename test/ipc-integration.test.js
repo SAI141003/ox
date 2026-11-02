@@ -30,7 +30,7 @@ import {
   wsPath,
   writeWs,
 } from '../bench/real/lib.mjs';
-import { connectIpcClient } from '../src/ipc.js';
+import { connectIpcClient, nativeIpcPath } from '../src/ipc.js';
 
 const OX_BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
 
@@ -480,7 +480,8 @@ test('ipc integration 8: ox ipc serve/status, a duplicate run, and SIGINT cleanu
   const served = () => serve.out().includes('socket:') && serve.out().includes('ms');
   for (let i = 0; i < 200 && !served(); i++) await sleep(25);
   assert.match(serve.out(), /socket: /, `serve never printed its socket:\n${serve.out()}\n${serve.err()}`);
-  assert.ok(serve.out().includes(socket), `serve printed the wrong socket path:\n${serve.out()}`);
+  // On Windows a socket file path is served as the named pipe made from it.
+  assert.ok(serve.out().includes(nativeIpcPath(socket)), `serve printed the wrong socket path:\n${serve.out()}`);
   assert.match(serve.out(), /1234ms/, 'serve must report the resolved approval hold');
 
   const live = await spawnCli(['ipc', 'status', '--socket', socket]).done;

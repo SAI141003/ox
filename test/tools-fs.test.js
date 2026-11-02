@@ -546,7 +546,7 @@ test('1. a relative path inside the cwd works for read_file, write_file, edit_fi
   assert.ok(listedDefault.content.startsWith('./\n'));
 });
 
-test('2. ../ traversal is not a new hole: it gets the same verdict as the absolute path', async (t) => {
+test('2. ../ traversal is not a new hole: it gets the same verdict as the absolute path', { skip: process.platform === 'win32' && 'it walks up to /etc/passwd' }, async (t) => {
   const cwd = workspace(t);
   const outside = sandbox(t);
   fs.writeFileSync(path.join(outside, 'far.txt'), 'farMarker\n');

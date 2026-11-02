@@ -21,6 +21,7 @@ function childEnv(home, extra = {}) {
   const env = { ...process.env };
   for (const k of SCRUB) delete env[k];
   env.HOME = home;
+  env.USERPROFILE = home; // what Windows reads for the home folder
   env.NO_COLOR = '1';
   return { ...env, ...extra };
 }

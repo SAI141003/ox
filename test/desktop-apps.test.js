@@ -17,7 +17,7 @@ const fakeRun = (installed) => (cmd, args) => {
   return { status: 1, stdout: '' };
 };
 
-test('apps are found by bundle id, with version and whether they are open', () => {
+test('apps are found by bundle id, with version and whether they are open', { skip: process.platform === 'win32' && 'bundle ids are macOS' }, () => {
   const apps = detectDesktopApps({ platform: 'darwin', run: fakeRun({ 'net.whatsapp.WhatsApp': '/Applications/WhatsApp.app', 'com.microsoft.Outlook': '/Applications/Microsoft Outlook.app' }), exists: () => false, fresh: true });
   assert.deepEqual([apps.whatsapp.installed, apps.whatsapp.version, apps.whatsapp.running], [true, '1.2.3', true]);
   assert.equal(apps.outlook.installed, true);

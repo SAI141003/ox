@@ -18,10 +18,13 @@ function repo() {
   return dir;
 }
 
+// git prints C:/Users/... on Windows; compare the real paths, not their spelling.
+const same = (p) => fs.realpathSync.native(path.resolve(p));
+
 test('root and branch match git, from a nested folder', () => {
   const dir = repo();
   const sub = path.join(dir, 'a', 'b');
-  assert.equal(gitToplevel(sub), git(sub, 'rev-parse', '--show-toplevel'));
+  assert.equal(same(gitToplevel(sub)), same(git(sub, 'rev-parse', '--show-toplevel')));
   assert.equal(gitBranch(sub), 'trunk');
 });
 
@@ -29,7 +32,7 @@ test('a linked worktree: its own root and branch (.git is a file)', () => {
   const dir = repo();
   const wt = path.join(path.dirname(dir), `${path.basename(dir)}-wt`);
   git(dir, 'worktree', 'add', '-q', '-b', 'feature/x', wt);
-  assert.equal(gitToplevel(wt), git(wt, 'rev-parse', '--show-toplevel'));
+  assert.equal(same(gitToplevel(wt)), same(git(wt, 'rev-parse', '--show-toplevel')));
   assert.equal(gitBranch(wt), 'feature/x');
 });
 
