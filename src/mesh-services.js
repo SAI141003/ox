@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 export const OP_GRANT = Object.freeze({ describe: 'status', agents: 'agents', 'agent-read': 'agents', 'agent-send': 'agents', 'agent-delivery': 'agents', ls: 'files', pull: 'files', push: 'files-write', 'dev-start': 'dev', 'dev-stop': 'dev', 'dev-list': 'dev', http: 'dev', screen: 'screen', 'control-list': 'control', 'control-click': 'control', 'control-type': 'control', 'control-key': 'control' });
 const CHUNK = 48 * 1024;
@@ -51,7 +52,7 @@ export async function describe({ ollamaUrl = 'http://127.0.0.1:11434', home = pa
   for (const [bin, label] of [['claude', 'Claude Code'], ['codex', 'Codex'], ['gemini', 'Gemini CLI'], ['cursor-agent', 'Cursor'], ['copilot', 'Copilot CLI'], ['hermes', 'Hermes'], ['opencode', 'OpenCode'], ['ollama', 'Ollama'], ['gh', 'GitHub CLI'], ['docker', 'Docker'], ['git', 'git'], ['python3', 'Python'], ['ffmpeg', 'ffmpeg']]) if (has(bin)) out.tools.push(label);
   try { const r = await fetch(`${ollamaUrl.replace(/\/+$/, '')}/api/tags`, { signal: AbortSignal.timeout(1500) }); if (r.ok) out.models = ((await r.json()).models ?? []).map((m) => m.name); } catch {}
   try { out.providers = Object.keys(JSON.parse(fs.readFileSync(path.join(home, 'keys.json'), 'utf8'))).map((k) => k.replace(/_API_KEY$|_TOKEN$/, '').toLowerCase()); } catch {}
-  try { out.ox = JSON.parse(fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'package.json'), 'utf8')).version; } catch {}
+  try { out.ox = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8')).version; } catch {}
   try { out.sessions = (await import('./agents-live.js')).liveAgents().length; } catch {}
   return out;
 }

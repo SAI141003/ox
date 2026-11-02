@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
 
@@ -59,7 +60,7 @@ test("what's new lists commits since the one you saw, and nothing for a bad or c
   assert.deepEqual(A.whatsNew(head).changes, []);
   assert.deepEqual(A.whatsNew('not-a-hash;rm').changes, []);
   // A shallow checkout (CI) has no parent commit to compare with.
-  const prev = spawnSync('git', ['rev-parse', '--short', 'HEAD~1'], { encoding: 'utf8', cwd: new URL('..', import.meta.url).pathname });
+  const prev = spawnSync('git', ['rev-parse', '--short', 'HEAD~1'], { encoding: 'utf8', cwd: fileURLToPath(new URL('..', import.meta.url)) });
   if (prev.status === 0) {
     const w = A.whatsNew(prev.stdout.trim());
     assert.ok(w.changes.length >= 1, 'at least the head commit (a merge brings its parent\'s branch too)');

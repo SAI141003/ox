@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { PRICING, lookupModel, cacheRates, costOf, formatCost, createCostBudget, assertCostBudget, currentCostBudget, resolveMaxCostUsd } from '../src/cost.js';
 import { classifyTargetCost } from '../src/agent.js';
+import { fileURLToPath } from 'node:url';
 
 test('fallback cost classification fails closed for unpriced remote models', () => {
   assert.equal(classifyTargetCost({ provider: 'ollama', model: 'local-model', keyEnv: null }), 'free');
@@ -198,7 +199,7 @@ async function runBudgetCli(t, { args = [], config = {}, env = {}, reply } = {})
     fs.rmSync(home, { recursive: true, force: true });
   });
   const childEnv = { HOME: home, PATH: process.env.PATH, NO_COLOR: '1', OX_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`, OX_API_KEY: 'loopback-only', OX_MODEL: 'grok-4.6', ...env };
-  const argv = [new URL('../bin/ox.js', import.meta.url).pathname, ...args];
+  const argv = [fileURLToPath(new URL('../bin/ox.js', import.meta.url)), ...args];
   const child = spawn(process.execPath, argv, { cwd, env: childEnv });
   const { code, stdout, stderr } = await supervise(child, `node ${argv.join(' ')}`);
   return { code, stdout, stderr, calls, events: stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line)) };
@@ -363,7 +364,7 @@ async function runLocalBudgetCli(t, { args = [], config = {}, env = {} } = {}) {
     OX_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`,
     ...env,
   };
-  const argv = [new URL('../bin/ox.js', import.meta.url).pathname, ...args];
+  const argv = [fileURLToPath(new URL('../bin/ox.js', import.meta.url)), ...args];
   const child = spawn(process.execPath, argv, { cwd, env: childEnv });
   const { code, stdout, stderr } = await supervise(child, `node ${argv.join(' ')}`);
   return { code, stdout, stderr, calls, events: stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line)) };

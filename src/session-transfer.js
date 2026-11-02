@@ -21,6 +21,7 @@ import { redactSecrets as redactSession } from './session.js';
 // redactors run (memory's names what it hid; the session one is broader).
 const redactSecrets = (text) => ({ text: redactSession(redactMemory(String(text ?? '')).text) });
 import { resolveCli, SUBSCRIPTION_CLIS, codexListedModel } from './subscriptions.js';
+import { fileURLToPath } from 'node:url';
 
 export const HANDOFF_DIR = path.join('.agent', 'handoff');
 const MAX_FILES_SCANNED = 400;
@@ -262,8 +263,8 @@ const ox = {
     }
     return finish(s);
   },
-  resume: (id) => [process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js'), '--resume', id]],
-  start: (prompt) => [process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js'), prompt]],
+  resume: (id) => [process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js'), '--resume', id]],
+  start: (prompt) => [process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js'), prompt]],
 };
 
 // Cline's VS Code extension stores a JSON transcript per task. Reading it is

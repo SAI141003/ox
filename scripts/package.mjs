@@ -78,11 +78,63 @@ function packageMac() {
     fs.chmodSync(path.join(islandDest, '.build', 'release', bin), 0o755);
   }
   fs.cpSync(path.join(pkg, '.build', 'release', 'OxIsland_OxIsland.bundle'), path.join(islandDest, '.build', 'release', 'OxIsland_OxIsland.bundle'), { recursive: true });
-  spawnSync('codesign', ['--force', '--deep', '-s', '-', app], { stdio: 'ignore' });
   const zip = path.join(OUT, `ox-mac-${ARCH}.zip`);
+  const identity = process.env.OX_SIGN_IDENTITY;
+  if (identity) signForRelease(app, identity);
+  else spawnSync('codesign', ['--force', '--deep', '-s', '-', app], { stdio: 'ignore' });
   fs.rmSync(zip, { force: true });
   run('ditto', ['-c', '-k', '--keepParent', app, zip]);
+  if (identity && process.env.APPLE_ID && process.env.APPLE_TEAM_ID && process.env.APPLE_APP_PASSWORD) {
+    // Apple checks the zip, then the ticket is stapled to the app so it opens
+    // offline too; the zip testers download is made again from the stapled app.
+    run('xcrun', ['notarytool', 'submit', zip, '--apple-id', process.env.APPLE_ID, '--team-id', process.env.APPLE_TEAM_ID, '--password', process.env.APPLE_APP_PASSWORD, '--wait', '--timeout', '30m']);
+    run('xcrun', ['stapler', 'staple', app]);
+    fs.rmSync(zip, { force: true });
+    run('ditto', ['-c', '-k', '--keepParent', app, zip]);
+  }
   return zip;
+}
+
+// A Developer ID signature Apple will notarize: every program inside is
+// signed first (Node, native addons, the island's helpers), innermost first,
+// with the hardened runtime and a timestamp, then the app around them.
+function signForRelease(app, identity) {
+  const entitlements = path.join(ROOT, 'desktop', 'island', 'OX.entitlements');
+  const sign = (file, withEntitlements) => run('codesign', ['--force', '--timestamp', '--options', 'runtime', ...(withEntitlements ? ['--entitlements', entitlements] : []), '-s', identity, file]);
+  const machO = [];
+  const bundles = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isSymbolicLink()) continue;
+      if (e.isDirectory()) {
+        walk(p);
+        if (/\.(app|bundle|framework)$/.test(e.name) && fs.existsSync(path.join(p, 'Contents', 'Info.plist'))) bundles.push(p);
+      } else if (isMachO(p)) machO.push(p);
+    }
+  };
+  walk(path.join(app, 'Contents'));
+  const main = path.join(app, 'Contents', 'MacOS');
+  // Deepest paths first, so nothing is signed before what it contains.
+  const depth = (p) => p.split(path.sep).length;
+  for (const f of machO.filter((f) => !f.startsWith(main + path.sep)).sort((a, b) => depth(b) - depth(a))) sign(f, true);
+  for (const b of bundles.sort((a, b2) => depth(b2) - depth(a))) sign(b, false);
+  sign(app, true);
+  run('codesign', ['--verify', '--deep', '--strict', app]);
+}
+
+function isMachO(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const b = Buffer.alloc(4);
+    if (fs.readSync(fd, b, 0, 4, 0) < 4) return false;
+    return ['feedface', 'feedfacf', 'cefaedfe', 'cffaedfe', 'cafebabe', 'bebafeca'].includes(b.toString('hex'));
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
 }
 
 function packageWindows() {

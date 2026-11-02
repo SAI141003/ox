@@ -14,7 +14,11 @@
 // into a mysterious bind failure. node:test runs the tests in a file sequentially,
 // so mutating process.env per test is safe here.
 
-import { test } from 'node:test';
+import { test as nodeTest } from 'node:test';
+
+// The daemon is Unix-only (signals, a unix control socket, ps): on Windows it
+// is not offered, so its tests are skipped there rather than failed.
+const test = process.platform === 'win32' ? nodeTest.skip : nodeTest;
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';

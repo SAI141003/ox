@@ -4920,8 +4920,8 @@ async function runSubcommand(cmd, args) {
         // Connect your agent: Claude Code, Codex, ChatGPT… use the library over MCP.
         if (sub === 'mcp') { L.serveLibraryMcp(); await new Promise(() => {}); }
         if (sub === 'connect') {
-          const bin = `${process.execPath} ${path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js')}`;
-          console.log(`Give any agent your library (it can save, search and read; never delete):\n\n  Claude Code:  claude mcp add ox-library -- ${bin} library mcp\n  Codex:        add to ~/.codex/config.toml:\n                [mcp_servers.ox-library]\n                command = "${process.execPath}"\n                args = ["${path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js')}", "library", "mcp"]\n  Any MCP app:  command ${bin} library mcp`);
+          const bin = `${process.execPath} ${path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js')}`;
+          console.log(`Give any agent your library (it can save, search and read; never delete):\n\n  Claude Code:  claude mcp add ox-library -- ${bin} library mcp\n  Codex:        add to ~/.codex/config.toml:\n                [mcp_servers.ox-library]\n                command = "${process.execPath}"\n                args = ["${path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js')}", "library", "mcp"]\n  Any MCP app:  command ${bin} library mcp`);
           return;
         }
         console.error('usage: ox library [add <url|file> | foresight <export> | read <id> | ask <id> "<question>" | search <words> | rm <id> | connect | mcp]'); process.exitCode = 3;
@@ -4934,7 +4934,7 @@ async function runSubcommand(cmd, args) {
       const sub = args[0] ?? 'list';
       if (sub === 'install') {
         const only = ['claude', 'codex', 'cursor'].filter((t) => args.includes(`--${t}`));
-        const bin = (() => { try { return execFileSync('which', ['ox'], { encoding: 'utf8' }).trim() ? 'ox' : null; } catch { return null; } })() ?? `${process.execPath} ${path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js')}`;
+        const bin = (() => { try { return execFileSync('which', ['ox'], { encoding: 'utf8' }).trim() ? 'ox' : null; } catch { return null; } })() ?? `${process.execPath} ${path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js')}`;
         const done = S.install({ only: only.length ? only : null, bin });
         if (!done.length) { console.log(c.yellow('none of Claude Code, Codex or Cursor is installed here')); return; }
         for (const d of done) console.log(`${c.green('✓')} ${c.bold(d.tool)}: ${d.files} files · try ${d.invoke} "…"${d.tool !== 'Cursor' ? ' · and the ox skill, so it uses ox commands on its own' : ''}`);
@@ -5041,7 +5041,7 @@ async function runSubcommand(cmd, args) {
           return;
         }
         if (sub === 'connect') {
-          const script = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+          const script = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
           const bin = `${process.execPath} ${script}`;
           console.log(`Give any agent OX Studio (open image, video and audio models; it makes and edits, never deletes):\n\n  Claude Code:  claude mcp add ox-studio -- ${bin} studio mcp\n  Codex:        add to ~/.codex/config.toml:\n                [mcp_servers.ox-studio]\n                command = "${process.execPath}"\n                args = ["${script}", "studio", "mcp"]\n  Cursor:       ~/.cursor/mcp.json → {"mcpServers":{"ox-studio":{"command":"${process.execPath}","args":["${script}","studio","mcp"]}}}\n  Any MCP app:  command ${bin} studio mcp\n\nOn this Mac's own chip, with no key: images, edits, clips, upscale and cut-outs (set up once with ox studio local install). The hosted models run where you have a key: FAL_KEY (fal) or HF_TOKEN (Hugging Face), or your own Stable Diffusion server (OX_SD_URL).`);
           return;

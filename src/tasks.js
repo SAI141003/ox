@@ -22,6 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const TASKS_DIR = path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'tasks');
 
@@ -526,7 +527,7 @@ function runTask(id, opts = {}) {
 
   return new Promise((resolve) => {
     const args = ['-p', [brief, opts.prompt].filter(Boolean).join('\n\n')];
-    execFile(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js'), ...args],
+    execFile(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js'), ...args],
       // OX_TASK_ID offers the run its task_board tool (src/tools/task-board.js).
       { timeout: 300000, cwd: opts.cwd ?? process.cwd(), env: { ...process.env, OX_TASK_ID: id, OX_AGENT_NAME: 'ox-run' } }, (error, stdout, stderr) => {
         if (error) {

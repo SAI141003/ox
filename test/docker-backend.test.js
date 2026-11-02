@@ -2,7 +2,10 @@
 // (OX_DOCKER_BIN) records every call and runs `exec` commands in the mounted
 // project, so the whole flow is checked without a Docker engine; a real engine
 // is exercised at the end when one is running.
-import { test, after } from 'node:test';
+import { test as nodeTest, after } from 'node:test';
+
+// These drive Docker through a fake `docker` shell script, which Windows cannot run.
+const test = process.platform === 'win32' ? nodeTest.skip : nodeTest;
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -10,6 +13,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseBackendSpec, containerCwd, dockerProblem, stopSession, DEFAULT_DOCKER_IMAGE } from '../src/docker-backend.js';
 import { bashTool } from '../src/tools/exec.js';
+import { fileURLToPath } from 'node:url';
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-docker-')));
 const log = path.join(tmp, 'docker.log');
@@ -117,7 +121,7 @@ test('Docker not running: a clear, actionable error and nothing started', async 
 });
 
 test('the CLI refuses an unknown backend before doing anything', () => {
-  const ox = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+  const ox = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
   const r = spawnSync(process.execPath, [ox, '-p', 'hi', '--backend', 'kubernetes'], { encoding: 'utf8', env: { ...process.env, OX_ISLAND: '0' } });
   assert.equal(r.status, 3);
   assert.match(r.stderr, /unknown backend 'kubernetes'/);

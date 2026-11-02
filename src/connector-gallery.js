@@ -28,7 +28,11 @@ export const GALLERY = Object.freeze([
 ]);
 
 const defaultHas = (cmd) => {
-  try { execFileSync('/bin/sh', ['-c', `command -v ${cmd}`], { stdio: 'ignore', timeout: 2000 }); return true; } catch { return false; }
+  try {
+    if (process.platform === 'win32') execFileSync('where', [cmd], { stdio: 'ignore', timeout: 2000 });
+    else execFileSync('/bin/sh', ['-c', `command -v ${cmd}`], { stdio: 'ignore', timeout: 2000 });
+    return true;
+  } catch { return false; }
 };
 
 // What a template needs on this machine before it can run.

@@ -62,7 +62,9 @@ export function runStatusline(raw, { env = process.env, now = Date.now(), run = 
   try { prev = JSON.parse(fs.readFileSync(PREVIOUS_FILE(env), 'utf8'))?.command ?? null; } catch {}
   if (typeof prev === 'string' && prev.trim()) {
     try {
-      const r = run('/bin/sh', ['-c', prev], { input: String(raw ?? ''), encoding: 'utf8', timeout: 5000 });
+      const r = process.platform === 'win32'
+        ? run(prev, { input: String(raw ?? ''), encoding: 'utf8', timeout: 5000, shell: true })
+        : run('/bin/sh', ['-c', prev], { input: String(raw ?? ''), encoding: 'utf8', timeout: 5000 });
       if (typeof r.stdout === 'string' && r.stdout) return r.stdout;
     } catch {}
   }

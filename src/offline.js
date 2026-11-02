@@ -12,6 +12,7 @@ import path from 'node:path';
 import { osCmd } from './tools/operator.js';
 import { codeChanges as codeChangesSync } from './usage-log.js';
 import { parseControl, performControl, protectTyped, browserInFront, activateApp, openWhatsAppChat } from './voice-control.js';
+import { fileURLToPath } from 'node:url';
 
 // ---- arithmetic without eval: + - * / ^ % ( ) and "x% of y" ----
 
@@ -593,7 +594,7 @@ export function perform(it) {
     case 'note': { const r = addNote(it.text); return { ok: r.ok, message: `noted in ${r.where}` }; }
     case 'make': {
       // Runs on its own (it waits for the agent to finish), narrated in the notch.
-      const bin = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+      const bin = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
       const child = spawn(process.execPath, [bin, 'make', it.idea, '--with', it.builder], { detached: true, stdio: 'ignore', cwd: os.homedir() });
       child.on('error', () => {});
       child.unref();

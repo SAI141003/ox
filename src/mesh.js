@@ -17,6 +17,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 export const PORT = 47870;          // node listener (TCP)
 export const BEACON_PORT = 47871;   // LAN discovery (UDP broadcast)
@@ -474,7 +475,7 @@ export async function startNode(o = {}) {
   function runTask(ch, msg, refuse) {
     const cwd = msg.args?.cwd ? path.resolve(msg.args.cwd) : os.homedir();
     if (!fs.existsSync(cwd)) return refuse(`${cwd} does not exist on ${me.name}`);
-    const bin = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+    const bin = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
     const p = spawn(process.execPath, [bin, '-p', String(msg.args?.prompt ?? '')], { cwd, env: { ...process.env, OX_SURFACE: 'mesh' }, stdio: ['ignore', 'pipe', 'pipe'] });
     p.stdout.on('data', (d) => ch.send({ t: 'chunk', rid: msg.rid, data: b64(d) }));
     p.stderr.on('data', (d) => ch.send({ t: 'chunk', rid: msg.rid, data: b64(d) }));

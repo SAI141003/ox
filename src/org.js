@@ -24,6 +24,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { readyTasks, claimTask, completeTask, taskBrief, addSpend, listTasks } from './tasks.js';
 import { readUsage } from './usage-log.js';
+import { fileURLToPath } from 'node:url';
 
 const OX_HOME = () => process.env.OX_HOME || path.join(os.homedir(), '.ox');
 export const ORG_FILE = () => path.join(OX_HOME(), 'org.json');
@@ -211,7 +212,7 @@ export function runThroughOx(agent, task, prompt, { timeoutMs = 30 * 60_000, mes
   // allow it there (ox mesh allow <this machine> tasks).
   if (agent.machine) return runOnMachine(agent, task, prompt, { timeoutMs, mesh });
   return new Promise((resolve) => {
-    const bin = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+    const bin = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
     const approval = agent.approval === 'all' ? ['--dangerously-skip-approvals'] : agent.approval === 'read' ? ['--mode', 'ask'] : ['--yes-edits'];
     const args = [bin, '-p', prompt, ...approval, ...(agent.runtime && agent.runtime !== 'ox' ? ['--bot', agent.runtime] : [])];
     const child = spawn(process.execPath, args, {

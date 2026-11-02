@@ -22,6 +22,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const HOME_SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-home-skillbody-'));
 process.env.HOME = HOME_SANDBOX;
@@ -30,7 +31,7 @@ const { screenSkillBody, withheldSkillBodyNotice, readSkillBody, discoverSkills 
 const { memoryScreenStats, resetMemoryScreenStats, shortWithheldNotice } = await import('../src/memory.js');
 const { auditFilePath } = await import('../src/audit.js');
 
-const OX_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const OX_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = path.join(OX_ROOT, 'bin', 'ox.js');
 
 after(() => fs.rmSync(HOME_SANDBOX, { recursive: true, force: true }));

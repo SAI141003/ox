@@ -50,7 +50,7 @@ export function saveUpload(req, name, { limit = MAX_UPLOAD } = {}) {
   });
 }
 
-const has = (bin) => spawnSync('/bin/sh', ['-c', `command -v ${bin}`], { encoding: 'utf8' }).status === 0;
+const has = (bin) => (process.platform === 'win32' ? spawnSync('where', [bin], { encoding: 'utf8' }) : spawnSync('/bin/sh', ['-c', `command -v ${bin}`], { encoding: 'utf8' })).status === 0;
 
 function durationOf(file) {
   const r = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file], { encoding: 'utf8', timeout: 20000 });

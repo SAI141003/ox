@@ -31,9 +31,10 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const OX_BIN = new URL('../bin/ox.js', import.meta.url).pathname;
-const CLI_JS = new URL('../src/cli.js', import.meta.url).pathname;
+const OX_BIN = fileURLToPath(new URL('../bin/ox.js', import.meta.url));
+const CLI_JS = fileURLToPath(new URL('../src/cli.js', import.meta.url));
 
 // Phrases that would claim a review/approval happened. None may appear on a
 // path where no gate ran.

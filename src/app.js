@@ -203,7 +203,7 @@ export function installMacApp() {
   // Which ox this app opens: this Node and this ox, written into the app
   // itself, so it starts from the Dock or Spotlight with no terminal, and
   // follows this checkout as it is updated.
-  const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+  const cli = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
   fs.writeFileSync(path.join(dest, 'Contents', 'Resources', 'ox-paths.json'), JSON.stringify({ node: process.execPath, cli }, null, 2));
   return dest;
 }

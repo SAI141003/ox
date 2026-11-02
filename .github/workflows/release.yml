@@ -24,6 +24,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     # A hung step must not hold a download back for GitHub's 6-hour limit.
     timeout-minutes: 60
+    env:
+      HAS_APPLE_CERT: ${{ secrets.APPLE_CERT_P12 != '' }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -39,8 +41,34 @@ jobs:
         continue-on-error: ${{ runner.os == 'Windows' }}
         timeout-minutes: 30
         run: OX_ISLAND=0 OX_LEARN=0 OX_NO_KEYSTORE=1 OX_USAGE_LOG=0 OX_NO_PLUGINS=1 OX_NO_BUILTIN_SKILLS=1 node scripts/verify.mjs --only unit
+      # Notarized Mac downloads once the Apple secrets are set (Settings →
+      # Secrets → Actions): APPLE_CERT_P12 (base64 of the Developer ID
+      # Application .p12), APPLE_CERT_PASSWORD, APPLE_ID, APPLE_TEAM_ID and
+      # APPLE_APP_PASSWORD (an app-specific password). Without them the app is
+      # signed ad hoc, as before, and opens with right-click → Open.
+      - name: Load the Developer ID certificate
+        if: runner.os == 'macOS' && env.HAS_APPLE_CERT == 'true'
+        shell: bash
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          kc="$RUNNER_TEMP/ox-sign.keychain-db"; pw="$(uuidgen)"
+          echo "$APPLE_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$pw" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$pw" "$kc"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$pw" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          echo "OX_SIGN_IDENTITY=Developer ID Application" >> "$GITHUB_ENV"
       - name: Package
         shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: node scripts/package.mjs --out dist
       - name: Attach to the release
         if: startsWith(github.ref, 'refs/tags/')

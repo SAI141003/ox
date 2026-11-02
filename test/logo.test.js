@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
-const SRC = new URL('../src/logo.js', import.meta.url).pathname;
+const SRC = fileURLToPath(new URL('../src/logo.js', import.meta.url));
 
 // The ambient shell may export NO_COLOR (this workstation does). Keep the
 // baseline deterministic so the explicit TTY-colour assertions below exercise
@@ -159,7 +160,7 @@ test('NO_COLOR and non-TTY produce no escapes', async () => {
 });
 
 test('the real CLI emits no escapes when piped or with NO_COLOR', () => {
-  const bin = new URL('../bin/ox.js', import.meta.url).pathname;
+  const bin = fileURLToPath(new URL('../bin/ox.js', import.meta.url));
   const plain = spawnSync(process.execPath, [bin, '--version'], { encoding: 'utf8' });
   assert.equal(plain.status, 0);
   assert.equal(plain.stdout.includes('\x1b'), false, 'piped --version must be escape-free');

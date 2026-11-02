@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { keychainUsable } from './keychain-ok.js';
+import { fileURLToPath } from 'node:url';
 
 const RISKY_TOOLS = new Set(['whatsapp_send', 'mail_send', 'send_email', 'messages_send', 'imessage_send', 'delete_file', 'git_push']);
 const RISKY_WORDS = /\b(send|pay|purchase|buy|checkout|transfer|delete|remove account|unsubscribe|rm -rf|rm -r|git push|--force|drop table|sudo)\b/i;
@@ -17,7 +18,7 @@ export function needsFingerprint(tool, detail = '') {
 
 // The helper that ships with ox (built beside the island, inside the Mac app too).
 const HELPER = () => [
-  path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'desktop', 'island', '.build', 'release', 'OxKeys'),
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'desktop', 'island', '.build', 'release', 'OxKeys'),
   path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'bin', 'ox-keys'),
 ].find((p) => fs.existsSync(p)) ?? '';
 

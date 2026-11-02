@@ -8,6 +8,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { KEY_ENV, BOTS } from './bots.js';
 import { keyStatus, setKey } from './keystore.js';
+import { fileURLToPath } from 'node:url';
 
 // Every key the app can hold, grouped as the page shows them: what it is, where
 // to get one (the provider's own key page), and what it unlocks. `free` is set
@@ -707,13 +708,13 @@ export function removeWorktree(repo, wt) {
 }
 
 export function serverView({ port = null, startedAt = null } = {}) {
-  const root = path.dirname(path.dirname(new URL(import.meta.url).pathname));
+  const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   return { pid: process.pid, port, url: port ? `http://127.0.0.1:${port}/` : null, node: process.version, uptime: Math.round(process.uptime()), startedAt, cwd: process.cwd(), code: root, commit: gitOut(root, ['rev-parse', '--short', 'HEAD']), app: process.env.OX_APP === '1', island: process.env.OX_ISLAND_SERVER === '1' };
 }
 
 /** What changed in ox since a commit you saw (git installs), newest first. */
 export function whatsNew(since) {
-  const root = path.dirname(path.dirname(new URL(import.meta.url).pathname));
+  const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const head = gitOut(root, ['rev-parse', '--short', 'HEAD']);
   if (!head) return { head: null, changes: [] };
   if (!since || !/^[0-9a-f]{6,40}$/.test(since) || since === head) return { head, changes: [] };

@@ -16,6 +16,7 @@ import { markOwn, OWN_RUN_ENV } from './own-sessions.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 function claudePromptText(prompt, images = []) {
   return images.length ? `${prompt}\n\n[Attached image${images.length > 1 ? 's' : ''}: read ${images.length > 1 ? 'these files' : 'this file'} to see ${images.length > 1 ? 'them' : 'it'}: ${images.join(', ')}]` : prompt;
@@ -340,7 +341,7 @@ const versionOf = (file, env) => {
 // Codex config overrides that attach `ox mcp-mac` (off with OX_MAC_MCP=0).
 export function macMcpArgs(env = process.env) {
   if (env.OX_MAC_MCP === '0') return [];
-  const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+  const cli = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
   return ['-c', `mcp_servers.ox.command=${JSON.stringify(process.execPath)}`, '-c', `mcp_servers.ox.args=${JSON.stringify([cli, 'mcp-mac'])}`,
     // Approved ahead: under approval "never" Codex refuses MCP calls that would ask.
     '-c', 'mcp_servers.ox.default_tools_approval_mode="approve"'];
@@ -348,7 +349,7 @@ export function macMcpArgs(env = process.env) {
 
 export function claudeMacMcpArgs(env = process.env) {
   if (env.OX_MAC_MCP === '0') return [];
-  const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+  const cli = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
   const tools = ['open_app', 'open_url', 'current_page', 'youtube_transcript', 'ox_do', 'notify', 'ui_elements', 'click', 'type_text', 'press_key', 'draw'].map((t) => `mcp__ox__${t}`);
   return ['--mcp-config', JSON.stringify({ mcpServers: { ox: { command: process.execPath, args: [cli, 'mcp-mac'] } } }), '--allowedTools', tools.join(',')];
 }

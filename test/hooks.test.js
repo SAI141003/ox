@@ -11,6 +11,7 @@ import {
   formatHookErrors,
   hooksFor,
 } from '../src/hooks.js';
+import { fileURLToPath } from 'node:url';
 
 // ---------------------------------------------------------------------------
 // HOOK_EVENTS: complete list
@@ -278,7 +279,7 @@ test('fireHooks: PostToolUse ignores exit-2 (does not deny)', async () => {
 const WIRED_HOOK_EVENTS = ['PostLLM', 'PostToolUse', 'PreLLM', 'PreToolUse', 'SessionStart', 'SessionStop']; // sorted: compared to a sorted scan
 
 function collectFiredHookEvents() {
-  const root = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'src');
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src');
   const found = new Set();
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

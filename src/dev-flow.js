@@ -17,9 +17,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+// A command line from environment.yml, run by the platform's own shell.
+const SHELL = process.platform === 'win32' ? [process.env.ComSpec || 'cmd.exe', '/d', '/s', '/c'] : ['/bin/sh', '-c'];
 
 const STEPS = ['install', 'lint', 'build', 'test', 'start'];
-const OX_BIN = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'bin', 'ox.js');
+const OX_BIN = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js');
 
 const sh = (cmd, args, cwd, extra = {}) => {
   const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', timeout: extra.timeout ?? 120_000, env: { ...process.env, ...(extra.env ?? {}) } });
@@ -109,7 +113,7 @@ export function runChecks(root, steps = ['lint', 'build', 'test'], { timeout = 1
     if (!r[s]) continue;
     onStep?.(s, r[s]);
     const t = Date.now();
-    const x = sh('/bin/sh', ['-c', r[s]], root, { timeout, env: { CI: '1' } });
+    const x = sh(SHELL[0], [...SHELL.slice(1), r[s]], root, { timeout, env: { CI: '1' } });
     results.push({ step: s, command: r[s], ok: x.ok, ms: Date.now() - t, tail: (x.ok ? x.out : `${x.out}\n${x.err}`).split('\n').slice(-15).join('\n').trim() });
     if (!x.ok) break;
   }
@@ -540,7 +544,7 @@ export async function captureApp(cwd, { routes = ['/'], port = null, base = null
   let child = null, url = base;
   if (!url) {
     if (!r.start) fail('no start step in .ox/environment.yml: add one (start: npm run dev) or pass --url');
-    child = spawn('/bin/sh', ['-c', r.start], { cwd: root, env: { ...process.env, ...(port ? { PORT: String(port) } : {}), BROWSER: 'none' }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    child = spawn(SHELL[0], [...SHELL.slice(1), r.start], { cwd: root, env: { ...process.env, ...(port ? { PORT: String(port) } : {}), BROWSER: 'none' }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
     let seen = '';
     const found = await new Promise((resolve) => {
       const t = setTimeout(() => resolve(port ? `http://localhost:${port}` : null), waitMs);

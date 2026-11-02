@@ -2195,7 +2195,7 @@ const ROUTES = [
     if (!p) throw new Error('not an ox command (type / for the list)');
     if (!p.cmd.app) throw new Error(`/${p.cmd.name} runs in a session: ask ox to do it, or use the terminal`);
     const { spawn } = await import('node:child_process');
-    const bin = new URL('../bin/ox.js', import.meta.url).pathname;
+    const bin = fileURLToPath(new URL('../bin/ox.js', import.meta.url));
     const cwd = typeof body?.cwd === 'string' && body.cwd ? body.cwd : process.cwd();
     // Its own process, no shell, nothing to type into: a command that would ask stops instead.
     return await new Promise((resolve) => {
@@ -3136,7 +3136,7 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
             // island's voice must never find no server. ensureServer stops this one.
             if (islandServer) { server.close(); announced?.(); setTimeout(() => process.exit(0), 300); return; }
             import('node:child_process').then(({ spawn }) => {
-              const bin = new URL('../bin/ox.js', import.meta.url).pathname;
+              const bin = fileURLToPath(new URL('../bin/ox.js', import.meta.url));
               spawn(process.execPath, [bin, 'app', '--print-url'], { cwd: process.cwd(), detached: true, stdio: 'ignore', env: { ...process.env } }).unref();
             }).catch(() => {});
             setTimeout(() => { server.close(); announced?.(); process.exit(0); }, 20_000).unref();

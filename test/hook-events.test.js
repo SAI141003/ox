@@ -14,6 +14,7 @@ import http from 'node:http';
 import { spawnSync } from 'node:child_process';
 import { runAgent, drainPendingHooks } from '../src/agent.js';
 import { fireHooks, hooksFor, HOOK_EVENTS, loadHooksConfig } from '../src/hooks.js';
+import { fileURLToPath } from 'node:url';
 
 const marker = (dir, name) => path.join(dir, name);
 const readMarker = (dir, name) => {
@@ -474,7 +475,7 @@ test('PreLLM/PostLLM/Session* hooks receive the documented env vars', async (t) 
 // ---------------------------------------------------------------------------
 
 test('src/ has a call site for all six declared events', () => {
-  const root = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'src');
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src');
   const found = new Set();
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

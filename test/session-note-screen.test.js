@@ -20,6 +20,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const HOME_SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-home-note-'));
 process.env.HOME = HOME_SANDBOX;
@@ -76,7 +77,7 @@ function captureStderr(fn) {
 // ---- the premise: nothing reads .agent/notes/ back into a prompt -------------
 
 test('PREMISE: no source path reads .agent/notes/ back', () => {
-  const srcDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'src');
+  const srcDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'src');
   const files = fs.readdirSync(srcDir).filter((f) => f.endsWith('.js'));
   // Only READ calls count: writeSessionNote's own pruning `readdirSync(dir)` is a
   // write path maintaining its own directory, not something re-injecting notes.

@@ -611,8 +611,9 @@ test('pruneSessions: dry-run lists, real run deletes strictly older-than-Nd file
 // ---------- spawned CLI plumbing (isolated HOME already active) ----------
 
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const OX_BIN = new URL('../bin/ox.js', import.meta.url).pathname;
+const OX_BIN = fileURLToPath(new URL('../bin/ox.js', import.meta.url));
 
 function spawnOx(t, args, { cwd = process.cwd(), timeoutMs = 25000, extraEnv = {} } = {}) {
   const child = spawn(process.execPath, [OX_BIN, ...args], {
