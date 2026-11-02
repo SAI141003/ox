@@ -46,6 +46,10 @@ export const WEB_MAX_REDIRECTS = 5;
 export const WEB_MAX_RESULTS = 10;
 export const WEB_SNIPPET_CHARS = 240;
 
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { screenMatch, screenReadLines } from '../memory.js';
 // The single egress decision (profile.restrict_network + network_allow) lives in
 // src/sandbox.js; this module owns only the prose of a refusal.
@@ -1022,6 +1026,15 @@ function defaultSearchProbe(backend) {
   };
 }
 
+
+// The Claude Code CLI, when it is on this machine (claude-cli search backend).
+const claudeSearchCache = new Map();
+function claudeBin() {
+  if (process.env.NODE_TEST_CONTEXT || process.env.OX_NO_CLAUDE_SEARCH === '1') return null;
+  for (const p of [process.env.OX_CLAUDE_BIN, path.join(os.homedir(), '.local', 'bin', 'claude'), '/opt/homebrew/bin/claude', '/usr/local/bin/claude']) if (p && fs.existsSync(p)) return p;
+  return null;
+}
+
 const SEARCH_BACKEND_DEFS = [
   {
     name: 'tavily',
@@ -1222,6 +1235,48 @@ const SEARCH_BACKEND_DEFS = [
       return normalizeRows(rows, cap, snippetCap);
     },
   },
+  {
+    // Your Claude plan's own web search, through the Claude Code CLI (no new key: it
+    // uses the account `claude` is signed in to). Slow (~15 s) and it spends a little
+    // plan usage, so it stands after the keyed APIs, and results are kept an hour.
+    name: 'claude-cli',
+    envVar: null,
+    slowMs: 45_000,
+    keyless: true,
+    defaultEligible: false,
+    note: 'Searches through the Claude Code CLI with your Claude plan (claude -p, Haiku, WebSearch). About 15 s a search; results cached for an hour.',
+    async probe() {
+      const bin = claudeBin();
+      return bin ? { status: 200, payload: [{ title: 'claude CLI', url: 'https://claude.ai', snippet: bin }] } : { status: 0, payload: [] };
+    },
+    async search(query, { timeoutMs, signal, cap, snippetCap } = {}) {
+      const bin = claudeBin();
+      if (!bin) throw new Error('claude-cli: the Claude Code CLI is not installed or not signed in');
+      const key = `${query}|${cap}`;
+      const hit = claudeSearchCache.get(key);
+      if (hit && Date.now() - hit.at < 3_600_000) return hit.rows;
+      const prompt = `Use WebSearch for: ${query}\nThen reply with ONLY a JSON array of the top ${Math.min(cap, 8)} results, each {"title": string, "url": string, "snippet": string (one sentence from the page)}. No other text.`;
+      const out = await new Promise((resolve, reject) => {
+        const p = spawn(bin, ['-p', prompt, '--model', 'haiku', '--allowedTools', 'WebSearch', '--output-format', 'json'], { stdio: ['ignore', 'pipe', 'pipe'] });
+        let so = '';
+        const t = setTimeout(() => { p.kill(); reject(new Error('claude-cli: no answer in time')); }, Math.max(timeoutMs ?? 0, 45_000));
+        signal?.addEventListener?.('abort', () => { clearTimeout(t); p.kill(); reject(new Error('aborted')); });
+        p.stdout.on('data', (d) => (so += d));
+        p.on('error', (e) => { clearTimeout(t); reject(e); });
+        p.on('close', () => { clearTimeout(t); resolve(so); });
+      });
+      let text = '';
+      try { text = String(JSON.parse(out).result ?? ''); } catch { throw new Error('claude-cli: unreadable answer'); }
+      const m = /\[[\s\S]*\]/.exec(text);
+      let rows = [];
+      try { rows = JSON.parse(m ? m[0] : '[]'); } catch {}
+      rows = (Array.isArray(rows) ? rows : []).filter((r) => r && /^https?:\/\//.test(String(r.url ?? ''))).map((r) => ({ title: String(r.title ?? r.url), url: String(r.url), snippet: String(r.snippet ?? '').slice(0, snippetCap) }));
+      if (!rows.length) throw new Error('claude-cli: no results');
+      const norm = normalizeRows(rows, cap, snippetCap);
+      claudeSearchCache.set(key, { at: Date.now(), rows: norm });
+      return norm;
+    },
+  },
 ];
 
 const registry = new Map();
@@ -1238,7 +1293,7 @@ for (const def of SEARCH_BACKEND_DEFS) {
 // measured alive on 2026-10-03, then any configured MCP search tool. Reorder
 // with setBackendOrder("web_search", [...]) -- including at runtime from a
 // plugin, which is the entire mechanism for changing routes.
-export const SEARCH_CHAIN_ORDER = ['searxng', 'tavily', 'brave', 'serper', 'ddg-html', 'marginalia', 'wikipedia'];
+export const SEARCH_CHAIN_ORDER = ['searxng', 'tavily', 'brave', 'serper', 'claude-cli', 'ddg-html', 'marginalia', 'wikipedia'];
 
 // web_fetch: the direct HTTP path is preferred (it is the only one that
 // returns the page as served), and the open Jina reader is the fallback for the
@@ -1597,7 +1652,8 @@ async function serveSearch({ query, cap, snippetCap, timeoutMs, signal, env, pin
     try {
       // Each route gets its own limit (at most 10 s), so one that hangs leaves
       // time for the next instead of spending the whole call.
-      const each = Math.min(timeoutMs, 10_000);
+      // A slow route that says so (the Claude CLI takes ~15-20 s) gets its own allowance.
+      const each = backend.slowMs ? backend.slowMs : Math.min(timeoutMs, 10_000);
       const rows = await backend.search(query, { timeoutMs: each, signal: combineSignals(signal, AbortSignal.timeout(each)), cap, snippetCap });
       if (Array.isArray(rows) && rows.length) {
         if (i > from) invalidateVerdict('web_search');
@@ -1661,7 +1717,13 @@ export async function fetchText(url, { timeoutMs = 15_000, maxChars = 40_000 } =
 // ---- web_search tool ---------------------------------------------------------
 
 /** Plain search rows for other modules (social research): [{ title, url, snippet }], or [] when no backend answers. */
-export async function searchRows(query, { cap = 8, env = process.env, timeoutMs = 15_000 } = {}) {
+// With a search key a search takes a second or two; without one the Claude CLI route
+// (about 15-20 s) is likely the one that answers, so the call allows for it.
+function defaultSearchTimeout(env = process.env) {
+  return ['TAVILY_API_KEY', 'BRAVE_SEARCH_API_KEY', 'SERPER_API_KEY', 'OX_SEARXNG_URL'].some((k) => env?.[k]) ? 15_000 : 50_000;
+}
+
+export async function searchRows(query, { cap = 8, env = process.env, timeoutMs = defaultSearchTimeout(env) } = {}) {
   const served = await serveSearch({ query, cap, snippetCap: 300, timeoutMs, signal: AbortSignal.timeout(timeoutMs), env, pinned: String(env?.OX_WEB_SEARCH_BACKEND ?? '').trim() || null }).catch(() => ({ ok: false }));
   if (!served.ok) return [];
   return (served.rows ?? []).map((r) => ({ title: stripInvisible(r.title ?? '').text, url: r.url, snippet: stripInvisible(r.snippet ?? '').text })).filter((r) => !screenMatch(`${r.title}\n${r.snippet}\n${r.url}`));
@@ -1685,7 +1747,7 @@ export async function webSearchTool(args = {}, ctx = {}) {
 
   const cap = Math.max(1, Math.min(Number(args?.count) || 5, WEB_MAX_RESULTS));
   const snippetCap = Math.max(40, Math.min(Number(args?.snippet_chars) || WEB_SNIPPET_CHARS, 1000));
-  const timeoutMs = Number(args?.timeout_ms) > 0 ? Math.min(Number(args.timeout_ms), 60_000) : 15_000;
+  const timeoutMs = Number(args?.timeout_ms) > 0 ? Math.min(Number(args.timeout_ms), 60_000) : defaultSearchTimeout(env);
 
   // Per-call deadline, combined with the caller's signal so both stop the call.
   const timer = AbortSignal.timeout(timeoutMs);
