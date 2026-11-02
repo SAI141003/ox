@@ -302,8 +302,12 @@ export class McpHub {
     // Docker off) still starts, in the background, but no run waits on it.
     const health = readMcpHealth();
     const now = Date.now();
-    const runs = Object.entries(this.config).map(([name, cfg]) => ({ name: String(name), p: this._startServer(String(name), cfg).catch(() => {}) }));
     const failedAt = (h) => (typeof h === 'number' ? h : h?.at ?? 0);
+    // One that failed in the last 6 hours is not started by a run at all: a
+    // connector never signed in (mcp-remote) began a new browser sign-in on
+    // every run. `ox mcp` still tries it, and a good start clears the mark.
+    const resting = (n) => health[n] && now - failedAt(health[n]) < 6 * 3_600_000;
+    const runs = Object.entries(this.config).filter(([name]) => !resting(String(name))).map(([name, cfg]) => ({ name: String(name), p: this._startServer(String(name), cfg).catch(() => {}) }));
     const waited = runs.filter((r) => !(health[r.name] && now - failedAt(health[r.name]) < 3_600_000)).map((r) => r.p);
     let timer;
     await Promise.race([Promise.allSettled(waited), new Promise((r) => { timer = setTimeout(r, waitMs); timer.unref?.(); })]);

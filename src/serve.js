@@ -28,7 +28,7 @@ import { quickReply } from './quick-reply.js';
 import { createServer } from 'http';
 import { createHash, timingSafeEqual } from 'crypto';
 import { runAgent } from './agent.js';
-import { BOTS, KEY_ENV, resolveBot, defaultBotSpec } from './bots.js';
+import { BOTS, KEY_ENV, resolveBot, defaultBotSpec, withFastFallbacks } from './bots.js';
 
 import { readFile } from 'fs/promises';
 import { join, resolve, extname, dirname, basename } from 'path';
@@ -346,7 +346,10 @@ export function runnable(spec, env = process.env) {
 // anything about code, files, tools or several steps goes to the strongest you
 // have connected. Only models that can answer right now are considered.
 const FAST_BOTS = ['ox-haiku', 'ox-flash', 'ox-grok-fast', 'ox-groq'];
-const STRONG_BOTS = ['claude-plan', 'chatgpt-plan', 'ox-opus', 'ox-claude', 'ox-gpt', 'ox-gemini', 'ox-grok', 'ox-deepseek', 'cursor-plan'];
+// No claude-plan: Anthropic keeps Claude logins for its own apps, so ox runs
+// your Claude plan only when you pick it (as pickWorkingDefault below), and a
+// plan's turn runs inside its CLI where steering arrives late.
+const STRONG_BOTS = ['chatgpt-plan', 'ox-opus', 'ox-claude', 'ox-gpt', 'ox-gemini', 'ox-grok', 'ox-deepseek', 'cursor-plan'];
 // Under 1B parameters, read from the name ("SmolLM2-135M", "qwen2.5:0.5b").
 export function tinyModel(name) {
   const m = /(?:^|[^a-z0-9.])(\d+(?:\.\d+)?)\s*([mb])(?![a-z0-9])/i.exec(String(name));
@@ -374,8 +377,13 @@ export function autoModel(messages = [], env = process.env, { think = false, s1 
     const id = local.find(can) ?? FAST_BOTS.find(can) ?? STRONG_BOTS.find(can);
     if (id) return { id, why: local.includes(id) ? 'a quick answer, on your machine' : FAST_BOTS.includes(id) ? 'a quick answer, the fastest model connected' : 'a quick answer (no small model is connected)' };
   }
-  const id = STRONG_BOTS.find(can) ?? FAST_BOTS.find(can) ?? local.find(can);
+  // The model you made your default comes first for real work: you chose it.
+  let mine = null;
+  try { mine = readConfigDoc().defaultBot ?? null; } catch {}
+  if (mine && (mine === 'claude-plan' || !can(mine) || tinyModel(mine))) mine = null;
+  const id = mine ?? STRONG_BOTS.find(can) ?? FAST_BOTS.find(can) ?? local.find(can);
   if (!id) return { id: pickWorkingDefault(env), why: 'nothing else can answer here' };
+  if (id === mine) return { id, why: think || seeing ? `${think ? 'think harder' : 'a photo to look at'}: your default model` : light ? 'your default model' : 'work with code or tools: your default model' };
   const strong = STRONG_BOTS.includes(id);
   if (think || seeing) return { id, why: strong ? `${think ? 'think harder' : 'a photo to look at'}: the strongest model connected` : `${think ? 'think harder' : 'a photo to look at'}: the best model connected (connect a stronger one in Settings)` };
   return { id, why: light ? 'the only model that can answer' : strong ? 'work with code or tools, the strongest model connected' : 'work with code or tools; the only model that can answer (connect a stronger one in Settings)' };
@@ -1007,8 +1015,8 @@ async function handleChatCompletions(req, res) {
   // not the chat's own. A plan's turn runs inside its CLI and is not bounced.
   try {
     const fdoc = readConfigDoc() ?? {};
-    const specs = fdoc.fallback_bots ?? fdoc.fallbackBots ?? [];
-    ctx.fallbackTargets = (Array.isArray(specs) ? specs : [])
+    const specs = withFastFallbacks(fdoc.fallback_bots ?? fdoc.fallbackBots ?? []);
+    ctx.fallbackTargets = specs
       .filter((sp) => runnable(sp))
       .map((sp) => { try { return resolveBot(sp, { bots: fdoc.bots ?? {} }); } catch { return null; } })
       .filter((t) => t && t.provider !== 'subscription' && !(t.provider === target?.provider && t.model === target?.model));

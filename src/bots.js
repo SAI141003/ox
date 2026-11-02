@@ -333,3 +333,17 @@ export function resolveBot(nameOrSpec, config = {}, env = process.env) {
   }
   return build({ name: null, provider: 'custom', model: spec, desc: `custom endpoint ${baseUrl}`, config, env });
 }
+
+// After the backup you chose, fast models that call tools well, so a provider
+// overload ("503") lands on a quick model, never on a slow reasoning one.
+// Callers keep only the ones that can run here (a key, a plan). Measured
+// 2026-11-01 under NVIDIA load: MiniMax M3.1 Flash answered a tool call in 6 s
+// while Nemotron Ultra took 58 s for one word.
+export const FAST_FALLBACKS = Object.freeze(['nvidia:minimaxai/minimax-m3.1-flash', 'ox-haiku', 'ox-flash', 'ox-grok-fast', 'ox-groq', 'nvidia:deepseek-ai/deepseek-v4.1-flash']);
+
+export function withFastFallbacks(specs = [], env = process.env) {
+  const chosen = (Array.isArray(specs) ? specs : []).filter(Boolean);
+  // Off in tests unless one asks for it: their fallback chains are exact.
+  if (env.OX_NO_FAST_FALLBACK === '1' || (env.NODE_TEST_CONTEXT && env.OX_FAST_FALLBACK !== '1')) return chosen;
+  return [...new Set([...chosen, ...FAST_FALLBACKS])];
+}

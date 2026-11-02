@@ -31,7 +31,8 @@ export const MODES = Object.freeze({
     desc: `look and plan; the only files it can write are under ${PLAN_DIR}/`,
     block: [
       '# Mode: plan',
-      'Investigate first, then write a concrete plan: the files to change, the order, the risks, and how each step will be verified.',
+      'Look only at what the task touches (a few reads for a small change), then write a concrete plan: the files to change, the order, the risks, and how each step will be verified.',
+      'Write the plan as soon as you know which files change; do not survey the whole project.',
       `Save it with write_file under ${PLAN_DIR}/<short-name>.md. Every other change is refused in this mode.`,
     ].join('\n'),
   },
@@ -40,10 +41,11 @@ export const MODES = Object.freeze({
     desc: 'root cause first: reproduce, hypothesise, prove, then the smallest fix',
     block: [
       '# Mode: debug',
-      '1. Reproduce the failure and quote the exact error before touching code.',
+      '1. Reproduce first: run the failing command straight away and quote the exact error before reading around or touching code.',
       '2. List the plausible causes and test them one at a time with evidence (logs, a failing test, a minimal script).',
       '3. Fix the cause you proved, with the smallest change. No speculative fixes.',
       '4. Re-run the reproduction and show it now passes; add a regression test when the project has tests.',
+      'Keep it proportional: a one-line error in a small project needs a few steps, not a survey.',
     ].join('\n'),
   },
   data: {

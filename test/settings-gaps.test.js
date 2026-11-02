@@ -210,3 +210,13 @@ test('the installed Ox app and temporary runtime app use distinct macOS identiti
   assert.match(app, /bundleIdentifier = 'dev\.ox\.app\.runtime'/);
   assert.match(app, /buildMacApp\(\{ bundleIdentifier: 'dev\.ox\.app' \}\)/);
 });
+
+test('after your backup model, fast tool-callers follow, so an overload never lands on a slow model', async () => {
+  const { withFastFallbacks, FAST_FALLBACKS } = await import('../src/bots.js');
+  const env = { OX_FAST_FALLBACK: '1' };
+  const chain = withFastFallbacks(['nvidia-muse-glimmer-30b'], env);
+  assert.equal(chain[0], 'nvidia-muse-glimmer-30b', 'your choice stays first');
+  assert.deepEqual(chain.slice(1), [...FAST_FALLBACKS]);
+  assert.equal(new Set(withFastFallbacks([FAST_FALLBACKS[0]], env)).size, FAST_FALLBACKS.length, 'no duplicates');
+  assert.deepEqual(withFastFallbacks(['a'], { OX_NO_FAST_FALLBACK: '1' }), ['a']);
+});

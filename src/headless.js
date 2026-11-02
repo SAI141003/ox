@@ -21,7 +21,7 @@ import { makeSubagentToolHandler, listSubagents } from './subagent.js';
 import { makeAgentTeamsHandler } from './agent-teams.js';import { listToolSchemas } from './tools/index.js';
 import { McpHub } from './mcp.js';
 import { setMcpSearchHub } from './tools/web.js';
-import { defaultBotSpec, resolveBot } from './bots.js';
+import { defaultBotSpec, resolveBot, withFastFallbacks } from './bots.js';
 import {
   c, renderError, renderToolEnd, renderToolStart, streamText, truncate,
   SubagentTicker,
@@ -120,11 +120,17 @@ export async function assembleCtx({ config, target, opts = {}, auxTarget = null 
   // F2: resolve the ordered cross-provider fallback chain once per session.
   const fallbackTargets = [];
   const fbWarned = new Set();
-  for (const spec of Array.isArray(config.fallbackBots) ? config.fallbackBots : []) {
+  const chosenFallbacks = Array.isArray(config.fallbackBots) ? config.fallbackBots : [];
+  for (const spec of withFastFallbacks(chosenFallbacks)) {
+    const auto = !chosenFallbacks.includes(spec);
     try {
-      fallbackTargets.push(resolveBot(spec, config));
+      const t = resolveBot(spec, config);
+      // The automatic fast ones only when they can run here, and silently.
+      if (auto && (t.subscription || (t.keyEnv && !process.env[t.keyEnv]))) continue;
+      if (auto && t.provider === target?.provider && t.model === target?.model) continue;
+      fallbackTargets.push(t);
     } catch (err) {
-      if (!fbWarned.has(spec)) {
+      if (!auto && !fbWarned.has(spec)) {
         fbWarned.add(spec);
         process.stderr.write(
           `ox: fallback bot '${spec}' unusable (${String(err?.message ?? err)}) — skipping\n`
