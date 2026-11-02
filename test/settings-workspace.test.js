@@ -21,7 +21,7 @@ test('the changed file is read from ox tools, Claude Code tools, and never from 
 
 test('projects come from sessions; worktrees from git; removing keeps the branch and refuses the main checkout', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-ws-home-'));
-  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-ws-repo-')));
+  const repo = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-ws-repo-'))); // native: Windows' long path, as git reports it
   git(repo, 'init', '-q', '-b', 'main');
   git(repo, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'one');
   const wt = path.join(repo, '..', `${path.basename(repo)}-wt`);
