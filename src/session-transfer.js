@@ -23,7 +23,8 @@ const redactSecrets = (text) => ({ text: redactSession(redactMemory(String(text 
 import { resolveCli, SUBSCRIPTION_CLIS, codexListedModel } from './subscriptions.js';
 import { fileURLToPath } from 'node:url';
 
-export const HANDOFF_DIR = path.join('.agent', 'handoff');
+// Forward slashes on every OS: it is shown to the next tool, and Windows reads them too.
+export const HANDOFF_DIR = '.agent/handoff';
 const MAX_FILES_SCANNED = 400;
 
 // ---------------------------------------------------------------- helpers

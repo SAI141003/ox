@@ -1,0 +1,13 @@
+# The same bytes on every OS: Windows checkouts used to turn LF into CRLF,
+# so skills, prompts and test fixtures read differently there.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.jpg binary
+*.icns binary
+*.gif binary
+*.mp3 binary
+*.mp4 binary
+*.wav binary

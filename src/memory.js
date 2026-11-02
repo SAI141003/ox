@@ -707,7 +707,7 @@ function memorySearch(cwd, args = {}) {
     } catch {
       continue;
     }
-    const rel = `.${path.sep}${path.relative(path.resolve(cwd), file)}`;
+    const rel = `./${path.relative(path.resolve(cwd), file).split(path.sep).join('/')}`;
     // The PATH is part of the result body (`${h.file}:${h.line}: ${h.text}`) and is
     // just as model-visible as the line. Stores that derive a filename from
     // supplied text -- .agent/episodes/ (writeEpisode) and .agent/notes/

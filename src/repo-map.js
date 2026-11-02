@@ -44,7 +44,7 @@ function walk(cwd, rootDepth, maxDepth, include, exclude) {
     for (const e of entries) {
       if (shouldSkip(e.name, e.isDirectory())) continue;
       const full = path.join(dir, e.name);
-      const rel = path.relative(cwd, full);
+      const rel = path.relative(cwd, full).split(path.sep).join('/');
       if (include && !include.test(rel)) continue;
       if (exclude && exclude.test(rel)) continue;
       if (e.isDirectory()) {

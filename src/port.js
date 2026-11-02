@@ -92,7 +92,7 @@ function resolveLocal(fromFile, spec, lang, byRel, root) {
     if (!spec.startsWith('.')) return null;
     const base = path.resolve(path.dirname(fromFile), spec);
     for (const cand of [base, ...['.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx'].map((e) => base + e), ...['index.js', 'index.ts'].map((i) => path.join(base, i))]) {
-      const rel = path.relative(root, cand);
+      const rel = path.relative(root, cand).split(path.sep).join('/');
       if (byRel.has(rel)) return rel;
     }
     return null;
@@ -102,13 +102,13 @@ function resolveLocal(fromFile, spec, lang, byRel, root) {
     const name = spec.slice(dots).replace(/\./g, '/');
     const bases = dots ? [path.resolve(path.dirname(fromFile), ...Array(dots - 1).fill('..'))] : [root, path.dirname(fromFile)];
     for (const b of bases) for (const cand of [path.join(b, `${name}.py`), path.join(b, name, '__init__.py')]) {
-      const rel = path.relative(root, cand);
+      const rel = path.relative(root, cand).split(path.sep).join('/');
       if (byRel.has(rel)) return rel;
     }
     return null;
   }
   if (lang === 'rb') {
-    const cand = path.relative(root, path.resolve(path.dirname(fromFile), spec.endsWith('.rb') ? spec : `${spec}.rb`));
+    const cand = path.relative(root, path.resolve(path.dirname(fromFile), spec.endsWith('.rb') ? spec : `${spec}.rb`)).split(path.sep).join('/');
     return byRel.has(cand) ? cand : null;
   }
   return null;
@@ -122,7 +122,7 @@ export function inventory(root, { maxFiles = 3000 } = {}) {
   const counts = {};
   for (const f of code) counts[langOf(f)] = (counts[langOf(f)] ?? 0) + 1;
   const lang = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-  const byRel = new Map(code.map((f) => [path.relative(root, f), f]));
+  const byRel = new Map(code.map((f) => [path.relative(root, f).split(path.sep).join('/'), f]));
   const modules = [];
   const libraries = new Map();
   const factors = new Map(); // `${kind}:${name}` → { kind, name, where: [] }
@@ -158,7 +158,7 @@ export function inventory(root, { maxFiles = 3000 } = {}) {
   }
   // Project-level factors: manifests, env files, containers, CI.
   for (const f of all) {
-    const rel = path.relative(root, f);
+    const rel = path.relative(root, f).split(path.sep).join('/');
     const base = path.basename(f);
     if (/^(?:package\.json|requirements.*\.txt|pyproject\.toml|go\.mod|Cargo\.toml|Gemfile|pom\.xml|build\.gradle)$/.test(base)) factors.set(`manifest:${rel}`, { kind: 'manifest', name: rel, where: [rel] });
     if (/^\.env\.example$|^Dockerfile|^docker-compose|\.ya?ml$/.test(base) && !rel.includes('node_modules')) factors.set(`config:${rel}`, { kind: 'config', name: rel, where: [rel] });

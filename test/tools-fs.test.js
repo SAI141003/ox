@@ -193,7 +193,7 @@ test("glob '**/*.js' finds nested matches and skips .git/node_modules", async (t
   const lines = res.content.split('\n');
   assert.equal(lines.length, 3);
   assert.deepEqual(
-    lines.map((l) => path.relative(dir, l)).sort(),
+    lines.map((l) => path.relative(dir, l).split(path.sep).join('/')).sort(),
     ['root.js', 'sub/deeper/x.js', 'sub/nested.js']
   );
 });
@@ -393,8 +393,9 @@ test('tool output inside the cwd shows the path RELATIVE to the cwd', async (t) 
   const dir = sandbox(t);
   const ctx = { cwd: dir };
   fs.mkdirSync(path.join(dir, 'src', 'deep'), { recursive: true });
-  const rel = path.join('src', 'deep', 'a.js');
-  const abs = path.join(dir, rel);
+  // Tools show paths with forward slashes on every OS.
+  const rel = 'src/deep/a.js';
+  const abs = path.join(dir, 'src', 'deep', 'a.js');
   fs.writeFileSync(abs, 'const x = 1;\n// calcTotal\n');
 
   const read = await readFileTool({ path: abs }, ctx);
