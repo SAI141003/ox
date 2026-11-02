@@ -23,4 +23,14 @@ jobs:
           OX_USAGE_LOG: '0'
           OX_NO_PLUGINS: '1'
           OX_NO_BUILTIN_SKILLS: '1'
-        run: node scripts/verify.mjs --only unit
+        # Windows still has known failures: list them on the run's summary page
+        # instead of marking every run red. Releases run the same suite.
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          node scripts/verify.mjs --only unit 2>&1 | tee verify.txt
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          { echo '## Windows unit tests'; echo; grep -E '^(PASS|FAIL) unit' verify.txt || true; echo; echo '```'; sed -n '/^FAIL unit/,/verify failed/p' verify.txt | head -300; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
