@@ -170,7 +170,7 @@ test('a GLOB read_only path inside cwd is still denied (regression guard for the
 // an anchored full-path regex, so `dir*` matches the entry `dir` and NOT
 // `dir/inside`. Use `dir/**` to cover a subtree. The literal form was silently
 // unenforced before, which hid this entirely.
-test('documented: literal read_only is a subtree deny; a glob needs ** for a subtree', () => {
+test('documented: literal read_only is a subtree deny; a glob needs ** for a subtree', { skip: process.platform === 'win32' && 'SBPL is the macOS sandbox' }, () => {
   const root = tempRoot('asym');
   const { profile } = workspace(root, [path.join(root, 'lit'), path.join(root, 'globdir', '*')]);
   const sbpl = compileSbpl(profile);
@@ -387,7 +387,7 @@ test('bwrap: read_only (and deny) are reported as UNAPPLIED, never silently igno
 
 // ---------- the gap reaches the user ---------------------------------------
 
-test('/sandbox displays the loaded read_only entries', (t) => {
+test('/sandbox displays the loaded read_only entries', { skip: process.platform === 'win32' && 'the profile shown is the macOS sandbox one' }, (t) => {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-ro-cli-')));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-ro-ws-')));

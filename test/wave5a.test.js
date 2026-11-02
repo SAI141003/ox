@@ -185,7 +185,7 @@ test('unsupported glob metachars refuse startup naming file + line (fail-closed)
 
 // ---------- A: SBPL compile + bwrap argv --------------------------------------
 
-test('SBPL workspace profile compiles deny/allow forms incl subpath cwd, oxdir and temp regex', () => {
+test('SBPL workspace profile compiles deny/allow forms incl subpath cwd, oxdir and temp regex', { skip: process.platform === 'win32' && 'SBPL is the macOS sandbox' }, () => {
   const prof = resolveSandbox({ flag: 'workspace', home, cwd: '/w' });
   const sbpl = compileSbpl(prof);
   assert.ok(sbpl.includes('(version 1)'));

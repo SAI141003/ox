@@ -45,7 +45,7 @@ test('a silent open stdin does not stall the run', async () => {
   assert.ok(r.ms < base.ms + 4000, `took ${r.ms}ms with stdin open and silent, ${base.ms}ms with it closed`);
 });
 
-test('a shell pipe is still read into the prompt', async () => {
+test('a shell pipe is still read into the prompt', { skip: process.platform === 'win32' && 'the pipe here is /bin/sh' }, async () => {
   bodies.length = 0;
   const r = await run('/bin/sh', ['-c', `printf 'PIPED-CONTEXT' | "${process.execPath}" "${OX}" --bot custom:m -p summarise`]);
   assert.equal(r.code, 0, r.out);

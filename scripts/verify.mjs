@@ -148,6 +148,8 @@ const STAGES = {
     } finally {
       fs.rmSync(testHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
+    // CI keeps the full TAP, so a failure there can be read in full, not by its first line.
+    if (process.env.CI) { try { fs.mkdirSync(path.join(ROOT, '.ox-verify'), { recursive: true }); fs.writeFileSync(path.join(ROOT, '.ox-verify', 'unit.tap'), r.out); } catch {} }
     const num = (k) => Number((r.out.match(new RegExp(`^# ${k} (\\d+)`, 'm')) ?? [])[1] ?? NaN);
     const pass = num('pass');
     const fail = num('fail');
