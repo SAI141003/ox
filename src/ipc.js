@@ -791,7 +791,12 @@ export function createIpcServer(opts = {}) {
 
   server.on('listening', () => emitter.emit('listening', { socketPath: server.address()?.path ?? socketPath }));
 
+  // Resolves once the server is closed and its clients have had their queued
+  // events, so `await close()` before exiting loses nothing.
   function close(cb) {
+    return new Promise((resolve) => closeNow(() => { if (typeof cb === 'function') cb(); resolve(); }));
+  }
+  function closeNow(cb) {
     if (closed) {
       if (typeof cb === 'function') queueMicrotask(cb);
       return;
@@ -802,7 +807,12 @@ export function createIpcServer(opts = {}) {
     for (const client of [...clients]) {
       client.pump();
       client.teardown();
-      try { client.socket.destroy(); } catch { /* already gone */ }
+      // end() sends what is still queued (the run's last events: on Windows a
+      // pipe write is asynchronous, and destroy() dropped them), then closes;
+      // destroy() follows in case the other side never finishes reading.
+      try { client.socket.end(); } catch { /* already gone */ }
+      const sock = client.socket;
+      setTimeout(() => { try { sock.destroy(); } catch {} }, 500).unref?.();
     }
     clients.clear();
     server.close(() => {

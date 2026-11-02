@@ -317,6 +317,6 @@ test('dev servers on another machine: start its own dev command there, read its 
   } finally {
     await A.close(); await B.close();
     // Windows holds a folder a just-stopped dev server ran in for a moment.
-    fs.rmSync(site, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); fs.rmSync(plain, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    for (const d of [site, plain]) { try { fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch {} }
   }
 });

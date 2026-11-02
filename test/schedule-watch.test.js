@@ -41,3 +41,9 @@ test('a routine from a description: cadence, sources, cap, each with a reason', 
   assert.deepEqual(watcher.cadence, { every: '30m' });
   assert.ok(watcher.reasons.length >= 3);
 });
+
+test('a Windows folder is a source to watch too', async () => {
+  const W = await import('../src/schedule-watch.js');
+  for (const s of ['C:\\Users\\me\\inbox', 'D:/work/repo', '~\\notes', 'git:C:\\repo']) assert.equal(W.validSource(s), true, s);
+  assert.equal(W.validSource('inbox'), false);
+});

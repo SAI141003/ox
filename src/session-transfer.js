@@ -620,6 +620,9 @@ export function importToOx(s, { home = os.homedir(), handoff = null } = {}) {
 
 export function onPath(cmd) {
   if (!cmd) return false;
-  if (cmd.includes('/')) return fs.existsSync(cmd);
-  return (process.env.PATH ?? '').split(path.delimiter).some((d) => { try { fs.accessSync(path.join(d, cmd), fs.constants.X_OK); return true; } catch { return false; } });
+  if (/[\\/]/.test(cmd)) return fs.existsSync(cmd);
+  // Windows finds claude as claude.cmd or claude.exe (PATHEXT), and has no execute bit.
+  const exts = process.platform === 'win32' ? ['', ...(process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)] : [''];
+  const mode = process.platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK;
+  return (process.env.PATH ?? '').split(path.delimiter).some((d) => exts.some((e) => { try { fs.accessSync(path.join(d, cmd + e), mode); return true; } catch { return false; } }));
 }

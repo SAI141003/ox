@@ -198,7 +198,7 @@ async function runBudgetCli(t, { args = [], config = {}, env = {}, reply } = {})
     server.close();
     fs.rmSync(home, { recursive: true, force: true });
   });
-  const childEnv = { HOME: home, PATH: process.env.PATH, NO_COLOR: '1', OX_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`, OX_API_KEY: 'loopback-only', OX_MODEL: 'grok-4.6', ...env };
+  const childEnv = { HOME: home, USERPROFILE: home, PATH: process.env.PATH, NO_COLOR: '1', OX_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`, OX_API_KEY: 'loopback-only', OX_MODEL: 'grok-4.6', ...env };
   const argv = [fileURLToPath(new URL('../bin/ox.js', import.meta.url)), ...args];
   const child = spawn(process.execPath, argv, { cwd, env: childEnv });
   const { code, stdout, stderr } = await supervise(child, `node ${argv.join(' ')}`);
@@ -358,7 +358,7 @@ async function runLocalBudgetCli(t, { args = [], config = {}, env = {} } = {}) {
   // bill; OX_BASE_URL points it at the loopback server. qwen2.5:0.5b has no
   // price row, so it is unpriced AND free at the same time.
   const childEnv = {
-    HOME: home,
+    HOME: home, USERPROFILE: home,
     PATH: process.env.PATH,
     NO_COLOR: '1',
     OX_BASE_URL: `http://127.0.0.1:${server.address().port}/v1`,

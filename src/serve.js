@@ -31,7 +31,7 @@ import { runAgent } from './agent.js';
 import { BOTS, KEY_ENV, resolveBot, defaultBotSpec, withFastFallbacks } from './bots.js';
 
 import { readFile } from 'fs/promises';
-import { join, resolve, extname, dirname, basename } from 'path';
+import { join, resolve, extname, dirname, basename, sep } from 'path';
 import os, { homedir } from 'os';
 import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, statSync, statfsSync, readdirSync, rmSync } from 'fs';
 import { spawn, spawnSync } from 'node:child_process';
@@ -2928,7 +2928,7 @@ async function handleRequest(req, res) {
     try {
       const appDir = dirname(fileURLToPath(import.meta.url));
       const file = resolve(appDir, '../node_modules/mochi-avatar', `.${path.slice('/vendor/mochi-avatar'.length)}`);
-      const root = resolve(appDir, '../node_modules/mochi-avatar/dist') + '/';
+      const root = resolve(appDir, '../node_modules/mochi-avatar/dist') + sep;
       if (!file.startsWith(root)) throw new Error('invalid avatar module path');
       const data = await readFile(file);
       res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' });

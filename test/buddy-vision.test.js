@@ -11,7 +11,7 @@ import { buildGeminiBody } from '../src/providers/gemini.js';
 import { toWireMessages } from '../src/providers/openai-compat.js';
 import { loadImage } from '../src/providers/images.js';
 import { buddyTurn, parsePoint, pngSize } from '../src/buddy.js';
-import { createIpcServer } from '../src/ipc.js';
+import { createIpcServer, nativeIpcPath } from '../src/ipc.js';
 import { islandEnabled, islandRunning, setIslandEnabled, cmdIsland } from '../src/island.js';
 
 // A real 3x2 PNG, so size parsing reads an actual IHDR.
@@ -76,7 +76,7 @@ async function ipcPair(t) {
   const server = createIpcServer({ socketPath: sock, sessionId: 's', meta: {} });
   await new Promise((r) => server.once('listening', r));
   t.after(() => server.close());
-  const client = net.createConnection(sock);
+  const client = net.createConnection(nativeIpcPath(sock));
   await new Promise((r) => client.once('connect', r));
   t.after(() => client.destroy());
   return { server, send: (o) => client.write(`${JSON.stringify(o)}\n`) };

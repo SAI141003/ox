@@ -682,12 +682,15 @@ export function projectsView({ limit = 400 } = {}) {
 export function worktreesView() {
   const seen = new Set(), out = [];
   for (const p of projectsView()) {
-    const root = gitOut(p.path, ['rev-parse', '--show-toplevel']);
+    // git prints C:/Users/... on Windows: the native form matches every other path here.
+    const top = gitOut(p.path, ['rev-parse', '--show-toplevel']);
+    const root = top ? path.resolve(top) : '';
     if (!root || seen.has(root)) continue;
     seen.add(root);
     const txt = gitOut(root, ['worktree', 'list', '--porcelain']);
     if (!txt) continue;
     const trees = txt.split('\n\n').map((b) => Object.fromEntries(b.split('\n').map((l) => [l.split(' ')[0], l.slice(l.indexOf(' ') + 1)])));
+    for (const t of trees) if (t.worktree) t.worktree = path.resolve(t.worktree);
     for (const [i, t] of trees.entries()) {
       if (!t.worktree) continue;
       const dirty = i > 0 && fs.existsSync(t.worktree) ? !!gitOut(t.worktree, ['status', '--porcelain']) : null;

@@ -688,7 +688,7 @@ function runOx(t, { home, port, args, lines, timeoutMs = 45000 }) {
   for (const k of SCRUB) delete env[k];
   const child = spawn(process.execPath, [OX_BIN, ...args], {
     cwd: home,
-    env: { ...env, HOME: home, NO_COLOR: '1', OX_BASE_URL: `http://127.0.0.1:${port}/v1`, OX_API_KEY: 'test' },
+    env: { ...env, HOME: home, USERPROFILE: home, NO_COLOR: '1', OX_BASE_URL: `http://127.0.0.1:${port}/v1`, OX_API_KEY: 'test' },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   let stdout = '';

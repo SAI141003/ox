@@ -343,7 +343,8 @@ test('sanitizeEnv none is minimal; OX_ENV_ALL=1 forces all', () => {
 test('bashTool spawns children with the sanitized env; sandbox env_mode=all restores passthrough', async (t) => {
   const { cwd, profile } = wsProfile(t);
   process.env.WAVE5_PLAIN = 'plain-value';
-  const node = process.execPath;
+  // Quoted with forward slashes: Git Bash on Windows eats bare backslashes.
+  const node = JSON.stringify(process.execPath.split('\\').join('/'));
   try {
     const core = await bashTool(
       { command: `${node} -e "console.log('plain='+(process.env.WAVE5_PLAIN??'unset')+' path='+!!process.env.PATH)"` },

@@ -1056,7 +1056,8 @@ export async function grepTool(args = {}, ctx = {}) {
     const abs = rel ? path.join(base, rel) : base;
     const name = path.basename(abs);
     if (incRe) {
-      const target = include.includes('/') ? rel : name;
+      // Folder patterns use '/'; so does the path they are matched against, on Windows too.
+      const target = include.includes('/') ? rel.split(path.sep).join('/') : name;
       if (!incRe.test(target)) continue;
     }
     if (secretMatch(abs, ctx?.cwd)) continue; // secrets are never searched

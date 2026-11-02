@@ -232,7 +232,7 @@ test('gate fail -> continuation -> fixed -> pass -> LLM verifier (no iteration c
       '',
     ].join('\n')
   );
-  const gateCmd = `${process.execPath} ${path.join(scratch, 'gate-fail-once.js')} ${JSON.stringify(counter)} ${JSON.stringify(cwd)}`;
+  const gateCmd = [process.execPath, path.join(scratch, 'gate-fail-once.js'), counter, cwd].map((a) => JSON.stringify(a.split('\\').join('/'))).join(' ');
   const contract = {
     outcome: 'done',
     verification: `all checks green; gate: ${gateCmd}`,
@@ -297,7 +297,7 @@ test('GIT-FINGERPRINT SKIP: retry-cap exhaustion blocks completion before an app
       '',
     ].join('\n')
   );
-  const gateCmd = `${process.execPath} ${path.join(scratch, 'gate-always-fail.js')} ${JSON.stringify(counter)}`;
+  const gateCmd = [process.execPath, path.join(scratch, 'gate-always-fail.js'), counter].map((a) => JSON.stringify(a.split('\\').join('/'))).join(' ');
   const contract = {
     outcome: 'done',
     verification: `gate: ${gateCmd}`,

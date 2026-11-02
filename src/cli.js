@@ -179,7 +179,7 @@ import {inspectProject, formatInspect} from './inspect.js';
 import {createCodebaseIndex, formatSearchResults} from './codebase-index.js';
 import { createResearchBrain } from './brain-research.js';
 import { startServer } from './serve.js';
-import { DEFAULT_APPROVAL_TIMEOUT_MS, controlReply, createIpcServer, socketPathFor } from './ipc.js';
+import { DEFAULT_APPROVAL_TIMEOUT_MS, controlReply, createIpcServer, nativeIpcPath, socketPathFor } from './ipc.js';
 import { WATCH_DEFAULT_FPS, runWatch } from './ipc-watch.js';
 import { islandRunning } from './island.js';
 import { expandCommand, listCustomCommands } from './plugins.js';
@@ -4382,11 +4382,12 @@ async function cmdServe(args = []) {
 // the backstop for every path that does not reach an explicit close.
 let closeIpcBridgeNow = null;
 
-function closeIpcBridge() {
+// Waits (up to a second) for the clients to receive the run's last events.
+async function closeIpcBridge() {
   const close = closeIpcBridgeNow;
   closeIpcBridgeNow = null;
   if (!close) return;
-  try { close(); } catch {}
+  try { await Promise.race([close(), new Promise((r) => setTimeout(r, 1000).unref?.())]); } catch {}
 }
 
 // One well-known default so a GUI can find ox without a discovery file.
@@ -4432,10 +4433,12 @@ function ipcApprovalTimeout() {
 function installIpcLifecycle(server) {
   let closed = false;
   const close = () => {
-    if (closed) return;
+    if (closed) return undefined;
     closed = true;
-    try { server.close(); } catch {}
+    let done;
+    try { done = server.close(); } catch {}
     try { fs.unlinkSync(server.socketPath); } catch { /* already gone */ }
+    return done;
   };
   // Close the bridge, then re-raise with the DEFAULT disposition: an
   // interrupted run must still die exactly the way it did before --ipc existed
@@ -4571,7 +4574,7 @@ function probeIpcSocket(socketPath, timeoutMs = 300) {
     };
     const timer = setTimeout(() => done(false), timeoutMs);
     try {
-      sock = net.connect({ path: socketPath });
+      sock = net.connect({ path: nativeIpcPath(socketPath) });
       sock.on('connect', () => {
         try { sock.write('{"type":"probe"}\n'); } catch {}
         done(true);

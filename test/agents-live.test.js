@@ -136,7 +136,7 @@ test('Cursor, Gemini CLI and Continue show up while their files change', async (
   fs.rmSync(home, { recursive: true, force: true });
 });
 
-test('Cline, Kilo and Kimi sessions are discovered from their local state without reading credentials', async () => {
+test('Cline, Kilo and Kimi sessions are discovered from their local state without reading credentials', { skip: process.platform === 'win32' && 'it needs the sqlite3 CLI and the macOS Library folder' }, async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-more-agents-'));
   const now = Date.now();
   const cline = path.join(home, '.cline', 'data', 'sessions', 'c1'); fs.mkdirSync(cline, { recursive: true });

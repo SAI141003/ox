@@ -110,7 +110,8 @@ async function defaultNotify(sig) {
 
 /** One trace, summed: turns, tokens, cost, tools, errors, signals. */
 export function readTrace(idOrFile) {
-  const f = idOrFile.includes('/') ? idOrFile : path.join(dir(), idOrFile.endsWith('.jsonl') ? idOrFile : `${idOrFile}.jsonl`);
+  // A path (either separator, so Windows ones too) or an id in ~/.ox/traces.
+  const f = /[\\/]/.test(idOrFile) ? idOrFile : path.join(dir(), idOrFile.endsWith('.jsonl') ? idOrFile : `${idOrFile}.jsonl`);
   const rows = fs.readFileSync(f, 'utf8').trim().split('\n').map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
   const run = rows.find((r) => r.t === 'run') ?? {};
   const end = rows.find((r) => r.t === 'end');

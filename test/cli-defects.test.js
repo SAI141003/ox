@@ -19,6 +19,7 @@ function childEnv(home, extra = {}) {
   const env = { ...process.env };
   for (const k of SCRUB) delete env[k];
   env.HOME = home;
+  env.USERPROFILE = home; // what Windows reads for the home folder
   env.NO_COLOR = '1';
   return { ...env, ...extra };
 }
@@ -75,7 +76,7 @@ test('ox index build usage string advertises only build|search', (t) => {
 });
 
 // --- BUG 2a: ox cron run <id> ---
-test('ox cron run <id> runs a scheduled job and reports the run', (t) => {
+test('ox cron run <id> runs a scheduled job and reports the run', { skip: process.platform === 'win32' && 'it runs through the daemon, which is Unix-only' }, (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-cron-run-'));
   // `ox cron run` dispatches through the daemon (one execution path), so this
   // test starts a supervisor. It is stopped BEFORE the home directory is removed:

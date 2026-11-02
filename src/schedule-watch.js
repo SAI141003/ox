@@ -20,11 +20,13 @@ import { spawnSync } from 'node:child_process';
 
 const FILE = (env = process.env) => path.join(env.OX_HOME || path.join(os.homedir(), '.ox'), 'schedule-watch.json');
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
-const home = (p) => p.replace(/^~(?=\/|$)/, os.homedir());
+const home = (p) => p.replace(/^~(?=[\\/]|$)/, os.homedir());
 
 export function validSource(s) {
   const t = String(s ?? '').trim();
-  return /^https?:\/\/\S+$/.test(t) || /^(\/|~\/)/.test(t) || t === 'git' || /^git:(\/|~\/)/.test(t) || /^gh:\S/.test(t);
+  // A path: /x or ~/x, or on Windows C:\x, C:/x or ~\x.
+  const isPath = (p) => /^(\/|~[\\/])/.test(p) || /^[A-Za-z]:[\\/]/.test(p);
+  return /^https?:\/\/\S+$/.test(t) || isPath(t) || t === 'git' || (t.startsWith('git:') && isPath(t.slice(4))) || /^gh:\S/.test(t);
 }
 
 /** What one source looks like now, as a hash; null when it cannot be read (counts as changed). */
