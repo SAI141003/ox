@@ -214,7 +214,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -541,6 +541,7 @@ function usageAll() {
     '  ox org team "<sentence>" [--draft]   the chief sets up a whole team and its group chat; ox org say <team> "…"; ox org group <team>',
     '  ox skill from <book.pdf|folder>   a book or docs → a skill: an index plus chapters read only when needed',
     '',
+    'search: ox search [setup | status | stop]   your own open-source web search (SearXNG), no key',
     'library: ox library [add <url|pdf> | foresight <export> | read | ask <id> "q" | search]   saved articles and local meeting exports; highlight and ask in the app',
     'commands: ox commands [list | install [--claude] [--codex] [--cursor] | uninstall]   every ox command as /name, here and inside Claude Code, Codex, Cursor',
     'theme: ox theme ["<look>" | list | use <name> | reset]   restyle the app from a sentence (neumorphic, glass, paper, terminal, contrast…)',
@@ -4894,6 +4895,32 @@ async function runSubcommand(cmd, args) {
     case 'pr':
       await cmdPr(args);
       return;
+    case 'search': {
+      // ox search [setup | status | start | stop]: your own open-source web search (SearXNG).
+      const S = await import('./searxng.js');
+      const sub = args[0] ?? 'status';
+      try {
+        if (sub === 'setup') {
+          const url = await S.setup({ say: (l) => console.log(c.dim(`… ${l}`)) });
+          console.log(`${c.green('✓')} your own web search is running at ${url}; web_search uses it first, no key needed`);
+        } else if (sub === 'start') {
+          console.log((await S.start()) ? `${c.green('✓')} running at ${S.localUrl()}` : c.red('✗ not set up or did not start: ox search setup'));
+        } else if (sub === 'stop') {
+          console.log(S.stop() ? 'stopped' : c.dim('it was not running'));
+        } else if (sub === 'status') {
+          const url = S.searxngUrl();
+          if (!url) console.log(`${c.dim('not set up.')} ox search setup installs SearXNG here: open source, no key, searches Google, Bing, DuckDuckGo and more at once`);
+          else console.log(`${(await S.running(url)) ? c.green('✓ running') : c.dim('installed, starts on the next search')}  ${url}`);
+        } else {
+          process.stderr.write('usage: ox search [setup | status | start | stop]\n');
+          process.exitCode = 1;
+        }
+      } catch (e) {
+        console.error(c.red(`✗ ${e.message}`));
+        process.exitCode = 1;
+      }
+      return;
+    }
     case 'library': {
       // ox library [add <url|file> | foresight <export> | read <id> | ask <id> "q" | search <words> | rm <id>]
       const L = await import('./library.js');

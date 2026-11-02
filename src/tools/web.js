@@ -1062,14 +1062,26 @@ const SEARCH_BACKEND_DEFS = [
     },
   },
   {
-    // Your own SearXNG (free, self-hosted, open source): OX_SEARXNG_URL=http://localhost:8888
+    // Your own SearXNG (free, open source, no key): `ox search setup` runs one on
+    // this machine and it is started on demand; OX_SEARXNG_URL points at another.
     name: 'searxng',
     envVar: 'OX_SEARXNG_URL',
-    keyless: false,
+    keyless: true,
+    requiresCredential: false,
     defaultEligible: false,
-    note: 'Your own SearXNG instance (its JSON output must be enabled: search.formats: [html, json]).',
+    note: 'Your own SearXNG: `ox search setup` installs one here (open source, no key), or OX_SEARXNG_URL points at yours (JSON output enabled: search.formats: [html, json]).',
+    async probe() {
+      const S = await import('../searxng.js');
+      const base = S.searxngUrl();
+      if (!base) return { status: 0, payload: [] };
+      if (!process.env.OX_SEARXNG_URL && !(await S.start())) return { status: 0, payload: [] };
+      return { status: 200, payload: [{ title: 'SearXNG', url: base, snippet: 'your own search' }] };
+    },
     async search(query, { signal, cap, snippetCap } = {}) {
-      const base = String(process.env.OX_SEARXNG_URL ?? '').replace(/\/+$/, '');
+      const S = await import('../searxng.js');
+      const base = S.searxngUrl();
+      if (!base) throw new Error('searxng: not set up (ox search setup)');
+      if (!process.env.OX_SEARXNG_URL) await S.start();
       const res = await fetch(`${base}/search?q=${encodeURIComponent(query)}&format=json`, { headers: { accept: 'application/json' }, signal: signal ?? undefined });
       const read = await readCapped(res, 512 * 1024);
       const text = decodeBuffer(read.buffer, res.headers.get('content-type'));

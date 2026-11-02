@@ -4,8 +4,13 @@ Thanks for trying ox. This takes about 15 minutes.
 
 ## 1. Install (Mac with Apple silicon)
 
-1. Download `ox-mac-arm64.zip` from [Releases](https://github.com/SAI141003/ox/releases), unzip it, and drag **OX** to Applications.
-2. Open OX. If macOS blocks it: System Settings › Privacy & Security › **Open Anyway**.
+1. Open Terminal and paste this line. It installs OX and opens it, with no security warning:
+
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/SAI141003/ox/main/install.sh | sh
+   ```
+
+2. (Or by hand: download `ox-mac-arm64.zip` from [Releases](https://github.com/SAI141003/ox/releases), unzip, drag **OX** to Applications. macOS then blocks the first open: System Settings › Privacy & Security › **Open Anyway**.)
 3. In OX, open **Settings › API keys** and add a key. A free NVIDIA key works: [build.nvidia.com](https://build.nvidia.com).
 
 ## 2. Allow access (once)

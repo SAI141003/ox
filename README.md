@@ -29,7 +29,16 @@ see `bench/h2h/RESULTS.md`), and the public benchmarks
 
 Testing ox for us? Follow [docs/TESTING.md](docs/TESTING.md): install, allow access, five things to try, and how to report.
 
-**Mac app** (Apple Silicon): download `ox-mac-arm64.zip` from
+**One line** (Mac, Linux): installs the latest release and opens it, with no
+"unverified developer" warning, since a terminal download is not marked as being from the internet:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/SAI141003/ox/main/install.sh | sh
+```
+
+Windows (PowerShell): `irm https://raw.githubusercontent.com/SAI141003/ox/main/install.ps1 | iex`
+
+**Mac app by hand** (Apple Silicon): download `ox-mac-arm64.zip` from
 [Releases](https://github.com/SAI141003/ox/releases), unzip, drag **OX** to
 Applications. It brings its own runtime; nothing else to install.
 
