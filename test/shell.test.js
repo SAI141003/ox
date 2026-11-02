@@ -28,3 +28,17 @@ test('Windows: Git Bash when it is there, else PowerShell, and the model is told
   assert.match(shellNote({ platform: 'win32', env: { ProgramFiles: pf }, fresh: true }), /Git Bash/);
   assert.equal(shellNote({ platform: 'darwin', env: { SHELL: '/bin/zsh' }, fresh: true }), '');
 });
+
+test('killTree: the whole tree on Windows (taskkill /T), the process group elsewhere', async () => {
+  const { killTree } = await import('../src/shell.js');
+  const calls = [];
+  assert.equal(killTree(4242, 'SIGTERM', { platform: 'win32', run: (cmd, args) => { calls.push([cmd, ...args]); return { status: 0 }; } }), true);
+  assert.deepEqual(calls, [['taskkill', '/pid', '4242', '/T', '/F']]);
+  if (process.platform !== 'win32') {
+    const { spawn } = await import('node:child_process');
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' });
+    const exited = new Promise((r) => child.on('exit', r));
+    assert.equal(killTree(child.pid), true);
+    await exited;
+  }
+});

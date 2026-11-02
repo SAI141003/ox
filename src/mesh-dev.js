@@ -9,7 +9,7 @@ import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { shellArgv } from './shell.js';
+import { killTree, shellArgv } from './shell.js';
 
 const running = new Map(); // port → { port, pid, dir, command, started, child?, server?, log }
 
@@ -103,7 +103,7 @@ export function stopDev(port) {
   if (!r) return false;
   running.delete(r.port);
   if (r.server) r.server.close();
-  else { try { process.kill(process.platform === 'win32' ? r.pid : -r.pid, 'SIGTERM'); } catch { try { r.child.kill('SIGTERM'); } catch {} } }
+  else if (!killTree(r.pid)) { try { r.child.kill('SIGTERM'); } catch {} }
   return true;
 }
 

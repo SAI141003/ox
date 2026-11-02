@@ -7326,8 +7326,8 @@ async function runPrint(prompt, config, opts, initialMessages = []) {
   } finally {
     // The run is over: drop the GUI bridge (and its socket file) here rather
     // than waiting for 'exit', which the bridge's own client sockets would
-    // otherwise prevent from ever arriving.
-    closeIpcBridge();
+    // otherwise prevent from ever arriving. Awaited: the GUI gets the run's last events first.
+    await closeIpcBridge();
   }
 }
 
@@ -7506,7 +7506,7 @@ async function replWithBudget(config, opts, flags, budget) {
       rl.close();
     } catch {}
     // A connected GUI learns the session is over while it can still read it.
-    closeIpcBridge();
+    await closeIpcBridge();
     process.exit(0);
   }
 

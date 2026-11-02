@@ -5,6 +5,7 @@
 //   Windows        Git Bash when installed (models write bash), else PowerShell
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 let cached = null;
 
@@ -55,4 +56,17 @@ export function shellNote(opts = {}) {
   if (sh.kind === 'powershell') return 'The bash tool runs PowerShell on this Windows machine (no Git Bash found): write PowerShell commands, not bash.';
   if ((opts.platform ?? process.platform) === 'win32') return 'The bash tool runs Git Bash on Windows: use bash syntax and forward-slash paths.';
   return '';
+}
+
+// Stop a process and everything it started. On macOS and Linux that is its
+// process group (started detached); Windows has none, so taskkill /T ends the
+// tree; killing only the shell left the dev server it ran still listening.
+export function killTree(pid, signal = 'SIGTERM', { platform = process.platform, run = spawnSync } = {}) {
+  if (!pid) return false;
+  if (platform === 'win32') {
+    const r = run('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+    return r.status === 0;
+  }
+  try { process.kill(-pid, signal); return true; } catch {}
+  try { process.kill(pid, signal); return true; } catch { return false; }
 }

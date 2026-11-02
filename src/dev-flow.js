@@ -18,6 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { killTree } from './shell.js';
 
 // A command line from environment.yml, run by the platform's own shell.
 const SHELL = process.platform === 'win32' ? [process.env.ComSpec || 'cmd.exe', '/d', '/s', '/c'] : ['/bin/sh', '-c'];
@@ -553,7 +554,7 @@ export async function captureApp(cwd, { routes = ['/'], port = null, base = null
       child.on('exit', () => { clearTimeout(t); resolve(null); });
     });
     url = found;
-    if (!url) { try { process.kill(-child.pid); } catch {} fail(`the app did not say where it listens: ${seen.split('\n').slice(-3).join(' ').slice(0, 200)}`); }
+    if (!url) { killTree(child.pid); fail(`the app did not say where it listens: ${seen.split('\n').slice(-3).join(' ').slice(0, 200)}`); }
   }
   try {
     if (!(await waitForUrl(url, waitMs))) fail(`${url} did not answer`);
@@ -565,6 +566,6 @@ export async function captureApp(cwd, { routes = ['/'], port = null, base = null
     fs.rmSync(list, { force: true });
     return { gif: ff.status === 0 ? gif : null, shots, base: url };
   } finally {
-    if (child) { try { process.kill(-child.pid, 'SIGTERM'); } catch { try { child.kill(); } catch {} } }
+    if (child && !killTree(child.pid)) { try { child.kill(); } catch {} }
   }
 }

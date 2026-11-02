@@ -36,8 +36,9 @@ test('projects come from sessions; worktrees from git; removing keeps the branch
     assert.ok(p, 'the session folder is a project');
     assert.equal(p.sessions, 1);
     assert.equal(p.branch, 'main');
-    const trees = A.worktreesView().filter((t) => t.repo === repo);
-    assert.deepEqual(trees.map((t) => [t.main, t.branch]), [[true, 'main'], [false, 'feature']]);
+    const all = A.worktreesView();
+    const trees = all.filter((t) => t.repo === repo);
+    assert.deepEqual(trees.map((t) => [t.main, t.branch]), [[true, 'main'], [false, 'feature']], `repo ${repo}; ox saw ${JSON.stringify(all.map((t) => [t.repo, t.path, t.branch]))}`);
     assert.throws(() => A.removeWorktree(repo, repo), /main checkout/);
     assert.throws(() => A.removeWorktree(repo, '/etc'), /not a worktree/);
     fs.writeFileSync(path.join(wt, 'dirty.txt'), 'x');
