@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const SRC = fileURLToPath(new URL('../src/logo.js', import.meta.url));
+const SRC_URL = new URL('../src/logo.js', import.meta.url).href;
 
 // The ambient shell may export NO_COLOR (this workstation does). Keep the
 // baseline deterministic so the explicit TTY-colour assertions below exercise
@@ -41,7 +42,7 @@ const colorsOf = (text) => [...text.matchAll(/\x1b\[38;2;(\d+);(\d+);(\d+)m/g)]
   .map((m) => `${m[1]},${m[2]},${m[3]}`);
 
 test('color:false output is byte-identical to the plain art, with zero escapes', async () => {
-  const { LOGO, LOGO_SMALL, renderLogo } = await import(SRC);
+  const { LOGO, LOGO_SMALL, renderLogo } = await import(SRC_URL);
   for (const [art, small] of [[LOGO, false], [LOGO_SMALL, true]]) {
     const out = withTty(() => renderLogo({ small, color: false }));
     assert.equal(out, plainArt(art), `LOGO${small ? '_SMALL' : ''} plain art`);
@@ -54,7 +55,7 @@ test('color:false output is byte-identical to the plain art, with zero escapes',
 });
 
 test('colour wraps every line in a truecolor SGR pair', async () => {
-  const { LOGO, LOGO_SMALL, renderLogo } = await import(SRC);
+  const { LOGO, LOGO_SMALL, renderLogo } = await import(SRC_URL);
   for (const [art, small] of [[LOGO, false], [LOGO_SMALL, true]]) {
     const out = withTty(() => renderLogo({ small, color: true }));
     const lines = out.split('\n');
@@ -68,7 +69,7 @@ test('colour wraps every line in a truecolor SGR pair', async () => {
 });
 
 test('the gradient is keyed to the art\'s own line count, not a constant', async () => {
-  const { LOGO, LOGO_SMALL, renderLogo } = await import(SRC);
+  const { LOGO, LOGO_SMALL, renderLogo } = await import(SRC_URL);
   const steps = (art, small) => {
     const out = withTty(() => renderLogo({ small, color: true }));
     const lines = out.split('\n');
@@ -94,7 +95,7 @@ test('the gradient is keyed to the art\'s own line count, not a constant', async
 });
 
 test('the ramp is not the washed-out 2-stop lavender at the midpoint', async () => {
-  const { LOGO, renderLogo } = await import(SRC);
+  const { LOGO, renderLogo } = await import(SRC_URL);
   const lines = withTty(() => renderLogo({ color: true })).split('\n');
   const rgb = lines.map((l) => {
     const m = l.match(/\x1b\[38;2;(\d+);(\d+);(\d+)m/);
@@ -114,7 +115,7 @@ test('the ramp is not the washed-out 2-stop lavender at the midpoint', async () 
 });
 
 test('banner color:false equals banner color:true with escapes stripped', async () => {
-  const { banner } = await import(SRC);
+  const { banner } = await import(SRC_URL);
   for (const small of [false, true]) {
     for (const version of ['0.1.0', '', null, 'v2.0.0']) {
       const colour = withTty(() => banner({ small, color: true, version }));
@@ -130,7 +131,7 @@ test('banner color:false equals banner color:true with escapes stripped', async 
 });
 
 test('NO_COLOR and non-TTY produce no escapes', async () => {
-  const { LOGO, LOGO_SMALL, renderLogo, banner } = await import(SRC);
+  const { LOGO, LOGO_SMALL, renderLogo, banner } = await import(SRC_URL);
 
   // Non-TTY: isTTY left as the runner set it. It is undefined rather than
   // false here, but Boolean(undefined) is false either way, which is all
@@ -177,7 +178,7 @@ test('the real CLI emits no escapes when piped or with NO_COLOR', () => {
 });
 
 test('swarm settled frame is the coloured logo, not the plain one', async () => {
-  const { renderSwarmFrame, renderLogo, LOGO } = await import(SRC);
+  const { renderSwarmFrame, renderLogo, LOGO } = await import(SRC_URL);
   const frame = withTty(() => renderSwarmFrame({ progress: 1, seed: 1 }).join('\n'));
   const logo = withTty(() => renderLogo({ color: true }));
   assert.equal(frame, logo, 'the settled swarm frame equals the coloured logo');
@@ -185,7 +186,7 @@ test('swarm settled frame is the coloured logo, not the plain one', async () => 
 });
 
 test('the intro draws whole lines, not one escape-wrapped line per character', async () => {
-  const { intro, LOGO } = await import(SRC);
+  const { intro, LOGO } = await import(SRC_URL);
   // animateLogo draws with `for (const line of frameLines(p))`, so every branch
   // of frameLines has to hand back an array. renderLogo() returns a string; if
   // the settled frame is not split, for...of walks it a character at a time and
@@ -219,7 +220,7 @@ test('the intro draws whole lines, not one escape-wrapped line per character', a
 });
 
 test('the banner paints for the stream it will be written to (acp stderr path)', async () => {
-  const { banner, renderLogo } = await import(SRC);
+  const { banner, renderLogo } = await import(SRC_URL);
   const fake = (isTTY) => ({ isTTY, write: () => true });
 
   // The `ox acp server` case: stdout is the JSON-RPC pipe (never a TTY under

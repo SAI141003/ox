@@ -66,7 +66,7 @@ test('earlier turns ride along in the folded prompt', () => {
   assert.deepEqual(parseLine('claude-stream', 'not json', { text: '', tools: new Map() }), []);
 });
 
-test('claude-plan: Claude Code runs in the project, its tools and answer stream back', () => {
+test('claude-plan: Claude Code runs in the project, its tools and answer stream back', { skip: process.platform === 'win32' && 'the fake CLI here is a Unix script' }, () => {
   const r = ox('--bot', 'claude-plan', '-p', 'what is the secret word?');
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /The word is pineapple\./);
@@ -77,7 +77,7 @@ test('claude-plan: Claude Code runs in the project, its tools and answer stream 
   assert.equal(a[a.indexOf('--permission-mode') + 1], 'default', 'no -y: the CLI keeps its own approvals');
 });
 
-test('ox approvals map onto the vendor CLI: -y, and ask mode is read-only', () => {
+test('ox approvals map onto the vendor CLI: -y, and ask mode is read-only', { skip: process.platform === 'win32' && 'the fake CLI here is a Unix script' }, () => {
   ox('--bot', 'claude-plan', '-y', '-p', 'go');
   let { a } = lastArgs();
   assert.equal(a[a.indexOf('--permission-mode') + 1], 'bypassPermissions');
@@ -90,14 +90,14 @@ test('ox approvals map onto the vendor CLI: -y, and ask mode is read-only', () =
   assert.equal(a[a.indexOf('--model') + 1], 'gpt-5');
 });
 
-test('chatgpt-plan: Codex events become ox output', () => {
+test('chatgpt-plan: Codex events become ox output', { skip: process.platform === 'win32' && 'the fake CLI here is a Unix script' }, () => {
   const r = ox('--bot', 'chatgpt-plan', '-p', 'read notes');
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /Codex says pineapple\./);
   assert.match(r.out, /shell/);
 });
 
-test('a text CLI streams verbatim; a failing one says why, not "done"', () => {
+test('a text CLI streams verbatim; a failing one says why, not "done"', { skip: process.platform === 'win32' && 'the fake CLI here is a Unix script' }, () => {
   const ok = ox('--bot', 'qwen-plan', '-p', 'hi');
   assert.equal(ok.code, 0, ok.out);
   assert.match(ok.out, /plain answer from qwen/);
@@ -120,7 +120,7 @@ test('Windows: claude.cmd is found, and run through node, never through cmd.exe'
   assert.deepEqual(execPlan('/usr/local/bin/claude', 'darwin'), { cmd: '/usr/local/bin/claude', pre: [] });
 });
 
-test('ox connect reports what runs here, and a missing CLI explains how to get it', () => {
+test('ox connect reports what runs here, and a missing CLI explains how to get it', { skip: process.platform === 'win32' && 'the fake CLI here is a Unix script' }, () => {
   const r = ox('connect');
   assert.match(r.out, /● claude-plan/);
   assert.match(r.out, /● chatgpt-plan/);

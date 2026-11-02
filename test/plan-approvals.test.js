@@ -61,7 +61,7 @@ async function run(requestApproval) {
   return { cwd, asked, text, written: fs.existsSync(path.join(cwd, 'tmp-check.txt')), args: JSON.parse(fs.readFileSync(argsLog, 'utf8')) };
 }
 
-test('Allow: the plan asks through requestApproval and the file is written', async () => {
+test('Allow: the plan asks through requestApproval and the file is written', { skip: process.platform === 'win32' && 'the fake CLI here is a Unix script' }, async () => {
   const r = await run(async () => true);
   assert.ok(r.args.includes('--permission-prompt-tool') && r.args.includes('stdio'));
   assert.ok(r.args.includes('--input-format'));
@@ -72,7 +72,7 @@ test('Allow: the plan asks through requestApproval and the file is written', asy
   assert.match(r.text, /Created tmp-check\.txt/);
 });
 
-test('Deny (or anything but a yes) refuses the write', async () => {
+test('Deny (or anything but a yes) refuses the write', { skip: process.platform === 'win32' && 'the fake CLI here is a Unix script' }, async () => {
   for (const answer of [async () => false, async () => 'allow', async () => { throw new Error('gone'); }]) {
     const r = await run(answer);
     assert.equal(r.asked.length, 1);
@@ -81,7 +81,7 @@ test('Deny (or anything but a yes) refuses the write', async () => {
   }
 });
 
-test('with nobody to ask, the plan runs as before (prompt as an argument)', async () => {
+test('with nobody to ask, the plan runs as before (prompt as an argument)', { skip: process.platform === 'win32' && 'the fake CLI here is a Unix script' }, async () => {
   const r = await run(null);
   assert.ok(!r.args.includes('stdio'));
   assert.ok(r.args.includes('create tmp-check.txt in the project root'));

@@ -131,6 +131,14 @@ function pipePrefix(dir) {
   return `ox-ipcd-${createHash('sha256').update(path.resolve(dir)).digest('hex').slice(0, 10)}-`;
 }
 
+// The address to really listen on or connect to. A socket file path given on
+// Windows (a test's dir, --ipc-socket) cannot be listened on there: it becomes
+// a named pipe derived from that path, the same one for server and client.
+export function nativeIpcPath(p, platform = process.platform) {
+  if (platform !== 'win32' || !p || /^\\\\[.?]\\pipe\\/i.test(p)) return p;
+  return `\\\\.\\pipe\\ox-ipcp-${createHash('sha256').update(path.resolve(p)).digest('hex').slice(0, 16)}`;
+}
+
 // Every live run's socket, found the same way on each OS: socket files in the
 // temp dir, or named pipes on Windows. Used by islands that watch all runs.
 export function listIpcSockets(dir = DEFAULT_SOCKET_DIR, platform = process.platform) {
@@ -331,7 +339,7 @@ export function controlReply(msg, { ok = true, result = undefined, error = null 
 // protocol warning and no reply.
 export function createIpcServer(opts = {}) {
   const {
-    socketPath = socketPathFor(opts.sessionId ?? 'default'),
+    socketPath: requestedPath = socketPathFor(opts.sessionId ?? 'default'),
     sessionId = 'default',
     meta = {},
     approvalTimeoutMs = DEFAULT_APPROVAL_TIMEOUT_MS,
@@ -341,6 +349,7 @@ export function createIpcServer(opts = {}) {
     logger = null,
     onRequest = null,
   } = opts;
+  const socketPath = nativeIpcPath(requestedPath);
 
   const emitter = new EventEmitter();
   // Approvals resolve to a decision, so the emitter carries no error contract;
@@ -844,10 +853,11 @@ export function createIpcServer(opts = {}) {
 // approval means falling back to the terminal prompt.
 export function connectIpcClient(opts = {}) {
   const {
-    socketPath,
+    socketPath: requestedPath,
     clientId = `client-${process.pid}`,
     connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS,
   } = opts;
+  const socketPath = nativeIpcPath(requestedPath);
 
   const emitter = new EventEmitter();
   emitter.on('error', () => {});

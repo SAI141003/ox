@@ -44,7 +44,7 @@ test('recipe: detected from package.json, saved once, edits respected', () => {
   assert.equal(D.recipe(work).saved, false);
 });
 
-test('pr open: branch off main, commit, checks, push, PR with what was checked', async () => {
+test('pr open: branch off main, commit, checks, push, PR with what was checked', { skip: process.platform === 'win32' && 'the fake CLI here is a Unix script' }, async () => {
   const { work, log } = repo();
   fs.writeFileSync(path.join(work, 'a.txt'), 'hello');
   const pr = await D.openPr(work, { title: 'Add a greeting' });
@@ -60,7 +60,7 @@ test('pr open: branch off main, commit, checks, push, PR with what was checked',
   await assert.rejects(D.openPr(work), /nothing changed/);
 });
 
-test('pr open still opens when a check fails, and says so in the body', async () => {
+test('pr open still opens when a check fails, and says so in the body', { skip: process.platform === 'win32' && 'the fake CLI here is a Unix script' }, async () => {
   const { work, log } = repo({ testCmd: 'node -e "process.exit(1)"' });
   fs.writeFileSync(path.join(work, 'b.txt'), 'x');
   const pr = await D.openPr(work, { title: 'Broken' });
@@ -68,7 +68,7 @@ test('pr open still opens when a check fails, and says so in the body', async ()
   assert.match(log(), /❌ `npm test`/);
 });
 
-test('pr status and fix: failing CI and a review comment become one ox task, then a push', async () => {
+test('pr status and fix: failing CI and a review comment become one ox task, then a push', { skip: process.platform === 'win32' && 'the fake CLI here is a Unix script' }, async () => {
   const { d, work } = repo();
   fs.writeFileSync(path.join(work, 'c.txt'), 'x');
   const pr = await D.openPr(work, { title: 'Feature', checks: false });

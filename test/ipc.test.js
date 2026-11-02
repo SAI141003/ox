@@ -930,3 +930,12 @@ test('ipc: the approval gate counts a client that is still connecting', async (t
   await sleep(50);
   assert.equal(approver.hasClient(), true, 'connected, ready not read yet: still asked');
 });
+
+test('ipc: a socket file path given on Windows is listened on as a named pipe, the same for both ends', async () => {
+  const { nativeIpcPath } = await import('../src/ipc.js');
+  assert.equal(nativeIpcPath('/tmp/x/s.sock', 'darwin'), '/tmp/x/s.sock');
+  const a = nativeIpcPath('C:\\tmp\\x\\s.sock', 'win32');
+  assert.match(a, /^\\\\\.\\pipe\\ox-ipcp-[0-9a-f]{16}$/);
+  assert.equal(nativeIpcPath('C:\\tmp\\x\\s.sock', 'win32'), a, 'server and client agree');
+  assert.equal(nativeIpcPath('\\\\.\\pipe\\ox-ipc-abc', 'win32'), '\\\\.\\pipe\\ox-ipc-abc', 'a pipe stays a pipe');
+});

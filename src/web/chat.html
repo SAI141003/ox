@@ -3071,7 +3071,7 @@
   }
 
   // ---------- capabilities
-  let capsTab = 'skills', capsSel = null;
+  let capsTab = 'skills', capsSel = null, capsSrc = 'built-in';
   async function loadCaps() {
     if (!caps) {
       $('caps-list').innerHTML = '<div style="padding:14px"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>';
@@ -3084,7 +3084,12 @@
     $('caps-tabs').innerHTML = [['skills', 'Skills'], ['tools', 'Tools'], ['mcp', 'MCP'], ['agents', 'Agents']].map(([k, l]) => `<button data-ct="${k}" class="${capsTab === k ? 'on' : ''}">${l}<sup>${counts[k]}</sup></button>`).join('');
     $('caps-tabs').querySelectorAll('button').forEach((b) => (b.onclick = () => { capsTab = b.dataset.ct; capsSel = null; renderCaps(); }));
     const q = $('caps-q').value.trim().toLowerCase();
-    const items = (caps[capsTab] || []).filter((x) => !q || `${x.name} ${x.description || x.desc || ''}`.toLowerCase().includes(q));
+    // Skills come in groups (built in, yours, each plugin's): one group at a
+    // time instead of a hundred in one list; a search looks through all of them.
+    const srcOf = (x) => x.source?.startsWith('plugin') ? 'plugins' : x.source;
+    const srcs = capsTab === 'skills' ? [...new Set(caps.skills.map(srcOf))] : [];
+    if (capsTab === 'skills' && !srcs.includes(capsSrc)) capsSrc = srcs[0] ?? 'built-in';
+    const items = (caps[capsTab] || []).filter((x) => (q ? `${x.name} ${x.description || x.desc || ''}`.toLowerCase().includes(q) : capsTab !== 'skills' || srcOf(x) === capsSrc));
     // Open on something rather than half a page of nothing (wide screens only:
     // on a phone the list is the page until you pick one).
     if (!capsSel && items.length && !matchMedia('(max-width: 860px)').matches) capsSel = items[0].name;
@@ -3092,8 +3097,10 @@
       : capsTab === 'mcp' ? `<span>${esc(x.kind)}</span><span class="mono">${esc(x.target)}</span>`
       : capsTab === 'agents' ? `<span>${esc(x.mode)}</span><span>${esc(x.bot || 'default model')}</span>`
       : `<span>${esc(x.description)}</span>`;
-    $('caps-list').innerHTML = items.length ? items.map((x) => `<button class="item${capsSel === x.name ? ' on' : ''}" data-ci="${esc(x.name)}"><span class="t"><div class="n">${esc(x.name)}</div><div class="d">${sub(x)}</div></span></button>`).join('')
-      : `<div class="empty-note" style="padding:14px">${capsTab === 'mcp' ? 'No MCP servers yet. Add one with <code>ox mcp add</code>.' : capsTab === 'agents' ? 'No agents yet. <code>ox agent new</code> makes one.' : 'Nothing matches.'}</div>`;
+    const srcBar = capsTab === 'skills' && !q && srcs.length > 1 ? `<div class="caps-src" style="display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px">${srcs.map((k) => `<button class="btn small ${capsSrc === k ? 'primary' : 'ghost'}" data-csrc="${esc(k)}">${esc(k === 'plugins' ? 'From plugins' : k === 'yours' ? 'Yours' : k === 'built-in' ? 'Built in' : k)} ${caps.skills.filter((x) => srcOf(x) === k).length}</button>`).join('')}</div>` : '';
+    $('caps-list').innerHTML = srcBar + (items.length ? items.map((x) => `<button class="item${capsSel === x.name ? ' on' : ''}" data-ci="${esc(x.name)}"><span class="t"><div class="n">${esc(x.name)}</div><div class="d">${sub(x)}</div></span></button>`).join('')
+      : `<div class="empty-note" style="padding:14px">${capsTab === 'mcp' ? 'No MCP servers yet. Add one with <code>ox mcp add</code>.' : capsTab === 'agents' ? 'No agents yet. <code>ox agent new</code> makes one.' : 'Nothing matches.'}</div>`);
+    $('caps-list').querySelectorAll('[data-csrc]').forEach((b) => (b.onclick = () => { capsSrc = b.dataset.csrc; capsSel = null; renderCaps(); }));
     $('caps-list').querySelectorAll('[data-ci]').forEach((b) => (b.onclick = () => { capsSel = b.dataset.ci; renderCaps(); $('caps-split').classList.add('show-detail'); }));
     renderCapDetail();
   }

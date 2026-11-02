@@ -1,4 +1,4 @@
-import { constants as fsConstants, promises as fsp } from 'node:fs';
+import fs, { constants as fsConstants, promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile, spawn } from 'node:child_process';
@@ -183,7 +183,12 @@ export function displayPath(p, ctx) {
   const abs = String(p ?? '');
   const cwd = typeof ctx?.cwd === 'string' && ctx.cwd ? path.resolve(ctx.cwd) : null;
   if (!cwd || !abs) return abs;
-  const rel = path.relative(cwd, abs);
+  let rel = path.relative(cwd, abs);
+  // Windows spells one folder two ways (C:\Users\RUNNER~1 and C:\Users\runneradmin):
+  // compare the real paths before calling a file outside the project.
+  if ((rel.startsWith('..') || path.isAbsolute(rel)) && process.platform === 'win32') {
+    try { rel = path.relative(fs.realpathSync.native(cwd), fs.realpathSync.native(abs)); } catch {}
+  }
   if (rel === '') return '.';
   if (rel.startsWith('..') || path.isAbsolute(rel)) return abs;
   return rel.split(path.sep).join('/');
