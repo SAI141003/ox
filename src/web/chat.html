@@ -118,6 +118,9 @@
   .tabs button:hover { color: var(--text); }
   .tabs button.on { color: var(--text); background: var(--sel); box-shadow: 0 1px 2px rgba(0,0,0,.25); }
   .nav { padding: 8px 8px 4px; display: flex; flex-direction: column; gap: 1px; }
+  .nav-more { display: flex; flex-direction: column; gap: 1px; }
+  .nav-more[hidden] { display: none; }
+  .nav-more-btn[aria-expanded="true"] [data-i] { transform: rotate(45deg); }
   .nav button { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; color: var(--muted); text-align: left; font-size: 13.5px; }
   .nav button:hover { background: var(--hover); color: var(--text); }
   .nav button.on { background: var(--sel); color: var(--text); box-shadow: inset 0 0 0 1px var(--line2); }
@@ -637,6 +640,9 @@
   .sbody-inner { max-width: 980px; }
   .shead { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; font-size: 15px; font-weight: 600; }
   .sdesc { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+  /* Long explanations show one line; a click shows the rest. */
+  .sdesc.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; cursor: pointer; }
+  .sdesc.clamp.open { display: block; cursor: auto; }
   .srow { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 14px 0; border-top: 1px solid var(--line); }
   .srow:first-of-type { border-top: 0; }
   .srow .l { min-width: 0; }
@@ -796,22 +802,25 @@
     <div id="tab-sessions">
       <div class="nav">
         <button id="nav-new"><span data-i="plus"></span><span class="grow">New session</span><span class="kbd">⌘</span><span class="kbd">N</span></button>
-        <button id="nav-incog" title="Chat transcript, memory and usage are not retained. Project file changes still apply. (⌘⇧N)"><span data-i="incog"></span><span class="grow">New incognito chat</span><span class="kbd">⇧</span><span class="kbd">N</span></button>
-        <button data-view="map"><span data-i="mapi"></span><span class="grow">Project map</span></button>
-        <button data-view="bots"><span data-i="bot"></span><span class="grow">Bots</span></button>
-        <button data-view="caps"><span data-i="blocks"></span><span class="grow">Capabilities</span></button>
         <button data-view="studio"><span data-i="film"></span><span class="grow">Studio</span></button>
         <button data-view="review"><span data-i="check"></span><span class="grow">Code Review</span></button>
-        <button data-view="market"><span data-i="store"></span><span class="grow">Marketplace</span></button>
-        <button data-view="msg"><span data-i="chat"></span><span class="grow">Messaging</span></button>
-        <button data-view="sched"><span data-i="clock"></span><span class="grow">Scheduled</span></button>
+        <button data-view="gallery"><span data-i="office"></span><span class="grow">Agents</span></button>
         <button data-view="flows"><span data-i="flow"></span><span class="grow">Automations</span></button>
         <button data-view="tasks"><span data-i="list"></span><span class="grow">Task board</span></button>
-        <button data-view="office"><span data-i="office"></span><span class="grow">Office</span><span class="office-count" id="office-count" hidden></span></button>
-        <button data-view="gallery"><span data-i="office"></span><span class="grow">Agents</span></button>
-        <button data-view="mission"><span data-i="list"></span><span class="grow">Mission map</span></button>
         <button data-view="library"><span data-i="list"></span><span class="grow">Library</span></button>
-        <button data-view="canvas"><span data-i="office"></span><span class="grow">Sessions canvas</span></button>
+        <button id="nav-more-btn" class="nav-more-btn" aria-expanded="false" aria-controls="nav-more"><span data-i="plus"></span><span class="grow">More</span></button>
+        <div id="nav-more" class="nav-more" hidden>
+          <button id="nav-incog" title="Chat transcript, memory and usage are not retained. Project file changes still apply. (⌘⇧N)"><span data-i="incog"></span><span class="grow">Incognito chat</span><span class="kbd">⇧</span><span class="kbd">N</span></button>
+          <button data-view="office"><span data-i="office"></span><span class="grow">Office</span><span class="office-count" id="office-count" hidden></span></button>
+          <button data-view="map"><span data-i="mapi"></span><span class="grow">Project map</span></button>
+          <button data-view="bots"><span data-i="bot"></span><span class="grow">Bots</span></button>
+          <button data-view="caps"><span data-i="blocks"></span><span class="grow">Capabilities</span></button>
+          <button data-view="market"><span data-i="store"></span><span class="grow">Marketplace</span></button>
+          <button data-view="msg"><span data-i="chat"></span><span class="grow">Messaging</span></button>
+          <button data-view="sched"><span data-i="clock"></span><span class="grow">Scheduled</span></button>
+          <button data-view="mission"><span data-i="list"></span><span class="grow">Mission map</span></button>
+          <button data-view="canvas"><span data-i="office"></span><span class="grow">Sessions canvas</span></button>
+        </div>
       </div>
       <label class="search"><span data-i="search"></span><input id="q" placeholder="Search sessions…" aria-label="Search sessions"><span class="kbd">⌘K</span></label>
     </div>
@@ -1266,6 +1275,7 @@
     view = v;
     document.querySelectorAll('.view').forEach((el) => el.classList.toggle('on', el.id === `v-${v}`));
     document.querySelectorAll('.nav [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
+    if ($('nav-more')?.querySelector(`[data-view="${v}"]`) && $('nav-more').hidden) setNavMore(true);
     $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'review' ? 'Code Review' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : v === 'flows' ? 'Automations' : v === 'tasks' ? 'Task board' : v === 'gallery' ? 'Agents' : v === 'mission' ? 'Mission map' : v === 'library' ? 'Library' : v === 'canvas' ? 'Sessions canvas' : (readonly ? readonly.title : convo()?.title || 'New session');
     document.body.classList.remove('nav');
     if (v === 'caps') loadCaps();
@@ -1286,6 +1296,24 @@
     renderLists();
   }
   document.querySelectorAll('.nav [data-view]').forEach((b) => (b.onclick = () => show(b.dataset.view)));
+  // Every page's explanation is one line until you click it.
+  const clampDescs = (root = document) => root.querySelectorAll?.('.sdesc:not([data-clamped])').forEach((p) => {
+    p.dataset.clamped = '1';
+    if (p.textContent.trim().length < 110) return;
+    p.classList.add('clamp');
+    p.title = 'Show more';
+    p.addEventListener('click', (e) => { if (!p.classList.contains('open') && !e.target.closest('a, button, input')) { p.classList.add('open'); p.removeAttribute('title'); } });
+  });
+  clampDescs();
+  new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1) { if (n.matches?.('.sdesc')) clampDescs(n.parentNode); else clampDescs(n); } }).observe(document.body, { childList: true, subtree: true });
+  // The sidebar shows the everyday pages; the rest wait under More (remembered).
+  function setNavMore(open) {
+    $('nav-more').hidden = !open;
+    $('nav-more-btn').setAttribute('aria-expanded', String(open));
+    $('nav-more-btn').querySelector('.grow').textContent = open ? 'Less' : 'More';
+  }
+  setNavMore(store.get('ox.nav.more', false) === true);
+  $('nav-more-btn').onclick = () => { const open = $('nav-more').hidden; setNavMore(open); store.set('ox.nav.more', open); };
   $('menu').onclick = () => { if (matchMedia('(max-width: 860px)').matches) document.body.classList.toggle('nav'); else document.body.classList.toggle('collapsed'); };
   // On a narrow window the sidebar is an overlay (body.nav): its own button, Esc,
   // or a click beside it closes it. Before, the button only toggled the wide
@@ -3580,9 +3608,9 @@ files: [src/billing/**]
             <span class="small muted" id="b-state"></span>
           </div></div>`
           : B.mine.length ? `<div class="box muted" style="text-align:center;padding:40px 20px">Choose a bot to see its setup, or create a new one.</div>` : `<div class="bots-empty"><div><h3>Build your first OX bot</h3><p>Give it a name, choose the model and mode, then set the tools and instructions it should follow. Your bot can be called from chat, the terminal, and your phone.</p><button class="btn primary" data-bot="+new">${icon('plus')} Create your first bot</button></div><div class="bots-empty-art">${botHeaderMark()}</div></div>`}
-          <div class="section-cap cap" style="margin-top:22px">What bots can run on</div>
+          <details class="runs-on" style="margin-top:22px"><summary class="section-cap cap" style="cursor:pointer">What bots can run on (${B.runsOn.filter((r) => r.ready).length})</summary>
           <div class="cards">${B.runsOn.filter((r) => r.ready).slice(0, 12).map((r) => `<div class="card"><span class="dot ok"></span><span class="t"><div class="n mono">${esc(r.id)}</div><div class="d">${esc(r.desc)}</div></span><span class="badge">${esc(r.kind)}</span></div>`).join('') || '<div class="box muted small">Nothing is connected yet. Add a key, an account or a local model in Settings.</div>'}</div>
-          <p class="small muted">${B.runsOn.filter((r) => !r.ready).length} more need a key, a sign-in or a model: Settings › Providers.</p>
+          <p class="small muted">${B.runsOn.filter((r) => !r.ready).length} more need a key, a sign-in or a model: Settings › Providers.</p></details>
         </div>
       </div>`;
     paintIcons();
@@ -3720,7 +3748,7 @@ files: [src/billing/**]
   ];
   let tasksTimer = null;
   // ---------- Agents: a gallery of character cards (Little Agent Club)
-  let galTab = 'all';
+  let galTab = 'active';
   async function loadGallery() {
     const el = $('gallery');
     const [org, live, tools] = await Promise.all([getJson('/ox/org').catch(() => ({ agents: [] })), getJson('/ox/agents').catch(() => ({ sessions: [] })), getJson('/ox/connected').catch(() => ({ tools: [] }))]);
@@ -3732,12 +3760,16 @@ files: [src/billing/**]
       ...(live.detected || []).map((x) => ({ id: `detected:${x.id}`, name: x.tool, what: x.source + (x.extensionId ? ` · ${x.extensionId}` : ''), price: x.sessionSupport === 'native' ? 'session bridge ready' : 'detected — no session adapter yet', runs: x.source, state: x.state, live: x.state === 'running', kind: 'Detected automatically' })),
       ...(tools.tools || []).map((t) => ({ id: `tool:${t.id}`, name: t.name, what: t.via ? `via ${t.via}` : 'agent tool', price: t.plan || (t.state === 'ready' ? 'ready' : t.state), runs: t.id, state: t.state, live: t.state === 'ready', kind: 'On this Mac' })),
     ];
-    const shown = cards.filter((c) => galTab === 'all' || (galTab === 'fav' ? fav.has(c.id) : use.has(c.id)));
+    // Active first: your agents, what runs now, tools ready to use. Installed
+    // apps and extensions that ox only detected wait in their own tab.
+    const active = (c) => !c.id.startsWith('detected:') && (c.id.startsWith('org:') || c.live || c.id.startsWith('live:'));
+    const shown = cards.filter((c) => galTab === 'all' || (galTab === 'active' ? active(c) : galTab === 'installed' ? !active(c) : galTab === 'fav' ? fav.has(c.id) : use.has(c.id)));
     el.innerHTML = `<div class="shead">${icon('office')}Agents</div>
       <p class="sdesc">Every agent you have, as a card: your company's agents, active sessions, installed apps, and VS Code/Cursor extensions. Detection is automatic; a tool is only marked running when Ox verifies local activity.</p>
       <div class="box tk-new"><input class="field" id="gal-hire" placeholder="Hire in a sentence: someone who reviews my pull requests every morning, $15 a month" style="flex:1"><button class="btn primary" id="gal-hire-go">Draft</button></div>
       <div id="gal-draft"></div>
-      <div class="gal-tabs">${[['all', `All ${cards.length}`], ['fav', `Favorites ${cards.filter((c) => fav.has(c.id)).length}`], ['use', `I use this ${cards.filter((c) => use.has(c.id)).length}`]].map(([k, l]) => `<button class="btn ${galTab === k ? 'primary' : 'ghost'} small" data-galtab="${k}">${l}</button>`).join('')}</div>
+      <div class="gal-tabs">${[['active', `Active ${cards.filter(active).length}`], ['installed', `Installed ${cards.filter((c) => !active(c)).length}`], ['fav', `Favorites ${cards.filter((c) => fav.has(c.id)).length}`], ['use', `I use this ${cards.filter((c) => use.has(c.id)).length}`]].map(([k, l]) => `<button class="btn ${galTab === k ? 'primary' : 'ghost'} small" data-galtab="${k}">${l}</button>`).join('')}</div>
+      ${shown.length ? '' : `<div class="dim small" style="margin:12px 0">${galTab === 'active' ? 'Nothing running right now. Your installed agents are under Installed.' : 'Nothing here yet.'}</div>`}
       <div class="gal-grid">${shown.map((c) => `<div class="gal-card"><div class="gal-top"><div class="gal-face" style="background:hsl(${hue(c.name)} 55% 45%)">${esc(c.name.slice(0, 1).toUpperCase())}</div>
         <div style="min-width:0"><b>${esc(c.name)}</b><div class="dim small">${esc(c.kind)}</div></div></div>
         <div class="small">${esc(c.what)}</div>
