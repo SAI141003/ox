@@ -903,8 +903,12 @@ async function handleChatCompletions(req, res) {
   // made to-do lists instead of drawing).
   // (An "ask" guess counts too: "Compare iPhone, Pixel and Galaxy in a table"
   // was guessed ask, kept every tool, and the model stopped at an approval.)
+  // ...but a request to DO something on this computer ("delete the logs to make
+  // space") is never turned into a drawing: Interactive answer left on made ox
+  // answer such requests with steps, because the model had no tools.
+  const wantsAction = /\b(delete|remove|clear|clean(?:\s+up)?|free\s+up|empty|uninstall|install|run|execute|kill|quit|move|rename|copy|download|unzip|compress|archive|organi[sz]e|tidy|make\s+(?:some\s+)?(?:space|room))\b/i.test(said) && !WANTS_UI.test(said);
   if ((turnMode.routed || tool.canvas) && !turnMode.answerOnly && body.ox_ui === 'live'
-    && (wantsUi || tool.canvas) && !TOUCHES_CODE.test(said)) {
+    && (wantsUi || tool.canvas) && !TOUCHES_CODE.test(said) && !wantsAction) {
     turnMode = { mode: 'ask', routed: true, reason: 'an answer to use here, not a change to your files', answerOnly: true };
   }
   // A model under 1B parameters cannot write an interactive answer (SmolLM2-135M
@@ -2867,7 +2871,7 @@ async function serveChatPage(res) {
     'Content-Length': chatPage.length,
     'Cache-Control': 'no-cache',
     // The page talks only to this server and loads nothing else (it frames only its own /office).
-    'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self' https://www.openstreetmap.org; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
   });
@@ -2984,6 +2988,19 @@ async function handleRequest(req, res) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': page.length, 'Cache-Control': 'no-store',
       'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'" });
     res.end(page);
+    return;
+  }
+  // A live wallpaper (src/wallpapers.js), drawn in a frame behind the app. Its
+  // CSP lets it run its own script and nothing else: no requests at all.
+  const wallMatch = req.method === 'GET' && /^\/wallpapers\/([a-z0-9-]+)$/.exec(path);
+  if (wallMatch) {
+    const { wallpaperPage } = await import('./wallpapers.js');
+    const page = wallpaperPage(wallMatch[1]);
+    if (!page) { sendError(res, 404, 'No such wallpaper.', 'invalid_request_error', 'not_found', null); return; }
+    const body = Buffer.from(page);
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': body.length, 'Cache-Control': 'no-cache',
+      'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'" });
+    res.end(body);
     return;
   }
   // The 3D office (the-delegation): every live agent at the desk of what it is doing.

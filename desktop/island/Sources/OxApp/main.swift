@@ -322,6 +322,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         decisionHandler(.allow)
     }
 
+    // window.open and target=_blank links (an interactive answer's "Open in Maps"):
+    // WebKit drops them unless the app answers here. Other sites go to the
+    // browser; ox's own pages load in this window.
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if let u = action.request.url {
+            if u.host == "127.0.0.1" || u.host == "localhost" { webView.load(action.request) }
+            else if ["http", "https", "mailto"].contains(u.scheme ?? "") { NSWorkspace.shared.open(u) }
+        }
+        return nil
+    }
+
     // The chat's microphone: only ox's own page (the exact scheme, loopback host
     // and port this window loaded) may use it; macOS still asks the person once,
     // through NSMicrophoneUsageDescription. Another local service on a different

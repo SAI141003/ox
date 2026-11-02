@@ -81,6 +81,7 @@ export const LIBRARY = {
   Carousel: { params: [['children', 'nodes']], desc: 'one item at a time with previous / next' },
   Quote: { params: [['text', 'any'], ['cite', 'str', true]], desc: 'quotation' },
   Link: { params: [['label', 'str'], ['url', 'str']], desc: 'link that opens a web page (https)' },
+  Map: { params: [['places', 'any'], ['title', 'str', true]], desc: 'a real, live map (OpenStreetMap) with the places pinned: places = [["YVR", 49.1947, -123.1792], ["LAX", 33.9416, -118.4085]]; two places also get directions links. Use this for any map; never draw one or embed a map page' },
   Image: { params: [['src', 'str'], ['alt', 'str', true], ['aspect', 'num', true]], desc: 'a picture ox made or has (/ox/media/… path); for a photo of a real thing use SearchImage' },
   Math: { params: [['expr', 'str'], ['block', 'bool', true]], desc: 'a formula, shown typeset (x^2, sqrt(), pi, <=, >=)' },
   Popover: { params: [['label', 'str'], ['children', 'nodes']], desc: 'reveal more on click (a hint, the answer, details)' },
@@ -884,6 +885,7 @@ export function languageSpec() {
     'Compose like a page: Title, a short Text, then blocks; Grid/Row/Col for layout; colours by name (ink muted surface info success warning danger purple pink chart1 chart2 chart3 chart4 chart5 chart6) or #hex in Badge tone, Text color, Chart and Svg fills. steps[$step] indexes a list. $var = default declares state; Input("Amount", $amount, "number") and Slider("Rate %", $rate, 0, 20, 0.1) let the user change it and every line using it recomputes. @Pow(b, e) @Sqrt @Abs @Floor @Ceil @Clamp(n, lo, hi) @Default(v, d) @Format(n, "currency|percent|compact") @Plural(n, "item") @Percent(a, b) @Range(0, n) @Includes @Toggle @Append @Remove @GroupBy(rows, key, field) @Today @Count @Sum @Avg @Min @Max @First @Last @Round(n, digits) @Join @Filter(rows, field, op, value) @Sort(rows, field, "desc") @Each(rows, "r", Text(r.x)). Dates: @AddDays(d, n) @AddMonths(d, n) @DaysBetween(a, b) @MonthsBetween(a, b) @StartOf(d, "week|month|year") @FormatDate(d, "short|medium|long|weekday|month") @Now(). Lists: @Take @Slice @Reverse @Unique @Chunk @Flatten @Prepend @RemoveAt @Update @Find(rows, field, v) @Pick(rows, field) @Shuffle. Data: @Stats @Cumulative @MovingAvg(l, n) @Change(from, to) @Between(n, lo, hi) @Top(rows, field, n) @Histogram(l, bins) @MixColor(#a, #b, t).',
     `Live data: d = Query("${[...QUERY_TOOLS].join('|')}", {args}, {defaults}); d is the tool result ({text, lines} or parsed JSON).`,
     'Buttons: Button("Label", Action([@Set($v, 1), @Run(d), @ToAssistant("msg"), @OpenUrl("u")])). m = Mutation("tool", {args}) runs only via @Run(m) from a Button.',
+    'Maps: Map([["YVR", 49.1947, -123.1792], ["LAX", 33.9416, -118.4085]], "YVR to LAX") shows a real OpenStreetMap map with the places pinned and directions links. For any map or route use Map; never draw one or build a page that loads map tiles (it shows blank).',
     'Edit an existing canvas with patch: true and send only changed or new lines.',
   ].join('\n');
 }
@@ -1117,6 +1119,7 @@ function draw(node, w, actions) {
     case 'Flashcard': return [`Q: ${p.front}`, paint.dim(`A: ${p.back}`)];
     case 'Quote': return [`“${p.text}”`, ...(p.cite ? [paint.dim(`— ${p.cite}`)] : [])];
     case 'Link': return [`${p.label} → ${p.url}`];
+    case 'Map': return [...(p.title ? [String(p.title)] : []), ...(Array.isArray(p.places) ? p.places : []).map((q) => `📍 ${Array.isArray(q) ? `${q[0]} (${q[1]}, ${q[2]})` : q}`)];
     case 'Math': return [String(p.expr ?? '')];
     case 'Celebration': return [`🎉 ${p.text ?? ''}`.trim()];
     case 'Chart': {

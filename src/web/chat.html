@@ -163,6 +163,24 @@
 
   /* ---------- chat */
   .thread { flex: 1; overflow-y: auto; padding: 28px 22px 40px; }
+  /* Live wallpaper (Settings > Appearance): drawn behind everything, takes no clicks.
+     The sidebar turns to frosted glass and the conversation keeps a darker band
+     down the middle, so the scene shows through without getting in the way of reading. */
+  #wallpaper { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; z-index: 0; pointer-events: none; }
+  body.walled { background: #000; }
+  body.walled .app { position: relative; z-index: 1; }
+  body.walled .side { background: color-mix(in srgb, var(--side) 58%, transparent); -webkit-backdrop-filter: blur(18px) saturate(1.15); backdrop-filter: blur(18px) saturate(1.15); }
+  :root[data-theme="light"] body.walled .side { background: color-mix(in srgb, var(--side) 84%, transparent); }
+  @media (prefers-color-scheme: light) { :root:not([data-theme]) body.walled .side { background: color-mix(in srgb, var(--side) 84%, transparent); } }
+  body.walled .thread { background: linear-gradient(90deg, transparent calc(50% - var(--tw) / 2 - 110px), color-mix(in srgb, var(--bg) 74%, transparent) calc(50% - var(--tw) / 2 - 24px), color-mix(in srgb, var(--bg) 74%, transparent) calc(50% + var(--tw) / 2 + 24px), transparent calc(50% + var(--tw) / 2 + 110px)); }
+  body.walled .view:not(#v-chat) { background: color-mix(in srgb, var(--bg) 80%, transparent); }
+  /* Small text that sits right on the scene gets a frosted backing to stay readable. */
+  body.walled main > .bar { background: color-mix(in srgb, var(--bg) 62%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+  body.walled .cfoot { background: color-mix(in srgb, var(--bg) 70%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border-radius: 8px; padding: 2px 8px; }
+  .wall-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 4px 0 18px; }
+  .wall-pick { text-align: left; padding: 10px 12px; border-radius: 10px; background: var(--raise); border: 1px solid var(--line); }
+  .wall-pick.on { border-color: var(--gold, #ffb020); }
+  .wall-pick b { display: block; font-size: 13px; } .wall-pick span { font-size: 12px; color: var(--dim); }
   .inner { max-width: var(--tw); margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
   .msg.user { align-self: flex-end; max-width: 80%; background: var(--raise); border: 1px solid var(--line); padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .msg.assistant { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 12px; }
@@ -338,6 +356,9 @@
   .ui-field .cv-val { float: right; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
   .ui-field input[type=range] { accent-color: var(--text); width: 100%; }
   .chip.on { background: var(--btn); color: var(--btn-ink); border-color: transparent; }
+  .cv-map { margin: 0; display: flex; flex-direction: column; gap: 8px; } .cv-map figcaption { font-weight: 600; }
+  .cv-map iframe { width: 100%; height: 320px; border: 1px solid var(--line); border-radius: 12px; background: var(--raise); }
+  .cv-map-pins { display: flex; flex-wrap: wrap; gap: 6px; }
   .live .cb { display: flex; justify-content: space-between; align-items: center; padding: 5px 10px; font: 11.5px var(--mono); color: var(--dim); background: var(--panel); border-bottom: 1px solid var(--line); }
   .live .cb button { color: var(--muted); font-size: 12px; }
   .worklog { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 12px; margin: 0 0 10px; }
@@ -778,6 +799,7 @@
 </style>
 </head>
 <body>
+<iframe id="wallpaper" title="" aria-hidden="true" tabindex="-1" sandbox="allow-scripts" hidden></iframe>
 <div id="talk" hidden role="dialog" aria-label="Spoken conversation">
   <div class="talk-orb"><i></i><i></i><i></i></div>
   <div id="talk-state">Listening</div>
@@ -1132,12 +1154,24 @@
   // remain deliberately excluded from browser storage below.
   const prefs = Object.assign({ theme: null, size: 'medium', width: 'medium', motion: 'system', sendKey: 'enter', speakReplies: false, lang: '', voice: '', activity: 'normal', changedFiles: true, whatsNew: true, notifyDone: false, notifyFail: false, notifySound: false, hiddenModels: [], saveChatHistory: true, learnFromChats: false }, store.get('ox.prefs', {}));
   const savePrefs = () => { store.set('ox.prefs', prefs); applyPrefs(); };
+  // Live wallpapers (src/wallpapers.js): served at /wallpapers/<id>, chosen per device.
+  const WALLPAPERS = [['pasture', 'Pasture', 'an ox grazing on the hills at dusk'], ['agent-mesh', 'Agent Mesh', 'your agents as stars, messages flying between them'], ['embers', 'Embers', 'gold sparks rising from the coals'], ['code-rain', 'Code Rain', 'amber code trickling down'], ['tide', 'Tide', 'slow swells under a night sky'], ['koi-pond', 'Koi Pond', 'koi winding between lily pads'], ['moonlit', 'Moonlit', 'a crescent moon, low clouds, shooting stars'], ['jellyfish', 'Jellyfish', 'bells pulsing upward, tentacles trailing'], ['fireflies', 'Fireflies', 'blinking fireflies over swaying grass'], ['honu-lagoon', 'Honu Lagoon', 'sea turtles and a school of fish'], ['paper-boats', 'Paper Boats', 'folded boats drifting down a canal'], ['cloud-drift', 'Cloud Drift', 'puffy clouds at three depths']];
+  function applyWallpaper() {
+    const id = WALLPAPERS.some(([w]) => w === prefs.wallpaper) ? prefs.wallpaper : '';
+    const f = $('wallpaper');
+    document.body.classList.toggle('walled', !!id);
+    if (!id) { f.hidden = true; f.removeAttribute('src'); delete f.dataset.id; return; }
+    // Shown before it loads: a scene that starts in a hidden (0x0) frame stays blank.
+    f.hidden = false;
+    if (f.dataset.id !== id) { f.src = `/wallpapers/${id}`; f.dataset.id = id; }
+  }
   function applyPrefs() {
     const r = document.documentElement;
     if (prefs.theme) r.dataset.theme = prefs.theme; else delete r.dataset.theme;
     r.style.setProperty('--fs', { small: '13px', medium: '14px', large: '15.5px' }[prefs.size] || '14px');
     r.style.setProperty('--tw', { narrow: '660px', medium: '760px', wide: '1000px' }[prefs.width] || '760px');
     if (prefs.motion === 'reduced') r.dataset.motion = 'reduced'; else delete r.dataset.motion;
+    applyWallpaper();
     $('hint').textContent = `${prefs.sendKey === 'enter' ? 'Enter to send · Shift+Enter for a new line' : `${MOD}+Enter to send`} · Ask and Plan never change your files`;
   }
   applyPrefs();
@@ -1594,11 +1628,15 @@
       case 'Buttons': return `<div class="ui-choices">${kids(p.buttons)}</div>`;
       case 'Button': {
         // Live answers: the page runs the action (state, queries) or sends it on.
-        if (cx) { const i = cx.actions.push(p.action ?? { steps: [{ step: 'ask', message: p.label }] }) - 1; return `<button class="chip${p.tone === 'primary' ? ' on' : ''}" data-cv-act="${i}">${esc(p.label ?? '')}</button>`; }
+        // A button always says what it does: models sometimes name the text something
+        // else, and a primary button with no label was a blank white block.
         const steps = p.action?.steps ?? [];
         const ask = steps.find((x) => x.step === 'ask')?.message, url = steps.find((x) => x.step === 'open' || x.step === 'url')?.url;
-        if (url && /^https?:\/\//.test(url)) return `<a class="chip" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(p.label ?? '')}</a>`;
-        return `<button class="chip" ${ask ? `data-ask="${esc(ask)}"` : 'disabled title="Works in the terminal and the island"'}>${esc(p.label ?? '')}</button>`;
+        let host = ''; try { host = url ? new URL(url).host.replace(/^www\./, '') : ''; } catch {}
+        const label = String(p.label ?? p.text ?? p.title ?? p.name ?? '').trim() || (host ? `Open ${host}` : ask ? String(ask).slice(0, 40) : 'Open');
+        if (cx) { const i = cx.actions.push(p.action ?? { steps: [{ step: 'ask', message: label }] }) - 1; return `<button class="chip${p.tone === 'primary' ? ' on' : ''}" data-cv-act="${i}">${esc(label)}</button>`; }
+        if (url && /^https?:\/\//.test(url)) return `<a class="chip" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
+        return `<button class="chip" ${ask ? `data-ask="${esc(ask)}"` : 'disabled title="Works in the terminal and the island"'}>${esc(label)}</button>`;
       }
       case 'Select': return `<label class="ui-field"><span>${esc(p.name ?? '')}</span><select ${cx && p.bind ? `data-cv-bind="${esc(p.bind)}"` : 'disabled'}>${(p.options ?? []).map((o) => { const q = o.props ?? o; return `<option value="${esc(q.value)}" ${String(q.value) === String(p.value) ? 'selected' : ''}>${esc(q.label ?? q.value)}</option>`; }).join('')}</select></label>`;
       case 'Input': return `<label class="ui-field"><span>${esc(p.label ?? '')}</span><input type="${p.type === 'text' ? 'text' : 'number'}" step="any" value="${esc(p.value ?? '')}" ${cx && p.bind ? `data-cv-bind="${esc(p.bind)}"` : 'disabled'}></label>`;
@@ -1610,6 +1648,7 @@
       case 'Flashcard': return `<button class="cv-flash" data-flip><span class="f">${typeof p.front === 'object' ? canvasNode(p.front, cx) : inline(String(p.front ?? ''))}</span><span class="b">${typeof p.back === 'object' ? canvasNode(p.back, cx) : inline(String(p.back ?? ''))}</span><small>tap to flip</small></button>`;
       case 'Carousel': { const items = (Array.isArray(p.children) ? p.children : [p.children]).filter(Boolean); return `<div class="cv-carousel" data-car="0">${items.map((x, i) => `<div class="cv-slide"${i ? ' hidden' : ''}>${canvasNode(x, cx)}</div>`).join('')}<div class="cv-car-nav"><button class="chip" data-car-go="-1" aria-label="Previous">‹</button><span>1 / ${items.length}</span><button class="chip" data-car-go="1" aria-label="Next">›</button></div></div>`; }
       case 'Quote': return `<blockquote class="cv-quote">${inline(String(p.text ?? ''))}${p.cite ? `<cite>— ${esc(p.cite)}</cite>` : ''}</blockquote>`;
+      case 'Map': return mapNode(p);
       case 'Link': return /^https:\/\//.test(String(p.url ?? '')) ? `<a class="cv-link" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${esc(p.label || p.url)} ↗</a>` : `<span class="cv-link">${esc(p.label ?? '')}</span>`;
       case 'Image': { const src = String(p.src ?? ''); const ok = /^\/ox\/media\/[\w-]+\/[\w.-]+\.(png|jpe?g|webp|gif)$/i.test(src) || /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(src); const ar = Math.max(0.4, Math.min(3, Number(p.aspect) || 1)); return ok ? `<figure class="cv-img" style="aspect-ratio:${ar}"><img alt="${esc(p.alt ?? '')}" src="${esc(src)}">${p.alt ? `<figcaption>${esc(p.alt)}</figcaption>` : ''}</figure>` : `<div class="ui-box muted small">${esc(p.alt || 'picture')}</div>`; }
       case 'Math': { const t = esc(String(p.expr ?? '')).replace(/sqrt\(/g, '√(').replace(/\bpi\b/g, 'π').replace(/&lt;=/g, '≤').replace(/&gt;=/g, '≥').replace(/!=/g, '≠').replace(/\*/g, '·').replace(/\^\(([^)]{1,20})\)|\^([\w.]{1,8})/g, (_, a, b) => `<sup>${a ?? b}</sup>`).replace(/_([\w]{1,6})/g, '<sub>$1</sub>'); return p.block ? `<div class="cv-math block">${t}</div>` : `<span class="cv-math">${t}</span>`; }
@@ -1619,6 +1658,22 @@
     }
   }
 
+  // A real map: OpenStreetMap's own embed with the places' area and a pin, and
+  // links to directions. Models used to draw a page that loaded map tiles,
+  // which the app's security policy blocks: a large blank box.
+  function mapNode(p) {
+    const pts = (Array.isArray(p.places) ? p.places : []).map((q) => (Array.isArray(q) ? q : [q?.name, q?.lat, q?.lon])).map(([n, la, lo]) => [String(n ?? ''), Number(la), Number(lo)]).filter(([, la, lo]) => Math.abs(la) <= 90 && Math.abs(lo) <= 180 && Number.isFinite(la) && Number.isFinite(lo)).slice(0, 12);
+    if (!pts.length) return `<div class="ui-box muted small">${esc(p.title || 'a map')}: no places with coordinates</div>`;
+    const lats = pts.map((q) => q[1]), lons = pts.map((q) => q[2]);
+    const pad = Math.max(0.02, (Math.max(...lats) - Math.min(...lats)) * 0.15, (Math.max(...lons) - Math.min(...lons)) * 0.15);
+    const bbox = [Math.min(...lons) - pad, Math.min(...lats) - pad, Math.max(...lons) + pad, Math.max(...lats) + pad].map((v) => v.toFixed(5)).join(',');
+    const [a, b] = pts;
+    const embed = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${a[1]},${a[2]}`;
+    const links = b
+      ? `<a class="chip" href="https://www.google.com/maps/dir/?api=1&origin=${a[1]},${a[2]}&destination=${b[1]},${b[2]}" target="_blank" rel="noopener noreferrer">Directions in Google Maps ↗</a><a class="chip" href="https://www.openstreetmap.org/directions?route=${a[1]}%2C${a[2]}%3B${b[1]}%2C${b[2]}" target="_blank" rel="noopener noreferrer">Open in OpenStreetMap ↗</a>`
+      : `<a class="chip" href="https://www.google.com/maps/search/?api=1&query=${a[1]},${a[2]}" target="_blank" rel="noopener noreferrer">Open in Google Maps ↗</a><a class="chip" href="https://www.openstreetmap.org/?mlat=${a[1]}&mlon=${a[2]}#map=12/${a[1]}/${a[2]}" target="_blank" rel="noopener noreferrer">Open in OpenStreetMap ↗</a>`;
+    return `<figure class="cv-map">${p.title ? `<figcaption>${esc(p.title)}</figcaption>` : ''}<iframe title="${esc(p.title || 'map')}" src="${esc(embed)}" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin"></iframe><div class="cv-map-pins">${pts.map(([n, la, lo]) => `<span class="badge">📍 ${esc(n)} <span class="dim">${la.toFixed(3)}, ${lo.toFixed(3)}</span></span>`).join('')}</div><div class="ui-choices">${links}</div></figure>`;
+  }
   // ---------- OpenUI Lang answers (thesysdev/openui; ox's parser, src/ui-lang.js)
   // A Canvas per block, kept by its place in the chat, so what the user typed or
   // dragged survives while the answer is still streaming in.
@@ -1757,7 +1812,7 @@
   // Interactive frames get the page's dark/light colours and size themselves to their content.
   function mountLive(root) {
     root.querySelectorAll('iframe[data-src]').forEach((f) => {
-      const src = f.dataset.src; f.removeAttribute('data-src');
+      const src = f.dataset.src; f.removeAttribute('data-src'); f.dataset.srcKey = src;
       const sizer = '<script>(()=>{const s=()=>parent.postMessage({oxLiveHeight:Math.ceil(document.body.getBoundingClientRect().height)+28},"*");addEventListener("load",s);addEventListener("input",s);addEventListener("click",()=>setTimeout(s,30));setTimeout(s,60);try{new ResizeObserver(s).observe(document.body)}catch{}})()<\/script>';
       const cs = getComputedStyle(document.documentElement), v = (n) => cs.getPropertyValue(n).trim();
       const base = `:root{color-scheme:${v('color-scheme') || 'dark'}}body{font:14px/1.5 -apple-system,system-ui,sans-serif;margin:14px;color:${v('--text')};background:${v('--panel')}}input,select,textarea,button{font:inherit;color:inherit;background:${v('--bg')};border:1px solid ${v('--line2')};border-radius:8px;padding:6px 9px}button{cursor:pointer;background:${v('--btn')};color:${v('--btn-ink')};border:0;font-weight:600}input[type=range]{accent-color:${v('--text')}}table{border-collapse:collapse}td,th{border-bottom:1px solid ${v('--line')};padding:6px 8px;text-align:left}`;
@@ -1780,6 +1835,34 @@
     }
     $('inner').append(m);
     return role === 'assistant' ? m.querySelector('.body') : m;
+  }
+  // Update a message in place: only what changed is replaced. Setting innerHTML
+  // on every streamed chunk rebuilt maps, live blocks and frames each time, so
+  // they reloaded and flashed white while the answer came in.
+  function morph(el, html) {
+    const t = document.createElement('template');
+    t.innerHTML = html;
+    patchKids(el, t.content);
+  }
+  function patchKids(el, from) {
+    const next = [...from.childNodes];
+    for (let i = 0; i < next.length; i++) {
+      const a = el.childNodes[i], b = next[i];
+      if (!a) { el.appendChild(b); continue; }
+      if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) { el.replaceChild(b, a); continue; }
+      if (a.nodeType === 3) { if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; continue; }
+      if (a.nodeType !== 1) { el.replaceChild(b, a); continue; }
+      // A frame is kept as it is while its source is the same (moving or
+      // rebuilding one reloads it).
+      if (a.nodeName === 'IFRAME') { if ((a.dataset.srcKey ?? a.getAttribute('src')) !== (b.dataset.src ?? b.getAttribute('src'))) el.replaceChild(b, a); continue; }
+      if (a.isEqualNode(b)) continue;
+      for (const { name } of [...a.attributes]) if (!b.hasAttribute(name) && name !== 'data-bound' && name !== 'data-src-key' && name !== 'srcdoc' && name !== 'style') a.removeAttribute(name);
+      for (const { name, value } of [...b.attributes]) if (a.getAttribute(name) !== value) a.setAttribute(name, value);
+      // Form controls keep what the person typed.
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(a.nodeName)) continue;
+      patchKids(a, b);
+    }
+    while (el.childNodes.length > next.length) el.removeChild(el.lastChild);
   }
   function paint(body, msg) {
     if (msg.role === 'user') {
@@ -1816,7 +1899,7 @@
     const asks = (msg.asks || []).map((a) => a.state
       ? `<div class="ask-done small dim">${a.state === 'allow' ? 'Allowed' : 'Denied'} · <b>${esc(a.tool)}</b> <span class="mono">${esc(askWhat(a))}</span></div>`
       : `<div class="ask-card" data-ask-id="${esc(a.id)}"><div class="cap">Waiting for your OK</div><div><b>${esc(a.tool)}</b> <span class="mono small">${esc(askWhat(a))}</span></div><div class="ask-btns"><button class="btn primary small" data-ask-answer="allow">Allow</button><button class="btn ghost small" data-ask-answer="deny">Deny</button></div></div>`).join('');
-    body.innerHTML = routed + plan + (steps ? `<div class="steps${prefs.activity === 'detailed' ? ' detailed' : ''}">${steps}</div>` : '') + asks + canv + made + text + changedHtml + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : '');
+    morph(body, routed + plan + (steps ? `<div class="steps${prefs.activity === 'detailed' ? ' detailed' : ''}">${steps}</div>` : '') + asks + canv + made + text + changedHtml + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : ''));
     body.querySelectorAll('[data-ask-answer]').forEach((b) => (b.onclick = () => {
       const card = b.closest('[data-ask-id]');
       const a = (msg.asks || []).find((x) => x.id === card.dataset.askId);
@@ -4605,8 +4688,11 @@ files: [src/billing/**]
           ${row('Theme', '', seg('theme', [['', 'System'], ['light', 'Light'], ['dark', 'Dark']], prefs.theme || ''))}
           ${row('Text size', 'Size of the conversation text.', seg('size', [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']], prefs.size))}
           ${row('Width', 'How wide the conversation and the message box are.', seg('width', [['narrow', 'Narrow'], ['medium', 'Medium'], ['wide', 'Wide']], prefs.width))}
-          ${row('Motion', 'Fewer animations while answers stream in.', seg('motion', [['system', 'System'], ['reduced', 'Reduced']], prefs.motion))}`;
+          ${row('Motion', 'Fewer animations while answers stream in.', seg('motion', [['system', 'System'], ['reduced', 'Reduced']], prefs.motion))}
+          <div class="shead" style="margin-top:22px">Wallpaper</div><p class="sdesc">A live scene behind the app, drawn in characters. It pauses when the window is hidden and holds still with Reduced motion.</p>
+          <div class="wall-picks">${[['', 'None', 'the plain background'], ...WALLPAPERS].map(([id, name, blurb]) => `<button class="wall-pick${(prefs.wallpaper || '') === id ? ' on' : ''}" data-wall="${id}"><b>${esc(name)}</b><span>${esc(blurb)}</span></button>`).join('')}</div>`;
         bindSegs(el, (k, v) => { prefs[k] = v || null; savePrefs(); });
+        el.querySelectorAll('[data-wall]').forEach((b) => (b.onclick = () => { prefs.wallpaper = b.dataset.wall || null; savePrefs(); el.querySelectorAll('[data-wall]').forEach((x) => x.classList.toggle('on', x === b)); }));
       } else if (sec === 'desktop') {
         const st = await getJson('/ox/settings');
         const ip = st.island.preferences || { size: 'standard', autoClose: 6, hideFullscreen: true, companion: 'ox', pet: 'none' };
