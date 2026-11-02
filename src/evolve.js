@@ -89,6 +89,14 @@ export function archive() {
       try { const r = JSON.parse(l); byId.set(r.id, { ...byId.get(r.id), ...r }); } catch {}
     }
   } catch {}
+  // An attempt whose process is gone (the Mac slept, ox was closed, it crashed) is not
+  // "running" for ever: it shows as interrupted, and the next attempt can start.
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  for (const r of byId.values()) {
+    if (r.state === 'running' && ((r.pid && !alive(r.pid)) || (!r.pid && Date.now() - (r.at ?? 0) > 3 * 3600_000))) {
+      r.state = 'interrupted'; r.why = 'stopped before it finished (ox was closed or the Mac slept)';
+    }
+  }
   return [...byId.values()].sort((a, b) => b.at - a.at);
 }
 
@@ -200,7 +208,7 @@ export async function evolve({ goal = '', root = OX_ROOT, maxCost = 2, bot = nul
   const branch = `ox-evolve/${id}`;
   const dir = path.join(SELF(), 'evolve', id);
   const goalText = goal || `fix: ${failure.sig}`;
-  note({ id, at: Date.now(), goal: goalText, branch, dir, failureSig: failure?.sig ?? null, state: 'running' });
+  note({ id, at: Date.now(), goal: goalText, branch, dir, failureSig: failure?.sig ?? null, state: 'running', pid: process.pid });
 
   log(`measuring the current version (once per commit)…`);
   const before = await baseline(root, { onLine: () => {} });

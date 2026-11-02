@@ -107,7 +107,12 @@ export function loadSpec(cwd, id = null) {
   if (!names.length) return null;
   const pick = id ? names.find((n) => n.startsWith(id)) : names.map((n) => ({ n, t: fs.statSync(path.join(dir, n)).mtimeMs })).sort((a, b) => b.t - a.t)[0].n;
   if (!pick) return null;
-  try { return JSON.parse(fs.readFileSync(path.join(dir, pick), 'utf8')); } catch { return null; }
+  let spec;
+  try { spec = JSON.parse(fs.readFileSync(path.join(dir, pick), 'utf8')); } catch { return null; }
+  // A spec saved without criteria (an older version, or edited by hand) used to crash
+  // every later step with "spec.acceptance is not iterable".
+  if (!Array.isArray(spec?.acceptance) || !spec.acceptance.length) throw new Error(`${path.join(SPEC_DIR, pick)} has no acceptance criteria: write the spec again (ox spec "<what to build>")`);
+  return spec;
 }
 
 /** The instructions the agent works from, and the contract its run must meet. */

@@ -151,7 +151,15 @@ final class Buddy: NSObject, ObservableObject {
     /// an older build (a rebuild changes an ad-hoc signature). Then the stale
     /// permission is reset, so the next tap asks again and Allow takes.
     func noSignalAdvice() -> String {
+        // Reset at most once a day: silence with the permission already fresh is something
+        // else (a muted mic, another app holding it), and resetting each time made macOS ask again and again.
+        let last = UserDefaults.standard.double(forKey: "voice.lastPermissionReset")
+        if peakInputLevel < 0.00001, Date().timeIntervalSince1970 - last < 86_400 {
+            IslandLog.write("voice: the microphone gave exact silence again (permission was reset today)")
+            return "I heard silence. Check that the microphone is not muted and no other app is using it (System Settings › Sound › Input), then try again."
+        }
         if peakInputLevel < 0.00001 {
+            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "voice.lastPermissionReset")
             for service in ["Microphone", "SpeechRecognition"] {
                 let p = Process()
                 p.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")

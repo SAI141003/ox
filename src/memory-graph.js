@@ -408,6 +408,10 @@ const LEARNABLE = [
   /\b(?:please\s+)?(?:always|never|don'?t ever|stop)\s+(?:use|write|add|run|commit|push|call|reply|answer|ask)\b[^.!?\n]{2,160}/i,
   /\b(?:call me|my name is)\s+[A-Z][\p{L}-]{1,30}/iu,
   /\b(?:use|prefer)\s+\S+\s+(?:instead of|over|rather than)\s+[^.!?\n]{2,80}/i,
+  // Said straight out: "remember that…", "from now on…", "my sister is Priya".
+  /^(?:please\s+)?(?:remember|note|keep in mind)\s+(?:that\s+)?[^.!?\n]{4,200}/i,
+  /\bfrom now on\b[^.!?\n]{3,160}/i,
+  /^my\s+(?:[\p{L}'-]+\s+){0,2}(?:is|are|was|lives|works|studies)\s+[^.!?\n]{2,120}/iu,
 ];
 
 export function learnable(message) {
@@ -417,6 +421,8 @@ export function learnable(message) {
     if (s.length < 8 || s.length > 240 || /```|\bhttps?:\/\//.test(s)) continue;
     // A question or a request is not a fact about the user.
     if (/\?\s*$/.test(s) || /^(?:hey|hi|ok(?:ay)?|so|now)?[,\s]*(?:can|could|would|will) you\b/i.test(s)) continue;
+    // Never a secret: "my password is …", "the API key is …", a PIN, a card number.
+    if (/\b(?:password|passcode|passphrase|pin|api[\s_-]?key|secret|token|otp|one[\s-]time code|card number|cvv|ssn|social security(?: number)?|bank account(?: number)?|routing number|seed phrase|private key)\s*(?:is|are|was|=|:)\s*\S/i.test(s)) continue;
     if (LEARNABLE.some((re) => re.test(s))) out.push(s.replace(/[.!?]+$/, ''));
   }
   return out.slice(0, 5);
