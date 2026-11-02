@@ -526,6 +526,7 @@
   .market-logo { position: relative; flex: 0 0 40px; width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; overflow: hidden; color: white; font-weight: 800; font-size: 14px; border: 1px solid color-mix(in srgb, white 10%, transparent); }
   .market-logo img { position: absolute; inset: 7px; width: 26px; height: 26px; object-fit: contain; }
   .market-card { min-height: 66px; }
+  .market-card .t .d { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .card .t { flex: 1; min-width: 0; }
   .card .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card .d { font-size: 12px; color: var(--dim); display: flex; gap: 8px; flex-wrap: wrap; }
@@ -970,12 +971,12 @@
     <section class="view" id="v-office"><div class="page"><div class="page-inner" style="max-width:1100px">
       <div class="office-head"><div><h2 style="margin:0">Office</h2><div class="small dim">Who is working on what, live: every chat, bot and helper agent this app started.</div></div><span class="grow"></span><span class="small dim" id="office-sum"></span></div>
       <div class="floor" id="floor"><iframe id="floor-frame" title="The office: every AI tool at its desk, on each floor (machine), and what it is doing" loading="lazy" style="display:block;width:100%;aspect-ratio:4/3;max-height:72vh;border:0;background:#0b0b0c"></iframe></div>
-      <div class="small dim" style="margin-top:6px">Each person is one session; its colour is the tool (the legend at the bottom names them; click one to light it up). Each connected machine is a floor. <a href="/office" target="_blank" rel="noopener">Open full screen</a></div>
-      <div class="lounge-h small dim" style="margin-top:16px">Desks in detail</div>
+      <div class="small dim" style="margin-top:6px"><a href="/office" target="_blank" rel="noopener">Open full screen</a></div>
+      <details style="margin-top:16px"><summary class="lounge-h small dim" style="cursor:pointer">Desks and lounge in detail</summary>
       <div class="room" id="room"></div>
       <div class="lounge-h small dim" id="lounge-h">Lounge: your bots, free</div>
       <div class="room lounge" id="lounge"></div>
-      <p class="small dim" style="margin-top:14px">Shown from what each run reports as it works (the tool, the file or page). Runs started in a terminal are not shown here yet.</p>
+      </details>
     </div></div></section>
     <section class="view" id="v-bots"><div class="page"><div class="page-inner" style="max-width:1100px" id="bots"></div></div></section>
     <section class="view" id="v-flows"><div class="page"><div class="page-inner" id="flows"></div></div></section>
@@ -3125,7 +3126,6 @@
     try { channels = await getJson('/ox/messaging'); } catch (e) { $('msg-list').innerHTML = `<div class="empty-note">${esc(e.message)}</div>`; return; }
     const state = (c) => c.desktop ? ['ok', 'WhatsApp for Mac found · sends after your OK'] : c.outlook ? (c.available ? ['ok', 'Outlook found · opens drafts'] : ['warn', 'Outlook not installed']) : c.mail ? (c.needsPermission ? ['warn', 'Needs Automation approval + account check'] : c.configured ? ['ok', 'Mail verified'] : ['warn', 'Needs a mail connector']) : c.sms ? (c.needsPermission ? ['warn', 'Needs Automation approval + a test send'] : c.reachable ? ['ok', 'Messages available · approval required'] : ['warn', 'macOS Messages required']) : c.reachable === false && c.configured ? ['warn', 'Configured · health check failed'] : c.reachable ? ['ok', 'Cloud API reachable · approval required'] : c.paired ? ['ok', 'Paired'] : c.configured ? ['warn', c.pairing ? 'Waiting for /pair' : 'Token saved. Run it to pair'] : ['warn', c.experimental ? 'Connector required' : 'Needs setup'];
     $('msg-list').innerHTML = `<label class="search"><span data-i="search"></span><input placeholder="Filter channels…" aria-label="Filter channels" id="msg-q"></label>` + channels.map((c) => `<button class="item${msgSel === c.id ? ' on' : ''}" data-ch="${c.id}"><span class="ch-icon" style="background:${CH[c.id]?.bg || '#555'}">${CH[c.id]?.l || '?'}</span><span class="t"><div class="n">${esc(c.label)}</div><div class="d">${esc(state(c)[1])}</div></span><span class="dot ${state(c)[0]}"></span></button>`).join('')
-      + '<div class="empty-note" style="padding:12px 16px">Telegram, Discord and Slack are first-class gateways. Email drafts are available through the Mail tool on macOS; WhatsApp and iMessage require an explicitly configured connector and are never claimed as connected until their status is verified.</div>';
     paintIcons($('msg-list'));
     $('msg-list').querySelectorAll('[data-ch]').forEach((b) => (b.onclick = () => { msgSel = b.dataset.ch; loadMessaging(); $('msg-split').classList.add('show-detail'); }));
     $('msg-q').oninput = () => { const q = $('msg-q').value.toLowerCase(); $('msg-list').querySelectorAll('[data-ch]').forEach((b) => (b.hidden = !b.textContent.toLowerCase().includes(q))); };
@@ -3443,19 +3443,21 @@ files: [src/billing/**]
   }
 
   // ---------- marketplace
-  let mkTab = 'plugins', mkCat = '', mkData = null, mkTimer = null;
+  let mkTab = 'plugins', mkCat = '', mkData = null, mkTimer = null, mkShow = 40;
   async function loadMarket() {
     $('mk-list').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
+    mkShow = 40;
     try { mkData = await getJson(`/ox/market?q=${encodeURIComponent($('mk-q').value.trim())}`); } catch (e) { $('mk-list').innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; return; }
     renderMarket();
   }
   function renderMarket() {
     const d = mkData;
     $('mk-tabs').innerHTML = `<button data-mt2="plugins" class="${mkTab === 'plugins' ? 'on' : ''}">Plugins<sup>${d.plugins.length}</sup></button><button data-mt2="repos" class="${mkTab === 'repos' ? 'on' : ''}">GitHub skills<sup>${d.repos.length}</sup></button>`;
-    $('mk-tabs').querySelectorAll('button').forEach((b) => (b.onclick = () => { mkTab = b.dataset.mt2; mkCat = ''; renderMarket(); }));
+    $('mk-tabs').querySelectorAll('button').forEach((b) => (b.onclick = () => { mkTab = b.dataset.mt2; mkCat = ''; mkShow = 40; renderMarket(); }));
     const cats = [...new Set(d.plugins.map((p) => p.category).filter(Boolean))].sort();
-    $('mk-cats').innerHTML = mkTab === 'plugins' && cats.length ? ['', ...cats].map((c) => `<button class="badge" data-cat="${esc(c)}" style="cursor:pointer;${mkCat === c ? 'color:var(--text);border-color:var(--muted)' : ''}">${esc(c || 'all')}</button>`).join('') : '';
-    $('mk-cats').querySelectorAll('[data-cat]').forEach((b) => (b.onclick = () => { mkCat = b.dataset.cat; renderMarket(); }));
+    // One dropdown instead of forty category chips.
+    $('mk-cats').innerHTML = mkTab === 'plugins' && cats.length ? `<select class="field" id="mk-cat" aria-label="Category" style="width:auto">${['', ...cats].map((c) => `<option value="${esc(c)}"${mkCat === c ? ' selected' : ''}>${esc(c || 'All categories')}</option>`).join('')}</select>` : '';
+    if ($('mk-cat')) $('mk-cat').onchange = () => { mkCat = $('mk-cat').value; mkShow = 40; renderMarket(); };
     const btn = (installed, attrs) => installed ? '<span class="badge ok"><span class="dot ok"></span>installed</span>' : `<button class="btn primary" ${attrs}>Install</button>`;
     // The logo is visual metadata only. Connection/install state still comes
     // from the live marketplace and is never inferred from a familiar name.
@@ -3474,9 +3476,11 @@ files: [src/billing/**]
       return `<span class="market-logo" style="background:${color}" title="${esc(name)} logo"><span aria-hidden="true">${esc(letters)}</span><img src="https://cdn.simpleicons.org/${slug}/ffffff" alt="" loading="lazy" onerror="this.remove()"></span>`;
     };
     const list = mkTab === 'plugins'
-      ? d.plugins.filter((p) => !mkCat || p.category === mkCat).map((p) => `<div class="card market-card">${marketLogo(p.name, `${p.catalog} ${p.author || ''}`)}<span class="t"><div class="n">${esc(p.name)} ${p.category ? `<span class="badge">${esc(p.category)}</span>` : ''}</div><div class="d"><span>${esc(p.description)}</span></div><div class="d"><span>${esc(p.author || '')}</span><span class="mono">${esc(p.catalog)}</span>${p.skills ? `<span>skills: ${esc(p.skills.join(', '))}</span>` : ''}</div></span>${btn(p.installed, `data-inst-name="${esc(p.name)}" data-inst-cat="${esc(p.catalog)}"`)}</div>`)
+      ? d.plugins.filter((p) => !mkCat || p.category === mkCat).map((p) => `<div class="card market-card">${marketLogo(p.name, `${p.catalog} ${p.author || ''}`)}<span class="t"><div class="n">${esc(p.name)} ${p.category ? `<span class="badge">${esc(p.category)}</span>` : ''}</div><div class="d"><span>${esc(p.description)}</span></div>${p.author ? `<div class="d" title="${esc(p.catalog)}"><span>${esc(p.author)}</span></div>` : ''}</span>${btn(p.installed, `data-inst-name="${esc(p.name)}" data-inst-cat="${esc(p.catalog)}"`)}</div>`)
       : d.repos.map((r) => `<div class="card market-card">${marketLogo(r.repo, r.repo)}<span class="t"><div class="n"><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" style="color:inherit">${esc(r.repo)}</a></div><div class="d"><span>${esc(r.description)}</span></div><div class="d"><span>★ ${Number(r.stars).toLocaleString()}</span>${r.license ? `<span>${esc(r.license)}</span>` : ''}<span>updated ${esc(String(r.updated || '').slice(0, 10))}</span></div></span>${btn(r.installed, `data-inst-repo="${esc(r.repo)}"`)}</div>`);
-    $('mk-list').innerHTML = list.join('') || '<div class="box muted small">Nothing matches.</div>';
+    // Forty at a time: the whole catalogue (over a thousand) made the page heavy to read and to scroll.
+    $('mk-list').innerHTML = (list.slice(0, mkShow).join('') || '<div class="box muted small">Nothing matches.</div>') + (list.length > mkShow ? `<button class="btn" id="mk-more" style="margin:8px auto;display:block">Show more (${list.length - mkShow} left)</button>` : '');
+    if ($('mk-more')) $('mk-more').onclick = () => { mkShow += 40; renderMarket(); };
     if (d.errors.length) $('mk-list').insertAdjacentHTML('afterbegin', `<div class="alert">${icon('info')}${esc(d.errors.join(' · '))}</div>`);
     $('mk-catalogs').innerHTML = d.catalogs.map((c) => `<span class="badge mono" style="margin:0 6px 6px 0">${esc(c)}</span>`).join('');
     $('mk-list').querySelectorAll('[data-inst-name], [data-inst-repo]').forEach((b) => (b.onclick = async () => {
@@ -4429,7 +4433,7 @@ files: [src/billing/**]
               <div class="pet-preview-actions" style="display:flex;gap:8px;justify-content:flex-start;margin-top:18px"><button class="btn" id="pet-visible">${visible ? 'Hide mini' : 'Show mini'}</button><button class="btn" id="pet-customize">Pet size</button></div>
             </div>
           </div>
-          <div class="shead">Expressions</div><p class="sdesc">Give your mini a mood. The face is part of the companion artwork and follows it onto the floating Mac pet.</p><div class="pet-expression-list" style="--pet-accent:${esc(currentPet.color || '#7397ff')}" aria-label="Choose pet expression">${expressionMarkup}</div>
+          <details class="pet-expr-fold"><summary class="shead" style="cursor:pointer">Expressions</summary><div class="pet-expression-list" style="--pet-accent:${esc(currentPet.color || '#7397ff')}" aria-label="Choose pet expression">${expressionMarkup}</div></details>
           <div class="shead" style="margin-top:24px">My pets</div><p class="sdesc">Choose who stays with you, or select None to keep the desktop clear.</p>
           <div class="pet-grid">${pets.map(petMarkup).join('')}</div>
           <div class="sblock"><div class="shead">Pet size</div>${row('Desktop companion', 'Adjust the floating mini size (32–144 px).', `<span style="display:flex;align-items:center;gap:10px"><input id="pet-size" type="range" min="32" max="144" step="8" value="${size}" aria-label="Pet size"><output id="pet-size-value">${size}px</output><button class="btn ghost" id="pet-size-reset">Reset</button></span>`)}</div>
@@ -4530,10 +4534,10 @@ files: [src/billing/**]
         el.innerHTML = `${mobileBack}<div class="shead">${icon('mode')}Models</div><p class="sdesc">Which models the picker shows. Hidden ones still work by name and for Auto. Kept in this browser.</p>
           <label class="search" style="margin:0 0 10px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:9px 12px"><span data-i="search"></span><input id="md-q" placeholder="Search models" aria-label="Search models"></label>
           <div style="display:flex;gap:8px;margin-bottom:6px"><button class="btn ghost" id="md-all">Show all</button><span class="small muted" style="align-self:center">${data.length - [...hidden].filter((h) => data.some((m) => m.id === h)).length} of ${data.length} shown</span></div>
-          ${groups.filter(([, l]) => l.length).map(([label, l]) => `<div class="section-cap cap">${label}</div>${l.map((m) => `<div class="srow" data-md="${esc(m.id.toLowerCase())}"><div class="l"><b class="mono">${esc(m.id)}</b>${m.ox?.desc ? `<span>${esc(m.ox.desc)}</span>` : ''}</div>${sw(`md-${btoa(unescape(encodeURIComponent(m.id))).replace(/[^A-Za-z0-9]/g, '')}`, !hidden.has(m.id)).replace('<input', `<input data-model-id="${esc(m.id)}"`)}</div>`).join('')}`).join('')}`;
+          ${groups.filter(([, l]) => l.length).map(([label, l]) => `${label === 'Needs a key' ? `<details class="md-needkey"><summary class="section-cap cap" style="cursor:pointer">${label} (${l.length})</summary>` : `<div class="section-cap cap">${label}</div>`}${l.map((m) => `<div class="srow" data-md="${esc(m.id.toLowerCase())}"><div class="l"><b class="mono">${esc(m.id)}</b>${m.ox?.desc ? `<span>${esc(m.ox.desc)}</span>` : ''}</div>${sw(`md-${btoa(unescape(encodeURIComponent(m.id))).replace(/[^A-Za-z0-9]/g, '')}`, !hidden.has(m.id)).replace('<input', `<input data-model-id="${esc(m.id)}"`)}</div>`).join('')}${label === 'Needs a key' ? '</details>' : ''}`).join('')}`;
         el.querySelectorAll('[data-model-id]').forEach((i) => (i.onchange = () => { const h = new Set(prefs.hiddenModels || []); if (i.checked) h.delete(i.dataset.modelId); else h.add(i.dataset.modelId); prefs.hiddenModels = [...h]; savePrefs(); loadModels(); }));
         $('md-all').onclick = () => { prefs.hiddenModels = []; savePrefs(); loadModels(); renderSection(); };
-        $('md-q').oninput = () => { const q = $('md-q').value.toLowerCase().trim(); el.querySelectorAll('[data-md]').forEach((r) => (r.style.display = !q || r.dataset.md.includes(q) ? '' : 'none')); };
+        $('md-q').oninput = () => { const q = $('md-q').value.toLowerCase().trim(); const nk = el.querySelector('.md-needkey'); if (nk) nk.open = !!q; el.querySelectorAll('[data-md]').forEach((r) => (r.style.display = !q || r.dataset.md.includes(q) ? '' : 'none')); };
       } else if (sec === 'skill-audit') {
         const A = await getJson('/ox/skill-audit');
         const report = A.report || { skills: [], signals: {} };
@@ -4541,9 +4545,9 @@ files: [src/billing/**]
         const flagged = new Set(kinds.flatMap(([, hits]) => hits.map((h) => h.skill)));
         const rootLine = (A.roots || []).map((p) => `<code>${esc(p)}</code>`).join('<br>');
         el.innerHTML = `${mobileBack}<div class="shead">${icon('shield')}Skill safety</div><p class="sdesc">A local, read-only inspection of installed skill instructions. It highlights capability signals; a signal is not proof that a skill is malicious. New skills still pass Ox’s stricter install-time denylist before they can be installed.</p>
-          <div class="sblock"><div class="section-cap cap">Scan</div><div class="chipline"><span class="badge">${report.skills.length} skills inspected</span><span class="badge ${flagged.size ? 'err' : 'ok'}">${flagged.size} with capability signals</span><button class="btn ghost" id="skill-audit-refresh">Rescan</button></div><p class="small muted" style="margin:10px 0 0">Local roots:<br>${rootLine}</p></div>
-          <div class="sblock"><div class="section-cap cap">Signals</div>${kinds.length ? kinds.map(([kind, hits]) => `<div class="srow"><div class="l"><b>${esc(kind)}</b><span>${hits.map((h) => `${esc(h.skill)} (${esc(h.hits.join(', '))})`).join(' · ')}</span></div><span class="badge err">${hits.length}</span></div>`).join('') : '<p class="small ok">No capability signals found in the scanned skill documents.</p>'}</div>
-          <div class="sblock"><div class="section-cap cap">Installed skills</div>${report.skills.length ? report.skills.map((s) => `<div class="srow"><div class="l"><b>${esc(s.id)}</b><span class="mono">${esc(s.path)}</span></div><span class="badge ${s.hasDoc ? 'ok' : 'err'}">${s.hasDoc ? (flagged.has(s.id) ? 'review signals' : 'documented') : 'no SKILL.md'}</span></div>`).join('') : '<p class="small muted">No skill folders were found in the local scan roots.</p>'}</div>`;
+          <div class="sblock"><div class="section-cap cap">Scan</div><div class="chipline"><span class="badge">${report.skills.length} skills inspected</span><span class="badge ${flagged.size ? 'err' : 'ok'}">${flagged.size} with capability signals</span><button class="btn ghost" id="skill-audit-refresh">Rescan</button></div><details class="small muted" style="margin:10px 0 0"><summary style="cursor:pointer">Folders scanned (${(A.roots || []).length})</summary>${rootLine}</details></div>
+          <div class="sblock"><div class="section-cap cap">Signals</div>${kinds.length ? kinds.map(([kind, hits]) => `<div class="srow"><div class="l"><b>${esc(kind)}</b><span>${hits.slice(0, 3).map((h) => esc(h.skill)).join(' · ')}${hits.length > 3 ? ` <details style="display:inline"><summary style="display:inline;cursor:pointer;color:var(--muted)">+${hits.length - 3} more</summary>${hits.slice(3).map((h) => esc(h.skill)).join(' · ')}</details>` : ''}</span></div><span class="badge err">${hits.length}</span></div>`).join('') : '<p class="small ok">No capability signals found in the scanned skill documents.</p>'}</div>
+          <details class="sblock"><summary class="section-cap cap" style="cursor:pointer">Installed skills (${report.skills.length})</summary>${report.skills.length ? report.skills.map((s) => `<div class="srow"><div class="l"><b>${esc(s.id)}</b><span class="mono">${esc(s.path)}</span></div><span class="badge ${s.hasDoc ? 'ok' : 'err'}">${s.hasDoc ? (flagged.has(s.id) ? 'review signals' : 'documented') : 'no SKILL.md'}</span></div>`).join('') : '<p class="small muted">No skill folders were found in the local scan roots.</p>'}</details>`;
         $('skill-audit-refresh').onclick = () => renderSection();
       } else if (sec === 'environments') {
         const E = await getJson('/ox/environments');
@@ -4871,6 +4875,7 @@ files: [src/billing/**]
           }
         }));
       } else if (sec === 'keys') {
+        const KEY_POPULAR = ['anthropic', 'openai', 'gemini', 'openrouter', 'nvidia', 'groq', 'deepseek', 'tavily', 'brave', 'fal'];
         const keys = await getJson('/ox/providers');
         providerIndex = keys;
         const GROUPS = [['models', 'AI models', 'Chat, code and agents. Set one and pick its models anywhere: the model menu, or the terminal (ox --bot &lt;provider&gt;:&lt;model&gt;).'], ['search', 'Web search', 'The agent’s web_search tool uses the first key set here; with none, it uses a keyless search.'], ['media', 'Images & video', 'OX Studio and the create_media tool. OpenAI and Gemini keys above make images too.']];
@@ -4884,18 +4889,30 @@ files: [src/billing/**]
           <label class="search" style="margin:0 0 8px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line)"><span data-i="search"></span><input id="kq" placeholder="Search ${keys.length} providers: OpenRouter, Perplexity, Tavily, Hugging Face…" value="${esc(pendingKeyQuery || '')}"></label>
           <div id="knone" class="box muted small" hidden>Not listed? Any OpenAI-compatible service works: add it under <a href="#" id="to-endpoints" style="color:var(--gold)">Custom endpoints</a> with its URL and key.</div>
           ${GROUPS.map(([g, title, desc]) => { const rows = keys.filter((k) => k.group === g); return rows.length ? `<div class="kgroup" data-g="${g}"><div class="section-cap cap">${title} <span class="muted">(${rows.filter((k) => k.set).length} of ${rows.length} set)</span></div><p class="sdesc" style="margin-top:0">${desc}</p><div>${rows.map(rowHtml).join('')}</div></div>` : ''; }).join('')}
+          <button class="btn" id="kmore" style="margin:6px 0 14px">More providers (${keys.filter((k) => !k.set && !KEY_POPULAR.includes(k.id)).length})</button>
           <p class="sdesc">A key already set in your shell always wins. ox only ever shows the last four characters, and never sends a key anywhere but its own provider.</p>`;
         paintIcons(el);
         pendingKeyQuery = '';
+        // Your keys and the popular providers; the other thirty wait behind
+        // "More providers", and a search always looks through all of them.
+        let kAll = false;
         const filter = () => {
           const words = $('kq').value.toLowerCase().split(/\s+/).filter(Boolean);
           let shown = 0;
-          el.querySelectorAll('.keyrow').forEach((r) => { const hit = words.every((w) => r.dataset.name.includes(w)); r.hidden = !hit; if (hit) shown++; });
+          el.querySelectorAll('.keyrow').forEach((r) => {
+            const k = keys.find((x) => x.id === r.dataset.k);
+            const extra = !k?.set && !KEY_POPULAR.includes(r.dataset.k);
+            const hit = words.length ? words.every((w) => r.dataset.name.includes(w)) : (kAll || !extra);
+            r.hidden = !hit; if (hit) shown++;
+          });
+          $('kmore').hidden = kAll || words.length > 0;
           el.querySelectorAll('.kgroup').forEach((g) => (g.hidden = ![...g.querySelectorAll('.keyrow')].some((r) => !r.hidden)));
           $('knone').hidden = shown > 0;
         };
         $('kq').oninput = filter;
-        if ($('kq').value) { filter(); $('kq').focus(); }
+        $('kmore').onclick = () => { kAll = true; filter(); };
+        filter();
+        if ($('kq').value) $('kq').focus();
         $('to-endpoints').onclick = (e) => { e.preventDefault(); sec = 'endpoints'; renderSnav(); renderSection(); };
         el.querySelectorAll('.keyrow').forEach((r) => {
           const inp = r.querySelector('input');
@@ -4984,7 +5001,7 @@ files: [src/billing/**]
           <label class="search" style="margin:0 0 8px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:8px 10px"><span data-i="search"></span><input id="hf-q" placeholder="Search models by name: qwen coder, llama, gemma, deepseek…"></label>
           <div id="hf-results" class="cards"></div>
           <div class="section-cap cap">Models for coding</div>
-          <div class="cards">${L.catalog.map((c) => `<div class="card"><span class="t"><div class="n">${esc(c.name)}</div><div class="d"><span>${esc(c.bestFor)}</span><span class="badge ${c.fits ? 'ok' : 'err'}">${c.fits ? 'Fits this machine' : 'Too big for this machine'}</span><span class="badge">needs ${c.minRAM} GB</span><span class="badge">${esc(c.size)}</span></div></span><button class="btn ghost" data-copy-cmd="${esc(c.pull)}">${icon('copy')}${esc(c.pull)}</button></div>`).join('')}</div>`;
+          <div class="cards">${L.catalog.filter((c) => c.fits).map((c) => `<div class="card"><span class="t"><div class="n">${esc(c.name)}</div><div class="d"><span>${esc(c.bestFor)}</span><span class="badge ${c.fits ? 'ok' : 'err'}">${c.fits ? 'Fits this machine' : 'Too big for this machine'}</span><span class="badge">needs ${c.minRAM} GB</span><span class="badge">${esc(c.size)}</span></div></span><button class="btn ghost" data-copy-cmd="${esc(c.pull)}">${icon('copy')}${esc(c.pull)}</button></div>`).join('')}</div>${L.catalog.some((c) => !c.fits) ? `<details style="margin-top:8px"><summary class="small muted" style="cursor:pointer">Too big for this Mac (${L.catalog.filter((c) => !c.fits).length})</summary><div class="cards">${L.catalog.filter((c) => !c.fits).map((c) => `<div class="card"><span class="t"><div class="n">${esc(c.name)}</div><div class="d"><span>${esc(c.bestFor)}</span><span class="badge ${c.fits ? 'ok' : 'err'}">${c.fits ? 'Fits this machine' : 'Too big for this machine'}</span><span class="badge">needs ${c.minRAM} GB</span><span class="badge">${esc(c.size)}</span></div></span><button class="btn ghost" data-copy-cmd="${esc(c.pull)}">${icon('copy')}${esc(c.pull)}</button></div>`).join('')}</div></details>` : ''}`;
         el.querySelectorAll('[data-use]').forEach((b) => (b.onclick = async () => { try { await postJson('/ox/settings', { defaultBot: b.dataset.use }); toast(`Default model: ${b.dataset.use}`); loadModels(); } catch (e) { toast(e.message); } }));
         paintIcons(el);
         let hfTimer = null;
