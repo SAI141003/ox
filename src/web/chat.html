@@ -4217,10 +4217,11 @@ files: [src/billing/**]
     telegram: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" fill="#29a9eb"/><path d="M11 23.4 33.6 14.7c1-.4 2 .3 1.6 1.9L31.4 34.5c-.3 1.3-1.1 1.6-2.2 1l-6-4.4-2.9 2.8c-.3.3-.6.6-1.2.6l.4-6.1 11.1-10c.5-.4-.1-.7-.7-.3L16.1 26.8l-5.9-1.8c-1.3-.4-1.3-1.3.8-1.6z" fill="#fff"/></svg>',
     browser: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="#4285f4"/><path d="M24 4a20 20 0 0 1 17.3 10H24a10 10 0 0 0-8.7 5L9.5 9.1A20 20 0 0 1 24 4z" fill="#ea4335"/><path d="M41.3 14A20 20 0 0 1 25.4 44l8.7-15a10 10 0 0 0-.1-15z" fill="#fbbc04"/><path d="M25.4 44A20 20 0 0 1 9.5 9.1L15.3 19A10 10 0 0 0 24 34l.8 10z" fill="#34a853"/><circle cx="24" cy="24" r="8" fill="#fff"/><circle cx="24" cy="24" r="6" fill="#1a73e8"/></svg>',
   };
-  const connSub = (c) => c.state === 'broken' ? 'Added, not working' : c.state === 'added' ? 'Added to ox' : c.state === 'connected' ? 'Connected' : c.state === 'local' ? 'On this Mac' : c.template === 'gsuite' ? 'Google Workspace' : c.template ? 'Official connector' : c.id === 'telegram' ? 'Your own bot' : 'App on your Mac';
+  const connSub = (c) => c.state === 'broken' ? 'Added, not working' : c.state === 'signin' ? 'Added: sign in once' : c.state === 'added' ? 'Added to ox' : c.state === 'connected' ? 'Connected' : c.state === 'local' ? 'On this Mac' : c.template === 'gsuite' ? 'Google Workspace' : c.template ? 'Official connector' : c.id === 'telegram' ? 'Your own bot' : 'App on your Mac';
   function connAction(c) {
     if (c.state === 'added') return `<button class="on" data-conn-rm="${esc(c.id)}" title="${esc(c.why)} · click to remove">Added</button>`;
     if (c.state === 'connected') return `<span class="on" title="${esc(c.why)}">Connected</span>`;
+    if (c.state === 'signin') return `<button class="go" data-conn-login="${esc(c.id)}" title="${esc(c.why)}">Sign in</button>`;
     if (c.state === 'broken') return `<button class="on" style="color:var(--red)" data-conn-rm="${esc(c.id)}" title="${esc(c.why)} · click to remove">Not working</button>`;
     if (c.state === 'local') return `<span class="on local" title="${esc(c.why)}">Found</span>`;
     if (c.state === 'connect') return `<button class="go" data-conn-add="${esc(c.id)}" title="${esc(c.why)}">Connect</button>`;
@@ -5088,6 +5089,11 @@ files: [src/billing/**]
               b.disabled = true; b.textContent = 'Adding…';
               try { paint(await postJson('/ox/connectors/gallery', { id: b.dataset.connAdd })); toast('Added. It signs in the first time ox uses it; every action asks you first.'); }
               catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Connect'; }
+            }));
+            box.querySelectorAll('[data-conn-login]').forEach((b) => (b.onclick = async () => {
+              b.disabled = true; b.textContent = 'Finish in your browser…';
+              try { paint(await postJson('/ox/connectors/gallery', { id: b.dataset.connLogin, action: 'login' })); toast('Signed in. ox remembers it and renews it by itself.'); }
+              catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Sign in'; }
             }));
             box.querySelectorAll('[data-conn-rm]').forEach((b) => (b.onclick = async () => {
               if (!(await askSure('Remove this connector? Ox stops using it from the next run.', 'Remove'))) return;

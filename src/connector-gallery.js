@@ -47,7 +47,14 @@ const NEEDS = { gsuite: { cmd: 'uvx', how: 'Install uv first: brew install uv' }
  *   needs      something is missing first (`why` says what)
  *   broken     added, but it has been failing to start (`why` says why)
  */
-export function galleryView({ servers = {}, apps = {}, channels = {}, env = process.env, has = defaultHas, health = {} } = {}) {
+// The https address of a remote connector: its url, or the one an npx mcp-remote bridge wraps.
+export function remoteUrl(cfg) {
+  if (!cfg || typeof cfg !== 'object') return null;
+  if (typeof cfg.url === 'string' && /^https?:\/\//.test(cfg.url)) return cfg.url;
+  return Array.isArray(cfg.args) && cfg.args.some((a) => /mcp-remote/.test(String(a))) ? cfg.args.find((a) => /^https:\/\//.test(String(a))) ?? null : null;
+}
+
+export function galleryView({ servers = {}, apps = {}, channels = {}, env = process.env, has = defaultHas, health = {}, signedIn = () => true } = {}) {
   const hasCache = new Map();
   const haveCmd = (c) => { if (!hasCache.has(c)) hasCache.set(c, has(c)); return hasCache.get(c); };
   return GALLERY.map((g) => {
@@ -57,6 +64,8 @@ export function galleryView({ servers = {}, apps = {}, channels = {}, env = proc
     const base = { id: g.id, name: g.name, desc: g.desc, template: g.template ?? null };
     if (tpl && Object.prototype.hasOwnProperty.call(servers, g.template)) {
       // Added, but it has not been starting: say so and why, instead of a quiet "Added".
+      // A remote one nobody has signed in to yet: one click, once (ox mcp login).
+      if (remoteUrl(servers[g.template]) && !signedIn(g.template)) return { ...base, state: 'signin', why: 'Sign in once: your browser opens, then ox remembers it' };
       const h = health[g.template];
       if (h && typeof h === 'object') {
         const why = h.status === 'slow' ? 'never finished starting: finish its sign-in in the browser' : h.status === 'http-error' ? 'its login was refused: sign in again' : /docker/i.test(`${h.why ?? ''} ${g.template}`) || g.template === 'github' ? 'did not start: Docker is not running' : `did not start (${h.status})`;

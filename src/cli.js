@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import net from 'node:net';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { runAgent, applySubgoal, buildSummarizePrompt, draftContract, draftTitle, parseGates } from './agent.js';
@@ -392,7 +392,7 @@ function usage() {
     c.bold('Extend'),
     row('ox skill', 'skills: ls, add, new, curate'),
     row('ox plugin', 'Claude Code plugins: add, import-claude, ls'),
-    row('ox mcp', 'MCP servers: add, test, remove'),
+    row('ox mcp', 'MCP servers: add, test, remove; login signs in to one once'),
     row('ox agent new <name>', 'your own agent: a bot, a mode and instructions; run with --agent'),
     '',
     c.bold('History and memory'),
@@ -1925,6 +1925,49 @@ async function cmdMcpTest(args = []) {
   } catch {}
 }
 
+// ox mcp login <name>: sign in once to a remote MCP server (Notion, Canva...)
+// in the browser; runs then use and refresh the token, never a browser.
+async function cmdMcpLogin(sub, rest) {
+  const name = String(rest[0] ?? '').trim();
+  const servers = loadConfig().mcpServers ?? {};
+  const cfg = servers[name];
+  if (!name || !cfg) {
+    process.stderr.write(`usage: ox mcp ${sub} <name>   (one of: ${Object.keys(servers).join(', ') || 'none added yet'})\n`);
+    process.exitCode = 3;
+    return;
+  }
+  const A = await import('./mcp-oauth.js');
+  if (sub === 'logout') {
+    console.log(A.logout(name) ? `signed out of ${name}` : c.dim(`${name} was not signed in`));
+    return;
+  }
+  // A connector still run through `npx mcp-remote <url>`: sign in to that url directly.
+  const url = cfg.url ?? (Array.isArray(cfg.args) ? cfg.args.find((a) => /^https:\/\//.test(String(a))) : null);
+  if (!url) {
+    process.stderr.write(`ox: ${name} runs on this machine (${cfg.command}); there is nothing to sign in to\n`);
+    process.exitCode = 3;
+    return;
+  }
+  const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
+  try {
+    const r = await A.login(name, url, {
+      say: (l) => console.log(c.dim(l)),
+      open: (u) => { spawn(opener, [u], { stdio: 'ignore', detached: true }).unref(); console.log(c.dim(`if no browser opened, visit:\n${u}`)); },
+    });
+    if (r.open) { console.log(`${name} needs no sign-in`); return; }
+    if (!cfg.url) {
+      // Use it directly from now on: no npx bridge opening a browser on every run.
+      saveConfigDoc((doc) => { doc.mcpServers = doc.mcpServers ?? {}; doc.mcpServers[name] = { url }; });
+      console.log(c.dim(`${name} now connects directly to ${url}`));
+    }
+    try { const h = JSON.parse(fs.readFileSync(path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'mcp-health.json'), 'utf8')); delete h[name]; fs.writeFileSync(path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'mcp-health.json'), JSON.stringify(h)); } catch {}
+    console.log(`${c.green('✓')} signed in to ${name}${r.expiresAt ? c.dim(` (renews by itself)`) : ''}`);
+  } catch (e) {
+    process.stderr.write(`${c.red(`✗ ${e.message}`)}\n`);
+    process.exitCode = 1;
+  }
+}
+
 async function cmdMcp(args = []) {
   const sub = String(args[0] ?? '').trim().toLowerCase();
   if (!sub || sub === 'ls') {
@@ -1944,7 +1987,11 @@ async function cmdMcp(args = []) {
     await cmdMcpTest(rest);
     return;
   }
-  process.stderr.write(`ox: unknown mcp subcommand '${args[0]}' (use ls | add | remove | test)\n`);
+  if (sub === 'login' || sub === 'logout') {
+    await cmdMcpLogin(sub, rest);
+    return;
+  }
+  process.stderr.write(`ox: unknown mcp subcommand '${args[0]}' (use ls | add | remove | test | login | logout)\n`);
   process.exitCode = 3;
 }
 

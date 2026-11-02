@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { KEY_ENV, BOTS } from './bots.js';
 import { keyStatus, setKey } from './keystore.js';
 import { fileURLToPath } from 'node:url';
@@ -229,7 +229,8 @@ export async function connectorGalleryView(env = process.env) {
   const channels = Object.fromEntries((await messagingView(env)).map((c) => [c.id, c]));
   let health = {};
   try { health = (await import('./mcp.js')).readMcpHealth(); } catch {}
-  return galleryView({ servers: readConfigDoc().mcpServers ?? {}, apps, channels, env, health });
+  const { readAuth } = await import('./mcp-oauth.js');
+  return galleryView({ servers: readConfigDoc().mcpServers ?? {}, apps, channels, env, health, signedIn: (n) => !!readAuth(n) });
 }
 export async function addGalleryConnector(body = {}) {
   const { saveConfigDoc, readConfigDoc } = await import('./config.js');
@@ -239,7 +240,18 @@ export async function addGalleryConnector(body = {}) {
   // fresh add starts at Ask every call (no policy entry means ask), never at an
   // Allow left over from before.
   const dropPolicy = (doc) => { if (doc.mcpPolicy && Object.prototype.hasOwnProperty.call(doc.mcpPolicy, name)) { const next = { ...doc.mcpPolicy }; delete next[name]; doc.mcpPolicy = next; } };
-  if (body.action === 'remove') {
+  if (body.action === 'login') {
+    // The browser sign-in (src/mcp-oauth.js); then the connector talks to the
+    // server directly instead of through an npx bridge.
+    const { remoteUrl } = await import('./connector-gallery.js');
+    const url = remoteUrl((readConfigDoc().mcpServers ?? {})[name]);
+    if (!url) throw new Error('this connector runs on this Mac; there is nothing to sign in to');
+    const { login } = await import('./mcp-oauth.js');
+    const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';
+    await login(name, url, { open: (u) => spawn(opener, [u], { stdio: 'ignore', detached: true }).unref() });
+    saveConfigDoc((doc) => { doc.mcpServers = { ...(doc.mcpServers ?? {}), [name]: { url } }; });
+    try { const { readMcpHealth } = await import('./mcp.js'); const h = readMcpHealth(); if (h[name]) { delete h[name]; fs.writeFileSync(path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'mcp-health.json'), JSON.stringify(h)); } } catch {}
+  } else if (body.action === 'remove') {
     saveConfigDoc((doc) => { if (doc.mcpServers) delete doc.mcpServers[name]; dropPolicy(doc); });
   } else if (!Object.prototype.hasOwnProperty.call(readConfigDoc().mcpServers ?? {}, name)) {
     saveConfigDoc((doc) => { doc.mcpServers = { ...(doc.mcpServers ?? {}), [name]: entry }; dropPolicy(doc); });

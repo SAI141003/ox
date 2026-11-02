@@ -599,12 +599,23 @@ export class McpHub {
     // audited; more than MAX_REDIRECT_HOPS hops aborts.
     let res = null;
     let currentUrl = String(state.cfg.url);
+    // Signed in with `ox mcp login` (src/mcp-oauth.js): its token, unless the
+    // config already carries an Authorization header. Plus the session the
+    // server handed out at initialize, and the protocol version.
+    const headers = httpHeaders(state.cfg);
+    if (!headers.authorization) {
+      const { bearerFor } = await import('./mcp-oauth.js');
+      const tok = await bearerFor(state.name, String(state.cfg.url), { force: state._authRetry === true });
+      if (tok) headers.authorization = `Bearer ${tok}`;
+    }
+    if (state.httpSession) headers['mcp-session-id'] = state.httpSession;
+    headers['mcp-protocol-version'] = MCP_PROTOCOL_VERSION;
     for (let hop = 0; ; hop++) {
       let hopRes;
       try {
         hopRes = await fetch(currentUrl, {
           method: 'POST',
-          headers: httpHeaders(state.cfg),
+          headers,
           body,
           signal: ctrl.signal,
           redirect: 'manual',
@@ -667,10 +678,22 @@ export class McpHub {
     }
     if (!res.ok) {
       clearTimeout(timer);
-      const err = new Error(`MCP '${state.name}': ${method} got HTTP ${res.status} ${res.statusText ?? ''}`.trim());
+      // An expired token: refresh once and ask again. Never a browser here.
+      const sentSignIn = headers.authorization?.startsWith('Bearer ') && !httpHeaders(state.cfg).authorization;
+      if (res.status === 401 && sentSignIn && !state._authRetry) {
+        state._authRetry = true;
+        try { return await this._httpRequest(state, method, params, timeoutMs); } finally { state._authRetry = false; }
+      }
+      const signIn = res.status === 401 && !httpHeaders(state.cfg).authorization;
+      const err = new Error(signIn
+        ? `MCP '${state.name}': needs you to sign in once: ox mcp login ${state.name}`
+        : `MCP '${state.name}': ${method} got HTTP ${res.status} ${res.statusText ?? ''}`.trim());
       err.httpStatus = res.status;
+      if (signIn) err.needsLogin = true;
       throw err;
     }
+    const sid = res.headers.get('mcp-session-id');
+    if (sid) state.httpSession = sid;
     let raw;
     try {
       const ab = await res.arrayBuffer();
