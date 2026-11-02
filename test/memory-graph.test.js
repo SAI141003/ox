@@ -120,7 +120,7 @@ test('learning from conversation: only what the user says about themselves', () 
 
 test('always learning: "remember that…", "from now on…", "my sister is…" are kept; a secret never is', async () => {
   const { learnable } = await import('../src/memory-graph.js');
-  assert.deepEqual(learnable('Remember that my Railway token needs rotating.'), ['Remember that my Railway token needs rotating']);
+  assert.deepEqual(learnable('Remember that my Railway token needs rotating.'), ['My Railway token needs rotating']);
   assert.deepEqual(learnable('From now on reply in English.'), ['From now on reply in English']);
   assert.deepEqual(learnable('My sister is Priya.'), ['My sister is Priya']);
   for (const secret of ['My password is hunter2xyz.', 'My PIN is 4321.', 'my card number: 4111 1111 1111 1111', 'The API key is abc123def.']) assert.deepEqual(learnable(secret), [], secret);

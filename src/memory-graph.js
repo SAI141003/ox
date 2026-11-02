@@ -423,7 +423,8 @@ export function learnable(message) {
     if (/\?\s*$/.test(s) || /^(?:hey|hi|ok(?:ay)?|so|now)?[,\s]*(?:can|could|would|will) you\b/i.test(s)) continue;
     // Never a secret: "my password is …", "the API key is …", a PIN, a card number.
     if (/\b(?:password|passcode|passphrase|pin|api[\s_-]?key|secret|token|otp|one[\s-]time code|card number|cvv|ssn|social security(?: number)?|bank account(?: number)?|routing number|seed phrase|private key)\s*(?:is|are|was|=|:)\s*\S/i.test(s)) continue;
-    if (LEARNABLE.some((re) => re.test(s))) out.push(s.replace(/[.!?]+$/, ''));
+    // Kept as the fact itself: "Remember that my favourite food is biryani" → "My favourite food is biryani".
+    if (LEARNABLE.some((re) => re.test(s))) out.push(s.replace(/[.!?]+$/, '').replace(/^(?:please\s+)?(?:remember|note|keep in mind)\s+(?:that\s+)?/i, '').replace(/^\p{Ll}/u, (c) => c.toUpperCase()));
   }
   return out.slice(0, 5);
 }
