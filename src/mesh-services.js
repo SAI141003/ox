@@ -95,7 +95,7 @@ export async function serveOp({ ch, peer, msg, grants, roots, home, ollamaUrl, m
   if (!need) return false;
   const reply = (data) => ch.send({ t: 'res', rid: msg.rid, ok: true, data });
   const refuse = (why) => ch.send({ t: 'res', rid: msg.rid, ok: false, error: why });
-  if (!grants[need]) { refuse(`${meName} does not allow ${need} for ${peer.name}: on ${meName}, run  ox mesh allow "${peer.name}" ${need}`); return true; }
+  if (!grants[need]) { refuse(`${meName} does not allow ${need} for ${peer.name} yet. Its owner can turn it on in OX › Settings › Offline & devices › Manage ${peer.name}, or run  ox mesh allow "${peer.name}" ${need}`); return true; }
   const a = msg.args ?? {};
   let detail = String(a.path ?? a.id ?? '').slice(0, 200);
   if (need === 'screen' || need === 'control') {

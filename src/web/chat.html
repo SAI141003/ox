@@ -5224,7 +5224,7 @@ files: [src/billing/**]
             // What this Mac lets the other one do. Chats from it need Answer chats; each computer decides for itself.
             const granted = peers.find((p) => p.name === machine)?.grants ?? {};
             const grantRow = (g, label, why) => `<label class="small" style="display:flex;gap:8px;align-items:flex-start;margin-top:8px"><input type="checkbox" data-od-grant="${g}" ${granted[g] ? 'checked' : ''}><span><b>${label}</b><br><span class="muted">${why}</span></span></label>`;
-            box.insertAdjacentHTML('afterbegin', `<div class="section-cap cap" style="margin-top:18px">What ${esc(machine)} may use on this Mac</div>${grantRow('infer', 'Answer chats', `${esc(machine)} can chat with this Mac’s models.`)}${grantRow('tasks', 'Run tasks', `${esc(machine)} can start ox tasks here, under this Mac’s approvals.`)}`);
+            box.insertAdjacentHTML('afterbegin', `<div class="section-cap cap" style="margin-top:18px">What ${esc(machine)} may use on this Mac</div>${grantRow('infer', 'Answer chats', `${esc(machine)} can chat with this Mac’s models.`)}${grantRow('tasks', 'Run tasks', `${esc(machine)} can start ox tasks here, under this Mac’s approvals.`)}${grantRow('agents', 'Coding sessions', `${esc(machine)} can see this Mac’s coding sessions and send them messages.`)}<p class="small muted" style="margin-top:8px">To use ${esc(machine)} from here, turn these on there for this Mac. Its models then appear in the model list.</p>`);
             box.querySelectorAll('[data-od-grant]').forEach((c) => (c.onchange = async () => {
               const on = c.checked; c.disabled = true;
               try { await postJson(`/ox/mesh/${on ? 'allow' : 'deny'}`, { machine, grant: c.dataset.odGrant }); toast(on ? 'Allowed' : 'Turned off'); }
@@ -5765,11 +5765,13 @@ files: [src/billing/**]
         const updateInfo = await getJson('/ox/update').catch(() => null);
         const updateStatus = !updateInfo ? 'Update status is temporarily unavailable.'
           : updateInfo.problem ? `Update check needs attention: ${updateInfo.problem}`
-          : updateInfo.applying ? `${(updateInfo.applying.steps || []).at(-1) || 'Updating…'}${updateInfo.applying.done ? '' : '…'}`
+          : updateInfo.applying && !updateInfo.applying.done ? `${(updateInfo.applying.steps || []).at(-1) || 'Updating'}…`
+          : updateInfo.applying?.ok === false ? `The update did not install: ${updateInfo.applying.why || 'unknown error'}`
+          : updateInfo.updatedTo && /^\d+\.\d+\.\d+$/.test(updateInfo.updatedTo) && updateInfo.updatedTo !== about.version ? `Updated to ${updateInfo.updatedTo}, restarting.`
           : updateInfo.allowed == null ? 'Update checks are off until you choose to enable them.'
           : updateInfo.allowed === false ? 'GitHub update checks are off.'
           : updateInfo.available?.count ? `${updateInfo.available.count} update${updateInfo.available.count === 1 ? '' : 's'} ready from ${updateInfo.available.upstream}.`
-          : updateInfo.upToDate && updateInfo.current ? `You have the newest version (${updateInfo.current}).`
+          : updateInfo.upToDate ? `You have the newest version (${about.version}).`
           : updateInfo.updatedTo ? `Up to date — now on ${updateInfo.updatedTo}.`
           : 'Update checks are on. Check GitHub whenever you want.';
         const updateActions = !updateInfo ? ''
@@ -5791,7 +5793,23 @@ files: [src/billing/**]
             return;
           }
           b.disabled = true;
-          try { await postJson('/ox/update', { action: b.dataset.update }); toast(b.dataset.update === 'apply' ? 'Update started in the background' : 'Update preference saved'); setTimeout(renderSection, 250); }
+          try {
+            const before = JSON.stringify(await getJson('/ox/update'));
+            const action = b.dataset.update;
+            await postJson('/ox/update', { action });
+            toast(action === 'apply' ? 'Update started in the background' : action === 'check' ? 'Checking GitHub…' : 'Update preference saved');
+            setTimeout(renderSection, 250);
+            // The check and the update run in their own process: show the answer when it lands.
+            if (action === 'check' || action === 'apply' || action === 'allow') {
+              const shown = sec;
+              for (let i = 0, last = before; i < 90 && sec === shown; i++) {
+                await new Promise((r) => setTimeout(r, 1000));
+                const now = JSON.stringify(await getJson('/ox/update'));
+                if (now !== last) { last = now; renderSection(); }
+                if (action !== 'apply' && now !== before) break;
+              }
+            }
+          }
           catch (e) { toast(e.message); b.disabled = false; }
         }));
         if ($('upd-auto')) $('upd-auto').onchange = async () => {

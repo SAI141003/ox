@@ -514,7 +514,20 @@ export function serveModelCatalog(env = process.env) {
       ox: { agent: true, bot: agentBotSpec(a), mode: a.mode ?? 'code', tools: Array.isArray(a.tools) ? a.tools : null, desc: a.description || '' },
     });
   }
+  if (meshNode) data.push(...meshCatalogEntries(meshNode.machines()));
   return { data, withheld };
+}
+
+/** Your paired computers' models, so a chat can run on one: mesh:<machine>/<model> (src/bots.js). */
+export function meshCatalogEntries(machines = []) {
+  const out = [];
+  for (const m of machines) {
+    const names = [...(m.stats?.models ?? []).map((x) => x.name), ...(m.stats?.providers ?? [])];
+    for (const name of names) {
+      out.push({ id: `mesh:${m.name}/${name}`, object: 'model', created: MODELS_CREATED, owned_by: 'you', ox: { provider: 'mesh', model: name, available: true, endpoint: true, desc: `${name} on ${m.name}` } });
+    }
+  }
+  return out;
 }
 
 function modelById(id, env = process.env) {
