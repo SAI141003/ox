@@ -1143,9 +1143,10 @@ test('daemon 16: nothing is written outside the sandbox HOME and the daemon dir'
   const { port } = await startMock(t, () => ({ text: 'hermetic' }));
   const env = mockEnv(sb, port);
   const realHome = REAL_HOME;
-  // The unit run shares this HOME with other tests running at the same time; on
-  // Linux a font library they start creates ~/.cache and ~/.fontconfig. Those
-  // are not the daemon's writes, and the checks below still cover what it makes.
+  // On Ubuntu CI ~/.cache and ~/.fontconfig appeared in this shared HOME during
+  // the unit run. What writes them was not found (nothing in src/ or test/ names
+  // fontconfig); they are left out of this listing, so a daemon writing there
+  // would not be caught. The checks below still cover the daemon's own files.
   const SYSTEM_CACHES = new Set(['.cache', '.fontconfig']);
   const listing = (dir) => fs.readdirSync(dir).filter((n) => !SYSTEM_CACHES.has(n)).sort().join('\n');
   const before = listing(realHome);
