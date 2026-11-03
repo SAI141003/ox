@@ -19,6 +19,17 @@ function capture(file) {
   });
 }
 
+/** The main display in points, the unit clicks use: a Retina capture has twice as many pixels. */
+function screenPoints() {
+  return new Promise((resolve) => {
+    const p = spawn('osascript', ['-e', 'tell application "Finder" to get bounds of window of desktop'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    let out = '';
+    p.stdout.on('data', (d) => { out += d; });
+    p.on('error', () => resolve(null));
+    p.on('close', () => { const n = out.split(',').map((x) => Number(x.trim())); resolve(n.length === 4 && n[2] > 0 && n[3] > 0 ? { w: n[2], h: n[3] } : null); });
+  });
+}
+
 /**
  * Execute one intentionally-small remote desktop request.  A test may supply
  * this API through startNode({ remoteControl }) so mesh protocol tests never
@@ -32,7 +43,7 @@ export async function remoteControl(op, args = {}) {
     try {
       const r = await capture(file);
       if (r.error) return r;
-      return { mime: 'image/png', data: await fs.readFile(file) };
+      return { mime: 'image/png', data: await fs.readFile(file), points: await screenPoints() };
     } catch (e) {
       return fail(`screen capture failed: ${e.message}`);
     } finally {

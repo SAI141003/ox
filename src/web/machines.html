@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ox · Machines</title>
+<style>
+  :root {
+    --bg: #000; --side: #0A0A0A; --panel: #0F0F0F; --raise: #161616; --hover: #1A1A1A; --sel: #1F1F1F;
+    --line: #1F1F1F; --line2: #2A2A2A; --text: #EDEDED; --muted: #A1A1A1; --dim: #6B6B6B; --btn: #EDEDED; --btn-ink: #000; --red: #F2615C; --ok: #4CC38A; --work: #E5B567;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #FFF; --side: #FAFAFA; --panel: #FFF; --raise: #F4F4F4; --hover: #F0F0F0; --sel: #EBEBEB;
+      --line: #EAEAEA; --line2: #DDD; --text: #0A0A0A; --muted: #5E5E5E; --dim: #8F8F8F; --btn: #0A0A0A; --btn-ink: #FFF; --ok: #1F8F5F; --work: #A86F10; color-scheme: light;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.5 var(--sans); display: grid; grid-template-columns: minmax(170px, 28%) 1fr; overflow: hidden; }
+  button, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  .list { border-right: 1px solid var(--line); background: var(--side); overflow: auto; padding: 8px; }
+  .cap { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); margin: 6px 6px 8px; }
+  .m { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 8px; padding: 8px; margin-bottom: 2px; }
+  .m:hover { background: var(--hover); }
+  .m.on { background: var(--sel); }
+  .m .n { display: flex; align-items: center; gap: 6px; font-weight: 600; min-width: 0; }
+  .m .n span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .m .d { color: var(--muted); font-size: 12px; margin-left: 14px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; }
+  .dot.ok { background: var(--ok); }
+  .dot.work { background: var(--work); }
+  .star { font-size: 10px; padding: 0 6px; border-radius: 9px; border: 1px solid var(--line2); color: var(--text); flex: none; }
+  .main { display: grid; grid-template-rows: auto auto 1fr; min-width: 0; min-height: 0; }
+  .head { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .head h1 { font-size: 16px; margin: 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .sub { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  .tabs { display: flex; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+  .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 10px; color: var(--muted); white-space: nowrap; }
+  .tabs button.on { color: var(--text); border-bottom-color: var(--text); }
+  .body { overflow: auto; padding: 12px 16px; min-height: 0; }
+  .btn { padding: 4px 11px; border-radius: 6px; border: 1px solid var(--line2); background: var(--raise); font-size: 12px; }
+  .btn:hover:not(:disabled) { background: var(--hover); }
+  .btn.primary { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); font-weight: 600; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .field { background: var(--panel); border: 1px solid var(--line2); border-radius: 6px; padding: 5px 8px; min-width: 0; flex: 1; }
+  .s { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; background: var(--panel); }
+  .s > button { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 9px 11px; }
+  .s .t { display: flex; align-items: center; gap: 7px; font-weight: 600; min-width: 0; }
+  .s .t .x { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .s .w { color: var(--muted); font-size: 12px; margin-left: 15px; overflow-wrap: anywhere; }
+  .open { border-top: 1px solid var(--line); padding: 10px 11px; }
+  .say { margin: 0 0 8px; }
+  .say .who { font-size: 11px; color: var(--dim); }
+  .say .tx { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; }
+  .note { color: var(--muted); font-size: 12px; }
+  .bad { color: var(--red); }
+  .f { display: flex; gap: 8px; width: 100%; background: none; border: 0; padding: 3px 6px; text-align: left; border-radius: 4px; font: 12.5px var(--mono); }
+  .f:hover { background: var(--hover); }
+  .f .sz { margin-left: auto; color: var(--dim); }
+  textarea { width: 100%; min-height: 320px; background: var(--panel); border: 1px solid var(--line2); border-radius: 6px; padding: 8px; font: 12.5px/1.6 var(--mono); resize: vertical; tab-size: 2; }
+  .shot { max-width: 100%; display: block; border: 1px solid var(--line2); border-radius: 6px; cursor: crosshair; margin-top: 8px; }
+  @media (max-width: 560px) { body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; overflow: auto; } .list { border-right: 0; border-bottom: 1px solid var(--line); max-height: 34vh; } }
+</style>
+</head>
+<body>
+<nav class="list" aria-label="Your computers"><div class="cap">Your computers</div><div id="list"></div></nav>
+<main class="main">
+  <header class="head" id="head"></header>
+  <div class="tabs" id="tabs" role="tablist"></div>
+  <section class="body" id="body"><div class="note">Looking for your computers…</div></section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+let key = (() => { try { return sessionStorage.getItem('ox.key') || ''; } catch { return ''; } })();
+const api = async (path, body) => {
+  const r = await fetch(path, { ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}), headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j?.error?.message || `Failed (${r.status})`);
+  return j;
+};
+const ago = (t) => { if (!t) return ''; const s = Math.round((Date.now() - new Date(t).getTime()) / 1000); return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; };
+const sizeWords = (n) => (n == null ? '' : n >= 1073741824 ? `${(n / 1073741824).toFixed(1)} GB` : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
+const working = (s) => s.state && s.state !== 'idle';
+
+let data = null, selected = null, tab = 'sessions', openSession = null, cwd = '~', editing = null, liveTimer = null;
+const current = () => data?.machines.find((m) => m.id === selected) ?? null;
+const isMain = (m) => data?.main?.id === m.id;
+
+function renderList() {
+  $('list').innerHTML = data.machines.map((m) => {
+    const n = m.sessions?.filter(working).length ?? 0;
+    const line = m.self ? `${m.sessions.length} session${m.sessions.length === 1 ? '' : 's'}${n ? ` · ${n} working` : ''}`
+      : m.paused ? 'Disconnected' : !m.up ? 'Not connected'
+      : m.sessions ? `${m.sessions.length} session${m.sessions.length === 1 ? '' : 's'}${n ? ` · ${n} working` : ''}` : `${m.rttMs ?? '?'} ms · sessions not shared`;
+    return `<button class="m ${m.id === selected ? 'on' : ''}" data-m="${esc(m.id)}"><div class="n"><span class="dot ${n ? 'work' : m.up ? 'ok' : ''}"></span><span>${esc(m.self ? `${m.name} (this one)` : m.name)}</span>${isMain(m) ? '<span class="star">Main</span>' : ''}</div><div class="d">${esc(line)}</div></button>`;
+  }).join('');
+  $('list').querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => { selected = b.dataset.m; tab = 'sessions'; openSession = null; editing = null; cwd = '~'; stopLive(); renderAll(); }));
+}
+
+function statusLine(m) {
+  if (m.self) return m.stats ? `Load ${Math.round((m.stats.load ?? 0) * 100)}% · memory ${Math.round((m.stats.mem ?? 0) * 100)}%` : 'This computer';
+  if (m.paused) return 'Disconnected by you. Reconnect it in Settings › Offline & devices.';
+  if (!m.up) return `Not connected${m.linkError ? `: ${m.linkError}` : ''}`;
+  return [`Connected · ${m.rttMs ?? '?'} ms`, m.addr, m.version ? `ox ${m.version}` : 'older ox', m.stats ? `load ${Math.round((m.stats.load ?? 0) * 100)}%` : null].filter(Boolean).join(' · ');
+}
+
+function renderHead() {
+  const m = current(); if (!m) return;
+  const canChoose = !isMain(m) && (m.self ? data.machines.length > 1 : m.up);
+  $('head').innerHTML = `<h1>${esc(m.name)}${isMain(m) ? '<span class="star">Main</span>' : ''}</h1><div class="sub">${esc(statusLine(m))}</div>
+    <div class="row">${canChoose ? `<button class="btn" id="make-main">${m.self ? 'Make this the main computer' : `Make ${esc(m.name)} the main computer`}</button>` : ''}<span class="note" id="main-state" role="status" aria-live="polite">${isMain(m) ? (m.self ? 'The computers that accepted this one share their sessions, tasks, models and files with it.' : `This computer shares its sessions, tasks, models and files with ${esc(m.name)}.`) : ''}</span></div>`;
+  if ($('make-main')) $('make-main').onclick = async () => {
+    const state = $('main-state');
+    const ok = m.self
+      ? confirm(`Ask your other computers to accept ${m.name} as main?\n\nEach computer's owner is asked there. If they accept, this computer can see and message their sessions, run tasks, and use their models and shared files. Screen and control stay off until turned on over there.`)
+      : confirm(`Make ${m.name} the main computer?\n\nFrom now, ${m.name} can see and message this computer's sessions, run tasks here, and use this computer's models and shared files. What the old main was given for being main is taken back. Screen and control stay as they are.`);
+    if (!ok) return;
+    $('make-main').disabled = true; state.textContent = m.self ? 'Waiting for your other computers to answer (up to a minute)…' : 'Switching…';
+    try {
+      const r = await api('/ox/mesh/main', m.self ? {} : { machine: m.id });
+      const refused = (r.results || []).filter((x) => !x.ok);
+      state.textContent = refused.length ? refused.map((x) => x.why).join(' · ') : `${r.main?.name} is the main computer.`;
+      state.classList.toggle('bad', refused.length > 0);
+      setTimeout(refresh, 300);
+    } catch (e) { state.textContent = e.message; state.classList.add('bad'); $('make-main').disabled = false; }
+  };
+}
+
+function tabsFor(m) { return m.self ? [['sessions', 'Sessions']] : [['sessions', 'Sessions'], ['messages', 'Messages'], ['files', 'Files'], ['screen', 'Screen & control']]; }
+function renderTabs() {
+  const m = current(); if (!m) return;
+  $('tabs').innerHTML = tabsFor(m).map(([k, t]) => `<button role="tab" aria-selected="${k === tab}" class="${k === tab ? 'on' : ''}" data-t="${k}">${t}</button>`).join('');
+  $('tabs').querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => { tab = b.dataset.t; stopLive(); renderAll(); }));
+}
+
+// ---- sessions
+function renderSessionList() {
+  const m = current(); const box = $('session-list'); if (!m || !box) return;
+  if (!m.self && !m.up) { box.innerHTML = `<div class="note">${esc(statusLine(m))}</div>`; return; }
+  if (m.needsAgents) {
+    box.innerHTML = `<p class="note">${esc(m.name)} has not shared its sessions with this computer.</p><button class="btn primary" id="ask-agents">Ask ${esc(m.name)} for access</button> <span class="note" id="ask-state" role="status" aria-live="polite"></span>`;
+    $('ask-agents').onclick = async () => {
+      $('ask-agents').disabled = true; $('ask-state').textContent = `Waiting for its owner to answer on ${m.name}…`;
+      try { await api('/ox/mesh/agents/ask', { machine: m.id }); $('ask-state').textContent = 'Allowed.'; refresh(); }
+      catch (e) { $('ask-state').textContent = e.message; $('ask-agents').disabled = false; }
+    };
+    return;
+  }
+  if (m.error) { box.innerHTML = `<div class="note bad">${esc(m.error)}</div>`; return; }
+  const list = [...(m.sessions ?? [])].sort((a, b) => working(b) - working(a));
+  if (!list.length) { box.innerHTML = '<div class="note">Nothing is running here.</div>'; return; }
+  box.innerHTML = list.map((s) => `<div class="s" data-s="${esc(s.id)}"><button data-open="${esc(s.id)}" aria-expanded="${openSession === s.id}"><div class="t"><span class="dot ${working(s) ? 'work' : 'ok'}"></span><span class="x">${esc(s.title || s.project || s.id)}</span></div><div class="w">${esc([s.tool, s.project && s.title ? s.project : null, s.model].filter(Boolean).join(' · '))}</div><div class="w">${esc(working(s) ? (s.doing || 'Working') : `Idle${s.updated ? ` · ${ago(s.updated)}` : ''}`)}</div></button></div>`).join('');
+  box.querySelectorAll('[data-open]').forEach((b) => (b.onclick = () => { openSession = openSession === b.dataset.open ? null : b.dataset.open; renderSessionList(); showSession(); }));
+  showSession();
+}
+async function showSession() {
+  const m = current(); if (!openSession || !m) return;
+  const host = document.querySelector(`[data-s="${CSS.escape(openSession)}"]`); if (!host) return;
+  let pane = host.querySelector('.open');
+  if (pane) return;
+  pane = document.createElement('div'); pane.className = 'open';
+  pane.innerHTML = '<div class="talk note">Reading this session…</div><form class="row" autocomplete="off"><input class="field" placeholder="Message this session" aria-label="Message this session"><button class="btn primary" type="submit">Send</button></form><div class="note st" role="status" aria-live="polite"></div>';
+  host.append(pane);
+  const id = openSession;
+  const load = async () => {
+    try {
+      const r = m.self ? await api('/ox/agents/session', { id }) : await api('/ox/mesh/agent/read', { machine: m.id, id });
+      const talk = pane.querySelector('.talk');
+      talk.classList.remove('note');
+      talk.innerHTML = (r.messages || []).length ? r.messages.map((x) => `<div class="say"><div class="who">${x.role === 'user' ? 'You' : esc(r.tool || 'Agent')}</div><div class="tx">${esc(x.text)}</div></div>`).join('') : '<div class="note">Nothing to show from this session.</div>';
+      if (r.canSend === false) { pane.querySelector('form').hidden = true; pane.querySelector('.st').textContent = r.why || 'This tool does not let ox send to it. You can read it here.'; }
+    } catch (e) { pane.querySelector('.talk').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
+  };
+  load();
+  pane.querySelector('form').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const input = pane.querySelector('input'), st = pane.querySelector('.st'), b = pane.querySelector('button');
+    const text = input.value.trim(); if (!text) return;
+    b.disabled = true; st.classList.remove('bad'); st.textContent = 'Sending…';
+    try {
+      const out = m.self ? await api('/ox/agents/send', { id, text }) : await api('/ox/mesh/agent/send', { machine: m.id, id, text });
+      input.value = '';
+      st.textContent = out.queued ? (out.why || 'Waiting: it goes in as soon as the session is idle.') : out.ok === false ? `Not delivered: ${out.error}` : 'Delivered, and the session answered.';
+      if (out.ok === false) st.classList.add('bad');
+      load();
+    } catch (e) { st.textContent = `Not delivered: ${e.message}`; st.classList.add('bad'); } finally { b.disabled = false; }
+  };
+}
+
+// ---- messages
+async function renderMessages() {
+  const m = current();
+  $('body').innerHTML = `<div id="talk"></div><form class="row" id="say" autocomplete="off"><input class="field" id="say-t" maxlength="8000" placeholder="Message to ${esc(m.name)}" aria-label="Message to ${esc(m.name)}"><button class="btn primary" type="submit">Send</button></form><div class="note" id="say-s" role="status" aria-live="polite"></div>`;
+  const show = async () => {
+    try { const { messages = [] } = await api(`/ox/mesh/messages?machine=${encodeURIComponent(m.id)}`);
+      const t = $('talk'); if (!t) return;
+      t.innerHTML = messages.length ? messages.slice(-60).map((x) => `<div class="say"><div class="who">${x.way === 'out' ? 'You' : esc(x.name)} · ${esc(new Date(x.at).toLocaleTimeString())}${x.way === 'out' ? ' · ✓ delivered' : ''}</div><div class="tx">${esc(x.text)}</div></div>`).join('') : '<div class="note">No messages yet.</div>';
+    } catch (e) { const t = $('talk'); if (t) t.innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
+  };
+  show();
+  liveTimer = setInterval(show, 4000);
+  $('say').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const text = $('say-t').value.trim(); if (!text) return;
+    $('say-s').textContent = `Sending… if ${m.name} has not allowed messages, its owner is being asked.`;
+    try { const r = await api('/ox/mesh/message', { machine: m.id, text }); $('say-t').value = ''; $('say-s').textContent = `Delivered at ${new Date(r.deliveredAt || Date.now()).toLocaleTimeString()}`; show(); }
+    catch (e) { $('say-s').textContent = `Not delivered: ${e.message}`; }
+  };
+}
+
+// ---- files
+async function renderFiles() {
+  const m = current();
+  if (editing) return renderEditor(m);
+  $('body').innerHTML = `<form class="row" id="go" autocomplete="off" style="margin-top:0"><input class="field" id="go-p" value="${esc(cwd)}" aria-label="Folder on ${esc(m.name)}" spellcheck="false"><button class="btn" type="submit">Open</button></form><div id="files" style="margin-top:10px"><div class="note">Listing… if ${esc(m.name)} has not allowed files, its owner is being asked.</div></div><div class="row"><button class="btn" id="new-f">New text file here</button><span class="note" id="f-s" role="status" aria-live="polite"></span></div>`;
+  $('go').onsubmit = (ev) => { ev.preventDefault(); cwd = $('go-p').value.trim() || '~'; renderFiles(); };
+  $('new-f').onclick = () => { const n = prompt('File name'); if (n && !/[\\/]/.test(n)) { editing = { path: `${cwd.replace(/\/$/, '')}/${n}`, text: '', base: null, isNew: true }; renderFiles(); } };
+  try {
+    const r = await api('/ox/mesh/ls', { machine: m.id, path: cwd });
+    cwd = r.path; if ($('go-p')) $('go-p').value = cwd;
+    const up = cwd.replace(/\/[^/]+\/?$/, '') || '/';
+    $('files').innerHTML = `<button class="f" data-d="${esc(up)}">..</button>` + (r.entries || []).map((e) => `<button class="f" ${e.dir ? `data-d="${esc(`${cwd.replace(/\/$/, '')}/${e.name}`)}"` : `data-f="${esc(`${cwd.replace(/\/$/, '')}/${e.name}`)}"`}><span>${e.dir ? '▸ ' : ''}${esc(e.name)}</span><span class="sz">${e.dir ? '' : sizeWords(e.size)}</span></button>`).join('');
+    $('files').querySelectorAll('[data-d]').forEach((b) => (b.onclick = () => { cwd = b.dataset.d; renderFiles(); }));
+    $('files').querySelectorAll('[data-f]').forEach((b) => (b.onclick = async () => {
+      $('f-s').textContent = 'Opening…';
+      try { const f = await api('/ox/mesh/file/read', { machine: m.id, path: b.dataset.f }); editing = { path: f.path, text: f.text, base: f.sha256 }; renderFiles(); }
+      catch (e) { $('f-s').innerHTML = `${esc(e.message)} <button class="btn" id="get-f">Get file to Downloads</button>`; $('get-f').onclick = async () => { $('f-s').textContent = 'Copying…'; try { const o = await api('/ox/mesh/get-file', { machine: m.id, path: b.dataset.f }); $('f-s').textContent = `Saved to ${o.path} · checksum ok`; } catch (x) { $('f-s').textContent = x.message; } }; }
+    }));
+  } catch (e) { if ($('files')) $('files').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
+}
+function renderEditor(m) {
+  $('body').innerHTML = `<div class="row" style="margin:0 0 8px"><button class="btn" id="back">Back</button><span class="note" style="flex:1;overflow-wrap:anywhere">${esc(editing.path)} on ${esc(m.name)}</span><button class="btn primary" id="save">Save</button></div><textarea id="ed" spellcheck="false" aria-label="${esc(editing.path)}"></textarea><div class="note" id="ed-s" role="status" aria-live="polite"></div>`;
+  $('ed').value = editing.text;
+  $('back').onclick = () => { if ($('ed').value !== editing.text && !confirm('Leave without saving?')) return; editing = null; renderFiles(); };
+  $('ed').onkeydown = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); $('save').click(); } };
+  $('save').onclick = async () => {
+    const text = $('ed').value;
+    $('save').disabled = true; $('ed-s').classList.remove('bad'); $('ed-s').textContent = 'Saving…';
+    try { const r = await api('/ox/mesh/file/save', { machine: m.id, path: editing.path, text, base: editing.base }); editing.text = text; editing.base = r.sha256; editing.isNew = false; $('ed-s').textContent = `Saved on ${m.name} · checksum ok`; }
+    catch (e) { $('ed-s').textContent = e.message; $('ed-s').classList.add('bad'); } finally { $('save').disabled = false; }
+  };
+}
+
+// ---- screen and control
+const stopLive = () => { clearInterval(liveTimer); liveTimer = null; };
+function renderScreen() {
+  const m = current();
+  const can = m.theirGrants || {};
+  if (m.theirGrants && !can.screen) {
+    $('body').innerHTML = `<p class="note">${esc(m.name)} has not allowed this computer to see its screen. This is never asked for or given automatically. On ${esc(m.name)}: Settings › Offline &amp; devices › Manage, turn on <b>See this screen</b>, and <b>Click and type here</b> to control it.</p>`;
+    return;
+  }
+  $('body').innerHTML = `<div class="row" style="margin-top:0"><button class="btn" id="shot">Refresh</button><label class="note"><input type="checkbox" id="live"> Live</label><span class="note" id="scr-s" role="status" aria-live="polite"></span></div>
+    ${can.control ? `<form class="row" id="typ" autocomplete="off"><input class="field" id="typ-t" placeholder="Type on ${esc(m.name)}" aria-label="Type on ${esc(m.name)}"><button class="btn" type="submit">Type</button><button class="btn" type="button" data-k="return">Return</button><button class="btn" type="button" data-k="escape">Esc</button><button class="btn" type="button" data-k="tab">Tab</button></form><p class="note">Click the picture to click there. ox refuses clicks on Send, Pay and Delete. Every action is logged on ${esc(m.name)}.</p>` : `<p class="note">View only. To click and type, turn on <b>Click and type here</b> on ${esc(m.name)}.</p>`}
+    <img class="shot" id="img" alt="The screen of ${esc(m.name)}" hidden>`;
+  let points = null, busy = false;
+  const grab = async () => {
+    if (busy) return; busy = true;
+    try { const r = await api('/ox/mesh/screen', { machine: m.id }); if (!$('img')) return; points = r.points; $('img').src = `data:${r.mime};base64,${r.data}`; $('img').hidden = false; $('scr-s').textContent = `Updated ${new Date().toLocaleTimeString()}`; }
+    catch (e) { if ($('scr-s')) $('scr-s').textContent = e.message; stopLive(); if ($('live')) $('live').checked = false; }
+    finally { busy = false; }
+  };
+  $('shot').onclick = grab;
+  $('live').onchange = () => { stopLive(); if ($('live').checked) { grab(); liveTimer = setInterval(() => { if (!document.hidden) grab(); }, 2000); } };
+  const control = async (body, said) => {
+    $('scr-s').textContent = `${said}…`;
+    try { await api('/ox/mesh/control', { machine: m.id, ...body }); $('scr-s').textContent = said; setTimeout(grab, 400); }
+    catch (e) { $('scr-s').textContent = e.message; }
+  };
+  if (can.control) {
+    $('img').onclick = (e) => {
+      const im = e.currentTarget, box = im.getBoundingClientRect();
+      const w = points?.w ?? im.naturalWidth / 2, h = points?.h ?? im.naturalHeight / 2;
+      control({ action: 'click', x: Math.round((e.clientX - box.left) / box.width * w), y: Math.round((e.clientY - box.top) / box.height * h) }, 'Clicked');
+    };
+    $('typ').onsubmit = (ev) => { ev.preventDefault(); const text = $('typ-t').value; if (!text) return; $('typ-t').value = ''; control({ action: 'type', text }, 'Typed'); };
+    document.querySelectorAll('[data-k]').forEach((b) => (b.onclick = () => control({ action: 'key', key: b.dataset.k }, `Pressed ${b.dataset.k}`)));
+  }
+  grab();
+}
+
+function renderBody() {
+  const m = current(); if (!m) return;
+  if (tab === 'sessions') { if (!$('session-list')) $('body').innerHTML = '<div id="session-list"></div>'; renderSessionList(); }
+  else if (tab === 'messages') renderMessages();
+  else if (tab === 'files') renderFiles();
+  else if (tab === 'screen') renderScreen();
+}
+function renderAll() { renderList(); renderHead(); renderTabs(); $('body').innerHTML = ''; renderBody(); }
+
+async function refresh() {
+  if (document.hidden) return;
+  try {
+    const first = !data;
+    const before = current();
+    data = await api('/ox/mesh/everything');
+    if (!current()) selected = data.machines[0].id;
+    const after = current();
+    if (first || !before) return renderAll();
+    renderList();
+    // The header and permissions can change under you; what you are typing cannot.
+    if (statusKey(before) !== statusKey(after) || !$('make-main')) renderHead();
+    if (tab === 'sessions' && !openSession) renderSessionList();
+    else if (tab === 'sessions') { const keep = document.querySelector('.open'); if (!keep) renderSessionList(); }
+  } catch (e) { if (!data) $('body').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
+}
+const statusKey = (m) => JSON.stringify([m?.up, m?.rttMs != null, data?.main?.id, m?.paused]);
+refresh();
+setInterval(refresh, 4000);
+</script>
+</body>
+</html>

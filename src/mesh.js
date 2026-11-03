@@ -27,13 +27,14 @@ const BINARY_FRAME = 0; // never the first byte of a text line
 const MAX_FRAME = 32 * 1024 * 1024;
 const APPROVAL_WAIT_MS = 60_000;
 const TEMP_GRANT_MS = 30 * 60_000;
+const TEMP_GRANTS = new Set(['infer', 'agents']); // asked for again and again within one piece of work
 const DENIED_QUIET_MS = 60_000;
 const OX_VERSION = (() => { try { return JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version; } catch { return null; } })();
 // What may ask its owner instead of being refused. Never screen or control (a
 // separate, deliberate choice), and never the requests a machine makes on its own
 // timer (describe, agents), which would ask every few seconds.
-const APPROVABLE = Object.freeze({ message: 'message', infer: 'infer', run: 'tasks', 'agent-send': 'agents', 'agent-read': 'agents', push: 'files-write', 'push-begin': 'files-write', pull: 'files', ls: 'files' });
-const GRANT_WORDS = Object.freeze({ message: 'send you a message', infer: 'chat with this computer\'s models', tasks: 'run an ox task here', agents: 'read or message a coding session here', 'files-write': 'copy a file here', files: 'read a file here' });
+const APPROVABLE = Object.freeze({ 'agents-ask': 'agents', message: 'message', infer: 'infer', run: 'tasks', 'agent-send': 'agents', 'agent-read': 'agents', push: 'files-write', 'push-begin': 'files-write', pull: 'files', ls: 'files' });
+const GRANT_WORDS = Object.freeze({ message: 'send you a message', infer: 'chat with this computer\'s models', tasks: 'run an ox task here', agents: 'see, read or message the coding sessions here', main: 'become your main computer: it could see and message your sessions, run tasks, use your models and your shared files. Never your screen or controls', 'files-write': 'copy a file here', files: 'read a file here' });
 const INVITE_MS = 10 * 60_000;
 const VERSION = 1;
 
@@ -163,6 +164,47 @@ export function lockdown(o = {}) {
   for (const id of Object.keys(peers)) peers[id].grants = { ...DEFAULT_GRANTS };
   writePeers(peers, o);
   return Object.keys(peers).length;
+}
+
+// ---------------------------------------------------------------- the main computer
+
+// What a computer gives the one it accepts as main. Screen and control are left
+// out on purpose: each is its own switch, on the computer being controlled.
+export const MAIN_GRANTS = Object.freeze(['status', 'message', 'infer', 'tasks', 'agents', 'files', 'files-write']);
+const mainFile = (o) => path.join(dir(o), 'main.json');
+/** Which computer is main, as this one knows it: { id, at } or null. A label: it gives nothing by itself. */
+export function readMain(o = {}) {
+  try { const j = JSON.parse(fs.readFileSync(mainFile(o), 'utf8')); return j?.id ? { id: String(j.id), at: Number(j.at) || 0 } : null; } catch { return null; }
+}
+function writeMain(id, at, o = {}) {
+  fs.mkdirSync(dir(o), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(mainFile(o), JSON.stringify({ id, at }), { mode: 0o600 });
+  return { id, at };
+}
+/** Take back only what the main role added: anything you allowed yourself stays. */
+function revokeMainGrants(id, o = {}) {
+  const peers = readPeers(o);
+  const p = peers[id];
+  if (!p?.mainGrants?.length) return;
+  for (const g of p.mainGrants) if (g !== 'status') p.grants[g] = false;
+  delete p.mainGrants;
+  writePeers(peers, o);
+}
+/** This computer accepts `id` as main: that is its owner's decision, made here. */
+function acceptMain(id, o = {}) {
+  const before = readMain(o);
+  if (before?.id && before.id !== id) revokeMainGrants(before.id, o);
+  const peers = readPeers(o);
+  const p = peers[id];
+  if (p) {
+    const g = { ...DEFAULT_GRANTS, ...p.grants };
+    const added = [...new Set([...(p.mainGrants ?? []), ...MAIN_GRANTS.filter((x) => !g[x])])];
+    for (const x of MAIN_GRANTS) g[x] = true;
+    p.grants = g;
+    p.mainGrants = added;
+    writePeers(peers, o);
+  }
+  return writeMain(id, Date.now(), o);
 }
 
 /** Disconnect (keeps the pairing) or reconnect. Nothing passes either way while it is set. */
@@ -533,11 +575,14 @@ export async function startNode(o = {}) {
     import('./mesh-services.js').then((S) => S.audit(home(o), { from: row.peer.name, peer: row.peer.id, op: 'approval', detail: `${row.grant}: ${answer.ok ? answer.how : answer.why}` })).catch(() => {});
     o.onAlerts?.(allAlerts());
   }
-  const approvalOptions = (grant) => [
-    { label: grant === 'infer' ? 'Allow for 30 minutes' : 'Allow once', action: 'approve-once' },
+  const approvalOptions = (grant) => (grant === 'main' ? [
+    { label: 'Make it main', action: 'approve-once' },
+    { label: 'Not now', action: 'approve-deny' },
+  ] : [
+    { label: TEMP_GRANTS.has(grant) ? 'Allow for 30 minutes' : 'Allow once', action: 'approve-once' },
     { label: 'Always allow', action: 'approve-always' },
     { label: 'Deny', action: 'approve-deny' },
-  ];
+  ]);
   const notices = [];
   const allAlerts = () => [...notices, ...[...approvals.values()].map((r) => ({ id: r.id, machine: r.peer.name, kind: 'approval', text: r.text, options: approvalOptions(r.grant), at: r.at })), ...(state.alerts ?? [])];
 
@@ -555,12 +600,31 @@ export async function startNode(o = {}) {
   // ---- serving: what this machine answers
   async function serve(ch, peer, msg) {
     const grants = { ...DEFAULT_GRANTS, ...(readPeers(o)[peer.id]?.grants ?? {}) };
+    for (const g of TEMP_GRANTS) if (hasTemp(peer, g)) grants[g] = true;
     const reply = (data) => ch.send({ t: 'res', rid: msg.rid, ok: true, data });
     const refuse = (why) => ch.send({ t: 'res', rid: msg.rid, ok: false, error: why });
     if (msg.op === 'ping') return reply({ name: me.name, at: Date.now() });
     if (msg.op === 'stats') { if (!grants.status) return refuse('status is not allowed'); return reply(await stats({ ollamaUrl, runs: o.runs?.() ?? 0, plans: (await o.plans?.()) ?? null })); }
     // What this machine lets the asker do, so its screen can say so before it tries.
-    if (msg.op === 'peer-info') return reply({ version: OX_VERSION, name: me.name, grants: Object.fromEntries(Object.entries(grants).map(([k, on]) => [k, !!on || hasTemp(peer, k)])), approvals: !!o.approvals });
+    if (msg.op === 'peer-info') return reply({ version: OX_VERSION, name: me.name, grants: Object.fromEntries(Object.entries(grants).map(([k, on]) => [k, !!on || hasTemp(peer, k)])), approvals: !!o.approvals, main: readMain(o) });
+    // Another computer asks to be main. Only this computer's owner can say yes.
+    if (msg.op === 'main-request') {
+      if (!o.approvals) return refuse(`${me.name} has nobody to ask: open OX there`);
+      if (readMain(o)?.id === peer.id) return reply({ main: true, already: true });
+      ch.send({ t: 'waiting', rid: msg.rid, why: `Waiting for ${me.name} to approve` });
+      const answer = await askOwner(peer, 'main', msg);
+      if (!answer.ok) return refuse(`${me.name} did not accept ${peer.name} as main: ${answer.why}`);
+      const m = acceptMain(peer.id, o);
+      note(`${peer.name} is now the main computer`);
+      return reply({ main: true, at: m.at });
+    }
+    // "I made you main." It can give nothing, so nothing needs asking. The one thing
+    // it changes here: what the old main was given for being main goes back.
+    if (msg.op === 'main-notice') {
+      const at = Number(msg.args?.at) || Date.now();
+      if (msg.args?.id === me.id && (readMain(o)?.at ?? 0) < at) { revokeMainGrants(peer.id, o); writeMain(me.id, at, o); note(`${peer.name} made this computer main`); }
+      return reply({ ok: true });
+    }
     // Not yet allowed, and the owner is here to ask: hold the request and ask.
     const wanted = APPROVABLE[msg.op];
     if (wanted && !grants[wanted]) {
@@ -783,6 +847,9 @@ export async function startNode(o = {}) {
         m.detector.beat(); m.error = null; m.lastSeen = Date.now();
         // An older ox does not know this one: it stays "unknown", not "refused".
         m.info = await ask(peer, 'peer-info', {}, { timeoutMs: 4000 }).catch(() => null);
+        // Newer news of which computer is main: the label only, never a permission.
+        const heard = m.info?.main;
+        if (heard?.id && heard.at > (readMain(o)?.at ?? 0)) writeMain(heard.id, heard.at, o);
       } catch (e) { m.error = e.message; m.rttMs = null; }
     }
     const list = [...state.machines.values()].map((m) => ({ ...m, phi: m.detector.phi() }));
@@ -912,6 +979,34 @@ export async function startNode(o = {}) {
       try { rows = fs.readFileSync(messagesFile(), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((r) => r.peer === peer.id); } catch {}
       return rows.slice(-limit);
     },
+    /**
+     * Choose the main computer. Another one: your say on this computer, so it takes
+     * effect here at once. This one: every other computer's owner is asked.
+     * → { main, results: [{ name, ok, why }] }
+     */
+    async setMain(ref = null) {
+      const peers = Object.values(readPeers(o)).filter((p) => !p.paused);
+      if (ref) {
+        const peer = findPeer(ref, o);
+        if (!peer) throw new Error(`no paired machine ${ref}`);
+        const m = acceptMain(peer.id, o);
+        // Best effort: it hears anyway on its next beat.
+        const told = await ask(peer, 'main-notice', { id: peer.id, at: m.at }, { timeoutMs: 5000 }).then(() => true, () => false);
+        return { main: { id: peer.id, name: peer.name }, results: [{ name: peer.name, ok: true, told }] };
+      }
+      const results = await Promise.all(peers.map((p) => ask(p, 'main-request', {}, { timeoutMs: 15_000 })
+        .then(() => ({ name: p.name, ok: true }), (e) => ({ name: p.name, ok: false, why: /unknown request/.test(e.message) ? `${p.name} runs an older ox; update it` : e.message }))));
+      if (peers.length && !results.some((r) => r.ok)) return { main: this.mainNow(), results };
+      const before = readMain(o);
+      if (before?.id && before.id !== me.id) revokeMainGrants(before.id, o);
+      writeMain(me.id, Date.now(), o);
+      return { main: { id: me.id, name: identity(o).name }, results };
+    },
+    mainNow() {
+      const m = readMain(o);
+      if (!m) return null;
+      return { id: m.id, self: m.id === me.id, name: m.id === me.id ? identity(o).name : (readPeers(o)[m.id]?.name ?? 'an unpaired computer'), at: m.at };
+    },
     /** Stop all traffic with a machine, both ways; the pairing stays. */
     disconnect(ref) {
       const peer = setPaused(ref, true, o);
@@ -949,6 +1044,7 @@ export async function startNode(o = {}) {
       const machines = handle.machines();
       return {
         me: { id: me.id, name: identity(o).name, port, proxyPort },
+        main: handle.mainNow(),
         self: state.self ?? null,
         peers: Object.values(readPeers(o)).map((p) => ({ id: p.id, name: p.name, addr: p.addr ?? null, grants: p.grants, paused: !!p.paused, pairedAt: p.pairedAt, live: machines.find((x) => x.id === p.id) ?? null })),
         alerts: allAlerts(),
@@ -973,7 +1069,7 @@ export async function startNode(o = {}) {
           return { done: `${pending.peer.name} is always allowed to ${GRANT_WORDS[pending.grant] ?? pending.grant}` };
         }
         if (option.action === 'approve-once') {
-          if (pending.grant === 'infer') tempGrants.set(pending.key, Date.now() + TEMP_GRANT_MS);
+          if (TEMP_GRANTS.has(pending.grant)) tempGrants.set(pending.key, Date.now() + TEMP_GRANT_MS);
           settle(pending, { ok: true, how: 'once' });
           return { done: `Allowed ${pending.peer.name}` };
         }

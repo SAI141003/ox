@@ -518,6 +518,18 @@ export function serveModelCatalog(env = process.env) {
   return { data, withheld };
 }
 
+const REMOTE_TEXT_MAX = 2 * 1024 * 1024;
+/** A text file from a paired computer, to open and edit. → { path, text, sha256, size } */
+async function readRemoteText(node, machine, target) {
+  const parts = [];
+  let got = 0;
+  const r = await node.ask(machine, 'pull', { path: target }, { timeoutMs: 30_000, onChunk: (c) => { got += c.length; if (got <= REMOTE_TEXT_MAX) parts.push(c); } });
+  if (got > REMOTE_TEXT_MAX) throw new Error('too large to open here (2 MB at most); use Get file');
+  const bytes = Buffer.concat(parts);
+  if (bytes.includes(0)) throw new Error('this is not a text file; use Get file');
+  return { path: target, text: bytes.toString('utf8'), size: got, sha256: createHash('sha256').update(bytes).digest('hex'), remoteSha: r.sha256 ?? null };
+}
+
 /** Your paired computers' models, so a chat can run on one: mesh:<machine>/<model> (src/bots.js). */
 export function meshCatalogEntries(machines = []) {
   const out = [];
@@ -2594,6 +2606,59 @@ const ROUTES = [
     if (!machine || !ticket) throw new Error('choose a machine and delivery ticket');
     return (await meshUp()).ask(machine, 'agent-delivery', { ticket }, { timeoutMs: 20_000 });
   }) },
+  // Everything working on every computer, this one first.
+  { method: 'GET', pattern: /^\/ox\/mesh\/everything\/?$/, handler: appRoute(async () => {
+    const A = await import('./agents-live.js');
+    const S = await import('./mesh-services.js');
+    const node = await meshUp();
+    const st = node.status();
+    const here = { id: st.me.id, name: st.me.name, self: true, up: true, sessions: A.liveAgents({ fresh: true }).map(S.sessionRow), stats: st.self ?? null, error: null };
+    const others = await Promise.all(st.peers.map(async (p) => {
+      const row = { id: p.id, name: p.name, self: false, paused: p.paused, addr: p.addr, up: !p.paused && !!p.live?.lastSeen && !p.live?.error, rttMs: p.live?.rttMs ?? null, version: p.live?.version ?? null, binary: !!p.live?.binary, stats: p.live?.stats ?? null, grants: p.grants, theirGrants: p.live?.theirGrants ?? null, linkError: p.live?.error ?? null, sessions: null, error: null };
+      if (!row.up) return row;
+      try { row.sessions = (await node.ask(p.id, 'agents', {}, { timeoutMs: 6000 })).sessions ?? []; }
+      catch (e) { row.error = e.message; row.needsAgents = /does not allow/.test(e.message); }
+      return row;
+    }));
+    return { main: st.main, machines: [here, ...others] };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/mesh\/main\/?$/, handler: appRoute(async (body) => (await meshUp()).setMain(body?.machine ? String(body.machine) : null)) },
+  { method: 'POST', pattern: /^\/ox\/mesh\/agents\/ask\/?$/, handler: appRoute(async (body) => (await meshUp()).ask(String(body?.machine ?? ''), 'agents-ask', {}, { timeoutMs: 15_000 })) },
+  { method: 'POST', pattern: /^\/ox\/mesh\/agent\/read\/?$/, handler: appRoute(async (body) => (await meshUp()).ask(String(body?.machine ?? ''), 'agent-read', { id: String(body?.id ?? '') }, { timeoutMs: 15_000 })) },
+  { method: 'POST', pattern: /^\/ox\/mesh\/ls\/?$/, handler: appRoute(async (body) => (await meshUp()).ask(String(body?.machine ?? ''), 'ls', { path: String(body?.path ?? '~') }, { timeoutMs: 15_000 })) },
+  // Open a text file from another computer. Saving is refused if it changed since.
+  { method: 'POST', pattern: /^\/ox\/mesh\/file\/read\/?$/, handler: appRoute(async (body) => {
+    const out = await readRemoteText(await meshUp(), String(body?.machine ?? ''), String(body?.path ?? ''));
+    return out;
+  }) },
+  { method: 'POST', pattern: /^\/ox\/mesh\/file\/save\/?$/, handler: appRoute(async (body) => {
+    const node = await meshUp();
+    const machine = String(body?.machine ?? ''), target = String(body?.path ?? ''), text = String(body?.text ?? '');
+    if (body?.base) {
+      const now = await readRemoteText(node, machine, target);
+      if (now.sha256 !== String(body.base)) throw new Error(`${target} changed on ${machine} since you opened it; nothing was saved. Open it again.`);
+    }
+    const S = await import('./mesh-services.js');
+    const bytes = Buffer.from(text, 'utf8');
+    const { Readable } = await import('node:stream');
+    const out = await S.pushStream(node, machine, Readable.from([bytes]), { path: target, size: bytes.length, overwrite: !!body?.base });
+    return { ...out, sha256: createHash('sha256').update(bytes).digest('hex') };
+  }) },
+  // Its screen, and input to it: each its own switch on that computer, never by approval or by being main.
+  { method: 'POST', pattern: /^\/ox\/mesh\/screen\/?$/, handler: appRoute(async (body) => {
+    const parts = [];
+    const r = await (await meshUp()).ask(String(body?.machine ?? ''), 'screen', {}, { timeoutMs: 30_000, onChunk: (c) => parts.push(c) });
+    return { mime: r.mime, points: r.points ?? null, data: Buffer.concat(parts).toString('base64') };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/mesh\/control\/?$/, handler: appRoute(async (body) => {
+    const machine = String(body?.machine ?? '');
+    const action = String(body?.action ?? '');
+    if (!['click', 'type', 'key', 'list'].includes(action)) throw new Error('action: click, type, key or list');
+    const args = action === 'click' ? { x: Number(body?.x), y: Number(body?.y), double: body?.double === true }
+      : action === 'type' ? { text: String(body?.text ?? '') }
+      : action === 'key' ? { key: String(body?.key ?? '') } : {};
+    return (await meshUp()).ask(machine, `control-${action}`, args, { timeoutMs: 30_000 });
+  }) },
   // A message to another of your computers. Answered only with that computer's receipt.
   { method: 'POST', pattern: /^\/ox\/mesh\/message\/?$/, handler: appRoute(async (body) => {
     const machine = String(body?.machine ?? '').trim();
@@ -3363,8 +3428,8 @@ async function handleRequest(req, res) {
     return;
   }
   // The build room (src/build-room.js) and ox's own terminal emulator (src/web/term.js).
-  if (req.method === 'GET' && (path === '/build' || path === '/files' || path === '/coworkers' || path === '/web/term.js')) {
-    const page = await readFile(new URL(path === '/build' ? './web/build.html' : path === '/files' ? './web/files.html' : path === '/coworkers' ? './web/coworkers.html' : './web/term.js', import.meta.url));
+  if (req.method === 'GET' && (path === '/build' || path === '/files' || path === '/coworkers' || path === '/machines' || path === '/web/term.js')) {
+    const page = await readFile(new URL(path === '/build' ? './web/build.html' : path === '/files' ? './web/files.html' : path === '/coworkers' ? './web/coworkers.html' : path === '/machines' ? './web/machines.html' : './web/term.js', import.meta.url));
     res.writeHead(200, { 'Content-Type': path === '/web/term.js' ? 'application/javascript; charset=utf-8' : 'text/html; charset=utf-8', 'Content-Length': page.length, 'Cache-Control': 'no-store',
       'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'", 'X-Content-Type-Options': 'nosniff' });
     res.end(page);

@@ -15,7 +15,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-export const OP_GRANT = Object.freeze({ 'push-begin': 'files-write', describe: 'status', agents: 'agents', 'agent-read': 'agents', 'agent-send': 'agents', 'agent-delivery': 'agents', ls: 'files', pull: 'files', push: 'files-write', 'dev-start': 'dev', 'dev-stop': 'dev', 'dev-list': 'dev', http: 'dev', screen: 'screen', 'control-list': 'control', 'control-click': 'control', 'control-type': 'control', 'control-key': 'control' });
+export const OP_GRANT = Object.freeze({ 'agents-ask': 'agents', 'push-begin': 'files-write', describe: 'status', agents: 'agents', 'agent-read': 'agents', 'agent-send': 'agents', 'agent-delivery': 'agents', ls: 'files', pull: 'files', push: 'files-write', 'dev-start': 'dev', 'dev-stop': 'dev', 'dev-list': 'dev', http: 'dev', screen: 'screen', 'control-list': 'control', 'control-click': 'control', 'control-type': 'control', 'control-key': 'control' });
 const CHUNK = 48 * 1024;
 const FAST_CHUNK = 512 * 1024;
 const PUSH_WINDOW = 8; // chunks on the wire at once
@@ -93,6 +93,9 @@ function writeInside(target, roots) {
   }
   return destination;
 }
+
+/** One session as another computer sees it: what it is doing, and nothing about its files. */
+export const sessionRow = (s) => ({ id: s.id, tool: s.tool, project: s.project, title: s.title ?? null, state: s.state, doing: s.doing, idleSec: s.idleSec, model: s.model, updated: s.updated ?? null });
 
 function dropTransfer(row) {
   clearTimeout(row.stalled);
@@ -234,15 +237,15 @@ export async function serveOp({ ch, peer, msg, grants, roots, home, ollamaUrl, m
     if (op === 'screen') {
       const data = Buffer.from(r.data ?? []);
       for (let at = 0; at < data.length; at += CHUNK) ch.send({ t: 'chunk', rid: msg.rid, data: b64(data.subarray(at, at + CHUNK)) });
-      reply({ mime: r.mime ?? 'image/png', size: data.length });
+      reply({ mime: r.mime ?? 'image/png', size: data.length, points: r.points ?? null });
     } else reply(r);
     return true;
   }
 
   if (op === 'describe') { reply(await describe({ ollamaUrl, home })); return true; }
-  if (op === 'agents') {
+  if (op === 'agents' || op === 'agents-ask') {
     const A = await import('./agents-live.js');
-    reply({ sessions: A.liveAgents({ fresh: true }).map((s) => ({ id: s.id, tool: s.tool, project: s.project, state: s.state, doing: s.doing, idleSec: s.idleSec, model: s.model })) });
+    reply({ sessions: A.liveAgents({ fresh: true }).map(sessionRow) });
     return true;
   }
   if (op === 'agent-read') { const A = await import('./agents-live.js'); reply(await A.sessionMessages(String(a.id ?? ''), { home })); return true; }

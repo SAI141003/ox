@@ -2372,7 +2372,7 @@
 
   // ---------- The side panel: per session, tabs for its team builds, a terminal, a browser, files
   // c.panel = { open, max, tabs: [{ k: 'team'|'term'|'browser'|'files', id, url?, path?, title? }], active }
-  const PANEL_KINDS = { team: ['team', 'Team'], term: ['terminal', 'Terminal'], browser: ['globe', 'Browser'], files: ['file', 'Files'], coworkers: ['office', 'Coworkers'] };
+  const PANEL_KINDS = { team: ['team', 'Team'], term: ['terminal', 'Terminal'], browser: ['globe', 'Browser'], files: ['file', 'Files'], coworkers: ['office', 'Coworkers'], machines: ['globe', 'Machines'] };
   const frames = new Map();   // session:tab → its element, kept while you switch tabs (a terminal stays alive)
   const sessionDir = (c) => c?.cwd || c?.buildDir || about?.cwd || '';
   function panelOf(c) {
@@ -2425,6 +2425,7 @@
       el.src = t.k === 'team' ? `/build?id=${encodeURIComponent(t.id)}&embed=1`
         : t.k === 'term' ? `/build?embed=1&termonly=1&cwd=${encodeURIComponent(sessionDir(c))}`
         : t.k === 'coworkers' ? '/coworkers'
+        : t.k === 'machines' ? '/machines'
         : `/files?root=${encodeURIComponent(sessionDir(c))}${t.path ? `&path=${encodeURIComponent(t.path)}` : ''}`;
     }
     $('sp-body').appendChild(el);
@@ -2463,7 +2464,7 @@
     const act = p.tabs[p.active];
     $('sp-rail').innerHTML = `<button data-rail="toggle" title="${open ? 'Close' : 'Open'} the panel (⌘\\)">${icon('dbl')}</button>`
       + ((c.builds ?? []).length ? `<button data-rail="team" class="${liveTeam ? 'live' : ''}${open && act?.k === 'team' ? ' on' : ''}" title="The team">${icon('team')}</button>` : '')
-      + [['browser', 'Browser (⇧⌘B)'], ['term', 'Terminal (⌘J)'], ['files', 'Files (⇧⌘F)'], ['coworkers', 'Coworkers: your team, their skills, what waits for you']].map(([k, ti]) => `<button data-rail="${k}" class="${open && act?.k === k ? 'on' : ''}" title="${ti}">${icon(PANEL_KINDS[k][0])}</button>`).join('');
+      + [['browser', 'Browser (⇧⌘B)'], ['term', 'Terminal (⌘J)'], ['files', 'Files (⇧⌘F)'], ['coworkers', 'Coworkers: your team, their skills, what waits for you'], ['machines', 'Machines: what is working on each of your computers']].map(([k, ti]) => `<button data-rail="${k}" class="${open && act?.k === k ? 'on' : ''}" title="${ti}">${icon(PANEL_KINDS[k][0])}</button>`).join('');
     $('sp-rail').querySelector('[data-rail="toggle"] svg').style.transform = open ? 'scaleX(-1)' : '';
     renderSideTabs();
     if (!open) return;
@@ -2495,7 +2496,7 @@
   // The team's card in the chat opens its tab.
   document.addEventListener('click', (e) => { const b = e.target.closest('[data-open-team]'); if (b) openTab('team', { id: b.dataset.openTeam, title: (convo()?.builds ?? []).find((x) => x.id === b.dataset.openTeam)?.task }); });
   // "+": a small launcher with a filter: a link opens the browser, a path opens the file.
-  const SP_MENU = [['files', 'File', '⇧⌘F'], ['term', 'Terminal', '⌘J'], ['browser', 'Browser', '⇧⌘B'], ['coworkers', 'Coworkers', '']];
+  const SP_MENU = [['files', 'File', '⇧⌘F'], ['term', 'Terminal', '⌘J'], ['browser', 'Browser', '⇧⌘B'], ['coworkers', 'Coworkers', ''], ['machines', 'Machines', '']];
   function openSpMenu() {
     const m = $('sp-menu');
     m.innerHTML = `<input id="sp-q" placeholder="Open any file, link, …" aria-label="Open">` + SP_MENU.map(([k, n, key]) => `<button data-open="${k}">${icon(PANEL_KINDS[k][0])}${n}<span class="k">${key}</span></button>`).join('');
@@ -5180,7 +5181,7 @@ files: [src/billing/**]
           <div class="sblock"><div class="section-cap cap">Your paired computers</div>
             ${M.me ? `<div class="chipline"><span class="badge ok">${esc(M.me.name || 'This Mac')}</span><span class="badge">${M.running ? 'mesh node running' : 'node starts with the Ox app'}</span></div>` : '<p class="small muted">This Mac has not joined a mesh yet.</p>'}
             ${peers.length ? `<div class="cards" style="margin-top:10px">${peers.map((p) => `<div class="card" data-od-card="${esc(p.id)}"><span class="dot ${peerUp(p) ? 'ok' : ''}"></span><span class="t"><div class="n">${esc(p.name)}</div><div class="d" data-l="link">${esc(linkLine(p))}</div><div class="d" data-l="mine">You allow it: ${esc(grantWords(p.grants))}</div><div class="d" data-l="theirs">It allows you: ${esc(theirWords(p))}</div></span><button class="btn ghost" data-od-link="${esc(p.name)}" data-paused="${p.paused ? '1' : ''}">${p.paused ? 'Reconnect' : 'Disconnect'}</button>${p.paused ? '' : `<button class="btn ghost" data-od-peer="${esc(p.name)}">Manage</button>`}</div>`).join('')}</div>` : '<div class="box muted small" style="margin-top:10px">No other computers are paired. Pairing begins with a short-lived code and starts with status-only access.</div>'}
-            <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="btn" id="od-invite">Pair another computer</button><button class="btn ghost" id="od-office">Open Office</button><span class="small muted" id="od-invite-state"></span></div>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="btn" id="od-invite">Pair another computer</button><button class="btn ghost" id="od-machines">Open Machines</button><button class="btn ghost" id="od-office">Open Office</button><span class="small muted" id="od-invite-state"></span></div>
             <div class="section-cap cap" style="margin-top:16px">Have a code from another computer?</div>
             <form id="od-join-form" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap" autocomplete="off">
               <input class="field mono" id="od-code" placeholder="OX-K7P3-Q9XA-2MWD" aria-label="Pairing code" maxlength="20" spellcheck="false" style="flex:1 1 200px;min-width:0;text-transform:uppercase">
@@ -5213,6 +5214,7 @@ files: [src/billing/**]
           } catch {}
         }, 4000);
         $('od-local').onclick = () => { sec = 'local'; renderSnav(); renderSection(); };
+        $('od-machines').onclick = () => { closeSettings(); document.querySelector('[data-rail="machines"]')?.click(); };
         $('od-office').onclick = () => { closeSettings(); document.querySelector('[data-view="office"]')?.click(); };
         $('od-invite').onclick = async () => {
           const b = $('od-invite'); b.disabled = true; $('od-invite-state').textContent = 'Making a one-time code…';
@@ -5262,7 +5264,7 @@ files: [src/billing/**]
             const grantRow = (g, label, why) => `<label class="small" style="display:flex;gap:8px;align-items:flex-start;margin-top:8px"><input type="checkbox" data-od-grant="${g}" ${granted[g] ? 'checked' : ''}><span><b>${label}</b><br><span class="muted">${why}</span></span></label>`;
             box.insertAdjacentHTML('afterbegin', `<div class="section-cap cap" style="margin-top:18px">${esc(machine)}</div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost" id="od-test">Test connection</button><button class="btn ghost" id="od-remove">Remove this computer</button><span class="small muted" id="od-test-state" role="status" aria-live="polite"></span></div>
               <div class="section-cap cap" style="margin-top:14px">Messages</div><div id="od-talk" style="max-height:220px;overflow:auto;padding:6px 0"></div><form id="od-say-form" style="display:flex;gap:8px;margin-top:6px" autocomplete="off"><input class="field" id="od-say" placeholder="Message to ${esc(machine)}" maxlength="8000" aria-label="Message to ${esc(machine)}" style="flex:1;min-width:0"><button class="btn primary" id="od-say-send" type="submit">Send</button></form><div class="small muted" id="od-say-state" role="status" aria-live="polite" style="margin-top:4px"></div>
-              <div class="section-cap cap" style="margin-top:14px">Always allowed on this Mac</div><p class="small muted" style="margin:0">Anything off here asks you each time, with Allow once, Always or Deny.</p>${grantRow('message', 'Messages', `${esc(machine)} can send you messages.`)}${grantRow('infer', 'Answer chats', `${esc(machine)} can chat with this Mac’s models.`)}${grantRow('tasks', 'Run tasks', `${esc(machine)} can start ox tasks here, under this Mac’s approvals.`)}${grantRow('agents', 'Coding sessions', `${esc(machine)} can see this Mac’s coding sessions and send them messages.`)}${grantRow('files', 'Read files', `${esc(machine)} can read files from the folders you share.`)}${grantRow('files-write', 'Copy files here', `${esc(machine)} can put files in the folders you share.`)}<p class="small muted" style="margin-top:8px">${esc(machine)} decides the same for this Mac on its own screen. Its models appear in the model list while it is connected.</p>`);
+              <div class="section-cap cap" style="margin-top:14px">Always allowed on this Mac</div><p class="small muted" style="margin:0">Anything off here asks you each time, with Allow once, Always or Deny.</p>${grantRow('message', 'Messages', `${esc(machine)} can send you messages.`)}${grantRow('infer', 'Answer chats', `${esc(machine)} can chat with this Mac’s models.`)}${grantRow('tasks', 'Run tasks', `${esc(machine)} can start ox tasks here, under this Mac’s approvals.`)}${grantRow('agents', 'Coding sessions', `${esc(machine)} can see this Mac’s coding sessions and send them messages.`)}${grantRow('files', 'Read files', `${esc(machine)} can read files from the folders you share.`)}${grantRow('files-write', 'Copy files here', `${esc(machine)} can put files in the folders you share.`)}${grantRow('screen', 'See this screen', `${esc(machine)} can look at this Mac’s screen. Never asked for or given any other way.`)}${grantRow('control', 'Click and type here', `${esc(machine)} can click and type on this Mac. Never asked for or given any other way.`)}<p class="small muted" style="margin-top:8px">${esc(machine)} decides the same for this Mac on its own screen. Its models appear in the model list while it is connected.</p>`);
             box.querySelectorAll('[data-od-grant]').forEach((c) => (c.onchange = async () => {
               const on = c.checked; c.disabled = true;
               try { await postJson(`/ox/mesh/${on ? 'allow' : 'deny'}`, { machine, grant: c.dataset.odGrant }); toast(on ? 'Allowed' : 'Turned off'); }
