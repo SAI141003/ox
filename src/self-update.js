@@ -13,6 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import * as D from './download-update.js';
 
 export const OX_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const HOME_REPO = /^(?:https:\/\/github\.com\/|git@github\.com:)SAI141003\/ox(?:\.git)?\/?$/i;
@@ -22,7 +23,7 @@ const CHECK_EVERY_MS = 6 * 3600_000;
 const TELL_EVERY_MS = 24 * 3600_000;
 
 export function readState() { try { return JSON.parse(fs.readFileSync(stateFile(), 'utf8')); } catch { return { allowed: null }; } }
-function writeState(s) { fs.mkdirSync(path.dirname(stateFile()), { recursive: true }); fs.writeFileSync(stateFile(), JSON.stringify(s, null, 2)); return s; }
+export function writeState(s) { fs.mkdirSync(path.dirname(stateFile()), { recursive: true }); fs.writeFileSync(stateFile(), JSON.stringify(s, null, 2)); return s; }
 
 /** Your answer to "may ox check GitHub for new versions?" */
 export function setAllowed(yes) {
@@ -63,6 +64,38 @@ export function check({ root = OX_ROOT, now = Date.now(), force = false, trusted
   const log = git(root, ['log', '--format=%h %s', `HEAD..${src.upstream}`]).stdout.trim();
   const incoming = log ? log.split('\n') : [];
   return writeState({ ...s, checkedAt: now, problem: null, available: incoming.length ? { count: incoming.length, upstream: src.upstream, subjects: incoming.slice(0, 20) } : null });
+}
+
+/**
+ * check() for any copy: a git checkout fetches its branch; a copy installed from
+ * a release asks GitHub for the newest release (src/download-update.js).
+ */
+export async function checkAny({ root = OX_ROOT, now = Date.now(), force = false, trusted = HOME_REPO, fetchImpl } = {}) {
+  if (!D.isDownloadCopy(root)) return check({ root, now, force, trusted });
+  const s = readState();
+  if (s.allowed !== true) return { ...s, ask: s.allowed == null };
+  if (!force && s.checkedAt && now - s.checkedAt < CHECK_EVERY_MS) return s;
+  try {
+    const r = await D.checkDownload({ root, fetchImpl });
+    return writeState({
+      ...s, checkedAt: now, problem: null, current: r.current, latest: r.version, upToDate: r.upToDate,
+      available: r.upToDate ? null : { count: 1, upstream: r.tag, subjects: [`OX ${r.tag} (you have ${r.current ?? 'an older version'})`] },
+    });
+  } catch (e) {
+    return writeState({ ...s, checkedAt: now, problem: `could not check GitHub: ${e.message}` });
+  }
+}
+
+/** applyWithProgress() for any copy (see checkAny). */
+export async function applyAnyWithProgress(opts = {}) {
+  if (!D.isDownloadCopy(opts.root ?? OX_ROOT)) return applyWithProgress(opts);
+  const steps = [];
+  const put = (extra) => writeState({ ...readState(), applying: { steps, at: Date.now(), done: false, ...extra } });
+  const r = await D.applyDownload({ root: opts.root ?? OX_ROOT, say: (t) => { steps.push(t); put(); }, ...opts });
+  if (r.ok && !r.upToDate) writeState({ ...readState(), available: null, updatedAt: Date.now(), updatedTo: r.to, current: r.to, upToDate: true });
+  if (r.ok && r.upToDate) writeState({ ...readState(), available: null, upToDate: true, current: r.to });
+  put({ done: true, ok: r.ok, why: r.why ?? null, upToDate: !!r.upToDate });
+  return r;
 }
 
 /** What the notch should show now: 'ask' once, 'update' at most once a day, or nothing. */

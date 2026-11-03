@@ -2499,7 +2499,7 @@ const ROUTES = [
   // Needs you (src/needs-you.js): what only you can move, across GitHub, ox and Mail, with links.
   { method: 'GET', pattern: /^\/ox\/needs\/?$/, handler: appRoute(async () => (await import('./needs-you.js')).needsYou()) },
   // ox updates itself from the notch (src/self-update.js): asked once, at most one notice a day.
-  { method: 'GET', pattern: /^\/ox\/update\/?$/, handler: appRoute(async () => { const U = await import('./self-update.js'); const st = U.readState(); return { notice: U.notice(), allowed: st.allowed ?? null, autoApply: st.autoApply === true, available: st.available ?? null, problem: st.problem ?? null, updatedTo: st.updatedTo ?? null, applying: st.applying ?? null }; }) },
+  { method: 'GET', pattern: /^\/ox\/update\/?$/, handler: appRoute(async () => { const U = await import('./self-update.js'); const st = U.readState(); return { notice: U.notice(), allowed: st.allowed ?? null, autoApply: st.autoApply === true, available: st.available ?? null, problem: st.problem ?? null, updatedTo: st.updatedTo ?? null, applying: st.applying ?? null, current: st.current ?? null, upToDate: st.upToDate === true }; }) },
   { method: 'POST', pattern: /^\/ox\/update\/?$/, handler: appRoute(async (body) => {
     const U = await import('./self-update.js');
     const a = String(body?.action ?? '');

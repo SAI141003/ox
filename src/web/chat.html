@@ -5759,6 +5759,7 @@ files: [src/billing/**]
           : updateInfo.allowed == null ? 'Update checks are off until you choose to enable them.'
           : updateInfo.allowed === false ? 'GitHub update checks are off.'
           : updateInfo.available?.count ? `${updateInfo.available.count} update${updateInfo.available.count === 1 ? '' : 's'} ready from ${updateInfo.available.upstream}.`
+          : updateInfo.upToDate && updateInfo.current ? `You have the newest version (${updateInfo.current}).`
           : updateInfo.updatedTo ? `Up to date — now on ${updateInfo.updatedTo}.`
           : 'Update checks are on. Check GitHub whenever you want.';
         const updateActions = !updateInfo ? ''

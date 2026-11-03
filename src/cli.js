@@ -6817,15 +6817,16 @@ async function runSubcommand(cmd, args) {
       // The notch's self-update (src/self-update.js) runs these in the background.
       if (args.includes('--notch-check')) {
         const U = await import('./self-update.js');
-        const st = U.check({ force: true });
+        const st = await U.checkAny({ force: true });
         // This only runs after the person explicitly selected Auto-update in
-        // the Island. applyWithProgress still verifies the signed source,
+        // the Island. applyAnyWithProgress still verifies the signed source,
         // requires a fast-forward, validates changed JS, and rolls back on a
-        // failed validation.
-        if (st.autoApply === true && st.available?.count) U.applyWithProgress();
+        // failed validation (a release download is checked against its
+        // checksum and GitHub's attestation).
+        if (st.autoApply === true && st.available?.count) await U.applyAnyWithProgress();
         return;
       }
-      if (args.includes('--notch-apply')) { const r = (await import('./self-update.js')).applyWithProgress(); if (!r.ok) process.exitCode = 1; return; }
+      if (args.includes('--notch-apply')) { const r = await (await import('./self-update.js')).applyAnyWithProgress(); if (!r.ok) process.exitCode = 1; return; }
       // Keep the terminal, the app and the Island on one update policy. The
       // older evolve updater required a configured tracking branch, while the
       // app correctly falls back to origin/<current-branch>. More importantly,
