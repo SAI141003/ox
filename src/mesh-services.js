@@ -8,14 +8,20 @@
 //   files-write safe, separately granted small-file pushes
 //
 // Every request is written to ~/.ox/mesh/audit.jsonl on this machine.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-export const OP_GRANT = Object.freeze({ describe: 'status', agents: 'agents', 'agent-read': 'agents', 'agent-send': 'agents', 'agent-delivery': 'agents', ls: 'files', pull: 'files', push: 'files-write', 'dev-start': 'dev', 'dev-stop': 'dev', 'dev-list': 'dev', http: 'dev', screen: 'screen', 'control-list': 'control', 'control-click': 'control', 'control-type': 'control', 'control-key': 'control' });
+export const OP_GRANT = Object.freeze({ 'push-begin': 'files-write', describe: 'status', agents: 'agents', 'agent-read': 'agents', 'agent-send': 'agents', 'agent-delivery': 'agents', ls: 'files', pull: 'files', push: 'files-write', 'dev-start': 'dev', 'dev-stop': 'dev', 'dev-list': 'dev', http: 'dev', screen: 'screen', 'control-list': 'control', 'control-click': 'control', 'control-type': 'control', 'control-key': 'control' });
 const CHUNK = 48 * 1024;
+const FAST_CHUNK = 512 * 1024;
+const PUSH_WINDOW = 8; // chunks on the wire at once
+const MAX_STREAM_BYTES = 100 * 1024 * 1024 * 1024;
+const STALLED_MS = 60_000;
+const transfers = new Map(); // id -> an upload in progress
 const MAX_PUSH_BYTES = 8 * 1024 * 1024;
 const b64 = (b) => Buffer.from(b).toString('base64');
 const expand = (p) => String(p ?? '').replace(/^~(?=$|\/)/, os.homedir());
@@ -88,9 +94,126 @@ function writeInside(target, roots) {
   return destination;
 }
 
+function dropTransfer(row) {
+  clearTimeout(row.stalled);
+  transfers.delete(row.id);
+  try { fs.closeSync(row.fd); } catch {}
+  try { fs.rmSync(row.temp, { force: true }); } catch {}
+}
+
+function pushStep(ch, peer, msg, home) {
+  const a = msg.args ?? {};
+  const reply = (data) => ch.send({ t: 'res', rid: msg.rid, ok: true, data });
+  const refuse = (why) => ch.send({ t: 'res', rid: msg.rid, ok: false, error: why });
+  const row = transfers.get(String(a.id ?? ''));
+  if (!row || row.peer !== peer.id) return refuse('that upload is not open here');
+  row.stalled.refresh?.();
+  if (msg.op === 'push-abort') { dropTransfer(row); return reply({ aborted: true }); }
+  if (msg.op === 'push-chunk') {
+    const bytes = Buffer.isBuffer(msg.data) ? msg.data : Buffer.from(String(msg.data ?? ''), 'base64');
+    if (row.got + bytes.length > row.size) { dropTransfer(row); return refuse('more bytes arrived than the file has'); }
+    try { fs.writeSync(row.fd, bytes); } catch (e) { dropTransfer(row); return refuse(`upload failed: ${e.message}`); }
+    row.hash.update(bytes);
+    row.got += bytes.length;
+    return reply({ got: row.got });
+  }
+  const sha256 = row.hash.digest('hex');
+  if (row.got !== row.size || sha256 !== String(a.sha256 ?? '')) {
+    dropTransfer(row);
+    return refuse(`the file did not arrive intact (${row.got} of ${row.size} bytes); nothing was written`);
+  }
+  clearTimeout(row.stalled);
+  transfers.delete(row.id);
+  try {
+    fs.closeSync(row.fd);
+    fs.renameSync(row.temp, row.destination);
+  } catch (e) {
+    try { fs.rmSync(row.temp, { force: true }); } catch {}
+    return refuse(`upload failed: ${e.message}`);
+  }
+  audit(home, { from: peer.name, peer: peer.id, op: 'push', detail: `${row.destination} (${row.size} bytes)` });
+  return reply({ ok: true, path: row.destination, size: row.size, sha256, overwritten: row.overwrite });
+}
+
+/**
+ * Send a stream of bytes to a paired machine: chunks on the wire at once, each
+ * acknowledged, the whole checked by SHA-256 before it takes the file's name.
+ * An older ox answers "unknown request": small files go the old way, in one piece.
+ */
+export async function pushStream(node, machine, source, { path: remote, size, overwrite = false, onProgress = () => {}, onWaiting } = {}) {
+  let open;
+  try {
+    open = await node.ask(machine, 'push-begin', { path: remote, size, overwrite }, { timeoutMs: 30_000, onWaiting });
+  } catch (e) {
+    if (!/unknown request/.test(e.message)) throw e;
+    if (size < 1 || size > MAX_PUSH_BYTES) throw new Error(`${machine} runs an older ox that only takes files up to ${MAX_PUSH_BYTES / 1024 / 1024} MB; update ox there`);
+    const parts = [];
+    for await (const c of source) parts.push(c);
+    return node.ask(machine, 'push', { path: remote, data: Buffer.concat(parts).toString('base64'), overwrite }, { timeoutMs: 60_000, onWaiting });
+  }
+  // Timed from here: the wait for an approval above is not transfer time.
+  const began = Date.now();
+  const hash = crypto.createHash('sha256');
+  const inFlight = new Set();
+  let sent = 0, failure = null;
+  const flush = async (bytes) => {
+    hash.update(bytes);
+    const p = node.ask(machine, 'push-chunk', { id: open.id }, { timeoutMs: STALLED_MS, bytes })
+      .then(() => { inFlight.delete(p); }, (e) => { inFlight.delete(p); failure ??= e; });
+    inFlight.add(p);
+    sent += bytes.length;
+    onProgress(sent, size);
+    await node.whenReady(machine);
+    while (inFlight.size >= (open.window ?? PUSH_WINDOW)) await Promise.race(inFlight);
+    if (failure) throw failure;
+  };
+  try {
+    let held = [], heldBytes = 0;
+    const room = open.chunk ?? FAST_CHUNK;
+    for await (const piece of source) {
+      let c = Buffer.from(piece);
+      while (c.length) {
+        const take = c.subarray(0, room - heldBytes);
+        held.push(take); heldBytes += take.length; c = c.subarray(take.length);
+        if (heldBytes === room) { await flush(Buffer.concat(held)); held = []; heldBytes = 0; }
+      }
+    }
+    if (heldBytes) await flush(Buffer.concat(held));
+    await Promise.all(inFlight);
+    if (failure) throw failure;
+    const done = await node.ask(machine, 'push-end', { id: open.id, sha256: hash.digest('hex') }, { timeoutMs: 120_000 });
+    return { ...done, seconds: (Date.now() - began) / 1000 };
+  } catch (e) {
+    await node.ask(machine, 'push-abort', { id: open.id }, { timeoutMs: 5000 }).catch(() => {});
+    throw e;
+  }
+}
+
+/** Fetch a file from a paired machine into `dest`: a part file until its SHA-256 checks, then renamed. */
+export async function pullFile(node, machine, remote, dest, { overwrite = false, onProgress = () => {}, onWaiting } = {}) {
+  if (fs.existsSync(dest) && !overwrite) throw new Error(`${dest} exists`);
+  const tmp = `${dest}.ox-part`;
+  const fd = fs.openSync(tmp, 'w', 0o600);
+  const hash = crypto.createHash('sha256');
+  let got = 0, began = null;
+  try {
+    const r = await node.ask(machine, 'pull', { path: remote }, { timeoutMs: STALLED_MS, onWaiting, onChunk: (b) => { began ??= Date.now(); fs.writeSync(fd, b); hash.update(b); got += b.length; onProgress(got); } });
+    fs.closeSync(fd);
+    if (got !== r.size || (r.sha256 && r.sha256 !== hash.digest('hex'))) throw new Error(`the file did not arrive intact (${got} of ${r.size} bytes)`);
+    fs.renameSync(tmp, dest);
+    return { path: dest, size: got, sha256: r.sha256 ?? null, seconds: began ? (Date.now() - began) / 1000 : 0 };
+  } catch (e) {
+    try { fs.closeSync(fd); } catch {}
+    fs.rmSync(tmp, { force: true });
+    throw e;
+  }
+}
+
 /** One read-only request from a paired machine. Returns true when `msg.op` is one of these. */
 export async function serveOp({ ch, peer, msg, grants, roots, home, ollamaUrl, meName, remoteControl = null, agentRun = null }) {
   const op = msg.op;
+  // The rest of an upload already allowed at push-begin: bound to that machine and that id.
+  if (op === 'push-chunk' || op === 'push-end' || op === 'push-abort') { pushStep(ch, peer, msg, home); return true; }
   const need = OP_GRANT[op];
   if (!need) return false;
   const reply = (data) => ch.send({ t: 'res', rid: msg.rid, ok: true, data });
@@ -166,10 +289,36 @@ export async function serveOp({ ch, peer, msg, grants, roots, home, ollamaUrl, m
     if (!f) { refuse(`${a.path} is outside the folders ${meName} shares, or does not exist`); return true; }
     const st = fs.statSync(f);
     if (st.isDirectory()) { refuse('copy one file at a time (a folder: copy its files)'); return true; }
-    const rs = fs.createReadStream(f, { highWaterMark: CHUNK });
-    rs.on('data', (d) => ch.send({ t: 'chunk', rid: msg.rid, data: b64(d) }));
-    rs.on('end', () => reply({ size: st.size, name: path.basename(f) }));
+    const hash = crypto.createHash('sha256');
+    const rs = fs.createReadStream(f, { highWaterMark: ch.binary ? FAST_CHUNK : CHUNK });
+    // Never faster than the connection takes it: a large file used to sit in memory.
+    rs.on('data', (d) => {
+      hash.update(d);
+      if (ch.sendBytes({ t: 'chunk', rid: msg.rid }, d) === false) { rs.pause(); ch.ready().then(() => rs.resume()); }
+    });
+    rs.on('end', () => reply({ size: st.size, name: path.basename(f), sha256: hash.digest('hex') }));
     rs.on('error', (e) => refuse(e.message));
+    return true;
+  }
+  if (op === 'push-begin') {
+    const size = Number(a.size);
+    if (!Number.isSafeInteger(size) || size < 0 || size > MAX_STREAM_BYTES) { refuse('that file size is not allowed'); return true; }
+    const destination = writeInside(a.path, roots);
+    if (!destination) { refuse(`${a.path ?? '(no destination)'} is not a regular file location inside folders ${meName} shares`); return true; }
+    if (fs.existsSync(destination) && !a.overwrite) { refuse(`${destination} already exists; explicit overwrite is required`); return true; }
+    try {
+      const free = fs.statfsSync(path.dirname(destination));
+      if (free.bavail * free.bsize < size) { refuse(`${meName} does not have room for this file`); return true; }
+    } catch {}
+    const id = crypto.randomBytes(8).toString('hex');
+    const temp = path.join(path.dirname(destination), `.${path.basename(destination)}.ox-upload-${id}`);
+    let fd;
+    try { fd = fs.openSync(temp, 'wx', 0o600); } catch (e) { refuse(`upload failed: ${e.message}`); return true; }
+    const row = { id, peer: peer.id, fd, temp, destination, size, got: 0, hash: crypto.createHash('sha256'), overwrite: !!a.overwrite };
+    row.stalled = setTimeout(() => dropTransfer(row), STALLED_MS);
+    row.stalled.unref?.();
+    transfers.set(id, row);
+    reply({ id, chunk: FAST_CHUNK, window: PUSH_WINDOW });
     return true;
   }
   if (op === 'push') {

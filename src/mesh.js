@@ -23,6 +23,17 @@ export const PORT = 47870;          // node listener (TCP)
 export const BEACON_PORT = 47871;   // LAN discovery (UDP broadcast)
 export const PROXY_PORT = 47872;    // this machine's local endpoint for mesh model calls
 const HEARTBEAT_MS = 5000;
+const BINARY_FRAME = 0; // never the first byte of a text line
+const MAX_FRAME = 32 * 1024 * 1024;
+const APPROVAL_WAIT_MS = 60_000;
+const TEMP_GRANT_MS = 30 * 60_000;
+const DENIED_QUIET_MS = 60_000;
+const OX_VERSION = (() => { try { return JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version; } catch { return null; } })();
+// What may ask its owner instead of being refused. Never screen or control (a
+// separate, deliberate choice), and never the requests a machine makes on its own
+// timer (describe, agents), which would ask every few seconds.
+const APPROVABLE = Object.freeze({ message: 'message', infer: 'infer', run: 'tasks', 'agent-send': 'agents', 'agent-read': 'agents', push: 'files-write', 'push-begin': 'files-write', pull: 'files', ls: 'files' });
+const GRANT_WORDS = Object.freeze({ message: 'send you a message', infer: 'chat with this computer\'s models', tasks: 'run an ox task here', agents: 'read or message a coding session here', 'files-write': 'copy a file here', files: 'read a file here' });
 const INVITE_MS = 10 * 60_000;
 const VERSION = 1;
 
@@ -87,12 +98,12 @@ export function setName(name, o = {}) {
 
 // `files` remains read-only. A peer must receive a second, explicit grant
 // before it can write anything into a shared folder.
-const DEFAULT_GRANTS = { status: true, infer: false, tasks: false, files: false, 'files-write': false, agents: false, dev: false, screen: false, control: false };
+const DEFAULT_GRANTS = { status: true, message: false, infer: false, tasks: false, files: false, 'files-write': false, agents: false, dev: false, screen: false, control: false };
 export const GRANTS = Object.keys(DEFAULT_GRANTS);
 // Presets for `ox mesh allow <machine> <preset>`.
 // Screen and control are deliberately not part of `full`: the controlled Mac's
 // owner must opt in to each, or use the explicit desktop preset.
-export const PRESETS = Object.freeze({ viewer: ['status'], helper: ['status', 'infer', 'tasks'], full: ['status', 'infer', 'tasks', 'files', 'agents', 'dev'], desktop: ['status', 'screen', 'control'] });
+export const PRESETS = Object.freeze({ viewer: ['status'], helper: ['status', 'message', 'infer', 'tasks'], full: ['status', 'message', 'infer', 'tasks', 'files', 'agents', 'dev'], desktop: ['status', 'screen', 'control'] });
 
 export function readPeers(o = {}) {
   try { return JSON.parse(fs.readFileSync(path.join(dir(o), 'peers.json'), 'utf8')).peers ?? {}; } catch { return {}; }
@@ -107,7 +118,8 @@ function writePeers(peers, o = {}) {
 function pin(peer, o = {}) {
   const peers = readPeers(o);
   const old = peers[peer.id];
-  peers[peer.id] = { grants: { ...DEFAULT_GRANTS }, ...old, ...peer, pairedAt: old?.pairedAt ?? new Date().toISOString() };
+  // Pairing again is a new start: a Disconnect from before does not carry over.
+  peers[peer.id] = { grants: { ...DEFAULT_GRANTS }, ...old, ...peer, paused: false, pairedAt: old?.pairedAt ?? new Date().toISOString() };
   writePeers(peers, o);
   return peers[peer.id];
 }
@@ -153,6 +165,16 @@ export function lockdown(o = {}) {
   return Object.keys(peers).length;
 }
 
+/** Disconnect (keeps the pairing) or reconnect. Nothing passes either way while it is set. */
+export function setPaused(ref, on, o = {}) {
+  const p = findPeer(ref, o);
+  if (!p) throw new Error(`no paired machine ${ref}`);
+  const peers = readPeers(o);
+  peers[p.id].paused = !!on;
+  writePeers(peers, o);
+  return peers[p.id];
+}
+
 export function forget(ref, o = {}) {
   const p = findPeer(ref, o);
   if (!p) throw new Error(`no paired machine ${ref}`);
@@ -194,7 +216,35 @@ class Sealed {
     const iv = this.nonce(this.sendN++);
     const c = crypto.createCipheriv('aes-256-gcm', this.sendKey, iv);
     const ct = Buffer.concat([c.update(JSON.stringify(obj)), c.final()]);
-    this.sock.write(`${b64(Buffer.concat([ct, c.getAuthTag()]))}\n`);
+    return this.sock.write(`${b64(Buffer.concat([ct, c.getAuthTag()]))}\n`);
+  }
+  /**
+   * A message with bytes, as `data`. Between two machines that both offered it in
+   * their hello the bytes travel raw; base64 twice over cost 78% more on the wire.
+   * The hello is not signed, so a tamperer could only make a transfer slower.
+   * → false when the socket is full: wait for ready() before sending more.
+   */
+  sendBytes(obj, bytes) {
+    if (!this.binary) return this.send({ ...obj, data: b64(bytes) });
+    const head = Buffer.from(JSON.stringify(obj));
+    const size = Buffer.alloc(4); size.writeUInt32BE(head.length);
+    const iv = this.nonce(this.sendN++);
+    const c = crypto.createCipheriv('aes-256-gcm', this.sendKey, iv);
+    const parts = [c.update(size), c.update(head), c.update(bytes)];
+    c.final();
+    const body = Buffer.concat([...parts, c.getAuthTag()]);
+    const frame = Buffer.alloc(5); frame[0] = BINARY_FRAME; frame.writeUInt32BE(body.length, 1);
+    this.sock.write(frame);
+    return this.sock.write(body);
+  }
+  ready() { return this.sock.writableNeedDrain ? new Promise((r) => { const done = () => { this.sock.off('drain', done); this.sock.off('close', done); r(); }; this.sock.once('drain', done); this.sock.once('close', done); }) : Promise.resolve(); }
+  openBytes(body) {
+    const iv = this.nonce(this.recvN++);
+    const d = crypto.createDecipheriv('aes-256-gcm', this.recvKey, iv);
+    d.setAuthTag(body.subarray(-16));
+    const plain = Buffer.concat([d.update(body.subarray(0, -16)), d.final()]);
+    const n = plain.readUInt32BE(0);
+    return { ...JSON.parse(plain.subarray(4, 4 + n).toString('utf8')), data: plain.subarray(4 + n) };
   }
   open(line) {
     const buf = unb64(line);
@@ -205,13 +255,29 @@ class Sealed {
   }
 }
 
-function lines(sock, onLine) {
-  let buf = '';
+/** Frames off a socket: text lines, and (once both sides offered them) raw byte frames. */
+function lines(sock, onLine, onBytes = null) {
+  let buf = Buffer.alloc(0);
   sock.on('data', (d) => {
-    buf += d;
-    if (buf.length > 32 * 1024 * 1024) { sock.destroy(); return; }
-    let i;
-    while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); if (l) onLine(l); }
+    buf = buf.length ? Buffer.concat([buf, d]) : d;
+    if (buf.length > MAX_FRAME) { sock.destroy(); return; }
+    while (buf.length) {
+      if (buf[0] === BINARY_FRAME) {
+        if (!onBytes?.() || buf.length < 5) { if (!onBytes?.()) sock.destroy(); return; }
+        const n = buf.readUInt32BE(1);
+        if (n > MAX_FRAME) { sock.destroy(); return; }
+        if (buf.length < 5 + n) return;
+        const body = buf.subarray(5, 5 + n);
+        buf = buf.subarray(5 + n);
+        onBytes()(body);
+        continue;
+      }
+      const i = buf.indexOf(10);
+      if (i < 0) return;
+      const l = buf.toString('utf8', 0, i);
+      buf = buf.subarray(i + 1);
+      if (l) onLine(l);
+    }
   });
 }
 
@@ -234,14 +300,20 @@ export function connect({ host, port = PORT, me, mode = 'auth', code = null, exp
     const mine = { id: me.id, pub: b64(me.pub), eph: b64(ephRaw) };
     const fail = (e) => { sock.destroy(); reject(e instanceof Error ? e : new Error(String(e))); };
     const t = setTimeout(() => fail('no answer from that machine'), timeoutMs);
-    let theirs = null, ch = null, stage = 'hello';
+    let theirs = null, ch = null, stage = 'hello', theirBinary = false;
     sock.on('error', (e) => { clearTimeout(t); fail(e.message); });
+    const onBytes = () => (ch?.binary && stage === 'open' ? (body) => {
+      let m;
+      try { m = ch.openBytes(body); } catch { sock.destroy(); return; }
+      for (const h of ch.handlers) h(m);
+    } : null);
     lines(sock, (line) => {
       try {
         if (stage === 'hello') {
           const m = JSON.parse(line);
           if (m.t === 'refused') return fail(m.why ?? 'refused');
           if (m.t !== 'hello' || m.v !== VERSION) return fail('not an ox mesh node');
+          theirBinary = m.bin === 1;
           const pub = unb64(m.pub);
           if (idOf(pub) !== m.id) return fail('its id does not match its key');
           if (expect && expect.pub !== m.pub) return fail('that machine\'s key changed: it is not the machine you paired (forget and pair it again if it was reinstalled)');
@@ -251,6 +323,7 @@ export function connect({ host, port = PORT, me, mode = 'auth', code = null, exp
           const shared = crypto.diffieHellman({ privateKey: eph.privateKey, publicKey: crypto.createPublicKey({ key: Buffer.concat([Buffer.from('302a300506032b656e032100', 'hex'), unb64(m.eph)]), format: 'der', type: 'spki' }) });
           const [sk, rk] = sessionKeys(shared, me, theirs, true);
           ch = new Sealed(sock, sk, rk);
+          ch.binary = theirBinary;
           const sig = b64(crypto.sign(null, T, me.priv));
           const mac = mode === 'pair' ? b64(crypto.createHmac('sha256', normCode(code)).update('C').update(T).digest()) : null;
           ch.send({ t: 'auth', sig, mac, name: myName ?? me.name });
@@ -277,10 +350,10 @@ export function connect({ host, port = PORT, me, mode = 'auth', code = null, exp
           resolve({ ch, peer: { id: theirs.id, pub: theirs.pub, name: m.name ?? theirs.name } });
         }
       } catch (e) { fail(e.message); }
-    });
+    }, onBytes);
     sock.on('connect', () => {
       // The hello carries no signature yet: the server answers first, then each signs the transcript.
-      sock.write(`${JSON.stringify({ t: 'hello', v: VERSION, mode, id: mine.id, pub: mine.pub, eph: mine.eph, name: myName ?? me.name, port: myPort })}\n`);
+      sock.write(`${JSON.stringify({ t: 'hello', v: VERSION, mode, id: mine.id, pub: mine.pub, eph: mine.eph, name: myName ?? me.name, port: myPort, bin: 1 })}\n`);
     });
   });
 }
@@ -414,6 +487,70 @@ export async function startNode(o = {}) {
   const state = { invite: null, machines: new Map(), alerts: [], log: [] };
   const note = (s) => { state.log.push({ at: Date.now(), s }); if (state.log.length > 200) state.log.shift(); o.onLog?.(s); };
   const conns = new Map(); // peer id -> { ch, pending: Map }
+  const sockets = new Map(); // a paired machine's socket into this node -> its id
+
+  /** Cut everything to and from a machine, now: connections both ways, and what it is waiting on. */
+  function cutOff(id) {
+    conns.get(id)?.ch.sock.destroy();
+    for (const [sock, who] of sockets) if (who === id) sock.destroy();
+    for (const row of approvals.values()) if (row.peer.id === id) settle(row, { ok: false, why: `${me.name} disconnected` });
+    for (let i = notices.length - 1; i >= 0; i--) if (notices[i].peerId === id) notices.splice(i, 1);
+  }
+
+  // ---- real approval: a request nobody allowed yet waits for its owner's answer
+  const approvals = new Map(); // key -> { id, peer, grant, text, at, waiters, timer }
+  const tempGrants = new Map(); // `${peer id}:${grant}` -> expires
+  const deniedUntil = new Map();
+  const hasTemp = (peer, grant) => (tempGrants.get(`${peer.id}:${grant}`) ?? 0) > Date.now();
+  function requestWords(peer, grant, msg) {
+    const a = msg.args ?? {};
+    const about = msg.op === 'message' ? `: "${String(a.text ?? '').slice(0, 120)}"`
+      : msg.op === 'agent-send' ? ` (${String(a.id ?? '').slice(0, 60)}): "${String(a.text ?? '').slice(0, 120)}"`
+      : msg.op === 'run' ? `: "${String(a.prompt ?? '').slice(0, 120)}"`
+      : a.path ? `: ${String(a.path).slice(0, 160)}` : '';
+    return `${peer.name} wants to ${GRANT_WORDS[grant] ?? grant}${about}`;
+  }
+  function askOwner(peer, grant, msg) {
+    const key = `${peer.id}:${grant}`;
+    if ((deniedUntil.get(key) ?? 0) > Date.now()) return Promise.resolve({ ok: false, why: 'its owner just declined' });
+    return new Promise((resolve) => {
+      const open = approvals.get(key);
+      if (open) { open.waiters.push(resolve); return; }
+      if (approvals.size >= 20) { resolve({ ok: false, why: 'too many requests are waiting for its owner' }); return; }
+      const row = { id: `approve:${crypto.randomBytes(6).toString('hex')}`, peer, grant, key, text: requestWords(peer, grant, msg), at: Date.now(), waiters: [resolve] };
+      row.timer = setTimeout(() => settle(row, { ok: false, why: `nobody answered on ${me.name} within ${Math.round(waitMs / 1000)} s` }), waitMs);
+      row.timer.unref?.();
+      approvals.set(key, row);
+      note(`asking: ${row.text}`);
+      o.onAlerts?.(allAlerts());
+    });
+  }
+  const waitMs = o.approvalWaitMs ?? APPROVAL_WAIT_MS;
+  function settle(row, answer) {
+    clearTimeout(row.timer);
+    approvals.delete(row.key);
+    for (const w of row.waiters) w(answer);
+    import('./mesh-services.js').then((S) => S.audit(home(o), { from: row.peer.name, peer: row.peer.id, op: 'approval', detail: `${row.grant}: ${answer.ok ? answer.how : answer.why}` })).catch(() => {});
+    o.onAlerts?.(allAlerts());
+  }
+  const approvalOptions = (grant) => [
+    { label: grant === 'infer' ? 'Allow for 30 minutes' : 'Allow once', action: 'approve-once' },
+    { label: 'Always allow', action: 'approve-always' },
+    { label: 'Deny', action: 'approve-deny' },
+  ];
+  const notices = [];
+  const allAlerts = () => [...notices, ...[...approvals.values()].map((r) => ({ id: r.id, machine: r.peer.name, kind: 'approval', text: r.text, options: approvalOptions(r.grant), at: r.at })), ...(state.alerts ?? [])];
+
+  // ---- messages between your computers: a plain log on each, in your own hands
+  const messagesFile = () => path.join(dir(o), 'messages.jsonl');
+  function logMessage(peer, way, text, id = null) {
+    const words = String(text ?? '').trim();
+    if (!words || words.length > 8000) return null;
+    const row = { id: String(id ?? crypto.randomBytes(6).toString('hex')).slice(0, 40), peer: peer.id, name: peer.name, way, text: words, at: Date.now() };
+    fs.mkdirSync(dir(o), { recursive: true, mode: 0o700 });
+    fs.appendFileSync(messagesFile(), `${JSON.stringify(row)}\n`, { mode: 0o600 });
+    return row;
+  }
 
   // ---- serving: what this machine answers
   async function serve(ch, peer, msg) {
@@ -422,6 +559,29 @@ export async function startNode(o = {}) {
     const refuse = (why) => ch.send({ t: 'res', rid: msg.rid, ok: false, error: why });
     if (msg.op === 'ping') return reply({ name: me.name, at: Date.now() });
     if (msg.op === 'stats') { if (!grants.status) return refuse('status is not allowed'); return reply(await stats({ ollamaUrl, runs: o.runs?.() ?? 0, plans: (await o.plans?.()) ?? null })); }
+    // What this machine lets the asker do, so its screen can say so before it tries.
+    if (msg.op === 'peer-info') return reply({ version: OX_VERSION, name: me.name, grants: Object.fromEntries(Object.entries(grants).map(([k, on]) => [k, !!on || hasTemp(peer, k)])), approvals: !!o.approvals });
+    // Not yet allowed, and the owner is here to ask: hold the request and ask.
+    const wanted = APPROVABLE[msg.op];
+    if (wanted && !grants[wanted]) {
+      if (hasTemp(peer, wanted)) grants[wanted] = true;
+      else if (o.approvals) {
+        ch.send({ t: 'waiting', rid: msg.rid, why: `Waiting for ${me.name} to approve` });
+        const answer = await askOwner(peer, wanted, msg);
+        if (!answer.ok) return refuse(`${me.name} does not allow ${wanted} from ${peer.name}: ${answer.why}`);
+        grants[wanted] = true;
+      }
+    }
+    if (msg.op === 'message') {
+      if (!grants.message) return refuse(`${me.name} does not allow messages from ${peer.name} yet. Its owner can turn on Messages in OX › Settings › Offline & devices › Manage ${peer.name}, or run  ox mesh allow "${peer.name}" message`);
+      const row = logMessage(peer, 'in', msg.args?.text, msg.args?.id);
+      if (!row) return refuse('that message is empty or too long');
+      notices.push({ id: `message:${row.id}`, peerId: peer.id, machine: peer.name, kind: 'message', text: `${peer.name}: ${row.text.slice(0, 200)}`, options: [{ label: 'OK', action: 'message-ok' }], at: row.at });
+      if (notices.length > 5) notices.shift();
+      o.onAlerts?.(allAlerts());
+      o.onMessage?.(row);
+      return reply({ delivered: true, at: row.at, id: row.id });
+    }
     if (msg.op === 'infer') {
       if (!grants.infer) return refuse(`${me.name} does not allow model calls from ${peer.name} yet. Its owner can turn on Answer chats in OX › Settings › Offline & devices › Manage ${peer.name}, or run  ox mesh allow "${peer.name}" infer`);
       return infer(ch, msg, refuse);
@@ -493,6 +653,12 @@ export async function startNode(o = {}) {
     const eph = crypto.generateKeyPairSync('x25519');
     const ephRaw = eph.publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
     // After the hello the client reads sealed frames only, so a refusal is sealed too.
+    let theirBinary = false;
+    const onBytes = () => (ch?.binary && stage === 'open' ? (body) => {
+      let msg;
+      try { msg = ch.openBytes(body); } catch { sock.destroy(); return; }
+      for (const h of ch.handlers) h(msg);
+    } : null);
     const drop = (why) => { try { if (ch) ch.send({ t: 'refused', why }); else sock.write(`${JSON.stringify({ t: 'refused', why })}\n`); } catch {} sock.end(); };
     sock.on('error', () => {});
     lines(sock, (line) => {
@@ -503,8 +669,10 @@ export async function startNode(o = {}) {
           const pub = unb64(m.pub);
           if (idOf(pub) !== m.id) return drop('id does not match key');
           mode = m.mode === 'pair' ? 'pair' : 'auth';
+          theirBinary = m.bin === 1;
           const known = readPeers(o)[m.id];
           if (mode === 'auth' && (!known || known.pub !== m.pub)) return drop('not a paired machine');
+          if (mode === 'auth' && known.paused) return drop(`${me.name} has disconnected from this computer`);
           if (mode === 'pair' && !(state.invite && Date.now() < state.invite.expires)) return drop('no invite is open on this machine');
           theirs = { id: m.id, pub: m.pub, eph: m.eph, name: String(m.name ?? '').slice(0, 40), port: Number(m.port) || PORT };
           mine = { id: me.id, pub: b64(me.pub), eph: b64(ephRaw) };
@@ -512,8 +680,9 @@ export async function startNode(o = {}) {
           const shared = crypto.diffieHellman({ privateKey: eph.privateKey, publicKey: crypto.createPublicKey({ key: Buffer.concat([Buffer.from('302a300506032b656e032100', 'hex'), unb64(m.eph)]), format: 'der', type: 'spki' }) });
           const [sk, rk] = sessionKeys(shared, me, theirs, false);
           ch = new Sealed(sock, sk, rk);
+          ch.binary = theirBinary;
           ch.T = T;
-          sock.write(`${JSON.stringify({ t: 'hello', v: VERSION, id: mine.id, pub: mine.pub, eph: mine.eph, name: me.name, sig: b64(crypto.sign(null, T, me.priv)) })}\n`);
+          sock.write(`${JSON.stringify({ t: 'hello', v: VERSION, id: mine.id, pub: mine.pub, eph: mine.eph, name: me.name, sig: b64(crypto.sign(null, T, me.priv)), bin: 1 })}\n`);
           stage = 'auth';
           return;
         }
@@ -545,10 +714,12 @@ export async function startNode(o = {}) {
           }
           stage = 'open';
           const peer = { id: theirs.id, name: readPeers(o)[theirs.id]?.name ?? theirs.name };
+          sockets.set(sock, peer.id);
+          sock.on('close', () => sockets.delete(sock));
           ch.handlers.add((msg) => { if (msg.t === 'req') serve(ch, peer, msg).catch((e) => ch.send({ t: 'res', rid: msg.rid, ok: false, error: e.message })); });
         }
       } catch (e) { drop(e.message); }
-    });
+    }, onBytes);
   });
   await new Promise((res, rej) => { server.once('error', rej); server.listen(port, o.host ?? '0.0.0.0', res); });
   port = server.address().port; // port 0 picks a free one (tests)
@@ -558,6 +729,7 @@ export async function startNode(o = {}) {
     const have = conns.get(peer.id);
     if (have && !have.ch.sock.destroyed) return have;
     const [host, p] = String(peer.addr ?? '').split(':');
+    if (peer.paused) throw new Error(`you disconnected ${peer.name}; reconnect it in Settings › Offline & devices`);
     if (!host) throw new Error(`no address for ${peer.name} yet (it announces itself on the network, or pair with --at)`);
     const { ch } = await connect({ host, port: Number(p) || PORT, me, mode: 'auth', expect: peer, myPort: port });
     const entry = { ch, pending: new Map() };
@@ -565,7 +737,8 @@ export async function startNode(o = {}) {
       const w = entry.pending.get(msg.rid);
       if (!w) return;
       if (msg.t === 'head') w.onHead?.(msg);
-      else if (msg.t === 'chunk') w.onChunk?.(unb64(msg.data));
+      else if (msg.t === 'chunk') w.onChunk?.(Buffer.isBuffer(msg.data) ? msg.data : unb64(msg.data));
+      else if (msg.t === 'waiting') w.onWaiting?.(msg);
       else if (msg.t === 'res') { entry.pending.delete(msg.rid); msg.ok ? w.resolve(msg.data) : w.reject(new Error(msg.error)); }
     });
     ch.sock.on('close', () => { conns.delete(peer.id); for (const w of entry.pending.values()) w.reject(new Error(`${peer.name} closed the connection`)); });
@@ -573,17 +746,26 @@ export async function startNode(o = {}) {
     return entry;
   }
 
-  async function ask(ref, op, args = {}, { onHead, onChunk, timeoutMs = 15_000 } = {}) {
+  async function ask(ref, op, args = {}, { onHead, onChunk, onWaiting, timeoutMs = 15_000, bytes = null } = {}) {
     const peer = typeof ref === 'object' ? ref : findPeer(ref, o);
     if (!peer) throw new Error(`no paired machine ${ref}`);
     const e = await channel(peer);
     const rid = crypto.randomBytes(6).toString('hex');
     return new Promise((resolve, reject) => {
-      const t = timeoutMs ? setTimeout(() => { e.pending.delete(rid); reject(new Error(`${peer.name} did not answer`)); }, timeoutMs) : null;
-      e.pending.set(rid, { resolve: (d) => { clearTimeout(t); resolve(d); }, reject: (er) => { clearTimeout(t); reject(er); }, onHead, onChunk: (c) => { if (t) t.refresh(); onChunk?.(c); } });
-      e.ch.send({ t: 'req', rid, op, args });
+      const gaveUp = () => { e.pending.delete(rid); reject(new Error(`${peer.name} did not answer`)); };
+      let t = timeoutMs ? setTimeout(gaveUp, timeoutMs) : null;
+      e.pending.set(rid, {
+        resolve: (d) => { clearTimeout(t); resolve(d); }, reject: (er) => { clearTimeout(t); reject(er); }, onHead,
+        onChunk: (c) => { if (t) t.refresh(); onChunk?.(c); },
+        // Its owner is deciding: give them the time they were given, plus the trip back.
+        onWaiting: (m) => { if (t) { clearTimeout(t); t = setTimeout(gaveUp, Math.max(timeoutMs, APPROVAL_WAIT_MS + 10_000)); } onWaiting?.(m); },
+      });
+      if (bytes) e.ch.sendBytes({ t: 'req', rid, op, args }, bytes);
+      else e.ch.send({ t: 'req', rid, op, args });
     });
   }
+  /** Wait until the connection to a machine has room for more (fast transfers). */
+  const whenReady = async (ref) => (await channel(typeof ref === 'object' ? ref : findPeer(ref, o))).ch.ready();
 
   // ---- heartbeats: pull each machine's health, keep φ
   async function heartbeat() {
@@ -591,8 +773,17 @@ export async function startNode(o = {}) {
       const m = state.machines.get(peer.id) ?? { id: peer.id, name: peer.name, detector: new Phi(), stats: null };
       m.name = peer.name;
       state.machines.set(peer.id, m);
-      try { m.stats = await ask(peer, 'stats', {}, { timeoutMs: 4000 }); m.detector.beat(); m.error = null; }
-      catch (e) { m.error = e.message; }
+      // Also set from `ox mesh disconnect` in another process: it takes effect here within a beat.
+      if (peer.paused) { cutOff(peer.id); m.error = 'you disconnected it'; m.rttMs = null; m.info = null; continue; }
+      try {
+        const began = performance.now();
+        await ask(peer, 'ping', {}, { timeoutMs: 4000 });
+        m.rttMs = Math.round((performance.now() - began) * 10) / 10;
+        m.stats = await ask(peer, 'stats', {}, { timeoutMs: 4000 });
+        m.detector.beat(); m.error = null; m.lastSeen = Date.now();
+        // An older ox does not know this one: it stays "unknown", not "refused".
+        m.info = await ask(peer, 'peer-info', {}, { timeoutMs: 4000 }).catch(() => null);
+      } catch (e) { m.error = e.message; m.rttMs = null; }
     }
     const list = [...state.machines.values()].map((m) => ({ ...m, phi: m.detector.phi() }));
     const selfStats = await stats({ ollamaUrl, runs: o.runs?.() ?? 0, plans: (await o.plans?.()) ?? null });
@@ -703,21 +894,91 @@ export async function startNode(o = {}) {
   await new Promise((res) => { proxy.once('error', () => { proxyPort = null; res(); }); proxy.listen(proxyPort, '127.0.0.1', () => { proxyPort = proxy.address().port; res(); }); });
 
   const handle = {
-    me, get port() { return port; }, get proxyPort() { return proxyPort; }, state, ask,
+    me, get port() { return port; }, get proxyPort() { return proxyPort; }, state, ask, whenReady,
+    /** Send a message to a paired machine. Resolves only on its receipt: "sent" means it arrived. */
+    async sendMessage(ref, text) {
+      const peer = findPeer(ref, o);
+      if (!peer) throw new Error(`no paired machine ${ref}`);
+      const id = crypto.randomBytes(6).toString('hex');
+      const receipt = await ask(peer, 'message', { text, id }, { timeoutMs: 15_000 });
+      const row = logMessage(peer, 'out', text, id);
+      return { ...row, delivered: !!receipt?.delivered, deliveredAt: receipt?.at ?? null };
+    },
+    /** The conversation with one machine, oldest first. */
+    messages(ref, limit = 100) {
+      const peer = findPeer(ref, o);
+      if (!peer) throw new Error(`no paired machine ${ref}`);
+      let rows = [];
+      try { rows = fs.readFileSync(messagesFile(), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((r) => r.peer === peer.id); } catch {}
+      return rows.slice(-limit);
+    },
+    /** Stop all traffic with a machine, both ways; the pairing stays. */
+    disconnect(ref) {
+      const peer = setPaused(ref, true, o);
+      cutOff(peer.id);
+      const m = state.machines.get(peer.id);
+      if (m) { m.error = 'you disconnected it'; m.rttMs = null; m.info = null; }
+      note(`disconnected ${peer.name}`);
+      return { id: peer.id, name: peer.name, paused: true };
+    },
+    async reconnect(ref) {
+      const peer = setPaused(ref, false, o);
+      note(`reconnected ${peer.name}`);
+      await heartbeat().catch(() => {});
+      const m = state.machines.get(peer.id);
+      return { id: peer.id, name: peer.name, paused: false, error: m?.error ?? null, rttMs: m?.rttMs ?? null };
+    },
+    /** Forget a machine: the pairing goes, and any connection with it. */
+    remove(ref) {
+      const peer = forget(ref, o);
+      cutOff(peer.id);
+      state.machines.delete(peer.id);
+      note(`removed ${peer.name}`);
+      return { forgot: peer.name };
+    },
+    /** Reach a machine now and time the sealed round trip. */
+    async testLink(ref) {
+      const peer = findPeer(ref, o);
+      if (!peer) throw new Error(`no paired machine ${ref}`);
+      const began = performance.now();
+      await ask(peer, 'ping', {}, { timeoutMs: 8000 });
+      return { ok: true, rttMs: Math.round((performance.now() - began) * 10) / 10, addr: peer.addr ?? null, binary: !!conns.get(peer.id)?.ch.binary };
+    },
     /** Everything the CLI, the app and the island show. Keys never appear here. */
     status() {
       const machines = handle.machines();
       return {
         me: { id: me.id, name: identity(o).name, port, proxyPort },
         self: state.self ?? null,
-        peers: Object.values(readPeers(o)).map((p) => ({ id: p.id, name: p.name, addr: p.addr ?? null, grants: p.grants, pairedAt: p.pairedAt, live: machines.find((x) => x.id === p.id) ?? null })),
-        alerts: state.alerts,
+        peers: Object.values(readPeers(o)).map((p) => ({ id: p.id, name: p.name, addr: p.addr ?? null, grants: p.grants, paused: !!p.paused, pairedAt: p.pairedAt, live: machines.find((x) => x.id === p.id) ?? null })),
+        alerts: allAlerts(),
         invite: state.invite && Date.now() < state.invite.expires ? { open: true, expires: state.invite.expires } : { open: false },
         seen: [...(state.seen?.values() ?? [])].filter((x) => Date.now() - x.at < 15_000 && !readPeers(o)[x.id]),
       };
     },
     /** The owner's choice on an alert. Only this runs anything, and only what it names. */
     choose(alertId, option = {}) {
+      const seen = notices.findIndex((n) => n.id === alertId);
+      if (seen >= 0) { notices.splice(seen, 1); return { done: null }; }
+      const pending = [...approvals.values()].find((r) => r.id === alertId);
+      if (pending) {
+        if (option.action === 'approve-deny') {
+          deniedUntil.set(pending.key, Date.now() + DENIED_QUIET_MS);
+          settle(pending, { ok: false, why: 'its owner declined' });
+          return { done: `Denied ${pending.peer.name}` };
+        }
+        if (option.action === 'approve-always') {
+          setGrant(pending.peer.id, pending.grant, true, o);
+          settle(pending, { ok: true, how: 'always' });
+          return { done: `${pending.peer.name} is always allowed to ${GRANT_WORDS[pending.grant] ?? pending.grant}` };
+        }
+        if (option.action === 'approve-once') {
+          if (pending.grant === 'infer') tempGrants.set(pending.key, Date.now() + TEMP_GRANT_MS);
+          settle(pending, { ok: true, how: 'once' });
+          return { done: `Allowed ${pending.peer.name}` };
+        }
+        throw new Error('choose allow once, always or deny');
+      }
       const a = state.alerts.find((x) => x.id === alertId);
       if (!a) throw new Error('that alert is gone (the condition passed)');
       if (option.action === 'snooze' || option.action === 'wait') { state.snoozed ??= {}; state.snoozed[alertId] = Date.now() + 5 * 60_000; state.alerts = state.alerts.filter((x) => x.id !== alertId); return { done: 'checking again in 5 minutes' }; }
@@ -726,7 +987,7 @@ export async function startNode(o = {}) {
     },
     invite() { state.invite = { code: normCode(newCode()), expires: Date.now() + INVITE_MS, tries: 0 }; const c = state.invite.code; return { code: `OX-${c.slice(0, 4)}-${c.slice(4, 8)}-${c.slice(8, 12)}`, expires: state.invite.expires }; },
     heartbeat,
-    machines: () => [...state.machines.values()].map((m) => ({ id: m.id, name: m.name, stats: m.stats, phi: Math.round(m.detector.phi() * 10) / 10, error: m.error ?? null })),
+    machines: () => [...state.machines.values()].map((m) => ({ id: m.id, name: m.name, stats: m.stats, phi: Math.round(m.detector.phi() * 10) / 10, error: m.error ?? null, rttMs: m.rttMs ?? null, lastSeen: m.lastSeen ?? null, version: m.info?.version ?? null, theirGrants: m.info?.grants ?? null, askable: m.info?.approvals ?? null, binary: !!conns.get(m.id)?.ch.binary })),
     async close() {
       clearInterval(hb); clearInterval(state.beaconTimer);
       for (const c of conns.values()) c.ch.sock.destroy();

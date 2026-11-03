@@ -38,6 +38,6 @@ test('a refused chat or task says where to turn it on in the app, not only a ter
   assert.match(mesh, /does not allow tasks from \$\{peer\.name\} yet\. Its owner can turn on Run tasks/);
 });
 
-test('pairing tells the person what to turn on for chats', () => {
-  assert.match(page, /Chats need Answer chats turned on, here and on/);
+test('pairing says that requests are asked first', () => {
+  assert.match(page, /When either computer asks for something new, its owner is asked first/);
 });

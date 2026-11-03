@@ -578,6 +578,7 @@ function usageAll() {
     '  ox mesh push <local file> <machine>:<destination> [--overwrite]   copy a small file there (requires files-write)',
     '  ox mesh share <machine> <folder>…  which folders of THIS machine that one may browse (default: home)',
     '  ox mesh audit · ox mesh lockdown  what other machines asked here · every machine back to status only',
+    '  ox mesh disconnect <machine>      stop all traffic both ways, keep the pairing (reconnect brings it back)',
     '  ox mesh forget <machine>          unpair',
     '  ox mesh up [--port n]             run this machine\'s node in the foreground (the OX app runs it too)',
     '  ox mesh models                    every model your machines offer, as mesh:<machine>/<model>',
@@ -4010,14 +4011,9 @@ async function cmdMesh(args = []) {
         let dest = path.resolve(args[2] ?? '.');
         if (fs.existsSync(dest) && fs.statSync(dest).isDirectory()) dest = path.join(dest, path.basename(p));
         if (fs.existsSync(dest) && !args.includes('--overwrite')) throw new Error(`${dest} exists (--overwrite to replace it)`);
-        const tmp = `${dest}.ox-part`;
-        const fd = fs.openSync(tmp, 'w');
-        let got = 0;
-        const r = await node.ask(who, 'pull', { path: p }, { timeoutMs: 60_000, onChunk: (b) => { fs.writeSync(fd, b); got += b.length; } });
-        fs.closeSync(fd);
-        if (got !== r.size) { fs.rmSync(tmp, { force: true }); throw new Error(`incomplete copy (${got} of ${r.size} bytes)`); }
-        fs.renameSync(tmp, dest);
-        console.log(`${c.green('✓')} ${dest} ${c.dim(`(${got} bytes from ${who})`)}`);
+        const { size: got, seconds } = await (await import('./mesh-services.js')).pullFile(node, who, p, dest, { overwrite: args.includes('--overwrite') });
+        const secs = Math.max(seconds, 0.001);
+        console.log(`${c.green('✓')} ${dest} ${c.dim(`(${got} bytes from ${who}, ${(got / 1048576 / secs).toFixed(0)} MB/s, checksum ok)`)}`);
       } finally { await node.close(); }
       return;
     }
@@ -4027,12 +4023,18 @@ async function cmdMesh(args = []) {
       if (!args[1] || !who || !remote) throw new Error('usage: ox mesh push <local file> <machine>:<destination> [--overwrite]');
       const st = fs.statSync(source);
       if (!st.isFile()) throw new Error(`${source} is not a regular file`);
-      if (st.size < 1 || st.size > 8 * 1024 * 1024) throw new Error('mesh push accepts files from 1 byte through 8 MB');
       const node = await oneShot();
       try {
-        const r = await node.ask(who, 'push', { path: remote, data: fs.readFileSync(source).toString('base64'), overwrite: args.includes('--overwrite') }, { timeoutMs: 60_000 });
-        console.log(`${c.green('✓')} ${source} → ${r.path} ${c.dim(`(${r.size} bytes${r.overwritten ? ', replaced' : ''})`)}`);
+        const r = await (await import('./mesh-services.js')).pushStream(node, who, fs.createReadStream(source, { highWaterMark: 512 * 1024 }), { path: remote, size: st.size, overwrite: args.includes('--overwrite') });
+        const secs = Math.max(r.seconds ?? 0, 0.001);
+        console.log(`${c.green('✓')} ${source} → ${r.path} ${c.dim(`(${r.size} bytes${r.overwritten ? ', replaced' : ''}, ${(r.size / 1048576 / secs).toFixed(0)} MB/s${r.sha256 ? ', checksum ok' : ''})`)}`);
       } finally { await node.close(); }
+      return;
+    }
+    if (sub === 'disconnect' || sub === 'reconnect') {
+      if (!args[1]) throw new Error(`usage: ox mesh ${sub} <machine>`);
+      const pr = M.setPaused(args[1], sub === 'disconnect');
+      console.log(`${c.green('✓')} ${sub === 'disconnect' ? `disconnected from ${pr.name}; nothing passes either way, and the pairing is kept` : `${pr.name} can connect again`}`);
       return;
     }
     if (sub === 'share') {
@@ -4111,7 +4113,7 @@ async function cmdMesh(args = []) {
         throw new Error('remote control action is one of list, click, type, key');
       } finally { await node.close(); }
     }
-    console.error('usage: ox mesh [status|name|invite|join|allow|deny|forget|up|models|run|screen|control|describe|agents|ls|pull|push|share|audit|lockdown] — ox help for details');
+    console.error('usage: ox mesh [status|name|invite|join|allow|deny|disconnect|reconnect|forget|up|models|run|screen|control|describe|agents|ls|pull|push|share|audit|lockdown] — ox help for details');
     process.exitCode = 1;
   } catch (e) {
     console.error(c.red(e.message));

@@ -523,6 +523,7 @@ export function meshCatalogEntries(machines = []) {
   const out = [];
   for (const m of machines) {
     const names = [...(m.stats?.models ?? []).map((x) => x.name), ...(m.stats?.providers ?? [])];
+    if (m.error) continue; // not reachable now: nothing to pick
     for (const name of names) {
       out.push({ id: `mesh:${m.name}/${name}`, object: 'model', created: MODELS_CREATED, owned_by: 'you', ox: { provider: 'mesh', model: name, available: true, endpoint: true, desc: `${name} on ${m.name}` } });
     }
@@ -2180,7 +2181,12 @@ async function meshUp() {
   if (meshNode) return meshNode;
   meshStarting ??= (async () => {
     const M = await import('./mesh.js');
-    meshNode = await M.startNode({ plans: M.planHeadroom, onLog: (l) => console.log(`[mesh] ${l}`) });
+    // approvals: this node has an owner at the app and the island to ask.
+    meshNode = await M.startNode({
+      plans: M.planHeadroom, approvals: true, onLog: (l) => console.log(`[mesh] ${l}`),
+      // A second node on one machine, for checking two computers' worth of app here.
+      ...(process.env.OX_MESH_PORT ? { port: Number(process.env.OX_MESH_PORT), proxyPort: Number(process.env.OX_MESH_PROXY_PORT) || 0, beacon: false } : {}),
+    });
     return meshNode;
   })().catch((e) => { meshStarting = null; throw e; });
   return meshStarting;
@@ -2588,6 +2594,35 @@ const ROUTES = [
     if (!machine || !ticket) throw new Error('choose a machine and delivery ticket');
     return (await meshUp()).ask(machine, 'agent-delivery', { ticket }, { timeoutMs: 20_000 });
   }) },
+  // A message to another of your computers. Answered only with that computer's receipt.
+  { method: 'POST', pattern: /^\/ox\/mesh\/message\/?$/, handler: appRoute(async (body) => {
+    const machine = String(body?.machine ?? '').trim();
+    const text = String(body?.text ?? '').trim();
+    if (!machine || !text) throw new Error('choose a machine and write a message');
+    return (await meshUp()).sendMessage(machine, text);
+  }) },
+  { method: 'GET', pattern: /^\/ox\/mesh\/messages\/?$/, handler: appRoute(async (_, __, req) => ({ messages: (await meshUp()).messages(new URL(req.url, 'http://x').searchParams.get('machine') ?? '') })) },
+  { method: 'POST', pattern: /^\/ox\/mesh\/test\/?$/, handler: appRoute(async (body) => (await meshUp()).testLink(String(body?.machine ?? ''))) },
+  // Any size: the request body is the file, streamed, never held in memory or base64.
+  { method: 'POST', pattern: /^\/ox\/mesh\/send-file\/?$/, handler: async (req, res) => {
+    if (!authorized(req)) { unauthorized(res); return; }
+    try {
+      const q = new URL(req.url, 'http://x').searchParams;
+      const size = Number(req.headers['content-length']);
+      if (req.headers['x-ox-mesh-file'] !== '1' || !q.get('machine') || !q.get('path') || !Number.isSafeInteger(size)) throw new Error('choose a machine, destination and file');
+      const S = await import('./mesh-services.js');
+      sendJson(res, 200, await S.pushStream(await meshUp(), q.get('machine'), req, { path: q.get('path'), size, overwrite: q.get('overwrite') === '1' }));
+    } catch (e) { sendError(res, 400, String(e?.message ?? e), 'invalid_request_error', 'bad_request', null); }
+  } },
+  { method: 'POST', pattern: /^\/ox\/mesh\/get-file\/?$/, handler: appRoute(async (body) => {
+    const machine = String(body?.machine ?? '').trim();
+    const remote = String(body?.path ?? '').trim();
+    if (!machine || !remote) throw new Error('choose a machine and a file');
+    const S = await import('./mesh-services.js');
+    const dir = join(homedir(), 'Downloads');
+    mkdirSync(dir, { recursive: true });
+    return S.pullFile(await meshUp(), machine, remote, join(dir, remote.split(/[\\/]/).pop() || 'file'), { overwrite: body?.overwrite === true });
+  }) },
   { method: 'POST', pattern: /^\/ox\/mesh\/push\/?$/, handler: appRoute(async (body) => {
     const machine = String(body?.machine ?? '').trim();
     const target = String(body?.path ?? '').trim();
@@ -2596,7 +2631,7 @@ const ROUTES = [
     // The peer repeats validation and enforces the actual write boundary.
     return (await meshUp()).ask(machine, 'push', { path: target, data, overwrite: body?.overwrite === true }, { timeoutMs: 60_000 });
   }) },
-  { method: 'POST', pattern: /^\/ox\/mesh\/(invite|join|name|allow|deny|forget|choose)\/?$/, handler: appRoute(async (body, m) => {
+  { method: 'POST', pattern: /^\/ox\/mesh\/(invite|join|name|allow|deny|forget|disconnect|reconnect|choose)\/?$/, handler: appRoute(async (body, m) => {
     const M = await import('./mesh.js');
     switch (m[1]) {
       case 'invite': {
@@ -2620,14 +2655,17 @@ const ROUTES = [
           if (open.length) at = open[0].addr;
         }
         if (at && !/^[\w.:\-[\]]+$/.test(at)) throw new Error('the address looks like host:port, e.g. 192.168.1.20:47321');
-        const peer = await M.join({ code, at, name: body?.name ? String(body.name) : null });
+        const myPort = (await meshUp().catch(() => null))?.port;
+        const peer = await M.join({ code, at, name: body?.name ? String(body.name) : null, ...(myPort ? { myPort } : {}) });
         // The node reads paired machines on every heartbeat: start it, or ask it now.
         meshUp().then((n) => n.heartbeat?.()).catch(() => {});
         return { paired: { id: peer.id, name: peer.name } };
       }
       case 'name': return { name: M.setName(String(body?.name ?? '')) };
       case 'allow': case 'deny': return { peer: M.setGrant(String(body?.machine ?? ''), String(body?.grant ?? ''), m[1] === 'allow') };
-      case 'forget': return { forgot: M.forget(String(body?.machine ?? '')).name };
+      case 'forget': return meshNode ? meshNode.remove(String(body?.machine ?? '')) : { forgot: M.forget(String(body?.machine ?? '')).name };
+      case 'disconnect': return (await meshUp()).disconnect(String(body?.machine ?? ''));
+      case 'reconnect': return (await meshUp()).reconnect(String(body?.machine ?? ''));
       default: {
         if (!meshNode) throw new Error('the mesh is not running in this app');
         const out = meshNode.choose(String(body?.alert ?? ''), body?.option ?? {});

@@ -5162,7 +5162,14 @@ files: [src/billing/**]
         const [L, M] = await Promise.all([getJson('/ox/local'), getJson('/ox/mesh')]);
         const runtimes = L.runtimes || [];
         const peers = M.peers || [];
-        const grantWords = (g) => Object.entries(g || {}).filter(([, on]) => on).map(([k]) => k).join(', ') || 'status only';
+        const grantWords = (g) => Object.entries(g || {}).filter(([k, on]) => on && k !== 'status').map(([k]) => ({ infer: 'chats', tasks: 'tasks', message: 'messages', agents: 'coding sessions', files: 'read files', 'files-write': 'copy files', dev: 'dev servers', screen: 'screen', control: 'control' })[k] || k).join(', ') || 'status only';
+        const peerUp = (p) => !!p.live && !p.live.error && !!p.live.lastSeen;
+        const linkLine = (p) => (p.paused ? 'Disconnected by you. Nothing passes either way until you reconnect.'
+          : !M.running ? 'The mesh is not running on this Mac'
+          : p.live?.error ? `Not connected: ${p.live.error}`
+          : !peerUp(p) ? 'Checking the connection…'
+          : `Connected · ${p.live.rttMs ?? '?'} ms${p.addr ? ` · ${p.addr}` : ''}${p.live.version ? ` · ox ${p.live.version}` : ' · older ox'}`);
+        const theirWords = (p) => (!peerUp(p) ? 'unknown until connected' : p.live.theirGrants ? grantWords(p.live.theirGrants) : 'unknown (it runs an older ox)');
         el.innerHTML = `${mobileBack}<div class="shead">${icon('office')}Offline &amp; devices</div>
           <p class="sdesc">What works with no internet, and which of your own computers are paired with this one. Ox keeps model keys and files on the computer that owns them.</p>
           <div class="sblock"><div class="section-cap cap">This Mac, offline</div>
@@ -5172,7 +5179,7 @@ files: [src/billing/**]
           </div>
           <div class="sblock"><div class="section-cap cap">Your paired computers</div>
             ${M.me ? `<div class="chipline"><span class="badge ok">${esc(M.me.name || 'This Mac')}</span><span class="badge">${M.running ? 'mesh node running' : 'node starts with the Ox app'}</span></div>` : '<p class="small muted">This Mac has not joined a mesh yet.</p>'}
-            ${peers.length ? `<div class="cards" style="margin-top:10px">${peers.map((p) => `<div class="card"><span class="dot ${M.running ? 'ok' : ''}"></span><span class="t"><div class="n">${esc(p.name)}</div><div class="d">This Mac lets it: ${esc(grantWords(p.grants))}</div></span><button class="btn ghost" data-od-peer="${esc(p.name)}">Manage</button></div>`).join('')}</div>` : '<div class="box muted small" style="margin-top:10px">No other computers are paired. Pairing begins with a short-lived code and starts with status-only access.</div>'}
+            ${peers.length ? `<div class="cards" style="margin-top:10px">${peers.map((p) => `<div class="card" data-od-card="${esc(p.id)}"><span class="dot ${peerUp(p) ? 'ok' : ''}"></span><span class="t"><div class="n">${esc(p.name)}</div><div class="d" data-l="link">${esc(linkLine(p))}</div><div class="d" data-l="mine">You allow it: ${esc(grantWords(p.grants))}</div><div class="d" data-l="theirs">It allows you: ${esc(theirWords(p))}</div></span><button class="btn ghost" data-od-link="${esc(p.name)}" data-paused="${p.paused ? '1' : ''}">${p.paused ? 'Reconnect' : 'Disconnect'}</button>${p.paused ? '' : `<button class="btn ghost" data-od-peer="${esc(p.name)}">Manage</button>`}</div>`).join('')}</div>` : '<div class="box muted small" style="margin-top:10px">No other computers are paired. Pairing begins with a short-lived code and starts with status-only access.</div>'}
             <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="btn" id="od-invite">Pair another computer</button><button class="btn ghost" id="od-office">Open Office</button><span class="small muted" id="od-invite-state"></span></div>
             <div class="section-cap cap" style="margin-top:16px">Have a code from another computer?</div>
             <form id="od-join-form" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap" autocomplete="off">
@@ -5186,6 +5193,25 @@ files: [src/billing/**]
             <div id="od-detail"></div>
             <p class="small muted" style="margin:10px 0 0">Each machine must explicitly grant what the controller may do. Tasks run under that machine’s own approvals and every request is audited there. Inspect activity with <code>ox mesh audit</code> and remove all optional grants with <code>ox mesh lockdown</code>.</p>
           </div>`;
+        // The cards keep telling the truth while they are on screen.
+        const liveCards = setInterval(async () => {
+          const cards = el.querySelectorAll('[data-od-card]');
+          if (!cards.length || !document.body.contains(cards[0])) { clearInterval(liveCards); return; }
+          if (document.hidden) return;
+          try {
+            const now = await getJson('/ox/mesh');
+            for (const p of now.peers || []) {
+              const card = el.querySelector(`[data-od-card="${CSS.escape(p.id)}"]`);
+              if (!card) continue;
+              card.querySelector('.dot').classList.toggle('ok', peerUp(p));
+              const link = card.querySelector('[data-od-link]');
+              if (link && (link.dataset.paused === '1') !== !!p.paused) { renderSection(); return; }
+              card.querySelector('[data-l="link"]').textContent = linkLine(p);
+              card.querySelector('[data-l="mine"]').textContent = `You allow it: ${grantWords(p.grants)}`;
+              card.querySelector('[data-l="theirs"]').textContent = `It allows you: ${theirWords(p)}`;
+            }
+          } catch {}
+        }, 4000);
         $('od-local').onclick = () => { sec = 'local'; renderSnav(); renderSection(); };
         $('od-office').onclick = () => { closeSettings(); document.querySelector('[data-view="office"]')?.click(); };
         $('od-invite').onclick = async () => {
@@ -5205,10 +5231,19 @@ files: [src/billing/**]
           $('od-join-state').textContent = at ? `Connecting to ${at}…` : 'Looking for the computer that made this code on your network (up to 15 seconds)…';
           try {
             const r = await postJson('/ox/mesh/join', { code, ...(at ? { at } : {}) });
-            toast(`Paired with ${r.paired.name}. Chats need Answer chats turned on, here and on ${r.paired.name}: Manage ${r.paired.name}.`);
+            toast(`Paired with ${r.paired.name}. When either computer asks for something new, its owner is asked first.`);
             renderSection();
           } catch (e) { $('od-join-state').textContent = e.message; b.disabled = false; }
         };
+        el.querySelectorAll('[data-od-link]').forEach((b) => (b.onclick = async () => {
+          const machine = b.dataset.odLink, back = b.dataset.paused === '1';
+          b.disabled = true; b.textContent = back ? 'Reconnecting…' : 'Disconnecting…';
+          try {
+            const r = await postJson(`/ox/mesh/${back ? 'reconnect' : 'disconnect'}`, { machine });
+            toast(back ? (r.error ? `${machine} is allowed again, but not reachable: ${r.error}` : `Connected to ${machine} · ${r.rttMs} ms`) : `Disconnected from ${machine}. The pairing is kept.`);
+          } catch (e) { toast(e.message); }
+          renderSection();
+        }));
         el.querySelectorAll('[data-od-peer]').forEach((b) => (b.onclick = async () => {
           const box = $('od-detail'); const machine = b.dataset.odPeer;
           box.innerHTML = '<div class="section-cap cap" style="margin-top:18px">Loading ' + esc(machine) + '…</div><div class="skeleton"></div>';
@@ -5219,30 +5254,91 @@ files: [src/billing/**]
             box.innerHTML = `<div class="section-cap cap" style="margin-top:18px">${esc(machine)}</div>
               ${d ? `<div class="chipline"><span class="badge">${esc(d.os || '')}</span><span class="badge">${esc(String(d.cores || '?'))} cores</span><span class="badge">${esc(String(d.memGb || '?'))} GB</span><span class="badge">${esc(String(d.sessions || 0))} live sessions</span></div><p class="small muted" style="margin:8px 0">${esc(d.models?.join(', ') || 'No local models reported')}</p>` : `<div class="small muted">${esc(r.describeError || 'Machine details unavailable')}</div>`}
               <div class="section-cap cap" style="margin-top:14px">Coding sessions</div><div class="cards">${agentList}</div>
-              <div class="section-cap cap" style="margin-top:14px">Copy a file to this machine</div><p class="small muted">The remote owner must separately allow <code>files-write</code>. Ox writes one file atomically inside a shared folder; uploads are limited to 8 MB and never overwrite without your explicit choice.</p><input class="field" id="od-push-file" type="file"><input class="field" id="od-push-path" placeholder="Destination path inside a shared folder on ${esc(machine)}" style="margin-top:8px"><div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn ghost" id="od-push">Copy file</button><label class="small muted"><input type="checkbox" id="od-push-overwrite"> Replace an existing file</label><span class="small muted" id="od-push-state"></span></div>
+              <div class="section-cap cap" style="margin-top:14px">Files</div><p class="small muted">Any size, sealed, and checked by SHA-256 before it takes the file's name. ${esc(machine)} asks its owner first unless already allowed. Nothing is replaced unless you tick the box.</p><input class="field" id="od-push-file" type="file"><input class="field" id="od-push-path" placeholder="Where on ${esc(machine)}, e.g. ~/Downloads/report.pdf" style="margin-top:8px"><div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn ghost" id="od-push">Send file</button><label class="small muted"><input type="checkbox" id="od-push-overwrite"> Replace an existing file</label><span class="small muted" id="od-push-state" role="status" aria-live="polite"></span></div>
+              <input class="field" id="od-pull-path" placeholder="A file on ${esc(machine)}, e.g. ~/Documents/report.pdf" style="margin-top:10px"><div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn ghost" id="od-pull">Get file to Downloads</button><span class="small muted" id="od-pull-state" role="status" aria-live="polite"></span></div>
               <div class="section-cap cap" style="margin-top:14px">Run an Ox task there</div><p class="small muted">The other computer must first allow this Mac to run tasks. Ox will apply that computer’s own approval policy; this is not a raw shell.</p><textarea class="field" id="od-task" rows="3" placeholder="Run tests, inspect the failure, fix it, and report what changed."></textarea><input class="field" id="od-cwd" placeholder="Optional folder on ${esc(machine)}" style="margin-top:8px"><div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn primary" id="od-run">Run task</button><span class="small muted" id="od-run-state"></span></div><pre class="box mono small" id="od-run-output" style="display:none;max-height:240px;overflow:auto;white-space:pre-wrap"></pre>`;
             // What this Mac lets the other one do. Chats from it need Answer chats; each computer decides for itself.
             const granted = peers.find((p) => p.name === machine)?.grants ?? {};
             const grantRow = (g, label, why) => `<label class="small" style="display:flex;gap:8px;align-items:flex-start;margin-top:8px"><input type="checkbox" data-od-grant="${g}" ${granted[g] ? 'checked' : ''}><span><b>${label}</b><br><span class="muted">${why}</span></span></label>`;
-            box.insertAdjacentHTML('afterbegin', `<div class="section-cap cap" style="margin-top:18px">What ${esc(machine)} may use on this Mac</div>${grantRow('infer', 'Answer chats', `${esc(machine)} can chat with this Mac’s models.`)}${grantRow('tasks', 'Run tasks', `${esc(machine)} can start ox tasks here, under this Mac’s approvals.`)}${grantRow('agents', 'Coding sessions', `${esc(machine)} can see this Mac’s coding sessions and send them messages.`)}<p class="small muted" style="margin-top:8px">To use ${esc(machine)} from here, turn these on there for this Mac. Its models then appear in the model list.</p>`);
+            box.insertAdjacentHTML('afterbegin', `<div class="section-cap cap" style="margin-top:18px">${esc(machine)}</div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost" id="od-test">Test connection</button><button class="btn ghost" id="od-remove">Remove this computer</button><span class="small muted" id="od-test-state" role="status" aria-live="polite"></span></div>
+              <div class="section-cap cap" style="margin-top:14px">Messages</div><div id="od-talk" style="max-height:220px;overflow:auto;padding:6px 0"></div><form id="od-say-form" style="display:flex;gap:8px;margin-top:6px" autocomplete="off"><input class="field" id="od-say" placeholder="Message to ${esc(machine)}" maxlength="8000" aria-label="Message to ${esc(machine)}" style="flex:1;min-width:0"><button class="btn primary" id="od-say-send" type="submit">Send</button></form><div class="small muted" id="od-say-state" role="status" aria-live="polite" style="margin-top:4px"></div>
+              <div class="section-cap cap" style="margin-top:14px">Always allowed on this Mac</div><p class="small muted" style="margin:0">Anything off here asks you each time, with Allow once, Always or Deny.</p>${grantRow('message', 'Messages', `${esc(machine)} can send you messages.`)}${grantRow('infer', 'Answer chats', `${esc(machine)} can chat with this Mac’s models.`)}${grantRow('tasks', 'Run tasks', `${esc(machine)} can start ox tasks here, under this Mac’s approvals.`)}${grantRow('agents', 'Coding sessions', `${esc(machine)} can see this Mac’s coding sessions and send them messages.`)}${grantRow('files', 'Read files', `${esc(machine)} can read files from the folders you share.`)}${grantRow('files-write', 'Copy files here', `${esc(machine)} can put files in the folders you share.`)}<p class="small muted" style="margin-top:8px">${esc(machine)} decides the same for this Mac on its own screen. Its models appear in the model list while it is connected.</p>`);
             box.querySelectorAll('[data-od-grant]').forEach((c) => (c.onchange = async () => {
               const on = c.checked; c.disabled = true;
               try { await postJson(`/ox/mesh/${on ? 'allow' : 'deny'}`, { machine, grant: c.dataset.odGrant }); toast(on ? 'Allowed' : 'Turned off'); }
               catch (e) { c.checked = !on; toast(e.message); }
               finally { c.disabled = false; }
             }));
+            const sizeWords = (n) => (n >= 1073741824 ? `${(n / 1073741824).toFixed(1)} GB` : `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`);
             $('od-push').onclick = async () => {
               const file = $('od-push-file').files?.[0], destination = $('od-push-path').value.trim(), state = $('od-push-state');
               if (!file || !destination) return toast('Choose a file and destination first');
-              if (file.size < 1 || file.size > 8 * 1024 * 1024) return toast('Mesh copy accepts files from 1 byte through 8 MB');
-              if (!(await askSure(`Copy ${file.name} to ${machine}? The remote machine will enforce its own shared-folder and overwrite rules.`, 'Copy file'))) return;
-              $('od-push').disabled = true; state.textContent = 'Reading file…';
+              $('od-push').disabled = true; state.textContent = `Connecting to ${machine}…`;
+              let mark = null;
+              const q = new URLSearchParams({ machine, path: destination, ...($('od-push-overwrite').checked ? { overwrite: '1' } : {}) });
               try {
-                const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error('Could not read that file')); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.readAsDataURL(file); });
-                state.textContent = 'Copying through the encrypted mesh…';
-                const out = await postJson('/ox/mesh/push', { machine, path: destination, data, overwrite: $('od-push-overwrite').checked });
-                state.textContent = `Copied ${out.size} bytes to ${out.path}${out.overwritten ? ' (replaced)' : ''}.`;
-              } catch (e) { state.textContent = e.message; } finally { $('od-push').disabled = false; }
+                const out = await new Promise((resolve, reject) => {
+                  const x = new XMLHttpRequest();
+                  x.open('POST', `/ox/mesh/send-file?${q}`);
+                  x.setRequestHeader('x-ox-mesh-file', '1');
+                  if (key) x.setRequestHeader('Authorization', `Bearer ${key}`);
+                  x.setRequestHeader('content-type', 'application/octet-stream');
+                  x.upload.onprogress = (e) => {
+                    // The rate of what is moving now: a wait for approval is not slowness.
+                    const t = Date.now();
+                    if (!mark) mark = { t, n: e.loaded, rate: null };
+                    else if (t - mark.t >= 400) { mark.rate = (e.loaded - mark.n) / 1048576 / ((t - mark.t) / 1000); mark.t = t; mark.n = e.loaded; }
+                    state.textContent = `${sizeWords(e.loaded)} of ${sizeWords(file.size)}${mark.rate != null ? ` · ${mark.rate.toFixed(0)} MB/s` : ''}`;
+                  };
+                  x.upload.onload = () => { state.textContent = 'Checking it arrived intact…'; };
+                  x.onerror = () => reject(new Error('The connection to ox dropped'));
+                  x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch {} if (x.status === 200) resolve(j); else reject(new Error(j.error?.message || `Failed (${x.status})`)); };
+                  x.send(file);
+                });
+                state.textContent = `Sent to ${out.path} · ${sizeWords(out.size)}${out.seconds ? ` · ${(out.size / 1048576 / Math.max(out.seconds, 0.01)).toFixed(0)} MB/s` : ''}${out.sha256 ? ' · checksum ok' : ''}${out.overwritten ? ' · replaced' : ''}`;
+              } catch (e) { state.textContent = `Not sent: ${e.message}`; } finally { $('od-push').disabled = false; }
+            };
+            $('od-pull').onclick = async () => {
+              const remote = $('od-pull-path').value.trim(), state = $('od-pull-state');
+              if (!remote) return toast('Which file?');
+              $('od-pull').disabled = true; state.textContent = `Getting it from ${machine}…`;
+              try {
+                const out = await postJson('/ox/mesh/get-file', { machine, path: remote });
+                state.textContent = `Saved to ${out.path} · ${sizeWords(out.size)} · ${(out.size / 1048576 / Math.max(out.seconds, 0.01)).toFixed(0)} MB/s${out.sha256 ? ' · checksum ok' : ''}`;
+              } catch (e) { state.textContent = `Not copied: ${e.message}`; } finally { $('od-pull').disabled = false; }
+            };
+            // Messages: "Delivered" is that computer's own receipt, never a guess.
+            const talk = $('od-talk');
+            const showTalk = async () => {
+              try {
+                const { messages = [] } = await getJson(`/ox/mesh/messages?machine=${encodeURIComponent(machine)}`);
+                talk.innerHTML = messages.length ? messages.slice(-30).map((m) => `<div class="small" style="margin:4px 0;${m.way === 'out' ? 'text-align:right' : ''}"><span class="muted">${m.way === 'out' ? 'You' : esc(m.name)} · ${esc(new Date(m.at).toLocaleTimeString())}${m.way === 'out' ? ' · ✓ delivered' : ''}</span><br>${esc(m.text)}</div>`).join('') : '<div class="small muted">No messages yet.</div>';
+                talk.scrollTop = talk.scrollHeight;
+              } catch (e) { talk.innerHTML = `<div class="small muted">${esc(e.message)}</div>`; }
+            };
+            showTalk();
+            const talkTimer = setInterval(() => { if (!document.body.contains(talk)) clearInterval(talkTimer); else showTalk(); }, 4000);
+            $('od-say-form').onsubmit = async (ev) => {
+              ev.preventDefault();
+              const text = $('od-say').value.trim(), state = $('od-say-state'), b = $('od-say-send');
+              if (!text) return;
+              b.disabled = true; state.textContent = `Sending… if ${machine} has not allowed messages, its owner is being asked.`;
+              try {
+                const out = await postJson('/ox/mesh/message', { machine, text });
+                $('od-say').value = '';
+                state.textContent = `Delivered at ${new Date(out.deliveredAt || Date.now()).toLocaleTimeString()}`;
+                showTalk();
+              } catch (e) { state.textContent = `Not delivered: ${e.message}`; } finally { b.disabled = false; }
+            };
+            $('od-remove').onclick = async () => {
+              if (!(await askSure(`Remove ${machine}? This computer forgets the pairing and refuses it from now on. Connecting again takes a new code.`, 'Remove'))) return;
+              try { await postJson('/ox/mesh/forget', { machine }); toast(`Removed ${machine}`); $('od-detail').innerHTML = ''; renderSection(); }
+              catch (e) { toast(e.message); }
+            };
+            $('od-test').onclick = async () => {
+              const state = $('od-test-state'); state.textContent = 'Testing…';
+              try { const r = await postJson('/ox/mesh/test', { machine }); state.textContent = `Reached ${machine} in ${r.rttMs} ms, sealed${r.addr ? ` · ${r.addr}` : ''}${r.binary ? ' · fast transfer on' : ' · older ox, slower transfer'}`; }
+              catch (e) { state.textContent = `Could not reach it: ${e.message}`; }
             };
             $('od-run').onclick = async () => {
               const prompt = $('od-task').value.trim(); if (!prompt) return toast('Describe the task first');
@@ -5896,6 +5992,37 @@ files: [src/billing/**]
   setBusy(false); resize();
   loadModels();
   renderChat(); renderLists();
+  // A request from another of your computers, and messages from them: asked here,
+  // wherever you are in the app, as well as in the island.
+  const meshAsks = new Map();
+  const meshAskBox = document.createElement('div');
+  meshAskBox.style.cssText = 'position:fixed;top:14px;right:14px;z-index:9999;display:flex;flex-direction:column;gap:8px;width:min(380px,calc(100vw - 28px))';
+  meshAskBox.setAttribute('aria-live', 'polite');
+  document.body.append(meshAskBox);
+  async function pollMeshAsks() {
+    if (document.hidden) return;
+    let alerts = [];
+    try { alerts = ((await getJson('/ox/mesh')).alerts || []).filter((a) => a.kind === 'approval' || a.kind === 'message'); } catch { return; }
+    const ids = new Set(alerts.map((a) => a.id));
+    for (const [id, el] of meshAsks) if (!ids.has(id)) { el.remove(); meshAsks.delete(id); }
+    for (const a of alerts) {
+      if (meshAsks.has(a.id)) continue;
+      const el = document.createElement('div');
+      el.className = 'ask-box';
+      el.setAttribute('role', a.kind === 'approval' ? 'alertdialog' : 'status');
+      el.innerHTML = `<div class="small" style="margin-bottom:8px;overflow-wrap:anywhere">${esc(a.text)}</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${(a.options || []).map((o, i) => `<button class="btn ${o.action === 'approve-once' ? 'primary' : 'ghost'}" data-i="${i}">${esc(o.label)}</button>`).join('')}</div>`;
+      el.querySelectorAll('button').forEach((b) => (b.onclick = async () => {
+        el.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+        try { const r = await postJson('/ox/mesh/choose', { alert: a.id, option: a.options[Number(b.dataset.i)] }); if (r?.done) toast(r.done); }
+        catch (e) { toast(e.message); }
+        el.remove(); meshAsks.delete(a.id);
+      }));
+      meshAsks.set(a.id, el);
+      meshAskBox.append(el);
+    }
+  }
+  setInterval(pollMeshAsks, 3000);
+  pollMeshAsks();
   getJson('/ox/about').then((a) => { about = a; showRepo(); if (!convo()?.messages?.length) renderChat(); }).catch(() => { $('cwd').textContent = location.host; });
   // Launch screen: once per browser session, at least long enough to draw the
   // mark, and never longer than 2.4s even if the server is slow to answer.
