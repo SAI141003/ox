@@ -178,15 +178,23 @@ test('tests that fail only for a teammate\'s unmerged file wait for that teammat
     ? { files: [['lib.js', 'export const two = () => 2;\n']] }
     : { files: [['app.js', "import { two } from './lib.js';\nexport const four = () => two() * 2;\n"], ['app.test.js', "import { test } from 'node:test';\nimport assert from 'node:assert';\nimport { four } from './app.js';\ntest('four', () => assert.equal(four(), 4));\n"]] }));
   // Agent 1 is slow: Agent 2 finishes first and must wait for lib.js.
+  let releaseAgent1;
+  const agent2Waits = new Promise((r) => { releaseAgent1 = r; });
   const spawnBuilder = (o) => {
     const run = base(o);
     if (o.name !== 'Agent 1') return run;
-    return { ...run, lines: (async function* () { await new Promise((r) => setTimeout(r, 700)); yield* run.lines; })() };
+    return { ...run, lines: (async function* () { await agent2Waits; yield* run.lines; })() };
   };
   const room = new B.BuildRoom({ task: 't', dir, ask, spawnBuilder, env });
   const seen = [];
-  room.on('event', (e) => seen.push(e));
+  room.on('event', (e) => {
+    seen.push(e);
+    if (e.type === 'agent' && e.agent === 'Agent 2' && e.status === 'waiting') releaseAgent1();
+  });
+  // Not a fixed delay: a slow machine finished Agent 1 before Agent 2 began to wait.
+  const giveUp = setTimeout(releaseAgent1, 60_000);
   await room.run();
+  clearTimeout(giveUp);
   assert.ok(seen.some((e) => e.type === 'agent' && e.agent === 'Agent 2' && e.status === 'waiting' && /Agent 1/.test(e.doing)));
   const t2 = seen.filter((e) => e.type === 'tests' && e.agent === 'Agent 2');
   assert.equal(t2.length, 1, 'no fix round spent on a teammate\'s missing file');
