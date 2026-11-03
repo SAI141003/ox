@@ -3,6 +3,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
@@ -27,7 +28,9 @@ const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-servemode-'));
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/_API_KEY$|^OX_/.test(k)));
 Object.assign(env, { HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'ox-servemode-h-')), OX_ISLAND: '0', OX_NO_PLUGINS: '1', OX_NO_AWAKE: '1', OX_BASE_URL: `http://127.0.0.1:${model.address().port}/v1`, OX_API_KEY: 'x', OX_APP_APPROVAL_MS: '3000' });
 // An app write waits on Allow / Deny; unanswered, it is a no after OX_APP_APPROVAL_MS.
-const port = 40000 + Math.floor(Math.random() * 20000);
+// Asked of the system: a random pick could land on a port already taken, and then
+// this file's tests talk to whatever holds it.
+const port = await new Promise((r) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
 const srv = spawn(process.execPath, [OX, 'serve', '--port', String(port)], { cwd, env, stdio: 'ignore' });
 after(() => { srv.kill(); model.close(); });
 for (let i = 0; i < 100; i++) {
