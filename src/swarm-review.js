@@ -187,3 +187,46 @@ export async function runSwarmReview(url, { agents = 12, headless = false, pace 
     await b.close().catch(() => {});
   }
 }
+
+/**
+ * The same review for a desktop app, through agent-desktop (src/agent-desktop.js):
+ * its controls are read from the accessibility tree, shared between the agents,
+ * and checked: a button or link with no name, a control too small to tap, a
+ * field with no label. Read-only: nothing is pressed, the pointer never moves.
+ */
+export async function runDesktopSwarmReview(app, { agents = 12, out = null, env = process.env } = {}) {
+  const A = await import('./agent-desktop.js');
+  if (!A.available(env)) throw new Error('desktop review needs agent-desktop: npm install -g agent-desktop');
+  agents = Math.max(1, Math.min(32, Math.round(agents)));
+  const list = await A.listElements(app, { env, max: 600 });
+  if (list.error) throw new Error(list.error);
+  const findings = [];
+  const where = (e) => `${e.role}${e.name ? ` "${String(e.name).slice(0, 40)}"` : ''}`;
+  const isButton = (e) => /button|link|menuitem|tab|checkbox|radio/i.test(e.role);
+  const isField = (e) => /textfield|textarea|combobox|searchfield|text field/i.test(e.role);
+  // Each agent takes every Nth control, as on a page.
+  await Promise.all(Array.from({ length: agents }, async (_, i) => {
+    for (let k = i; k < list.elements.length; k += agents) {
+      const e = list.elements[k];
+      // The system's own window buttons (macOS traffic lights, Windows caption buttons) are the same in every app.
+      if (/^(close|minimi[sz]e|zoom|full ?screen|maximi[sz]e|restore( down)?)$/i.test(String(e.name ?? '').trim()) && (!e.frame || e.frame[1] < 140)) continue;
+      const box = e.frame ?? [0, 0, 0, 0];
+      const add = (kind, msg) => findings.push({ kind, msg, where: where(e), agent: i + 1, box });
+      const label = String(e.name || e.description || '').trim();
+      if (isButton(e) && !label) add('no-name', `a ${e.role} with no name: screen readers say nothing`);
+      if (isField(e) && !label) add('no-label', 'a field with no label');
+      if (e.frame && isButton(e) && (box[2] < 24 || box[3] < 24) && box[2] > 0) add('tap-target', `only ${box[2]} × ${box[3]} to click; 24 × 24 is the minimum`);
+    }
+  }));
+  const dir = out ?? path.join(env.OX_HOME || path.join(os.homedir(), '.ox'), 'reviews');
+  fs.mkdirSync(dir, { recursive: true });
+  const stem = `${String(list.app).replace(/[^\w.-]/g, '-')}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
+  const screenshot = path.join(dir, `${stem}.png`);
+  const shot = await A.run(['screenshot', '--app', list.app, screenshot], { env });
+  const result = { url: `${list.app}${list.window ? ` · ${list.window}` : ''}`, agents, total: list.elements.length, findings };
+  const report = swarmReport({ ...result, screenshot: shot.ok && fs.existsSync(screenshot) ? screenshot : null });
+  const reportFile = path.join(dir, `${stem}.md`);
+  fs.writeFileSync(reportFile, report);
+  fs.writeFileSync(path.join(dir, `${stem}.json`), JSON.stringify(result, null, 2));
+  return { ...result, report, reportFile, screenshot: shot.ok ? screenshot : null };
+}

@@ -542,7 +542,7 @@ function usageAll() {
     '  ox skill from <book.pdf|folder>   a book or docs → a skill: an index plus chapters read only when needed',
     '',
     'search: ox search [setup | status | stop]   your own open-source web search (SearXNG), no key',
-    'swarm: ox swarm <url> [--agents 12] [--headless]   many agents review a page at once (contrast, labels, tap size, overflow); you watch them work',
+    'swarm: ox swarm <url> [--agents 12] [--headless]   many agents review a page at once (contrast, labels, tap size, overflow); you watch them work. --app "<name>" reviews a desktop app (agent-desktop)',
     'library: ox library [add <url|pdf> | foresight <export> | read | ask <id> "q" | search]   saved articles and local meeting exports; highlight and ask in the app',
     'commands: ox commands [list | install [--claude] [--codex] [--cursor] | uninstall]   every ox command as /name, here and inside Claude Code, Codex, Cursor',
     'theme: ox theme ["<look>" | list | use <name> | reset]   restyle the app from a sentence (neumorphic, glass, paper, terminal, contrast…)',
@@ -4948,13 +4948,15 @@ async function runSubcommand(cmd, args) {
       return;
     case 'swarm': {
       // ox swarm <url> [--agents 12] [--headless] [--pace 220]: many agents review a page at once, and you watch.
-      const url = args.find((a) => !a.startsWith('--') && args[args.indexOf(a) - 1] !== '--agents' && args[args.indexOf(a) - 1] !== '--pace');
-      if (!url) { process.stderr.write('usage: ox swarm <url> [--agents 12] [--headless] [--pace 220]\n'); process.exitCode = 3; return; }
+      const appI = args.indexOf('--app');
+      const desktopApp = appI >= 0 ? args[appI + 1] : null;
+      const url = args.find((a) => !a.startsWith('--') && !['--agents', '--pace', '--app'].includes(args[args.indexOf(a) - 1]));
+      if (!url && !desktopApp) { process.stderr.write('usage: ox swarm <url> [--agents 12] [--headless] [--pace 220]\n       ox swarm --app "<desktop app>" [--agents 12]   (needs agent-desktop)\n'); process.exitCode = 3; return; }
       const num = (flag, d) => { const i = args.indexOf(flag); const n = i >= 0 ? Number(args[i + 1]) : NaN; return Number.isFinite(n) ? n : d; };
-      const { runSwarmReview } = await import('./swarm-review.js');
+      const { runSwarmReview, runDesktopSwarmReview } = await import('./swarm-review.js');
       let last = '';
       try {
-        const r = await runSwarmReview(url, {
+        const r = desktopApp ? await runDesktopSwarmReview(desktopApp, { agents: num('--agents', 12) }) : await runSwarmReview(url, {
           agents: num('--agents', 12), pace: num('--pace', 220), headless: args.includes('--headless'),
           onProgress: (st) => { const line = `${st.done}/${st.total} layers · ${st.n} found`; if (line !== last && process.stderr.isTTY) { process.stderr.write(`\r${c.dim(line)}   `); last = line; } },
         });

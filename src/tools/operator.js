@@ -136,6 +136,13 @@ export async function type_text(args = {}, ctx = {}) {
       return err('type_text requires approval');
     }
   }
+  const A = args.into ? await agentDesktop() : null;
+  if (A && !isDry()) {
+    return adAct(A, { app: args.app, element: args.into }, async (t, list) => {
+      const r = await A.typeInto(t, String(text));
+      return r.error ? (r.stale ? r : err(r.error)) : { content: `typed ${[...String(text)].length} characters into ${ctlName(t)} in ${list.app}; nothing sent: press Return or Send yourself when it reads right` };
+    });
+  }
   // On a Mac the text is pasted (any language; a newline in it never presses
   // Return, so a chat box is filled, not sent): src/mac-control.js.
   if (isMac()) return macRun(() => macControl.typeText({ app: args.app, text, into: args.into }, { dryRun: isDry() }));
@@ -144,7 +151,31 @@ export async function type_text(args = {}, ctx = {}) {
   return runCmd(cmd, `type "${text.slice(0, 50)}..."`, isWindows() ? { OX_TYPE_TEXT: String(text) } : undefined);
 }
 
-const isDry = () => !!(process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1');
+// OX_OPERATOR_DRY=0 lets a test drive a fake agent-desktop for real.
+const isDry = () => process.env.OX_OPERATOR_DRY !== '0' && !!(process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1');
+
+// agent-desktop (src/agent-desktop.js), when installed: the same controls on
+// Windows and Linux, and on a Mac without moving your pointer or taking focus.
+// ox's rules stay on top: never Send / Pay / Delete, never Return, ask first.
+async function agentDesktop() { const A = await import('../agent-desktop.js'); return A.available() ? A : null; }
+const ctlName = (e) => `${e.role} "${e.name || e.description || e.value || ''}"`;
+const pick = (list, element, role) => {
+  const q = String(element).trim();
+  return /^\d+$/.test(q) && Number(q) <= list.elements.length && !macControl.findElement(list.elements, q, role) ? list.elements[Number(q) - 1] : macControl.findElement(list.elements, q, role);
+};
+async function adAct(A, { app, element, role }, act) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const list = await A.listElements(app);
+    if (list.error) return err(list.error);
+    const target = pick(list, element, role);
+    if (!target) return err(`no control called "${element}" in ${list.app}. ${macControl.describeElements({ ...list, elements: list.elements.slice(0, 40) })}`);
+    if (macControl.isRisky(target)) return err(`ox does not press "${target.name || target.description}": that sends, pays or deletes. It is left for you to press.`);
+    const r = await act(target, list);
+    if (r.stale) continue;   // the window changed: read it again
+    return r;
+  }
+  return err(`the window kept changing; "${element}" was not reached`);
+}
 async function macRun(fn) {
   if (!isMac()) return err(`click and type work on macOS only (this is ${os.platform()})`);
   const r = await fn();
@@ -153,7 +184,13 @@ async function macRun(fn) {
 
 // The controls of an app's window: read-only, so no approval.
 export async function ui_elements(args = {}) {
-  if (!isMac()) return err(`ui_elements works on macOS only (this is ${os.platform()})`);
+  const A = await agentDesktop();
+  if (A && !isDry()) {
+    const l = await A.listElements(args.app);
+    if (!l.error) return { content: macControl.describeElements(l) };
+    if (!isMac()) return err(l.error);
+  }
+  if (!isMac()) return err(`ui_elements works on macOS, or anywhere with agent-desktop (npm install -g agent-desktop); this is ${os.platform()}`);
   if (isDry()) return { content: `done (dry run: would list the controls of ${args.app || 'the app in front'})` };
   const l = await macControl.listElements(args.app);
   return l.error ? err(l.error) : { content: macControl.describeElements(l) };
@@ -165,6 +202,13 @@ export async function click(args = {}, ctx = {}) {
     if (!ctx?.requestApproval) return err('click requires approval');
     const v = await ctx.requestApproval('click', { app: args.app, element: args.element, x: args.x, y: args.y }, `Click ${args.element ? `"${args.element}"` : `${args.x},${args.y}`}${args.app ? ` in ${args.app}` : ''}?`);
     if (!v) return { content: 'User declined click' };
+  }
+  const A = args.element != null && String(args.element).trim() ? await agentDesktop() : null;
+  if (A && !isDry()) {
+    return adAct(A, args, async (t, list) => {
+      const r = await A.press(t, { double: !!args.double });
+      return r.error ? (r.stale ? r : err(r.error)) : { content: `clicked ${ctlName(t)} in ${list.app} (through accessibility: your pointer did not move)` };
+    });
   }
   return macRun(() => macControl.click(args, { dryRun: isDry() }));
 }
@@ -188,6 +232,16 @@ export async function press_key(args = {}, ctx = {}) {
     if (!ctx?.requestApproval) return err('press_key requires approval');
     const v = await ctx.requestApproval('press_key', { app: args.app, key: args.key }, `Press ${args.key}${args.app ? ` in ${args.app}` : ''}?`);
     if (!v) return { content: 'User declined press_key' };
+  }
+  const A = await agentDesktop();
+  if (A && !isDry()) {
+    const combo = String(args.key).toLowerCase().replace(/\s+/g, '');
+    const times = Math.max(1, Math.min(20, Number(args.times) || 1));
+    let done = 0, last = null;
+    for (; done < times; done++) { const r = await A.pressKey(combo, { app: args.app }); if (r.error) { last = r.error; break; } }
+    if (done === times) return { content: `pressed ${args.key}${times > 1 ? ` ${times} times` : ''}${args.app ? ` in ${args.app}` : ''}` };
+    if (!isMac()) return err(last);
+    args = { ...args, times: times - done };   // the rest through ox-hands
   }
   return macRun(() => macControl.pressKey(args, { dryRun: isDry() }));
 }
