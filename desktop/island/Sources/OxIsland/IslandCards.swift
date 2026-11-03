@@ -59,7 +59,7 @@ end if
 end tell
 """##
             var err: NSDictionary?
-            let raw = NSAppleScript(source: script)?.executeAndReturnError(&err).stringValue ?? ""
+            let raw = runAppleScript(script, &err)?.stringValue ?? ""
             let values = raw.components(separatedBy: ", ").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { $0.count > 1 }
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -218,7 +218,7 @@ final class MailCenter: ObservableObject {
             return out
             """
             var err: NSDictionary?
-            let raw = NSAppleScript(source: script)?.executeAndReturnError(&err).stringValue ?? ""
+            let raw = runAppleScript(script, &err)?.stringValue ?? ""
             let msgs = raw.components(separatedBy: "\n␞\n").compactMap { chunk -> Message? in
                 let f = chunk.components(separatedBy: "\t")
                 guard f.count >= 8, !f[0].isEmpty else { return nil }
@@ -245,7 +245,7 @@ final class MailCenter: ObservableObject {
     private func run(_ body: String, then: (() -> Void)? = nil) {
         DispatchQueue.global(qos: .userInitiated).async {
             var err: NSDictionary?
-            _ = NSAppleScript(source: "tell application \"Mail\"\n\(body)\nend tell")?.executeAndReturnError(&err)
+            _ = runAppleScript("tell application \"Mail\"\n\(body)\nend tell", &err)
             DispatchQueue.main.async { then?() }
         }
     }

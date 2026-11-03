@@ -38,7 +38,7 @@ final class NowPlaying: ObservableObject {
             end tell
             """
             var err: NSDictionary?
-            let out = NSAppleScript(source: script)?.executeAndReturnError(&err).stringValue ?? ""
+            let out = runAppleScript(script, &err)?.stringValue ?? ""
             let parts = out.components(separatedBy: "\n")
             let t: Track? = parts.count >= 3 && !parts[0].isEmpty ? Track(app: app, title: parts[0], artist: parts[1], playing: parts[2] == "true") : nil
             DispatchQueue.main.async {
@@ -55,11 +55,11 @@ final class NowPlaying: ObservableObject {
             var img: NSImage?
             if app == "Spotify" {
                 var err: NSDictionary?
-                let url = NSAppleScript(source: "tell application \"Spotify\" to return artwork url of current track")?.executeAndReturnError(&err).stringValue ?? ""
+                let url = runAppleScript("tell application \"Spotify\" to return artwork url of current track", &err)?.stringValue ?? ""
                 if let u = URL(string: url), let d = try? Data(contentsOf: u) { img = NSImage(data: d) }
             } else {
                 var err: NSDictionary?
-                let desc = NSAppleScript(source: "tell application \"Music\" to return raw data of artwork 1 of current track")?.executeAndReturnError(&err)
+                let desc = runAppleScript("tell application \"Music\" to return raw data of artwork 1 of current track", &err)
                 if let d = desc?.data, !d.isEmpty { img = NSImage(data: d) }
             }
             DispatchQueue.main.async { self?.artwork = img }
@@ -70,7 +70,7 @@ final class NowPlaying: ObservableObject {
         guard let app = track?.app ?? runningApp else { return }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var err: NSDictionary?
-            _ = NSAppleScript(source: "tell application \"\(app)\" to \(command)")?.executeAndReturnError(&err)
+            _ = runAppleScript("tell application \"\(app)\" to \(command)", &err)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self?.refresh() }
         }
     }
