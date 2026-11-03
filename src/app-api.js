@@ -274,7 +274,7 @@ export async function accountsView(env = process.env, onlyId = null) {
   const checked = onlyId ? [checkCli(String(onlyId), config, env)] : checkAll(config, env);
   return checked.filter((c) => c.known !== false).map((c) => ({
     id: c.id, label: c.label, bin: c.bin, installed: !!c.installed, works: !!c.works,
-    signedIn: c.signedIn ?? null, version: c.version ?? null, problem: c.problem ?? null, fix: c.fix ?? null, login: c.login ?? null,
+    signedIn: c.signedIn ?? null, verified: !!c.verified, version: c.version ?? null, problem: c.problem ?? null, fix: c.fix ?? null, login: c.login ?? null,
     installUrl: accountInstallPage(c.id), canConnect: accountCanConnect(c.id),
     bot: `${c.id}-plan`,
     // The model this account accepted last time (e.g. a free ChatGPT account), shown on its card.

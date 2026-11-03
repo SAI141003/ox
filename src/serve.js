@@ -328,9 +328,15 @@ export function refreshPlans() {
   });
   return planCache.running;
 }
-export const workingPlans = () => planCache.list.filter((p) => p.works && !expiredPlansNow().has(p.id));
-let expiredRef = null;
-import('./subscriptions.js').then((m) => { expiredRef = m.expiredPlans; }).catch(() => {});
+// Working: installed, and signed in as far as ox can tell (checked, or it has
+// answered before). Only these are picked for you. Installed but never tried
+// (most CLIs cannot be asked whether they are signed in) are listed apart: you
+// can pick one, and once it answers it counts as working.
+const planOk = (p) => p.signedIn === true || p.verified || (workedRef?.(p.id) ?? false);
+export const workingPlans = () => planCache.list.filter((p) => p.works && planOk(p) && !expiredPlansNow().has(p.id));
+export const untriedPlans = () => planCache.list.filter((p) => p.works && !planOk(p) && !expiredPlansNow().has(p.id));
+let expiredRef = null, workedRef = null;
+import('./subscriptions.js').then((m) => { expiredRef = m.expiredPlans; workedRef = m.planWorked; }).catch(() => {});
 const expiredPlansNow = () => expiredRef ?? new Set();
 
 // Chat models Ollama has on this machine, biggest first (refreshed in the background).
@@ -440,6 +446,9 @@ export function serveModelCatalog(env = process.env) {
   if (Date.now() - planCache.at > 10 * 60_000 && process.env.OX_NO_PLAN_CHECK !== '1' && process.env.OX_NO_KEYSTORE !== '1') refreshPlans();
   for (const p of workingPlans()) {
     data.push({ id: p.bot, object: 'model', created: MODELS_CREATED, owned_by: p.id, ox: { provider: p.id, plan: true, available: true, availability: 'signed-in', desc: `${p.label}${p.version ? ` · ${p.version}` : ''}` } });
+  }
+  for (const p of untriedPlans()) {
+    data.push({ id: p.bot, object: 'model', created: MODELS_CREATED, owned_by: p.id, ox: { provider: p.id, plan: true, untried: true, available: true, availability: 'installed, sign-in not checked', desc: `${p.label}${p.version ? ` · ${p.version}` : ''}`, fix: p.login ?? null } });
   }
   for (const [id, def] of Object.entries(BOTS)) {
     const keyEnv = KEY_ENV[def.provider] ?? null;

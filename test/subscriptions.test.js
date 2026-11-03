@@ -103,7 +103,22 @@ test('a text CLI streams verbatim; a failing one says why, not "done"', { skip: 
   assert.match(ok.out, /plain answer from qwen/);
   const bad = ox('--bot', 'kimi-plan', '-p', 'hi');
   assert.notEqual(bad.code, 0, bad.out);
-  assert.match(bad.out, /kimi-plan \(kimi\): Error: not logged in, run \/setup/);
+  assert.match(bad.out, /kimi-plan \(kimi\): .*not signed in, or has no plan: [\s\S]*Until then ox does not pick it\. \(Error: not logged in, run \/setup\)/);
+});
+
+test('a plan counts as working once it answers; a sign-in failure takes it off again', { skip: process.platform === 'win32' && 'the fake CLI here is a Unix script' }, () => {
+  const okFile = path.join(home, '.ox', 'plan-ok.json');
+  const read = () => { try { return JSON.parse(fs.readFileSync(okFile, 'utf8')); } catch { return {}; } };
+  // qwen cannot be asked whether it is signed in: installed is not enough.
+  const before = checkCli('qwen', {}, { ...env, OX_HOME: path.join(home, '.ox') });
+  assert.equal(before.works, true);
+  assert.equal(before.signedIn, null);
+  assert.equal(before.verified, read().qwen?.ok === true);
+  assert.equal(ox('--bot', 'qwen-plan', '-p', 'hi').code, 0);
+  assert.equal(read().qwen?.ok, true, 'an answer is recorded');
+  assert.equal(checkCli('qwen', {}, { ...env, OX_HOME: path.join(home, '.ox') }).verified, true);
+  ox('--bot', 'kimi-plan', '-p', 'hi');
+  assert.equal(read().kimi?.ok, false, 'not signed in is recorded');
 });
 
 test('Windows: claude.cmd is found, and run through node, never through cmd.exe', () => {

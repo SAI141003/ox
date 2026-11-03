@@ -410,7 +410,7 @@ export function checkCli(id, config = {}, env = process.env) {
     const signedIn = signInState(id, app.where, env);
     if (signedIn === false) return { id, label: cli.label, bin: cli.bin, path: app.where, installed: true, works: false, signedIn, version, via: 'app', problem: 'installed and working, but not signed in', fix: signInHow(id, app.where, cli) };
     // The model this account accepted before (a free ChatGPT account, for one), so the page can say what it runs.
-    return { id, label: cli.label, bin: cli.bin, path: app.where, installed: true, works: true, signedIn, version, via: 'app', login: cli.login, model: planModel(id) };
+    return { id, label: cli.label, bin: cli.bin, path: app.where, installed: true, works: true, signedIn, verified: signedIn === true || planWorked(id, env), version, via: 'app', login: cli.login, model: planModel(id) };
   }
   const where = findOnPath(cli.bin, env);
   if (!where) {
@@ -428,12 +428,14 @@ export function checkCli(id, config = {}, env = process.env) {
   const why = r.error?.code ?? (r.stderr || '').trim().split('\n').find(Boolean) ?? `exit ${r.status}`;
   // A copy on PATH is asked whether it is signed in too (it was only asked
   // --version, so a signed-out Cursor counted as connected and runs failed).
+  let signedIn = null;
   if (works) {
-    const signedIn = signInState(id, where, env);
+    signedIn = signInState(id, where, env);
     if (signedIn === false) return { id, label: cli.label, bin: cli.bin, path: where, installed: true, works: false, signedIn, version, problem: 'installed and working, but not signed in', fix: signInHow(id, where, cli) };
   }
   return {
     id, label: cli.label, bin: cli.bin, path: where, installed: true, works, version,
+    ...(works ? { signedIn, verified: signedIn === true || planWorked(id, env) } : {}),
     ...(works ? { login: cli.login } : { problem: String(why).slice(0, 160), fix: `reinstall: ${cli.install}` }),
   };
 }
@@ -684,6 +686,24 @@ export function rememberPlanModel(id, model) {
   try { fs.mkdirSync(path.dirname(PLAN_MODELS()), { recursive: true }); fs.writeFileSync(PLAN_MODELS(), JSON.stringify(j, null, 2)); } catch {}
 }
 
+// Plans that answered a real turn. Most CLIs have no way to ask whether they are
+// signed in, so "installed and answers --version" is not enough to offer a plan
+// as working: a friend's Mac listed Gemini and Copilot as plans and every chat
+// that picked them failed. A plan counts once it has answered (or ox could check
+// its sign-in); a sign-in or subscription failure takes it off again.
+const PLAN_OK = (env = process.env) => path.join(env.OX_HOME || (env === process.env ? path.join(os.homedir(), '.ox') : path.join(env.HOME || os.homedir(), '.ox')), 'plan-ok.json');
+export function planWorked(id, env = process.env) { try { return JSON.parse(fs.readFileSync(PLAN_OK(env), 'utf8'))[id]?.ok === true; } catch { return false; } }
+export function rememberPlanWorked(id, ok) {
+  if (!id) return;
+  let j = {};
+  try { j = JSON.parse(fs.readFileSync(PLAN_OK(), 'utf8')); } catch {}
+  if (j[id]?.ok === ok) return;
+  j[id] = { ok, at: new Date().toISOString() };
+  try { fs.mkdirSync(path.dirname(PLAN_OK()), { recursive: true }); fs.writeFileSync(PLAN_OK(), JSON.stringify(j, null, 2)); } catch {}
+}
+// What a CLI says when it is not signed in, has no plan, or its sign-in ran out.
+export const PLAN_SIGNIN_FAILED = /not (?:logged|signed) in|log ?in required|please (?:log ?in|login|sign in|authenticate|run \S+ login)|no authentication|authentication (?:is )?(?:required|failed)|set an auth method|must specify the \w+_API_KEY|api[ _]?key (?:is )?(?:missing|not (?:set|found)|required)|unauthori[sz]ed|\b40[13]\b|not authorized|no (?:active )?(?:subscription|copilot)|subscription (?:is )?(?:required|not found|expired|inactive)|OAuth session expired|could not be refreshed|Failed to authenticate|session (?:has )?expired|re-?authenticate|invalid (?:api key|token|credentials)/i;
+
 export async function* runSubscriptionTurn(opts = {}) {
   const { target, config = {}, ctx = {} } = opts;
   // A model this account accepted before: go straight to it.
@@ -837,13 +857,16 @@ async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = 
     // "auth status" still says logged in when the saved session has expired;
     // the run is what tells. Say it plainly, and stop offering the plan.
     const out = `${why} ${stderr} ${st.text ?? ''}`;
-    if (/OAuth session expired|could not be refreshed|Failed to authenticate|session (?:has )?expired|re-?authenticate|invalid (?:api key|token)|401\b/i.test(out)) {
+    if (PLAN_SIGNIN_FAILED.test(out)) {
       expiredPlans.add(target.subscription);
-      why = `your ${target.subscription} sign-in has expired: ${signInHow(target.subscription, cli.bin, cli)}`;
+      rememberPlanWorked(target.subscription, false);
+      const expired = /expired|could not be refreshed|re-?authenticate/i.test(out);
+      why = `${cli.label} is ${expired ? 'signed out (the sign-in expired)' : 'not signed in, or has no plan'}: ${signInHow(target.subscription, cli.bin, cli)}. Until then ox does not pick it. (${String(why).slice(0, 160)})`;
     }
     yield { type: 'error', error: `${target.bot} (${cli.bin}): ${why}` };
   }
   const message = { role: 'assistant', content: st.text.trim() };
+  if (!failed && message.content && !signal?.aborted) rememberPlanWorked(target.subscription, true);
   if (message.content) yield { type: 'final', message };
   yield { type: 'history', messages: [...messages.filter((m) => m?.role !== 'system'), ...(message.content ? [message] : [])] };
   yield { type: 'turn-end', stopReason: failed ? 'error' : signal?.aborted ? 'aborted' : 'end_turn', iters: 1 };

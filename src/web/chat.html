@@ -2840,7 +2840,7 @@
       sel.innerHTML = '';
       // What can answer comes first; models without a key are listed, greyed, last.
       const isModel = (m) => !m.ox?.agent && !m.ox?.endpoint && !m.ox?.plan;
-      for (const [label, list, off] of [['Plans you pay for', data.filter((m) => m.ox?.plan)], ['Your agents', data.filter((m) => m.ox?.agent)], ['Your endpoints', data.filter((m) => m.ox?.endpoint)], ['Models', data.filter((m) => isModel(m) && m.ox?.available !== false)], ['Needs a key (Settings › API keys)', data.filter((m) => isModel(m) && m.ox?.available === false), true]]) {
+      for (const [label, list, off] of [['Plans you pay for', data.filter((m) => m.ox?.plan && !m.ox?.untried)], ['Installed, not tried yet (sign in first)', data.filter((m) => m.ox?.plan && m.ox?.untried)], ['Your agents', data.filter((m) => m.ox?.agent)], ['Your endpoints', data.filter((m) => m.ox?.endpoint)], ['Models', data.filter((m) => isModel(m) && m.ox?.available !== false)], ['Needs a key (Settings › API keys)', data.filter((m) => isModel(m) && m.ox?.available === false), true]]) {
         if (!list.length) continue;
         const g = document.createElement('optgroup'); g.label = label;
         for (const m of list) {
@@ -5070,7 +5070,7 @@ files: [src/billing/**]
       } else if (sec === 'models') {
         const { data = [] } = await getJson('/v1/models');
         const hidden = new Set(prefs.hiddenModels || []);
-        const groups = [['Plans you pay for', data.filter((m) => m.ox?.plan)], ['Your agents', data.filter((m) => m.ox?.agent)], ['Your endpoints', data.filter((m) => m.ox?.endpoint)], ['Ready to use', data.filter((m) => !m.ox?.agent && !m.ox?.endpoint && !m.ox?.plan && m.ox?.available !== false)], ['Needs a key', data.filter((m) => !m.ox?.agent && !m.ox?.endpoint && !m.ox?.plan && m.ox?.available === false)]];
+        const groups = [['Plans you pay for', data.filter((m) => m.ox?.plan && !m.ox?.untried)], ['Installed, not tried yet', data.filter((m) => m.ox?.plan && m.ox?.untried)], ['Your agents', data.filter((m) => m.ox?.agent)], ['Your endpoints', data.filter((m) => m.ox?.endpoint)], ['Ready to use', data.filter((m) => !m.ox?.agent && !m.ox?.endpoint && !m.ox?.plan && m.ox?.available !== false)], ['Needs a key', data.filter((m) => !m.ox?.agent && !m.ox?.endpoint && !m.ox?.plan && m.ox?.available === false)]];
         el.innerHTML = `${mobileBack}<div class="shead">${icon('mode')}Models</div><p class="sdesc">Which models the picker shows. Hidden ones still work by name and for Auto. Kept in this browser.</p>
           <label class="search" style="margin:0 0 10px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line2);padding:9px 12px"><span data-i="search"></span><input id="md-q" placeholder="Search models" aria-label="Search models"></label>
           <div style="display:flex;gap:8px;margin-bottom:6px"><button class="btn ghost" id="md-all">Show all</button><span class="small muted" style="align-self:center">${data.length - [...hidden].filter((h) => data.some((m) => m.id === h)).length} of ${data.length} shown</span></div>
