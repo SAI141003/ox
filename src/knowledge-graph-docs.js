@@ -49,8 +49,11 @@ export function sections(text) {
   const out = [];
   let cur = { heading: '', level: 0, lines: [] };
   const trail = [];
+  let fence = null;   // inside ``` or ~~~, a "# comment" is code, not a heading
   for (const line of String(text).split('\n')) {
-    const h = /^(#{1,4})\s+(.+?)\s*#*$/.exec(line);
+    const f = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (f) { if (!fence) fence = f[1][0]; else if (f[1][0] === fence) fence = null; cur.lines.push(line); continue; }
+    const h = fence ? null : /^(#{1,4})\s+(.+?)\s*#*$/.exec(line);
     if (h) {
       if (cur.lines.join('').trim() || cur.heading) out.push(cur);
       const level = h[1].length;
@@ -153,21 +156,42 @@ export async function buildKnowledge({ root = process.cwd(), home = process.env.
 export function queryKnowledge(g, question, { budget = 800, seeds: maxSeeds = 8 } = {}) {
   const q = [...new Set(words(question).map(stem))];
   if (!q.length) return { text: '', tokens: 0, used: [], sources: [] };
-  // Rare words decide (BM25's idf): "release" in three sections says more than "ox" in all of them.
+  // BM25 over three fields. Rare words decide (idf): "release" in three sections says
+  // more than "ox" in all of them. How often a word appears counts, against the
+  // section's length (tf, k1 and b). The section's own heading says most about
+  // it; the headings above it (its document's title, its parents) say a little,
+  // so a long doc's title no longer lifts every one of its sections.
   const pieces = g.nodes.filter((n) => n.kind !== 'doc' && n.kind !== 'entity');
-  const bag = new Map(pieces.map((n) => [n.id, { head: new Set(words(n.name).map(stem)), body: new Set(words(n.text).map(stem)) }]));
-  const df = new Map(q.map((w) => [w, pieces.filter((n) => { const b = bag.get(n.id); return b.head.has(w) || b.body.has(w); }).length]));
+  const counts = (ws) => { const m = new Map(); for (const w of ws) m.set(w, (m.get(w) ?? 0) + 1); return m; };
+  const bag = new Map(pieces.map((n) => {
+    const trail = String(n.name ?? '').split(' › ');
+    const own = words(trail.pop()).map(stem);
+    const body = words(n.text).map(stem);
+    return [n.id, { own: new Set(own), above: new Set(words(trail.join(' ')).map(stem)), tf: counts(body), len: body.length, seq: [...own, '|', ...body] }];
+  }));
+  const avgLen = pieces.reduce((a, n) => a + bag.get(n.id).len, 0) / Math.max(1, pieces.length) || 1;
+  const has = (b, w) => b.own.has(w) || b.above.has(w) || b.tf.has(w);
+  const df = new Map(q.map((w) => [w, pieces.filter((n) => has(bag.get(n.id), w)).length]));
   const idf = (w) => Math.log(1 + (pieces.length - df.get(w) + 0.5) / (df.get(w) + 0.5));
+  const pairs = q.length > 1 ? q.slice(1).map((w, k) => `${q[k]} ${w}`) : [];
+  const K1 = 1.2, B = 0.75;
   const score = (n) => {
     const b = bag.get(n.id);
     if (!b) return 0;
     let s = 0, hit = 0;
     for (const w of q) {
-      if (b.head.has(w)) { s += 2 * idf(w); hit++; }        // in its heading: what the section is about
-      else if (b.body.has(w)) { s += idf(w); hit++; }
+      const tf = b.tf.get(w) ?? 0;
+      let ws = tf ? idf(w) * (tf * (K1 + 1)) / (tf + K1 * (1 - B + B * b.len / avgLen)) : 0;
+      if (b.own.has(w)) ws += 2.5 * idf(w);
+      else if (b.above.has(w)) ws += 0.4 * idf(w);
+      if (ws) { s += ws; hit++; }
     }
     if (!hit) return 0;
-    return s * (hit / q.length) + (n.kind === 'fact' || n.kind === 'note' ? 0.5 : 0) - Math.min(1, n.tokens / 1500);
+    // Two question words side by side in the text: "sandbox profiles", "prompt cache".
+    if (pairs.length) { const seq = b.seq.join(' '); for (const p of pairs) if (seq.includes(p)) s += 1.5; }
+    // A heading with next to nothing under it answers nothing.
+    const thin = b.len < 12 ? 0.35 : 1;
+    return (s * (hit / q.length) + (n.kind === 'fact' || n.kind === 'note' ? 0.5 : 0)) * thin;
   };
   const ranked = g.nodes.map((n) => [n, score(n)]).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
   const seeds = ranked.slice(0, maxSeeds).map(([n]) => n);
@@ -175,13 +199,16 @@ export function queryKnowledge(g, question, { budget = 800, seeds: maxSeeds = 8 
   const byId = new Map(g.nodes.map((n) => [n.id, n]));
   const nbr = new Map();
   for (const e of g.edges) { (nbr.get(e.from) ?? nbr.set(e.from, []).get(e.from)).push(e.to); (nbr.get(e.to) ?? nbr.set(e.to, []).get(e.to)).push(e.from); }
-  const order = [...seeds];
-  const inOrder = new Set(order.map((n) => n.id));
+  // A neighbour joins only when it is about the question too, and the best of them come first.
+  const inOrder = new Set(seeds.map((n) => n.id));
+  const floor = seeds.length ? score(seeds[seeds.length - 1]) * 0.25 : 0;
+  const extra = new Map();
   for (const s of seeds) for (const mid of nbr.get(s.id) ?? []) {
     const via = byId.get(mid);
     const hops = via?.kind === 'entity' ? (nbr.get(mid) ?? []) : [mid];
-    for (const id of hops) { const n = byId.get(id); if (n && !inOrder.has(id) && n.kind !== 'entity' && n.kind !== 'doc' && score(n) > 0) { inOrder.add(id); order.push(n); } }
+    for (const id of hops) { const n = byId.get(id); if (n && !inOrder.has(id) && !extra.has(id) && n.kind !== 'entity' && n.kind !== 'doc') { const sc = score(n); if (sc > floor) extra.set(id, [n, sc]); } }
   }
+  const order = [...seeds, ...[...extra.values()].sort((a, b) => b[1] - a[1]).map(([n]) => n)];
   const lines = [], used = [];
   let total = 0;
   for (const n of order) {
