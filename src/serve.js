@@ -38,7 +38,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createReadStream } from 'fs';
 import { stat, unlink } from 'fs/promises';
 import { fileURLToPath } from 'node:url';
-import { resolveTurnMode } from './modes.js';
+import { DO_IT, resolveTurnMode } from './modes.js';
 import { listAgents, loadAgent, agentBotSpec, agentPersonaBlock } from './agents.js';
 import { parseBackendSpec } from './docker-backend.js';
 import { createMemoryApi } from './memory.js';
@@ -906,7 +906,7 @@ async function handleChatCompletions(req, res) {
   // ...but a request to DO something on this computer ("delete the logs to make
   // space") is never turned into a drawing: Interactive answer left on made ox
   // answer such requests with steps, because the model had no tools.
-  const wantsAction = /\b(delete|remove|clear|clean(?:\s+up)?|free\s+up|empty|uninstall|install|run|execute|kill|quit|move|rename|copy|download|unzip|compress|archive|organi[sz]e|tidy|make\s+(?:some\s+)?(?:space|room))\b/i.test(said) && !WANTS_UI.test(said);
+  const wantsAction = (/\b(delete|remove|clear|clean(?:\s+up)?|free\s+up|empty|uninstall|install|run|execute|kill|quit|move|rename|copy|download|unzip|compress|archive|organi[sz]e|tidy|make\s+(?:some\s+)?(?:space|room))\b/i.test(said) && !WANTS_UI.test(said)) || DO_IT.test(said);
   if ((turnMode.routed || tool.canvas) && !turnMode.answerOnly && body.ox_ui === 'live'
     && (wantsUi || tool.canvas) && !TOUCHES_CODE.test(said) && !wantsAction) {
     turnMode = { mode: 'ask', routed: true, reason: 'an answer to use here, not a change to your files', answerOnly: true };
@@ -932,13 +932,13 @@ async function handleChatCompletions(req, res) {
   // ("Name the capital of Australia" was routed as a change: 2,115 tokens).
   if (directAnswer && !TOUCHES_CODE.test(said)) {
     turnMode = { mode: 'ask', routed: true, reason: 'a direct answer', answerOnly: true };
-  } else if (s1 && turnMode.routed && !turnMode.answerOnly && !TOUCHES_CODE.test(said)) {
+  } else if (s1 && turnMode.routed && !turnMode.answerOnly && !TOUCHES_CODE.test(said) && !wantsAction) {
     // System 1's reading wins over the word lists; a named file or code still
     // keeps the tools whatever it says.
     if (['chat', 'question', 'current'].includes(s1.kind) && !(s1.plan > 0.5)) {
       turnMode = { mode: 'ask', routed: true, reason: `${s1.kind === 'chat' ? 'small talk' : s1.kind === 'current' ? 'needs current information' : 'a question'}${by}`, answerOnly: true };
     } else if (turnMode.reason) turnMode = { ...turnMode, reason: `${turnMode.reason}${by}` };
-  } else if (turnMode.routed && !turnMode.answerOnly && !TOUCHES_CODE.test(said) && !NEEDS_TOOLS.test(said) && (turnMode.mode === 'ask' || SMALL_TALK.test(said) || (!BUILDS.test(said) && said.length < 400))) {
+  } else if (turnMode.routed && !turnMode.answerOnly && !TOUCHES_CODE.test(said) && !NEEDS_TOOLS.test(said) && !wantsAction && (turnMode.mode === 'ask' || SMALL_TALK.test(said) || (!BUILDS.test(said) && said.length < 400))) {
     turnMode = { mode: 'ask', routed: true, reason: turnMode.mode === 'ask' ? turnMode.reason : SMALL_TALK.test(said) ? 'small talk' : 'a question', answerOnly: true };
   }
   if (tool.web || tool.research) turnMode = { mode: 'ask', routed: true, reason: tool.research ? 'deep research' : 'web search', answerOnly: true };
@@ -2526,6 +2526,15 @@ const ROUTES = [
   } },
   { method: 'GET', pattern: /^\/ox\/instructions\/?$/, handler: appRoute(async () => (await appApi()).instructionsView()) },
   { method: 'POST', pattern: /^\/ox\/instructions\/?$/, handler: appRoute(async (b) => (await appApi()).saveInstructions(b.text ?? '')) },
+  // An answer's "Open Storage Settings": only System Settings panes, opened on this Mac.
+  { method: 'POST', pattern: /^\/ox\/open-settings\/?$/, handler: appRoute(async (b) => {
+    const url = String(b?.url ?? '');
+    if (!/^x-apple\.systempreferences:[\w.\-]*(\?[\w.\-=&]*)?$/i.test(url)) throw new Error('only System Settings links open from here');
+    if (process.platform !== 'darwin') throw new Error('System Settings is on a Mac');
+    const { spawn } = await import('node:child_process');
+    spawn('open', [url], { stdio: 'ignore', detached: true }).unref();
+    return { ok: true };
+  }) },
   { method: 'GET', pattern: /^\/ox\/connectors\/gallery\/?$/, handler: appRoute(async () => (await appApi()).connectorGalleryView()) },
   { method: 'POST', pattern: /^\/ox\/connectors\/gallery\/?$/, handler: appRoute(async (b) => (await appApi()).addGalleryConnector(b)) },
   { method: 'GET', pattern: /^\/ox\/connectors\/?$/, handler: appRoute(async () => (await appApi()).connectorsView()) },

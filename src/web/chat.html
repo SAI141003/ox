@@ -1636,6 +1636,7 @@
         const label = String(p.label ?? p.text ?? p.title ?? p.name ?? '').trim() || (host ? `Open ${host}` : ask ? String(ask).slice(0, 40) : 'Open');
         if (cx) { const i = cx.actions.push(p.action ?? { steps: [{ step: 'ask', message: label }] }) - 1; return `<button class="chip${p.tone === 'primary' ? ' on' : ''}" data-cv-act="${i}">${esc(label)}</button>`; }
         if (url && /^https?:\/\//.test(url)) return `<a class="chip" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
+        if (url && SETTINGS_URL.test(url)) return `<button class="chip" data-open-settings="${esc(url)}">${esc(label)}</button>`;
         return `<button class="chip" ${ask ? `data-ask="${esc(ask)}"` : 'disabled title="Works in the terminal and the island"'}>${esc(label)}</button>`;
       }
       case 'Select': return `<label class="ui-field"><span>${esc(p.name ?? '')}</span><select ${cx && p.bind ? `data-cv-bind="${esc(p.bind)}"` : 'disabled'}>${(p.options ?? []).map((o) => { const q = o.props ?? o; return `<option value="${esc(q.value)}" ${String(q.value) === String(p.value) ? 'selected' : ''}>${esc(q.label ?? q.value)}</option>`; }).join('')}</select></label>`;
@@ -1649,7 +1650,7 @@
       case 'Carousel': { const items = (Array.isArray(p.children) ? p.children : [p.children]).filter(Boolean); return `<div class="cv-carousel" data-car="0">${items.map((x, i) => `<div class="cv-slide"${i ? ' hidden' : ''}>${canvasNode(x, cx)}</div>`).join('')}<div class="cv-car-nav"><button class="chip" data-car-go="-1" aria-label="Previous">‹</button><span>1 / ${items.length}</span><button class="chip" data-car-go="1" aria-label="Next">›</button></div></div>`; }
       case 'Quote': return `<blockquote class="cv-quote">${inline(String(p.text ?? ''))}${p.cite ? `<cite>— ${esc(p.cite)}</cite>` : ''}</blockquote>`;
       case 'Map': return mapNode(p);
-      case 'Link': return /^https:\/\//.test(String(p.url ?? '')) ? `<a class="cv-link" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${esc(p.label || p.url)} ↗</a>` : `<span class="cv-link">${esc(p.label ?? '')}</span>`;
+      case 'Link': if (SETTINGS_URL.test(String(p.url ?? ''))) return `<button class="chip" data-open-settings="${esc(p.url)}">${esc(p.label || 'Open Settings')}</button>`; return /^https:\/\//.test(String(p.url ?? '')) ? `<a class="cv-link" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${esc(p.label || p.url)} ↗</a>` : `<span class="cv-link">${esc(p.label ?? '')}</span>`;
       case 'Image': { const src = String(p.src ?? ''); const ok = /^\/ox\/media\/[\w-]+\/[\w.-]+\.(png|jpe?g|webp|gif)$/i.test(src) || /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(src); const ar = Math.max(0.4, Math.min(3, Number(p.aspect) || 1)); return ok ? `<figure class="cv-img" style="aspect-ratio:${ar}"><img alt="${esc(p.alt ?? '')}" src="${esc(src)}">${p.alt ? `<figcaption>${esc(p.alt)}</figcaption>` : ''}</figure>` : `<div class="ui-box muted small">${esc(p.alt || 'picture')}</div>`; }
       case 'Math': { const t = esc(String(p.expr ?? '')).replace(/sqrt\(/g, '√(').replace(/\bpi\b/g, 'π').replace(/&lt;=/g, '≤').replace(/&gt;=/g, '≥').replace(/!=/g, '≠').replace(/\*/g, '·').replace(/\^\(([^)]{1,20})\)|\^([\w.]{1,8})/g, (_, a, b) => `<sup>${a ?? b}</sup>`).replace(/_([\w]{1,6})/g, '<sub>$1</sub>'); return p.block ? `<div class="cv-math block">${t}</div>` : `<span class="cv-math">${t}</span>`; }
       case 'Popover': return `<details class="cv-pop"><summary>${esc(p.label ?? 'More')}</summary><div class="cv-stack">${kids(p.children)}</div></details>`;
@@ -1661,6 +1662,12 @@
   // A real map: OpenStreetMap's own embed with the places' area and a pin, and
   // links to directions. Models used to draw a page that loaded map tiles,
   // which the app's security policy blocks: a large blank box.
+  // macOS System Settings panes an answer may open (x-apple.systempreferences:…).
+  const SETTINGS_URL = /^x-apple\.systempreferences:[\w.\-]*(\?[\w.\-=&]*)?$/i;
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest?.('[data-open-settings]');
+    if (b) postJson('/ox/open-settings', { url: b.dataset.openSettings }).catch((err) => toast(err.message));
+  });
   function mapNode(p) {
     const pts = (Array.isArray(p.places) ? p.places : []).map((q) => (Array.isArray(q) ? q : [q?.name, q?.lat, q?.lon])).map(([n, la, lo]) => [String(n ?? ''), Number(la), Number(lo)]).filter(([, la, lo]) => Math.abs(la) <= 90 && Math.abs(lo) <= 180 && Number.isFinite(la) && Number.isFinite(lo)).slice(0, 12);
     if (!pts.length) return `<div class="ui-box muted small">${esc(p.title || 'a map')}: no places with coordinates</div>`;
@@ -1690,7 +1697,11 @@
   function olHtml(c) {
     const ev = c.canvas.last ?? c.canvas.evaluate();
     c.actions = [];
+    // While it streams, a half-written last line can leave no root for a moment:
+    // keep the last drawing up instead of flashing back to "Drawing…".
+    if (!ev.root && c.lastBody) { c.actions = c.lastActions; return c.lastBody; }
     const body = ev.root ? canvasNode(ev.root, c) : '<div class="ui-box muted small">Drawing…</div>';
+    if (ev.root) { c.lastBody = body; c.lastActions = c.actions; }
     // OpenUI's rule: bad lines are dropped and the rest renders. Say so, briefly.
     const errs = [...(ev.parseErrors ?? []), ...(ev.errors ?? [])].filter((e) => (e.code !== 'root' || ev.root) && e.code !== 'ignored');
     const note = errs.length && c.done ? `<details class="ol-errs"><summary>${errs.length} line${errs.length === 1 ? '' : 's'} could not be drawn</summary>${errs.slice(0, 8).map((e) => `<div>${e.line ? `line ${e.line}: ` : ''}${esc(e.msg)}</div>`).join('')}</details>` : '';
@@ -1752,6 +1763,9 @@
         const out = await c.canvas.act(c.actions[Number(b.dataset.cvAct)], olQuery);
         if (out.rerender) redraw();
         if (out.open && /^https?:\/\//.test(out.open)) window.open(out.open, '_blank', 'noopener');
+        // A System Settings pane ("Open Storage Settings"): the page cannot open
+        // that itself, so ox opens it on this Mac.
+        else if (out.open && SETTINGS_URL.test(out.open)) postJson('/ox/open-settings', { url: out.open }).catch((err) => toast(err.message));
         if (out.ask) { $('input').value = out.ask; resize(); send(); }
         if (out.mutation) { $('input').value = `Run ${out.mutation.tool} with ${JSON.stringify(out.mutation.args)}`; resize(); $('input').focus(); toast('Changes go through ox, which asks first'); }
       });

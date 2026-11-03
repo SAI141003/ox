@@ -101,9 +101,12 @@ export function classifyMode(text) {
 // tokens instead of about 1,900 with tools, the workspace tree and skills).
 const PLAIN_TOUCHES = /\b(file|files|repo|repository|project|codebase|function|class|module|component|test|tests|bug|fix|refactor|commit|branch|src|readme|this code|my code|here|folder|directory)\b|[\w-]+\.(js|ts|tsx|jsx|py|go|rs|java|rb|css|html|json|md)\b/i;
 const PLAIN_NEEDS = /\b(search|look up|google|browse|latest|today|news|price|weather|open|run|install|email|mail|send|remember|forget|schedule|remind|screenshot|download|fetch|https?:\/\/|www\.|agent|build|create|make|write|generate|edit|change|update|delete|rename|add|remove|deploy)\b/i;
+// "Do it yourself", "go ahead", "you do it": the person wants the work done,
+// with tools, not an answer (it read as a question because it starts with "do").
+export const DO_IT = /\b(do (it|that|this|them)|yourself|go ahead|you do|u do|fix (it|that|this)|run (it|that|this)|use (the|my) terminal|on my (mac|computer|laptop)|for me)\b/i;
 export function isPlainQuestion(text) {
   const t = String(text ?? '').trim();
-  if (!t || t.length > 400 || t.includes('\n')) return false;
+  if (!t || t.length > 400 || t.includes('\n') || DO_IT.test(t)) return false;
   return !PLAIN_TOUCHES.test(t) && !PLAIN_NEEDS.test(t) && (/\?\s*$/.test(t) || /^(what|why|how|who|when|where|which|explain|define|tell me|is|are|can|does|do)\b/i.test(t));
 }
 

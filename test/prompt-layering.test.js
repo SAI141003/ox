@@ -256,7 +256,10 @@ test('the prompt did not get longer: the reorder is byte-neutral, not merely sma
   const envBytes = Buffer.byteLength(layers.find((l) => l.name === 'environment').text);
   // 1927 -> 2110: the 183 bytes are exactly the create_media rule (fbe768e:
   // "generate, make, render, draw, or create an image, use create_media…").
-  assert.equal(sum.totalBytes - envBytes, 2110, 'pinned: the reorder is byte-neutral');
+  // 2110 -> 2533: the 423 bytes are exactly the do-it-yourself rule ("When the
+  // person asks you to do something on this computer… do it yourself"): asked
+  // to free disk space, models replied with commands for the person to run.
+  assert.equal(sum.totalBytes - envBytes, 2533, 'pinned: the reorder is byte-neutral');
 
   // The pinned number alone would still pass if a line were added AND another
   // dropped. Rebuild the exact byte sequence the flat string used to emit -- the

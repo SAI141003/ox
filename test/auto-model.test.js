@@ -42,3 +42,12 @@ test('Auto never picks the Claude plan on its own; your default model leads real
     fs.rmSync(cfg, { force: true });
   }
 });
+
+test('"do it yourself" and other go-aheads keep their tools: they are requests to act, not questions', async () => {
+  const M = await import('../src/modes.js');
+  for (const t of ['do it yourself', 'u do it', 'go ahead', 'you do it, use the terminal', 'fix it for me']) {
+    assert.equal(M.isPlainQuestion(t), false, t);
+    assert.ok(M.DO_IT.test(t), t);
+  }
+  assert.equal(M.isPlainQuestion('do you know what a mortgage is?'), true, 'a real question still is one');
+});
