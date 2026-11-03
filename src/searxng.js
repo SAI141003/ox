@@ -127,6 +127,8 @@ export async function setup({ say = () => {} } = {}) {
   if (uv) {
     const env = { ...process.env, VIRTUAL_ENV: venv };
     run('uv', ['pip', 'install', ...reqs], { env });
+    // A fresh uv environment has no setuptools, which SearXNG's own install needs.
+    run('uv', ['pip', 'install', 'setuptools', 'wheel'], { env });
     run('uv', ['pip', 'install', '--no-build-isolation', '-e', path.join(d, 'src')], { env });
   } else {
     run(py(), ['-m', 'pip', 'install', '-q', '--upgrade', 'pip', 'setuptools', 'wheel']);
