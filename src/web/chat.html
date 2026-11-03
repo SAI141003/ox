@@ -1988,7 +1988,11 @@
     const asks = (msg.asks || []).map((a) => a.state
       ? `<div class="ask-done small dim">${a.state === 'allow' ? 'Allowed' : 'Denied'} · <b>${esc(a.tool)}</b> <span class="mono">${esc(askWhat(a))}</span></div>`
       : `<div class="ask-card" data-ask-id="${esc(a.id)}"><div class="cap">Waiting for your OK</div><div><b>${esc(a.tool)}</b> <span class="mono small">${esc(askWhat(a))}</span></div><div class="ask-btns"><button class="btn primary small" data-ask-answer="allow">Allow</button><button class="btn ghost small" data-ask-answer="deny">Deny</button></div></div>`).join('');
-    morph(body, routed + plan + (steps ? `<div class="steps${prefs.activity === 'detailed' ? ' detailed' : ''}">${steps}</div>` : '') + asks + canv + made + text + changedHtml + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : ''));
+    // An agent asking for a key: a private field; the value goes to ox's key store, never into the chat.
+    const secrets = (msg.secrets || []).map((x) => x.state
+      ? `<div class="ask-done small dim">${x.state === 'saved' ? 'Saved on this machine' : 'Not given'} · <b class="mono">${esc(x.name)}</b></div>`
+      : `<form class="ask-card" data-secret-id="${esc(x.id)}" autocomplete="off"><div class="cap">ox needs a key</div><div><b class="mono">${esc(x.name)}</b> <span class="small muted">${esc(x.why || '')}</span></div><input class="field mono" type="password" name="v" placeholder="Paste it here: it is saved on this Mac and never shown to the model" autocomplete="off" spellcheck="false" style="margin:8px 0"><div class="ask-btns"><button class="btn primary small" type="submit">Save</button><button class="btn ghost small" type="button" data-secret-skip>Skip</button></div></form>`).join('');
+    morph(body, routed + plan + (steps ? `<div class="steps${prefs.activity === 'detailed' ? ' detailed' : ''}">${steps}</div>` : '') + asks + secrets + canv + made + text + changedHtml + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : ''));
     body.querySelectorAll('[data-ask-answer]').forEach((b) => (b.onclick = () => {
       const card = b.closest('[data-ask-id]');
       const a = (msg.asks || []).find((x) => x.id === card.dataset.askId);
@@ -1997,6 +2001,17 @@
         .then(() => { if (a) { a.state = b.dataset.askAnswer; paint(body, msg); } })
         .catch((e) => { if (a) a.state = 'deny'; paint(body, msg); toast(plainDash(e.message)); });
     }));
+    body.querySelectorAll('[data-secret-id]').forEach((f) => {
+      const x = (msg.secrets || []).find((y) => y.id === f.dataset.secretId);
+      const answer = (value) => {
+        f.querySelectorAll('button, input').forEach((el) => (el.disabled = true));
+        postJson('/ox/secret', { id: f.dataset.secretId, value })
+          .then((r) => { if (x) { x.state = r.saved ? 'saved' : 'skipped'; paint(body, msg); } })
+          .catch((e) => { if (x) x.state = 'skipped'; paint(body, msg); toast(plainDash(e.message)); });
+      };
+      f.onsubmit = (e) => { e.preventDefault(); const v = f.elements.v.value; f.elements.v.value = ''; answer(v); };
+      f.querySelector('[data-secret-skip]').onclick = () => answer('');
+    });
     mountLive(body); bindUi(body); bindOpenUI(body);
     // One undo: the turn's file changes go back and the exchange leaves the chat.
     const ub = body.querySelector('[data-undo-turn]');
@@ -2534,6 +2549,8 @@
           if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; if (Array.isArray(ox.media) && ox.media.length) reply.media = [...new Set([...(reply.media || []), ...ox.media])]; if (ox.canvas) { reply.canvases = (reply.canvases || []).filter((x) => x.id !== ox.id); reply.canvases.push({ id: ox.id, tree: ox.canvas }); } }
           // A step waiting on your yes (a plan's write, a command): Allow / Deny here.
           if (ox?.type === 'approval') (reply.asks ??= []).push({ id: ox.id, tool: ox.tool, preview: ox.preview, state: '' });
+          if (ox?.type === 'secret') (reply.secrets ??= []).push({ id: ox.id, name: ox.name, why: ox.why, state: '' });
+          if (ox?.type === 'secret-resolved') { const x = (reply.secrets || []).find((y) => y.id === ox.id); if (x) x.state = ox.saved ? 'saved' : 'skipped'; }
           if (ox?.type === 'approval-resolved') { const a = (reply.asks || []).find((x) => x.id === ox.id); if (a) a.state = ox.decision === 'allow' ? 'allow' : 'deny'; }
           // The server redrew an interactive answer that did not load.
           if (ox?.type === 'replace' && typeof ox.content === 'string') reply.content = ox.content;

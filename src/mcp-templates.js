@@ -119,6 +119,23 @@ export const MCP_TEMPLATES = {
     ].join('\n'),
   },
 
+  'phone-harness': {
+    name: 'phone-harness',
+    title: 'Phone Harness (an iPhone or Android your agent drives)',
+    risk: 'write',
+    desc: 'Phone Harness hosted MCP: tap, type and scroll on a cloud or your own iPhone/Android, reading the screen. Cloud phones are billed per minute by Phone Harness.',
+    requires: [],
+    entry: () => ({
+      type: 'http',
+      url: 'https://mcp.phone-harness.com/mcp',
+    }),
+    setup: [
+      'Hosted endpoint: nothing is downloaded or spawned.',
+      'Sign in once: ox mcp login phone-harness (OAuth, scope phone:drive; the token stays on this machine).',
+      'Cloud Android phones cost 5¢ a minute after the free credit; a cloud iPhone is a monthly plan (phone-harness.com).',
+    ].join('\n'),
+  },
+
   slack: {
     name: 'slack',
     title: 'Slack (hosted MCP)',

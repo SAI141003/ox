@@ -65,6 +65,8 @@ export function classifyTool(name) {
   if (toolName.startsWith('memory_')) return 'memory_write';
   // ox brain (src/brain.js): searches and saves long-term notes, the same posture as memory_*.
   if (toolName === 'brain') return 'memory_write';
+  // request_secret (src/tools/secret.js): writes nothing until you type the key yourself; the card is its approval.
+  if (toolName === 'request_secret') return 'memory_write';
   if (MAILBOX_TOOLS.has(toolName)) return 'memory_write';
   if (SESSION_STATE_TOOLS.has(toolName)) return 'memory_write';
   if (TERMINAL_TOOLS.has(toolName)) return 'terminal';

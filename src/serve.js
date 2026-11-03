@@ -141,6 +141,23 @@ export function appApprover(res, model, { timeoutMs = Number(process.env.OX_APP_
 // In Orchestrate these still ask: steps that cannot be taken back or that act outside the project.
 export const ORCHESTRATE_STILL_ASKS = /\brm\s+-[a-z]*[rf]|\brmdir\b|\bdelete_file\b|\bgit\s+(push|reset\s+--hard|clean\s+-[a-z]*f|branch\s+-D)|\bnpm\s+publish\b|\bsudo\b|\bdeploy\b|\bvercel\s+(--prod|deploy)|\bcurl\b[^|]*\|\s*(sh|bash)\b|\bpay(ment)?\b|\bsend_(email|message)\b|\bdrop\s+(table|database)\b/i;
 
+// request_secret (src/tools/secret.js): the agent asks for a key in the chat; the
+// value goes from the app straight to the key store and never into the stream.
+const appSecrets = new Map();
+let appSecretSeq = 0;
+export function appSecretAsker(res, model, { timeoutMs = 10 * 60_000 } = {}) {
+  return (name, why) => new Promise((resolve) => {
+    if (res.writableEnded || res.destroyed) { resolve(false); return; }
+    const id = `sec-${Date.now().toString(36)}-${++appSecretSeq}`;
+    const done = (ok) => { if (!appSecrets.delete(id)) return; clearTimeout(timer); if (!res.writableEnded && !res.destroyed) sendSSE(res, { ...createChatCompletionChunk(model, ''), ox: { type: 'secret-resolved', id, saved: ok } }); resolve(ok); };
+    const timer = setTimeout(() => done(false), timeoutMs);
+    timer.unref?.();
+    appSecrets.set(id, { name, done });
+    res.on?.('close', () => done(false));
+    sendSSE(res, { ...createChatCompletionChunk(model, ''), ox: { type: 'secret', id, name, why } });
+  });
+}
+
 export function answerAppApproval(id, decision) {
   const p = appApprovals.get(id);
   if (!p) return false;
@@ -1057,6 +1074,7 @@ async function handleChatCompletions(req, res) {
     // keeps the old answer, no, rather than waiting on a card it never shows.
     const fromApp = Boolean(body.ox_mode || body.ox_ui);
     if (fromApp || target?.provider === 'subscription') ctx.requestApproval = appApprover(res, targetModel);
+    if (fromApp) ctx.requestSecret = appSecretAsker(res, targetModel);
     // Orchestrate, chosen by you, runs on its own: its helpers' edits and
     // commands in the project go ahead without a card each. What cannot be
     // taken back or reaches outside (deleting, pushing, publishing, paying,
@@ -2573,6 +2591,16 @@ const ROUTES = [
     return { ok: true, decision };
   }) },
   { method: 'GET', pattern: /^\/ox\/approvals\/?$/, handler: appRoute(async () => ({ approvals: pendingAppApprovals() })) },
+  { method: 'POST', pattern: /^\/ox\/secret\/?$/, handler: appRoute(async (body) => {
+    const p = appSecrets.get(String(body?.id ?? ''));
+    if (!p) throw new Error('that request is no longer waiting');
+    const value = typeof body?.value === 'string' ? body.value.trim() : '';
+    if (!value) { p.done(false); return { saved: false }; }
+    const { setKey } = await import('./keystore.js');
+    setKey(p.name, value);
+    p.done(true);
+    return { saved: true, name: p.name };
+  }) },
   { method: 'POST', pattern: /^\/ox\/org\/(approve|reject|beat|pause|resume)\/?$/, handler: appRoute(async (body, m) => {
     const O = await import('./org.js');
     const id = String(body?.id ?? '');

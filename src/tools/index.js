@@ -38,6 +38,8 @@ import { codeGraphTool, CODE_GRAPH_TOOL_SCHEMAS, CODE_GRAPH_TOOLS, CODE_GRAPH_KE
 import { createBotTool, BOT_TOOL_SCHEMAS } from './bots.js';
 import { sessionRecallTool, SESSION_RECALL_TOOL_SCHEMAS } from './session-recall.js';
 import { withWriteLock } from '../write-lock.js';
+import { guardCall, repairArgs } from '../run-guards.js';
+import { request_secret, SECRET_TOOL_SCHEMAS } from './secret.js';
 
 export const TOOL_IMPLS = {
   read_file: readFileTool,
@@ -64,6 +66,7 @@ export const TOOL_IMPLS = {
   messages_send,
   whatsapp_send,
   web_fetch: webFetchTool,
+  request_secret,
   web_search: webSearchTool,
   library: async (args = {}) => {
     const L = await import('../library.js');
@@ -111,6 +114,7 @@ export const TOOL_IMPLS = {
 const PLAN_READ_ONLY = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'show_ui', 'agent_status', 'code_graph', 'session_recall'];
 
 export const BUILTIN_SCHEMAS = [
+  ...SECRET_TOOL_SCHEMAS,
   ...OPERATOR_TOOL_SCHEMAS,
   ...MAIL_TOOL_SCHEMAS,
   ...MESSAGES_TOOL_SCHEMAS,
@@ -289,6 +293,9 @@ function normalizeMcpResult(result) {
   if (result.isError === true) out.isError = true;
   return out;
 }
+
+// Each built-in tool's required arguments (a null in any other one is dropped, src/run-guards.js).
+const TOOL_REQUIRED = new Map(BUILTIN_SCHEMAS.map((sc) => [sc?.name ?? sc?.function?.name, (sc?.parameters ?? sc?.input_schema ?? sc?.function?.parameters)?.required ?? []]));
 
 export function listToolSchemas(ctx = {}, strictSchemas = false) {
   const strict =
@@ -888,13 +895,16 @@ export async function dispatchTool(name, args, ctx = {}) {
     // mutations targeting the same argument path; unrelated files remain
     // concurrent. The filesystem tool still performs the authoritative path
     // resolution and approval checks inside the lock.
+    // An omitted optional argument sent as null is dropped, not refused (src/run-guards.js).
+    args = repairArgs(args, TOOL_REQUIRED.get(name));
     const mutatesFile = name === 'write_file' || name === 'edit_file';
     const lockPath = mutatesFile
       ? path.resolve(String(ctx?.cwd ?? process.cwd()), String(args?.path ?? ''))
       : null;
+    // A website that refused three times is closed for the rest of the run; a bot wall is named as one.
     const result = mutatesFile
       ? await withWriteLock(lockPath, () => impl(args ?? {}, ctx ?? {}))
-      : await impl(args ?? {}, ctx ?? {});
+      : await guardCall(name, args ?? {}, ctx ?? {}, () => impl(args ?? {}, ctx ?? {}));
     if (result && typeof result === 'object' && !Array.isArray(result)) {
       const out = { content: String(result.content ?? '') };
       if (result.isError === true) out.isError = true;
