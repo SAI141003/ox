@@ -26,6 +26,7 @@ import { readyTasks, claimTask, completeTask, taskBrief, addSpend, listTasks } f
 import { readUsage } from './usage-log.js';
 import { fileURLToPath } from 'node:url';
 import * as H from './coworker-home.js';
+import { defaultWorkspace } from './workspace.js';
 
 const OX_HOME = () => process.env.OX_HOME || path.join(os.homedir(), '.ox');
 export const ORG_FILE = () => path.join(OX_HOME(), 'org.json');
@@ -222,8 +223,9 @@ export function runThroughOx(agent, task, prompt, { timeoutMs = 30 * 60_000, mes
     const approval = agent.approval === 'all' ? ['--dangerously-skip-approvals'] : agent.approval === 'read' ? ['--mode', 'ask'] : ['--yes-edits'];
     const args = [bin, '-p', prompt, ...approval, ...(agent.runtime && agent.runtime !== 'ox' ? ['--bot', agent.runtime] : [])];
     const child = spawn(process.execPath, args, {
-      // No project folder of its own: it works in its own workspace, not wherever ox was started.
-      cwd: agent.cwd ?? (H.ensureHome(agent), H.workspaceOf(agent.id)),
+      // Where the work is: its project folder, else the one the task names, else where you work
+      // (never a folder of its own that you would have to go and find).
+      cwd: agent.cwd ?? task.cwd ?? defaultWorkspace(),
       env: { ...process.env, OX_TASK_ID: task.id, OX_AGENT_NAME: agent.id, OX_ORG_AGENT: agent.id, OX_SURFACE: 'org', OX_ORG_DEPTH: String(Number(process.env.OX_ORG_DEPTH || 0) + 1) },
       stdio: ['ignore', 'pipe', 'pipe'],
     });

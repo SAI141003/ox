@@ -57,7 +57,7 @@ const list = (path) => getJson(`/ox/files?root=${encodeURIComponent(ROOT)}&path=
 
 const open = new Set(['']);
 const kids = new Map();
-let current = null, saved = '';
+let current = null, saved = '', leaving = null;
 
 async function load(path) { if (!kids.has(path)) kids.set(path, (await list(path)).entries ?? []); return kids.get(path); }
 async function drawTree() {
@@ -76,7 +76,9 @@ $('tree').onclick = async (ev) => {
   const r = ev.target.closest('.row');
   if (!r) return;
   if (r.dataset.dir) { open.has(r.dataset.p) ? open.delete(r.dataset.p) : open.add(r.dataset.p); drawTree(); return; }
-  if (current && $('ed') && $('ed').value !== saved && !confirm('Leave without saving your changes?')) return;
+  // Unsaved changes: a second click on another file leaves them (the app's web view has no confirm()).
+  if (current && $('ed') && $('ed').value !== saved && leaving !== r.dataset.p) { leaving = r.dataset.p; $('state').textContent = 'unsaved: click that file again to leave without saving'; return; }
+  leaving = null;
   openFile(r.dataset.p);
 };
 async function openFile(p) {

@@ -259,7 +259,10 @@ test('the prompt did not get longer: the reorder is byte-neutral, not merely sma
   // 2110 -> 2533: the 423 bytes are exactly the do-it-yourself rule ("When the
   // person asks you to do something on this computer… do it yourself"): asked
   // to free disk space, models replied with commands for the person to run.
-  assert.equal(sum.totalBytes - envBytes, 2533, 'pinned: the reorder is byte-neutral');
+  // 2533 -> 2731: the 198 bytes are exactly the new-project rule ("A new project or app the
+  // current folder is not … set_project"): asked to build an app, ox wrote it into whatever
+  // folder it was in, ox's own included, instead of a folder of its own.
+  assert.equal(sum.totalBytes - envBytes, 2731, 'pinned: the reorder is byte-neutral');
 
   // The pinned number alone would still pass if a line were added AND another
   // dropped. Rebuild the exact byte sequence the flat string used to emit -- the

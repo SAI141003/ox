@@ -45,6 +45,7 @@ import { createMemoryApi } from './memory.js';
 import { readConfigDoc, saveConfigDoc } from './config.js';
 import * as UI_LANG from './ui-lang.js';
 import { classifyTurn, warmSystem1 } from './system1.js';
+import { defaultWorkspace, teamDirFor } from './workspace.js';
 
 // Read at request time, not at module load: a supervisor (or a test) that sets
 // the key after this module is imported must not silently get the old answer.
@@ -1076,6 +1077,8 @@ async function handleChatCompletions(req, res) {
     const fromApp = Boolean(body.ox_mode || body.ox_ui);
     if (fromApp || target?.provider === 'subscription') ctx.requestApproval = appApprover(res, targetModel);
     if (fromApp) ctx.requestSecret = appSecretAsker(res, targetModel);
+    // set_project (src/tools/project.js) moved the run: the app's session follows to the new folder.
+    if (fromApp) ctx.onProject = (dir) => { if (!res.writableEnded && !res.destroyed) sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'project', cwd: dir } }); };
     // Orchestrate, chosen by you, runs on its own: its helpers' edits and
     // commands in the project go ahead without a card each. What cannot be
     // taken back or reaches outside (deleting, pushing, publishing, paying,
@@ -2184,10 +2187,11 @@ async function themeAsk() {
 
 /** The folder a chat session works in: one it chose (an existing folder, not the disk's root), else ox's own. */
 export function sessionCwd(asked) {
-  if (typeof asked !== 'string' || !asked.trim()) return process.cwd();
+  const fallback = defaultWorkspace();
+  if (typeof asked !== 'string' || !asked.trim()) return fallback;
   const dir = resolve(asked.trim().replace(/^~(?=$|\/)/, homedir()));
   try { if (dir !== '/' && statSync(dir).isDirectory()) return dir; } catch {}
-  return process.cwd();
+  return fallback;
 }
 
 /** Project folders to switch to: git repos where people keep them, newest first. */
@@ -2688,13 +2692,28 @@ const ROUTES = [
     const task = String(body?.task ?? '').trim();
     if (!task) throw new Error('say what to build');
     const raw = String(body?.dir ?? '').trim().replace(/^~(?=$|\/)/, homedir());
-    const dir = raw ? resolve(raw) : join(homedir(), 'ox-builds', `${BR.slugOf(task).slice(0, 30)}-${Date.now().toString(36).slice(-4)}`);
+    // Where you are working: this project when the session is in one, else a new folder for it there.
+    const dir = raw ? resolve(raw) : teamDirFor(typeof body?.cwd === 'string' && body.cwd ? sessionCwd(body.cwd) : defaultWorkspace(), task);
     if (dir === homedir() || dir === '/' || dir.split(sep).length < 3) throw new Error('pick a project folder, not your home folder or the disk');
     BR.prepareRepo(dir);   // refuses a folder of your own files or uncommitted changes, before anything runs
     const ask = await buildAsk();
     if (!ask) throw new Error('no model is set up: run ox doctor');
     const room = BR.startBuild({ task, dir, agents: body?.agents, ask, bot: typeof body?.bot === 'string' && body.bot ? body.bot : null, sessionId: typeof body?.sessionId === 'string' ? body.sessionId : null });
     return { id: room.id, dir };
+  }) },
+  // One agent of a build: ask it what it is doing (from its record), or tell it something for its next step.
+  { method: 'POST', pattern: /^\/ox\/builds\/([\w.-]+)\/agents\/(Agent-[1-8])\/(ask|tell)\/?$/, handler: appRoute(async (body, m) => {
+    const BR = await import('./build-room.js');
+    const agent = m[2].replace('-', ' ');
+    if (m[3] === 'tell') {
+      const room = BR.liveBuild(m[1]);
+      if (!room || room.state === 'done' || room.state === 'stopped') throw new Error('that build has finished: tell ox in the chat instead');
+      room.tell(agent, body?.text);
+      return { ok: true, agent };
+    }
+    const ask = await buildAsk();
+    if (!ask) throw new Error('no model is set up: run ox doctor');
+    return { agent, answer: await BR.askBuildAgent(m[1], agent, String(body?.question ?? ''), { ask }) };
   }) },
   // Your edit to a file the team built (committed as yours, between merges).
   { method: 'POST', pattern: /^\/ox\/builds\/([\w.-]+)\/file\/?$/, handler: appRoute(async (body, m) => (await import('./build-room.js')).editBuildFile(m[1], body?.file, String(body?.content ?? ''))) },

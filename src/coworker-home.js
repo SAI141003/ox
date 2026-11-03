@@ -3,7 +3,7 @@
 //
 //   ~/.ox/org/home/<id>/
 //     SOUL.md          who it is and how it works (you edit it; it starts from its hire)
-//     workspace/       where it works when it has no project folder of its own
+//     workspace/       scratch space; its work happens in your projects, not here
 //     memory.jsonl     what it learned (ox's memory graph, its own file)
 //     skills/<slug>/SKILL.md   how it does recurring work (it writes these itself)
 //     schedules/<slug>.json    work it does on a cadence ("every 2h", "daily at 9am")
@@ -96,6 +96,7 @@ export function homeBrief(agent, taskText, { env = process.env, org = null, reca
   const mates = Object.values(org?.agents ?? {}).filter((a) => a.id !== agent.id && a.status === 'active');
   if (mates.length) parts.push(`YOUR TEAMMATES (ask one when the question is theirs: run  ox org ask <id> "<question>"  and use the answer):\n${mates.map((a) => `- ${a.id}: ${a.name}, ${a.title}`).join('\n')}`);
   parts.push(`SHARED FOLDER for handing files to teammates: ${sharedDir(env)}`);
+  parts.push('WHERE YOU WORK: in the project you are given (the folder you start in). A new project gets its own folder next to the others there, named after it; say its path when you finish.');
   parts.push('THE COMPANY BRAIN: to add or correct what everyone should know, propose it:  ox brain propose "<title>" --body "<the note>"  (the owner accepts or dismisses it).');
   return parts.filter(Boolean).join('\n\n');
 }

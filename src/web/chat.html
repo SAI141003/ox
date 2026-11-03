@@ -1293,7 +1293,7 @@
   $('open-pr').onclick = async () => {
     const b = $('open-pr');
     if (b.disabled) return;
-    if (!confirm('Open a pull request for the changes in this folder? ox makes a branch, runs the checks, commits, pushes and opens the PR. Merging stays yours.')) return;
+    if (!(await askSure('Open a pull request for the changes in this folder? ox makes a branch, runs the checks, commits, pushes and opens the PR. Merging stays yours.', 'Open a PR'))) return;
     b.disabled = true; b.textContent = 'Opening…';
     try {
       const r = await api('/ox/pr/open', { method: 'POST', body: JSON.stringify({ cwd: convo()?.cwd || undefined }) });
@@ -2093,6 +2093,10 @@
       const el = bubble(m.role);
       paint(el, m);
       if (m.build) el.insertAdjacentHTML('beforeend', `<div style="margin-top:8px"><button class="btn small" data-open-team="${esc(m.build)}">${icon('team')}Show the team</button></div>`);
+      if (m.role === 'assistant') {
+        const urls = [...new Set(String(m.content ?? '').match(/https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?[^\s)'"`>]*/g) ?? [])].slice(0, 3);
+        if (urls.length) el.insertAdjacentHTML('beforeend', `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${urls.map((u) => `<button class="btn small" data-open-here="${esc(u)}">${icon('globe')}Open ${esc(u.replace(/^https?:\/\//, ''))} here</button>`).join('')}</div>`);
+      }
     }
     scrollDown();
   }
@@ -2227,6 +2231,17 @@
     // Build with a team: Team mode, or "build with a team: …" / "/team …" in any mode.
     // A question about how it is going is answered as usual (from the builds' records).
     const teamTask = !pics.length && !c.group && !c.compare?.length && !TEAM_STATUS.test(text) ? (c.mode === 'team' && !/\?\s*$/.test(text) ? text : TEAM_ASK.exec(text)?.[1] ?? null) : null;
+    // A team is building for this chat: what you say now is held and done the moment it finishes
+    // ("once done, show me the game"); a question about how it is going is answered right away.
+    const building = (c.builds ?? []).find((b) => !b.done);
+    if (building && !TEAM_STATUS.test(text) && !pics.length) {
+      if (!queued) { input.value = ''; resize(); }
+      c.messages.push({ role: 'user', content: text });
+      (c.teamQueue ??= []).push(text);
+      c.messages.push({ role: 'assistant', content: `Noted. The team is still building **${building.task.slice(0, 80)}**; I will do this as soon as it finishes, in ${String(c.cwd || c.buildDir || '').split(/[\\/]/).pop() || 'its folder'}. Ask "how is it going?" any time, or stop the team on the right.`, tools: [] });
+      c.updated = Date.now(); saveConvos(); renderChat(); renderLists();
+      return;
+    }
     if (teamTask) { if (!queued) { input.value = ''; resize(); } await startTeam(c, teamTask, text); drainQueue(c.id); return; }
     if (c.mode === 'team') c.mode = 'auto';
     if (!c.tools && Object.keys(draftTools).length) c.tools = { ...draftTools };
@@ -2265,7 +2280,7 @@
   // Each build belongs to the session that started it (c.builds): a new session
   // starts with no team; any session can ask how the builds are going.
   const TEAM_ASK = /^(?:\/team\s+|(?:please\s+)?build (?:this |it |me )?with (?:a|the|my) team[:,]?\s+|team[:,]\s+)([\s\S]{3,})$/i;
-  const TEAM_STATUS = /\b(what'?s|what is|how'?s|how is|status|progress|update on|where are)\b[^?]{0,60}\b(going on|happening|running|doing|build|building|agents?|team|working)\b|\b(agents?|team|builds?)\b[^?]{0,40}\b(doing|status|progress|working on|up to)\b/i;
+  const TEAM_STATUS = /\b(what'?s|what is|how'?s|how is|status|progress|update on|where are)\b[^?]{0,60}\b(going|going on|happening|running|doing|build|building|agents?|team|working|progress|status)\b|\b(agents?|team|builds?)\b[^?]{0,40}\b(doing|status|progress|working on|up to)\b/i;
   async function startTeam(c, task, said) {
     if (!c.messages.length) c.title = task.replace(/\s+/g, ' ').slice(0, 60);
     c.messages.push({ role: 'user', content: said });
@@ -2274,8 +2289,10 @@
     c.updated = Date.now(); saveConvos(); renderChat(); renderLists();
     try {
       // A later task in the same chat builds on the same project.
-      const j = await postJson('/ox/builds', { task, dir: c.buildDir || undefined, sessionId: c.id, agents: prefs.teamSize || undefined });
-      c.buildDir = j.dir;
+      // Where: the server decides from the session's folder (in it when it is a project, else a new folder in it).
+      const j = await postJson('/ox/builds', { task, cwd: c.cwd || about?.cwd || undefined, sessionId: c.id, agents: prefs.teamSize || undefined });
+      // The session follows the project the team builds: its chat, terminal and files are there now.
+      c.buildDir = j.dir; c.cwd = j.dir; showRepo();
       (c.builds ??= []).push({ id: j.id, task, at: Date.now() });
       const p = panelOf(c); p.open = true; p.active = p.tabs.findIndex((t) => t.k === 'team' && t.id === j.id);
       reply.build = j.id;
@@ -2336,7 +2353,7 @@
     if (!convo() || readonly) newConvo();
     const c = convo();
     if (c.cwd === dir) return;
-    c.cwd = dir; c.buildDir = dir;
+    c.cwd = dir; delete c.buildDir;
     // A terminal or files tab opened on the old folder closes; it reopens on the new one.
     const p = panelOf(c);
     p.tabs = p.tabs.filter((t) => { if (t.k !== 'term' && t.k !== 'files') return true; frames.get(tabKey(c, t))?.remove(); frames.delete(tabKey(c, t)); return false; });
@@ -2353,7 +2370,7 @@
   // c.panel = { open, max, tabs: [{ k: 'team'|'term'|'browser'|'files', id, url?, path?, title? }], active }
   const PANEL_KINDS = { team: ['team', 'Team'], term: ['terminal', 'Terminal'], browser: ['globe', 'Browser'], files: ['file', 'Files'], coworkers: ['office', 'Coworkers'] };
   const frames = new Map();   // session:tab → its element, kept while you switch tabs (a terminal stays alive)
-  const sessionDir = (c) => c?.buildDir || c?.cwd || about?.cwd || '';
+  const sessionDir = (c) => c?.cwd || c?.buildDir || about?.cwd || '';
   function panelOf(c) {
     c.panel ??= { open: false, max: false, tabs: [], active: 0 };
     // Every team build of this session has its tab (until you close it).
@@ -2530,11 +2547,27 @@
       b.done = true; b.ok = s.ok; changed = true;
       const m = c.messages.find((x) => x.build === b.id);
       if (m) m.content += `\n\n**${s.ok ? 'Built.' : 'Finished, with something left.'}** ${s.summary}`;
+      // What you said while it was building goes now, in the project, as one turn.
+      if (c.teamQueue?.length && !(c.builds ?? []).some((x) => !x.done)) {
+        const said = c.teamQueue.splice(0);
+        setTimeout(() => runAfterTeam(c, said), 300);
+      }
       if (prefs.notifyDone) try { toast(`Team ${s.ok ? 'finished' : 'stopped'}: ${b.task.slice(0, 60)}`); } catch {}
     }
     if (changed) { saveConvos(); if (open.some((c) => c.id === current)) renderChat(); }
   }
   setInterval(() => { if (!document.hidden) syncTeams(); }, 8000);
+  async function runAfterTeam(c, said) {
+    const text = `The team has finished building${c.cwd ? ` in ${c.cwd}` : ''}. Now: ${said.join('\n')}`;
+    const wantsToSee = /\b(show|open|run|play|preview|see|launch|start)\b/i.test(said.join(' '));
+    await send({ text, files: '', pics: [], model: c.model || $('model').value, mode: 'auto' }, c.id);
+    if (!wantsToSee) return;
+    const last = [...c.messages].reverse().find((x) => x.role === 'assistant');
+    const url = /https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?[^\s)'"`>]*/.exec(String(last?.content ?? ''))?.[0];
+    if (url && c.id === current) openTab('browser', { url });
+  }
+  // A local address in an answer opens beside the chat.
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-open-here]'); if (b) openTab('browser', { url: b.dataset.openHere }); });
 
   // One answer from one model (or one bot in a group).
   async function replyOnce(c, text, bot, group, opts = {}) {
@@ -2612,6 +2645,8 @@
           // A step waiting on your yes (a plan's write, a command): Allow / Deny here.
           if (ox?.type === 'approval') (reply.asks ??= []).push({ id: ox.id, tool: ox.tool, preview: ox.preview, state: '' });
           if (ox?.type === 'secret') (reply.secrets ??= []).push({ id: ox.id, name: ox.name, why: ox.why, state: '' });
+          // The run moved to a new project folder: this session works there from now on.
+          if (ox?.type === 'project' && ox.cwd) { c.cwd = ox.cwd; delete c.buildDir; prefs.recentRepos = [ox.cwd, ...(prefs.recentRepos ?? []).filter((x) => x !== ox.cwd)].slice(0, 12); savePrefs(); saveConvos(); if (c.id === current) showRepo(); }
           if (ox?.type === 'secret-resolved') { const x = (reply.secrets || []).find((y) => y.id === ox.id); if (x) x.state = ox.saved ? 'saved' : 'skipped'; }
           if (ox?.type === 'approval-resolved') { const a = (reply.asks || []).find((x) => x.id === ox.id); if (a) a.state = ox.decision === 'allow' ? 'allow' : 'deny'; }
           // The server redrew an interactive answer that did not load.

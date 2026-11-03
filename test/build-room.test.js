@@ -139,15 +139,34 @@ test('a part whose review never passes is not merged and is named in the summary
   assert.equal(seen.filter((e) => e.type === 'review').length, 3, 'first try plus two fix rounds');
 });
 
-test('your own files are never committed for you: a non-empty folder or uncommitted changes are refused', () => {
+test('your own files are never committed for you: a folder of files that is not a git repository is refused', () => {
   const plain = path.join(root, 'plain');
   fs.mkdirSync(plain, { recursive: true });
   fs.writeFileSync(path.join(plain, '.env'), 'SECRET=1');
   assert.throws(() => B.prepareRepo(plain), /not a git repository/);
-  const repo = path.join(root, 'dirty');
-  B.prepareRepo(repo);
-  fs.writeFileSync(path.join(repo, 'mine.txt'), 'wip');
-  assert.throws(() => B.prepareRepo(repo), /uncommitted changes/);
+});
+
+test('in a project of yours the team works on its own branch: your checkout and uncommitted work are untouched', async () => {
+  const repo = path.join(root, 'yours');
+  fs.mkdirSync(repo, { recursive: true });
+  const g = (...a) => spawnSync('git', a, { cwd: repo, encoding: 'utf8' });
+  g('init', '-q'); fs.writeFileSync(path.join(repo, 'app.js'), 'export const app = 1;\n');
+  g('add', '-A'); g('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'mine');
+  fs.writeFileSync(path.join(repo, 'wip.txt'), 'not committed');
+  const branchBefore = g('rev-parse', '--abbrev-ref', 'HEAD').stdout.trim();
+  const ask = async ({ system }) => system === B.PLAN_SYSTEM ? JSON.stringify({ summary: 's', parts: [{ title: 'Extra', files: ['extra.js'], brief: '' }] }) : JSON.stringify({ comments: [] });
+  const room = new B.BuildRoom({ task: 'add extra', dir: repo, ask, spawnBuilder: fakeBuilder(() => ({ files: [['extra.js', 'export const extra = 2;\n']] })), env });
+  const seen = [];
+  room.on('event', (e) => seen.push(e));
+  await room.run();
+  const done = seen.find((e) => e.type === 'done');
+  assert.ok(done.ok, done.summary);
+  assert.match(done.branch, /^ox-team\//);
+  assert.match(done.summary, /git merge ox-team\//);
+  assert.equal(g('rev-parse', '--abbrev-ref', 'HEAD').stdout.trim(), branchBefore, 'still on your branch');
+  assert.equal(fs.readFileSync(path.join(repo, 'wip.txt'), 'utf8'), 'not committed');
+  assert.equal(fs.existsSync(path.join(repo, 'extra.js')), false, 'not in your checkout');
+  assert.match(g('show', `${done.branch}:extra.js`).stdout, /extra = 2/);
 });
 
 test('tests that fail only for a teammate\'s unmerged file wait for that teammate, then pass', async () => {
@@ -175,7 +194,7 @@ test('tests that fail only for a teammate\'s unmerged file wait for that teammat
   assert.ok(seen.find((e) => e.type === 'done').ok);
 });
 
-test("ox's own edit backups never reach a commit or a part's tests", () => {
+test("ox's own edit backups never reach a commit or a part's tests", async () => {
   const repo = path.join(root, 'backups');
   const base = B.prepareRepo(repo);
   fs.mkdirSync(path.join(repo, '.ox-backups', '1', 'test'), { recursive: true });
@@ -184,7 +203,7 @@ test("ox's own edit backups never reach a commit or a part's tests", () => {
   spawnSync('git', ['add', '-A'], { cwd: repo });
   spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'x'], { cwd: repo });
   assert.equal(spawnSync('git', ['ls-files'], { cwd: repo, encoding: 'utf8' }).stdout.trim(), 'ok.test.js');
-  const t = B.partTests(repo, base);
+  const t = await B.partTests(repo, base);
   assert.deepEqual(t.files, ['ok.test.js']);
   assert.equal(t.ok, true);
 });
@@ -273,4 +292,67 @@ test('your edit to a merged file is committed as yours; a file still being writt
   assert.deepEqual(last.owners, ['Agent 1', 'You', 'Agent 1']);
   await assert.rejects(B.editBuildFile(room.id, '../escape.js', 'x', { env: henv }), /not a file of this project/);
   await assert.rejects(B.editBuildFile(room.id, 'not-merged.js', 'x', { env: henv }), /once it is merged/);
+});
+
+test('Stop ends the builders and what they started, and the server keeps answering while tests run', async () => {
+  const dir = path.join(root, 'stoppable');
+  const ask = async ({ system }) => system === B.PLAN_SYSTEM ? JSON.stringify({ summary: 's', parts: [{ title: 'Slow', files: ['x.js'], brief: '' }] }) : JSON.stringify({ comments: [] });
+  // Like a real `ox -p`: it works until it is killed, then its output ends and it exits.
+  let killed = 0, end, exit;
+  const ended = new Promise((r) => { end = r; });
+  const spawnBuilder = () => ({
+    lines: (async function* () { await ended; })(),
+    done: new Promise((r) => { exit = r; }),
+    kill() { killed++; end(); exit(143); },
+  });
+  const room = new B.BuildRoom({ task: 't', dir, ask, spawnBuilder, env });
+  const seen = [];
+  room.on('event', (e) => seen.push(e));
+  room.run();
+  for (let i = 0; i < 50 && !seen.some((e) => e.type === 'agent' && e.agent === 'Agent 1' && e.status === 'writing'); i++) await new Promise((r) => setTimeout(r, 20));
+  // The event loop is free: a timer fires while the builder "works".
+  const tick = await Promise.race([new Promise((r) => setTimeout(() => r('free'), 30)), new Promise((r) => setTimeout(() => r('blocked'), 2000))]);
+  assert.equal(tick, 'free');
+  room.stop();
+  assert.equal(killed, 1);
+  assert.equal(seen.filter((e) => e.type === 'done').length, 1);
+  assert.equal(seen.find((e) => e.type === 'done').stopped, true);
+});
+
+test('a shell command and everything it started end together', { skip: process.platform === 'win32' }, async () => {
+  const { spawn } = await import('node:child_process');
+  const child = spawn('/bin/sh', ['-c', 'sleep 30 & sleep 30; wait'], { detached: true, stdio: 'ignore' });
+  await new Promise((r) => setTimeout(r, 200));
+  const closed = new Promise((r) => child.on('close', r));
+  B.killTree(child);
+  await closed;
+  const left = spawnSync('pgrep', ['-g', String(child.pid)], { encoding: 'utf8' }).stdout.trim();
+  assert.equal(left, '', 'nothing of its group is left');
+});
+
+test('talking to one agent: its answer comes from its own record; what you tell it goes into its next step', async () => {
+  const dir = path.join(root, 'talk');
+  const ask = async ({ system }) => system === B.PLAN_SYSTEM ? JSON.stringify({ summary: 's', parts: [{ title: 'Money math', files: ['money.js'], brief: 'add(a,b)' }] }) : JSON.stringify({ comments: [] });
+  const prompts = [];
+  const base = fakeBuilder(() => ({ files: [['money.js', 'export const add = (a, b) => a + b;\n']] }));
+  let room;
+  const spawnBuilder = (o) => { prompts.push(o.prompt); if (prompts.length === 1) room.tell('Agent 1', 'use integer cents'); return base(o); };
+  room = new B.BuildRoom({ task: 't', dir, ask, spawnBuilder, env });
+  room.on('event', () => {});
+  await room.run();
+  assert.throws(() => room.tell('Agent 9', 'x'), /no Agent 9/);
+  const ctx = B.agentContext(B.readBuild(room.id, { env }).events, 'Agent 1');
+  assert.match(ctx, /YOUR PART: Money math/);
+  assert.match(ctx, /FILES YOU WROTE: money\.js/);
+  assert.match(ctx, /WHAT THE OWNER TOLD YOU: use integer cents/);
+  let seenUser = '';
+  const answer = await B.askBuildAgent(room.id, 'Agent 1', 'what are you doing?', { env, ask: async ({ system, user }) => { seenUser = user; assert.equal(system, B.AGENT_CHAT_SYSTEM); return ' I wrote money.js. '; } });
+  assert.equal(answer, 'I wrote money.js.');
+  assert.match(seenUser, /YOU ARE Agent 1[\s\S]*THE OWNER ASKS: what are you doing\?/);
+});
+
+test('"how is it going?" counts as asking about the build', async () => {
+  const henv = { ...env, OX_HOME: path.join(root, 'status-home') };
+  assert.ok(B.statusReply('how is it going?', { env: henv }));
+  assert.ok(B.statusReply("how's it going", { env: henv }));
 });

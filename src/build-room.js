@@ -176,12 +176,35 @@ export function reviewMaterial(dir, base) {
 // ox's own copies (.ox-backups, .ox-build) and other hidden folders are never a part's tests.
 const isTest = (f) => !/(^|\/)\./.test(f) && /(?:^|[._-])(?:test|spec)s?\.[cm]?[jt]sx?$|(?:^|\/)test_.*\.py$|_test\.(?:py|go)$|(?:^|\/)(?:test|tests|__tests__)\/.*\.[cm]?[jt]sx?$/.test(f);
 
-function sh(cwd, command, timeout = 5 * 60_000) {
+// Tests and installs run beside the server, never blocking it (a Stop must get through
+// while npm install takes minutes), in a process group of their own so a Stop ends
+// everything they started. `runs` is where the room keeps what it can stop.
+function sh(cwd, command, timeout = 5 * 60_000, runs = null) {
   const env = { ...process.env, CI: '1', NO_COLOR: '1', FORCE_COLOR: '0' };
   delete env.NODE_TEST_CONTEXT;
-  const r = spawnSync(process.platform === 'win32' ? 'cmd.exe' : '/bin/sh', process.platform === 'win32' ? ['/d', '/s', '/c', command] : ['-c', command], { cwd, encoding: 'utf8', timeout, env, maxBuffer: 16 * 1024 * 1024 });
-  const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
-  return { ok: r.status === 0, out: failureDigest(out) };
+  return new Promise((resolve) => {
+    const win = process.platform === 'win32';
+    const child = spawn(win ? 'cmd.exe' : '/bin/sh', win ? ['/d', '/s', '/c', command] : ['-c', command], { cwd, env, detached: !win, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    let out = '';
+    const add = (d) => { out += d; if (out.length > 4_000_000) out = out.slice(-2_000_000); };
+    child.stdout.on('data', add); child.stderr.on('data', add);
+    const handle = { kill: () => killTree(child) };
+    runs?.add(handle);
+    const timer = setTimeout(() => killTree(child), timeout);
+    const done = (code) => { clearTimeout(timer); runs?.delete(handle); resolve({ ok: code === 0, out: failureDigest(out) }); };
+    child.on('close', done);
+    child.on('error', (e) => { add(String(e.message)); done(1); });
+  });
+}
+
+/** End a process and everything it started (its group on macOS/Linux, its tree on Windows). */
+export function killTree(child) {
+  if (!child?.pid) return;
+  try {
+    if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+    else process.kill(-child.pid, 'SIGTERM');
+  } catch { try { child.kill('SIGTERM'); } catch {} }
+  setTimeout(() => { try { if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL'); } catch {} }, 2000).unref?.();
 }
 
 /**
@@ -205,7 +228,7 @@ export function failureDigest(out, max = 6000) {
 }
 
 /** A part's own tests: the test files its branch added, run the project's way. */
-export function partTests(dir, base) {
+export async function partTests(dir, base, runs = null) {
   const files = git(dir, ['diff', '--name-only', base, 'HEAD']).stdout.split('\n').filter((f) => f && isTest(f) && fs.existsSync(path.join(dir, f)));
   if (!files.length) return { ok: true, none: true, out: 'no tests in this part', files };
   const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
@@ -215,10 +238,10 @@ export function partTests(dir, base) {
   if (files.every((f) => f.endsWith('.py'))) cmd = `python3 -m pytest -q ${files.map(q).join(' ')}`;
   else {
     const deps = { ...(pkg?.dependencies ?? {}), ...(pkg?.devDependencies ?? {}) };
-    if ((deps.vitest || deps.jest) && !fs.existsSync(path.join(dir, 'node_modules'))) sh(dir, 'npm install --no-audit --no-fund', 5 * 60_000);
+    if ((deps.vitest || deps.jest) && !fs.existsSync(path.join(dir, 'node_modules'))) await sh(dir, 'npm install --no-audit --no-fund', 5 * 60_000, runs);
     cmd = deps.vitest ? `npx vitest run ${files.map(q).join(' ')}` : deps.jest ? `npx jest ${files.map(q).join(' ')}` : `node --test ${files.map(q).join(' ')}`;
   }
-  return { ...sh(dir, cmd), files, command: cmd };
+  return { ...(await sh(dir, cmd, 5 * 60_000, runs)), files, command: cmd };
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +251,7 @@ export function partTests(dir, base) {
 /** One builder run: `ox -p` in its worktree, JSONL events on stdout. → { lines (async iterable), done (Promise<code>), kill } */
 export function spawnOxBuilder({ cwd, prompt, bot = null }) {
   const args = [OX_BIN, '-p', prompt, '--json', '-y', '--sandbox', 'workspace', '--cwd', cwd, ...(bot ? ['--bot', bot] : [])];
-  const child = spawn(process.execPath, args, { cwd, env: { ...process.env, OX_MCP: '0', OX_LEARN: '0', NO_COLOR: '1', FORCE_COLOR: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, args, { cwd, env: { ...process.env, OX_MCP: '0', OX_LEARN: '0', NO_COLOR: '1', FORCE_COLOR: '0' }, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true });
   child.stderr.resume();
   const done = new Promise((resolve) => child.on('close', (code) => resolve(code ?? 1)));
   async function* lines() {
@@ -240,7 +263,7 @@ export function spawnOxBuilder({ cwd, prompt, bot = null }) {
     }
     if (buf.trim()) yield buf;
   }
-  return { lines: lines(), done, kill: () => { try { child.kill('SIGTERM'); } catch {} } };
+  return { lines: lines(), done, kill: () => killTree(child) };
 }
 
 // ---------------------------------------------------------------------------
@@ -256,7 +279,6 @@ export function prepareRepo(dir) {
     if (fs.readdirSync(dir).some((f) => f !== '.DS_Store')) throw new Error(`${dir} has files and is not a git repository: pick an empty folder or a git repository`);
     git(dir, ['init', '-q']);
   }
-  if (git(dir, ['status', '--porcelain']).stdout.trim()) throw new Error(`${dir} has uncommitted changes: commit or stash them first, so the team's work stays separate from yours`);
   const ident = ['-c', 'user.name=ox build', '-c', 'user.email=build@ox.local'];
   if (git(dir, ['rev-parse', '--verify', 'HEAD']).status !== 0) git(dir, [...ident, 'commit', '-q', '--allow-empty', '-m', 'Start']);
   // The builders' copies live inside the project; git never sees them.
@@ -298,6 +320,7 @@ export class BuildRoom extends EventEmitter {
     this.stopped = false;
     this.state = 'starting';
     this.retryScale = Number(env.OX_BUILD_RETRY_SCALE ?? 1);   // tests shrink the pauses
+    this.notes = new Map();   // agent → what you told it, taken into its next step
     this.log = path.join(BUILDS_DIR(env), this.id, 'events.jsonl');
     fs.mkdirSync(path.dirname(this.log), { recursive: true });
   }
@@ -345,8 +368,19 @@ export class BuildRoom extends EventEmitter {
     return r;
   }
 
+  /** Something you tell one agent: it takes it into its next step (a builder cannot be spoken to mid-run). */
+  tell(agent, text) {
+    const t = String(text ?? '').trim().slice(0, 2000);
+    if (!t) throw new Error('say something');
+    if (!this.team?.some((m) => m.name === agent)) throw new Error(`no ${agent} in this build`);
+    (this.notes.get(agent) ?? this.notes.set(agent, []).get(agent)).push(t);
+    this.emitEv({ type: 'told', agent, text: t });
+  }
+
   async runBuilderOnce(member, prompt) {
     const { name, wt } = member;
+    const told = this.notes.get(name)?.splice(0) ?? [];
+    if (told.length) prompt = `${prompt}\n\nTHE OWNER TOLD YOU, AND IT COMES FIRST:\n${told.map((t) => `- ${t}`).join('\n')}`;
     let modelError = false;
     const run = this.spawnBuilder({ cwd: wt, prompt, name, bot: this.bot });
     this.runs.add(run);
@@ -521,10 +555,10 @@ export class BuildRoom extends EventEmitter {
       commitAll(member.wt, `${member.name}: ${member.part.title}${round > 1 ? ` (fix ${round - 1})` : ''}`);
       this.syncMain(member);
       this.status(member.name, 'testing', '');
-      let tests = partTests(member.wt, this.base);
+      let tests = await partTests(member.wt, this.base, this.runs);
       if (!tests.ok && (await this.waitForTeammates(member, tests.out)).length) {
         this.status(member.name, 'testing', 'with the merged work');
-        tests = partTests(member.wt, this.base);
+        tests = await partTests(member.wt, this.base, this.runs);
       }
       this.emitEv({ type: 'tests', agent: member.name, round, ok: tests.ok, none: !!tests.none, command: tests.command ?? '', out: tests.out.slice(-2500) });
       const rv = await this.review(member, reviewer, round);
@@ -548,7 +582,20 @@ export class BuildRoom extends EventEmitter {
   async run() {
     try {
       this.emitEv({ type: 'build', id: this.id, task: this.task, dir: this.dir, sessionId: this.sessionId });
+      // A new project is built in place. In a project of yours the team works on
+      // a branch of its own, in its own copy: your checkout, your branch and
+      // anything you have not committed are never touched; you merge when ready.
+      const fresh = !fs.existsSync(this.dir) || !fs.readdirSync(this.dir).some((f) => f !== '.DS_Store');
       this.base = prepareRepo(this.dir);
+      this.projectDir = this.dir;
+      if (!fresh) {
+        this.teamBranch = `ox-team/${this.id.slice(-6)}`;
+        const wt = path.join(this.projectDir, '.ox-build', `${this.id.slice(-6)}-team`);
+        const add = git(this.projectDir, ['worktree', 'add', '-q', '-b', this.teamBranch, wt, this.base]);
+        if (add.status !== 0) throw new Error(`could not make the team's branch: ${add.stderr.trim()}`);
+        this.dir = wt;
+        this.emitEv({ type: 'note', agent: 'Planner', text: `Working on branch ${this.teamBranch}, in its own copy: your checkout and uncommitted work stay as they are.` });
+      }
       this.mainBranch = git(this.dir, ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim() || 'HEAD';
       // The planner.
       this.status('Planner', 'planning', this.task.slice(0, 80));
@@ -569,8 +616,8 @@ export class BuildRoom extends EventEmitter {
       // A worktree and a branch each.
       for (const m of team) {
         m.branch = `ox-build/${this.id.slice(-6)}-${slugOf(m.name)}`;
-        m.wt = path.join(this.dir, '.ox-build', `${this.id.slice(-6)}-${slugOf(m.name)}`);
-        const add = git(this.dir, ['worktree', 'add', '-q', '-b', m.branch, m.wt, this.base]);
+        m.wt = path.join(this.projectDir, '.ox-build', `${this.id.slice(-6)}-${slugOf(m.name)}`);
+        const add = git(this.projectDir, ['worktree', 'add', '-q', '-b', m.branch, m.wt, this.base]);
         if (add.status !== 0) throw new Error(`could not make ${m.name}'s copy: ${add.stderr.trim()}`);
         m.prompt = builderPrompt({ task: this.task, plan, part: m.part, name: m.name, team });
       }
@@ -586,8 +633,9 @@ export class BuildRoom extends EventEmitter {
       let final = null;
       if (plan.test && results.some((r) => r.merged)) {
         this.status('Planner', 'testing', plan.test);
-        if (fs.existsSync(path.join(this.dir, 'package.json')) && !fs.existsSync(path.join(this.dir, 'node_modules'))) sh(this.dir, 'npm install --no-audit --no-fund');
-        final = sh(this.dir, plan.test);
+        if (fs.existsSync(path.join(this.dir, 'package.json')) && !fs.existsSync(path.join(this.dir, 'node_modules'))) await sh(this.dir, 'npm install --no-audit --no-fund', 5 * 60_000, this.runs);
+        if (this.stopped) return;
+        final = await sh(this.dir, plan.test, 5 * 60_000, this.runs);
         this.emitEv({ type: 'tests', agent: 'Planner', round: 0, ok: final.ok, command: plan.test, out: final.out.slice(-2500), whole: true });
       }
       for (const m of team) {
@@ -603,7 +651,8 @@ export class BuildRoom extends EventEmitter {
       this.status('Planner', 'done', '');
       this.emitEv({
         type: 'done', ok, dir: this.dir, merged, parts: team.length,
-        summary: `${merged} of ${team.length} part${team.length === 1 ? '' : 's'} reviewed and merged${final ? `; the whole project's tests ${final.ok ? 'pass' : 'fail'}` : ''}.${left.length ? ` Not merged: ${left.join('; ')}.` : ''}`,
+        branch: this.teamBranch ?? null,
+        summary: `${merged} of ${team.length} part${team.length === 1 ? '' : 's'} reviewed and merged${this.teamBranch ? ` on branch ${this.teamBranch} (in your project: git merge ${this.teamBranch})` : ''}${final ? `; the whole project's tests ${final.ok ? 'pass' : 'fail'}` : ''}.${left.length ? ` Not merged: ${left.join('; ')}.` : ''}`,
       });
     } catch (e) {
       this.state = 'done';
@@ -668,7 +717,8 @@ export async function editBuildFile(id, file, content, { env = process.env } = {
   if (!rel || path.isAbsolute(rel) || rel.split('/').some((x) => x === '..' || x === '') || /^(\.git|\.ox-build|\.ox-backups)(\/|$)/.test(rel)) throw new Error('not a file of this project');
   if (String(content).length > 1024 * 1024) throw new Error('that file is too big to edit here');
   const room = live.get(id) ?? null;
-  const dir = room?.dir ?? b.events.find((e) => e.type === 'build')?.dir;
+  // Where the team's work is: its branch's copy in a project of yours, else the project itself.
+  const dir = room?.dir ?? [...b.events].reverse().find((e) => e.type === 'done')?.dir ?? b.events.find((e) => e.type === 'build')?.dir;
   if (!dir || !fs.existsSync(dir)) throw new Error('the project folder is gone');
   const write = () => {
     if (git(dir, ['cat-file', '-e', `HEAD:${rel}`]).status !== 0) {
@@ -688,7 +738,7 @@ export async function editBuildFile(id, file, content, { env = process.env } = {
   return { ok: true, file: rel };
 }
 
-const STATUS_Q = /\b(what'?s|what is|how'?s|how is|status|progress|update on|where are)\b[^?]{0,60}\b(going on|happening|running|doing|build|building|agents?|team|working)\b|\b(agents?|team|builds?)\b[^?]{0,40}\b(doing|status|progress|working on|up to)\b|^\s*(status|progress)\s*\??\s*$/i;
+const STATUS_Q = /\b(what'?s|what is|how'?s|how is|status|progress|update on|where are)\b[^?]{0,60}\b(going|going on|happening|running|doing|build|building|agents?|team|working|progress|status)\b|\b(agents?|team|builds?)\b[^?]{0,40}\b(doing|status|progress|working on|up to)\b|^\s*(status|progress)\s*\??\s*$/i;
 
 /**
  * "What's going on?" from any chat session: the team builds on this Mac, live
@@ -718,4 +768,60 @@ export function statusReply(text, { sessionId = null, env = process.env, now = D
     }
   }
   return `${lines.join('\n')}\n\nStart another with Team mode, or "build with a team: …".`;
+}
+
+/** One agent's own record in a build, for answering "what are you doing?" in its voice. */
+export function agentContext(events, agent) {
+  const mine = events.filter((e) => e.agent === agent || e.reviewer === agent);
+  const plan = [...events].reverse().find((e) => e.type === 'plan');
+  const part = plan?.parts?.find((p) => p.agent === agent);
+  const status = [...mine].reverse().find((e) => e.type === 'agent');
+  const files = [...new Set(mine.filter((e) => e.type === 'file' && e.agent === agent).map((e) => e.file))];
+  const cmds = mine.filter((e) => e.type === 'cmd').slice(-8).map((e) => e.command);
+  const reviews = events.filter((e) => e.type === 'review' && (e.agent === agent || e.reviewer === agent)).slice(-3)
+    .map((e) => `${e.reviewer} reviewed ${e.agent} (round ${e.round}): ${e.verdict}${e.comments?.length ? `: ${e.comments.map((c) => `${c.file}:${c.line} ${c.severity} ${c.comment}`).join(' | ')}` : ''}`);
+  const tests = mine.filter((e) => e.type === 'tests').slice(-2).map((e) => `${e.ok ? 'pass' : 'fail'}${e.ok ? '' : `: ${String(e.out ?? '').slice(0, 400)}`}`);
+  const said = [...mine].reverse().find((e) => e.type === 'say')?.text ?? '';
+  const told = mine.filter((e) => e.type === 'told').map((e) => e.text);
+  return [
+    part ? `YOUR PART: ${part.title}\n${part.brief}\nFiles you own: ${part.files.join(', ') || '(your own)'}` : '',
+    status ? `RIGHT NOW: ${status.status}${status.doing ? `: ${status.doing}` : ''}` : '',
+    files.length ? `FILES YOU WROTE: ${files.join(', ')}` : '',
+    cmds.length ? `COMMANDS YOU RAN LATELY:\n${cmds.map((c) => `$ ${c}`).join('\n')}` : '',
+    tests.length ? `YOUR TESTS: ${tests.join(' / ')}` : '',
+    reviews.length ? `REVIEWS:\n${reviews.join('\n')}` : '',
+    said ? `WHAT YOU LAST SAID: ${said}` : '',
+    told.length ? `WHAT THE OWNER TOLD YOU: ${told.join(' | ')}` : '',
+  ].filter(Boolean).join('\n\n');
+}
+
+export const AGENT_CHAT_SYSTEM = `You are one agent of a team building software. The owner asks you a question while you work. Answer as that agent, in the first person, in two to five short sentences: what you are doing right now, what is done, what is next, and anything blocking you. Use only your record below; if it does not say, say you do not know yet. Never claim work your record does not show.`;
+
+/** Ask one agent of a build what it is doing. → its answer */
+export async function askBuildAgent(id, agent, question, { ask, env = process.env } = {}) {
+  const b = readBuild(id, { env });
+  if (!b) throw new Error('no such build');
+  const ctx = agentContext(b.events, agent);
+  if (!ctx) throw new Error(`no ${agent} in this build`);
+  try {
+    const said = String(await ask({ system: AGENT_CHAT_SYSTEM, user: `YOU ARE ${agent}.\n\n${ctx}\n\nTHE OWNER ASKS: ${String(question ?? '').slice(0, 1000)}` }) ?? '').trim();
+    if (said) return said;
+  } catch {}
+  // The model is busy (its builders use it too) or down: the answer from its record, plainly.
+  return plainStatus(b.events, agent);
+}
+
+/** "What are you doing?" answered from the record alone, with no model. */
+export function plainStatus(events, agent) {
+  const mine = events.filter((e) => e.agent === agent);
+  const st = [...mine].reverse().find((e) => e.type === 'agent');
+  const files = [...new Set(mine.filter((e) => e.type === 'file').map((e) => e.file))];
+  const cmd = [...mine].reverse().find((e) => e.type === 'cmd');
+  const part = [...events].reverse().find((e) => e.type === 'plan')?.parts?.find((p) => p.agent === agent);
+  return [
+    part ? `My part: ${part.title}.` : '',
+    st ? `Right now I am ${st.status}${st.doing ? `: ${st.doing}` : ''}.` : 'I have not started yet.',
+    files.length ? `So far I wrote ${files.join(', ')}.` : '',
+    cmd ? `Last command: ${cmd.command}.` : '',
+  ].filter(Boolean).join(' ');
 }

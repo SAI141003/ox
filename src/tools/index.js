@@ -41,6 +41,7 @@ import { withWriteLock } from '../write-lock.js';
 import { guardCall, repairArgs } from '../run-guards.js';
 import { request_secret, SECRET_TOOL_SCHEMAS } from './secret.js';
 import { desktop, DESKTOP_TOOL_SCHEMAS } from './desktop.js';
+import { set_project, PROJECT_TOOL_SCHEMAS } from './project.js';
 
 export const TOOL_IMPLS = {
   read_file: readFileTool,
@@ -69,6 +70,7 @@ export const TOOL_IMPLS = {
   web_fetch: webFetchTool,
   request_secret,
   desktop,
+  set_project,
   web_search: webSearchTool,
   library: async (args = {}) => {
     const L = await import('../library.js');
@@ -273,6 +275,7 @@ export const BUILTIN_SCHEMAS = [
   // Last, so the older tools keep their places in the 'not offered this turn' list.
   ...SECRET_TOOL_SCHEMAS,
   ...DESKTOP_TOOL_SCHEMAS,
+  ...PROJECT_TOOL_SCHEMAS,
 ];
 
 function normalizeMcpResult(result) {

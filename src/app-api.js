@@ -527,7 +527,8 @@ export async function aboutView() {
   const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   return {
     version: pkg.version, license: pkg.license, node: process.version, platform: process.platform, arch: os.arch(),
-    cwd: process.cwd(), config: path.join(os.homedir(), '.ox', 'config.json'), keys: path.join(os.homedir(), '.ox', 'keys.json'),
+    // Where a chat starts: never ox's own install (the app starts its server there).
+    cwd: (await import('./workspace.js')).defaultWorkspace(), home: os.homedir(), config: path.join(os.homedir(), '.ox', 'config.json'), keys: path.join(os.homedir(), '.ox', 'keys.json'),
   };
 }
 

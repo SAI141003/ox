@@ -67,6 +67,8 @@ export function classifyTool(name) {
   if (toolName === 'brain') return 'memory_write';
   // request_secret (src/tools/secret.js): writes nothing until you type the key yourself; the card is its approval.
   if (toolName === 'request_secret') return 'memory_write';
+  // set_project (src/tools/project.js): makes a folder and moves the run there; one at a time.
+  if (toolName === 'set_project') return 'approval_gated';
   if (MAILBOX_TOOLS.has(toolName)) return 'memory_write';
   if (SESSION_STATE_TOOLS.has(toolName)) return 'memory_write';
   if (TERMINAL_TOOLS.has(toolName)) return 'terminal';

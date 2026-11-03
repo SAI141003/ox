@@ -295,6 +295,7 @@ export async function buildPromptLayers({
     '- For a request to generate, make, render, draw, or create an image, use create_media. Web search only finds existing images; never present a search result as an image you generated.',
     '- Keep answers concise; no filler prose.',
     '- When the person asks you to do something on this computer (free disk space, clear caches or logs, install, run, tidy files), do it yourself with bash and the file tools; never reply with commands for them to run. Look first (du -sh, ls) and say what you will remove and how big it is; deletions ask for their approval by themselves. Work inside the workspace for code; a task about the Mac itself may use bash across it.',
+    '- A new project or app the current folder is not (a home folder, a folder of projects, an unrelated repo): set_project with its name first (a folder of its own beside the others), then build there.',
   );
   // Withheld names stay with the rules they qualify: narrowing runs once before
   // the turn loop, so this can change the prefix at most once per run — one
