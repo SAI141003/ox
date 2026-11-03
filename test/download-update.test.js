@@ -91,12 +91,21 @@ test('latest release: a bad tag is refused plainly', async () => {
 
 test('check: a newer release is offered, the same version is up to date', async () => {
   const { root } = installedCopy('0.1.7');
-  const newer = await checkDownload({ root, fetchImpl: fakeRelease().fetchImpl });
+  const mac = { platform: 'darwin', arch: 'arm64' };
+  const newer = await checkDownload({ root, fetchImpl: fakeRelease().fetchImpl, ...mac });
   assert.equal(newer.upToDate, false);
   assert.equal(newer.version, '0.1.8');
   const { root: same } = installedCopy('0.1.8');
-  const current = await checkDownload({ root: same, fetchImpl: fakeRelease().fetchImpl });
+  const current = await checkDownload({ root: same, fetchImpl: fakeRelease().fetchImpl, ...mac });
   assert.equal(current.upToDate, true);
+});
+
+test('check: a release still uploading is not offered until this machine\'s file is there', async () => {
+  const { root } = installedCopy('0.1.7');
+  // Published with the Linux file only, as v0.1.8 was for a few minutes.
+  const { fetchImpl } = fakeRelease({ names: { zip: 'ox-linux-x64.tar.gz' } });
+  const r = await checkDownload({ root, fetchImpl, platform: 'darwin', arch: 'arm64' });
+  assert.equal(r.upToDate, true);
 });
 
 test('apply: a verified download replaces the bundle and reopens OX', async () => {

@@ -6836,13 +6836,13 @@ async function runSubcommand(cmd, args) {
       if (args.includes('--enable')) U.setAllowed(true);
       if (args.includes('--auto')) U.setAutoUpdate(true);
       if (args.includes('--off')) U.setAutoUpdate(false);
-      const state = U.check({ force: true });
+      const state = await U.checkAny({ force: true });
       if (state.allowed !== true) { console.log('Updates are off. Enable checks in Settings → About → GitHub updates, or run ox update --enable.'); return; }
       if (state.problem) { console.log(state.problem); process.exitCode = 1; return; }
       if (!state.available?.count) { console.log('up to date'); return; }
       console.log(`${state.available.count} new from ${state.available.upstream}:\n${state.available.subjects.slice(0, 15).map((l) => `  ${l}`).join('\n')}`);
       if (!args.includes('--apply')) { console.log(c.dim('bring them in safely: ox update --apply')); return; }
-      const r = U.applyWithProgress();
+      const r = await U.applyAnyWithProgress();
       if (!r.ok) { process.stderr.write(`ox: ${r.why}\n`); process.exitCode = 1; }
       else console.log(r.upToDate ? 'up to date' : `updated to ${r.to}`);
       return;

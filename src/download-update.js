@@ -62,11 +62,15 @@ export async function latestRelease(fetchImpl = fetch) {
 }
 
 /** Looks for a newer release. Changes nothing on disk. → { current, version, tag, upToDate } */
-export async function checkDownload({ root, fetchImpl = fetch } = {}) {
+export async function checkDownload({ root, fetchImpl = fetch, platform = process.platform, arch = process.arch } = {}) {
   const current = currentVersion(root);
   const rel = await latestRelease(fetchImpl);
+  // A release is published first and its files arrive one machine at a time:
+  // it is not on offer here until this machine's file and checksum are both there.
+  const asset = assetFor({ platform, arch });
+  const ready = !!asset && [asset.name, `${asset.name}.sha256`].every((n) => rel.assets.some((a) => a.name === n));
   const newer = compareVersions(rel.version, current) > 0;
-  return { current, version: rel.version, tag: rel.tag, upToDate: !newer };
+  return { current, version: rel.version, tag: rel.tag, upToDate: !(newer && ready) };
 }
 
 async function download(url, file, fetchImpl) {

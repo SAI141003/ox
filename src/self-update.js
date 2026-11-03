@@ -78,7 +78,7 @@ export async function checkAny({ root = OX_ROOT, now = Date.now(), force = false
   try {
     const r = await D.checkDownload({ root, fetchImpl });
     return writeState({
-      ...s, checkedAt: now, problem: null, current: r.current, latest: r.version, upToDate: r.upToDate,
+      ...s, checkedAt: now, problem: null, applying: null, current: r.current, latest: r.version, upToDate: r.upToDate,
       available: r.upToDate ? null : { count: 1, upstream: r.tag, subjects: [`OX ${r.tag} (you have ${r.current ?? 'an older version'})`] },
     });
   } catch (e) {
