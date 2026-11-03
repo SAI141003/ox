@@ -408,6 +408,13 @@
   .chip:hover { border-color: var(--line2); color: var(--text); background: var(--hover); }
 
   .composer { padding: 10px 22px 18px; position: relative; }
+  .repo-btn { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: 6px; color: inherit; }
+  .repo-btn:hover { background: var(--hover); color: var(--text); }
+  .repo-menu { bottom: 34px; left: 22px; width: min(420px, calc(100% - 44px)); max-height: 380px; overflow: auto; padding: 6px; }
+  .repo-menu input { width: 100%; padding: 7px 10px; border: 0; border-bottom: 1px solid var(--line); background: transparent; outline: 0; margin-bottom: 4px; font: 12.5px var(--mono); }
+  .repo-menu button { display: flex; flex-direction: column; align-items: flex-start; width: 100%; padding: 6px 10px; border-radius: 7px; text-align: left; }
+  .repo-menu button:hover, .repo-menu button.on { background: var(--hover); }
+  .repo-menu .p { font: 11px var(--mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   /* The side panel (Codex-style): a rail on the right; tabs for the team, a terminal, a browser and files, per session. */
   #v-chat.sp { display: grid; grid-template-columns: minmax(300px, 1fr) 7px var(--sp-w, 46%) 42px; grid-template-rows: minmax(0, 1fr) auto; }
   #v-chat.rail-only { display: grid; grid-template-columns: minmax(0, 1fr) 42px; grid-template-rows: minmax(0, 1fr) auto; }
@@ -965,7 +972,8 @@
           <div class="pop-group" id="pop-more"></div>
         </div>
         <div class="pop pop-modes" id="mode-menu" role="listbox" hidden></div>
-        <div class="cfoot"><span class="cmeta" title="ox works in this folder, on your machine"><span data-i="folder"></span><span id="cwd">…</span><span id="ro" class="dim"></span></span><span class="grow"></span><span class="hint" id="hint">Ask and Plan never change your files</span></div>
+        <div class="pop repo-menu" id="repo-menu" role="listbox" hidden></div>
+        <div class="cfoot"><button class="cmeta repo-btn" id="repo-btn" title="The project this session works in: click to switch repo" aria-haspopup="listbox"><span data-i="folder"></span><span id="cwd">…</span><span class="dim" style="font-size:10px">▾</span></button><span id="ro" class="dim"></span><span class="grow"></span><span class="hint" id="hint">Ask and Plan never change your files</span></div>
       </div>
       <div class="sp-sizer" id="sp-sizer" role="separator" aria-orientation="vertical" aria-label="Resize the side panel" title="Drag to resize · double-click to reset"></div>
       <aside class="sidepanel" id="sidepanel" aria-label="Side panel">
@@ -2050,6 +2058,7 @@
     const inner = $('inner');
     inner.innerHTML = '';
     renderSidePanel();
+    showRepo();
     $('title').textContent = readonly ? readonly.title : convo()?.title || 'New session';
     updateUsageMeter(convo());
     renderQueued();
@@ -2076,7 +2085,7 @@
     }
     const c = convo();
     if (!c || !c.messages.length) {
-      inner.innerHTML = `<div class="hello"><div class="avatar hello-mark">${OX_FACE}</div><h1>What should ${esc(botName)} do?</h1><p>${esc(botName)} works in ${esc(about?.cwd?.split(/[\\/]/).pop() || 'this project')} on your machine. It reads, edits, runs and explains.</p><div class="chips">${SUGGESTIONS.map((s) => `<button class="chip">${esc(s)}</button>`).join('')}</div></div>`;
+      inner.innerHTML = `<div class="hello"><div class="avatar hello-mark">${OX_FACE}</div><h1>What should ${esc(botName)} do?</h1><p>${esc(botName)} works in ${esc((c?.cwd || about?.cwd)?.split(/[\\/]/).pop() || 'this project')} on your machine. It reads, edits, runs and explains.</p><div class="chips">${SUGGESTIONS.map((s) => `<button class="chip">${esc(s)}</button>`).join('')}</div></div>`;
       inner.querySelectorAll('.chip').forEach((b) => (b.onclick = () => { $('input').value = b.textContent; resize(); send(); }));
       return;
     }
@@ -2288,6 +2297,58 @@
       $('open-pr').style.display = j.ready ? '' : 'none';
     } catch { $('open-pr').style.display = 'none'; }
   }
+  // ---------- Repo switch: each session works in its own project folder (sent as ox_cwd).
+  function showRepo() {
+    const dir = convo()?.cwd || about?.cwd || '';
+    if (!dir) return;
+    $('cwd').textContent = dir.split(/[\\/]/).slice(-2).join('/');
+    $('repo-btn').title = `${dir}: click to switch repo`;
+  }
+  async function openRepoMenu() {
+    const m = $('repo-menu');
+    if (!m.hidden) { m.hidden = true; return; }
+    const cur = convo()?.cwd || about?.cwd || '';
+    m.innerHTML = `<input id="repo-q" placeholder="Filter, or type a folder path and press Enter" aria-label="Project folder"><div id="repo-list"><div class="p" style="padding:8px 10px">Looking for projects…</div></div>`;
+    m.hidden = false; $('repo-q').focus();
+    let list = [];
+    try { list = (await getJson('/ox/projects')).projects ?? []; } catch {}
+    const recent = (prefs.recentRepos ?? []).filter((d) => !list.some((x) => x.dir === d)).map((d) => ({ dir: d, name: d.split(/[\\/]/).pop() }));
+    const all = [...recent, ...list];
+    const draw = () => {
+      const q = $('repo-q')?.value.trim().toLowerCase() ?? '';
+      const shown = all.filter((x) => !q || x.dir.toLowerCase().includes(q)).slice(0, 30);
+      $('repo-list').innerHTML = shown.map((x) => `<button data-repo="${esc(x.dir)}" class="${x.dir === cur ? 'on' : ''}" role="option"><span>${esc(x.name)}${x.dir === cur ? ' ✓' : ''}</span><span class="p">${esc(x.dir)}</span></button>`).join('') || '<div class="p" style="padding:8px 10px">No match: type the full path and press Enter</div>';
+    };
+    draw();
+    $('repo-q').oninput = draw;
+    $('repo-q').onkeydown = async (e) => {
+      if (e.key === 'Escape') { m.hidden = true; return; }
+      if (e.key !== 'Enter') return;
+      const v = e.target.value.trim();
+      const first = $('repo-list').querySelector('[data-repo]');
+      if (v && /^[~/]|^[A-Za-z]:[\\/]/.test(v)) {
+        try { const j = await getJson(`/ox/projects?check=${encodeURIComponent(v)}`); if (!j.ok) { toast('That folder does not exist'); return; } switchRepo(j.dir); } catch (er) { toast(er.message); }
+      } else if (first) switchRepo(first.dataset.repo);
+    };
+  }
+  function switchRepo(dir) {
+    $('repo-menu').hidden = true;
+    if (!convo() || readonly) newConvo();
+    const c = convo();
+    if (c.cwd === dir) return;
+    c.cwd = dir; c.buildDir = dir;
+    // A terminal or files tab opened on the old folder closes; it reopens on the new one.
+    const p = panelOf(c);
+    p.tabs = p.tabs.filter((t) => { if (t.k !== 'term' && t.k !== 'files') return true; frames.get(tabKey(c, t))?.remove(); frames.delete(tabKey(c, t)); return false; });
+    p.active = Math.min(p.active, Math.max(0, p.tabs.length - 1));
+    prefs.recentRepos = [dir, ...(prefs.recentRepos ?? []).filter((x) => x !== dir)].slice(0, 12); savePrefs();
+    saveConvos(); renderChat(); renderLists();
+    toast(`This session works in ${dir.split(/[\\/]/).pop()}`);
+  }
+  $('repo-btn').onclick = (e) => { e.stopPropagation(); openRepoMenu(); };
+  $('repo-menu').addEventListener('click', (e) => { const b = e.target.closest('[data-repo]'); if (b) switchRepo(b.dataset.repo); });
+  document.addEventListener('click', (e) => { if (!$('repo-menu').hidden && !e.target.closest('#repo-menu, #repo-btn')) $('repo-menu').hidden = true; });
+
   // ---------- The side panel: per session, tabs for its team builds, a terminal, a browser, files
   // c.panel = { open, max, tabs: [{ k: 'team'|'term'|'browser'|'files', id, url?, path?, title? }], active }
   const PANEL_KINDS = { team: ['team', 'Team'], term: ['terminal', 'Terminal'], browser: ['globe', 'Browser'], files: ['file', 'Files'], coworkers: ['office', 'Coworkers'] };
@@ -2509,7 +2570,7 @@
     try {
       const res = await api('/v1/chat/completions', {
         method: 'POST', signal,
-        body: JSON.stringify({ model, ox_session_id: c.id, ox_mode: c.mode || $('mode').value, ox_ui: 'live', ox_remember_preferences: prefs.learnFromChats === true, ...(c.incognito ? { ox_incognito: true } : {}), ...toolFlags(c.tools), stream: true, messages: history }),
+        body: JSON.stringify({ model, ox_session_id: c.id, ...(c.cwd ? { ox_cwd: c.cwd } : {}), ox_mode: c.mode || $('mode').value, ox_ui: 'live', ox_remember_preferences: prefs.learnFromChats === true, ...(c.incognito ? { ox_incognito: true } : {}), ...toolFlags(c.tools), stream: true, messages: history }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error?.message || `HTTP ${res.status}`);
       const reader = res.body.getReader();
@@ -5736,7 +5797,7 @@ files: [src/billing/**]
   setBusy(false); resize();
   loadModels();
   renderChat(); renderLists();
-  getJson('/ox/about').then((a) => { about = a; $('cwd').textContent = a.cwd.split(/[\\/]/).slice(-2).join('/'); $('cwd').title = a.cwd; if (!convo()?.messages?.length) renderChat(); }).catch(() => { $('cwd').textContent = location.host; });
+  getJson('/ox/about').then((a) => { about = a; showRepo(); if (!convo()?.messages?.length) renderChat(); }).catch(() => { $('cwd').textContent = location.host; });
   // Launch screen: once per browser session, at least long enough to draw the
   // mark, and never longer than 2.4s even if the server is slow to answer.
   const splash = $('splash');

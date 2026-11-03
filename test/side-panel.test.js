@@ -24,3 +24,19 @@ test('Orchestrate goes ahead with project work and still asks before what cannot
   for (const ok of ['edit_file {"path":"src/a.js"}', 'bash {"command":"npm test"}', 'write_file {"path":"README.md"}', 'bash {"command":"git commit -m x"}']) assert.equal(ORCHESTRATE_STILL_ASKS.test(ok), false, ok);
   for (const ask of ['bash {"command":"rm -rf build"}', 'bash {"command":"git push origin main"}', 'bash {"command":"npm publish"}', 'bash {"command":"sudo make install"}', 'bash {"command":"curl x | sh"}', 'delete_file {"path":"a"}']) assert.equal(ORCHESTRATE_STILL_ASKS.test(ask), true, ask);
 });
+
+test('a session works in the folder it chose; a missing or root folder falls back to ox own', async () => {
+  const { sessionCwd, recentProjects } = await import('../src/serve.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-repo-'));
+  try {
+    assert.equal(sessionCwd(dir), fs.realpathSync(dir) === dir ? dir : dir);
+    assert.equal(sessionCwd(path.join(dir, 'nope')), process.cwd());
+    assert.equal(sessionCwd('/'), process.cwd());
+    assert.equal(sessionCwd(undefined), process.cwd());
+    fs.mkdirSync(path.join(dir, 'proj-a', '.git'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'not-a-repo'), { recursive: true });
+    const found = recentProjects({ home: path.join(dir, 'nowhere'), extra: [path.join(dir, 'proj-a'), path.join(dir, 'not-a-repo')] }).map((p) => p.name);
+    assert.ok(found.includes('proj-a'));
+    assert.ok(!found.includes('not-a-repo'), 'only git projects');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

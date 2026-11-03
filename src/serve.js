@@ -1009,7 +1009,8 @@ async function handleChatCompletions(req, res) {
     if (i >= 0) messages = [...messages.slice(0, i), { ...lastUser, content: `${lastText}\n\n(Answer with an \`\`\`openui block as described in your instructions.)` }, ...messages.slice(i + 1)];
   }
   const ctx = {
-    cwd: process.cwd(),
+    // The session's own project (the app's repo switcher), else where ox was started.
+    cwd: sessionCwd(body.ox_cwd),
     mode: turnMode.mode,
     surface: 'app',
     memoryBlock,
@@ -2181,6 +2182,28 @@ async function themeAsk() {
   } catch { return null; }
 }
 
+/** The folder a chat session works in: one it chose (an existing folder, not the disk's root), else ox's own. */
+export function sessionCwd(asked) {
+  if (typeof asked !== 'string' || !asked.trim()) return process.cwd();
+  const dir = resolve(asked.trim().replace(/^~(?=$|\/)/, homedir()));
+  try { if (dir !== '/' && statSync(dir).isDirectory()) return dir; } catch {}
+  return process.cwd();
+}
+
+/** Project folders to switch to: git repos where people keep them, newest first. */
+export function recentProjects({ home = homedir(), extra = [] } = {}) {
+  const roots = ['', 'Desktop', 'Documents', 'Projects', 'projects', 'code', 'Code', 'dev', 'src', 'Developer', 'GitHub', 'repos', 'ox-builds'].map((d) => join(home, d));
+  const seen = new Map();
+  const add = (dir) => { try { const st = statSync(join(dir, '.git')); if (st) seen.set(dir, statSync(dir).mtimeMs); } catch {} };
+  for (const d of [process.cwd(), ...extra]) add(d);
+  for (const r of roots) {
+    let ents = [];
+    try { ents = readdirSync(r, { withFileTypes: true }); } catch { continue; }
+    for (const e of ents) if (e.isDirectory() && !e.name.startsWith('.') && e.name !== 'Library' && e.name !== 'node_modules') add(join(r, e.name));
+  }
+  return [...seen.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([dir, at]) => ({ dir, name: basename(dir), at }));
+}
+
 /** A path inside a project folder (never outside it, never a secret store). → { root, abs, rel } */
 export function projectPath(rootIn, relIn) {
   const root = resolve(String(rootIn || process.cwd()).replace(/^~(?=$|\/)/, homedir()));
@@ -2350,6 +2373,12 @@ const ROUTES = [
     O.runNow(m[1], prompt).catch(() => {});
     sendJson(res, 202, { accepted: true });
   } },
+  // The repo switcher: recent project folders, and checking one you typed.
+  { method: 'GET', pattern: /^\/ox\/projects\/?$/, handler: appRoute(async (_, __, req) => {
+    const q = new URL(req.url, 'http://x').searchParams.get('check');
+    if (q) { const dir = sessionCwd(q); return { dir, ok: dir !== process.cwd() || resolve(q.replace(/^~(?=$|\/)/, homedir())) === process.cwd(), git: existsSync(join(dir, '.git')) }; }
+    return { current: process.cwd(), projects: recentProjects() };
+  }) },
   // Whether "Open a PR" can do anything here: a git project with a remote, and changes not on it yet.
   { method: 'GET', pattern: /^\/ox\/pr\/ready\/?$/, handler: appRoute(async (_, __, req) => {
     const dir = new URL(req.url, 'http://x').searchParams.get('cwd') || process.cwd();
