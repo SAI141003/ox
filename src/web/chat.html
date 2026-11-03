@@ -825,6 +825,8 @@
     <div id="tab-sessions">
       <div class="nav">
         <button id="nav-new"><span data-i="plus"></span><span class="grow">New session</span><span class="kbd">⌘</span><span class="kbd">N</span></button>
+        <button id="nav-build" title="A team of agents builds it while you watch: every line, who wrote it, and the review"><span data-i="blocks"></span><span class="grow">Build with a team</span></button>
+        <button id="nav-term" title="Your shell, in the app"><span data-i="terminal"></span><span class="grow">Terminal</span></button>
         <button data-view="studio"><span data-i="film"></span><span class="grow">Studio</span></button>
         <button data-view="review"><span data-i="check"></span><span class="grow">Code Review</span></button>
         <button data-view="gallery"><span data-i="office"></span><span class="grow">Agents</span></button>
@@ -1331,6 +1333,8 @@
     renderLists();
   }
   document.querySelectorAll('.nav [data-view]').forEach((b) => (b.onclick = () => show(b.dataset.view)));
+  $('nav-build').onclick = () => { location.href = '/build'; };
+  $('nav-term').onclick = () => { location.href = '/build#terminal'; };
   // Every page's explanation is one line until you click it.
   const clampDescs = (root = document) => root.querySelectorAll?.('.sdesc:not([data-clamped])').forEach((p) => {
     p.dataset.clamped = '1';

@@ -6059,6 +6059,37 @@ async function runSubcommand(cmd, args) {
         console.log(c.dim('  --accept-test-changes   you approve test edits made after the lock.   ox spec proof [id]: prove again'));
         console.log(c.dim('  --spec-only   stop after the spec (review it, then: ox build --from-spec <id>)'));
         console.log(c.dim('  --bot <model> -y   as for any run.   ox spec trace [id]: the trace again, any time'));
+        console.log(`${c.bold('ox build --team')} "<task>" [--agents 2-4] [--dir <folder>]: a team builds it at once, each change reviewed by another agent; watch it in the app (Build with a team)`);
+        return;
+      }
+      if (args.includes('--team')) {
+        // The build room (src/build-room.js): planner, builders in parallel, review by another agent, merge.
+        const BR = await import('./build-room.js');
+        const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
+        const task = args.filter((a, i) => !a.startsWith('-') && !['--agents', '--dir', '--bot', '--model'].includes(args[i - 1])).join(' ').trim();
+        if (!task) { console.log(c.red('usage: ox build --team "<task>" [--agents 2-4] [--dir <folder>] [--bot <model>]')); process.exitCode = 2; return; }
+        const dir = path.resolve(val('--dir') ?? process.cwd());
+        const config = loadConfig({ cwd: dir });
+        const { workingModelSpec } = await import('./working-model.js');
+        const { quickText } = await import('./quick-text.js');
+        const target = resolveBot(val('--bot') ?? val('--model') ?? await workingModelSpec(config, { say: () => {} }), config);
+        const ask = async ({ system, user }) => (await quickText(target, { system, user, maxTokens: 4000 })).text;
+        const room = new BR.BuildRoom({ task, dir, agents: val('--agents') ?? 3, ask, bot: val('--bot') ?? val('--model') });
+        const tint = { 'Agent 1': c.cyan ?? ((s) => s), 'Agent 2': c.green ?? ((s) => s), 'Agent 3': c.yellow ?? ((s) => s), 'Agent 4': c.magenta ?? ((s) => s) };
+        const who = (a) => (tint[a] ?? c.bold)(a);
+        room.on('event', (e) => {
+          if (e.type === 'plan') { console.log(`${c.bold('Plan')}: ${e.summary}`); for (const p of e.parts) console.log(`  ${who(p.agent)} ${p.title} ${c.dim(`(reviewed by ${p.reviewer})`)}`); }
+          else if (e.type === 'file') console.log(`${who(e.agent)} ${c.dim('wrote')} ${e.file} ${c.dim(`+${e.changed.length}`)}`);
+          else if (e.type === 'cmd') console.log(`${who(e.agent)} ${c.dim('$')} ${e.command}`);
+          else if (e.type === 'tests') console.log(`${who(e.agent)} ${e.ok ? c.green('tests pass') : c.red('tests fail')}${e.whole ? ' (whole project)' : ''}`);
+          else if (e.type === 'review') { console.log(`${who(e.reviewer)} ${e.verdict === 'pass' ? c.green('approved') : c.red('asked for changes')} ${c.dim(`${e.agent}, round ${e.round}`)}`); for (const x of e.comments) console.log(c.dim(`    ${x.file}${x.line ? `:${x.line}` : ''} [${x.severity}] ${x.comment}`)); }
+          else if (e.type === 'merge') console.log(`${who(e.agent)} ${e.ok ? c.green('merged') : c.red(`not merged: ${e.note}`)}`);
+          else if (e.type === 'done') console.log(`\n${e.ok ? c.green('✓') : c.red('✗')} ${e.summary}\n${c.dim(e.dir ?? '')}`);
+        });
+        process.once('SIGINT', () => room.stop());
+        console.log(c.dim(`build ${room.id} — also live in the app: Build with a team`));
+        await room.run();
+        if (!room.events.find((e) => e.type === 'done')?.ok) process.exitCode = 1;
         return;
       }
       const B = await import('./build-spec.js');

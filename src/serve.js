@@ -2146,6 +2146,18 @@ async function themeAsk() {
   } catch { return null; }
 }
 
+// The build room's planner and reviewers: the model ox is set to use, with room for a plan or a review.
+async function buildAsk() {
+  try {
+    const { loadConfig } = await import('./config.js');
+    const { workingModelSpec } = await import('./working-model.js');
+    const { quickText } = await import('./quick-text.js');
+    const cfg = loadConfig();
+    const target = resolveBot(await workingModelSpec(cfg, { say: () => {} }), cfg);
+    return async ({ system, user }) => (await quickText(target, { system, user, maxTokens: 4000 })).text;
+  } catch { return null; }
+}
+
 const codeCache = {};
 let studioOpen = null;
 const SERVER_STARTED = new Date().toISOString();
@@ -2492,6 +2504,44 @@ const ROUTES = [
   // The office's floors: this Mac, then every paired machine (its agents over
   // ox mesh, when it shares them), each with the name you gave its floor.
   { method: 'GET', pattern: /^\/ox\/office\/floors\/?$/, handler: appRoute(officeFloors) },
+  // The build room (src/build-room.js): a team of agents building one task, followed live on /build.
+  { method: 'GET', pattern: /^\/ox\/builds\/?$/, handler: appRoute(async () => ({ builds: (await import('./build-room.js')).listBuilds() })) },
+  { method: 'POST', pattern: /^\/ox\/builds\/?$/, handler: appRoute(async (body) => {
+    const BR = await import('./build-room.js');
+    const task = String(body?.task ?? '').trim();
+    if (!task) throw new Error('say what to build');
+    const raw = String(body?.dir ?? '').trim().replace(/^~(?=$|\/)/, homedir());
+    const dir = raw ? resolve(raw) : join(homedir(), 'ox-builds', `${BR.slugOf(task).slice(0, 30)}-${Date.now().toString(36).slice(-4)}`);
+    if (dir === homedir() || dir === '/' || dir.split(sep).length < 3) throw new Error('pick a project folder, not your home folder or the disk');
+    BR.prepareRepo(dir);   // refuses a folder of your own files or uncommitted changes, before anything runs
+    const ask = await buildAsk();
+    if (!ask) throw new Error('no model is set up: run ox doctor');
+    const room = BR.startBuild({ task, dir, agents: body?.agents, ask, bot: typeof body?.bot === 'string' && body.bot ? body.bot : null });
+    return { id: room.id, dir };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/builds\/([\w.-]+)\/stop\/?$/, handler: appRoute(async (_, m) => {
+    const room = (await import('./build-room.js')).liveBuild(m[1]);
+    if (!room) throw new Error('that build is not running');
+    room.stop();
+    return { stopped: true };
+  }) },
+  // A real terminal for the Build page (src/pty.js). Local-only like every app route; input must come from this page.
+  { method: 'POST', pattern: /^\/ox\/term\/?$/, handler: appRoute(async (body) => {
+    const P = await import('./pty.js');
+    if (P.listTerms().length >= 8) throw new Error('8 terminals are open already');
+    const raw = String(body?.cwd ?? '').trim().replace(/^~(?=$|\/)/, homedir());
+    const cwd = raw && existsSync(raw) ? resolve(raw) : homedir();
+    const t = P.openTerm({ cwd, cols: Number(body?.cols) || 100, rows: Number(body?.rows) || 30 });
+    return { id: t.id, cwd, pty: t.pty };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/term\/([\w-]+)\/(input|resize|close)\/?$/, handler: appRoute(async (body, m) => {
+    const t = (await import('./pty.js')).getTerm(m[1]);
+    if (!t) throw new Error('that terminal has ended');
+    if (m[2] === 'input') t.write(String(body?.data ?? '').slice(0, 64 * 1024));
+    else if (m[2] === 'resize') t.resize(Number(body?.cols) || 80, Number(body?.rows) || 24);
+    else t.kill();
+    return { ok: true };
+  }) },
   { method: 'POST', pattern: /^\/ox\/office\/name\/?$/, handler: appRoute(async (b) => {
     const id = String(b?.id ?? ''), name = String(b?.name ?? '').trim().slice(0, 40);
     if (!id) throw new Error('which floor');
@@ -3029,6 +3079,45 @@ async function handleRequest(req, res) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': body.length, 'Cache-Control': 'no-cache',
       'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'" });
     res.end(body);
+    return;
+  }
+  // The build room (src/build-room.js) and ox's own terminal emulator (src/web/term.js).
+  if (req.method === 'GET' && (path === '/build' || path === '/web/term.js')) {
+    const page = await readFile(new URL(path === '/build' ? './web/build.html' : './web/term.js', import.meta.url));
+    res.writeHead(200, { 'Content-Type': path === '/build' ? 'text/html; charset=utf-8' : 'application/javascript; charset=utf-8', 'Content-Length': page.length, 'Cache-Control': 'no-store',
+      'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'", 'X-Content-Type-Options': 'nosniff' });
+    res.end(page);
+    return;
+  }
+  // Live streams for the Build page: a build's events, a terminal's output.
+  const buildEvents = req.method === 'GET' && /^\/ox\/builds\/([\w.-]+)\/events$/.exec(path);
+  const termStream = req.method === 'GET' && /^\/ox\/term\/([\w-]+)\/stream$/.exec(path);
+  if (buildEvents || termStream) {
+    if (!authorized(req)) { unauthorized(res); return; }
+    const sse = (d) => { try { res.write(`data: ${JSON.stringify(d)}\n\n`); } catch {} };
+    if (buildEvents) {
+      const BR = await import('./build-room.js');
+      const b = BR.readBuild(buildEvents[1]);
+      if (!b) { sendError(res, 404, 'No such build.', 'invalid_request_error', 'not_found', null); return; }
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+      const room = BR.liveBuild(buildEvents[1]);
+      for (const e of b.events) sse(e);
+      if (!room || !b.live) { res.end(); return; }
+      const on = (e) => { sse(e); if (e.type === 'done') res.end(); };
+      room.on('event', on);
+      const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 15_000);
+      res.on('close', () => { room.off('event', on); clearInterval(ping); });
+      return;
+    }
+    const { getTerm } = await import('./pty.js');
+    const t = getTerm(termStream[1]);
+    if (!t) { sendError(res, 404, 'No such terminal.', 'invalid_request_error', 'not_found', null); return; }
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+    if (t.buffer) sse(t.buffer);
+    const on = (d) => sse(d);
+    const off = (code) => { sse({ exit: code }); res.end(); };
+    t.on('data', on); t.once('exit', off);
+    res.on('close', () => { t.off('data', on); t.off('exit', off); });
     return;
   }
   // The 3D office (the-delegation): every live agent at the desk of what it is doing.
