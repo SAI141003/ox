@@ -151,6 +151,11 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
   const pkg = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'desktop', 'island');
   const bin = path.join(pkg, '.build', 'release', 'OxIsland');
   const live = () => islandRunning({ env: {} });
+  // Off in Settings (or `ox island off`): the app and the terminal do not bring it up.
+  if (action === 'start' && !islandEnabled()) {
+    log('OX Island is off: turn it on with: ox island on');
+    return 0;
+  }
 
   // Your own sounds: ox island sound <event> <file> | ox island sound <event> reset | ox island sounds.
   if (action === 'sound' || action === 'sounds') {

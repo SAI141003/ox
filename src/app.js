@@ -170,6 +170,8 @@ export async function openApp({ cwd = process.cwd(), log = console.log } = {}) {
       // app for this fixed bundle id; the server state remains the source of
       // truth for the workspace and sessions.
       spawnSync('open', [app, '--env', `OX_APP_URL=${st.url}`, '--env', `OX_NODE=${process.execPath}`, '--env', `OX_CLI=${OX_CLI}`], { stdio: 'ignore' });
+      // The island comes with ox, however OX was opened (ox island start does nothing while it is off).
+      spawn(process.execPath, [OX_CLI, 'island', 'start'], { detached: true, stdio: 'ignore' }).unref();
       log(`ox is open in its own window — working in ${cwd}`);
       return { how: 'mac-app', url: st.url };
     }

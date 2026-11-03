@@ -134,6 +134,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     func load() {
+        // The island comes with ox, on every way OX opens: from Applications, or
+        // from the `ox` command, which hands this window a URL (OX_APP_URL) and
+        // skips the path below. ox island start does nothing while the island is off.
+        DispatchQueue.global().async { Self.startIslandInBackground() }
         if !usedEnvURL, let s = ProcessInfo.processInfo.environment["OX_APP_URL"], let u = URL(string: s) {
             // `ox app` may have handed this process a URL from an older server.
             // Loading it blindly leaves the native window on a permanent blank
@@ -164,10 +168,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
                 if let url { self.loadOx(url) }
                 else { self.showMessage(Self.oxPaths() == nil ? "ox is not on this Mac yet. Download OX for Mac from github.com/SAI141003/ox/releases and open it from there." : "ox did not start. Open OX again; if it still does not start, run  ox doctor  in a terminal to see why.") }
             }
-            // The island comes with ox: started here when it is switched on (Settings).
-            // Its output is discarded: a pipe nobody reads fills up while `swift build`
-            // (first run, or a rebuild) writes to it, and that build never finishes.
-            Self.startIslandInBackground()
         }
     }
 
