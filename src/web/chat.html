@@ -5174,6 +5174,15 @@ files: [src/billing/**]
             ${M.me ? `<div class="chipline"><span class="badge ok">${esc(M.me.name || 'This Mac')}</span><span class="badge">${M.running ? 'mesh node running' : 'node starts with the Ox app'}</span></div>` : '<p class="small muted">This Mac has not joined a mesh yet.</p>'}
             ${peers.length ? `<div class="cards" style="margin-top:10px">${peers.map((p) => `<div class="card"><span class="dot ${M.running ? 'ok' : ''}"></span><span class="t"><div class="n">${esc(p.name)}</div><div class="d">This Mac lets it: ${esc(grantWords(p.grants))}</div></span><button class="btn ghost" data-od-peer="${esc(p.name)}">Manage</button></div>`).join('')}</div>` : '<div class="box muted small" style="margin-top:10px">No other computers are paired. Pairing begins with a short-lived code and starts with status-only access.</div>'}
             <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="btn" id="od-invite">Pair another computer</button><button class="btn ghost" id="od-office">Open Office</button><span class="small muted" id="od-invite-state"></span></div>
+            <div class="section-cap cap" style="margin-top:16px">Have a code from another computer?</div>
+            <form id="od-join-form" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap" autocomplete="off">
+              <input class="field mono" id="od-code" placeholder="OX-K7P3-Q9XA-2MWD" aria-label="Pairing code" maxlength="20" spellcheck="false" style="flex:1 1 200px;min-width:0;text-transform:uppercase">
+              <button class="btn primary" id="od-join" type="submit">Connect</button>
+            </form>
+            <details style="margin-top:6px"><summary class="small muted" style="cursor:pointer">Not on the same network?</summary>
+              <input class="field mono" id="od-at" placeholder="its address:port, e.g. 192.168.1.20:47870 or a Tailscale 100.x address" aria-label="Address of the inviting computer" spellcheck="false" style="margin-top:6px;width:100%">
+            </details>
+            <div class="small muted" id="od-join-state" role="status" aria-live="polite" style="margin-top:6px"></div>
             <div id="od-detail"></div>
             <p class="small muted" style="margin:10px 0 0">Each machine must explicitly grant what the controller may do. Tasks run under that machine’s own approvals and every request is audited there. Inspect activity with <code>ox mesh audit</code> and remove all optional grants with <code>ox mesh lockdown</code>.</p>
           </div>`;
@@ -5183,9 +5192,22 @@ files: [src/billing/**]
           const b = $('od-invite'); b.disabled = true; $('od-invite-state').textContent = 'Making a one-time code…';
           try {
             const r = await postJson('/ox/mesh/invite', {});
-            $('od-invite-state').innerHTML = `On the other computer run <code>ox mesh join ${esc(r.code)}</code> before ${esc(new Date(r.expires).toLocaleTimeString())}.`;
+            $('od-invite-state').innerHTML = `<b class="mono" style="font-size:15px;letter-spacing:.04em">${esc(r.code)}</b> <button class="btn ghost" id="od-copy" type="button">Copy</button><br>On the other computer open OX › Settings › Offline &amp; devices and enter it under “Have a code”, before ${esc(new Date(r.expires).toLocaleTimeString())}. (Or in a terminal there: <code>ox mesh join ${esc(r.code)}</code>.)${r.addrs?.length ? `<br>Not on the same network? Give it this address: ${r.addrs.map((a) => `<code>${esc(a)}</code>`).join(' or ')}` : ''}`;
+            $('od-copy').onclick = () => { navigator.clipboard?.writeText(r.code).then(() => toast('Code copied'), () => {}); };
             b.textContent = 'New pairing code'; b.disabled = false;
           } catch (e) { $('od-invite-state').textContent = e.message; b.disabled = false; }
+        };
+        $('od-join-form').onsubmit = async (ev) => {
+          ev.preventDefault();
+          const code = $('od-code').value.trim().toUpperCase(), at = $('od-at').value.trim();
+          if (!code) { $('od-code').focus(); return; }
+          const b = $('od-join'); b.disabled = true;
+          $('od-join-state').textContent = at ? `Connecting to ${at}…` : 'Looking for the computer that made this code on your network (up to 15 seconds)…';
+          try {
+            const r = await postJson('/ox/mesh/join', { code, ...(at ? { at } : {}) });
+            toast(`Paired with ${r.paired.name}`);
+            renderSection();
+          } catch (e) { $('od-join-state').textContent = e.message; b.disabled = false; }
         };
         el.querySelectorAll('[data-od-peer]').forEach((b) => (b.onclick = async () => {
           const box = $('od-detail'); const machine = b.dataset.odPeer;

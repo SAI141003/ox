@@ -2583,13 +2583,34 @@ const ROUTES = [
     // The peer repeats validation and enforces the actual write boundary.
     return (await meshUp()).ask(machine, 'push', { path: target, data, overwrite: body?.overwrite === true }, { timeoutMs: 60_000 });
   }) },
-  { method: 'POST', pattern: /^\/ox\/mesh\/(invite|name|allow|deny|forget|choose)\/?$/, handler: appRoute(async (body, m) => {
+  { method: 'POST', pattern: /^\/ox\/mesh\/(invite|join|name|allow|deny|forget|choose)\/?$/, handler: appRoute(async (body, m) => {
     const M = await import('./mesh.js');
     switch (m[1]) {
       case 'invite': {
         const node = await meshUp().catch(() => null);
-        if (node) return node.invite();
-        return M.control('invite', { method: 'POST' });
+        const out = node ? node.invite() : await M.control('invite', { method: 'POST' });
+        // Where the other computer can reach this one when it is not on the same network.
+        const port = node?.port ?? M.PORT;
+        const addrs = Object.values(os.networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => `${i.address}:${port}`);
+        return { ...out, addrs };
+      }
+      // The other side of an invite, from the app: the code the inviting computer
+      // shows (found on this network by its beacon, or at an address you give).
+      case 'join': {
+        const code = String(body?.code ?? '').trim();
+        if (code.toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^OX(?=.{12}$)/, '').length !== 12) throw new Error('enter the code the other computer shows, like OX-K7P3-Q9XA-2MWD');
+        let at = String(body?.at ?? '').trim() || null;
+        // This app's own node already hears the network's announcements: an open
+        // invite it heard in the last few seconds is where to go, at once.
+        if (!at && meshNode?.state?.seen) {
+          const open = [...meshNode.state.seen.values()].filter((x) => x.invite && Date.now() - x.at < 10_000).sort((a, b) => b.at - a.at);
+          if (open.length) at = open[0].addr;
+        }
+        if (at && !/^[\w.:\-[\]]+$/.test(at)) throw new Error('the address looks like host:port, e.g. 192.168.1.20:47321');
+        const peer = await M.join({ code, at, name: body?.name ? String(body.name) : null });
+        // The node reads paired machines on every heartbeat: start it, or ask it now.
+        meshUp().then((n) => n.heartbeat?.()).catch(() => {});
+        return { paired: { id: peer.id, name: peer.name } };
       }
       case 'name': return { name: M.setName(String(body?.name ?? '')) };
       case 'allow': case 'deny': return { peer: M.setGrant(String(body?.machine ?? ''), String(body?.grant ?? ''), m[1] === 'allow') };
