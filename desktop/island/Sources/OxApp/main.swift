@@ -86,16 +86,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if let host = webView.url?.host, host == "127.0.0.1" || host == "localhost" {
+            pageShown = true
+            recoverAttempts = 0
+        }
         deliverPendingPetEvent()
     }
 
     /// The page to show: given by `ox app`, or asked of `ox` when opened from the Dock.
     /// The server went away (stopped, updated, crashed): ask ox again, which
-    /// starts a new one, at most once every 10 s.
+    /// starts a new one, at most once every 10 s (3 s while no page has opened).
+    /// A failure inside that window waits for its turn: dropped, it left the
+    /// window on "Starting ox…" for good, since a message page has nothing to check.
     private var lastRecover = Date.distantPast
+    private var pageShown = false
+    private var recoverAttempts = 0
+    private var retryPending = false
+    private var loadToken = 0
+    private static let maxRecoverAttempts = 8
     private var usedEnvURL = false
     func recover() {
-        guard Date().timeIntervalSince(lastRecover) > 10 else { return }
+        let wait = (pageShown ? 10 : 3) - Date().timeIntervalSince(lastRecover)
+        if wait > 0 {
+            guard !retryPending else { return }
+            retryPending = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+                self?.retryPending = false
+                self?.recover()
+            }
+            return
+        }
+        recoverAttempts += 1
+        guard recoverAttempts <= Self.maxRecoverAttempts else {
+            loadToken += 1
+            showMessage("ox did not start. Open OX again; if it still does not start, run  ox doctor  in a terminal to see why.")
+            return
+        }
         lastRecover = Date()
         usedEnvURL = true
         load()
@@ -103,7 +129,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         let host = webView.url?.host ?? (error as NSError).userInfo[NSURLErrorFailingURLStringErrorKey].flatMap { URL(string: "\($0)")?.host }
-        if host == "127.0.0.1" || host == "localhost" { recover() }
+        if host == "127.0.0.1" || host == "localhost" { pageShown = false; recover() }
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        if (error as NSError).code != NSURLErrorCancelled, !pageShown { recover() }
     }
 
     /// Opened again from the Dock or by `ox app`: if the server is gone, bring it back.
@@ -112,7 +142,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         if let window, !window.isVisible { window.makeKeyAndOrderFront(nil) }
         return true
     }
-    func applicationDidBecomeActive(_ notification: Notification) { checkServer() }
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // Gave up earlier: coming back to the window is a new try.
+        if recoverAttempts > Self.maxRecoverAttempts { recoverAttempts = 0; recover() }
+        checkServer()
+    }
 
     private func checkServer() {
         guard let u = web.url, u.host == "127.0.0.1" || u.host == "localhost" else { return }
@@ -130,7 +164,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         if let host = url.host, let scheme = url.scheme {
             oxOrigin = (scheme, host, url.port ?? (scheme == "https" ? 443 : 80))
         }
+        pageShown = false
+        loadToken += 1
+        let token = loadToken
         web.load(URLRequest(url: url))
+        // A server that accepts and never answers fails no navigation.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+            guard let self, self.loadToken == token, !self.pageShown else { return }
+            self.recover()
+        }
     }
 
     func load() {
@@ -323,6 +365,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         p.standardOutput = pipe
         p.standardError = FileHandle.nullDevice
         do { try p.run() } catch { return nil }
+        // It gives up by itself after about 20 s; never wait on it forever.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 60) { if p.isRunning { p.terminate() } }
         p.waitUntilExit()
         let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         return out.split(separator: "\n").last.flatMap { URL(string: String($0).trimmingCharacters(in: .whitespaces)) }
