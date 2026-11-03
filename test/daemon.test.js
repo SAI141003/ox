@@ -1143,7 +1143,12 @@ test('daemon 16: nothing is written outside the sandbox HOME and the daemon dir'
   const { port } = await startMock(t, () => ({ text: 'hermetic' }));
   const env = mockEnv(sb, port);
   const realHome = REAL_HOME;
-  const before = fs.readdirSync(realHome).sort().join('\n');
+  // The unit run shares this HOME with other tests running at the same time; on
+  // Linux a font library they start creates ~/.cache and ~/.fontconfig. Those
+  // are not the daemon's writes, and the checks below still cover what it makes.
+  const SYSTEM_CACHES = new Set(['.cache', '.fontconfig']);
+  const listing = (dir) => fs.readdirSync(dir).filter((n) => !SYSTEM_CACHES.has(n)).sort().join('\n');
+  const before = listing(realHome);
 
   await spawnOx(sb, ['daemon', 'start'], { env });
   const detached = await spawnOx(sb, ['-p', 'stay in the sandbox', '--detach'], { env });
@@ -1154,7 +1159,7 @@ test('daemon 16: nothing is written outside the sandbox HOME and the daemon dir'
     return r?.state === 'exited' ? r : null;
   }, { timeoutMs: 25000, what: 'the worker to finish' });
 
-  const after = fs.readdirSync(realHome).sort().join('\n');
+  const after = listing(realHome);
   const was = new Set(before.split('\n'));
   const now = new Set(after.split('\n'));
   assert.equal(after, before, `the real home must be untouched (${realHome}); appeared: ${[...now].filter((x) => !was.has(x)).join(', ') || 'none'}; gone: ${[...was].filter((x) => !now.has(x)).join(', ') || 'none'}`);
