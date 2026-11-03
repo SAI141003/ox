@@ -214,7 +214,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -542,6 +542,7 @@ function usageAll() {
     '  ox skill from <book.pdf|folder>   a book or docs → a skill: an index plus chapters read only when needed',
     '',
     'search: ox search [setup | status | stop]   your own open-source web search (SearXNG), no key',
+    'shortcuts: ox shortcuts [forget <words>]   what ox learned to do instantly with no model (Atticus-style), and your "when I say …" phrases',
     'proactive: ox proactive [run]   morning cards: loose ends (calendar, mail, messages waiting, dates you mentioned) with the next step prepared; never sent',
     'reply: ox reply [--print] [--style] [what to say]   Double Tap: drafts the reply to the conversation on screen in your voice, unsent where your cursor is (island: double-tap right ⌘)',
     'swarm: ox swarm <url> [--agents 12] [--headless]   many agents review a page at once (contrast, labels, tap size, overflow); you watch them work. --app "<name>" reviews a desktop app (agent-desktop)',
@@ -4948,6 +4949,15 @@ async function runSubcommand(cmd, args) {
     case 'pr':
       await cmdPr(args);
       return;
+    case 'shortcuts': {
+      // ox shortcuts [forget <words>]: what ox learned to do with no model, and your own phrases.
+      const SC = await import('./shortcuts.js');
+      if (args[0] === 'forget') { console.log(SC.forgetShortcut(args.slice(1).join(' ')) ? 'forgotten' : c.dim('no shortcut for that')); return; }
+      const all = Object.entries(SC.readShortcuts());
+      if (!all.length) { console.log(c.dim('none yet: ask ox to do something (open an app, move a window, click a button) and the next time it runs instantly. Or say "when I say focus mode, open Things and close Slack".')); return; }
+      for (const [, v] of all) console.log(`${c.bold(v.said)}${v.mine ? c.dim('  (yours)') : ''}\n  ${c.dim(v.alias ? `→ ${v.alias}` : v.steps.map((s) => `${s.tool}(${Object.values(s.args).join(', ')})`).join(' → '))}`);
+      return;
+    }
     case 'proactive': {
       // ox proactive [run]: the morning cards (src/proactive.js): loose ends with the next step prepared, never done for you.
       const P = await import('./proactive.js');

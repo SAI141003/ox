@@ -1062,6 +1062,7 @@ async function handleChatCompletions(req, res) {
     });
 
     let fullContent = '';
+    const shortcutCalls = [];
     const totalUsage = usageTally();
     // route: what the turn was given (an answer only, web tools, the interactive guide, or the tools).
     const route = liveUi && turnMode.answerOnly ? 'ui' : turnMode.answerOnly ? (ctx.onlyTools?.includes('web_search') ? 'web' : 'answer') : 'tools';
@@ -1109,8 +1110,13 @@ async function handleChatCompletions(req, res) {
           // What the agent is doing, as an `ox` extension on an empty chunk:
           // OpenAI clients ignore the unknown field, the web chat draws it.
           sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: oxToolEvent(event) });
+          if (event.type === 'tool-end') { const c = shortcutCalls.find((x) => x.id === event.id && x.ok === null); if (c) c.ok = !event.isError; }
+        } else if (event.type === 'assistant-turn' && Array.isArray(event.message?.tool_calls)) {
+          for (const tc of event.message.tool_calls) { let a = {}; try { a = JSON.parse(tc.function?.arguments ?? '{}'); } catch {} shortcutCalls.push({ id: tc.id, name: tc.function?.name ?? '?', args: a, ok: null }); }
         }
       }
+      // Done with a model, plain actions only: next time the same words run with none (src/shortcuts.js).
+      if (shortcutCalls.length && typeof lastText === 'string' && !incognito) { try { (await import('./shortcuts.js')).learnShortcut(lastText, shortcutCalls, { reply: fullContent }); } catch {} }
       if (route === 'ui' && fullContent) {
         const mended = await mendUi({ text: fullContent, target, pickedName, messages, ctx, config, usage: totalUsage });
         if (mended) { fullContent = mended.text; sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'replace', content: mended.text, why: mended.by ? `the first drawing did not load, so ${mended.by} redrew it` : 'the first drawing did not load, so it was redrawn' } }); }
@@ -1792,6 +1798,19 @@ export async function voiceTurn(body) {
   }
   const quickSay = quickReply(text);
   if (quickSay) return { route: 'answer', handled: true, ok: true, say: quickSay, model: 'none (0 tokens)', ms: Date.now() - started };
+  // Your own phrases and what ox learned (src/shortcuts.js): "when I say focus
+  // mode, …" is saved and done; a learned shortcut replays with no model.
+  const SC = await import('./shortcuts.js');
+  const named = SC.parseNamed(text);
+  const depth = Number(body?._depth) || 0;   // a phrase that names itself must not loop
+  if (named && body?.dryRun !== true && depth < 2) { SC.saveNamed(named.phrase, named.then); return voiceTurn({ ...body, text: named.then, _depth: depth + 1 }); }
+  const sc = SC.findShortcut(text);
+  if (sc?.alias && body?.dryRun !== true && depth < 2) return voiceTurn({ ...body, text: sc.alias, _depth: depth + 1 });
+  if (sc?.steps && body?.dryRun !== true) {
+    const T = await import('./tools/operator.js');
+    const r = await SC.replayShortcut(sc, (name, args) => T[name](args, { yolo: true }));
+    if (r.ok) return { route: 'shortcut', handled: true, ok: true, say: r.said, model: 'none (learned)', ms: Date.now() - started };
+  }
   const { doOffline } = await import('./offline.js');
   // Typing, pressing and clicking take a second or two of waiting on the app:
   // done in a child (`ox do`), so the server keeps answering meanwhile.

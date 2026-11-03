@@ -790,6 +790,8 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
         // How this project is tested / built / started, from the commands that worked.
         const { learnProjectCommands } = await import('./memory-graph.js');
         const cmds = learnProjectCommands(learnCalls, { cwd: config.cwd });
+        // Plain actions done right: next time the same words run with no model (src/shortcuts.js).
+        if (code === 0) { try { if ((await import('./shortcuts.js')).learnShortcut(String(prompt ?? ''), learnCalls) && !opts.json) process.stderr.write(dimYellow('· learned: next time this runs instantly, with no model (ox shortcuts)\n')); } catch {} }
         if (cmds.length && !opts.json) process.stderr.write(dimYellow(`· remembered for this project: ${cmds.map((r) => r.memory.text).join('; ')}\n`));
       } catch {}
     }
