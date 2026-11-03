@@ -138,6 +138,9 @@ export function appApprover(res, model, { timeoutMs = Number(process.env.OX_APP_
     sendSSE(res, { ...createChatCompletionChunk(model, ''), ox: { type: 'approval', id, tool: String(tool), preview: String(detail || '').slice(0, 400) } });
   });
 }
+// In Orchestrate these still ask: steps that cannot be taken back or that act outside the project.
+export const ORCHESTRATE_STILL_ASKS = /\brm\s+-[a-z]*[rf]|\brmdir\b|\bdelete_file\b|\bgit\s+(push|reset\s+--hard|clean\s+-[a-z]*f|branch\s+-D)|\bnpm\s+publish\b|\bsudo\b|\bdeploy\b|\bvercel\s+(--prod|deploy)|\bcurl\b[^|]*\|\s*(sh|bash)\b|\bpay(ment)?\b|\bsend_(email|message)\b|\bdrop\s+(table|database)\b/i;
+
 export function answerAppApproval(id, decision) {
   const p = appApprovals.get(id);
   if (!p) return false;
@@ -854,12 +857,18 @@ async function handleChatCompletions(req, res) {
   // Small talk ("hey how are you", "thanks") is answered here for 0 tokens:
   // a model call for it carried the whole prompt to write one line (src/quick-reply.js).
   // Only when ox picks the model (auto): a model you chose by name answers itself.
-  const quick = typeof lastUserMsg?.content === 'string' && !(lastUserMsg.images?.length) && body.ox_quick !== false && (model === 'auto' || body.ox_quick === true) ? quickReply(lastUserMsg.content) : null;
+  // "What's going on?" while a team is building (src/build-room.js): answered from
+  // the builds' own records, in any chat, without a model.
+  let teamStatus = null;
+  if (typeof lastUserMsg?.content === 'string' && !(lastUserMsg.images?.length)) {
+    try { teamStatus = (await import('./build-room.js')).statusReply(lastUserMsg.content, { sessionId: typeof body.ox_session_id === 'string' ? body.ox_session_id : null }); } catch {}
+  }
+  const quick = teamStatus ?? (typeof lastUserMsg?.content === 'string' && !(lastUserMsg.images?.length) && body.ox_quick !== false && (model === 'auto' || body.ox_quick === true) ? quickReply(lastUserMsg.content) : null);
   if (quick) {
     const name = String(model || 'ox');
     if (stream) {
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
-      sendSSE(res, { ...createChatCompletionChunk(name, ''), ox: { type: 'mode', mode: 'ask', routed: true, reason: 'small talk, answered without a model (0 tokens)', route: 'quick' } });
+      sendSSE(res, { ...createChatCompletionChunk(name, ''), ox: { type: 'mode', mode: 'ask', routed: true, reason: teamStatus ? 'the team builds, read from their records (0 tokens)' : 'small talk, answered without a model (0 tokens)', route: 'quick' } });
       sendSSE(res, createChatCompletionChunk(name, quick));
       sendSSE(res, createChatCompletionChunk(name, '', true, { inputTokens: 0, outputTokens: 0 }));
       sendSSEDone(res);
@@ -1048,6 +1057,14 @@ async function handleChatCompletions(req, res) {
     // keeps the old answer, no, rather than waiting on a card it never shows.
     const fromApp = Boolean(body.ox_mode || body.ox_ui);
     if (fromApp || target?.provider === 'subscription') ctx.requestApproval = appApprover(res, targetModel);
+    // Orchestrate, chosen by you, runs on its own: its helpers' edits and
+    // commands in the project go ahead without a card each. What cannot be
+    // taken back or reaches outside (deleting, pushing, publishing, paying,
+    // sudo) still asks.
+    if (fromApp && turnMode.mode === 'orchestrate' && !turnMode.routed) {
+      const ask = ctx.requestApproval;
+      ctx.requestApproval = (tool, args = {}, detail = '') => (ORCHESTRATE_STILL_ASKS.test(`${tool} ${JSON.stringify(args ?? {})} ${detail}`) && ask ? ask(tool, args, detail) : Promise.resolve(true));
+    }
     if (target?.provider === 'subscription') ctx.planApprovals = true;
     const appSessionId = typeof body.ox_session_id === 'string' ? body.ox_session_id.slice(0, 128) : '';
     const steerState = appSessionId && fromApp ? { pending: [], startedAt: Date.now() } : null;
@@ -2146,6 +2163,18 @@ async function themeAsk() {
   } catch { return null; }
 }
 
+/** A path inside a project folder (never outside it, never a secret store). → { root, abs, rel } */
+export function projectPath(rootIn, relIn) {
+  const root = resolve(String(rootIn || process.cwd()).replace(/^~(?=$|\/)/, homedir()));
+  if (!existsSync(root) || !statSync(root).isDirectory()) throw new Error('that folder is gone');
+  if (root === homedir() || root === '/' || root.split(sep).length < 3) throw new Error('open a project folder, not your home folder or the disk');
+  const abs = resolve(root, String(relIn || '.'));
+  if (abs !== root && !abs.startsWith(root + sep)) throw new Error('outside the project');
+  const rel = abs === root ? '' : abs.slice(root.length + 1);
+  if (/(^|[\\/])(\.git|\.ssh|\.env[^\\/]*)([\\/]|$)/.test(rel)) throw new Error('not shown here');
+  return { root, abs, rel: rel.split(sep).join('/') };
+}
+
 // The build room's planner and reviewers: the model ox is set to use, with room for a plan or a review.
 async function buildAsk() {
   try {
@@ -2222,6 +2251,65 @@ const ROUTES = [
     const D = await import('./dev-flow.js');
     const dir = new URL(req.url, 'http://x').searchParams.get('cwd') || process.cwd();
     return { status: D.prStatus(dir), recipe: D.readRecipe(D.repoRoot(dir)) };
+  }) },
+  // The side panel's Files tab: a project's files, read and written only inside its folder.
+  { method: 'GET', pattern: /^\/ox\/files\/?$/, handler: appRoute(async (_, __, req) => {
+    const q = new URL(req.url, 'http://x').searchParams;
+    const { root, abs, rel } = projectPath(q.get('root'), q.get('path') || '');
+    const st = statSync(abs);
+    if (st.isDirectory()) {
+      const SKIP = new Set(['.git', 'node_modules', '.ox-build', '.ox-backups', '.DS_Store']);
+      const entries = readdirSync(abs, { withFileTypes: true }).filter((d) => !SKIP.has(d.name))
+        .map((d) => ({ name: d.name, dir: d.isDirectory() })).sort((a, b) => (b.dir - a.dir) || a.name.localeCompare(b.name)).slice(0, 500);
+      return { root, path: rel, dir: true, entries };
+    }
+    if (st.size > 1024 * 1024) return { root, path: rel, dir: false, tooBig: true, size: st.size };
+    const buf = readFileSync(abs);
+    if (buf.subarray(0, 4000).includes(0)) return { root, path: rel, dir: false, binary: true, size: st.size };
+    return { root, path: rel, dir: false, content: buf.toString('utf8') };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/files\/?$/, handler: appRoute(async (body) => {
+    const { abs, rel } = projectPath(body?.root, body?.path || '');
+    if (!rel) throw new Error('a file name is needed');
+    if (String(body?.content ?? '').length > 1024 * 1024) throw new Error('too big to save here');
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, String(body?.content ?? ''));
+    return { ok: true, path: rel };
+  }) },
+  // "IDE ↗": the session's folder in your editor (Zed, Cursor, VS Code, whichever is installed).
+  { method: 'POST', pattern: /^\/ox\/open-ide\/?$/, handler: appRoute(async (body) => {
+    const dir = resolve(String(body?.cwd || process.cwd()).replace(/^~(?=$|\/)/, homedir()));
+    if (!existsSync(dir)) throw new Error('that folder is gone');
+    const apps = process.platform === 'darwin' ? ['Zed', 'Cursor', 'Visual Studio Code', 'Windsurf'] : [];
+    const want = typeof body?.app === 'string' && apps.includes(body.app) ? [body.app] : apps;
+    for (const app of want) {
+      if (existsSync(`/Applications/${app}.app`) || existsSync(join(homedir(), 'Applications', `${app}.app`))) {
+        spawn('open', ['-a', app, dir], { detached: true, stdio: 'ignore' }).unref();
+        return { opened: app, dir };
+      }
+    }
+    for (const bin of ['zed', 'cursor', 'code']) {
+      if (spawnSync(process.platform === 'win32' ? 'where' : 'which', [bin]).status === 0) { spawn(bin, [dir], { detached: true, stdio: 'ignore', shell: process.platform === 'win32' }).unref(); return { opened: bin, dir }; }
+    }
+    throw new Error('no code editor found (Zed, Cursor or VS Code)');
+  }) },
+  // PersonaPlex (src/personaplex.js): the live voice page on your GPU machine, with ox's persona.
+  { method: 'GET', pattern: /^\/ox\/personaplex\/?$/, handler: appRoute(async () => {
+    const P = await import('./personaplex.js');
+    const cfg = P.readConfig();
+    const prompt = await P.personaPrompt({ custom: cfg.persona });
+    return { url: cfg.url, voice: cfg.voice, prompt, page: P.chatUrl(cfg, prompt) };
+  }) },
+  // Whether "Open a PR" can do anything here: a git project with a remote, and changes not on it yet.
+  { method: 'GET', pattern: /^\/ox\/pr\/ready\/?$/, handler: appRoute(async (_, __, req) => {
+    const dir = new URL(req.url, 'http://x').searchParams.get('cwd') || process.cwd();
+    const g = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8', timeout: 5000 });
+    if (!existsSync(dir) || g('rev-parse', '--git-dir').status !== 0) return { ready: false, why: 'not a git project' };
+    if (!g('remote').stdout.trim()) return { ready: false, why: 'no remote to push to' };
+    const dirty = !!g('status', '--porcelain').stdout.trim();
+    const ahead = g('rev-list', '--count', '@{u}..HEAD');
+    const unpushed = ahead.status !== 0 || Number(ahead.stdout.trim()) > 0;
+    return dirty || unpushed ? { ready: true } : { ready: false, why: 'nothing to send: no changes since the last push' };
   }) },
   { method: 'POST', pattern: /^\/ox\/pr\/(open|fix)\/?$/, handler: appRoute(async (body, m) => {
     const D = await import('./dev-flow.js');
@@ -2516,9 +2604,11 @@ const ROUTES = [
     BR.prepareRepo(dir);   // refuses a folder of your own files or uncommitted changes, before anything runs
     const ask = await buildAsk();
     if (!ask) throw new Error('no model is set up: run ox doctor');
-    const room = BR.startBuild({ task, dir, agents: body?.agents, ask, bot: typeof body?.bot === 'string' && body.bot ? body.bot : null });
+    const room = BR.startBuild({ task, dir, agents: body?.agents, ask, bot: typeof body?.bot === 'string' && body.bot ? body.bot : null, sessionId: typeof body?.sessionId === 'string' ? body.sessionId : null });
     return { id: room.id, dir };
   }) },
+  // Your edit to a file the team built (committed as yours, between merges).
+  { method: 'POST', pattern: /^\/ox\/builds\/([\w.-]+)\/file\/?$/, handler: appRoute(async (body, m) => (await import('./build-room.js')).editBuildFile(m[1], body?.file, String(body?.content ?? ''))) },
   { method: 'POST', pattern: /^\/ox\/builds\/([\w.-]+)\/stop\/?$/, handler: appRoute(async (_, m) => {
     const room = (await import('./build-room.js')).liveBuild(m[1]);
     if (!room) throw new Error('that build is not running');
@@ -2949,7 +3039,7 @@ async function serveChatPage(res) {
     'Content-Length': chatPage.length,
     'Cache-Control': 'no-cache',
     // The page talks only to this server and loads nothing else (it frames only its own /office).
-    'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self' https://www.openstreetmap.org; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self' http://localhost:* http://127.0.0.1:* https:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
   });
@@ -3082,9 +3172,9 @@ async function handleRequest(req, res) {
     return;
   }
   // The build room (src/build-room.js) and ox's own terminal emulator (src/web/term.js).
-  if (req.method === 'GET' && (path === '/build' || path === '/web/term.js')) {
-    const page = await readFile(new URL(path === '/build' ? './web/build.html' : './web/term.js', import.meta.url));
-    res.writeHead(200, { 'Content-Type': path === '/build' ? 'text/html; charset=utf-8' : 'application/javascript; charset=utf-8', 'Content-Length': page.length, 'Cache-Control': 'no-store',
+  if (req.method === 'GET' && (path === '/build' || path === '/files' || path === '/web/term.js')) {
+    const page = await readFile(new URL(path === '/build' ? './web/build.html' : path === '/files' ? './web/files.html' : './web/term.js', import.meta.url));
+    res.writeHead(200, { 'Content-Type': path === '/web/term.js' ? 'application/javascript; charset=utf-8' : 'text/html; charset=utf-8', 'Content-Length': page.length, 'Cache-Control': 'no-store',
       'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'", 'X-Content-Type-Options': 'nosniff' });
     res.end(page);
     return;

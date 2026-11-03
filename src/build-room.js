@@ -27,6 +27,7 @@ export const BUILDS_DIR = (env = process.env) => path.join(env.OX_HOME || path.j
 const OX_BIN = fileURLToPath(new URL('../bin/ox.js', import.meta.url));
 const MAX_LINES = 3000;
 const MAX_ROUNDS = 2;
+export const MAX_AGENTS = 8;
 
 const git = (cwd, args, opts = {}) => spawnSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...opts });
 export const slugOf = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'build';
@@ -276,16 +277,18 @@ export class BuildRoom extends EventEmitter {
    * @param {object} o
    * @param {string} o.task
    * @param {string} o.dir           project folder (made, and made a git repo, when needed)
-   * @param {number} [o.agents=3]    builders at most
+   * @param {number} [o.agents]      builders at most (default: as many as the plan needs, up to MAX_AGENTS)
    * @param {Function} o.ask         ({ system, user }) → text: the planner and the reviewers
    * @param {Function} [o.spawnBuilder] ({ cwd, prompt, name }) → { lines, done, kill }
    */
-  constructor({ task, dir, agents = 3, ask, spawnBuilder = spawnOxBuilder, bot = null, env = process.env, id = null }) {
+  constructor({ task, dir, agents = 3, ask, spawnBuilder = spawnOxBuilder, bot = null, env = process.env, id = null, sessionId = null }) {
     super();
+    this.sessionId = sessionId ? String(sessionId).slice(0, 120) : null;
     this.id = id ?? `${new Date().toISOString().slice(0, 10)}-${slugOf(task).slice(0, 24)}-${randomUUID().slice(0, 6)}`;
     this.task = String(task);
     this.dir = path.resolve(dir);
-    this.maxAgents = Math.max(1, Math.min(4, Number(agents) || 3));
+    // As many builders as the task splits into, up to MAX_AGENTS (a number asks for at most that many).
+    this.maxAgents = Math.max(1, Math.min(MAX_AGENTS, Number(agents) || MAX_AGENTS));
     this.ask = ask;
     this.spawnBuilder = spawnBuilder;
     this.bot = bot;
@@ -294,6 +297,7 @@ export class BuildRoom extends EventEmitter {
     this.runs = new Set();
     this.stopped = false;
     this.state = 'starting';
+    this.retryScale = Number(env.OX_BUILD_RETRY_SCALE ?? 1);   // tests shrink the pauses
     this.log = path.join(BUILDS_DIR(env), this.id, 'events.jsonl');
     fs.mkdirSync(path.dirname(this.log), { recursive: true });
   }
@@ -327,7 +331,23 @@ export class BuildRoom extends EventEmitter {
 
   /** One ox run for a builder, its events turned into the room's. → { code, said } */
   async runBuilder(member, prompt) {
+    // A run cut off by the model (rate limit, a stalled stream) is tried again
+    // after a pause, carrying on from what is already in the copy; it does not
+    // count as a review round.
+    let r = await this.runBuilderOnce(member, prompt);
+    for (let wait = 30; r.modelError && !this.stopped && wait <= 60; wait *= 2) {
+      this.status(member.name, 'waiting', `the model is busy; trying again in ${wait}s`);
+      await new Promise((ok) => setTimeout(ok, wait * 1000 * this.retryScale));
+      if (this.stopped) break;
+      this.status(member.name, 'writing', 'carrying on');
+      r = await this.runBuilderOnce(member, `${prompt}\n\nYou were cut off by a model error. Your copy already has what you wrote so far: look at it and carry on from there.`);
+    }
+    return r;
+  }
+
+  async runBuilderOnce(member, prompt) {
     const { name, wt } = member;
+    let modelError = false;
     const run = this.spawnBuilder({ cwd: wt, prompt, name, bot: this.bot });
     this.runs.add(run);
     const calls = new Map();
@@ -369,7 +389,9 @@ export class BuildRoom extends EventEmitter {
         } else if (type === 'final') {
           said = String(ev.message?.content ?? said);
         } else if (type === 'error') {
-          this.emitEv({ type: 'note', agent: name, text: String(ev.message ?? ev.error ?? 'error').slice(0, 300) });
+          const text = String(ev.message ?? ev.error ?? 'error');
+          if (/\b429\b|rate.?limit|too many requests|stalled|overloaded|\b50[234]\b|timed? ?out|ECONNRESET|socket hang up/i.test(text)) modelError = true;
+          this.emitEv({ type: 'note', agent: name, text: text.slice(0, 300) });
         }
       }
     } finally {
@@ -377,7 +399,7 @@ export class BuildRoom extends EventEmitter {
     }
     const code = await run.done;
     if (said) this.emitEv({ type: 'say', agent: name, text: said.slice(0, 600) });
-    return { code, said };
+    return { code, said, modelError };
   }
 
   /** Another agent reads the lines this one changed, plus ox's security check. */
@@ -404,37 +426,42 @@ export class BuildRoom extends EventEmitter {
     return { verdict, comments };
   }
 
-  /** Merge one finished part into the project; a conflict goes back to its author once. */
-  async merge(member) {
+  /** One change to the project at a time: merges, and your own edits. */
+  async withLock(fn) {
     const prev = this.mergeLock ?? Promise.resolve();
     let release;
     this.mergeLock = new Promise((r) => { release = r; });
     await prev;
-    try {
-      this.status(member.name, 'merging', member.branch);
-      // Bring the project's latest into the branch first, so the merge into the project is clean.
-      let up = git(member.wt, [...IDENT, 'merge', '--no-edit', '-q', this.mainBranch]);
-      if (up.status !== 0) {
-        // A conflict in another agent's file: that agent's merged version wins.
-        for (const f of git(member.wt, ['diff', '--name-only', '--diff-filter=U']).stdout.split('\n').filter(Boolean)) {
-          const owner = this.ownerOf(f);
-          if (owner && owner !== member) { git(member.wt, ['checkout', '--theirs', '--', f]); git(member.wt, ['add', '--', f]); }
-        }
-        if (!git(member.wt, ['diff', '--name-only', '--diff-filter=U']).stdout.trim()) up = git(member.wt, [...IDENT, 'commit', '-q', '--no-edit']);
+    try { return await fn(); } finally { release(); }
+  }
+
+  /** Merge one finished part into the project; a conflict goes back to its author once. */
+  merge(member) { return this.withLock(() => this.mergeNow(member)); }
+
+  async mergeNow(member) {
+    this.status(member.name, 'merging', member.branch);
+    // Bring the project's latest into the branch first, so the merge into the project is clean.
+    let up = git(member.wt, [...IDENT, 'merge', '--no-edit', '-q', this.mainBranch]);
+    if (up.status !== 0) {
+      // A conflict in another agent's file: that agent's merged version wins.
+      for (const f of git(member.wt, ['diff', '--name-only', '--diff-filter=U']).stdout.split('\n').filter(Boolean)) {
+        const owner = this.ownerOf(f);
+        if (owner && owner !== member) { git(member.wt, ['checkout', '--theirs', '--', f]); git(member.wt, ['add', '--', f]); }
       }
-      if (up.status !== 0) {
-        this.status(member.name, 'fixing', 'merge conflict');
-        await this.runBuilder(member, `${member.prompt}\n\nYour branch has merge conflicts with the other agents' merged work (git status shows them). Resolve every conflict keeping both sides' behaviour, run your tests, and finish with one line. Do not commit; ox does.`);
-        if (git(member.wt, ['diff', '--name-only', '--diff-filter=U']).stdout.trim()) { git(member.wt, ['merge', '--abort']); return { ok: false, note: 'merge conflict could not be resolved' }; }
-        commitAll(member.wt, `Merge ${this.mainBranch} into ${member.branch}`);
-      }
-      const m = git(this.dir, [...IDENT, 'merge', '--no-ff', '-q', '-m', `${member.name}: ${member.part.title}`, member.branch]);
-      if (m.status !== 0) { git(this.dir, ['merge', '--abort']); return { ok: false, note: (m.stderr || m.stdout).trim().slice(0, 300) }; }
-      for (const f of git(this.dir, ['diff', '--name-only', 'HEAD~1', 'HEAD']).stdout.split('\n').filter(Boolean)) {
-        if (!this.files.has(f)) this.showFile(member.name, this.dir, f);
-      }
-      return { ok: true };
-    } finally { release(); }
+      if (!git(member.wt, ['diff', '--name-only', '--diff-filter=U']).stdout.trim()) up = git(member.wt, [...IDENT, 'commit', '-q', '--no-edit']);
+    }
+    if (up.status !== 0) {
+      this.status(member.name, 'fixing', 'merge conflict');
+      await this.runBuilder(member, `${member.prompt}\n\nYour branch has merge conflicts with the other agents' merged work (git status shows them). Resolve every conflict keeping both sides' behaviour, run your tests, and finish with one line. Do not commit; ox does.`);
+      if (git(member.wt, ['diff', '--name-only', '--diff-filter=U']).stdout.trim()) { git(member.wt, ['merge', '--abort']); return { ok: false, note: 'merge conflict could not be resolved' }; }
+      commitAll(member.wt, `Merge ${this.mainBranch} into ${member.branch}`);
+    }
+    const m = git(this.dir, [...IDENT, 'merge', '--no-ff', '-q', '-m', `${member.name}: ${member.part.title}`, member.branch]);
+    if (m.status !== 0) { git(this.dir, ['merge', '--abort']); return { ok: false, note: (m.stderr || m.stdout).trim().slice(0, 300) }; }
+    for (const f of git(this.dir, ['diff', '--name-only', 'HEAD~1', 'HEAD']).stdout.split('\n').filter(Boolean)) {
+      if (!this.files.has(f)) this.showFile(member.name, this.dir, f);
+    }
+    return { ok: true };
   }
 
   /** Who owns a path in the plan (null: nobody named it). */
@@ -520,14 +547,14 @@ export class BuildRoom extends EventEmitter {
 
   async run() {
     try {
-      this.emitEv({ type: 'build', id: this.id, task: this.task, dir: this.dir });
+      this.emitEv({ type: 'build', id: this.id, task: this.task, dir: this.dir, sessionId: this.sessionId });
       this.base = prepareRepo(this.dir);
       this.mainBranch = git(this.dir, ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim() || 'HEAD';
       // The planner.
       this.status('Planner', 'planning', this.task.slice(0, 80));
       const tree = git(this.dir, ['ls-files']).stdout.split('\n').filter(Boolean).slice(0, 200).join('\n');
       let answer = '';
-      try { answer = await this.ask({ system: PLAN_SYSTEM, user: `TASK: ${this.task}\n\nAt most ${this.maxAgents} parts.\n\nFILES ALREADY IN THE PROJECT:\n${tree || '(none: an empty project)'}` }); } catch (e) { this.emitEv({ type: 'note', agent: 'Planner', text: `planner failed: ${String(e?.message ?? e).slice(0, 200)}` }); }
+      try { answer = await this.ask({ system: PLAN_SYSTEM, user: `TASK: ${this.task}\n\nAs many parts as the task really splits into (each worth an agent of its own), at most ${this.maxAgents}.\n\nFILES ALREADY IN THE PROJECT:\n${tree || '(none: an empty project)'}` }); } catch (e) { this.emitEv({ type: 'note', agent: 'Planner', text: `planner failed: ${String(e?.message ?? e).slice(0, 200)}` }); }
       const plan = parsePlan(answer, this.task, this.maxAgents);
       this.plan = plan;
       if (this.stopped) return;
@@ -548,7 +575,8 @@ export class BuildRoom extends EventEmitter {
         m.prompt = builderPrompt({ task: this.task, plan, part: m.part, name: m.name, team });
       }
       this.state = 'building';
-      const results = await Promise.all(team.map((m) => this.buildPart(m).catch((e) => {
+      // Started a few seconds apart, so a free-tier model is not hit by every agent at once.
+      const results = await Promise.all(team.map((m, i) => new Promise((ok) => setTimeout(ok, i * 4000 * this.retryScale)).then(() => this.buildPart(m)).catch((e) => {
         m.result = { merged: false, why: String(e?.message ?? e).slice(0, 200) };
         this.status(m.name, 'needs you', m.result.why);
         return m.result;
@@ -591,6 +619,10 @@ export class BuildRoom extends EventEmitter {
 const live = new Map();
 
 export function startBuild(opts) {
+  const dir = path.resolve(opts.dir);
+  for (const r of live.values()) {
+    if (r.dir === dir && r.state !== 'done' && r.state !== 'stopped') throw new Error(`a team is still building in ${dir}: wait for it, or stop it first`);
+  }
   const room = new BuildRoom(opts);
   live.set(room.id, room);
   room.run().finally(() => setTimeout(() => live.delete(room.id), 10 * 60_000).unref?.());
@@ -617,6 +649,71 @@ export function listBuilds({ env = process.env, limit = 20 } = {}) {
     if (!b?.events.length) return null;
     const first = b.events[0], last = b.events[b.events.length - 1];
     const done = b.events.findLast?.((e) => e.type === 'done') ?? null;
-    return { id, task: first.task ?? '', dir: first.dir ?? '', at: first.at, updated: last.at, live: b.live, ok: done?.ok ?? null, summary: done?.summary ?? '' };
+    return { id, task: first.task ?? '', dir: first.dir ?? '', sessionId: first.sessionId ?? null, at: first.at, updated: last.at, live: b.live, ok: done?.ok ?? null, summary: done?.summary ?? '' };
   }).filter(Boolean).sort((a, b) => b.at - a.at).slice(0, limit);
+}
+
+/**
+ * Your own edit to a file the team built: written into the project and
+ * committed as yours (between merges, so it never lands half way through
+ * one), and shown in the room with your name on the lines you changed.
+ * A file still only in a builder's copy is that builder's until it merges.
+ */
+export async function editBuildFile(id, file, content, { env = process.env } = {}) {
+  const b = readBuild(id, { env });
+  if (!b) throw new Error('no such build');
+  const rel = String(file ?? '').replace(/\\/g, '/');
+  if (!rel || path.isAbsolute(rel) || rel.split('/').some((x) => x === '..' || x === '') || /^(\.git|\.ox-build|\.ox-backups)(\/|$)/.test(rel)) throw new Error('not a file of this project');
+  if (String(content).length > 1024 * 1024) throw new Error('that file is too big to edit here');
+  const room = live.get(id) ?? null;
+  const dir = room?.dir ?? b.events.find((e) => e.type === 'build')?.dir;
+  if (!dir || !fs.existsSync(dir)) throw new Error('the project folder is gone');
+  const write = () => {
+    if (git(dir, ['cat-file', '-e', `HEAD:${rel}`]).status !== 0) {
+      const writer = [...b.events].reverse().find((e) => e.type === 'file' && e.file === rel)?.agent;
+      throw new Error(`${writer ?? 'An agent'} is still writing ${rel}: you can edit it once it is merged`);
+    }
+    fs.writeFileSync(path.join(dir, rel), String(content));
+    git(dir, ['add', '--', rel]);
+    if (git(dir, [...IDENT, 'commit', '-q', '-m', `You: edit ${rel}`]).status !== 0 && git(dir, ['diff', '--cached', '--quiet']).status !== 0) throw new Error('could not save the edit');
+    if (room) { room.showFile('You', dir, rel); return; }
+    // A finished build: the edit joins its record, attributed against what was last shown.
+    const prev = [...b.events].reverse().find((e) => e.type === 'file' && e.file === rel);
+    const shown = attribute(prev ? { lines: prev.lines, owners: prev.owners } : null, String(content), 'You');
+    fs.appendFileSync(path.join(BUILDS_DIR(env), id, 'events.jsonl'), `${JSON.stringify({ at: Date.now(), type: 'file', agent: 'You', file: rel, ...shown })}\n`);
+  };
+  if (room) await room.withLock(write); else write();
+  return { ok: true, file: rel };
+}
+
+const STATUS_Q = /\b(what'?s|what is|how'?s|how is|status|progress|update on|where are)\b[^?]{0,60}\b(going on|happening|running|doing|build|building|agents?|team|working)\b|\b(agents?|team|builds?)\b[^?]{0,40}\b(doing|status|progress|working on|up to)\b|^\s*(status|progress)\s*\??\s*$/i;
+
+/**
+ * "What's going on?" from any chat session: the team builds on this Mac, live
+ * and lately finished, read from their records (no model). null when the
+ * question is not about them or there are none.
+ */
+export function statusReply(text, { sessionId = null, env = process.env, now = Date.now() } = {}) {
+  if (!STATUS_Q.test(String(text ?? '')) || String(text).length > 200) return null;
+  const builds = listBuilds({ env, limit: 10 }).filter((b) => b.live || now - (b.updated ?? b.at) < 3 * 3600_000);
+  if (!builds.length) return null;
+  const lines = [];
+  for (const b of builds) {
+    const ev = readBuild(b.id, { env })?.events ?? [];
+    const where = b.sessionId && b.sessionId === sessionId ? 'started in this chat' : 'started in another chat';
+    if (b.live) {
+      const agents = new Map();
+      for (const e of ev) if (e.type === 'agent') agents.set(e.agent, e);
+      const merged = ev.filter((e) => e.type === 'merge' && e.ok).map((e) => e.agent);
+      lines.push(`**Building now** (${where}): ${b.task}`);
+      for (const [name, e] of agents) {
+        if (name === 'Planner' && e.status === 'done') continue;
+        lines.push(`- ${name}: ${merged.includes(name) ? 'merged' : e.status}${e.doing ? ` · ${e.doing}` : ''}`);
+      }
+      lines.push(`- Folder: \`${b.dir}\``);
+    } else {
+      lines.push(`**Finished** (${where}): ${b.task}\n- ${b.summary || (b.ok ? 'Built.' : 'Stopped.')}`);
+    }
+  }
+  return `${lines.join('\n')}\n\nStart another with Team mode, or "build with a team: …".`;
 }

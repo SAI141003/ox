@@ -214,7 +214,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -6043,6 +6043,31 @@ async function runSubcommand(cmd, args) {
         }
       } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; return; }
       console.log(SUB_USAGE.hf); process.exitCode = 2;
+      return;
+    }
+    case 'personaplex': {
+      // PersonaPlex (src/personaplex.js): full-duplex voice on your own NVIDIA GPU machine.
+      const P = await import('./personaplex.js');
+      const sub = String(args[0] ?? 'status').toLowerCase();
+      if (sub === 'setup') { console.log(P.setupSteps()); return; }
+      if (sub === 'voices') { for (const v of P.VOICES) console.log(`  ${v.id.padEnd(10)} ${c.dim(v.label)}`); return; }
+      if (sub === 'url') { const cfg = P.saveConfig({ url: args[1] ?? '' }); console.log(cfg.url ? `PersonaPlex: ${cfg.url}` : 'PersonaPlex server cleared'); return; }
+      if (sub === 'voice') { const cfg = P.saveConfig({ voice: args[1] }); console.log(`voice: ${cfg.voice}`); return; }
+      if (sub === 'persona') { const text = args.slice(1).join(' ').trim(); P.saveConfig({ persona: text }); console.log(text ? 'persona saved' : 'persona reset: written from what ox knows about you'); return; }
+      const cfg = P.readConfig();
+      const prompt = await P.personaPrompt({ custom: cfg.persona });
+      if (sub === 'prompt') { console.log(prompt); return; }
+      if (sub === 'open') {
+        if (!cfg.url) { console.log(c.red('no server set: ox personaplex url https://<gpu-box>:8998   (how: ox personaplex setup)')); process.exitCode = 1; return; }
+        spawnSync(process.platform === 'darwin' ? 'open' : 'xdg-open', [P.chatUrl(cfg, prompt)], { stdio: 'ignore' });
+        console.log(c.dim('Persona (paste it in the page if it asks):')); console.log(prompt);
+        return;
+      }
+      console.log(`${c.bold('PersonaPlex')} ${cfg.url ?? c.dim('no server set')}  ${c.dim(`voice ${cfg.voice}`)}`);
+      if (!cfg.url) { console.log(c.dim('It needs an NVIDIA GPU machine: ox personaplex setup, then ox personaplex url https://<it>:8998')); return; }
+      const r = await P.probe(cfg, { prompt });
+      console.log(r.ok ? c.green(`✓ answers (persona loaded in ${(r.ms / 1000).toFixed(1)} s)`) : c.red(`✗ ${r.error}`));
+      if (!r.ok) process.exitCode = 1;
       return;
     }
     case 'build': {

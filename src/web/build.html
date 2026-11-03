@@ -9,7 +9,7 @@
     --bg: #000; --side: #0A0A0A; --panel: #0F0F0F; --raise: #161616; --hover: #1A1A1A; --sel: #1F1F1F;
     --line: #1F1F1F; --line2: #2A2A2A; --text: #EDEDED; --muted: #A1A1A1; --dim: #6B6B6B;
     --btn: #EDEDED; --btn-ink: #000; --red: #F2615C; --ok: #8BD49C;
-    --a0: #EDEDED; --a1: #7AA2F7; --a2: #9ECE6A; --a3: #E0AF68; --a4: #BB9AF7; --sec: #F2615C;
+    --a0: #EDEDED; --a1: #7AA2F7; --a2: #9ECE6A; --a3: #E0AF68; --a4: #BB9AF7; --a5: #2AC3DE; --a6: #FF9E64; --a7: #C3E88D; --a8: #F7768E; --sec: #F2615C; --you: #FF7AB6;
     --term-bg: #050505; --term-fg: #E6E6E6;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
@@ -20,7 +20,7 @@
       --bg: #FFF; --side: #FAFAFA; --panel: #FFF; --raise: #F4F4F4; --hover: #F0F0F0; --sel: #EBEBEB;
       --line: #EAEAEA; --line2: #DDD; --text: #0A0A0A; --muted: #5E5E5E; --dim: #8F8F8F;
       --btn: #0A0A0A; --btn-ink: #FFF; --ok: #2F8F4E;
-      --a0: #0A0A0A; --a1: #2F5BD3; --a2: #3F8A1F; --a3: #B07A10; --a4: #7A4FC9;
+      --a0: #0A0A0A; --a1: #2F5BD3; --a2: #3F8A1F; --a3: #B07A10; --a4: #7A4FC9; --you: #C2307A;
       color-scheme: light;
     }
   }
@@ -41,6 +41,7 @@
   .btn:hover { background: var(--hover); }
   .btn.primary { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); font-weight: 600; }
   .btn.danger { color: var(--red); }
+  a.btn { text-decoration: none; color: inherit; }
   .btn:disabled { opacity: .5; cursor: default; }
   .muted { color: var(--muted); } .dim { color: var(--dim); } .mono { font-family: var(--mono); }
   .cap { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); font-weight: 600; padding: 12px 12px 6px; }
@@ -138,7 +139,35 @@
   .term-row { white-space: pre; min-height: 1.35em; }
   .term-cursor { background: var(--term-fg); color: var(--term-bg); }
   .term-measure { position: absolute; visibility: hidden; white-space: pre; }
-  @media (max-width: 900px) { .main { grid-template-columns: 1fr; } aside, .feed { display: none; } }
+  .editor { width: 100%; height: 100%; border: 0; outline: 0; resize: none; background: var(--panel); color: var(--text); font: 12.5px/1.6 var(--mono); padding: 10px 14px; tab-size: 2; white-space: pre; }
+  .tabbar .btn { padding: 3px 10px; font-size: 12px; }
+  @media (max-width: 900px) { body:not(.embed) .main { grid-template-columns: 1fr; } body:not(.embed) aside, body:not(.embed) .feed { display: none; } }
+  /* Beside a chat session (the app's right-hand panel): one column, the team and files as rows of chips. */
+  body.termonly header, body.termonly .main { display: none !important; }
+  body.termonly .app { grid-template-rows: 1fr; }
+  body.termonly .bottom, body.termonly.embed .bottom, body.termonly .bottom.min { height: 100vh; border-top: 0; grid-template-rows: 1fr; }
+  body.termonly .btabs { display: none; }
+  body.termonly .bottom.min .panes { display: block; }
+  body.embed header { padding: 8px 10px; }
+  body.embed header .brand, body.embed #start, body.embed #new { display: none !important; }
+  body.embed #rdir { display: none; }
+  body.embed .main { display: flex; flex-direction: column; }
+  body.embed aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 34%; flex: none; }
+  body.embed aside .cap { padding: 8px 10px 4px; }
+  body.embed #team { display: flex; flex-wrap: wrap; gap: 0 4px; }
+  body.embed .agent { padding: 4px 10px; min-width: 0; max-width: 100%; }
+  body.embed #files { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 10px 8px; }
+  body.embed .file { padding: 2px 8px; border: 1px solid var(--line2); border-radius: 6px; }
+  body.embed .file .n { margin-left: 6px; }
+  body.embed #past-cap, body.embed #past, body.embed #rtask { display: none; }
+  body.embed #running { justify-content: flex-end; }
+  body.embed .center { flex: 1; min-height: 120px; }
+  body.embed .legend { display: none; }
+  body.embed .feed { border-left: 0; border-top: 1px solid var(--line); max-height: 30%; flex: none; }
+  body.embed .bottom { height: 200px; }
+  body.embed .bottom.min { height: auto; }
+  body.embed .code .ln { grid-template-columns: 4px 36px 54px 1fr; }
+  body.embed .cm { margin-left: 94px; }
   @media (prefers-reduced-motion: reduce) { .ln.new .tx, .agent .dot.live { animation: none; } }
 </style>
 </head>
@@ -149,12 +178,13 @@
     <form id="start" class="grow" style="display:flex;gap:8px;min-width:0">
       <input id="task" class="field grow" placeholder="What should the team build? e.g. a budgeting app with a REST API and tests" autocomplete="off">
       <input id="dir" class="field mono" style="width:220px" placeholder="folder (new one if empty)" title="Where the project goes. Leave empty for a new folder in ~/ox-builds.">
-      <select id="agents" class="field" style="width:auto" title="How many agents build at once"><option value="2">2 agents</option><option value="3" selected>3 agents</option><option value="4">4 agents</option></select>
+      <select id="agents" class="field" style="width:auto" title="How many agents build at once"><option value="" selected>As many as it needs</option><option value="2">Up to 2</option><option value="3">Up to 3</option><option value="4">Up to 4</option><option value="6">Up to 6</option><option value="8">Up to 8</option></select>
       <button class="btn primary" id="go">Build</button>
     </form>
     <div id="running" class="grow" style="display:none;align-items:center;gap:10px;min-width:0">
       <div class="grow" style="min-width:0"><div id="rtask" style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div><div id="rdir" class="mono dim" style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div></div>
       <button class="btn danger" id="stop">Stop</button>
+      <a class="btn" id="full" target="_top" title="Open the full Build page" hidden>Full screen</a>
       <button class="btn" id="new">New build</button>
     </div>
   </header>
@@ -165,13 +195,14 @@
       <div id="team"><div class="agent"><span></span><span class="dim">No build yet</span></div></div>
       <div class="cap">Files</div>
       <div id="files"></div>
-      <div class="cap">Earlier builds</div>
+      <div class="cap" id="past-cap">Earlier builds</div>
       <div id="past"></div>
     </aside>
     <section class="center">
       <div class="tabbar">
         <span class="path" id="path">—</span>
-        <label class="dim" style="font-size:12px;white-space:nowrap"><input type="checkbox" id="follow" checked> follow the latest write</label>
+        <button class="btn" id="edit" hidden title="Edit this file yourself: it is committed as yours, between the team's merges">Edit</button>
+        <label class="dim" style="font-size:12px;white-space:nowrap"><input type="checkbox" id="follow" checked> follow</label>
         <div class="legend" id="legend"></div>
       </div>
       <div class="code" id="code">
@@ -228,9 +259,9 @@ async function stream(path, onData, signal) {
 }
 
 // ---------- colours: one per agent
-const COLOURS = { Planner: 'var(--a0)', 'Agent 1': 'var(--a1)', 'Agent 2': 'var(--a2)', 'Agent 3': 'var(--a3)', 'Agent 4': 'var(--a4)', 'security check': 'var(--sec)', Reviewer: 'var(--a0)' };
+const COLOURS = { You: 'var(--you)', Planner: 'var(--a0)', 'Agent 1': 'var(--a1)', 'Agent 2': 'var(--a2)', 'Agent 3': 'var(--a3)', 'Agent 4': 'var(--a4)', 'Agent 5': 'var(--a5)', 'Agent 6': 'var(--a6)', 'Agent 7': 'var(--a7)', 'Agent 8': 'var(--a8)', 'security check': 'var(--sec)', Reviewer: 'var(--a0)' };
 const col = (a) => COLOURS[a] ?? 'var(--muted)';
-const short = (a) => (a === 'Planner' ? 'plan' : a?.startsWith('Agent ') ? `agent ${a.slice(6)}` : a ?? '');
+const short = (a) => (a === 'Planner' ? 'plan' : a === 'You' ? 'you' : a?.startsWith('Agent ') ? `agent ${a.slice(6)}` : a ?? '');
 const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`; };
 
 // ---------- state of the build being shown
@@ -305,6 +336,8 @@ function render() {
   B.flash = null;
   // Code
   const cur = B.current && B.files.get(B.current);
+  $('edit').hidden = !cur || !!editing;
+  if (editing) { renderSide(); return; }
   $('path').textContent = B.current ? `${B.current}${cur ? ` · written by ${[...new Set(cur.owners)].join(', ')}` : ''}` : (B.done ? 'Done' : 'Waiting for the first file…');
   const k = `${B.current}:${cur?.n}:${(B.comments.get(B.current) ?? []).length}:${(B.comments.get(B.current) ?? []).filter((c) => c.old).length}`;
   if (cur && k !== codeKey) {
@@ -327,7 +360,13 @@ function render() {
       first?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
   }
+  renderSide();
+}
+
+function renderSide() {
   // Before the first file: the plan, one card per agent.
+  const cur = B.current && B.files.get(B.current);
+  if (editing) { renderFeed(); return; }
   if (!cur && codeKey !== `plan:${!!B.plan}`) {
     codeKey = `plan:${!!B.plan}`;
     $('code').innerHTML = B.plan
@@ -335,6 +374,10 @@ function render() {
         <div class="cards">${B.plan.parts.map((p) => `<div class="card" style="--c:${col(p.agent)}"><div class="h"><span class="dot" style="background:${col(p.agent)}"></span><b>${esc(p.agent)}</b><span class="dim">reviewed by ${esc(p.reviewer)}</span></div><div class="t">${esc(p.title)}</div><div class="mono dim f">${esc(p.files.join('  ') || 'its own files')}</div><div class="b">${esc(p.brief)}</div></div>`).join('')}</div></div>`
       : '<div class="empty"><div><h1>Planning…</h1><div>The planner is splitting the task into parts that can be built at the same time.</div></div></div>';
   }
+  renderFeed();
+}
+
+function renderFeed() {
   // Activity
   const feed = B.feed.slice().reverse();
   $('feed').innerHTML = (B.done ? `<div class="done ${B.done.ok ? 'ok' : 'bad'}"><b>${B.done.ok ? 'Built' : B.done.stopped ? 'Stopped' : 'Finished, with something left'}</b><div class="muted" style="margin-top:4px">${esc(B.done.summary)}</div>${B.done.dir ? `<div class="mono dim" style="margin-top:6px;font-size:11.5px">${esc(B.done.dir)}</div>` : ''}</div>` : '')
@@ -404,6 +447,32 @@ $('btabs').addEventListener('pointerdown', (e) => {
 });
 $('bmin').onclick = () => { $('bottom').classList.toggle('min'); $('bmin').textContent = $('bottom').classList.contains('min') ? '▴' : '▾'; };
 
+// ---------- your own edits
+let editing = null;
+$('edit').onclick = () => {
+  const cur = B?.current && B.files.get(B.current);
+  if (!cur) return;
+  editing = { file: B.current };
+  $('follow').checked = false;
+  $('code').innerHTML = `<div style="display:grid;grid-template-rows:auto 1fr;height:100%"><div style="display:flex;gap:8px;align-items:center;padding:6px 14px;border-bottom:1px solid var(--line)"><span class="dim" style="font-size:12px">Editing ${esc(editing.file)}: saved as your commit, between the team's merges</span><span class="grow"></span><button class="btn" id="ed-cancel">Cancel</button><button class="btn primary" id="ed-save">Save</button></div><textarea class="editor" id="ed" spellcheck="false"></textarea></div>`;
+  $('ed').value = cur.lines.join('\n');
+  $('ed').focus();
+  $('ed').addEventListener('keydown', (e) => {
+    if (e.key === 'Tab') { e.preventDefault(); const t = e.target, a = t.selectionStart; t.setRangeText('  ', a, t.selectionEnd, 'end'); }
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); $('ed-save').click(); }
+  });
+  $('ed-cancel').onclick = () => { editing = null; codeKey = ''; draw(); };
+  $('ed-save').onclick = async () => {
+    $('ed-save').disabled = true;
+    try {
+      await postJson(`/ox/builds/${encodeURIComponent(B.id)}/file`, { file: editing.file, content: $('ed').value });
+      editing = null; codeKey = '';
+      if (B.done) openBuild(B.id); else draw();   // a live build sends the edit back as an event
+    } catch (e) { alert(e.message); $('ed-save').disabled = false; }
+  };
+  draw();
+};
+
 // ---------- builds
 let follow = null;
 async function openBuild(id) {
@@ -436,7 +505,7 @@ $('start').onsubmit = async (ev) => {
   if (!task) { $('task').focus(); return; }
   $('go').disabled = true;
   try {
-    const j = await postJson('/ox/builds', { task, dir: $('dir').value.trim() || undefined, agents: Number($('agents').value) });
+    const j = await postJson('/ox/builds', { task, dir: $('dir').value.trim() || undefined, agents: Number($('agents').value) || undefined });
     openBuild(j.id);
   } catch (e) { alert(e.message); }
   finally { $('go').disabled = false; }
@@ -462,7 +531,7 @@ async function openTerminal() {
   });
   term = { ui, id: null };
   try {
-    const j = await postJson('/ox/term', { cwd: B?.dir || undefined, cols: ui.screen.cols, rows: ui.screen.rows });
+    const j = await postJson('/ox/term', { cwd: B?.dir || new URLSearchParams(location.search).get('cwd') || undefined, cols: ui.screen.cols, rows: ui.screen.rows });
     term.id = j.id;
     ui.fit();
     postJson(`/ox/term/${term.id}/resize`, { cols: ui.screen.cols, rows: ui.screen.rows }).catch(() => {});
@@ -476,12 +545,17 @@ async function openTerminal() {
 window.addEventListener('beforeunload', () => { if (term?.id) navigator.sendBeacon?.(`/ox/term/${term.id}/close`); });
 
 // ---------- start
+const EMBED = new URLSearchParams(location.search).has('embed');
+const TERM_ONLY = new URLSearchParams(location.search).has('termonly');
+if (EMBED) { document.body.classList.add('embed'); $('bottom').classList.add('min'); $('bmin').textContent = '▴'; }
+if (TERM_ONLY) { document.body.classList.add('termonly'); $('bottom').classList.remove('min'); $('bmin').hidden = true; }
 loadPast();
 const qid = new URLSearchParams(location.search).get('id');
 const qtask = new URLSearchParams(location.search).get('task');
 if (qid) openBuild(qid);
 else if (qtask) { $('task').value = qtask; }
-setTimeout(openTerminal, qid ? 900 : 0);   // in the build's folder when one is open
+if (!EMBED || TERM_ONLY) setTimeout(openTerminal, qid ? 900 : 0);   // in the build's folder when one is open (beside a chat: when you open it)
+if (EMBED && qid) { $('full').hidden = false; $('full').href = `/build?id=${encodeURIComponent(qid)}`; }
 </script>
 </body>
 </html>

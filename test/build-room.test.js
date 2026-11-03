@@ -10,7 +10,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-build-room-'));
-const env = { ...process.env, OX_HOME: path.join(root, '.ox') };
+const env = { ...process.env, OX_HOME: path.join(root, '.ox'), OX_BUILD_RETRY_SCALE: '0.001' };
 const B = await import('../src/build-room.js');
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -222,4 +222,55 @@ test("a builder that writes another agent's file has it put back; the owner's ve
   assert.ok(seen.some((e) => e.type === 'note' && e.agent === 'Agent 2' && /Agent 1's package\.json/.test(e.text)));
   assert.match(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'), /"real"/);
   assert.doesNotMatch(fs.readFileSync(path.join(dir, 'lib.js'), 'utf8'), /stub/);
+});
+
+test('a run cut off by the model (rate limit) is tried again, carrying on, without spending a review round', async () => {
+  const dir = path.join(root, 'ratelimit');
+  const ask = async ({ system }) => system === B.PLAN_SYSTEM ? JSON.stringify({ summary: 's', parts: [{ title: 'Only', files: ['x.js'], brief: '' }] }) : JSON.stringify({ comments: [] });
+  let runs = 0;
+  const prompts = [];
+  const ok = fakeBuilder(() => ({ files: [['x.js', 'export const x = 1;\n']] }));
+  const spawnBuilder = (o) => {
+    runs++; prompts.push(o.prompt);
+    if (runs === 1) return { lines: (async function* () { yield JSON.stringify({ type: 'error', message: 'ox[nvidia]: HTTP 429 Too Many Requests' }); })(), done: Promise.resolve(1), kill() {} };
+    return ok(o);
+  };
+  const room = new B.BuildRoom({ task: 't', dir, ask, spawnBuilder, env });
+  const seen = [];
+  room.on('event', (e) => seen.push(e));
+  await room.run();
+  assert.equal(runs, 2);
+  assert.match(prompts[1], /cut off by a model error/);
+  assert.ok(seen.some((e) => e.type === 'agent' && /model is busy/.test(e.doing)));
+  assert.ok(seen.find((e) => e.type === 'done').ok);
+  assert.equal(seen.filter((e) => e.type === 'review').length, 1);
+});
+
+test('a build belongs to the chat that started it; any chat can ask what is going on', async () => {
+  const henv = { ...env, OX_HOME: path.join(root, 'status-home') };
+  const dir = path.join(root, 'status');
+  const ask = async ({ system }) => system === B.PLAN_SYSTEM ? JSON.stringify({ summary: 's', parts: [{ title: 'Only', files: ['x.js'], brief: '' }] }) : JSON.stringify({ comments: [] });
+  const room = new B.BuildRoom({ task: 'a status demo', dir, ask, spawnBuilder: fakeBuilder(() => ({ files: [['x.js', 'export const x = 1;\n']] })), env: henv, sessionId: 'chat-A' });
+  await room.run();
+  assert.equal(B.listBuilds({ env: henv })[0].sessionId, 'chat-A');
+  const here = B.statusReply("what's going on?", { sessionId: 'chat-A', env: henv });
+  assert.match(here, /\*\*Finished\*\* \(started in this chat\): a status demo/);
+  assert.match(B.statusReply('how are the agents doing', { sessionId: 'chat-B', env: henv }), /started in another chat/);
+  assert.equal(B.statusReply('write me a poem', { env: henv }), null);
+  assert.equal(B.statusReply("what's going on?", { env: { ...env, OX_HOME: path.join(root, 'nobody') } }), null, 'no builds: the model answers');
+});
+
+test('your edit to a merged file is committed as yours; a file still being written is not yours to edit yet', async () => {
+  const henv = { ...env, OX_HOME: path.join(root, 'edit-home') };
+  const dir = path.join(root, 'edit');
+  const ask = async ({ system }) => system === B.PLAN_SYSTEM ? JSON.stringify({ summary: 's', parts: [{ title: 'Only', files: ['x.js'], brief: '' }] }) : JSON.stringify({ comments: [] });
+  const room = new B.BuildRoom({ task: 't', dir, ask, spawnBuilder: fakeBuilder(() => ({ files: [['x.js', 'export const x = 1;\nexport const y = 2;\n']] })), env: henv });
+  await room.run();
+  await B.editBuildFile(room.id, 'x.js', 'export const x = 1;\nexport const y = 3;\n', { env: henv });
+  assert.match(fs.readFileSync(path.join(dir, 'x.js'), 'utf8'), /y = 3/);
+  assert.match(spawnSync('git', ['log', '-1', '--format=%s'], { cwd: dir, encoding: 'utf8' }).stdout, /You: edit x\.js/);
+  const last = B.readBuild(room.id, { env: henv }).events.filter((e) => e.type === 'file' && e.file === 'x.js').at(-1);
+  assert.deepEqual(last.owners, ['Agent 1', 'You', 'Agent 1']);
+  await assert.rejects(B.editBuildFile(room.id, '../escape.js', 'x', { env: henv }), /not a file of this project/);
+  await assert.rejects(B.editBuildFile(room.id, 'not-merged.js', 'x', { env: henv }), /once it is merged/);
 });

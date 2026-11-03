@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ox · Files</title>
+<style>
+  :root {
+    --bg: #000; --side: #0A0A0A; --panel: #0F0F0F; --raise: #161616; --hover: #1A1A1A; --sel: #1F1F1F;
+    --line: #1F1F1F; --line2: #2A2A2A; --text: #EDEDED; --muted: #A1A1A1; --dim: #6B6B6B; --btn: #EDEDED; --btn-ink: #000; --red: #F2615C;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #FFF; --side: #FAFAFA; --panel: #FFF; --raise: #F4F4F4; --hover: #F0F0F0; --sel: #EBEBEB;
+      --line: #EAEAEA; --line2: #DDD; --text: #0A0A0A; --muted: #5E5E5E; --dim: #8F8F8F; --btn: #0A0A0A; --btn-ink: #FFF; color-scheme: light;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.5 var(--sans); display: grid; grid-template-columns: minmax(150px, 34%) 1fr; overflow: hidden; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  .tree { border-right: 1px solid var(--line); background: var(--side); overflow: auto; padding: 6px 0; }
+  .root { padding: 4px 12px 8px; font: 11px var(--mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row { display: flex; align-items: center; gap: 6px; padding: 2px 10px; cursor: pointer; font: 12.5px var(--mono); color: var(--muted); white-space: nowrap; }
+  .row:hover { background: var(--hover); color: var(--text); }
+  .row.on { background: var(--sel); color: var(--text); }
+  .row .tw { width: 10px; color: var(--dim); flex: none; }
+  .ed { display: grid; grid-template-rows: auto 1fr; min-width: 0; min-height: 0; }
+  .bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--line); min-width: 0; }
+  .bar .p { font: 12.5px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+  .bar .s { color: var(--dim); font-size: 12px; white-space: nowrap; }
+  .btn { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line2); background: var(--raise); font-size: 12px; }
+  .btn.primary { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); font-weight: 600; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  textarea { width: 100%; height: 100%; border: 0; outline: 0; resize: none; background: var(--panel); color: var(--text); font: 12.5px/1.6 var(--mono); padding: 10px 14px; tab-size: 2; white-space: pre; }
+  .empty { display: grid; place-items: center; color: var(--muted); padding: 24px; text-align: center; }
+</style>
+</head>
+<body>
+<nav class="tree" id="tree"></nav>
+<section class="ed">
+  <div class="bar"><span class="p" id="path">Pick a file</span><span class="s" id="state"></span><button class="btn primary" id="save" disabled title="Save (⌘S)">Save</button></div>
+  <div id="body" class="empty">Files in this session's folder. Open one to read or edit it.</div>
+</section>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const q = new URLSearchParams(location.search);
+const ROOT = q.get('root') || '';
+let key = (() => { try { return sessionStorage.getItem('ox.key') || ''; } catch { return ''; } })();
+const api = (path, opts = {}) => fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) } });
+async function getJson(path) { const r = await api(path); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j?.error?.message || `HTTP ${r.status}`); return j; }
+const list = (path) => getJson(`/ox/files?root=${encodeURIComponent(ROOT)}&path=${encodeURIComponent(path)}`);
+
+const open = new Set(['']);
+const kids = new Map();
+let current = null, saved = '';
+
+async function load(path) { if (!kids.has(path)) kids.set(path, (await list(path)).entries ?? []); return kids.get(path); }
+async function drawTree() {
+  let html = `<div class="root" title="${esc(ROOT)}">${esc(ROOT.split('/').slice(-2).join('/'))}</div>`;
+  const walk = async (path, depth) => {
+    for (const e of await load(path)) {
+      const p = path ? `${path}/${e.name}` : e.name;
+      html += `<div class="row${p === current ? ' on' : ''}" data-p="${esc(p)}" data-dir="${e.dir ? 1 : ''}" style="padding-left:${10 + depth * 14}px"><span class="tw">${e.dir ? (open.has(p) ? '▾' : '▸') : ''}</span>${esc(e.name)}</div>`;
+      if (e.dir && open.has(p)) await walk(p, depth + 1);
+    }
+  };
+  try { await walk('', 0); } catch (e) { html += `<div class="empty">${esc(e.message)}</div>`; }
+  $('tree').innerHTML = html;
+}
+$('tree').onclick = async (ev) => {
+  const r = ev.target.closest('.row');
+  if (!r) return;
+  if (r.dataset.dir) { open.has(r.dataset.p) ? open.delete(r.dataset.p) : open.add(r.dataset.p); drawTree(); return; }
+  if (current && $('ed') && $('ed').value !== saved && !confirm('Leave without saving your changes?')) return;
+  openFile(r.dataset.p);
+};
+async function openFile(p) {
+  current = p; drawTree();
+  $('path').textContent = p; $('state').textContent = ''; $('save').disabled = true;
+  try {
+    const j = await list(p);
+    if (j.binary || j.tooBig) { $('body').className = 'empty'; $('body').textContent = j.binary ? 'A binary file: not shown here.' : 'Too big to open here.'; return; }
+    $('body').className = '';
+    $('body').innerHTML = '<textarea id="ed" spellcheck="false"></textarea>';
+    $('ed').value = saved = j.content;
+    $('ed').oninput = () => { const dirty = $('ed').value !== saved; $('save').disabled = !dirty; $('state').textContent = dirty ? 'edited' : ''; };
+    $('ed').onkeydown = (e) => {
+      if (e.key === 'Tab') { e.preventDefault(); e.target.setRangeText('  ', e.target.selectionStart, e.target.selectionEnd, 'end'); e.target.oninput(); }
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); save(); }
+    };
+  } catch (e) { $('body').className = 'empty'; $('body').textContent = e.message; }
+}
+async function save() {
+  if (!current || $('save').disabled) return;
+  $('save').disabled = true;
+  try {
+    const r = await api('/ox/files', { method: 'POST', body: JSON.stringify({ root: ROOT, path: current, content: $('ed').value }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.error?.message || `HTTP ${r.status}`);
+    saved = $('ed').value; $('state').textContent = 'saved';
+  } catch (e) { $('state').textContent = e.message; $('save').disabled = false; }
+}
+$('save').onclick = save;
+if (!ROOT) $('tree').innerHTML = '<div class="empty">This session has no folder yet.</div>'; else drawTree().then(() => { if (q.get('path')) openFile(q.get('path')); });
+// Files the team or ox writes show up without a reload.
+setInterval(() => { if (!document.hidden && ROOT) { kids.clear(); drawTree(); } }, 6000);
+</script>
+</body>
+</html>
