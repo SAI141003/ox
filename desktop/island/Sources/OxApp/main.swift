@@ -16,15 +16,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     func applicationDidFinishLaunching(_ note: Notification) {
         buildMenu()
-        // The ox server this app starts clicks and types for you (ox-hands), and macOS
-        // charges that to this app: not trusted, ask, which lists "OX" in
-        // Settings › Privacy & Security › Accessibility by itself.
-        if !AXIsProcessTrusted() {
-            _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
-        }
+        // No permission is asked at launch: Accessibility (clicking and typing for you) and
+        // Screen Recording are asked the first time you use something that needs them, from
+        // the page ("Allow OX to click and type"), through the oxPermission message below.
         let config = WKWebViewConfiguration()
         config.preferences.isElementFullscreenEnabled = true
         config.userContentController.add(self, name: "oxMiniPet")
+        config.userContentController.add(self, name: "oxPermission")
         config.userContentController.addUserScript(WKUserScript(
             source: "document.documentElement.classList.add('native-desktop-pet');",
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -60,6 +58,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        // Asked when you use a feature that needs it: macOS lists "OX" in Settings and offers to open it.
+        if message.name == "oxPermission", let kind = message.body as? String {
+            if kind == "accessibility", !AXIsProcessTrusted() {
+                _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+            } else if kind == "screen", !CGPreflightScreenCaptureAccess() {
+                _ = CGRequestScreenCaptureAccess()
+            }
+            return
+        }
         guard message.name == "oxMiniPet", let state = message.body as? [String: Any] else { return }
         desktopPet.update(state)
     }

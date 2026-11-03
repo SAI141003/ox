@@ -18,7 +18,7 @@
                     ██████
 ```
 
-A zero-dependency terminal coding agent for Node ≥ 18: reads your code, edits
+A terminal coding agent for Node ≥ 18 with one small dependency (`mochi-avatar`, the app's animated face): reads your code, edits
 files behind approval gates, runs shell commands through a denylist, remembers
 what it learns across sessions, and talks to 22 LLM providers (Anthropic,
 OpenAI, Gemini, xAI, Groq, DeepSeek, Mistral, OpenRouter, Together, Fireworks,

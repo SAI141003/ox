@@ -10,6 +10,9 @@ on:
 
 permissions:
   contents: write
+  # Build provenance attestations (keyless signing through GitHub's OIDC token).
+  id-token: write
+  attestations: write
 
 jobs:
   package:
@@ -70,6 +73,15 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: node scripts/package.mjs --out dist
+      # Signed, keyless (Sigstore) proof that these files were built here, by this workflow:
+      # `gh attestation verify <file> --repo SAI141003/ox` checks it; the installers do when gh is there.
+      - name: Attest build provenance
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/ox-*.zip
+            dist/ox-*.tar.gz
       - name: Attach to the release
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
@@ -80,7 +92,12 @@ jobs:
           # Only the files this machine built (Windows makes no .tar.gz; a folder is never uploaded).
           files=$(find dist -maxdepth 1 -type f \( -name 'ox-*.zip' -o -name 'ox-*.tar.gz' \))
           test -n "$files"
-          gh release upload "$GITHUB_REF_NAME" $files --clobber
+          # A checksum beside each file: the installers refuse a download that does not match.
+          for f in $files; do
+            if command -v shasum >/dev/null 2>&1; then h=$(shasum -a 256 "$f" | cut -d' ' -f1); else h=$(sha256sum "$f" | cut -d' ' -f1); fi
+            printf '%s  %s\n' "$h" "$(basename "$f")" > "$f.sha256"
+          done
+          gh release upload "$GITHUB_REF_NAME" $files $(for f in $files; do printf '%s.sha256 ' "$f"; done) --clobber
       - name: Keep the build (manual runs)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v5

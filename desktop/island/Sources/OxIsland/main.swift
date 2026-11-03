@@ -15,12 +15,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         writePresence()
-        // Not trusted for Accessibility: ask macOS once per launch, which puts
-        // "OX Island" in the Accessibility list by itself (adding it back with +
-        // and a hidden ~/.ox folder was too hard) and offers Open System Settings.
+        // No permission is asked at launch: Accessibility is asked the first time
+        // dictation types for you (Dictation.swift), the microphone and speech when
+        // you first talk. Not trusted yet is only noted.
         if !AXIsProcessTrusted() {
-            _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
-            IslandLog.write("accessibility: not trusted; asked macOS to list OX Island in Settings › Privacy & Security › Accessibility")
+            IslandLog.write("accessibility: not trusted yet; asked the first time typing for you is used")
         }
         let buddy = bridge.buddy
         let wake = bridge.wake

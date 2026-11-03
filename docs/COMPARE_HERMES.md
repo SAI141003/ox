@@ -67,7 +67,7 @@ now blocked (`src/tools/exec.js`) or redacted (`redactSecrets` in
   input tokens, the ~7,600-token difference is about $0.02 per turn.
 - **One request per answer.** Hermes made 3 requests for a one-word reply; ox
   made 1.
-- **Startup.** ox is a zero-dependency Node program and, since `2a515b2`, starts
+- **Startup.** ox is a Node program with one small dependency (mochi-avatar) and, since `2a515b2`, starts
   no subprocesses before the first turn.
 
 ## Caveats

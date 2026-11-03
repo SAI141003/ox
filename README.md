@@ -4,7 +4,8 @@
 test before the fix, runs it again after, and shows you the result. Terminal,
 desktop app and a voice assistant in your Mac's notch. It runs on your ChatGPT
 plan, any API key (Claude through an Anthropic key) or a model on your own
-machine, with no dependencies, no account and no telemetry.
+machine, with one small dependency (`mochi-avatar`, the animated face, served
+read-only from a fixed list of its files), no account and no telemetry.
 
 ![ox answering with an interactive chart](assets/screenshots/chat-interactive-chart.png)
 
@@ -37,6 +38,18 @@ curl -fsSL https://raw.githubusercontent.com/SAI141003/ox/main/install.sh | sh
 ```
 
 Windows (PowerShell): `irm https://raw.githubusercontent.com/SAI141003/ox/main/install.ps1 | iex`
+
+What the installer does, before it installs anything: it resolves the newest
+release to an exact tag (or the one in `OX_VERSION=v…`) and says which; checks
+the download against the `.sha256` published with that release and stops on a
+mismatch; and, when the GitHub CLI (`gh`) is installed, checks GitHub's signed
+attestation that the file was built by this repository's release workflow
+(`gh attestation verify <file> --repo SAI141003/ox` does the same by hand). It
+does not open the app. Because OX.app is not notarized (see below), the
+installer clears macOS's "downloaded" mark on the copy it just verified, and on
+nothing else. No permission is asked at install or at launch: OX asks for
+Accessibility, Screen Recording or the microphone the first time you use
+something that needs it, and works without them.
 
 **Mac app by hand** (Apple Silicon): download `ox-mac-arm64.zip` from
 [Releases](https://github.com/SAI141003/ox/releases), unzip, drag **OX** to

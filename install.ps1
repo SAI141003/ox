@@ -1,18 +1,41 @@
-# Install ox on Windows from the latest GitHub release, without SmartScreen's
-# "downloaded from the internet" block:
+# Install ox on Windows from a GitHub release, checked before anything is installed:
 #
 #   irm https://raw.githubusercontent.com/SAI141003/ox/main/install.ps1 | iex
+#   $env:OX_VERSION='v0.1.7'; irm …/install.ps1 | iex     # an exact release
 #
-# Unblock-File clears the mark a download carries; the files are the same ones
-# on the release page. Installs for this user only: no admin needed.
+# It resolves the release to an exact tag, downloads the zip and its .sha256 from
+# it and stops on a mismatch; with the GitHub CLI (gh) it also checks GitHub's
+# signed attestation that the zip was built by this repository's release workflow.
+# Only then is it unpacked, and the "downloaded" mark cleared on those files only
+# (ox is not code-signed for SmartScreen). It does not start OX. For this user
+# only: no admin needed.
 $ErrorActionPreference = 'Stop'
 $repo = 'SAI141003/ox'
 $arch = if ([Environment]::Is64BitOperatingSystem) { 'x64' } else { throw 'ox needs 64-bit Windows' }
 $dest = Join-Path $env:LOCALAPPDATA 'ox'
 $zip = Join-Path $env:TEMP "ox-windows-$arch.zip"
 
-Write-Host 'downloading ox for Windows...'
-Invoke-WebRequest "https://github.com/$repo/releases/latest/download/ox-windows-$arch.zip" -OutFile $zip -UseBasicParsing
+$tag = $env:OX_VERSION
+if (-not $tag) {
+  $r = Invoke-WebRequest "https://github.com/$repo/releases/latest" -MaximumRedirection 0 -ErrorAction SilentlyContinue -UseBasicParsing
+  $tag = ($r.Headers.Location -replace '.*/tag/', '')
+}
+if ($tag -notmatch '^v[0-9]') { throw "could not find the release (got '$tag'); set OX_VERSION" }
+$base = "https://github.com/$repo/releases/download/$tag"
+$name = "ox-windows-$arch.zip"
+Write-Host "ox $tag"
+Write-Host "downloading $name..."
+Invoke-WebRequest "$base/$name" -OutFile $zip -UseBasicParsing
+try { $want = ((Invoke-WebRequest "$base/$name.sha256" -UseBasicParsing).Content.ToString().Trim() -split '\s+')[0] }
+catch { Remove-Item $zip; throw "$tag publishes no checksum for $name: not installing an unchecked download" }
+$have = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+if ($want.ToLower() -ne $have) { Remove-Item $zip; throw "checksum mismatch for ${name}: expected $want, got $have. Nothing was installed." }
+Write-Host "checksum ok: $have"
+if (Get-Command gh -ErrorAction SilentlyContinue) {
+  gh attestation verify $zip --repo $repo *> $null
+  if ($LASTEXITCODE -ne 0) { Remove-Item $zip; throw "GitHub could not confirm $name was built by $repo's release workflow. Nothing was installed." }
+  Write-Host "built by $repo's release workflow (GitHub attestation)"
+}
 Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$dest*" } | Stop-Process -Force
 if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
 Expand-Archive $zip -DestinationPath $dest -Force
@@ -32,5 +55,4 @@ $s.Arguments = '"' + (Join-Path $dest 'OX.vbs') + '"'
 $s.WorkingDirectory = $env:USERPROFILE
 $s.Save()
 
-Write-Host "ox installed in $dest. Open OX from the Start menu, or type  ox  in a new terminal."
-Start-Process wscript.exe -ArgumentList ('"' + (Join-Path $dest 'OX.vbs') + '"')
+Write-Host "ox $tag installed in $dest. Open OX from the Start menu when you are ready, or type  ox  in a new terminal." 

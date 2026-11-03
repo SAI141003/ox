@@ -4,22 +4,25 @@ Thanks for trying ox. This takes about 15 minutes.
 
 ## 1. Install (Mac with Apple silicon)
 
-1. Open Terminal and paste this line. It installs OX and opens it, with no security warning:
+1. Open Terminal and paste this line. It checks the download (an exact release, its published checksum) before installing, and does not open anything:
 
    ```sh
    curl -fsSL https://raw.githubusercontent.com/SAI141003/ox/main/install.sh | sh
    ```
 
+   Then open **OX** from Applications.
 2. (Or by hand: download `ox-mac-arm64.zip` from [Releases](https://github.com/SAI141003/ox/releases), unzip, drag **OX** to Applications. macOS then blocks the first open: System Settings › Privacy & Security › **Open Anyway**.)
 3. In OX, open **Settings › API keys** and add a key. A free NVIDIA key works: [build.nvidia.com](https://build.nvidia.com).
 
-## 2. Allow access (once)
+## 2. Allow access only for what you test
 
-When macOS asks, choose **Allow**. If a toggle is missing, open System Settings › Privacy & Security and turn on both **OX** and **OX Island** in:
+Nothing is asked at launch. OX asks the first time you use something that needs a permission, and everything else works without it. Use a test account and test files, and grant only what you are testing:
 
-- **Microphone** and **Speech Recognition**: talking to ox
-- **Accessibility**: typing and clicking for you
-- **Screen Recording**: finding buttons on screen
+- **Microphone** and **Speech Recognition**: only for talking to ox
+- **Accessibility**: only for ox typing and clicking in other apps for you
+- **Screen Recording**: only for ox finding buttons on screen
+
+You can turn any of them off again in System Settings › Privacy & Security; ox keeps working, without that feature.
 
 ## 3. Try these
 

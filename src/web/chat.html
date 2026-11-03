@@ -2093,6 +2093,10 @@
       const el = bubble(m.role);
       paint(el, m);
       if (m.build) el.insertAdjacentHTML('beforeend', `<div style="margin-top:8px"><button class="btn small" data-open-team="${esc(m.build)}">${icon('team')}Show the team</button></div>`);
+      // Clicking and typing for you needs Accessibility: asked here, when it is needed, not at launch.
+      if (m.role === 'assistant' && /accessibility/i.test(String(m.content ?? '')) && /(not (allowed|trusted|granted)|permission|turn on|grant|denied|needs)/i.test(String(m.content ?? ''))) {
+        el.insertAdjacentHTML('beforeend', `<div style="margin-top:8px"><button class="btn small" data-ask-permission="accessibility">Allow OX to click and type</button></div>`);
+      }
       if (m.role === 'assistant') {
         const urls = [...new Set(String(m.content ?? '').match(/https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?[^\s)'"`>]*/g) ?? [])].slice(0, 3);
         if (urls.length) el.insertAdjacentHTML('beforeend', `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${urls.map((u) => `<button class="btn small" data-open-here="${esc(u)}">${icon('globe')}Open ${esc(u.replace(/^https?:\/\//, ''))} here</button>`).join('')}</div>`);
@@ -2566,6 +2570,15 @@
     const url = /https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?[^\s)'"`>]*/.exec(String(last?.content ?? ''))?.[0];
     if (url && c.id === current) openTab('browser', { url });
   }
+  // A macOS permission, asked when a feature needs it: the app's own prompt (it lists OX in
+  // System Settings), else that page of System Settings.
+  function askPermission(kind) {
+    const native = window.webkit?.messageHandlers?.oxPermission;
+    if (native) { native.postMessage(kind); toast('macOS asks now: turn on OX, then try again'); return; }
+    const pane = kind === 'screen' ? 'Privacy_ScreenCapture' : 'Privacy_Accessibility';
+    postJson('/ox/open-settings', { url: `x-apple.systempreferences:com.apple.preference.security?${pane}` }).then(() => toast('Turn on OX in the list, then try again')).catch((e) => toast(e.message));
+  }
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-ask-permission]'); if (b) askPermission(b.dataset.askPermission); });
   // A local address in an answer opens beside the chat.
   document.addEventListener('click', (e) => { const b = e.target.closest('[data-open-here]'); if (b) openTab('browser', { url: b.dataset.openHere }); });
 
