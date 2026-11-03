@@ -372,6 +372,12 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
   }
   // Wait for the presence file so an `ox` started right after this connects.
   for (let i = 0; i < 30 && !live(); i++) await new Promise((r) => setTimeout(r, 100));
-  log(live() ? 'OX Island is live in your notch — every ox run now shows up there' : 'OX Island launched');
+  // A presence file alone is not proof: an island that dies at launch writes one first.
+  await new Promise((r) => setTimeout(r, 1500));
+  if (!live()) {
+    err('ox: OX Island did not stay open. macOS keeps the reason in Console › Crash Reports (OxIsland).\n');
+    return 1;
+  }
+  log('OX Island is live in your notch — every ox run now shows up there');
   return 0;
 }

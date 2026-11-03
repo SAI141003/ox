@@ -34,7 +34,7 @@ enum Frames {
     /// One bundled PNG ("barn/open"), decoded once.
     static func loadOne(_ name: String) -> NSImage? {
         if let i = single[name] { return i }
-        guard let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "Resources"),
+        guard let url = OxResources.bundle.url(forResource: name, withExtension: "png", subdirectory: "Resources"),
               let img = NSImage(contentsOf: url) else { return nil }
         single[name] = img
         return img
@@ -43,7 +43,7 @@ enum Frames {
     static func load(_ sub: String) -> [NSImage] {
         if let f = cache[sub] { return f }
         var out: [NSImage] = []
-        if let dir = Bundle.module.url(forResource: sub, withExtension: nil, subdirectory: "Resources") {
+        if let dir = OxResources.bundle.url(forResource: sub, withExtension: nil, subdirectory: "Resources") {
             let files = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasSuffix(".png") }.sorted()
             out = files.compactMap { NSImage(contentsOf: dir.appendingPathComponent($0)) }
         }

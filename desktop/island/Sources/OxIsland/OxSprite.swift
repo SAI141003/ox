@@ -8,7 +8,7 @@ import SwiftUI
 
 enum OxArt {
     static let body: NSImage? = {
-        guard let url = Bundle.module.url(forResource: "ox-body", withExtension: "png", subdirectory: "Resources") else { return nil }
+        guard let url = OxResources.bundle.url(forResource: "ox-body", withExtension: "png", subdirectory: "Resources") else { return nil }
         return NSImage(contentsOf: url)
     }()
 
@@ -19,7 +19,7 @@ enum OxArt {
     }
 
     static let anchors: Anchors = {
-        if let url = Bundle.module.url(forResource: "ox-body", withExtension: "json", subdirectory: "Resources"),
+        if let url = OxResources.bundle.url(forResource: "ox-body", withExtension: "json", subdirectory: "Resources"),
            let data = try? Data(contentsOf: url),
            let a = try? JSONDecoder().decode(Anchors.self, from: data) {
             return a

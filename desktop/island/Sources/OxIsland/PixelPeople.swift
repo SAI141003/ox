@@ -31,7 +31,7 @@ enum PixelCast {
     }
 
     private static let spec: Spec? = {
-        guard let url = Bundle.module.url(forResource: "people", withExtension: "json", subdirectory: "Resources/pixel"),
+        guard let url = OxResources.bundle.url(forResource: "people", withExtension: "json", subdirectory: "Resources/pixel"),
               let data = try? Data(contentsOf: url),
               let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         func layers(_ k: String) -> [String: [String: [String]]] { j[k] as? [String: [String: [String]]] ?? [:] }

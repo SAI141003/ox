@@ -44,3 +44,18 @@ test('ox app starts the island with the window, and the OX app starts it on ever
   assert.ok(loadStart > 0 && island > loadStart && island < envBranch, 'island start must come before the OX_APP_URL branch');
   assert.equal((oxApp.match(/startIslandInBackground\(\)/g) || []).length, 2, 'one call site in load(), one definition');
 });
+
+// Every Mac that installed a release: SwiftPM's Bundle.module looks beside the
+// .app and at the CI build folder, finds neither, and stops the program, because
+// buildIslandApp installs the resources in Contents/Resources.
+test('the island never loads its resources through Bundle.module', () => {
+  const dir = new URL('../desktop/island/Sources/OxIsland/', import.meta.url);
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.swift') && n !== 'OxResources.swift')) {
+    assert.doesNotMatch(fs.readFileSync(new URL(f, dir), 'utf8'), /Bundle\.module/, f);
+  }
+  const resources = fs.readFileSync(new URL('OxResources.swift', dir), 'utf8');
+  assert.match(resources, /Bundle\.main\.resourceURL/);
+  assert.doesNotMatch(resources, /fatalError/);
+  const island = fs.readFileSync(new URL('../src/island.js', import.meta.url), 'utf8');
+  assert.match(island, /path\.join\(contents, 'Resources', 'OxIsland_OxIsland\.bundle'\)/);
+});
