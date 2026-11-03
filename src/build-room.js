@@ -617,6 +617,8 @@ export class BuildRoom extends EventEmitter {
 // ---------------------------------------------------------------------------
 
 const live = new Map();
+// When ox's server stops, its builders stop with it (none left running on their own).
+process.once('exit', () => { for (const r of live.values()) for (const run of r.runs) run.kill(); });
 
 export function startBuild(opts) {
   const dir = path.resolve(opts.dir);
