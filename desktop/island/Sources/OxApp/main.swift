@@ -160,12 +160,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         showMessage("Starting ox…")
         DispatchQueue.global().async {
             let url = Self.askOxForURL()
-            // The island comes with ox: started here when it is switched on (Settings).
-            _ = Self.ox(["island", "start"])
             DispatchQueue.main.async {
                 if let url { self.loadOx(url) }
                 else { self.showMessage(Self.oxPaths() == nil ? "ox is not on this Mac yet. Download OX for Mac from github.com/SAI141003/ox/releases and open it from there." : "ox did not start. Open OX again; if it still does not start, run  ox doctor  in a terminal to see why.") }
             }
+            // The island comes with ox: started here when it is switched on (Settings).
+            // Its output is discarded: a pipe nobody reads fills up while `swift build`
+            // (first run, or a rebuild) writes to it, and that build never finishes.
+            Self.startIslandInBackground()
         }
     }
 
@@ -296,6 +298,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         p.waitUntilExit()
         let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         return out.split(separator: "\n").last.map { String($0).trimmingCharacters(in: .whitespaces) }
+    }
+
+    /// `ox island start` without reading its output: nothing waits on a pipe.
+    static func startIslandInBackground() {
+        guard let (node, cli) = oxPaths() else { return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: node)
+        p.arguments = [cli, "island", "start"]
+        p.currentDirectoryURL = URL(fileURLWithPath: defaultWorkingDirectory())
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        try? p.run()
     }
 
     /// `ox app --print-url` starts the server if needed and prints where it is.
