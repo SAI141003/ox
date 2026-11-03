@@ -3,6 +3,7 @@
 // moves cleanly. Being called main by another computer gives nothing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -151,4 +152,25 @@ test('the page, the routes and the release step are in place', () => {
   assert.match(chat, /machines: \['globe', 'Machines'\]/);
   assert.match(flow, /--latest=false/);
   assert.match(flow, /publish:\n\s+needs: package/);
+});
+
+// The tools keep sessions under the person's home. ox's own folder used to be
+// searched instead, so a session on another computer always read as missing.
+test('a real session file on the other computer can be read over the mesh', async () => {
+  const { A, hb, close } = await pair();
+  const id = crypto.randomUUID();
+  const dir = path.join(os.homedir(), '.claude', 'projects', `-ox-mesh-read-${id}`);
+  fs.mkdirSync(dir, { recursive: true });
+  const line = (type, content) => JSON.stringify({ type, sessionId: id, cwd: dir, timestamp: new Date().toISOString(), message: { role: type, content } });
+  fs.writeFileSync(path.join(dir, `${id}.jsonl`), `${line('user', 'are you there')}\n${line('assistant', [{ type: 'text', text: 'yes I am' }])}\n`);
+  try {
+    M.setGrant('One', 'agents', true, { home: hb });
+    const r = await A.ask('Two', 'agent-read', { id: `claude:${id}` }, { timeoutMs: 15000 });
+    assert.deepEqual(r.messages.map((m) => m.text), ['are you there', 'yes I am']);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); await close(); }
+});
+
+test('the page does not offer a key ox refuses to press', () => {
+  const page = fs.readFileSync(new URL('../src/web/machines.html', import.meta.url), 'utf8');
+  assert.doesNotMatch(page, /data-k="return"/);
 });

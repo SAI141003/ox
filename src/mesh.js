@@ -657,7 +657,7 @@ export async function startNode(o = {}) {
     // The machine's makeup, its agent sessions, its shared folders (src/mesh-services.js).
     const S = await import('./mesh-services.js');
     const roots = readPeers(o)[peer.id]?.roots ?? [os.homedir()];
-    if (await S.serveOp({ ch, peer, msg, grants, roots, home: home(o), ollamaUrl, meName: me.name, remoteControl: o.remoteControl, agentRun: o.agentRun })) return;
+    if (await S.serveOp({ ch, peer, msg, grants, roots, home: home(o), ollamaUrl, meName: me.name, remoteControl: o.remoteControl, agentRun: o.agentRun, sessionsHome: o.sessionsHome })) return;
     refuse(`unknown request ${msg.op}`);
   }
 

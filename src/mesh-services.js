@@ -213,7 +213,7 @@ export async function pullFile(node, machine, remote, dest, { overwrite = false,
 }
 
 /** One read-only request from a paired machine. Returns true when `msg.op` is one of these. */
-export async function serveOp({ ch, peer, msg, grants, roots, home, ollamaUrl, meName, remoteControl = null, agentRun = null }) {
+export async function serveOp({ ch, peer, msg, grants, roots, home, ollamaUrl, meName, remoteControl = null, agentRun = null, sessionsHome = null }) {
   const op = msg.op;
   // The rest of an upload already allowed at push-begin: bound to that machine and that id.
   if (op === 'push-chunk' || op === 'push-end' || op === 'push-abort') { pushStep(ch, peer, msg, home); return true; }
@@ -245,18 +245,19 @@ export async function serveOp({ ch, peer, msg, grants, roots, home, ollamaUrl, m
   if (op === 'describe') { reply(await describe({ ollamaUrl, home })); return true; }
   if (op === 'agents' || op === 'agents-ask') {
     const A = await import('./agents-live.js');
-    reply({ sessions: A.liveAgents({ fresh: true }).map(sessionRow) });
+    reply({ sessions: A.liveAgents({ fresh: true, ...(sessionsHome ? { home: sessionsHome } : {}) }).map(sessionRow) });
     return true;
   }
-  if (op === 'agent-read') { const A = await import('./agents-live.js'); reply(await A.sessionMessages(String(a.id ?? ''), { home })); return true; }
+  // `home` here is ox's folder; the tools keep their sessions under the person's own home.
+  if (op === 'agent-read') { const A = await import('./agents-live.js'); reply(await A.sessionMessages(String(a.id ?? ''), sessionsHome ? { home: sessionsHome } : {})); return true; }
   if (op === 'agent-send') {
     // A transcript being readable is not enough: sendToSession independently
     // verifies the target CLI's safe resume capability before starting a turn.
     const A = await import('./agents-live.js');
-    reply(await A.sendToSession(String(a.id ?? ''), String(a.text ?? ''), { home, run: agentRun, model: String(a.model ?? '') }));
+    reply(await A.sendToSession(String(a.id ?? ''), String(a.text ?? ''), { ...(sessionsHome ? { home: sessionsHome } : {}), run: agentRun, model: String(a.model ?? '') }));
     return true;
   }
-  if (op === 'agent-delivery') { const A = await import('./agents-live.js'); reply(A.deliveryStatus(String(a.ticket ?? ''), { home })); return true; }
+  if (op === 'agent-delivery') { const A = await import('./agents-live.js'); reply(A.deliveryStatus(String(a.ticket ?? ''), sessionsHome ? { home: sessionsHome } : {})); return true; }
   if (op === 'ls') {
     const d = inside(a.path ?? '~', roots);
     if (!d) { refuse(`${a.path ?? '~'} is outside the folders ${meName} shares, or does not exist`); return true; }

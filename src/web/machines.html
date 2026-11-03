@@ -258,7 +258,7 @@ function renderScreen() {
     return;
   }
   $('body').innerHTML = `<div class="row" style="margin-top:0"><button class="btn" id="shot">Refresh</button><label class="note"><input type="checkbox" id="live"> Live</label><span class="note" id="scr-s" role="status" aria-live="polite"></span></div>
-    ${can.control ? `<form class="row" id="typ" autocomplete="off"><input class="field" id="typ-t" placeholder="Type on ${esc(m.name)}" aria-label="Type on ${esc(m.name)}"><button class="btn" type="submit">Type</button><button class="btn" type="button" data-k="return">Return</button><button class="btn" type="button" data-k="escape">Esc</button><button class="btn" type="button" data-k="tab">Tab</button></form><p class="note">Click the picture to click there. ox refuses clicks on Send, Pay and Delete. Every action is logged on ${esc(m.name)}.</p>` : `<p class="note">View only. To click and type, turn on <b>Click and type here</b> on ${esc(m.name)}.</p>`}
+    ${can.control ? `<form class="row" id="typ" autocomplete="off"><input class="field" id="typ-t" placeholder="Type on ${esc(m.name)}" aria-label="Type on ${esc(m.name)}"><button class="btn" type="submit">Type</button><button class="btn" type="button" data-k="escape">Esc</button><button class="btn" type="button" data-k="tab">Tab</button></form><p class="note">Click the picture to click there. ox refuses clicks on Send, Pay and Delete, and never presses Return, so a person always does the last step. Every action is logged on ${esc(m.name)}.</p>` : `<p class="note">View only. To click and type, turn on <b>Click and type here</b> on ${esc(m.name)}.</p>`}
     <img class="shot" id="img" alt="The screen of ${esc(m.name)}" hidden>`;
   let points = null, busy = false;
   const grab = async () => {
