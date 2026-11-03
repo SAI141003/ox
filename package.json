@@ -1,6 +1,6 @@
 {
   "name": "ox-agent",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "the featherweight coding agent",
   "license": "MIT",
   "type": "module",
