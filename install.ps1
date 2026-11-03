@@ -26,8 +26,11 @@ $name = "ox-windows-$arch.zip"
 Write-Host "ox $tag"
 Write-Host "downloading $name..."
 Invoke-WebRequest "$base/$name" -OutFile $zip -UseBasicParsing
-try { $want = ((Invoke-WebRequest "$base/$name.sha256" -UseBasicParsing).Content.ToString().Trim() -split '\s+')[0] }
-catch { Remove-Item $zip; throw "$tag publishes no checksum for $name: not installing an unchecked download" }
+# Saved to a file and read as text: GitHub serves release files as bytes, so .Content would be a byte array.
+$sumFile = "$zip.sha256"
+try { Invoke-WebRequest "$base/$name.sha256" -OutFile $sumFile -UseBasicParsing; $want = (((Get-Content $sumFile -Raw) -as [string]).Trim() -split '\s+')[0]; Remove-Item $sumFile }
+catch { Remove-Item $zip, $sumFile -ErrorAction SilentlyContinue; throw "$tag publishes no checksum for ${name}: not installing an unchecked download" }
+if (-not $want) { Remove-Item $zip; throw "the checksum file for ${name} is empty. Nothing was installed." }
 $have = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
 if ($want.ToLower() -ne $have) { Remove-Item $zip; throw "checksum mismatch for ${name}: expected $want, got $have. Nothing was installed." }
 Write-Host "checksum ok: $have"
