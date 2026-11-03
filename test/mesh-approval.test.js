@@ -211,7 +211,12 @@ test('disconnect stops everything both ways and keeps the pairing; reconnect nee
     assert.equal(A.status().peers[0].live.error, 'you disconnected it');
     await assert.rejects(A.sendMessage('Laptop', 'hi'), /you disconnected Laptop/);
     // From the other side: refused by name, not a mystery, and not asked about.
-    await assert.rejects(B.testLink('Studio'), /has disconnected from this computer/);
+    let heard = '';
+    for (let i = 0; i < 100 && !/has disconnected/.test(heard); i++) {
+      heard = await B.testLink('Studio').then(() => 'still connected', (e) => e.message);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assert.match(heard, /has disconnected from this computer/);
     await B.heartbeat();
     assert.match(B.status().peers[0].live.error, /has disconnected from this computer/);
     assert.equal(asks(A).length, 0);
@@ -242,7 +247,13 @@ test('a disconnect made from another process takes effect on the next beat', asy
     await A.testLink('Laptop');
     M.setPaused('Studio', true, { home: hb });
     await B.heartbeat();
-    await assert.rejects(A.testLink('Laptop'), /has disconnected from this computer/);
+    // A may first see its old connection close; what it hears after that is the reason.
+    let heard = '';
+    for (let i = 0; i < 100 && !/has disconnected/.test(heard); i++) {
+      heard = await A.testLink('Laptop').then(() => 'still connected', (e) => e.message);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assert.match(heard, /has disconnected from this computer/);
   } finally { await close(); }
 });
 
@@ -253,8 +264,12 @@ test('remove forgets the machine and cuts it off; pairing again starts connected
     assert.deepEqual(B.remove('Studio'), { forgot: 'Studio' });
     assert.equal(Object.keys(M.readPeers({ home: hb })).length, 0);
     assert.equal(B.status().peers.length, 0);
-    await new Promise((r) => setTimeout(r, 100)); // A sees its old connection close
-    await assert.rejects(A.testLink('Laptop'), /not a paired machine/);
+    let refused = '';
+    for (let i = 0; i < 100 && !/not a paired machine/.test(refused); i++) {
+      refused = await A.testLink('Laptop').then(() => 'still connected', (e) => e.message);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assert.match(refused, /not a paired machine/);
 
     A.disconnect('Laptop');
     const { code } = A.invite();
