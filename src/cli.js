@@ -3614,6 +3614,63 @@ async function cmdOrg(args = []) {
   const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
   const num = (v) => (v === undefined ? undefined : v === 'none' ? null : Number(v));
   try {
+    // A coworker's own life (src/coworker-home.js): soul, skills, memory, schedules, triggers, asking one.
+    if (['ask', 'soul', 'skills', 'memory', 'schedule', 'trigger', 'home'].includes(sub)) {
+      const H = await import('./coworker-home.js');
+      const id = String(args[1] ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const a = O.readOrg().agents[id];
+      if (!a) throw new Error(`no coworker ${args[1] ?? ''}: ox org (the team), ox org hire <name> --title <title>`);
+      H.ensureHome(a);
+      const rest = args.slice(2);
+      if (sub === 'home') { console.log(H.homeOf(a.id)); return; }
+      if (sub === 'ask') {
+        const q = rest.join(' ').trim();
+        if (!q) throw new Error('usage: ox org ask <coworker> "<question>"');
+        process.stderr.write(c.dim(`asking ${a.name}…\n`));
+        const r = await O.askAgent(a.id, q);
+        console.log(r.answer);
+        if (!r.ok) process.exitCode = 1;
+        return;
+      }
+      if (sub === 'soul') {
+        if (rest.length) { H.writeSoul(a.id, rest.join(' ')); console.log(c.green(`✓ ${a.name}'s soul rewritten`)); }
+        else console.log(`${H.readSoul(a.id)}\n${c.dim(`(edit: ${path.join(H.homeOf(a.id), 'SOUL.md')})`)}`);
+        return;
+      }
+      if (sub === 'skills') {
+        const list = H.listSkills(a.id);
+        if (!list.length) console.log(c.dim(`${a.name} has no skills yet: it writes one when a job shows a way of working worth keeping`));
+        for (const k of list) console.log(`${c.bold(k.name)}${k.learned ? c.dim('  (learned)') : ''}  ${k.description}\n  ${c.dim(k.file)}`);
+        return;
+      }
+      if (sub === 'memory') {
+        const m = await H.memories(a.id);
+        if (!m.length) console.log(c.dim(`${a.name} remembers nothing yet`));
+        for (const x of m.slice(0, 40)) console.log(`- ${x.text}`);
+        return;
+      }
+      const action = String(rest[0] ?? 'ls');
+      if (sub === 'schedule') {
+        if (action === 'add') { const sc = await H.addSchedule(a.id, rest[1], rest.slice(2).join(' ')); console.log(c.green(`✓ ${a.name}: ${sc.every}: ${sc.prompt}`)); return; }
+        if (action === 'rm') { console.log(H.removeSchedule(a.id, rest[1]) ? 'removed' : c.dim('no such schedule')); return; }
+        const list = H.listSchedules(a.id);
+        if (!list.length) console.log(c.dim(`none: ox org schedule ${a.id} add "daily at 9am" "<what to do>"`));
+        for (const x of list) console.log(`${x.slug}  ${c.bold(x.every)}  ${x.prompt}${x.lastRunAt ? c.dim(`  last ${x.lastRunAt}`) : ''}`);
+        return;
+      }
+      if (sub === 'trigger') {
+        if (action === 'add') {
+          const t = H.addTrigger(a.id, rest[1], rest.slice(2).join(' '));
+          console.log(`${c.green(`✓ ${a.name} starts work when this is called:`)}\n  POST http://127.0.0.1:<ox serve port>/ox/org/${a.id}/trigger/${t.slug}\n  header  x-ox-trigger: ${t.token}\n${c.dim('  (the body is passed to it as data; reach it from outside through your own tunnel)')}`);
+          return;
+        }
+        if (action === 'rm') { console.log(H.removeTrigger(a.id, rest[1]) ? 'removed' : c.dim('no such trigger')); return; }
+        const list = H.listTriggers(a.id);
+        if (!list.length) console.log(c.dim(`none: ox org trigger ${a.id} add <name> "<what to do with what arrives>"`));
+        for (const x of list) console.log(`${x.slug}  ${x.prompt}  ${c.dim(`fired ${x.fired}×`)}`);
+        return;
+      }
+    }
     if (!sub || sub === 'chart' || sub === 'list') {
       const lines = O.chart({ all: args.includes('--all') });
       console.log(lines.length > 1 ? lines.join('\n') : `${lines[0]}\n${c.dim('  no agents yet: ox org hire <name> --title <title>')}`);
@@ -5358,6 +5415,25 @@ async function runSubcommand(cmd, args) {
       const sub = args[0] ?? 'where';
       const rest = args.slice(1);
       const val = (f) => { const i = rest.indexOf(f); return i >= 0 ? rest[i + 1] : null; };
+      // Proposals (src/brain-proposals.js): coworkers suggest, you accept or dismiss.
+      if (['propose', 'proposals', 'accept', 'dismiss'].includes(sub)) {
+        const P = await import('./brain-proposals.js');
+        if (sub === 'propose') {
+          const title = rest.filter((x, i) => !x.startsWith('--') && !['--body', '--why'].includes(rest[i - 1])).join(' ').trim();
+          const p = P.propose({ title, body: val('--body') ?? '', why: val('--why') ?? '', by: process.env.OX_ORG_AGENT || 'you' });
+          console.log(p.state === 'dismissed-before' ? c.dim('the owner dismissed this exact note before; not proposed again') : `${c.green('✓ proposed')} ${p.title} ${c.dim(`(${p.id}; the owner decides)`)}`);
+          return;
+        }
+        if (sub === 'accept' || sub === 'dismiss') {
+          const p = await P.decide(rest[0], sub);
+          console.log(p.already ? c.dim(`already ${p.state}`) : `${sub === 'accept' ? c.green('✓ in the brain') : 'dismissed'}: ${p.title}`);
+          return;
+        }
+        const list = P.listProposals();
+        if (!list.length) console.log(c.dim('no proposals waiting'));
+        for (const p of list) console.log(`${c.bold(p.id)}  ${p.title}  ${c.dim(`by ${p.by}`)}\n  ${p.body.split('\n')[0].slice(0, 160)}\n  ${c.dim(`ox brain accept ${p.id}  |  ox brain dismiss ${p.id}`)}`);
+        return;
+      }
       try {
         // The brain for other agents (src/brain-mcp.js): Claude Code, Cursor, Codex share it.
         if (sub === 'mcp') { (await import('./brain-mcp.js')).serveBrainMcp(); await new Promise(() => {}); }
@@ -7475,6 +7551,18 @@ async function runSubcommand(cmd, args) {
     case 'bench': {
       const action = String(args[0] ?? '').trim().toLowerCase();
       const restArgs = args.slice(1);
+      if (action === 'desktop') {
+        // What it costs to see an app: screenshot vs accessibility tree vs ox's list (src/desktop-bench.js).
+        const val = (f) => { const i = restArgs.indexOf(f); return i >= 0 ? restArgs[i + 1] : null; };
+        const app = val('--app') ?? restArgs.find((x) => !x.startsWith('-')) ?? 'Finder';
+        const D = await import('./desktop-bench.js');
+        const m = await D.measure(app, { find: val('--find') });
+        console.log(c.bold(`Seeing ${app}${m.width ? ` (${m.width}×${m.height} px window)` : ''}`));
+        for (const r of m.rows) console.log(`  ${String(r.tokens).padStart(7)} tokens  ${r.how}`);
+        for (const e of [m.shotError, m.snapError, m.listError].filter(Boolean)) console.log(c.dim(`  (${e})`));
+        if (m.times) console.log(`${c.green(`ox reads it in ${m.times}× fewer tokens than a screenshot`)}${m.findTimes ? c.green(`, ${m.findTimes}× with a targeted find`) : ''}`);
+        return;
+      }
       if (action === 'list') {
         console.log(c.bold('benchmarks'));
         for (const b of MODEL_BENCHMARKS) console.log(`  ${b.name}: ${b.description}`);

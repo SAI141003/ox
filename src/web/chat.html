@@ -2290,7 +2290,7 @@
   }
   // ---------- The side panel: per session, tabs for its team builds, a terminal, a browser, files
   // c.panel = { open, max, tabs: [{ k: 'team'|'term'|'browser'|'files', id, url?, path?, title? }], active }
-  const PANEL_KINDS = { team: ['team', 'Team'], term: ['terminal', 'Terminal'], browser: ['globe', 'Browser'], files: ['file', 'Files'] };
+  const PANEL_KINDS = { team: ['team', 'Team'], term: ['terminal', 'Terminal'], browser: ['globe', 'Browser'], files: ['file', 'Files'], coworkers: ['office', 'Coworkers'] };
   const frames = new Map();   // session:tab → its element, kept while you switch tabs (a terminal stays alive)
   const sessionDir = (c) => c?.buildDir || c?.cwd || about?.cwd || '';
   function panelOf(c) {
@@ -2342,6 +2342,7 @@
       el.title = PANEL_KINDS[t.k][1];
       el.src = t.k === 'team' ? `/build?id=${encodeURIComponent(t.id)}&embed=1`
         : t.k === 'term' ? `/build?embed=1&termonly=1&cwd=${encodeURIComponent(sessionDir(c))}`
+        : t.k === 'coworkers' ? '/coworkers'
         : `/files?root=${encodeURIComponent(sessionDir(c))}${t.path ? `&path=${encodeURIComponent(t.path)}` : ''}`;
     }
     $('sp-body').appendChild(el);
@@ -2380,7 +2381,7 @@
     const act = p.tabs[p.active];
     $('sp-rail').innerHTML = `<button data-rail="toggle" title="${open ? 'Close' : 'Open'} the panel (⌘\\)">${icon('dbl')}</button>`
       + ((c.builds ?? []).length ? `<button data-rail="team" class="${liveTeam ? 'live' : ''}${open && act?.k === 'team' ? ' on' : ''}" title="The team">${icon('team')}</button>` : '')
-      + [['browser', 'Browser (⇧⌘B)'], ['term', 'Terminal (⌘J)'], ['files', 'Files (⇧⌘F)']].map(([k, ti]) => `<button data-rail="${k}" class="${open && act?.k === k ? 'on' : ''}" title="${ti}">${icon(PANEL_KINDS[k][0])}</button>`).join('');
+      + [['browser', 'Browser (⇧⌘B)'], ['term', 'Terminal (⌘J)'], ['files', 'Files (⇧⌘F)'], ['coworkers', 'Coworkers: your team, their skills, what waits for you']].map(([k, ti]) => `<button data-rail="${k}" class="${open && act?.k === k ? 'on' : ''}" title="${ti}">${icon(PANEL_KINDS[k][0])}</button>`).join('');
     $('sp-rail').querySelector('[data-rail="toggle"] svg').style.transform = open ? 'scaleX(-1)' : '';
     renderSideTabs();
     if (!open) return;
@@ -2412,7 +2413,7 @@
   // The team's card in the chat opens its tab.
   document.addEventListener('click', (e) => { const b = e.target.closest('[data-open-team]'); if (b) openTab('team', { id: b.dataset.openTeam, title: (convo()?.builds ?? []).find((x) => x.id === b.dataset.openTeam)?.task }); });
   // "+": a small launcher with a filter: a link opens the browser, a path opens the file.
-  const SP_MENU = [['files', 'File', '⇧⌘F'], ['term', 'Terminal', '⌘J'], ['browser', 'Browser', '⇧⌘B']];
+  const SP_MENU = [['files', 'File', '⇧⌘F'], ['term', 'Terminal', '⌘J'], ['browser', 'Browser', '⇧⌘B'], ['coworkers', 'Coworkers', '']];
   function openSpMenu() {
     const m = $('sp-menu');
     m.innerHTML = `<input id="sp-q" placeholder="Open any file, link, …" aria-label="Open">` + SP_MENU.map(([k, n, key]) => `<button data-open="${k}">${icon(PANEL_KINDS[k][0])}${n}<span class="k">${key}</span></button>`).join('');

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ox · Coworkers</title>
+<style>
+  :root {
+    --bg: #000; --side: #0A0A0A; --panel: #0F0F0F; --raise: #161616; --hover: #1A1A1A; --sel: #1F1F1F;
+    --line: #1F1F1F; --line2: #2A2A2A; --text: #EDEDED; --muted: #A1A1A1; --dim: #6B6B6B; --btn: #EDEDED; --btn-ink: #000; --ok: #8BD49C; --red: #F2615C;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) { --bg: #FFF; --side: #FAFAFA; --panel: #FFF; --raise: #F4F4F4; --hover: #F0F0F0; --sel: #EBEBEB; --line: #EAEAEA; --line2: #DDD; --text: #0A0A0A; --muted: #5E5E5E; --dim: #8F8F8F; --btn: #0A0A0A; --btn-ink: #FFF; --ok: #2F8F4E; color-scheme: light; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 13.5px/1.5 var(--sans); }
+  button, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  main { padding: 14px 16px 40px; max-width: 900px; margin: 0 auto; }
+  h2 { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin: 20px 0 8px; font-weight: 600; }
+  .muted { color: var(--muted); } .dim { color: var(--dim); } .mono { font-family: var(--mono); }
+  .btn { padding: 4px 11px; border-radius: 7px; border: 1px solid var(--line2); background: var(--raise); font-size: 12.5px; }
+  .btn:hover { background: var(--hover); }
+  .btn.primary { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); font-weight: 600; }
+  .btn:disabled { opacity: .5; }
+  .card { border: 1px solid var(--line2); border-radius: 12px; background: var(--panel); padding: 12px 14px; margin-bottom: 10px; }
+  .head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .head b { font-size: 14.5px; }
+  .pill { font-size: 11px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line2); color: var(--muted); }
+  .pill.active { color: var(--ok); }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+  textarea { width: 100%; min-height: 110px; border: 1px solid var(--line2); border-radius: 8px; background: var(--bg); padding: 8px 10px; font: 12.5px/1.5 var(--mono); outline: 0; resize: vertical; }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  .row input { flex: 1; min-width: 0; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line2); background: var(--bg); outline: 0; }
+  ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; }
+  .answer { white-space: pre-wrap; margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--raise); font-size: 12.5px; max-height: 260px; overflow: auto; }
+  .prop .body { white-space: pre-wrap; font-size: 12.5px; color: var(--muted); margin: 6px 0; max-height: 160px; overflow: auto; }
+  .empty { color: var(--muted); padding: 10px 0; }
+  .act { font-size: 12px; color: var(--muted); padding: 3px 0; border-bottom: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<main>
+  <h2>Waiting for you</h2>
+  <div id="props"></div>
+  <h2>Coworkers</h2>
+  <div id="team"></div>
+  <h2>Lately</h2>
+  <div id="act"></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+let key = (() => { try { return sessionStorage.getItem('ox.key') || ''; } catch { return ''; } })();
+const api = (path, opts = {}) => fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) } });
+async function post(path, body) { const r = await api(path, { method: 'POST', body: JSON.stringify(body ?? {}) }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j?.error?.message || `HTTP ${r.status}`); return j; }
+const ago = (t) => { const s = Math.round((Date.now() - Date.parse(t)) / 1000); return !Number.isFinite(s) ? '' : s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`; };
+
+async function load() {
+  let j;
+  try { j = await (await api('/ox/coworkers')).json(); } catch { return; }
+  const openSouls = new Set([...document.querySelectorAll('details[open]')].map((d) => d.dataset.k));
+  $('props').innerHTML = (j.proposals ?? []).map((p) => `<div class="card prop" data-p="${esc(p.id)}"><div class="head"><b>${esc(p.title)}</b><span class="dim">for the company brain · proposed by ${esc(p.by)} · ${ago(p.at)}</span></div><div class="body">${esc(p.body)}</div>${p.why ? `<div class="dim" style="font-size:12px">${esc(p.why)}</div>` : ''}<div class="row"><button class="btn primary" data-decide="accept">Accept</button><button class="btn" data-decide="dismiss">Dismiss</button></div></div>`).join('') || '<div class="empty">Nothing: coworkers propose changes to the brain here, and you decide.</div>';
+  $('team').innerHTML = (j.agents ?? []).map((a) => `<div class="card" data-a="${esc(a.id)}">
+    <div class="head"><b>${esc(a.name)}</b><span class="muted">${esc(a.title)}</span><span class="pill ${a.status}">${esc(a.status)}</span>${a.lastRun ? `<span class="dim">last ran ${ago(a.lastRun.at)}${a.lastRun.ok === false ? ' · failed' : ''}</span>` : ''}</div>
+    ${a.lastRun ? `<div class="dim" style="font-size:12px;margin-top:4px">${esc(a.lastRun.title || '')}</div>` : ''}
+    <div class="row"><input placeholder="Ask ${esc(a.name)} something…" data-ask><button class="btn" data-ask-go>Ask</button></div>
+    <div class="answer" data-answer hidden></div>
+    <details data-k="soul:${esc(a.id)}"${openSouls.has(`soul:${a.id}`) ? ' open' : ''}><summary>Soul: who it is and how it works</summary><textarea data-soul>${esc(a.soul)}</textarea><div class="row"><button class="btn" data-soul-save>Save</button></div></details>
+    <details data-k="sk:${esc(a.id)}"${openSouls.has(`sk:${a.id}`) ? ' open' : ''}><summary>${a.skills.length} skill${a.skills.length === 1 ? '' : 's'}, ${a.schedules.length} schedule${a.schedules.length === 1 ? '' : 's'}, ${a.triggers.length} trigger${a.triggers.length === 1 ? '' : 's'}</summary>
+      ${a.skills.length ? `<ul>${a.skills.map((k) => `<li><b>${esc(k.name)}</b>${k.learned ? ' <span class="dim">(learned)</span>' : ''}: ${esc(k.description)}</li>`).join('')}</ul>` : '<div class="dim" style="font-size:12px">No skills yet: it writes one when a job shows a way of working worth keeping.</div>'}
+      ${a.schedules.length ? `<ul>${a.schedules.map((x) => `<li><span class="mono">${esc(x.every)}</span>: ${esc(x.prompt)}${x.lastRunAt ? ` <span class="dim">(last ${ago(x.lastRunAt)})</span>` : ''}</li>`).join('')}</ul>` : ''}
+      ${a.triggers.length ? `<ul>${a.triggers.map((x) => `<li>trigger <span class="mono">${esc(x.slug)}</span>: ${esc(x.prompt)} <span class="dim">(fired ${x.fired}×)</span></li>`).join('')}</ul>` : ''}
+      <div class="dim" style="font-size:12px;margin-top:6px">Add one: <span class="mono">ox org schedule ${esc(a.id)} add "daily at 9am" "…"</span> · <span class="mono">ox org trigger ${esc(a.id)} add &lt;name&gt; "…"</span></div>
+    </details></div>`).join('') || '<div class="empty">No coworkers yet. Ask ox: "hire a researcher and a writer for my newsletter", or <span class="mono">ox org hire &lt;name&gt; --title &lt;title&gt;</span>.</div>';
+  $('act').innerHTML = (j.activity ?? []).slice(0, 15).map((x) => `<div class="act"><b>${esc(x.by)}</b> ${esc(x.action)} ${esc(x.agent || '')}${x.why ? ` · ${esc(x.why)}` : ''} <span class="dim">${ago(x.at)}</span></div>`).join('') || '<div class="empty">Quiet.</div>';
+}
+
+document.addEventListener('click', async (e) => {
+  const d = e.target.closest('[data-decide]');
+  if (d) { d.disabled = true; try { await post(`/ox/brain/proposals/${d.closest('[data-p]').dataset.p}/${d.dataset.decide}`); } catch (er) { alert(er.message); } load(); return; }
+  const card = e.target.closest('[data-a]');
+  if (!card) return;
+  const id = card.dataset.a;
+  if (e.target.closest('[data-soul-save]')) { try { await post(`/ox/coworkers/${id}/soul`, { text: card.querySelector('[data-soul]').value }); e.target.textContent = 'Saved'; setTimeout(() => { e.target.textContent = 'Save'; }, 1500); } catch (er) { alert(er.message); } return; }
+  if (e.target.closest('[data-ask-go]')) {
+    const q = card.querySelector('[data-ask]').value.trim(); if (!q) return;
+    const out = card.querySelector('[data-answer]'); out.hidden = false; out.textContent = 'Working on it…';
+    e.target.disabled = true;
+    try { const r = await post(`/ox/coworkers/${id}/ask`, { question: q }); out.textContent = r.answer || '(no answer)'; } catch (er) { out.textContent = er.message; }
+    e.target.disabled = false;
+  }
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('[data-ask]')) e.target.closest('[data-a]').querySelector('[data-ask-go]').click(); });
+load();
+setInterval(() => { if (!document.hidden && !document.activeElement?.matches('textarea, input')) load(); }, 8000);
+</script>
+</body>
+</html>

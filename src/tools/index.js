@@ -40,6 +40,7 @@ import { sessionRecallTool, SESSION_RECALL_TOOL_SCHEMAS } from './session-recall
 import { withWriteLock } from '../write-lock.js';
 import { guardCall, repairArgs } from '../run-guards.js';
 import { request_secret, SECRET_TOOL_SCHEMAS } from './secret.js';
+import { desktop, DESKTOP_TOOL_SCHEMAS } from './desktop.js';
 
 export const TOOL_IMPLS = {
   read_file: readFileTool,
@@ -67,6 +68,7 @@ export const TOOL_IMPLS = {
   whatsapp_send,
   web_fetch: webFetchTool,
   request_secret,
+  desktop,
   web_search: webSearchTool,
   library: async (args = {}) => {
     const L = await import('../library.js');
@@ -114,7 +116,6 @@ export const TOOL_IMPLS = {
 const PLAN_READ_ONLY = ['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'show_ui', 'agent_status', 'code_graph', 'session_recall'];
 
 export const BUILTIN_SCHEMAS = [
-  ...SECRET_TOOL_SCHEMAS,
   ...OPERATOR_TOOL_SCHEMAS,
   ...MAIL_TOOL_SCHEMAS,
   ...MESSAGES_TOOL_SCHEMAS,
@@ -269,6 +270,9 @@ export const BUILTIN_SCHEMAS = [
   // Last, so when it is withheld it falls into the "+N more" of the withheld line.
   ...YOUTUBE_TOOL_SCHEMAS,
   ...CURRENT_PAGE_SCHEMAS,
+  // Last, so the older tools keep their places in the 'not offered this turn' list.
+  ...SECRET_TOOL_SCHEMAS,
+  ...DESKTOP_TOOL_SCHEMAS,
 ];
 
 function normalizeMcpResult(result) {

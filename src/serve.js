@@ -2318,6 +2318,38 @@ const ROUTES = [
     const prompt = await P.personaPrompt({ custom: cfg.persona });
     return { url: cfg.url, voice: cfg.voice, prompt, page: P.chatUrl(cfg, prompt) };
   }) },
+  // Coworkers (src/org.js + src/coworker-home.js): the team, their homes, and brain proposals to decide.
+  { method: 'GET', pattern: /^\/ox\/coworkers\/?$/, handler: appRoute(async () => {
+    const O = await import('./org.js');
+    const H = await import('./coworker-home.js');
+    const P = await import('./brain-proposals.js');
+    const org = O.readOrg();
+    const agents = Object.values(org.agents).filter((a) => a.status !== 'terminated').map((a) => ({
+      id: a.id, name: a.name, title: a.title, status: a.status, reportsTo: a.reportsTo, runtime: a.runtime, lastBeat: a.lastBeat,
+      soul: H.readSoul(a.id).slice(0, 600), skills: H.listSkills(a.id).map((k) => ({ name: k.name, description: k.description, learned: k.learned })),
+      schedules: H.listSchedules(a.id).map((x) => ({ slug: x.slug, every: x.every, prompt: x.prompt, lastRunAt: x.lastRunAt })),
+      triggers: H.listTriggers(a.id).map((x) => ({ slug: x.slug, prompt: x.prompt, fired: x.fired })),
+      lastRun: (org.runs[a.id] ?? []).at(-1) ?? null,
+    }));
+    return { agents, proposals: P.listProposals(), activity: (org.log ?? []).slice(-30).reverse() };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/coworkers\/([a-z0-9-]+)\/(ask|soul)\/?$/, handler: appRoute(async (body, m) => {
+    const O = await import('./org.js');
+    if (m[2] === 'soul') { (await import('./coworker-home.js')).writeSoul(m[1], String(body?.text ?? '')); return { ok: true }; }
+    return O.askAgent(m[1], String(body?.question ?? ''));
+  }) },
+  { method: 'POST', pattern: /^\/ox\/brain\/proposals\/([a-f0-9]+)\/(accept|dismiss)\/?$/, handler: appRoute(async (_, m) => (await import('./brain-proposals.js')).decide(m[1], m[2])) },
+  { method: 'POST', pattern: /^\/ox\/org\/([a-z0-9-]+)\/trigger\/([a-z0-9-]+)\/?$/, handler: async (req, res, m) => {
+    let raw = '';
+    try { raw = (await parseRawBody(req)).toString('utf8'); } catch (e) { sendError(res, 413, String(e?.message ?? e), 'invalid_request_error', 'too_large', null); return; }
+    const url = new URL(req.url, 'http://x');
+    const H = await import('./coworker-home.js');
+    const prompt = H.fireTrigger(m[1], m[2], req.headers['x-ox-trigger'] ?? url.searchParams.get('token'), raw);
+    if (!prompt) { sendError(res, 404, 'No such trigger.', 'invalid_request_error', 'not_found', null); return; }
+    const O = await import('./org.js');
+    O.runNow(m[1], prompt).catch(() => {});
+    sendJson(res, 202, { accepted: true });
+  } },
   // Whether "Open a PR" can do anything here: a git project with a remote, and changes not on it yet.
   { method: 'GET', pattern: /^\/ox\/pr\/ready\/?$/, handler: appRoute(async (_, __, req) => {
     const dir = new URL(req.url, 'http://x').searchParams.get('cwd') || process.cwd();
@@ -3107,7 +3139,9 @@ async function handleRequest(req, res) {
   // authenticated by its App Secret in the route handler; all other routes
   // retain the normal local-only request guard.
   const publicWhatsappWebhook = /^\/webhooks\/whatsapp\/?(?:\?|$)/.test(req.url ?? '');
-  const refused = publicWhatsappWebhook ? null : requestGuard(req);
+  // A coworker's trigger is called by other services (through your tunnel); its own token is its guard.
+  const coworkerTrigger = req.method === 'POST' && /^\/ox\/org\/[a-z0-9-]+\/trigger\/[a-z0-9-]+\/?(?:\?|$)/.test(req.url ?? '');
+  const refused = publicWhatsappWebhook || coworkerTrigger ? null : requestGuard(req);
   if (refused) {
     sendError(res, 403, refused, 'invalid_request_error', 'forbidden_origin', null);
     return;
@@ -3200,8 +3234,8 @@ async function handleRequest(req, res) {
     return;
   }
   // The build room (src/build-room.js) and ox's own terminal emulator (src/web/term.js).
-  if (req.method === 'GET' && (path === '/build' || path === '/files' || path === '/web/term.js')) {
-    const page = await readFile(new URL(path === '/build' ? './web/build.html' : path === '/files' ? './web/files.html' : './web/term.js', import.meta.url));
+  if (req.method === 'GET' && (path === '/build' || path === '/files' || path === '/coworkers' || path === '/web/term.js')) {
+    const page = await readFile(new URL(path === '/build' ? './web/build.html' : path === '/files' ? './web/files.html' : path === '/coworkers' ? './web/coworkers.html' : './web/term.js', import.meta.url));
     res.writeHead(200, { 'Content-Type': path === '/web/term.js' ? 'application/javascript; charset=utf-8' : 'text/html; charset=utf-8', 'Content-Length': page.length, 'Cache-Control': 'no-store',
       'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'", 'X-Content-Type-Options': 'nosniff' });
     res.end(page);
@@ -3301,6 +3335,14 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
   // (each is marked as started first, so the two never run one twice).
   if (!process.env.NODE_TEST_CONTEXT && process.env.OX_FLOWS !== '0') {
     setInterval(() => { import('./flows.js').then((F) => F.tickFlows()).catch(() => {}); }, 60_000).unref();
+    // Coworkers' own schedules (src/coworker-home.js): each due one goes on the board and runs.
+    setInterval(async () => {
+      try {
+        const O = await import('./org.js');
+        const H = await import('./coworker-home.js');
+        for (const d of await H.dueSchedules({ agents: Object.values(O.readOrg().agents) })) O.runNow(d.agent, d.schedule.prompt).catch(() => {});
+      } catch {}
+    }, 60_000).unref();
     // Today's to-dos ready before you ask (Reminders takes 5–8 s to answer a script).
     if (process.platform === 'darwin') {
       const todos = () => import('./offline.js').then((O) => O.refreshTodos()).catch(() => {});

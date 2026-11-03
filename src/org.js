@@ -25,6 +25,7 @@ import { spawn } from 'node:child_process';
 import { readyTasks, claimTask, completeTask, taskBrief, addSpend, listTasks } from './tasks.js';
 import { readUsage } from './usage-log.js';
 import { fileURLToPath } from 'node:url';
+import * as H from './coworker-home.js';
 
 const OX_HOME = () => process.env.OX_HOME || path.join(os.homedir(), '.ox');
 export const ORG_FILE = () => path.join(OX_HOME(), 'org.json');
@@ -32,6 +33,8 @@ export const AGENT_STATES = ['active', 'proposed', 'paused', 'terminated'];
 
 const month = (t = Date.now()) => new Date(t).toISOString().slice(0, 7);
 const fileOf = (o) => o?.file ?? ORG_FILE();
+// Coworker homes sit beside the org file (so an org kept elsewhere keeps its homes there too).
+const homeEnv = (o) => (o?.file ? { ...process.env, OX_HOME: path.dirname(o.file) } : (o?.env ?? process.env));
 
 export function readOrg(opts = {}) {
   try {
@@ -200,7 +203,8 @@ function briefFor(agent, task, opts) {
   const boss = agent.reportsTo === 'you' ? 'the owner' : `${org.agents[agent.reportsTo]?.name ?? agent.reportsTo} (${org.agents[agent.reportsTo]?.title ?? ''})`;
   return [
     `You are ${agent.name}, ${agent.title}${agent.role && agent.role !== agent.title ? ` (${agent.role})` : ''}. You report to ${boss}.`,
-    agent.instructions,
+    // Its own soul, skills, memories, teammates and shared folder (src/coworker-home.js).
+    H.homeBrief(agent, `${task.title ?? ''}\n${task.description ?? ''}`, { env: homeEnv(opts), org }),
     agent.budgetUsd != null ? `Budget left this month: $${Math.max(0, agent.budgetUsd - spentThisMonth(agent)).toFixed(2)}.` : '',
     taskBrief(task.id, opts.tasks ?? {}),
     'Do the task. End with a short report of what you did and what is left.',
@@ -218,8 +222,9 @@ export function runThroughOx(agent, task, prompt, { timeoutMs = 30 * 60_000, mes
     const approval = agent.approval === 'all' ? ['--dangerously-skip-approvals'] : agent.approval === 'read' ? ['--mode', 'ask'] : ['--yes-edits'];
     const args = [bin, '-p', prompt, ...approval, ...(agent.runtime && agent.runtime !== 'ox' ? ['--bot', agent.runtime] : [])];
     const child = spawn(process.execPath, args, {
-      cwd: agent.cwd ?? process.cwd(),
-      env: { ...process.env, OX_TASK_ID: task.id, OX_AGENT_NAME: agent.id, OX_ORG_AGENT: agent.id, OX_SURFACE: 'org' },
+      // No project folder of its own: it works in its own workspace, not wherever ox was started.
+      cwd: agent.cwd ?? (H.ensureHome(agent), H.workspaceOf(agent.id)),
+      env: { ...process.env, OX_TASK_ID: task.id, OX_AGENT_NAME: agent.id, OX_ORG_AGENT: agent.id, OX_SURFACE: 'org', OX_ORG_DEPTH: String(Number(process.env.OX_ORG_DEPTH || 0) + 1) },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '', err = '';
@@ -454,6 +459,7 @@ export async function beat(id, opts = {}) {
   if (!task) { stamp(); return { agent: a.id, state: 'idle' }; }
   const started = Date.now();
   const run = opts.run ?? runThroughOx;
+  await H.loadMemoryGraph();
   const r = await run(a, task, briefFor(a, task, opts));
   const cost = r.costUsd ?? costSince(a.id, started, opts.usageFile);
   if (cost != null) addSpend(task.id, cost, tasksOpts);
@@ -462,7 +468,58 @@ export async function beat(id, opts = {}) {
   // The agent's thread (GitBot): every run, what it was asked and what it said, to reopen later.
   { const o = readOrg(opts); (o.runs[a.id] ??= []).push({ at: new Date().toISOString(), task: task.id, title: task.title, asked: task.description ?? '', ok: r.ok, said: String(r.output ?? '').trim().slice(-1500), why: r.ok ? null : String(r.error ?? '').slice(0, 300), costUsd: cost }); note(o, a.id, r.ok ? 'finished' : 'failed', a.id, { task: task.id, why: task.title }); writeOrg(o, opts); }
   stamp();
+  // What it learned: a fact to its memory, a way of working to its skills (in the background).
+  const learned = r.ok ? curateAfter(a, task, r, opts) : null;
+  if (opts.awaitCurate && learned) await learned;
   return { agent: a.id, state: 'ran', task: task.id, ok: r.ok, costUsd: cost, ...charged, ...(r.ok ? {} : { why: r.error }) };
+}
+
+async function curatorAsk() {
+  const { loadConfig } = await import('./config.js');
+  const { resolveBot } = await import('./bots.js');
+  const { quickText } = await import('./quick-text.js');
+  const cfg = loadConfig();
+  const target = resolveBot(await (await import('./working-model.js')).workingModelSpec(cfg, { say: () => {} }), cfg);
+  return async ({ system, user }) => (await quickText(target, { system, user, maxTokens: 900 })).text;
+}
+function curateAfter(a, task, r, opts) {
+  if (opts.curate === false || ((process.env.NODE_TEST_CONTEXT || process.env.OX_LEARN === '0') && !opts.ask)) return null;
+  return (async () => {
+    try {
+      const out = await H.curate(a, { asked: `${task.title}\n${task.description ?? ''}`, said: r.output }, { ask: opts.ask ?? await curatorAsk(), env: homeEnv(opts) });
+      if (out.memory || out.skill || out.forgot.length) { const o = readOrg(opts); note(o, a.id, 'learned', a.id, { why: [out.memory && `remembered: ${out.memory}`, out.skill && `new skill: ${out.skill}`, out.forgot.length && `forgot ${out.forgot.length}`].filter(Boolean).join('; ').slice(0, 300) }); writeOrg(o, opts); }
+      return out;
+    } catch { return null; }
+  })();
+}
+
+/**
+ * Ask a coworker a question and wait for its answer (a teammate asking from
+ * inside its own run, or you). Two levels deep at most, so two coworkers can
+ * never keep asking each other. → { ok, answer }
+ */
+export async function askAgent(id, question, opts = {}) {
+  if (Number(process.env.OX_ORG_DEPTH || 0) >= 2) throw new Error('too deep: a coworker asked by a coworker cannot ask another; answer with what you have');
+  const { task } = await tell(id, question, { ...opts, by: opts.by ?? (process.env.OX_ORG_AGENT || 'you') });
+  const org = readOrg(opts);
+  const a = org.agents[slug(id)];
+  if (a.status !== 'active') throw new Error(`${a.id} is ${a.status}`);
+  const { claimTask: claim } = await import('./tasks.js');
+  const c = claim(task.id, { ...(opts.tasks ?? {}), owner: a.id });
+  if (!c.ok) throw new Error(`could not hand ${a.id} the question`);
+  await H.loadMemoryGraph();
+  const r = await (opts.run ?? runThroughOx)(a, c.task, briefFor(a, c.task, opts));
+  completeTask(task.id, { ...(opts.tasks ?? {}), owner: a.id, failed: !r.ok, result: String(r.output ?? '').slice(-2000) });
+  { const o = readOrg(opts); (o.runs[a.id] ??= []).push({ at: new Date().toISOString(), task: task.id, title: c.task.title, asked: question, ok: r.ok, said: String(r.output ?? '').trim().slice(-1500), by: opts.by ?? (process.env.OX_ORG_AGENT || 'you') }); writeOrg(o, opts); }
+  if (r.ok) curateAfter(a, c.task, r, opts);
+  return { ok: r.ok, answer: String(r.output ?? '').trim() || r.error || '' };
+}
+
+/** Work that came from a schedule or a trigger: on the board, then done now. */
+export async function runNow(id, prompt, opts = {}) {
+  const { task } = await tell(id, prompt, opts);
+  const b = await beat(id, opts);
+  return { task: task.id, ...b };
 }
 
 /** One agent's thread: its runs, newest last. */
