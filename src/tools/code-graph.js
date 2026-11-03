@@ -9,11 +9,11 @@ import path from 'node:path';
 
 export const CODE_GRAPH_TOOL_SCHEMAS = Object.freeze([{
   name: 'code_graph',
-  description: "Ask the project's code graph (files, functions, classes; imports, calls, definitions) instead of grepping or reading whole files. Precise answers with line ranges (read just those lines after): 'callers' and 'callees' of a function, its 'definition' (file, lines, signature), a file's 'outline' (every function and class with its lines). Broader: 'explain' a symbol (where it is, what calls it, what it calls), 'path' between two symbols (how A reaches B), 'query' a plain-language question (the matching code and its neighbours), or 'overview' (most connected code and the subsystems). Every link says EXTRACTED (written in the source) or INFERRED (resolved by ox). Read-only; built from the code without a model.",
+  description: "Ask the project's code graph (files, functions, classes; imports, calls, definitions) instead of grepping or reading whole files. Precise answers with line ranges (read just those lines after): 'callers' and 'callees' of a function, its 'definition' (file, lines, signature), a file's 'outline' (every function and class with its lines). Broader: 'explain' a symbol (where it is, what calls it, what it calls), 'path' between two symbols (how A reaches B), 'query' a plain-language question (the matching code and its neighbours), or 'overview' (most connected code and the subsystems). For what is not code, 'knowledge': the project's docs, what ox remembers and the brain, as a graph; it answers a question in a few hundred tokens with where each line came from, instead of reading whole documents. Every link says EXTRACTED (written in the source) or INFERRED (resolved by ox). Read-only; built from the code without a model.",
   parameters: {
     type: 'object',
     properties: {
-      action: { type: 'string', enum: ['callers', 'callees', 'definition', 'outline', 'explain', 'path', 'query', 'overview'], description: 'What to ask.' },
+      action: { type: 'string', enum: ['callers', 'callees', 'definition', 'outline', 'explain', 'path', 'query', 'overview', 'knowledge'], description: 'What to ask.' },
       target: { type: 'string', description: "callers / callees / definition / explain: a function or class name. outline: a file path. query: the question. path: where to start." },
       to: { type: 'string', description: 'path only: where to end.' },
     },
@@ -48,6 +48,14 @@ export async function codeGraphTool(args = {}, ctx = {}) {
   const cwd = typeof ctx.cwd === 'string' && ctx.cwd ? ctx.cwd : process.cwd();
   const action = String(args.action ?? '').toLowerCase();
   const target = String(args.target ?? '').trim();
+  // Docs, memory and brain as a knowledge graph (src/knowledge-graph-docs.js), answered within a token budget.
+  if (action === 'knowledge') {
+    if (!target) return { content: "code_graph: 'knowledge' needs the question as target", isError: true };
+    const K = await import('../knowledge-graph-docs.js');
+    const kg = await K.knowledgeFor(cwd);
+    const r = K.queryKnowledge(kg, target, { budget: 800 });
+    return { content: r.text || `nothing in the project's docs, memory or brain matches "${target}"` };
+  }
   let g;
   try { g = graphFor(cwd); } catch (e) { return { content: `code_graph: could not build the graph: ${e?.message ?? e}`, isError: true }; }
   if (!g.nodes.length) return { content: 'code_graph: no code ox can read in this folder (JS/TS, Python, Go, Swift, Ruby, Java/Kotlin, Rust).', isError: true };

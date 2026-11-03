@@ -214,7 +214,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'knowledge', 'ecc', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -6121,6 +6121,54 @@ async function runSubcommand(cmd, args) {
       console.log(SUB_USAGE.hf); process.exitCode = 2;
       return;
     }
+    case 'ecc': {
+      // ECC (everything-claude-code, MIT): its skills, agents, commands and rules in ox (src/ecc.js).
+      const E = await import('./ecc.js');
+      const sub = String(args[0] ?? 'status').toLowerCase();
+      const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
+      const dir = E.fetchEcc({ update: sub === 'update', source: val('--from') });
+      const inv = E.inventory(dir);
+      if (sub === 'rules') {
+        const r = E.installRules(dir, args[1] ?? '');
+        console.log(`${c.green('✓')} ${r.file} ${c.dim(`(${r.chars.toLocaleString('en-US')} characters; ox reads it in this project)`)}`);
+        return;
+      }
+      if (sub === 'hooks') {
+        console.log(`ECC's hooks (not installed by ox: they run scripts on every tool call; read them first):\n${inv.hooks.map((h) => `  ${path.join(dir, 'hooks', h)}`).join('\n')}`);
+        return;
+      }
+      if (sub === 'install' || sub === 'update') {
+        const what = ['skills', 'agents', 'commands'].filter((k) => args.includes(`--${k}`));
+        const out = await E.installEcc(dir, { what: what.length ? what : ['skills', 'agents', 'commands'] });
+        for (const [k, r] of Object.entries(out)) {
+          console.log(`${c.green('✓')} ${k}: ${r.added} added${r.kept ? `, ${r.kept} already there` : ''}${r.refused.length ? c.yellow(`, ${r.refused.length} refused by ox's safety scan`) : ''}`);
+          for (const x of r.refused.slice(0, 8)) console.log(c.dim(`    ${x.name}: ${x.why}`));
+        }
+        console.log(c.dim(`Rules for a language, in this project: ox ecc rules typescript   ·   hooks: ox ecc hooks`));
+        return;
+      }
+      console.log(`${c.bold('ECC')} (everything-claude-code, MIT) at ${E.ECC_PIN.slice(0, 7)}: ${inv.skills.length} skills, ${inv.agents.length} agents, ${inv.commands.length} commands, rules for ${inv.rules.filter((x) => x !== 'common').length} languages, ${inv.hooks.length} hooks`);
+      console.log(c.dim('ox ecc install [--skills] [--agents] [--commands]   ·   ox ecc rules <language>   ·   ox ecc hooks   ·   ox ecc update'));
+      return;
+    }
+    case 'knowledge': {
+      // ox knowledge: docs, memory and brain as one graph (graphify's idea; src/knowledge-graph-docs.js).
+      const K = await import('./knowledge-graph-docs.js');
+      const sub = String(args[0] ?? 'report').toLowerCase();
+      const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
+      const g = await K.knowledgeFor(process.cwd(), { fresh: sub === 'build' });
+      if (sub === 'query' || sub === 'ask') {
+        const q = args.slice(1).filter((x, i, a) => !x.startsWith('--') && a[i - 1] !== '--budget').join(' ');
+        const r = K.queryKnowledge(g, q, { budget: Number(val('--budget')) || 800 });
+        console.log(r.text || c.dim('nothing matches'));
+        const s = K.savings(g, r);
+        if (r.text) console.log(c.dim(`\n${s.answer} tokens instead of ${s.whole.toLocaleString('en-US')} for the documents and memories it drew on (${s.times}× fewer)`));
+        return;
+      }
+      console.log(K.knowledgeReport(g));
+      console.log(c.dim('ox knowledge query "<question>" [--budget 800]   ·   ox knowledge build (rebuild now)'));
+      return;
+    }
     case 'personaplex': {
       // PersonaPlex (src/personaplex.js): full-duplex voice on your own NVIDIA GPU machine.
       const P = await import('./personaplex.js');
@@ -7551,6 +7599,15 @@ async function runSubcommand(cmd, args) {
     case 'bench': {
       const action = String(args[0] ?? '').trim().toLowerCase();
       const restArgs = args.slice(1);
+      if (action === 'graph') {
+        // What the code graph saves on this project: its answers against opening the files (src/graph-bench.js).
+        const G = await import('./graph-bench.js');
+        const qs = restArgs.filter((x) => !x.startsWith('-'));
+        const r = G.benchGraph(process.cwd(), qs.length ? { questions: qs } : {});
+        for (const x of r.rows) console.log(`  ${String(x.graph).padStart(6)} vs ${String(x.opened).padStart(8)} tokens  ${x.times}×  ${x.question}`);
+        console.log(c.green(`the code graph answered in ${r.times}× fewer tokens than opening the ${r.rows.reduce((s, x) => s + x.files, 0)} files it pointed to`) + c.dim(` (whole project: ${r.projectTokens.toLocaleString('en-US')} tokens)`));
+        return;
+      }
       if (action === 'desktop') {
         // What it costs to see an app: screenshot vs accessibility tree vs ox's list (src/desktop-bench.js).
         const val = (f) => { const i = restArgs.indexOf(f); return i >= 0 ? restArgs[i + 1] : null; };

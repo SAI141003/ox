@@ -207,14 +207,18 @@ export function renderSkillIndex(skills, cap = MAX_INDEX_SKILLS) {
 // model can open any of them (`<folder>/<name>/SKILL.md`). With no task, or
 // OX_FULL_SKILL_INDEX=1, this is the full index.
 export function renderFocusedSkillIndex(skills, task = '', { maxFull = 6 } = {}) {
-  const list = (Array.isArray(skills) ? skills : []).slice(0, MAX_INDEX_SKILLS);
+  // The ones that match the task are picked from every skill (a big library such
+  // as ECC's 300 must not hide its best match past the first 25); only the names
+  // of the others are capped, and what is past the cap is one line, not a list.
+  const all = Array.isArray(skills) ? skills : [];
+  const list = all.slice(0, MAX_INDEX_SKILLS);
   const words = (t) => new Set(String(t ?? '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3));
   const want = words(task);
   // OX_FULL_SKILL_INDEX=1 keeps every description. A task with no telling
   // words ("hey how are you") used to get the FULL index (7 KB on every turn of
   // a greeting); it gets the names alone now, like any skill that does not match.
   if (process.env.OX_FULL_SKILL_INDEX === '1') return renderSkillIndex(list);
-  const scored = list.map((s) => {
+  const scored = all.map((s) => {
     const have = words(`${s.name.replace(/-/g, ' ')} ${s.description}`);
     let n = 0;
     for (const w of want) if (have.has(w)) n++;
@@ -231,6 +235,8 @@ export function renderFocusedSkillIndex(skills, task = '', { maxFull = 6 } = {})
     byRoot.get(root).push(s.name);
   }
   for (const [root, names] of byRoot) parts.push(`- also: ${names.join(', ')} (read ${root}/<name>/SKILL.md)`);
+  const past = all.length - list.length - full.filter((x) => !list.includes(x)).length;
+  if (past > 0) parts.push(`- and ${past} more skill${past === 1 ? '' : 's'} (ox skill list, or read <folder>/<name>/SKILL.md)`);
   return parts.join('\n');
 }
 
