@@ -214,7 +214,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -542,6 +542,8 @@ function usageAll() {
     '  ox skill from <book.pdf|folder>   a book or docs → a skill: an index plus chapters read only when needed',
     '',
     'search: ox search [setup | status | stop]   your own open-source web search (SearXNG), no key',
+    'proactive: ox proactive [run]   morning cards: loose ends (calendar, mail, messages waiting, dates you mentioned) with the next step prepared; never sent',
+    'reply: ox reply [--print] [--style] [what to say]   Double Tap: drafts the reply to the conversation on screen in your voice, unsent where your cursor is (island: double-tap right ⌘)',
     'swarm: ox swarm <url> [--agents 12] [--headless]   many agents review a page at once (contrast, labels, tap size, overflow); you watch them work. --app "<name>" reviews a desktop app (agent-desktop)',
     'library: ox library [add <url|pdf> | foresight <export> | read | ask <id> "q" | search]   saved articles and local meeting exports; highlight and ask in the app',
     'commands: ox commands [list | install [--claude] [--codex] [--cursor] | uninstall]   every ox command as /name, here and inside Claude Code, Codex, Cursor',
@@ -4946,6 +4948,53 @@ async function runSubcommand(cmd, args) {
     case 'pr':
       await cmdPr(args);
       return;
+    case 'proactive': {
+      // ox proactive [run]: the morning cards (src/proactive.js): loose ends with the next step prepared, never done for you.
+      const P = await import('./proactive.js');
+      if (args[0] === 'run') {
+        const { workingModelSpec } = await import('./working-model.js');
+        const { quickText } = await import('./quick-text.js');
+        const cfg = loadConfig();
+        const target = resolveBot(await workingModelSpec(cfg, { say: () => {} }), cfg);
+        process.stderr.write(c.dim('looking for loose ends…\n'));
+        const r = await P.prepareCards({ ask: async ({ system, user }) => (await quickText(target, { system, user, maxTokens: 1500 })).text });
+        console.log(c.dim(`${r.items.length} things looked at (${[...new Set(r.items.map((i) => i.source))].join(', ') || 'none open'})`));
+      }
+      const { at, cards } = P.readCards();
+      if (!cards.length) { console.log(c.dim(at ? 'nothing needs you right now' : 'no cards yet: ox proactive run (or wait for tonight)')); return; }
+      for (const [i, cd] of cards.entries()) console.log(`\n${c.bold(`${i + 1}. ${cd.title}`)}${cd.source ? c.dim(`  · ${cd.source}`) : ''}\n${c.dim(cd.why)}\n${cd.prepared}`);
+      console.log(c.dim(`\nprepared ${new Date(at).toLocaleString()} · nothing was sent or done`));
+      return;
+    }
+    case 'reply': {
+      // ox reply [--print] [--style] [what it should say]: Double Tap. Drafts the reply to the
+      // conversation on screen in your voice and pastes it, unsent, where your cursor is.
+      const D = await import('./double-tap.js');
+      if (args.includes('--style')) {
+        const st = D.ensureStyle();
+        console.log(`${st.created ? `${c.green('✓')} made` : 'your'} writing examples: ${st.file}${st.created ? c.dim(st.examples ? ` (${st.examples} of your sent messages)` : ' (a template: paste a few messages you have sent)') : ''}`);
+        if (process.platform === 'darwin') spawnSync('open', ['-t', st.file]);
+        return;
+      }
+      const { workingModelSpec } = await import('./working-model.js');
+      const { quickText } = await import('./quick-text.js');
+      const cfg = loadConfig();
+      const target = resolveBot(await workingModelSpec(cfg, { say: () => {} }), cfg);
+      const instruction = args.filter((a) => !a.startsWith('--')).join(' ');
+      try {
+        const r = await D.draftReply({ instruction, ask: async ({ system, user }) => (await quickText(target, { system, user, maxTokens: 600 })).text });
+        if (!r.draft) { console.error(c.red('✗ the model returned nothing')); process.exitCode = 1; return; }
+        if (args.includes('--print') || process.platform !== 'darwin') { console.log(r.draft); return; }
+        const mc = await import('./mac-control.js');
+        const t = await mc.typeText({ text: r.draft });
+        if (t.isError) { console.log(r.draft); console.error(c.dim(`(could not paste it: ${t.text})`)); return; }
+        console.log(`${c.green('✓')} drafted in ${r.app ?? 'the front app'}, not sent: read it, change it, send it yourself`);
+      } catch (e) {
+        console.error(c.red(`✗ ${e.message}`));
+        process.exitCode = 1;
+      }
+      return;
+    }
     case 'swarm': {
       // ox swarm <url> [--agents 12] [--headless] [--pace 220]: many agents review a page at once, and you watch.
       const appI = args.indexOf('--app');

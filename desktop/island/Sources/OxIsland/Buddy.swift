@@ -841,3 +841,53 @@ struct Arrow: Shape {
         return p
     }
 }
+
+// MARK: - double-tap right ⌘: Double Tap (ox reply)
+
+/// Two quick taps of the right ⌘ key, nothing else pressed in between, with the
+/// cursor in a reply box: ox drafts the reply in your voice and leaves it unsent
+/// (`ox reply`, src/double-tap.js). Off with `defaults write dev.ox.island doubletap.reply -bool NO`.
+enum RightCommandDoubleTap {
+    private static var monitors: [Any] = []
+    private static var downAt: Date?
+    private static var lastTapAt: Date?
+    private static var otherKey = false
+    private static var running = false
+
+    static var enabled: Bool { UserDefaults.standard.object(forKey: "doubletap.reply") as? Bool ?? true }
+
+    static func install() {
+        let flags: (NSEvent) -> Void = { e in
+            guard enabled, e.keyCode == 54 else { return }   // 54: the right ⌘
+            let others: NSEvent.ModifierFlags = [.option, .control, .shift, .function]
+            if e.modifierFlags.contains(.command), e.modifierFlags.intersection(others).isEmpty {
+                downAt = Date(); otherKey = false
+            } else if let d = downAt {
+                downAt = nil
+                guard !otherKey, Date().timeIntervalSince(d) < 0.3 else { lastTapAt = nil; return }
+                if let last = lastTapAt, Date().timeIntervalSince(last) < 0.4 { lastTapAt = nil; fire() } else { lastTapAt = Date() }
+            }
+        }
+        // ⌘C, ⌘V and the like are shortcuts, not a tap.
+        let key: (NSEvent) -> Void = { _ in otherKey = true; lastTapAt = nil }
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: flags) { monitors.append(m) }
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: key) { monitors.append(m) }
+    }
+
+    private static func fire() {
+        guard !running, let ox = OxRunner.paths() else { return }
+        running = true
+        IslandLog.write("double tap: drafting a reply")
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: ox.node)
+        p.arguments = [ox.cli, "reply"]
+        p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+        let out = Pipe(); p.standardOutput = out; p.standardError = out
+        p.terminationHandler = { proc in
+            let said = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            IslandLog.write("double tap: \(proc.terminationStatus == 0 ? "done" : "failed") \(said.suffix(200))")
+            running = false
+        }
+        do { try p.run() } catch { running = false; IslandLog.write("double tap: \(error.localizedDescription)") }
+    }
+}

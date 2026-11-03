@@ -221,8 +221,13 @@ export function sleepAll({ home = os.homedir(), cwd = process.cwd(), now = Date.
 export function startSleepCycle({ home = os.homedir(), cwd = process.cwd(), everyMs = 6 * 3600_000 } = {}) {
   if (process.env.NODE_TEST_CONTEXT || process.env.OX_MEMORY === '0') return () => {};
   // The rule-based tidy, then learning what the rules missed (memory-extract.js).
-  const run = () => { try { sleepAll({ home, cwd }); } catch {} import('./memory-extract.js').then((x) => x.learnInBackground({ home })).catch(() => {}); };
+  const run = () => {
+    try { sleepAll({ home, cwd }); } catch {}
+    import('./memory-extract.js').then((x) => x.learnInBackground({ home })).catch(() => {});
+  };
   const first = setTimeout(run, 30_000); first.unref?.();
   const t = setInterval(run, everyMs); t.unref?.();
-  return () => { clearTimeout(first); clearInterval(t); };
+  // Checked hourly; runs once a night after 2 AM: the morning's proactive cards (src/proactive.js).
+  const night = setInterval(() => { import('./proactive.js').then((P) => P.prepareTonight()).catch(() => {}); }, 3600_000); night.unref?.();
+  return () => { clearTimeout(first); clearInterval(t); clearInterval(night); };
 }

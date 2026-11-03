@@ -50,7 +50,7 @@ export function brainChanges(dir, { now = Date.now() } = {}) {
 /**
  * The brief from its parts (every part optional). → { needsYou, changed, schedule, ready, text }
  */
-export function compose({ events = null, unread = null, tasks = [], agents = [], prs = null, commits = [], notes = [], name = '', now = new Date(), needs = null } = {}) {
+export function compose({ events = null, unread = null, tasks = [], agents = [], prs = null, commits = [], notes = [], name = '', now = new Date(), needs = null, cards = [] } = {}) {
   const needsYou = [];
   // The full list (src/needs-you.js) when it was read: GitHub reviews, failing
   // checks, changes requested, assigned issues, failed routines, with links.
@@ -69,6 +69,8 @@ export function compose({ events = null, unread = null, tasks = [], agents = [],
     ...notes.filter((n) => !n.research).slice(0, 5).map((n) => `Note: ${n.title}`),
   ];
   const ready = [
+    // Prepared overnight (src/proactive.js): open with `ox proactive`; nothing was sent.
+    ...cards.map((c) => `Prepared: ${c.title} (ox proactive)`),
     ...notes.filter((n) => n.research).map((n) => `Research ready: ${n.title.replace(/^research-/, '').replace(/-/g, ' ')}`),
     ...(prs?.open ? [`${prs.open} open pull request${prs.open === 1 ? '' : 's'}${prs.failing ? '' : ', checks passing'}`] : []),
   ];
@@ -108,5 +110,7 @@ export async function brief({ home = os.homedir() } = {}) {
   if (gh.status === 0) { try { const n = JSON.parse(gh.stdout).data.viewer.pullRequests.nodes; prs = { open: n.length, failing: n.filter((x) => ['FAILURE', 'ERROR'].includes(x.commits.nodes[0]?.commit?.statusCheckRollup?.state)).length }; } catch {} }
   let needs = null;
   try { needs = await (await import('./needs-you.js')).needsYou(); } catch {}
-  return compose({ events: todaysEvents(), unread: unreadMail(), tasks, agents, prs, commits: recentCommits(projects), notes: brainChanges(B.brainDir()), needs });
+  let cards = [];
+  try { const c = (await import('./proactive.js')).readCards(); if (c.at && Date.now() - c.at < DAY) cards = c.cards; } catch {}
+  return compose({ events: todaysEvents(), unread: unreadMail(), tasks, agents, prs, commits: recentCommits(projects), notes: brainChanges(B.brainDir()), needs, cards });
 }
