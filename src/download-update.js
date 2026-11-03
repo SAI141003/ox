@@ -81,10 +81,12 @@ async function download(url, file, fetchImpl) {
 
 const sha256 = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
-function attest(file) {
-  // The GitHub CLI is optional. When it is here, its check must pass.
-  if (spawnSync('gh', ['--version'], { stdio: 'ignore' }).status !== 0) return { checked: false };
-  const r = spawnSync('gh', ['attestation', 'verify', file, '--repo', REPO], { encoding: 'utf8', timeout: 60_000 });
+export function attest(file, run = spawnSync) {
+  // The GitHub CLI is optional. Signed in, its check must pass. Not signed in, it
+  // gives no verdict at all, which says nothing about the file.
+  if (run('gh', ['--version'], { stdio: 'ignore' }).status !== 0) return { checked: false };
+  if (run('gh', ['auth', 'status'], { stdio: 'ignore' }).status !== 0) return { checked: false, why: 'gh is not signed in' };
+  const r = run('gh', ['attestation', 'verify', file, '--repo', REPO], { encoding: 'utf8', timeout: 60_000 });
   if (r.status !== 0) throw new Error(`GitHub could not verify who built this file: ${String(r.stderr || r.stdout).trim().split('\n').slice(-1)[0]}`);
   return { checked: true };
 }

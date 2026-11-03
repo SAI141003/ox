@@ -34,7 +34,13 @@ if (-not $want) { Remove-Item $zip; throw "the checksum file for ${name} is empt
 $have = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
 if ($want.ToLower() -ne $have) { Remove-Item $zip; throw "checksum mismatch for ${name}: expected $want, got $have. Nothing was installed." }
 Write-Host "checksum ok: $have"
+# gh gives no verdict until it is signed in, which says nothing about the file.
+$ghReady = $false
 if (Get-Command gh -ErrorAction SilentlyContinue) {
+  gh auth status *> $null
+  if ($LASTEXITCODE -eq 0) { $ghReady = $true } else { Write-Host '  (the GitHub CLI is not signed in: checked the checksum only. gh auth login adds the check of who built it)' }
+}
+if ($ghReady) {
   gh attestation verify $zip --repo $repo *> $null
   if ($LASTEXITCODE -ne 0) { Remove-Item $zip; throw "GitHub could not confirm $name was built by $repo's release workflow. Nothing was installed." }
   Write-Host "built by $repo's release workflow (GitHub attestation)"

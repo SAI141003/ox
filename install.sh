@@ -46,7 +46,10 @@ fetch_checked() {
   have="$(sha256 "$tmp/$name")"
   [ -n "$want" ] && [ "$want" = "$have" ] || die "checksum mismatch for $name: expected $want, got $have. Nothing was installed."
   say "✓ checksum $have"
-  if command -v gh >/dev/null 2>&1; then
+  # gh gives no verdict until it is signed in, which says nothing about the file.
+  if command -v gh >/dev/null 2>&1 && ! gh auth status >/dev/null 2>&1; then
+    say "  (the GitHub CLI is not signed in: checked the checksum only. gh auth login adds the check of who built it)"
+  elif command -v gh >/dev/null 2>&1; then
     if gh attestation verify "$tmp/$name" --repo "$REPO" >/dev/null 2>&1; then
       say "✓ built by $REPO's release workflow (GitHub attestation)"
     else

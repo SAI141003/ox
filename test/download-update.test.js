@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  applyDownload, assetFor, checkDownload, compareVersions, isDownloadCopy, appBundleOf, latestRelease,
+  applyDownload, assetFor, attest, checkDownload, compareVersions, isDownloadCopy, appBundleOf, latestRelease,
 } from '../src/download-update.js';
 
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
@@ -184,4 +184,12 @@ test('apply: other systems are told to run the installer, not handed a half upda
   const r = await applyDownload({ root, fetchImpl: fakeRelease().fetchImpl, platform: 'win32', arch: 'x64' });
   assert.equal(r.ok, false);
   assert.match(r.why, /run the installer again/);
+});
+
+test('who built it: no gh, or gh not signed in, is no verdict; signed in, a failure refuses', () => {
+  const runner = (answers) => (_cmd, args) => ({ status: answers[args[0]] ?? 0, stdout: '', stderr: 'no attestation found' });
+  assert.deepEqual(attest('f', runner({ '--version': 1 })), { checked: false });
+  assert.deepEqual(attest('f', runner({ auth: 1 })), { checked: false, why: 'gh is not signed in' });
+  assert.deepEqual(attest('f', runner({})), { checked: true });
+  assert.throws(() => attest('f', runner({ attestation: 1 })), /could not verify who built/);
 });

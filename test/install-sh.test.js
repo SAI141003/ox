@@ -39,7 +39,7 @@ if [ -n "$out" ] && [ "$out" != "/dev/null" ]; then cp "$f" "$out"; else cat "$f
 `, { mode: 0o755 });
   fs.writeFileSync(path.join(bin, 'pkill'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
   fs.writeFileSync(path.join(bin, 'open'), `#!/bin/sh\necho opened >> "${root}/opened"\n`, { mode: 0o755 });
-  if (gh) fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\nexit ${gh === 'ok' ? 0 : 1}\n`, { mode: 0o755 });
+  if (gh) fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/sh\nif [ "$1" = auth ]; then exit ${gh === 'signed-out' ? 1 : 0}; fi\nexit ${gh === 'ok' ? 0 : 1}\n`, { mode: 0o755 });
   return { root, home, bin, sum };
 }
 const run = ({ home, bin }) => spawnSync('sh', [path.resolve('install.sh')], { encoding: 'utf8', env: { HOME: home, PATH: `${bin}:/usr/bin:/bin:/usr/sbin:/sbin` } });
@@ -76,4 +76,13 @@ test('with gh, a release GitHub cannot attest is refused', { skip: !mac }, () =>
   const ok = setup({ gh: 'ok' });
   assert.match(run(ok).stdout, /built by SAI141003\/ox's release workflow/);
   for (const s of [bad, ok]) fs.rmSync(s.root, { recursive: true, force: true });
+});
+
+test('gh not signed in gives no verdict: the checksum decides, and it says so', { skip: !mac }, () => {
+  const out = setup({ gh: 'signed-out' });
+  const r = run(out);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /not signed in: checked the checksum only/);
+  assert.ok(installed(out.home));
+  fs.rmSync(out.root, { recursive: true, force: true });
 });
