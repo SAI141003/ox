@@ -423,11 +423,11 @@ export async function startNode(o = {}) {
     if (msg.op === 'ping') return reply({ name: me.name, at: Date.now() });
     if (msg.op === 'stats') { if (!grants.status) return refuse('status is not allowed'); return reply(await stats({ ollamaUrl, runs: o.runs?.() ?? 0, plans: (await o.plans?.()) ?? null })); }
     if (msg.op === 'infer') {
-      if (!grants.infer) return refuse(`${me.name} does not allow model calls from ${peer.name}: on ${me.name}, run  ox mesh allow "${peer.name}" infer`);
+      if (!grants.infer) return refuse(`${me.name} does not allow model calls from ${peer.name} yet. Its owner can turn on Answer chats in OX › Settings › Offline & devices › Manage ${peer.name}, or run  ox mesh allow "${peer.name}" infer`);
       return infer(ch, msg, refuse);
     }
     if (msg.op === 'run') {
-      if (!grants.tasks) return refuse(`${me.name} does not allow tasks from ${peer.name}: on ${me.name}, run  ox mesh allow "${peer.name}" tasks`);
+      if (!grants.tasks) return refuse(`${me.name} does not allow tasks from ${peer.name} yet. Its owner can turn on Run tasks in OX › Settings › Offline & devices › Manage ${peer.name}, or run  ox mesh allow "${peer.name}" tasks`);
       return runTask(ch, msg, refuse);
     }
     // The machine's makeup, its agent sessions, its shared folders (src/mesh-services.js).

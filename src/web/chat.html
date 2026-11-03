@@ -5205,7 +5205,7 @@ files: [src/billing/**]
           $('od-join-state').textContent = at ? `Connecting to ${at}…` : 'Looking for the computer that made this code on your network (up to 15 seconds)…';
           try {
             const r = await postJson('/ox/mesh/join', { code, ...(at ? { at } : {}) });
-            toast(`Paired with ${r.paired.name}`);
+            toast(`Paired with ${r.paired.name}. Chats need Answer chats turned on, here and on ${r.paired.name}: Manage ${r.paired.name}.`);
             renderSection();
           } catch (e) { $('od-join-state').textContent = e.message; b.disabled = false; }
         };
@@ -5221,6 +5221,16 @@ files: [src/billing/**]
               <div class="section-cap cap" style="margin-top:14px">Coding sessions</div><div class="cards">${agentList}</div>
               <div class="section-cap cap" style="margin-top:14px">Copy a file to this machine</div><p class="small muted">The remote owner must separately allow <code>files-write</code>. Ox writes one file atomically inside a shared folder; uploads are limited to 8 MB and never overwrite without your explicit choice.</p><input class="field" id="od-push-file" type="file"><input class="field" id="od-push-path" placeholder="Destination path inside a shared folder on ${esc(machine)}" style="margin-top:8px"><div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn ghost" id="od-push">Copy file</button><label class="small muted"><input type="checkbox" id="od-push-overwrite"> Replace an existing file</label><span class="small muted" id="od-push-state"></span></div>
               <div class="section-cap cap" style="margin-top:14px">Run an Ox task there</div><p class="small muted">The other computer must first allow this Mac to run tasks. Ox will apply that computer’s own approval policy; this is not a raw shell.</p><textarea class="field" id="od-task" rows="3" placeholder="Run tests, inspect the failure, fix it, and report what changed."></textarea><input class="field" id="od-cwd" placeholder="Optional folder on ${esc(machine)}" style="margin-top:8px"><div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn primary" id="od-run">Run task</button><span class="small muted" id="od-run-state"></span></div><pre class="box mono small" id="od-run-output" style="display:none;max-height:240px;overflow:auto;white-space:pre-wrap"></pre>`;
+            // What this Mac lets the other one do. Chats from it need Answer chats; each computer decides for itself.
+            const granted = peers.find((p) => p.name === machine)?.grants ?? {};
+            const grantRow = (g, label, why) => `<label class="small" style="display:flex;gap:8px;align-items:flex-start;margin-top:8px"><input type="checkbox" data-od-grant="${g}" ${granted[g] ? 'checked' : ''}><span><b>${label}</b><br><span class="muted">${why}</span></span></label>`;
+            box.insertAdjacentHTML('afterbegin', `<div class="section-cap cap" style="margin-top:18px">What ${esc(machine)} may use on this Mac</div>${grantRow('infer', 'Answer chats', `${esc(machine)} can chat with this Mac’s models.`)}${grantRow('tasks', 'Run tasks', `${esc(machine)} can start ox tasks here, under this Mac’s approvals.`)}`);
+            box.querySelectorAll('[data-od-grant]').forEach((c) => (c.onchange = async () => {
+              const on = c.checked; c.disabled = true;
+              try { await postJson(`/ox/mesh/${on ? 'allow' : 'deny'}`, { machine, grant: c.dataset.odGrant }); toast(on ? 'Allowed' : 'Turned off'); }
+              catch (e) { c.checked = !on; toast(e.message); }
+              finally { c.disabled = false; }
+            }));
             $('od-push').onclick = async () => {
               const file = $('od-push-file').files?.[0], destination = $('od-push-path').value.trim(), state = $('od-push-state');
               if (!file || !destination) return toast('Choose a file and destination first');
