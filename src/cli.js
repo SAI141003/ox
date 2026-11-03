@@ -214,7 +214,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
+const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -542,6 +542,7 @@ function usageAll() {
     '  ox skill from <book.pdf|folder>   a book or docs → a skill: an index plus chapters read only when needed',
     '',
     'search: ox search [setup | status | stop]   your own open-source web search (SearXNG), no key',
+    'swarm: ox swarm <url> [--agents 12] [--headless]   many agents review a page at once (contrast, labels, tap size, overflow); you watch them work',
     'library: ox library [add <url|pdf> | foresight <export> | read | ask <id> "q" | search]   saved articles and local meeting exports; highlight and ask in the app',
     'commands: ox commands [list | install [--claude] [--codex] [--cursor] | uninstall]   every ox command as /name, here and inside Claude Code, Codex, Cursor',
     'theme: ox theme ["<look>" | list | use <name> | reset]   restyle the app from a sentence (neumorphic, glass, paper, terminal, contrast…)',
@@ -4945,6 +4946,30 @@ async function runSubcommand(cmd, args) {
     case 'pr':
       await cmdPr(args);
       return;
+    case 'swarm': {
+      // ox swarm <url> [--agents 12] [--headless] [--pace 220]: many agents review a page at once, and you watch.
+      const url = args.find((a) => !a.startsWith('--') && args[args.indexOf(a) - 1] !== '--agents' && args[args.indexOf(a) - 1] !== '--pace');
+      if (!url) { process.stderr.write('usage: ox swarm <url> [--agents 12] [--headless] [--pace 220]\n'); process.exitCode = 3; return; }
+      const num = (flag, d) => { const i = args.indexOf(flag); const n = i >= 0 ? Number(args[i + 1]) : NaN; return Number.isFinite(n) ? n : d; };
+      const { runSwarmReview } = await import('./swarm-review.js');
+      let last = '';
+      try {
+        const r = await runSwarmReview(url, {
+          agents: num('--agents', 12), pace: num('--pace', 220), headless: args.includes('--headless'),
+          onProgress: (st) => { const line = `${st.done}/${st.total} layers · ${st.n} found`; if (line !== last && process.stderr.isTTY) { process.stderr.write(`\r${c.dim(line)}   `); last = line; } },
+        });
+        if (process.stderr.isTTY) process.stderr.write('\r');
+        console.log(`${c.green('✓')} ${r.agents} agents checked ${r.total} layers: ${r.findings.length} problem${r.findings.length === 1 ? '' : 's'}`);
+        const byKind = {};
+        for (const f of r.findings) byKind[f.kind] = (byKind[f.kind] ?? 0) + 1;
+        for (const [k, n] of Object.entries(byKind).sort((a, b) => b[1] - a[1])) console.log(`  ${String(n).padStart(3)}  ${k}`);
+        console.log(c.dim(`report: ${r.reportFile}\nscreenshot: ${r.screenshot}`));
+      } catch (e) {
+        console.error(c.red(`✗ ${e.message}`));
+        process.exitCode = 1;
+      }
+      return;
+    }
     case 'search': {
       // ox search [setup | status | start | stop]: your own open-source web search (SearXNG).
       const S = await import('./searxng.js');
