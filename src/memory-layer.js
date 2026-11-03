@@ -220,7 +220,8 @@ export function sleepAll({ home = os.homedir(), cwd = process.cwd(), now = Date.
 /** Sleep the user graph (and this project's) now and every few hours, off the request path. */
 export function startSleepCycle({ home = os.homedir(), cwd = process.cwd(), everyMs = 6 * 3600_000 } = {}) {
   if (process.env.NODE_TEST_CONTEXT || process.env.OX_MEMORY === '0') return () => {};
-  const run = () => { try { sleepAll({ home, cwd }); } catch {} };
+  // The rule-based tidy, then learning what the rules missed (memory-extract.js).
+  const run = () => { try { sleepAll({ home, cwd }); } catch {} import('./memory-extract.js').then((x) => x.learnInBackground({ home })).catch(() => {}); };
   const first = setTimeout(run, 30_000); first.unref?.();
   const t = setInterval(run, everyMs); t.unref?.();
   return () => { clearTimeout(first); clearInterval(t); };

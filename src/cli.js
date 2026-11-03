@@ -5897,6 +5897,15 @@ async function runSubcommand(cmd, args) {
       const file = project ? projFile : userFile;
       const day = mg.fmtDay;
       const row = (m) => `${c.dim(m.id)}  ${m.text}  ${c.dim(`${m.kind} · ${day(m.createdAt)}${m.strength > 1 ? ` · said ${m.strength}×` : ''}${m.updates ? ' · replaced an older fact' : ''}${m.expiresAt ? ` · until ${day(m.expiresAt)}` : ''}`)}`;
+      if (sub === 'learn') {
+        // The background learning pass, now: what you said that the rules missed, read by a model.
+        const X = await import('./memory-extract.js');
+        const r = await X.learnInBackground();
+        if (!r) { console.log(c.dim('learning is off (OX_LEARN=0)')); return; }
+        console.log(`${c.green('✓')} read ${r.read} statement${r.read === 1 ? '' : 's'}${r.model ? c.dim(` with ${r.model}`) : ''}: ${r.learned.length} learned${r.left ? `, ${r.left} left for next time` : ''}${r.embedded ? c.dim(` · ${r.embedded} given a meaning vector`) : ''}`);
+        for (const l of r.learned) console.log(`  ${c.dim(l.op)}  ${l.text}`);
+        return;
+      }
       if (sub === 'import-claude') {
         const sourceFile = words.find((a) => !String(a).startsWith('--'));
         if (!sourceFile) { console.log(c.red('usage: ox memory import-claude <export.md> [--apply]')); process.exitCode = 3; return; }

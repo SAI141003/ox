@@ -34,6 +34,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { screenPersistText } from './memory.js';
 import { noteMemoryEvent } from './memory-events.js';
+import { queueForExtraction } from './memory-extract.js';
 
 // The events log lives beside the user graph; a project graph logs there too.
 // A project graph's events go to the real home only outside the test runner, so
@@ -48,7 +49,8 @@ function logEvent(file, type, data) {
   if (home !== null) noteMemoryEvent(type, { ...data, scope: file.includes(`${path.sep}.agent${path.sep}`) ? 'project' : 'user' }, { home });
 }
 
-export const KINDS = Object.freeze(['fact', 'preference', 'event', 'lesson', 'procedure', 'derived']);
+// note: the user's own words, kept as said (searchable at once, never in the "always true" profile).
+export const KINDS = Object.freeze(['fact', 'preference', 'event', 'lesson', 'procedure', 'derived', 'note']);
 const DAY = 86_400_000;
 
 export function memoryFile(scope = 'user', { cwd = process.cwd(), home = os.homedir() } = {}) {
@@ -96,6 +98,38 @@ export function tokens(text) {
   return String(text ?? '').toLowerCase().replace(/[^\p{L}\p{N}._/@-]+/gu, ' ').split(/\s+/)
     .map((t) => stem(t.replace(/^[._/-]+|[._/-]+$/g, '')))
     .filter((t) => t.length > 1 && !STOP.has(t));
+}
+
+// Same thing, other words. Recall matched words only, so "Which company am I
+// employed by?" found nothing for "I work at Anthropic". Supermemory and Zep
+// close this with embeddings; these groups cover the everyday ones offline,
+// for free, in microseconds. A word in a group also counts as its concept.
+const CONCEPTS = [
+  ['job', /\b(work(s|ed|ing)?|job|jobs|employ(ed|er|ee|ment)?|company|companies|career|hired|office|workplace|colleague)\b/],
+  ['home', /\b(live[sd]?|living|city|town|home|moved|move|reside[sd]?|based|hometown|neighbou?rhood|address)\b/],
+  ['food', /\b(eat|eats|eating|food|foods|allerg(y|ic|ies)|diet|recipes?|meals?|vegan|vegetarian|peanuts?|gluten|lactose|dish(es)?|cuisine|dinner|lunch|breakfast)\b/],
+  ['hosting', /\b(host(s|ed|ing)?|deploy(s|ed|ing|ment|ments)?|server|servers|production|vercel|heroku|fly\.io|netlify|railway|render)\b/],
+  ['pet', /\b(pets?|dogs?|cats?|pupp(y|ies)|kittens?|hamster|parrot)\b/],
+  ['sibling', /\b(sisters?|brothers?|siblings?)\b/],
+  ['children', /\b(kids?|child|children|daughters?|sons?|baby|toddler)\b/],
+  ['partner', /\b(wife|husband|partner|spouse|girlfriend|boyfriend|fianc[ée]e?)\b/],
+  ['parent', /\b(mom|mum|mother|dad|father|parents?)\b/],
+  ['school', /\b(school|kindergarten|preschool|college|university|class(es)?|semester)\b/],
+  ['editor', /\b(editor|ide|vim|neovim|nvim|vscode|vs code|emacs|cursor|zed|jetbrains)\b/],
+  ['theme', /\b(theme|dark|light mode|appearance|colou?r scheme)\b/],
+  ['meeting', /\b(meetings?|standups?|stand-ups?|calls?|syncs?|1:1|one-on-one)\b/],
+  ['language', /\b(language|typescript|javascript|python|rust|golang|java|kotlin|swift|ruby|c\+\+)\b/],
+  ['packages', /\b(package manager|npm|pnpm|yarn|bun|pip|uv|poetry|cargo)\b/],
+  ['database', /\b(database|databases|db|postgres(ql)?|mysql|sqlite|mongo(db)?|redis)\b/],
+  ['style', /\b(answers?|repl(y|ies)|respon(se|ses|d)|format(ting)?|bullets?|bullet points?|concise|short|brief|verbose|detailed|tone|summar(y|ies|ise|ize))\b/],
+  ['health', /\b(allerg(y|ic|ies)|doctor|medicine|medication|health|sick|asthma|diabet(es|ic))\b/],
+];
+// Words that say nothing about WHAT a memory is about ("called", "name"): a match
+// on these alone is not a match ("What is my wife called?" got "My dog is called Biscuit").
+const GENERIC = new Set(['name', 'called', 'call', 'use', 'like', 'want', 'thing', 'get', 'go', 'know', 'tell', 'need', 'make', 'have', 'got', 'say', 'said']);
+export function concepts(text) {
+  const s = String(text ?? '').toLowerCase();
+  return CONCEPTS.filter(([, re]) => re.test(s)).map(([c]) => `~${c}`);
 }
 
 // Light stemming so "tests" finds "test" and "deploying" finds "deploy".
@@ -236,10 +270,15 @@ export function remember(text, {
   if (statement.length > 1000) return { op: 'refused', reason: 'too long to be one memory (1000 characters at most)' };
   const refusal = screenPersistText(statement, 'memory', 'ox memory');
   if (refusal) return { op: 'refused', reason: refusal };
-  const k = KINDS.includes(kind) ? kind : guessKind(statement);
   const ents = entities(statement);
   const slot = slotOf(statement, ents);
   const when = resolveWhen(statement, ref);
+  // A change to who you are or how you work ("I work at X now, started this
+  // week", "moved last month") is a lasting fact, whatever date it mentions:
+  // filed as an event it expired a week later and ox forgot where you work.
+  const durable = slot && /^(works-at|lives-in|name|is|prefers|uses)$/.test(slot.relation);
+  let k = KINDS.includes(kind) ? kind : guessKind(statement);
+  if (!KINDS.includes(kind) && k === 'event' && durable) k = 'fact';
   const all = load(file);
   const live = all.filter((m) => isLive(m, ref));
 
@@ -258,15 +297,17 @@ export function remember(text, {
     entities: ents, slot: slotOverride ?? (slot ? `${slot.subject}|${slot.relation}${slot.topic ? `|${slot.topic}` : ''}` : null),
     importance: Number.isFinite(importance) ? Math.max(1, Math.min(10, importance)) : (k === 'preference' ? 6 : k === 'lesson' ? 7 : k === 'event' ? 4 : 5),
     strength: 1, createdAt: ref, lastSeen: ref, validFrom: when?.at ?? ref, validTo: null,
-    expiresAt: k === 'event' && when ? when.until + DAY : null,
+    // Only something still to come runs out (an exam tomorrow); a past event fades with time instead.
+    expiresAt: k === 'event' && when && when.until >= ref ? when.until + DAY : null,
     state: 'active', latest: true, updates: null, extends: [], source,
   };
 
   // UPDATE: the same slot with a different value closes the old fact's validity.
   const changed = [];
   let previous = null;
-  if (memory.slot && (slotOverride || /\|(works-at|lives-in|prefers|uses|name|is)/.test(memory.slot))) {
-    previous = live.find((m) => m.slot === memory.slot && m.id !== memory.id);
+  // A note is the user's words as said: it neither replaces a fact nor is replaced by one.
+  if (k !== 'note' && memory.slot && (slotOverride || /\|(works-at|lives-in|prefers|uses|name|is)/.test(memory.slot))) {
+    previous = live.find((m) => m.slot === memory.slot && m.id !== memory.id && m.kind !== 'note');
     if (previous) {
       memory.updates = previous.id;
       changed.push({ ...previous, latest: false, validTo: memory.validFrom, supersededBy: memory.id });
@@ -306,16 +347,17 @@ export function history(id, { file }) {
 // ---- recall ----------------------------------------------------------------
 
 function bm25(docs, query) {
-  const q = [...new Set(tokens(query))];
+  // Only meaningful words and concepts count; a generic one alone never makes a match.
+  const q = [...new Set([...tokens(query).filter((t) => !GENERIC.has(t)), ...concepts(query)])];
   if (!q.length) return docs.map(() => 0);
-  const toks = docs.map((d) => tokens(`${d.text} ${(d.entities ?? []).join(' ')} ${String(d.slot ?? '').replace(/[|-]/g, ' ')}`));
+  const toks = docs.map((d) => { const t = `${d.text} ${(d.entities ?? []).join(' ')} ${String(d.slot ?? '').replace(/[|-]/g, ' ')}`; return [...tokens(t), ...concepts(t)]; });
   const avg = toks.reduce((a, t) => a + t.length, 0) / Math.max(1, toks.length) || 1;
   const df = new Map(q.map((t) => [t, toks.filter((d) => d.includes(t)).length]));
   const N = docs.length;
   return toks.map((d) => {
     let s = 0;
     for (const t of q) {
-      const f = d.filter((x) => x === t || (t.length > 3 && x.startsWith(t))).length;
+      const f = d.filter((x) => x === t || (t[0] !== '~' && t.length > 3 && x.startsWith(t))).length;
       if (!f) continue;
       const idf = Math.log(1 + (N - df.get(t) + 0.5) / (df.get(t) + 0.5));
       s += idf * ((f * 2.2) / (f + 1.2 * (0.25 + 0.75 * d.length / avg)));
@@ -324,31 +366,39 @@ function bm25(docs, query) {
   });
 }
 
-const HALF_LIFE = { event: 7, fact: 120, preference: 365, lesson: 180, procedure: 180, derived: 60 };
+const HALF_LIFE = { event: 7, fact: 120, preference: 365, lesson: 180, procedure: 180, derived: 60, note: 90 };
 
 // Ranked memories for a query. `at` asks what was true at that moment
 // (validity, not "latest"); `includeHistory` returns superseded facts too.
-export function recall(query, { file, k = 8, now = Date.now(), at = null, includeHistory = false } = {}) {
+// semantic: id → similarity of the question's meaning (memory-semantic.js), when an embedder is there.
+// On a measured set, right matches scored 0.54-0.72 and wrong ones 0.53-0.66
+// (nomic-embed-text): meaning alone cannot tell them apart below about 0.7. A
+// wrong memory in front of every run is worse than none, so a match on meaning
+// ALONE needs 0.7; below that it only helps rank what words or concepts found.
+export const SEM_MIN = Number(process.env.OX_MEMORY_SEM_MIN) || 0.7;
+export function recall(query, { file, k = 8, now = Date.now(), at = null, includeHistory = false, semantic = null } = {}) {
   const all = load(file).filter((m) => m.state === 'active');
   let pool;
   if (at != null) pool = all.filter((m) => m.validFrom <= at && (m.validTo == null || m.validTo > at));
   else pool = all.filter((m) => (includeHistory || m.latest !== false) && !(m.expiresAt && m.expiresAt < now));
   if (!pool.length) return [];
   const lex = bm25(pool, query);
-  const qEnts = new Set([...entities(query), ...tokens(query)]);
+  const qEnts = new Set([...entities(query), ...tokens(query).filter((t) => !GENERIC.has(t))]);
   // One hop over shared entities: memories linked to a strong lexical hit.
   const seeds = new Set(pool.filter((_, i) => lex[i] > 0).flatMap((m) => m.entities ?? []));
   const graph = pool.map((m) => (m.entities ?? []).reduce((s, e) => s + (qEnts.has(e) ? 2 : seeds.has(e) ? 1 : 0), 0));
   const recency = pool.map((m) => Math.pow(0.5, (now - (m.lastSeen ?? m.createdAt)) / DAY / (HALF_LIFE[m.kind] ?? 90)));
   const weight = pool.map((m) => (m.importance ?? 5) * (1 + Math.log(m.strength ?? 1)));
   const rank = (arr) => { const idx = arr.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]); const r = new Array(arr.length); idx.forEach(([, i], pos) => (r[i] = pos)); return r; };
-  const [rl, rg, rr, rw] = [rank(lex), rank(graph), rank(recency), rank(weight)];
+  const sem = pool.map((m) => (semantic ? semantic.get(m.id) ?? 0 : 0));
+  const SEM_RANK = 0.5;   // enough to order candidates the other signals found
+  const [rl, rg, rr, rw, rs] = [rank(lex), rank(graph), rank(recency), rank(weight), rank(sem)];
   const RRF = 60;
-  const relevant = pool.map((_, i) => lex[i] > 0 || graph[i] > 0);
+  const relevant = pool.map((_, i) => lex[i] > 0 || graph[i] > 0 || sem[i] >= SEM_MIN);
   const anyRelevant = relevant.some(Boolean);
   const scored = pool.map((m, i) => ({
     m,
-    score: (lex[i] > 0 ? 1 / (RRF + rl[i]) : 0) * 2 + (graph[i] > 0 ? 1 / (RRF + rg[i]) : 0) + 1 / (RRF + rr[i]) * 0.6 + 1 / (RRF + rw[i]) * 0.6,
+    score: (lex[i] > 0 ? 1 / (RRF + rl[i]) : 0) * 2 + (graph[i] > 0 ? 1 / (RRF + rg[i]) : 0) + (sem[i] >= SEM_MIN ? 2 : sem[i] >= SEM_RANK && (lex[i] > 0 || graph[i] > 0) ? 1 : 0) / (RRF + rs[i]) + 1 / (RRF + rr[i]) * 0.6 + 1 / (RRF + rw[i]) * 0.6,
   }));
   // A question nothing matches gets nothing back, not the most recent noise.
   if (String(query ?? '').trim()) {
@@ -365,7 +415,7 @@ export function profile({ file, now = Date.now(), maxStatic = 12, maxRecent = 8 
   const stable = live.filter((m) => ['preference', 'fact', 'lesson', 'procedure', 'derived'].includes(m.kind))
     .sort((a, b) => (b.strength ?? 1) * (b.importance ?? 5) - (a.strength ?? 1) * (a.importance ?? 5))
     .slice(0, maxStatic);
-  const lately = live.filter((m) => now - m.createdAt < 7 * DAY && !stable.includes(m))
+  const lately = live.filter((m) => m.kind !== 'note' && now - m.createdAt < 7 * DAY && !stable.includes(m))
     .sort((a, b) => b.createdAt - a.createdAt).slice(0, maxRecent);
   return { stable, lately, total: live.length };
 }
@@ -373,13 +423,13 @@ export function profile({ file, now = Date.now(), maxStatic = 12, maxRecent = 8 
 export const fmtDay = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 // The block put in front of a run: the profile, then what bears on this task.
-export function memoryPromptBlock({ cwd = process.cwd(), home = os.homedir(), task = '', now = Date.now() } = {}) {
+export function memoryPromptBlock({ cwd = process.cwd(), home = os.homedir(), task = '', now = Date.now(), relevantOverride = null } = {}) {
   if (process.env.OX_INCOGNITO === '1') return ''; // private: nothing about you goes in
   const userFile = memoryFile('user', { home });
   const projFile = memoryFile('project', { cwd });
   const p = profile({ file: userFile, now });
   const seen = new Set([...p.stable, ...p.lately].map((m) => m.id));
-  const relevant = task ? [...recall(task, { file: projFile, now, k: 6 }), ...recall(task, { file: userFile, now, k: 6 })].filter((m) => !seen.has(m.id)).slice(0, 8) : [];
+  const relevant = (relevantOverride ?? (task ? [...recall(task, { file: projFile, now, k: 6 }), ...recall(task, { file: userFile, now, k: 6 })] : [])).filter((m) => !seen.has(m.id)).slice(0, 8);
   const line = (m) => `- ${m.text}${m.kind === 'event' ? ` (${fmtDay(m.validFrom)})` : ''}`;
   const parts = [];
   if (p.stable.length) parts.push(`About the user (always true until they say otherwise):\n${p.stable.map(line).join('\n')}`);
@@ -393,6 +443,20 @@ export function memoryPromptBlock({ cwd = process.cwd(), home = os.homedir(), ta
     tokens: Math.ceil(block.length / 4), ids: [...p.stable, ...p.lately, ...relevant].map((m) => m.id), total: p.total,
   });
   return block;
+}
+
+/** memoryPromptBlock with recall by meaning when a local embedder is there (memory-semantic.js). */
+export async function memoryPromptBlockAsync(opts = {}) {
+  if (!opts.task || process.env.OX_INCOGNITO === '1') return memoryPromptBlock(opts);
+  try {
+    const S = await import('./memory-semantic.js');
+    if (!(await S.localEmbedder())) return memoryPromptBlock(opts);
+    const home = opts.home ?? os.homedir(), cwd = opts.cwd ?? process.cwd(), now = opts.now ?? Date.now();
+    const hits = [...await S.recallSemantic(opts.task, { file: memoryFile('project', { cwd }), now, k: 6 }), ...await S.recallSemantic(opts.task, { file: memoryFile('user', { home }), now, k: 6 })];
+    return memoryPromptBlock({ ...opts, relevantOverride: hits });
+  } catch {
+    return memoryPromptBlock(opts);
+  }
 }
 
 // ---- learning from what the user says -------------------------------------
@@ -411,7 +475,7 @@ const LEARNABLE = [
   // Said straight out: "remember that…", "from now on…", "my sister is Priya".
   /^(?:please\s+)?(?:remember|note|keep in mind)\s+(?:that\s+)?[^.!?\n]{4,200}/i,
   /\bfrom now on\b[^.!?\n]{3,160}/i,
-  /^my\s+(?:[\p{L}'-]+\s+){0,2}(?:is|are|was|lives|works|studies)\s+[^.!?\n]{2,120}/iu,
+  /^my\s+(?:[\p{L}'-]+\s+){0,2}(?:is|are|was|lives|works|studies|starts|started|has|have|goes|attends|likes|loves|turns|plays|moved)\s+[^.!?\n]{2,120}/iu,
 ];
 
 export function learnable(message) {
@@ -435,12 +499,29 @@ export function learnFromMessages(messages = [], { home = os.homedir(), source =
   if (process.env.OX_LEARN === '0' || incognito || process.env.OX_INCOGNITO === '1') return [];
   const file = memoryFile('user', { home });
   const done = [];
+  const missed = [];
   for (const m of messages) {
     if (m?.role !== 'user') continue;
-    for (const s of learnable(typeof m.content === 'string' ? m.content : '')) {
+    const text = typeof m.content === 'string' ? m.content : '';
+    const caught = learnable(text);
+    for (const s of caught) {
       const r = remember(s, { file, source, ref, scope: 'user' });
       if (r.op !== 'refused' && r.op !== 'noop') done.push(r);
     }
+    // The rest of what they said about themselves waits, word for word, for the
+    // background extraction pass (src/memory-extract.js).
+    for (const sentence of text.split(/(?<=[.!?\n])\s+/)) {
+      const t = sentence.trim();
+      if (t && !caught.some((c) => t.includes(c) || c.includes(t))) missed.push(t);
+    }
+  }
+  // ...and is kept as said right away, as a note: verbatim text is what recall
+  // matches best (arXiv 2601.00821), and a small extraction model drops things.
+  if (missed.length) {
+    try {
+      const queued = queueForExtraction(missed, { home, ref });
+      for (const t of queued) { const r = remember(t, { file, source, ref, scope: 'user', kind: 'note', importance: 3 }); if (r.op !== 'refused' && r.op !== 'noop') done.push(r); }
+    } catch {}
   }
   return done;
 }

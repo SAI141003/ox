@@ -963,8 +963,8 @@ async function handleChatCompletions(req, res) {
   if (!tool.noMemory && !incognito && process.env.OX_MEMORY !== '0')
   try {
     const { loadMemoryBlock } = await import('./memory.js');
-    const { memoryPromptBlock } = await import('./memory-graph.js');
-    memoryBlock = [loadMemoryBlock(process.cwd()), memoryPromptBlock({ cwd: process.cwd(), task: lastText })].filter(Boolean).join('\n\n');
+    const { memoryPromptBlockAsync } = await import('./memory-graph.js');
+    memoryBlock = [loadMemoryBlock(process.cwd()), await memoryPromptBlockAsync({ cwd: process.cwd(), task: lastText })].filter(Boolean).join('\n\n');
     memory = createMemoryApi(process.cwd());
   } catch {}
   // `ox_ui: 'live'` is sent by ox's own app, which can run interactive answers.

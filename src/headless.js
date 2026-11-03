@@ -12,7 +12,7 @@ import { buildContext, expandContextRefs } from './context.js';
 import { createCostBudget, currentCostBudget, formatCost } from './cost.js';
 import { runMaxModePlanning, resolveMaxMode } from './maxmode.js';
 import { createMemoryApi, loadMemoryBlock, writeSessionNote, writeEpisode } from './memory.js';
-import { memoryPromptBlock, learnFromMessages } from './memory-graph.js';
+import { memoryPromptBlock, memoryPromptBlockAsync, learnFromMessages } from './memory-graph.js';
 import { readMcpPolicyDocs, resolveAuxTarget } from './config.js';
 import { createSession, appendEvent, nextRewindId } from './session.js';
 import { discoverSkills, renderFocusedSkillIndex } from './skills.js';
@@ -67,7 +67,7 @@ export async function assembleCtx({ config, target, opts = {}, auxTarget = null 
   // bears on this task (src/memory-graph.js). OX_MEMORY=0 leaves the graph out.
   let graphBlock = '';
   if (process.env.OX_MEMORY !== '0') {
-    try { graphBlock = memoryPromptBlock({ cwd: config.cwd, task: String(opts.memoryTask ?? '') }); } catch {}
+    try { graphBlock = await memoryPromptBlockAsync({ cwd: config.cwd, task: String(opts.memoryTask ?? '') }); } catch {}
   }
   const memoryBlock = [loadMemoryBlock(config.cwd), graphBlock].filter(Boolean).join('\n\n');
   const basePersona = loadPersona({ cwd: config.cwd, enabled: config.soul !== false });
