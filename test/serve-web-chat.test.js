@@ -283,3 +283,15 @@ test('with an API key set the page loads, but the API it calls is locked', async
     delete process.env.OX_SERVE_API_KEY;
   }
 });
+
+test('a dead address loaded as a page offers a way back; an API call still gets JSON', async () => {
+  const page = await fetch(`${base}/ox/media/abcdef12/none.png`, { headers: { Accept: 'text/html' } });
+  assert.equal(page.status, 404);
+  assert.match(page.headers.get('content-type'), /text\/html/);
+  assert.match(await page.text(), /href="\/"/);
+  const api = await fetch(`${base}/ox/media/abcdef12/none.png`);
+  assert.equal(api.status, 404);
+  assert.equal((await api.json()).error.code, 'not_found');
+  assert.match(await (await fetch(`${base}/`)).text(), /media-over/, 'a made picture opens over the page, not in place of it');
+});
+

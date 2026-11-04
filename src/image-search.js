@@ -11,18 +11,33 @@ const CACHE = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.o
 const UA = { 'User-Agent': 'ox-agent/0.1 (local assistant; https://github.com/ox)' };
 const ALLOWED = /^https:\/\/(upload|thumb)\.wikimedia\.org\//;
 
+// The words that say what the picture is of. A search's top page can be about something
+// else entirely: "sports car 2d sketch" found a photo of an actress whose page mentions
+// cars. No page named for the subject means no picture, which is better than a wrong one.
+const NOT_THE_SUBJECT = new Set('the and for with from that this image images picture pictures photo photos sketch sketches drawing drawings illustration technical view side front back top art style 2d 3d'.split(' '));
+export function pageMatches(query, title) {
+  const words = (s) => String(s ?? '').toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  const stem = (w) => w.replace(/s$/, '');
+  const inTitle = new Set(words(title).map(stem));
+  const subject = words(query).filter((w) => w.length > 2 && !NOT_THE_SUBJECT.has(w));
+  return subject.some((w) => inTitle.has(stem(w)));
+}
+
 export async function findImage(query, { fetchImpl = fetch, width = 800 } = {}) {
   const q = String(query ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
   if (!q) return null;
   const key = crypto.createHash('sha1').update(`${q.toLowerCase()}|${width}`).digest('hex').slice(0, 20);
   const dir = CACHE();
   const file = path.join(dir, `${key}.img`), meta = path.join(dir, `${key}.json`);
-  if (fs.existsSync(file) && fs.existsSync(meta)) return { file, ...JSON.parse(fs.readFileSync(meta, 'utf8')) };
+  if (fs.existsSync(file) && fs.existsSync(meta)) {
+    const saved = JSON.parse(fs.readFileSync(meta, 'utf8'));
+    if (pageMatches(q, saved.title)) return { file, ...saved };
+  }
   const api = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(q)}&gsrlimit=5&prop=pageimages&piprop=thumbnail&pithumbsize=${width}&format=json&origin=*`;
   const r = await fetchImpl(api, { headers: UA, signal: AbortSignal.timeout(8000) });
   if (!r.ok) return null;
   const pages = Object.values((await r.json()).query?.pages ?? {}).filter((p) => p.thumbnail?.source).sort((a, b) => a.index - b.index);
-  const best = pages[0];
+  const best = pages.find((p) => pageMatches(q, p.title));
   if (!best || !ALLOWED.test(best.thumbnail.source)) return null;
   const img = await fetchImpl(best.thumbnail.source, { headers: UA, signal: AbortSignal.timeout(12000) });
   const type = img.headers.get('content-type') ?? '';

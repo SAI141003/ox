@@ -30,3 +30,16 @@ test('the best match is fetched once, cached, and only from Wikimedia', async ()
   assert.equal(await findImage('something else', { fetchImpl: evil }), null);
   assert.equal(await findImage('   '), null);
 });
+
+test('a page about something else is no picture at all', async () => {
+  const { pageMatches, findImage } = await import('../src/image-search.js');
+  assert.equal(pageMatches('sports car 2d sketch side view technical drawing', 'Jayne Mansfield'), false);
+  assert.equal(pageMatches('sports car 2d sketch', 'Sports car'), true);
+  assert.equal(pageMatches('Eiffel Tower at night', 'Eiffel Tower'), true);
+  assert.equal(pageMatches('golden retrievers', 'Golden Retriever'), true);
+  let fetched = 0;
+  const fetchImpl = async () => { fetched++; return { ok: true, json: async () => ({ query: { pages: { 1: { index: 1, pageid: 1, title: 'Jayne Mansfield', thumbnail: { source: 'https://upload.wikimedia.org/x.jpg' } } } } }) }; };
+  assert.equal(await findImage(`sports car sketch ${Date.now()}x`, { fetchImpl }), null);
+  assert.equal(fetched, 1, 'only the search: the wrong picture is never downloaded');
+});
+

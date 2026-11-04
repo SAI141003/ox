@@ -24,3 +24,20 @@ test('made files become /ox/media URLs; errors and other tools add nothing', () 
   assert.deepEqual(madeMedia({ type: 'tool-end', name: 'bash', content }), []);
   assert.deepEqual(madeMedia({ type: 'tool-end', name: 'create_media', content: '/Users/a/.ox/media/../../etc/passwd.png' }), []);
 });
+
+test('a mistyped request to make a picture is still one; real words near it are not', () => {
+  for (const s of ['hey crreate and image of sports car in 2d sketch', 'creat an imge of a cat', 'crate a video of a cat', 'genrate a pictre of a dog', 'make a skecth of a house']) {
+    assert.equal(wantsMediaMade(s), true, s);
+  }
+  for (const s of ['I created an image yesterday', 'create a mage for my game', 'create a proto for the api', 'crate the boxes', 'what is an image file', 'take a picture of this', 'build a crate for a video game page', 'create a video game with three levels']) {
+    assert.equal(wantsMediaMade(s), false, s);
+  }
+});
+
+test('a picture asked for reaches the tool as what to draw, with its kind', async () => {
+  const { mediaBrief } = await import('../src/serve.js');
+  assert.deepEqual(mediaBrief('hey crreate and image of sports car in 2d sketch'), { prompt: 'sports car in 2d sketch', kind: 'image' });
+  assert.deepEqual(mediaBrief('crate a vedio of a cat jumping'), { prompt: 'a cat jumping', kind: 'video' });
+  assert.deepEqual(mediaBrief('draw a red bicycle'), { prompt: 'draw a red bicycle', kind: 'image' });
+});
+
