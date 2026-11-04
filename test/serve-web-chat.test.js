@@ -295,3 +295,10 @@ test('a dead address loaded as a page offers a way back; an API call still gets 
   assert.match(await (await fetch(`${base}/`)).text(), /media-over/, 'a made picture opens over the page, not in place of it');
 });
 
+test('an answer leads somewhere: suggestions are on, and a form without a button gets one', async () => {
+  const html = await (await fetch(`${base}/`)).text();
+  assert.match(html, /prefs\.followups !== false/);
+  assert.match(html, /function deadEndForm/);
+  assert.match(html, /data-ol-go/);
+});
+

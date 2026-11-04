@@ -230,7 +230,7 @@ export function withCacheMarks(wire, { name, model, env = process.env } = {}) {
 }
 
 export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
-  return async function* streamChat({ model, messages, tools = [], apiKey, baseUrl, signal, maxTokens } = {}) {
+  return async function* streamChat({ model, messages, tools = [], apiKey, baseUrl, signal, maxTokens, reasoningEffort } = {}) {
     if (!baseUrl) throw new Error(`ox[${name}]: no baseUrl configured for OpenAI-compatible provider`);
     const body = { model, messages: withCacheMarks(toWireMessages(messages), { name, model }), stream: true };
     if (tools.length) {
@@ -246,6 +246,8 @@ export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
     // gets real numbers for local models instead of zeros.
     body.stream_options = { include_usage: true };
     if (maxTokens != null) body.max_tokens = maxTokens;
+    // NVIDIA's models accept this; other compatible hosts may refuse an unknown field.
+    if (reasoningEffort && name === 'nvidia') body.reasoning_effort = reasoningEffort;
     const headers = { 'content-type': 'application/json' };
     if (apiKey) headers.authorization = `Bearer ${apiKey}`;
     // A stalled provider (no reply, or a stream that stops sending) used to hold
