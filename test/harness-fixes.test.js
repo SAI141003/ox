@@ -301,10 +301,11 @@ test('memory: a request is not a memory, a fact stops growing, and a pass leaves
   assert.equal(worthKeeping('Clear caches and logs in my mac'), false);
   assert.equal(worthKeeping('In the Calculator app on my screen, do it for me: clear it, and tell me the result.'), false);
   assert.equal(worthKeeping('I moved to Berlin last spring with my family'), true);
-  const { remember, memoryFile, load } = await import('../src/memory-graph.js');
+  const { remember, load } = await import('../src/memory-graph.js');
   const { sleep } = await import('../src/memory-layer.js');
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-mem-'));
-  const file = memoryFile('user', { home });
+  // Its own file: the suite's OX_MEMORY_HOME is shared with every other test file.
+  const file = path.join(home, 'graph.jsonl');
   const { memory } = remember('My favourite food is biryani', { file, scope: 'user', kind: 'preference' });
   for (let i = 0; i < 60; i++) sleep({ file, home, recalls: new Map([[memory.id, 4]]) });
   assert.ok(load(file).find((m) => m.id === memory.id).strength <= 8);
