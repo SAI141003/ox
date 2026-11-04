@@ -553,7 +553,7 @@ function codexLine(j, st) {
   }
   if (j.type === 'turn.completed') {
     st.done = true;
-    if (j.usage) st.usage = { inputTokens: j.usage.input_tokens ?? 0, outputTokens: j.usage.output_tokens ?? 0 };
+    if (j.usage) st.usage = { inputTokens: j.usage.input_tokens ?? 0, outputTokens: j.usage.output_tokens ?? 0, cachedInputTokens: j.usage.cached_input_tokens ?? 0 };
   }
   if (j.type === 'turn.failed' || j.type === 'error') st.error = String(j.error?.message ?? j.message ?? 'codex failed');
   return ev;
@@ -846,6 +846,8 @@ async function* runSubscriptionOnce({ target, messages = [], ctx = {}, config = 
   signal?.removeEventListener?.('abort', onAbort);
 
   if (st.usage) yield { type: 'usage', ...st.usage, costUsd: null, model: st.model ?? target.model ?? target.bot, ...(st.estimateUsd != null ? { estimateUsd: st.estimateUsd } : {}), plan: target.subscription };
+  // What the usage log counts: without it a plan's runs never reached `ox usage`.
+  if (st.usage) yield { type: 'usage-total', ...st.usage, costUsd: null, model: st.model ?? target.model ?? target.bot };
   const failed = spawnError || st.error || (exitCode !== 0 && !signal?.aborted);
   if (failed) {
     // The line that says what went wrong, not the tail of a dumped object.

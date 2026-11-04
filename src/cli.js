@@ -6134,6 +6134,7 @@ async function runSubcommand(cmd, args) {
       // ECC (everything-claude-code, MIT): its skills, agents, commands and rules in ox (src/ecc.js).
       const E = await import('./ecc.js');
       const sub = String(args[0] ?? 'status').toLowerCase();
+      if (sub === 'move') { const r = E.moveEccSkills(); console.log(`${c.green('✓')} moved ${r.moved} ECC skills to ~/.ox/skills, where only ox reads them${r.kept ? c.dim(` (${r.kept} left: that name is already taken there)`) : ''}`); return; }
       const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
       const dir = E.fetchEcc({ update: sub === 'update', source: val('--from') });
       const inv = E.inventory(dir);

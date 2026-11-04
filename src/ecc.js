@@ -2,8 +2,10 @@
 // its skills, agents, commands and per-language rules, taken at a pinned
 // commit and put where ox already reads them.
 //
-//   skills    → ~/.agents/skills/<name> (where ox import puts skills), each one
-//               scanned by ox's skill denylist first; a refused one is named
+//   skills    → ~/.ox/skills/<name>, each one scanned by ox's skill denylist first;
+//               a refused one is named. Not ~/.agents/skills: other tools read that
+//               one too, and with ECC in it the ChatGPT plan's Codex spent about
+//               8,000 tokens a request on a list so long it dropped the descriptions
 //   agents    → ox agents (~/.ox/agents), as `ox import` turns subagents
 //   commands  → skills too (a command is a prompt you call by name)
 //   rules     → only when you ask, for one language: ox rules <lang> writes them
@@ -55,6 +57,34 @@ export function inventory(dir) {
   };
 }
 
+// Taken out at the owner's request; a later install must not put them back.
+const LEFT_OUT_AGENTS = new Set(['bengali-reviewer']);
+const oxSkillsDir = (home) => path.join(home, '.ox', 'skills');
+const isEccSkill = (dir) => { try { return /From ECC \(everything-claude-code/.test(fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf8')); } catch { return false; } };
+
+/**
+ * Move the ECC skills ox put in the shared ~/.agents/skills to ox's own folder.
+ * Only what carries ox's own ECC credit moves, never your other skills; a name
+ * already taken there stays where it is. Once is enough. → { moved, kept }
+ */
+export function moveEccSkills({ home = os.homedir() } = {}) {
+  const shared = path.join(home, '.agents', 'skills');
+  const dest = oxSkillsDir(home);
+  const out = { moved: 0, kept: 0 };
+  let names = [];
+  try { names = fs.readdirSync(shared); } catch { return out; }
+  for (const name of names) {
+    const from = path.join(shared, name);
+    if (!isEccSkill(from)) continue;
+    const to = path.join(dest, name);
+    if (fs.existsSync(to)) { out.kept++; continue; }
+    fs.mkdirSync(dest, { recursive: true });
+    fs.renameSync(from, to);
+    out.moved++;
+  }
+  return out;
+}
+
 /**
  * Put ECC into ox. what: any of skills, agents, commands. → { skills, agents,
  * commands: { added, kept, refused: [{ name, why }] } }
@@ -62,7 +92,8 @@ export function inventory(dir) {
 export async function installEcc(dir, { what = ['skills', 'agents', 'commands'], home = os.homedir(), env = process.env } = {}) {
   const inv = inventory(dir);
   const out = {};
-  const skillsDest = path.join(home, '.agents', 'skills');
+  moveEccSkills({ home });
+  const skillsDest = oxSkillsDir(home);
   const { scanSkillSource } = await import('./skill-add.js');
   const credit = (name, kind) => `\n\n---\n_From ECC (everything-claude-code by Affaan Mustafa, MIT), ${kind} \`${name}\` at ${ECC_PIN.slice(0, 7)}._\n`;
   if (what.includes('skills')) {
@@ -104,6 +135,7 @@ export async function installEcc(dir, { what = ['skills', 'agents', 'commands'],
       const { meta, body } = fm(fs.readFileSync(path.join(dir, 'agents', file), 'utf8'));
       const name = safeName(meta.name || file.replace(/\.md$/, '')).toLowerCase();
       if (!A.AGENT_NAME.test(name)) { r.refused.push({ name, why: 'not a usable agent name' }); continue; }
+      if (LEFT_OUT_AGENTS.has(name)) continue;
       if (A.loadAgent(name)) { r.kept++; continue; }
       const tools = meta.tools ? meta.tools.split(/[,\s]+/).map((t) => t.trim()).filter(Boolean) : null;
       A.saveAgent(name, { description: meta.description ?? '', ...(tools ? { tools } : {}), systemPrompt: `${body}${credit(file, 'agent')}` });

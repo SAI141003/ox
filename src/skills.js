@@ -17,6 +17,9 @@ export function skillScanDirs({ cwd = process.cwd(), home = os.homedir() } = {})
     path.join(path.resolve(cwd), '.agents', 'skills'),
     path.join(path.resolve(home), '.claude', 'skills'),
     path.join(path.resolve(cwd), '.claude', 'skills'),
+    // ox's alone. ~/.agents/skills is also read by other tools: a large library
+    // there costs them tokens on every request.
+    path.join(path.resolve(home), '.ox', 'skills'),
   ];
 }
 

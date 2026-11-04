@@ -29,9 +29,9 @@ test('skills, agents and commands land where ox reads them; a skill the safety s
   const out = await E.installEcc(ecc, { home, what: ['skills', 'commands'] });
   assert.equal(out.skills.added, 1);
   assert.equal(out.skills.refused[0].name, 'evil');
-  assert.ok(fs.existsSync(path.join(home, '.agents', 'skills', 'tdd-workflow', 'SKILL.md')));
-  assert.match(fs.readFileSync(path.join(home, '.agents', 'skills', 'tdd-workflow', 'SKILL.md'), 'utf8'), /From ECC .*MIT/);
-  const cmd = fs.readFileSync(path.join(home, '.agents', 'skills', 'ecc-aside', 'SKILL.md'), 'utf8');
+  assert.ok(fs.existsSync(path.join(home, '.ox', 'skills', 'tdd-workflow', 'SKILL.md')));
+  assert.match(fs.readFileSync(path.join(home, '.ox', 'skills', 'tdd-workflow', 'SKILL.md'), 'utf8'), /From ECC .*MIT/);
+  const cmd = fs.readFileSync(path.join(home, '.ox', 'skills', 'ecc-aside', 'SKILL.md'), 'utf8');
   assert.match(cmd, /name: ecc-aside/);
   assert.match(cmd, /Answer what the user asked for then resume/);
   const again = await E.installEcc(ecc, { home, what: ['skills'] });
@@ -57,4 +57,22 @@ test('a library of hundreds of skills: the best match is found anywhere, the res
   assert.match(idx, /kotlin-build-resolver/);
   assert.match(idx, /and 275 more skills/);
   assert.ok(idx.length < 2000, `index stays small (${idx.length} chars)`);
+});
+
+test('ECC stays out of the folder other tools read, and old copies move; nothing else does', async () => {
+  const E = await import('../src/ecc.js');
+  const h = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-ecc-move-'));
+  const shared = path.join(h, '.agents', 'skills');
+  w(path.join(shared, 'old-ecc', 'SKILL.md'), '---\nname: old-ecc\ndescription: x\n---\nbody\n\n---\n_From ECC (everything-claude-code by Affaan Mustafa, MIT), skill `old-ecc` at abc._\n');
+  w(path.join(shared, 'mine', 'SKILL.md'), '---\nname: mine\ndescription: mine\n---\nabout ecc, written by me\n');
+  w(path.join(shared, 'taken', 'SKILL.md'), '---\nname: taken\ndescription: x\n---\n_From ECC (everything-claude-code by A, MIT)_\n');
+  w(path.join(h, '.ox', 'skills', 'taken', 'SKILL.md'), '---\nname: taken\ndescription: y\n---\nalready here\n');
+  assert.deepEqual(E.moveEccSkills({ home: h }), { moved: 1, kept: 1 });
+  assert.ok(fs.existsSync(path.join(h, '.ox', 'skills', 'old-ecc', 'SKILL.md')));
+  assert.equal(fs.existsSync(path.join(shared, 'old-ecc')), false);
+  assert.ok(fs.existsSync(path.join(shared, 'mine', 'SKILL.md')));
+  assert.match(fs.readFileSync(path.join(h, '.ox', 'skills', 'taken', 'SKILL.md'), 'utf8'), /already here/);
+  assert.deepEqual(E.moveEccSkills({ home: h }), { moved: 0, kept: 1 }, 'safe to run again');
+  const { skillScanDirs } = await import('../src/skills.js');
+  assert.ok(skillScanDirs({ home: h, cwd: h }).includes(path.join(h, '.ox', 'skills')), 'ox still finds them');
 });

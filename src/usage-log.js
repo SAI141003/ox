@@ -19,6 +19,8 @@ export function recordRun({ surface = 'terminal', agent = null, mode = null, cwd
       at, surface, agent: agent ?? null, mode: mode ?? null, project: path.basename(cwd || ''), dir: cwd || null,
       who: r.id === 'main' ? 'main' : r.id === 'aux' ? 'helper' : 'subagent',
       model: r.model ?? null, in: r.inputTokens ?? 0, out: r.outputTokens ?? 0,
+      // Of `in`, what the provider served from its cache: far cheaper, so a total alone misleads.
+      ...(r.cachedInputTokens ? { cached: r.cachedInputTokens } : {}),
       cost: typeof r.costUsd === 'number' ? Number(r.costUsd.toFixed(6)) : null,
     }));
   if (!lines.length) return 0;
