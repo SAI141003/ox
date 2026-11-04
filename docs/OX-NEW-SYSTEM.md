@@ -26,6 +26,8 @@ ox is a coding agent that has to prove its work. It writes a failing test before
 
 A bot is simply who answers: a model from a provider, a plan you already pay for, a model on your own machine, your own endpoint, or a model on another of your computers. Pick one, or leave it on Auto and ox chooses for the task. You can also make your own agents.
 
+Each session keeps its own model, so one can be on NVIDIA while another runs on your ChatGPT plan. A team build splits the work itself and gives each part its own model, with a different model reviewing it. If a model stays down, another takes over the part. `ox ask codex "..."` puts a question to another agent, and a run can do the same once you say yes.
+
 You choose who gets your prompt. If you name a model and it can't answer, ox only moves to another model from the same provider, or to backups you listed yourself, and it says when it does.
 
 ## The memory layer
