@@ -135,5 +135,8 @@ test('real Chrome: cookie dialog, autocomplete, filters, sort, search, open the 
   assert.equal(r.title, 'Casa Flora · Stays');
   assert.doesNotMatch(first[0].split('ELEMENTS:')[1], /Destination|Search/, 'controls under the cookie dialog are not offered');
   assert.deepEqual(r.history.filter((h) => h.operation !== 'WAIT').map((h) => h.label), ['Only necessary', 'Destination', 'Lisbon, Portugal', 'Design hotels', 'Free cancellation', 'Sort → Top rated', 'Search', 'Casa Flora']);
-  assert.ok(r.elapsedMs < 15_000, `took ${r.elapsedMs} ms`);
+  // A speed check here. On shared CI machines a slow one took 20 s with every step right
+  // and failed a build, so there it only catches a browser that has really hung.
+  const limit = process.env.CI ? 60_000 : 15_000;
+  assert.ok(r.elapsedMs < limit, `took ${r.elapsedMs} ms (limit ${limit})`);
 });
