@@ -260,7 +260,7 @@ test('a payload (history + schemas) over the window is compacted before the requ
 
   const events = await collectEvents({
     target: mkTarget(srv.port),
-    messages: mixedHistory(1100, 1100), // 4 old fat + 4 recent (keepTurns keeps 4)
+    messages: mixedHistory(1080, 1080), // 4 old fat + 4 recent (keepTurns keeps 4)
     ctx: { cwd, allTools: bigSchemas(), modelWindow: window },
     config: { tools: { narrow: false } },
     auxTarget: null,
@@ -271,7 +271,7 @@ test('a payload (history + schemas) over the window is compacted before the requ
   const probeEvents = (
     await collectEvents({
       target: mkTarget(probeSrv.port),
-      messages: mixedHistory(1100, 1100),
+      messages: mixedHistory(1080, 1080),
       ctx: { cwd, allTools: bigSchemas(), modelWindow: 128_000 },
       config: { strictSchemas: true, tools: { narrow: false } },
       auxTarget: null,

@@ -54,8 +54,8 @@ export function summarize({ days = 30, now = Date.now(), file = USAGE_FILE() } =
     const m = new Map();
     for (const r of rows) {
       const k = key(r) ?? 'unknown';
-      const g = m.get(k) ?? { key: k, in: 0, out: 0, cost: 0, priced: false, runs: 0 };
-      g.in += r.in; g.out += r.out; g.runs += r.who === 'main' ? 1 : 0;
+      const g = m.get(k) ?? { key: k, in: 0, out: 0, cached: 0, cost: 0, priced: false, runs: 0 };
+      g.in += r.in; g.out += r.out; g.cached += r.cached ?? 0; g.runs += r.who === 'main' ? 1 : 0;
       if (typeof r.cost === 'number') { g.cost += r.cost; g.priced = true; }
       m.set(k, g);
     }

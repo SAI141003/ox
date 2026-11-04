@@ -563,6 +563,7 @@ export class BuildRoom extends EventEmitter {
         this.status(member.name, 'testing', 'with the merged work');
         tests = await partTests(member.wt, this.base, this.runs);
       }
+      member.noTests = !!tests.none;
       this.emitEv({ type: 'tests', agent: member.name, round, ok: tests.ok, none: !!tests.none, command: tests.command ?? '', out: tests.out.slice(-2500) });
       const rv = await this.review(member, reviewer, round);
       if (tests.ok && rv.verdict === 'pass' && code === 0) break;
@@ -655,7 +656,7 @@ export class BuildRoom extends EventEmitter {
       this.emitEv({
         type: 'done', ok, dir: this.dir, merged, parts: team.length,
         branch: this.teamBranch ?? null,
-        summary: `${merged} of ${team.length} part${team.length === 1 ? '' : 's'} ${team.some((m) => m.unreviewed) ? `merged, ${team.filter((m) => m.unreviewed).length} with no review because the reviewer could not be reached,` : 'reviewed and merged'}${this.teamBranch ? ` on branch ${this.teamBranch} (in your project: git merge ${this.teamBranch})` : ''}${final ? `; the whole project's tests ${final.ok ? 'pass' : 'fail'}` : ''}.${left.length ? ` Not merged: ${left.join('; ')}.` : ''}`,
+        summary: `${merged} of ${team.length} part${team.length === 1 ? '' : 's'} ${team.some((m) => m.noTests) ? `(${team.filter((m) => m.noTests).length} with no tests) ` : ''}${team.some((m) => m.unreviewed) ? `merged, ${team.filter((m) => m.unreviewed).length} with no review because the reviewer could not be reached,` : 'reviewed and merged'}${this.teamBranch ? ` on branch ${this.teamBranch} (in your project: git merge ${this.teamBranch})` : ''}${final ? `; the whole project's tests ${final.ok ? 'pass' : 'fail'}` : ''}.${left.length ? ` Not merged: ${left.join('; ')}.` : ''}`,
       });
     } catch (e) {
       this.state = 'done';

@@ -21,7 +21,7 @@ export function createLedger() {
       if (!ev || typeof ev !== 'object') return;
       if (ev.type === 'usage-total') {
         bump('main', 'main agent', ev.model, ev.inputTokens, ev.outputTokens, typeof ev.costUsd === 'number' && typeof ev.auxCostUsd === 'number' ? ev.costUsd - ev.auxCostUsd : ev.costUsd);
-        if (ev.cachedInputTokens) { const m = rows.get('main'); if (m) m.cachedInputTokens = (m.cachedInputTokens ?? 0) + ev.cachedInputTokens; }
+        { const cached = Number(ev.cachedInputTokens ?? ev.cacheReadTokens) || 0; const m = rows.get('main'); if (cached && m) m.cachedInputTokens = (m.cachedInputTokens ?? 0) + cached; }
         if ((ev.auxInputTokens ?? 0) + (ev.auxOutputTokens ?? 0) > 0) {
           bump('aux', 'helper (compaction/titles)', ev.auxModel ?? null, ev.auxInputTokens, ev.auxOutputTokens, ev.auxCostUsd);
         }

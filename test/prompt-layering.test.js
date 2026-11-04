@@ -263,7 +263,9 @@ test('the prompt did not get longer: the reorder is byte-neutral, not merely sma
   // current folder is not … set_project"): asked to build an app, ox wrote it into whatever
   // folder it was in, ox's own included, instead of a folder of its own.
   // 2731 -> 2717: the date is now the day, not the moment (14 bytes shorter).
-  assert.equal(sum.totalBytes - envBytes, 2717, 'pinned: the reorder is byte-neutral');
+  // 2717 -> 2852: the 135 bytes are exactly the rule to say a task cannot be done (abort
+  // option: cheating 54% to 9% on GPT-5, arXiv 2510.20270).
+  assert.equal(sum.totalBytes - envBytes, 2852, 'pinned: the reorder is byte-neutral');
 
   // The pinned number alone would still pass if a line were added AND another
   // dropped. Rebuild the exact byte sequence the flat string used to emit -- the

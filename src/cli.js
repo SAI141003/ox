@@ -6322,6 +6322,12 @@ async function runSubcommand(cmd, args) {
         const early = red.rows.filter((r) => r.status === 'passes').map((r) => r.id);
         if (early.length) console.log(c.yellow(`  ${early.join(', ')} already pass before any code: those tests may not test the new behaviour`));
         if (red.missing) console.log(c.yellow(`  ${red.missing} criteria have no test yet`));
+        // A test that was never seen to fail proves nothing about the code written after it.
+        if ((early.length || red.missing) && !args.includes('--allow-unproven')) {
+          process.stderr.write('ox build: stopping before any code, because not every criterion has a test seen to fail. Fix the tests, or rerun with --allow-unproven to go on knowing that.\n');
+          process.exitCode = 1;
+          return;
+        }
         PR.lockTests(cwd, spec.id, { base });
         console.log(c.dim(`  tests locked: .agent/specs/${spec.id}.lock.json (${Object.keys(PR.loadLock(cwd, spec.id).files).length} test files)`));
       } else console.log(c.dim('tests already locked for this spec; going on to the code'));
@@ -6912,7 +6918,7 @@ async function runSubcommand(cmd, args) {
       if (args.includes('--json')) { console.log(JSON.stringify(U, null, 2)); return; }
       const fmt = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
       const money = (x) => (x == null ? c.dim('unpriced') : x < 0.01 ? `$${x.toFixed(4)}` : `$${x.toFixed(2)}`);
-      console.log(`${c.bold(`Last ${days} day${days === 1 ? '' : 's'}`)}  ${fmt(U.total.in)} in · ${fmt(U.total.out)} out · ${U.total.runs} runs · ${money(U.total.cost)}`);
+      console.log(`${c.bold(`Last ${days} day${days === 1 ? '' : 's'}`)}  ${fmt(U.total.in)} in${U.total.cached ? ` (${fmt(U.total.cached)} from cache, ${Math.round(100 * U.total.cached / Math.max(U.total.in, 1))}%)` : ''} · ${fmt(U.total.out)} out · ${U.total.runs} runs · ${money(U.total.cost)}`);
       for (const [title, rows] of [['model', U.byModel], ['agent', U.byAgent], ['where', U.bySurface], ['project', U.byProject]]) {
         if (!rows.length) continue;
         console.log(c.dim(`\n  by ${title}`));

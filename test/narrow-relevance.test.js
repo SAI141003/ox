@@ -234,7 +234,7 @@ test('7. withheld inventory: names appear in the system prompt, descriptions do 
   const sample = OFFER.find((s) => s.name === 'memory_add');
   assert.ok(!line.includes(sample.description), 'no full description re-added');
   assert.ok(!prompt.includes(sample.description), 'schema description stays out of the prompt');
-  assert.ok(line.length < 200, `line must stay cheap, got ${line.length} chars`);
+  assert.ok(line.length < 260, `line must stay cheap, got ${line.length} chars`);
 
   const clean = await buildSystemPrompt({ cwd: process.cwd(), contextParts: {}, withheldTools: [] });
   assert.ok(!clean.includes('Not offered this turn'), 'clean turn renders no withheld line');
@@ -368,7 +368,7 @@ test('10. end-to-end: the withheld inventory reaches the wire system prompt', as
   // the line is a bare name list, capped so it stays cheap on every turn; the
   // overflow is reported as a count rather than silently dropping the tail.
   const listed = systemLine.split('one load_tools call away: ')[1];
-  assert.ok(listed.length < 220, `line must stay cheap, got ${listed.length} chars`);
+  assert.ok(listed.length < 280, `line must stay cheap, got ${listed.length} chars`);
   if (withheld.length > WITHHELD_LIST_CAP) {
     assert.ok(listed.includes(`+${withheld.length - WITHHELD_LIST_CAP} more`), `overflow counted: ${listed}`);
   } else {

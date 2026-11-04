@@ -85,7 +85,7 @@ function fakeProvider() {
       let messages = [];
       try { messages = JSON.parse(body)?.messages ?? []; } catch { /* asserted elsewhere */ }
       const last = messages[messages.length - 1];
-      const echo = typeof last?.content === 'string' ? last.content.slice(0, 80) : '';
+      const echo = typeof last?.content === 'string' ? last.content.slice(-80) : ''; // the end: recalled memory rides at the front
       const sse = o => `data: ${JSON.stringify(o)}\n\n`;
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.end(
