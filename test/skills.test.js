@@ -69,12 +69,13 @@ after(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('skillScanDirs covers all four paths in precedence order', () => {
+test('skillScanDirs covers every path in precedence order', () => {
   assert.deepEqual(skillScanDirs({ cwd: proj, home }), [
     path.join(home, '.agents', 'skills'),
     path.join(proj, '.agents', 'skills'),
     path.join(home, '.claude', 'skills'),
     path.join(proj, '.claude', 'skills'),
+    path.join(home, '.ox', 'skills'),
   ]);
 });
 

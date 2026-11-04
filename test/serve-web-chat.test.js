@@ -141,7 +141,7 @@ test('the app keeps chat history on this device by default (owner decision, 60a5
   assert.match(html, /tool-call arguments, which can contain code/);
   assert.match(html, /Use ox --incognito when you do not want a terminal run retained/);
   assert.match(html, /approved edits still apply in an incognito chat/);
-  assert.match(html, /chat not retained · project edits still apply/);
+  assert.match(html, /are not retained\. Any approved code changes still apply/);
 });
 
 test('the server does not learn app-chat preferences unless the client opts in', async () => {
