@@ -254,6 +254,34 @@ export function recorder(cwd, { timeoutMs = 300_000 } = {}) {
 }
 
 /**
+ * The tests again from a clean copy of what would be committed, so a passing result cannot
+ * rest on a stray file, an old build or a test left out of git. Dependencies are linked
+ * across, because they are not in git. → { ok } or { skipped }
+ */
+export function cleanCheckout(cwd, cmd, rec) {
+  const git = (args, env) => spawnSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: { ...process.env, ...env } });
+  const top = git(['rev-parse', '--show-toplevel']).stdout?.trim();
+  if (!top) return { skipped: 'not a git project' };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-clean-'));
+  const index = path.join(dir, '.index');
+  try {
+    const env = { GIT_INDEX_FILE: index };
+    if (spawnSync('git', ['add', '-A', '--', '.'], { cwd: top, env: { ...process.env, ...env } }).status !== 0) return { skipped: 'could not list the project files' };
+    const tree = git(['write-tree'], env).stdout.trim();
+    const copy = path.join(dir, 'copy');
+    fs.mkdirSync(copy);
+    const ar = spawnSync('git', ['archive', tree], { cwd: top, maxBuffer: 1024 * 1024 * 1024 });
+    if (ar.status !== 0 || spawnSync('tar', ['-x', '-C', copy], { input: ar.stdout }).status !== 0) return { skipped: 'could not make a clean copy' };
+    const deps = path.join(top, 'node_modules');
+    if (fs.existsSync(deps)) { try { fs.symlinkSync(deps, path.join(copy, 'node_modules'), 'dir'); } catch {} }
+    const inner = recorder(path.join(copy, path.relative(fs.realpathSync(top), fs.realpathSync(cwd))));
+    const r = inner.shell('the test suite from a clean copy', cmd);
+    rec.log.push(...inner.log);
+    return { ok: r.ok, ...(r.ok ? {} : { tail: r.tail }) };
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
+/**
  * The whole proof. `trace` is build-spec's traceSpec result; `ask` a fresh model
  * call ({ system, user } → text) or null to skip the model steps.
  * → { verdict: 'proven' | 'not proven', reasons, integrity, heldOut, mutation, verifier, commands }
@@ -277,8 +305,10 @@ export async function prove(cwd, spec, { tests, trace, ask = null, acceptTestCha
   let mutation = { skipped: base ? 'no changed source lines' : 'not a git project, so the changed lines are unknown' };
   const list = base && mutate ? mutants(cwd, changedSource(cwd, base), { max: mutate }) : [];
   if (list.length) mutation = mutationCheck(cwd, list, { run: (why) => rec.shell(why, tests.cmd) });
+  const clean = full.ok ? cleanCheckout(cwd, tests.cmd, rec) : { skipped: 'the tests already fail here' };
+  if (clean.ok === false) reasons.push('the tests pass here but fail from a clean copy: something they need is not in the project');
   const verdict = reasons.length ? 'not proven' : 'proven';
-  return { verdict, reasons, integrity: integ, acceptedTestChanges: acceptTestChanges && !integ.ok, heldOut, mutation, verifier, trace, commands: rec.log };
+  return { cleanCheckout: clean, verdict, reasons, integrity: integ, acceptedTestChanges: acceptTestChanges && !integ.ok, heldOut, mutation, verifier, trace, commands: rec.log };
 }
 
 export function proofMarkdown(spec, p) {

@@ -165,3 +165,24 @@ test('with nobody watching, bash writing to startup files is refused; reading th
     assert.equal(bashProtectedWrite(c), false, c);
   }
 });
+
+function gitRepo() {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-wt-')));
+  const g = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir, encoding: 'utf8' });
+  g('init', '-q'); fs.writeFileSync(path.join(dir, 'a.txt'), 'one\ntwo\nthree\n'); g('add', '-A'); g('commit', '-qm', 'x');
+  return { dir, g };
+}
+
+test('a proof reruns the tests from a clean copy: a stray untested dependency is caught', async () => {
+  const { cleanCheckout, recorder } = await import('../src/build-proof.js');
+  const { dir } = gitRepo();
+  fs.writeFileSync(path.join(dir, '.gitignore'), 'stray.txt\n');
+  fs.writeFileSync(path.join(dir, 'stray.txt'), 'only here\n');
+  const rec = recorder(dir);
+  assert.equal(cleanCheckout(dir, 'test -f stray.txt', rec).ok, false, 'an ignored file is not in the clean copy');
+  assert.equal(cleanCheckout(dir, 'test -f a.txt', rec).ok, true);
+  fs.writeFileSync(path.join(dir, 'uncommitted.txt'), 'x\n');
+  assert.equal(cleanCheckout(dir, 'test -f uncommitted.txt', rec).ok, true, 'it is what would be committed');
+  assert.match(rec.log.map((l) => l.why).join(), /clean copy/);
+  assert.ok(cleanCheckout(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-nogit-')), 'true', rec).skipped);
+});
