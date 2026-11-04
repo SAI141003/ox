@@ -50,6 +50,12 @@ function freePort(start = 47800) {
   });
 }
 
+const canBind = (p) => new Promise((resolve) => {
+  const s = net.createServer();
+  s.once('error', () => resolve(false));
+  s.listen(p, '127.0.0.1', () => s.close(() => resolve(true)));
+});
+
 async function answers(url, ms = 1500) {
   try {
     const ac = new AbortController();
@@ -73,7 +79,10 @@ export async function ensureServer({ cwd = process.cwd(), log = () => {} } = {})
     // Let it let go of its port, so the app keeps the same address.
     for (let i = 0; i < 40 && alive(st.pid); i++) await new Promise((r) => setTimeout(r, 50));
   }
-  const port = await freePort(st.port || 47800);
+  // The same port whenever it can be: the page's own storage belongs to the address.
+  const wanted = st.port || 47800;
+  for (let i = 0; i < 25 && !(await canBind(wanted)); i++) await new Promise((r) => setTimeout(r, 200));
+  const port = await freePort(wanted);
   const child = spawn(process.execPath, [OX_CLI, 'serve', '--port', String(port)], {
     cwd, detached: true, stdio: 'ignore', windowsHide: true, env: { ...process.env, OX_APP: '1' },
   });
