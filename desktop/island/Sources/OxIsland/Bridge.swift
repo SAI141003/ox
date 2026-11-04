@@ -227,6 +227,8 @@ final class OxBridge: ObservableObject {
                 }
                 self.lastVoiceRequest = (key, Date())
                 IslandLog.write("request: \"\(raw)\" → \"\(text)\" (live run: \(self.hasLiveRun))")
+                // Heard: said at once, whatever the answer then takes.
+                NSSound(named: "Pop")?.play()
                 if let part = self.islandPart(text) {
                     guard let rest = part.rest else { MainActor.assumeIsolated { self.buddy.speak(part.said) }; return true }
                     IslandLog.write("island did: \(part.said) · passing on: \(rest)")

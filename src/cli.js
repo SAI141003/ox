@@ -10560,6 +10560,13 @@ export async function main(argv = []) {
     const shown = process.env.OX_BUDDY_SEE !== 'numbered' && seen ? { ...seen, items: [], text: '' } : seen;
     words.push(`\n\n${buddyGuidance({ size, voice: true, act: !!flags.buddyAct, seen: shown })}`);
     if (!flags.buddyAct) process.env.OX_QUICK_LOOK = '1';
+    // A look at the screen should come back in seconds, whatever the default is: the plans
+    // answered in 11 and 18 s where a default that thinks at length took minutes.
+    if (!flags.buddyAct && !flags.bot && !flags.model) {
+      const { runnable, refreshPlans } = await import('./serve.js');
+      await refreshPlans().catch(() => {});
+      flags.bot = ['chatgpt-plan', 'claude-plan'].find((b) => runnable(b)) ?? flags.bot;
+    }
     opts.sayFailure = plainFailure;
     opts.rewriteReply = (text) => rewritePoints(text, seen, parsePoint, {
       log: ({ tag, resolved }) => { if (!resolved || process.env.OX_BUDDY_LOG) process.stderr.write(`· ${resolved ? `${tag} → ${resolved.x},${resolved.y} (${resolved.how})` : `dropped ${tag}: it could not be tied to the screen`}\n`); },

@@ -265,7 +265,9 @@ test('the prompt did not get longer: the reorder is byte-neutral, not merely sma
   // 2731 -> 2717: the date is now the day, not the moment (14 bytes shorter).
   // 2717 -> 2852: the 135 bytes are exactly the rule to say a task cannot be done (abort
   // option: cheating 54% to 9% on GPT-5, arXiv 2510.20270).
-  assert.equal(sum.totalBytes - envBytes, 2852, 'pinned: the reorder is byte-neutral');
+  // 2852 -> 3116: the 264 bytes are exactly the on-a-task rule ("say your approach in one short
+  // sentence before the first step…"): runs went quiet with no word of what they were doing.
+  assert.equal(sum.totalBytes - envBytes, 3116, 'pinned: the reorder is byte-neutral');
 
   // The pinned number alone would still pass if a line were added AND another
   // dropped. Rebuild the exact byte sequence the flat string used to emit -- the

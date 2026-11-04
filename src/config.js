@@ -285,6 +285,14 @@ export function compactionPassKnobs(config = {}) {
   return { twoPass, detail, wordBudget: DETAIL_WORD_BUDGETS[detail] };
 }
 
+// Another machine's model chosen from a mesh alert, for a while. Saved as the default it
+// stayed for good, long after that machine went away, and every request waited on it.
+export const BORROW_MS = 2 * 3600_000;
+export function borrowedBot(file = {}, now = Date.now()) {
+  const b = file.borrowedBot;
+  return b && typeof b.spec === 'string' && Number(b.until) > now ? b.spec : undefined;
+}
+
 export function loadConfig(overrides = {}) {
   const ov = obj(overrides);
   const env = process.env;
@@ -322,7 +330,7 @@ export function loadConfig(overrides = {}) {
   const model = firstDefined(ov.model, env.OX_MODEL, file.model) ?? null;
   // A default you chose wins; otherwise the first provider you have a key for;
   // 'ox-grok' only when nothing at all is set up (the error then says how to connect).
-  const chosenBot = firstDefined(ov.defaultBot ?? ov.default_bot, file.defaultBot ?? file.default_bot);
+  const chosenBot = firstDefined(ov.defaultBot ?? ov.default_bot, borrowedBot(file), file.defaultBot ?? file.default_bot);
   const autoBot = chosenBot === undefined ? autoDefaultBot(env, apiKeys) : null;
   const defaultBot = String(chosenBot ?? autoBot?.spec ?? 'ox-grok');
   const defaultBotSource = chosenBot !== undefined ? 'config' : autoBot ? `auto: ${autoBot.reason}` : 'fallback';
