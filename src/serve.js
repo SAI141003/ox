@@ -1049,6 +1049,8 @@ async function handleChatCompletions(req, res) {
     cwd: sessionCwd(body.ox_cwd),
     mode: turnMode.mode,
     surface: 'app',
+    // Keeps the session's tool list the same from message to message (the prompt cache).
+    ...(typeof body.ox_session_id === 'string' && body.ox_session_id ? { sessionId: body.ox_session_id.slice(0, 128) } : {}),
     memoryBlock,
     ...(memory ? { memory } : {}),
     ...(incognito ? { incognito: true } : {}),

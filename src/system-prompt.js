@@ -155,7 +155,7 @@ export function renderWithheldToolsLine(withheld) {
   const names = [...all.filter((n) => n.startsWith('mcp__')), ...all.filter((n) => !n.startsWith('mcp__'))];
   const shown = names.slice(0, WITHHELD_LIST_CAP);
   const extra = names.length - shown.length;
-  return `- Not offered this turn, available if asked: ${shown.join(', ')}${extra > 0 ? `, +${extra} more` : ''}`;
+  return `- Not offered this turn, one load_tools call away: ${shown.join(', ')}${extra > 0 ? `, +${extra} more` : ''}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -232,7 +232,9 @@ export async function buildPromptLayers({
   now = new Date(),
 } = {}) {
   const root = cwd ?? process.cwd();
-  const stamp = (now instanceof Date ? now : new Date(now)).toISOString();
+  // The day, not the moment: this is the last line of the block the provider caches, so
+  // a clock here missed the cached prefix on the first request after every message.
+  const stamp = (now instanceof Date ? now : new Date(now)).toISOString().slice(0, 10);
   const memory = String(memoryBlock ?? '').trim();
   const skills = String(skillIndex ?? '').trim();
   const guidance = String(extraGuidance ?? '').trim();
