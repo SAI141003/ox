@@ -12,6 +12,7 @@
 // On resume, those lessons are injected into the subagent's context block so it
 // does not repeat the same errors. This is the "memory that learns."
 
+import { isolateParallel } from './subagent-worktree.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -486,7 +487,11 @@ export function autoSubagentTarget({ config, mainTarget, pick = null, env = proc
   return null;
 }
 
-export function makeSubagentToolHandler({ config, target: mainTarget, auxTarget }) {
+export function makeSubagentToolHandler(opts) {
+  return isolateParallel(makeRawSubagentHandler(opts));
+}
+
+function makeRawSubagentHandler({ config, target: mainTarget, auxTarget }) {
   // `subagent.bot` routes delegated work to its own (usually cheaper) model.
   // Resolved once; a bad spec falls back to the main target with a note on the
   // tool result rather than failing every delegation.
@@ -743,7 +748,9 @@ async function runSubagent({ id, task, args, ctx, config, target, auxTarget, des
 
   const subCtx = {
     ...ctx,
-    cwd,
+    // Its files are its own checkout when it runs beside others; its notes stay with the project.
+    cwd: ctx?._workCwd ?? cwd,
+    _workCwd: undefined,
     depth: requestedDepth + 1,
     maxDepth: desc.maxDepth,
     sessionId: id,

@@ -186,3 +186,63 @@ test('a proof reruns the tests from a clean copy: a stray untested dependency is
   assert.match(rec.log.map((l) => l.why).join(), /clean copy/);
   assert.ok(cleanCheckout(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-nogit-')), 'true', rec).skipped);
 });
+
+test('parallel subagents work apart and their changes land; a lone one stays put', async () => {
+  const { isolateParallel } = await import('../src/subagent-worktree.js');
+  const { dir } = gitRepo();
+  const saved = process.env.OX_HOME;
+  process.env.OX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-wt-home-'));
+  try {
+    const seen = [];
+    const run = isolateParallel(async (args, ctx) => {
+      const where = ctx._workCwd ?? ctx.cwd;
+      seen.push(where);
+      fs.writeFileSync(path.join(where, args.file), 'made\n');
+      return { content: 'done' };
+    });
+    const batch = { batchSize: 2 };
+    const [r1, r2] = await Promise.all([run({ file: 'x.txt' }, { cwd: dir, _subagentBatch: batch }), run({ file: 'y.txt' }, { cwd: dir, _subagentBatch: batch })]);
+    assert.notEqual(seen[0], dir); assert.notEqual(seen[0], seen[1]);
+    assert.equal(fs.readFileSync(path.join(dir, 'x.txt'), 'utf8'), 'made\n');
+    assert.equal(fs.readFileSync(path.join(dir, 'y.txt'), 'utf8'), 'made\n');
+    assert.match(r1.content, /applied to the project: x\.txt/);
+    assert.match(r2.content, /applied to the project: y\.txt/);
+    assert.equal(fs.existsSync(seen[0]), false, 'its checkout is cleaned up');
+    await run({ file: 'z.txt' }, { cwd: dir });
+    assert.equal(seen.at(-1), dir, 'a lone subagent stays in the project');
+    await run({ file: 'r.txt', tools: ['read_file', 'grep'] }, { cwd: dir, _subagentBatch: batch });
+    assert.equal(seen.at(-1), dir, 'one that can only read needs no copy');
+  } finally { if (saved === undefined) delete process.env.OX_HOME; else process.env.OX_HOME = saved; }
+});
+
+test('a conflict loses nothing: the work stays and the parent is told where', async () => {
+  const { prepareWorktree, landWorktree } = await import('../src/subagent-worktree.js');
+  const { dir } = gitRepo();
+  const saved = process.env.OX_HOME;
+  process.env.OX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-wt-home-'));
+  try {
+    const wt = prepareWorktree(dir);
+    fs.writeFileSync(path.join(wt.cwd, 'a.txt'), 'one\nFROM AGENT\nthree\n');
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'one\nFROM YOU\nthree\n');
+    const note = landWorktree(wt);
+    assert.match(note, /could NOT be applied/);
+    assert.ok(note.includes(wt.dir));
+    assert.equal(fs.readFileSync(path.join(wt.dir, 'a.txt'), 'utf8'), 'one\nFROM AGENT\nthree\n');
+    assert.match(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8'), /FROM YOU/);
+  } finally { if (saved === undefined) delete process.env.OX_HOME; else process.env.OX_HOME = saved; }
+});
+
+test('uncommitted edits and new files reach the subagent, and it does nothing outside git', async () => {
+  const { prepareWorktree } = await import('../src/subagent-worktree.js');
+  const { dir } = gitRepo();
+  const saved = process.env.OX_HOME;
+  process.env.OX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-wt-home-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'edited, not committed\n');
+    fs.writeFileSync(path.join(dir, 'new.txt'), 'new\n');
+    const { cwd } = prepareWorktree(dir);
+    assert.equal(fs.readFileSync(path.join(cwd, 'a.txt'), 'utf8'), 'edited, not committed\n');
+    assert.equal(fs.readFileSync(path.join(cwd, 'new.txt'), 'utf8'), 'new\n');
+    assert.equal(prepareWorktree(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-nogit-'))), null);
+  } finally { if (saved === undefined) delete process.env.OX_HOME; else process.env.OX_HOME = saved; }
+});
