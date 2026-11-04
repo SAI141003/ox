@@ -364,3 +364,19 @@ test('"how is it going?" counts as asking about the build', async () => {
   assert.ok(B.statusReply('how is it going?', { env: henv }));
   assert.ok(B.statusReply("how's it going", { env: henv }));
 });
+
+test('a part no reviewer could reach is not merged, and the work stays on its branch', async () => {
+  const dir = path.join(root, 'unreached');
+  const ask = async ({ system }) => {
+    if (system === B.PLAN_SYSTEM) return JSON.stringify({ summary: 's', parts: [{ title: 'Only', files: ['x.js'], brief: 'x' }] });
+    throw new Error('the model is down');
+  };
+  const room = new B.BuildRoom({ task: 'x', dir, ask, spawnBuilder: fakeBuilder(() => ({ files: [['x.js', 'export const x = 1;\n']] })), env });
+  const seen = [];
+  room.on('event', (e) => seen.push(e));
+  await room.run();
+  const done = seen.find((e) => e.type === 'done');
+  assert.equal(done.ok, false);
+  assert.match(done.summary, /no reviewer could be reached/);
+  assert.equal(fs.existsSync(path.join(dir, 'x.js')), false);
+});

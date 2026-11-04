@@ -456,11 +456,11 @@ export class BuildRoom extends EventEmitter {
       }
     } catch {}
     const verdict = comments.some((c) => c.severity === 'must-fix') ? 'changes' : 'pass';
-    // Not reached is not approved: the build goes on, and says so.
+    // Not reached is not approved: the part stays unmerged, and the build says why.
     this.emitEv({ type: 'review', agent: member.name, reviewer, round, verdict: unreached && verdict === 'pass' ? 'unreviewed' : verdict, comments });
     this.status(reviewer, 'waiting', '');
     if (unreached) member.unreviewed = true;
-    return { verdict, comments };
+    return { verdict, comments, unreached };
   }
 
   /** One change to the project at a time: merges, and your own edits. */
@@ -566,6 +566,13 @@ export class BuildRoom extends EventEmitter {
       member.noTests = !!tests.none;
       this.emitEv({ type: 'tests', agent: member.name, round, ok: tests.ok, none: !!tests.none, command: tests.command ?? '', out: tests.out.slice(-2500) });
       const rv = await this.review(member, reviewer, round);
+      // Fail closed: work nobody could review waits on its branch rather than joining the
+      // project looking approved. OX_ALLOW_UNREVIEWED=1 merges it, and the summary says so.
+      if (rv.unreached && process.env.OX_ALLOW_UNREVIEWED !== '1') {
+        member.result = { merged: false, why: `no reviewer could be reached, so it was not merged; the work is on ${member.branch}` };
+        this.status(member.name, 'needs you', member.result.why);
+        return member.result;
+      }
       if (tests.ok && rv.verdict === 'pass' && code === 0) break;
       if (round > MAX_ROUNDS) {
         member.result = { merged: false, why: !tests.ok ? 'tests still fail' : rv.verdict !== 'pass' ? 'review still asks for changes' : 'the run did not finish' };
