@@ -198,6 +198,8 @@ test('parallel subagents work apart and their changes land; a lone one stays put
       const where = ctx._workCwd ?? ctx.cwd;
       seen.push(where);
       fs.writeFileSync(path.join(where, args.file), 'made\n');
+      fs.mkdirSync(path.join(where, '.ox-backups/undo/same'), { recursive: true });
+      fs.writeFileSync(path.join(where, '.ox-backups/undo/same/journal.jsonl'), `${args.file}\n`);
       return { content: 'done' };
     });
     const batch = { batchSize: 2 };
@@ -245,4 +247,17 @@ test('uncommitted edits and new files reach the subagent, and it does nothing ou
     assert.equal(fs.readFileSync(path.join(cwd, 'new.txt'), 'utf8'), 'new\n');
     assert.equal(prepareWorktree(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-nogit-'))), null);
   } finally { if (saved === undefined) delete process.env.OX_HOME; else process.env.OX_HOME = saved; }
+});
+
+test('a run that ends with a subagent still out brings its work home', () => {
+  const { dir } = gitRepo();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-wt-home-'));
+  const mod = JSON.stringify(path.resolve('src/subagent-worktree.js'));
+  const code = `import { isolateParallel } from ${mod}; import fs from 'node:fs'; import path from 'node:path';
+    const run = isolateParallel(async (a, ctx) => { fs.writeFileSync(path.join(ctx._workCwd, 'left.txt'), 'kept'); setTimeout(() => process.exit(0), 10); await new Promise(() => {}); });
+    run({}, { cwd: process.cwd(), _subagentBatch: { batchSize: 2 } });`;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', code], { cwd: dir, encoding: 'utf8', env: { ...process.env, OX_HOME: home } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(fs.readFileSync(path.join(dir, 'left.txt'), 'utf8'), 'kept');
+  assert.deepEqual(fs.readdirSync(path.join(home, 'worktrees')), []);
 });

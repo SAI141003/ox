@@ -12,6 +12,9 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
 const git = (cwd, args, input) => spawnSync('git', args, { cwd, encoding: 'utf8', input, maxBuffer: 256 * 1024 * 1024 });
+// Not the work: dependencies, and ox's own undo copies and notes. Two subagents can share an
+// undo folder, and that alone would make their patches collide.
+const OX_OWN = ['node_modules', '.agent/_sub', '.ox-backups', '.ox-build'];
 const home = () => process.env.OX_HOME || path.join(os.homedir(), '.ox');
 
 /** The folder as it is right now, as a commit, without touching your index or branch. */
@@ -51,7 +54,7 @@ function remove({ top, dir }) {
 
 /** Bring a subagent's changes home. Runs in one go, so two never interleave. → a line for the parent, or '' */
 export function landWorktree(wt) {
-  git(wt.dir, ['add', '-A', '--', '.', ':(exclude)node_modules', ':(exclude).agent/_sub']);
+  git(wt.dir, ['add', '-A', '--', '.', ...OX_OWN.map((f) => `:(exclude)${f}`)]);
   const diff = git(wt.dir, ['diff', '--cached', '--binary', wt.base]);
   const files = git(wt.dir, ['diff', '--cached', '--name-only', wt.base]).stdout.split('\n').filter(Boolean);
   if (diff.status !== 0 || !files.length) { remove(wt); return ''; }
@@ -61,6 +64,22 @@ export function landWorktree(wt) {
   return `\nIts changes could NOT be applied: they conflict with other work. Nothing was lost: they are in ${wt.dir} (${files.slice(0, 20).join(', ')}). Bring them in by hand, or redo that part.`;
 }
 
+// A run can end while a subagent is still out (the model gives up, Ctrl-C). Its work comes
+// home on the way out instead of being stranded in a folder nobody knows about.
+const out = new Set();
+let watching = false;
+function track(wt) {
+  out.add(wt);
+  if (watching) return;
+  watching = true;
+  process.once('exit', () => {
+    for (const w of out) {
+      const note = landWorktree(w).trim();
+      if (note) { try { process.stderr.write(`ox: a subagent was still running. ${note}\n`); } catch {} }
+    }
+  });
+}
+
 /** Wrap a subagent tool: its own checkout whenever it is one of several running at once. */
 export function isolateParallel(run) {
   return async (args, ctx) => {
@@ -68,14 +87,17 @@ export function isolateParallel(run) {
     const readsOnly = Array.isArray(args?.tools) && !args.tools.some((t) => /edit|write|patch|bash|exec|subagent/i.test(String(t)));
     const wt = size > 1 && !readsOnly && ctx?.cwd ? prepareWorktree(ctx.cwd) : null;
     if (!wt) return run(args, ctx);
+    track(wt);
     let result;
     try {
       result = await run(args, { ...ctx, _workCwd: wt.cwd });
     } catch (e) {
+      out.delete(wt);
       const note = landWorktree(wt);
       if (note) e.message = `${e.message}${note}`;
       throw e;
     }
+    out.delete(wt);
     const note = landWorktree(wt);
     return note && result && typeof result.content === 'string' ? { ...result, content: result.content + note } : result;
   };
