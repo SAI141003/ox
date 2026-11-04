@@ -33,6 +33,7 @@ export const COMMANDS = Object.freeze([
   // Agents and work
   { name: 'org', usage: '/org [hire "<sentence>" | tell <id> "…" | team "<sentence>" | timeline]', what: 'a company of agents: hire, give work, follow it', group: 'Agents' },
   { name: 'task', usage: '/task [list | add "<title>" | done <id> | next]', what: 'the task board', group: 'Agents', app: true },
+  { name: 'ask', usage: '/ask <agent> "<message>" [--work] | --session <id> "<message>"', what: 'ask Codex, Gemini or any other model; --work lets it change files in its own copy', group: 'Agents', slow: true },
   { name: 'agents', usage: '/agents', what: 'every agent running on this Mac (Claude Code, Codex, ox…)', group: 'Agents', app: true },
   { name: 'schedule', usage: '/schedule [add <cadence> "<text>" [--watch <source>] | suggest "<text>" | list]', what: 'runs on a timer; skipped when what it watches has not changed', group: 'Agents' },
   { name: 'needs', usage: '/needs', what: 'what waits on you: reviews, failing checks, assigned issues, ox tasks, mail', group: 'Agents', app: true },

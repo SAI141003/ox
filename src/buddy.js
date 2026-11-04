@@ -27,8 +27,9 @@ export function captureScreen({ dir = os.tmpdir(), run = execFileSync } = {}) {
 }
 
 /** The per-turn guidance for a screen/voice question. */
-export function buddyGuidance({ size = null, voice = false } = {}) {
+export function buddyGuidance({ size = null, voice = false, act = false } = {}) {
   return [
+    ...(act ? ['The user asked you to do this on their screen, not only explain it. Use the desktop tool: map the front app, act on its refs, then read it again to check the result. Anything that sends, pays, deletes or publishes stays theirs to press: stop there and tell them where it is.'] : []),
     size
       ? `The user attached a screenshot of their screen (${size.width}x${size.height} px). Ground your answer in it.`
       : 'The user may have attached a screenshot. Ground your answer in it.',

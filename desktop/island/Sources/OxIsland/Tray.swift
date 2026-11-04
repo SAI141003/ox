@@ -881,6 +881,15 @@ final class IslandChat: ObservableObject {
                 self.run(text, extra: ["--mode", "ask", "--buddy", "--image", shot], key: "ox-screen", who: nil)
                 return
             }
+            if let r, r.route == "screen-act" {
+                // Do it on my screen: it looks first, then acts through the desktop tool; each action asks here.
+                let shot = MainActor.assumeIsolated { Buddy.captureScreen() }
+                IslandLog.write("screen action after \(ms) ms (screenshot: \(shot != nil))")
+                self.lines.append(Line(mine: false, text: "On it…"))
+                MainActor.assumeIsolated { bridge.buddy.speak("On it.") }
+                self.run(text, extra: ["--mode", "auto", "--buddy", "--act"] + (shot.map { ["--image", $0] } ?? []), key: "ox-screen", who: nil)
+                return
+            }
             if let r, r.route == "agent" {
                 IslandLog.write("agent run (\(r.why ?? "")) after \(ms) ms")
                 self.lines.append(Line(mine: false, text: "On it…"))

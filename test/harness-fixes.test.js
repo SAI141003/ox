@@ -317,3 +317,11 @@ test('the background memory pass spends no model of yours unless you named one',
   const r = await learnInBackground({ home, env: { OLLAMA_HOST: 'http://127.0.0.1:9' } });
   assert.deepEqual([r.read, r.model ?? null], [0, null]);
 });
+
+test('Buddy, asked to act: it is told to use the desktop tool and leave send and pay to you', async () => {
+  const { buddyGuidance } = await import('../src/buddy.js');
+  const act = buddyGuidance({ act: true, voice: true });
+  assert.match(act, /desktop tool/);
+  assert.match(act, /sends, pays, deletes/);
+  assert.doesNotMatch(buddyGuidance({ voice: true }), /desktop tool/);
+});

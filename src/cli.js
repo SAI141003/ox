@@ -10174,6 +10174,9 @@ export async function main(argv = []) {
       }
       // A question about the screen, answered to be spoken with marks drawn over it
       // (src/buddy.js buddyGuidance): the island's screen route passes it.
+      case '--act':
+        flags.buddyAct = true;
+        break;
       case '--buddy':
         flags.buddy = true;
         break;
@@ -10544,7 +10547,7 @@ export async function main(argv = []) {
     const { buddyGuidance, pngSize } = await import('./buddy.js');
     let size = null;
     try { size = pngSize(fs.readFileSync(flags.images?.[0])); } catch {}
-    words.push(`\n\n${buddyGuidance({ size, voice: true })}`);
+    words.push(`\n\n${buddyGuidance({ size, voice: true, act: !!flags.buddyAct })}`);
   }
   if (print) {
     let initialMessages = [];

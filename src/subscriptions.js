@@ -58,6 +58,9 @@ export const SUBSCRIPTION_CLIS = Object.freeze({
     format: 'codex-jsonl',
     args: ({ prompt, model, approval, images = [] }) => [
       'exec', '--json', '--skip-git-repo-check',
+      // Codex's plugin catalogue adds about 2,500 tokens to every request (measured: 15,591 to
+      // 13,115) for tools a run from ox does not use. OX_CODEX_PLUGINS=1 keeps them.
+      ...(process.env.OX_CODEX_PLUGINS === '1' ? [] : ['-c', 'features.plugins=false']),
       // ox's Mac actions (open an app or a page, notes, to-dos, music…) as an MCP
       // server, so a run on the ChatGPT plan can act on this Mac too.
       ...macMcpArgs(),

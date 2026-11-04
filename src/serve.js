@@ -1818,6 +1818,8 @@ async function flowsRoute(b) {
 const VOICE_SYSTEM = (name) => `You are ${name}, a voice assistant in the user's desktop Island: quick, warm, and precise. You can act through Ox's approved local tools (open apps and URLs, inspect configured mail/connectors, draft messages, and perform supported desktop actions). When a request requires an action, do it through the available tools or explain the exact missing connector/permission; never claim an action happened when it did not. Sending email or messages always requires a visible draft or explicit approval. Everything you write is read aloud: one or two short sentences, no markdown, no lists, no emojis, no links. Never invent the user's data. Today is ${new Date().toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.`;
 // Questions about what is on screen need a look at it: the island attaches a screenshot.
 const SCREEN = /\b(my screen|on (?:the|my) screen|what am i looking at|what(?:'s| is) (?:this|that) (?:on|in)|this (?:page|window|screen|tab|error|message)|read (?:this|it|my screen)|look at (?:this|my|the screen)|see (?:this|my screen)|what do you see)\b/i;
+// "Do it for me", "click that": it has to see the screen and act on what it sees.
+const SCREEN_ACT = /\b(do (?:it|this|that) for me|(?:click|press|tap) (?:on )?(?:this|that|it\b|here)|fill (?:this|that|it) (?:in|out)|type (?:this|that|it) (?:here|in)|(?:click|press|fill|type|scroll|select|drag)\b.*\b(?:on|in) (?:my|the|this) (?:screen|window|page))/i;
 const ACTS = /\b(open|launch|close|quit|send|message|text|whatsapp|email|mail|play|pause|create|make|write|draft|delete|remove|move|rename|book|order|buy|schedule|remind|call|download|install|draw|annotate|search|look up|find|fix|build|run|deploy|commit|push|edit|change|update|turn (?:on|off)|set)\b/i;
 let voiceCall = null;
 export async function callRoute(text, body = {}, { O = null, ask = null } = {}) {
@@ -1923,6 +1925,7 @@ export async function voiceTurn(body) {
   // The island asks this first while a coding run is open: an errand ("play
   // Billie Jean", "volume down") is done here and never sent into that run.
   if (body?.offlineOnly === true) return { route: 'live', handled: false, why: 'not a small task', ms: Date.now() - started };
+  if (SCREEN_ACT.test(text) && !body?.image) return { route: 'screen-act', handled: false, why: 'it needs a look at your screen, then to act on it', ms: Date.now() - started };
   if (SCREEN.test(text) && !body?.image) return { route: 'screen', handled: false, why: 'it needs a look at your screen', ms: Date.now() - started };
   const { assistantName } = await import('./identity.js');
   // Small talk and questions: one short answer. Anything that acts: an agent.

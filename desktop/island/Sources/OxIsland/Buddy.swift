@@ -484,7 +484,7 @@ final class Buddy: NSObject, ObservableObject {
     // MARK: pointer
 
     private func showPointer(_ p: ScreenPoint) {
-        guard let screen = NSScreen.main else { return }
+        guard let screen = Buddy.shotScreen ?? NSScreen.main else { return }
         // Screenshot pixels -> screen points (AppKit's origin is bottom-left).
         let scale = screen.backingScaleFactor
         let target = CGPoint(x: screen.frame.minX + p.x / scale, y: screen.frame.maxY - p.y / scale)
@@ -503,7 +503,7 @@ final class Buddy: NSObject, ObservableObject {
     private var marksOverlay: MarksOverlay?
 
     private func showMarks(_ marks: [ScreenMark]) {
-        guard let screen = NSScreen.main else { return }
+        guard let screen = Buddy.shotScreen ?? NSScreen.main else { return }
         marksOverlay?.close()
         let o = MarksOverlay(screen: screen, marks: marks)
         o.orderFrontRegardless()
@@ -587,12 +587,29 @@ final class Buddy: NSObject, ObservableObject {
     /// Only when screen recording is already allowed: asking macOS on every
     /// request put its permission window up each time you spoke ("open Chrome"
     /// needs no screenshot). Turn it on once from the island's menu.
+    static var shotScreen: NSScreen?
+
+    /// The screen the mouse is on, and its number for screencapture's -D (1 is the first active display).
+    static func screenUnderMouse() -> (NSScreen?, Int?) {
+        let mouse = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) else { return (NSScreen.main, nil) }
+        guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return (screen, nil) }
+        var count: UInt32 = 0
+        CGGetActiveDisplayList(0, nil, &count)
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        CGGetActiveDisplayList(count, &ids, &count)
+        return (screen, ids.firstIndex(of: id).map { $0 + 1 })
+    }
+
     static func captureScreen() -> String? {
         guard CGPreflightScreenCaptureAccess() else { return nil }
         let path = (NSTemporaryDirectory() as NSString).appendingPathComponent("ox-buddy-\(Int(Date().timeIntervalSince1970 * 1000)).png")
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        p.arguments = ["-x", "-m", "-t", "png", path]
+        // The display you are on, not always the main one: the pointer flies on the same one.
+        let (screen, index) = screenUnderMouse()
+        shotScreen = screen
+        p.arguments = ["-x"] + (index.map { ["-D", String($0)] } ?? ["-m"]) + ["-t", "png", path]
         do {
             try p.run()
             p.waitUntilExit()
