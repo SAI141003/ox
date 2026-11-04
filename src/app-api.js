@@ -336,7 +336,7 @@ export async function capabilitiesView(cwd = process.cwd()) {
   const agents = listAgents().map((name) => {
     try {
       const a = loadAgent(name);
-      return { name, mode: a.mode ?? 'code', bot: a.bot ?? null, desc: a.description ?? a.desc ?? '', tools: a.tools ?? null };
+      return { name, mode: a.mode ?? 'code', bot: a.bot ?? null, desc: a.description ?? a.desc ?? '', tools: a.tools ?? null, library: /From ECC \(everything-claude-code/.test(String(a.systemPrompt ?? '')) };
     } catch { return { name, broken: true }; }
   });
   let plugins = [];

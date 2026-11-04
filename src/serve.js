@@ -2180,7 +2180,7 @@ export async function officeFloors() {
         if (hit && Date.now() - hit.at < 5000) { floors.push({ ...hit.floor, name: names[p.id] ?? p.name }); continue; }
         let floor;
         try { const r = await node.ask(p, 'agents', {}, { timeoutMs: 4000 }); floor = { id: p.id, machine: p.name, sessions: r.sessions ?? [] }; }
-        catch (e) { floor = { id: p.id, machine: p.name, sessions: [], error: /does not allow/.test(e.message) ? `${p.name} does not share its agents: on ${p.name}, run  ox mesh allow "${M.identity().name}" agents` : `${p.name}: ${e.message}` }; }
+        catch (e) { const closed = /does not allow/.test(e.message); floor = { id: p.id, machine: p.name, sessions: [], needsAccess: closed, error: closed ? `${p.name} has not shared its sessions with this computer.` : `${p.name}: ${e.message}` }; }
         floorCache.set(p.id, { at: Date.now(), floor });
         floors.push({ ...floor, name: names[p.id] ?? p.name });
       }
@@ -2608,6 +2608,14 @@ const ROUTES = [
     if (!machine || !ticket) throw new Error('choose a machine and delivery ticket');
     return (await meshUp()).ask(machine, 'agent-delivery', { ticket }, { timeoutMs: 20_000 });
   }) },
+  // Chats and settings on disk, whichever port this server got (src/chat-store.js).
+  { method: 'GET', pattern: /^\/ox\/chats\/?$/, handler: appRoute(async () => {
+    const C = await import('./chat-store.js');
+    try { C.recoverStranded(); } catch {}
+    const { chats, prefs } = C.readStore();
+    return { chats, prefs };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/chats\/?$/, handler: appRoute(async (body) => (await import('./chat-store.js')).saveStore(body)) },
   // Everything working on every computer, this one first.
   { method: 'GET', pattern: /^\/ox\/mesh\/everything\/?$/, handler: appRoute(async () => {
     const A = await import('./agents-live.js');
@@ -3560,6 +3568,8 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
     // New versions of ox, looked for every few hours once you allowed it (a git fetch).
     const lookForUpdates = () => import('./self-update.js').then((U) => { const st = U.readState(); if (st.allowed === true && (!st.checkedAt || Date.now() - st.checkedAt > 3 * 3600_000)) U.inBackground('check'); }).catch(() => {});
     setTimeout(lookForUpdates, 90_000).unref();
+    // Older ox put ECC where other tools read it too, costing them tokens every request.
+    import('./ecc.js').then((E) => { const r = E.moveEccSkills(); if (r.moved) console.log(`[skills] moved ${r.moved} ECC skills to ~/.ox/skills`); }).catch(() => {});
     setInterval(lookForUpdates, 3 * 3600_000).unref();
     setInterval(tidyBrain, 6 * 3600_000).unref();
   }

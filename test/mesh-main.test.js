@@ -149,7 +149,7 @@ test('the page, the routes and the release step are in place', () => {
     assert.ok(serve.includes(route.replaceAll('/', '\\/')), route);
   }
   assert.match(serve, /path === '\/machines' \? '\.\/web\/machines\.html'/);
-  assert.match(chat, /machines: \['globe', 'Machines'\]/);
+  assert.match(chat, /machines: \['laptop', 'Machines'\]/);
   assert.match(flow, /--latest=false/);
   assert.match(flow, /publish:\n\s+needs: package/);
 });
@@ -173,4 +173,12 @@ test('a real session file on the other computer can be read over the mesh', asyn
 test('the page does not offer a key ox refuses to press', () => {
   const page = fs.readFileSync(new URL('../src/web/machines.html', import.meta.url), 'utf8');
   assert.doesNotMatch(page, /data-k="return"/);
+});
+
+test('a floor nobody shared offers to ask, instead of a terminal command', () => {
+  const office = fs.readFileSync(new URL('../src/web/office.html', import.meta.url), 'utf8');
+  const serve = fs.readFileSync(new URL('../src/serve.js', import.meta.url), 'utf8');
+  assert.match(office, /f\.needsAccess/);
+  assert.match(office, /'\/ox\/mesh\/agents\/ask'/);
+  assert.doesNotMatch(serve, /does not share its agents/);
 });

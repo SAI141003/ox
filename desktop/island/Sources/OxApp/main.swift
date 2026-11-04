@@ -303,11 +303,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             .appendingPathComponent("Documents", isDirectory: true)
             .appendingPathComponent("Ox Workspace", isDirectory: true)
         let saved = savedState()["cwd"]
-        if let saved, fm.fileExists(atPath: saved), !isOxSourcePath(saved) {
+        // The Ox Workspace folder was only ever the old default, not a choice: ox works
+        // anywhere on this Mac, so it starts where a terminal starts.
+        if let saved, fm.fileExists(atPath: saved), !isOxSourcePath(saved), saved != workspace.path {
             return saved
         }
-        try? fm.createDirectory(at: workspace, withIntermediateDirectories: true)
-        return workspace.path
+        return home
     }
 
     private static func isOxSourcePath(_ candidate: String) -> Bool {

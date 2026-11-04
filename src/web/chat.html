@@ -525,6 +525,7 @@
   .slash-menu button.on, .slash-menu button:hover { background: var(--sel); }
   .cbox { max-width: var(--tw); margin: 0 auto; border: 1px solid var(--line2); border-radius: 16px; background: var(--panel); overflow: hidden; }
   .cbox:focus-within { border-color: var(--muted); }
+  .incog-tag { white-space: nowrap; flex: none; }
   .cfoot { display: flex; align-items: center; gap: 12px; max-width: var(--tw); margin: 7px auto 0; padding: 0 6px; font-size: 11.5px; color: var(--dim); min-width: 0; }
   .cmeta { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .cmeta .i { width: 13px; height: 13px; flex: none; } #cwd { overflow: hidden; text-overflow: ellipsis; }
@@ -884,13 +885,14 @@
         <button id="nav-build" title="A team of agents builds it while you watch: every line, who wrote it, and the review"><span data-i="blocks"></span><span class="grow">Build with a team</span></button>
         <button id="nav-term" title="Your shell, in the app"><span data-i="terminal"></span><span class="grow">Terminal</span></button>
         <button data-view="studio"><span data-i="film"></span><span class="grow">Studio</span></button>
+        <button id="nav-more-btn" class="nav-more-btn" aria-expanded="false" aria-controls="nav-more"><span data-i="plus"></span><span class="grow">More</span></button>
+        <div id="nav-more" class="nav-more" hidden>
         <button data-view="review"><span data-i="check"></span><span class="grow">Code Review</span></button>
-        <button data-view="gallery"><span data-i="office"></span><span class="grow">Agents</span></button>
+        <button data-view="gallery"><span data-i="office"></span><span class="grow">Agent gallery</span></button>
         <button data-view="flows"><span data-i="flow"></span><span class="grow">Automations</span></button>
         <button data-view="tasks"><span data-i="list"></span><span class="grow">Task board</span></button>
         <button data-view="library"><span data-i="list"></span><span class="grow">Library</span></button>
-        <button id="nav-more-btn" class="nav-more-btn" aria-expanded="false" aria-controls="nav-more"><span data-i="plus"></span><span class="grow">More</span></button>
-        <div id="nav-more" class="nav-more" hidden>
+          <button id="nav-machines" title="What is working on each of your computers"><span data-i="laptop"></span><span class="grow">Machines</span></button>
           <button id="nav-incog" title="Chat transcript, memory and usage are not retained. Project file changes still apply. (⌘⇧N)"><span data-i="incog"></span><span class="grow">Incognito chat</span><span class="kbd">⇧</span><span class="kbd">N</span></button>
           <button data-view="office"><span data-i="office"></span><span class="grow">Office</span><span class="office-count" id="office-count" hidden></span></button>
           <button data-view="map"><span data-i="mapi"></span><span class="grow">Project map</span></button>
@@ -1153,7 +1155,7 @@
 
   // ---------- icons (drawn here; nothing is loaded from elsewhere)
   const P = {
-    plus: 'M12 5v14M5 12h14', search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM20 20l-4-4', gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z',
+    laptop: 'M4 5h16v11H4zM2 19h20', plus: 'M12 5v14M5 12h14', search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM20 20l-4-4', gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z',
     contrast: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 3v18', keyboard: 'M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M7 14h10', sidebar: 'M3 4h18v16H3zM9 4v16',
     blocks: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z', bell: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0', branch: 'M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM18 9a9 9 0 0 1-9 9', server: 'M3 4h18v6H3zM3 14h18v6H3zM7 7h.01M7 17h.01', chat: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12Z', clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 7v5l3 2',
     folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z', mic: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5 11a7 7 0 0 0 14 0M12 18v3',
@@ -1227,7 +1229,13 @@
   // device by default.  Settings can turn this off and erase it; attachments
   // remain deliberately excluded from browser storage below.
   const prefs = Object.assign({ theme: null, size: 'medium', width: 'medium', motion: 'system', sendKey: 'enter', speakReplies: false, lang: '', voice: '', activity: 'normal', changedFiles: true, whatsNew: true, notifyDone: false, notifyFail: false, notifySound: false, hiddenModels: [], saveChatHistory: true, learnFromChats: false }, store.get('ox.prefs', {}));
-  const savePrefs = () => { store.set('ox.prefs', prefs); applyPrefs(); };
+  const prefsWereHere = (() => { try { return localStorage.getItem('ox.prefs') != null; } catch { return false; } })();
+  let chatsLoaded = false, prefsSaveTimer = null;
+  const savePrefs = () => {
+    store.set('ox.prefs', prefs); applyPrefs();
+    clearTimeout(prefsSaveTimer);
+    prefsSaveTimer = setTimeout(() => { if (chatsLoaded) postJson('/ox/chats', { prefs }).catch(() => {}); }, 400);
+  };
   // Live wallpapers (src/wallpapers.js): served at /wallpapers/<id>, chosen per device.
   const WALLPAPERS = [['pasture', 'Pasture', 'an ox grazing on the hills at dusk'], ['agent-mesh', 'Agent Mesh', 'your agents as stars, messages flying between them'], ['embers', 'Embers', 'gold sparks rising from the coals'], ['code-rain', 'Code Rain', 'amber code trickling down'], ['tide', 'Tide', 'slow swells under a night sky'], ['koi-pond', 'Koi Pond', 'koi winding between lily pads'], ['moonlit', 'Moonlit', 'a crescent moon, low clouds, shooting stars'], ['jellyfish', 'Jellyfish', 'bells pulsing upward, tentacles trailing'], ['fireflies', 'Fireflies', 'blinking fireflies over swaying grass'], ['honu-lagoon', 'Honu Lagoon', 'sea turtles and a school of fish'], ['paper-boats', 'Paper Boats', 'folded boats drifting down a canal'], ['cloud-drift', 'Cloud Drift', 'puffy clouds at three depths']];
   function applyWallpaper() {
@@ -1372,9 +1380,20 @@
   const applyName = (n) => { botName = n || 'ox'; document.title = botName; $('brand-name').textContent = botName; const own = botName !== 'ox'; document.querySelector('.brand').classList.toggle('own', own); const sn = document.querySelector('#splash .nm'); if (sn && own) sn.textContent = botName; if (!convo()?.messages?.length) renderChat(); };
   // Normal chats are stored only in this browser when local history is enabled;
   // image payloads are never included in that history.
+  const savedChats = () => convos.filter((c) => !c.incognito).slice(0, 200).map((c) => (c.messages.some((m) => m.images || m.thumbs) ? { ...c, messages: c.messages.map(({ images, thumbs, ...m }) => m) } : c));
+  // The file is what lasts: this page's storage belongs to one port (src/chat-store.js).
+  let chatsSaveTimer = null;
+  const pushChats = () => {
+    // A page that has not read the file yet has nothing to say about it: its empty
+    // list must never replace your chats.
+    if (!chatsLoaded) return;
+    clearTimeout(chatsSaveTimer);
+    chatsSaveTimer = setTimeout(() => { postJson('/ox/chats', { chats: savedChats() }).catch(() => {}); }, 500);
+  };
   const saveConvos = () => {
     if (!prefs.saveChatHistory) return;
-    store.set('ox.convos', convos.filter((c) => !c.incognito).slice(0, 200).map((c) => (c.messages.some((m) => m.images || m.thumbs) ? { ...c, messages: c.messages.map(({ images, thumbs, ...m }) => m) } : c)));
+    store.set('ox.convos', savedChats());
+    pushChats();
   };
   const convo = () => convos.find((c) => c.id === current);
 
@@ -1431,6 +1450,7 @@
     $('nav-more-btn').querySelector('.grow').textContent = open ? 'Less' : 'More';
   }
   setNavMore(store.get('ox.nav.more', false) === true);
+  $('nav-machines').onclick = () => document.querySelector('[data-rail="machines"]')?.click();
   $('nav-more-btn').onclick = () => { const open = $('nav-more').hidden; setNavMore(open); store.set('ox.nav.more', open); };
   $('menu').onclick = () => { if (matchMedia('(max-width: 860px)').matches) document.body.classList.toggle('nav'); else document.body.classList.toggle('collapsed'); };
   // On a narrow window the sidebar is an overlay (body.nav): its own button, Esc,
@@ -1497,12 +1517,22 @@
     const agents = caps?.agents ?? null;
     if (!agents) { el.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>'; loadCaps().then(renderLists); return; }
     const colors = ['var(--raise)'];
-    el.innerHTML = `<div class="group cap">Your agents</div>` + (agents.length ? agents.map((a, i) => `
-      <button class="row" data-agent="${esc(a.name)}" style="padding:8px">
-        <span class="avatar" style="background:${colors[i % colors.length]}">${esc(a.name[0].toUpperCase())}</span>
-        <span class="t" style="display:flex;flex-direction:column"><span>${esc(a.name)}</span><span class="dim small" style="overflow:hidden;text-overflow:ellipsis">${esc(a.desc || `${a.mode} · ${a.bot || 'default model'}`)}</span></span>
-      </button>`).join('') : '<div class="empty-note">No agents yet.</div>')
-      + `<div class="empty-note" style="margin-top:8px">Make one in the terminal:<div class="cmd" style="margin-top:6px"><code>ox agent new reviewer --mode ask</code><button data-copy-cmd="ox agent new reviewer --mode ask">${icon('copy')}</button></div></div>`;
+    // Yours first. The library is long, so it stays folded by kind, with a search over all of it.
+    const rowOf = (a) => `<button class="row" data-agent="${esc(a.name)}" style="padding:8px">
+        <span class="avatar" style="background:var(--raise)">${esc(a.name[0].toUpperCase())}</span>
+        <span class="t" style="display:flex;flex-direction:column;min-width:0"><span>${esc(a.name)}</span><span class="dim small" style="overflow:hidden;text-overflow:ellipsis">${esc(a.desc || a.mode || '')}</span></span>
+      </button>`;
+    const mine = agents.filter((a) => !a.library), lib = agents.filter((a) => a.library);
+    const kinds = [['Reviewers', /review/], ['Build fixers', /build|resolver/], ['Architects', /architect/], ['Other', /./]];
+    const seen = new Set();
+    const groups = kinds.map(([label, re]) => { const rows = lib.filter((a) => !seen.has(a.name) && re.test(a.name)); rows.forEach((a) => seen.add(a.name)); return [label, rows]; }).filter(([, rows]) => rows.length);
+    const howTo = `<div class="empty-note" style="margin-top:8px">Make one in the terminal:<div class="cmd" style="margin-top:6px"><code>ox agent new reviewer --mode ask</code><button data-copy-cmd="ox agent new reviewer --mode ask">${icon('copy')}</button></div></div>`;
+    el.innerHTML = `${agents.length > 8 ? '<input class="field" id="agent-search" placeholder="Search agents" aria-label="Search agents" style="width:100%;margin-bottom:6px">' : ''}<div id="agent-rows"><div class="group cap">Your agents</div>${mine.length ? mine.map(rowOf).join('') : '<div class="empty-note">None of your own yet.</div>'}${groups.map(([label, rows]) => `<details class="agent-group"><summary class="group cap" style="cursor:pointer">${esc(label)} <span class="dim">${rows.length}</span></summary>${rows.map(rowOf).join('')}</details>`).join('')}</div>${howTo}`;
+    if ($('agent-search')) $('agent-search').oninput = () => {
+      const q = $('agent-search').value.trim().toLowerCase();
+      el.querySelectorAll('.agent-group').forEach((d) => { d.open = !!q; });
+      el.querySelectorAll('[data-agent]').forEach((r) => { r.hidden = !!q && !r.textContent.toLowerCase().includes(q); });
+    };
     el.querySelectorAll('[data-agent]').forEach((b) => (b.onclick = () => {
       newConvo(); const id = `agent:${b.dataset.agent}`;
       if ([...$('model').options].some((o) => o.value === id)) { $('model').value = id; store.set('ox.model', id); }
@@ -2066,7 +2096,7 @@
     setBusy(!!currentController(), current);
     if (!currentController() && convo()?.queued?.length) setTimeout(drainQueue, 0);
     document.body.classList.toggle('incog', !!convo()?.incognito && !readonly);
-    $('ro').innerHTML = readonly ? 'terminal session · read-only' : convo()?.incognito ? `<span class="incog-tag" title="The conversation, memory updates and usage record are not retained. Any approved code changes still apply to the selected project.">${icon('incog')}incognito · chat not retained · project edits still apply</span>` : '';
+    $('ro').innerHTML = readonly ? 'terminal session · read-only' : convo()?.incognito ? `<span class="incog-tag" title="The conversation, memory updates and usage record are not retained. Any approved code changes still apply to the selected project.">${icon('incog')}incognito</span>` : '';
     $('input').disabled = !!readonly;
     $('input').placeholder = readonly ? 'Viewing a terminal session' : 'Describe what you need';
     if (readonly) {
@@ -2085,7 +2115,7 @@
     }
     const c = convo();
     if (!c || !c.messages.length) {
-      inner.innerHTML = `<div class="hello"><div class="avatar hello-mark">${OX_FACE}</div><h1>What should ${esc(botName)} do?</h1><p>${esc(botName)} works in ${esc((c?.cwd || about?.cwd)?.split(/[\\/]/).pop() || 'this project')} on your machine. It reads, edits, runs and explains.</p><div class="chips">${SUGGESTIONS.map((s) => `<button class="chip">${esc(s)}</button>`).join('')}</div></div>`;
+      inner.innerHTML = `<div class="hello"><div class="avatar hello-mark">${OX_FACE}</div><h1>What should ${esc(botName)} do?</h1><p>${esc(botName)} works ${esc(whereWords(c?.cwd || about?.cwd))}. It reads, edits, runs and explains.</p><div class="chips">${SUGGESTIONS.map((s) => `<button class="chip">${esc(s)}</button>`).join('')}</div></div>`;
       inner.querySelectorAll('.chip').forEach((b) => (b.onclick = () => { $('input').value = b.textContent; resize(); send(); }));
       return;
     }
@@ -2372,8 +2402,12 @@
 
   // ---------- The side panel: per session, tabs for its team builds, a terminal, a browser, files
   // c.panel = { open, max, tabs: [{ k: 'team'|'term'|'browser'|'files', id, url?, path?, title? }], active }
-  const PANEL_KINDS = { team: ['team', 'Team'], term: ['terminal', 'Terminal'], browser: ['globe', 'Browser'], files: ['file', 'Files'], coworkers: ['office', 'Coworkers'], machines: ['globe', 'Machines'] };
+  const PANEL_KINDS = { team: ['team', 'Team'], term: ['terminal', 'Terminal'], browser: ['globe', 'Browser'], files: ['file', 'Files'], coworkers: ['office', 'Coworkers'], machines: ['laptop', 'Machines'] };
   const frames = new Map();   // session:tab → its element, kept while you switch tabs (a terminal stays alive)
+  // The old default folder and your home are not "a project": ox works across the machine.
+  const notAProject = (d) => !d || /[\\/]Documents[\\/]Ox Workspace$/.test(d) || /^(?:\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)$/.test(d);
+  const whereWords = (d) => (notAProject(d) ? `anywhere on your ${isMac ? 'Mac' : 'computer'}` : `in ${d.split(/[\\/]/).pop()}`);
+  const shellDir = (c) => sessionDir(c).replace(/[\\/]Documents[\\/]Ox Workspace$/, '');
   const sessionDir = (c) => c?.cwd || c?.buildDir || about?.cwd || '';
   function panelOf(c) {
     c.panel ??= { open: false, max: false, tabs: [], active: 0 };
@@ -2423,7 +2457,7 @@
       el = document.createElement('iframe');
       el.title = PANEL_KINDS[t.k][1];
       el.src = t.k === 'team' ? `/build?id=${encodeURIComponent(t.id)}&embed=1`
-        : t.k === 'term' ? `/build?embed=1&termonly=1&cwd=${encodeURIComponent(sessionDir(c))}`
+        : t.k === 'term' ? `/build?embed=1&termonly=1&cwd=${encodeURIComponent(shellDir(c))}`
         : t.k === 'coworkers' ? '/coworkers'
         : t.k === 'machines' ? '/machines'
         : `/files?root=${encodeURIComponent(sessionDir(c))}${t.path ? `&path=${encodeURIComponent(t.path)}` : ''}`;
@@ -4264,8 +4298,9 @@ files: [src/billing/**]
       const noPr = /no pull request for this branch yet/i.test(e.message);
       // Not a git project: nothing to review, which is not an error.
       const noGit = /not in a git repository/i.test(e.message);
-      el.innerHTML = `<div class="shead">${icon('check')}Code Review</div><p class="sdesc">Pull request status and reviewer feedback for the current project. Review is read-only here; Ox will not edit, push, or merge from this page.</p><div class="box"><b>${noGit ? 'This folder is not a git project' : noPr ? 'No pull request for this branch yet' : 'Could not load pull request status'}</b><p class="small muted">${esc(noGit ? 'Code Review shows the pull request of a git project. Open a session in a project folder (one with a .git), or start one there with git init.' : noPr ? 'Open a pull request to see its checks and review comments here.' : e.message)}</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="review-open-pr">Open a PR</button><button class="btn" id="review-retry">Try again</button></div></div>`;
-      $('review-open-pr').onclick = () => $('open-pr').click();
+      el.innerHTML = `<div class="shead">${icon('check')}Code Review</div><p class="sdesc">Pull request status and reviewer feedback for the current project. Review is read-only here; Ox will not edit, push, or merge from this page.</p><div class="box"><b>${noGit ? 'This folder is not a git project' : noPr ? 'No pull request for this branch yet' : 'Could not load pull request status'}</b><p class="small muted">${esc(noGit ? 'Code Review shows the pull request of a git project. Choose one, or run git init in this folder.' : noPr ? 'Open a pull request to see its checks and review comments here.' : e.message)}</p><div style="display:flex;gap:8px;flex-wrap:wrap">${noGit ? '<button class="btn primary" id="review-pick">Choose a project</button>' : noPr ? '<button class="btn primary" id="review-open-pr">Open a PR</button>' : ''}<button class="btn" id="review-retry">Try again</button></div></div>`;
+      if ($('review-pick')) $('review-pick').onclick = () => $('repo-btn').click();
+      if ($('review-open-pr')) $('review-open-pr').onclick = () => $('open-pr').click();
       $('review-retry').onclick = loadCodeReview;
       return;
     }
@@ -5839,13 +5874,13 @@ files: [src/billing/**]
           }
           $('save-chats').checked = true;
           if (!(await askSure('Turn off chat history and delete chats saved in this browser? This does not delete terminal sessions, usage totals or memory.', 'Turn off and delete'))) return;
-          prefs.saveChatHistory = false; store.remove('ox.convos'); convos = []; current = null;
+          prefs.saveChatHistory = false; store.remove('ox.convos'); postJson('/ox/chats', { chats: [] }).catch(() => {}); convos = []; current = null;
           savePrefs(); renderLists(); renderChat(); renderSection(); toast('Local chat history deleted');
         };
         $('learn-chats').onchange = () => { prefs.learnFromChats = $('learn-chats').checked; savePrefs(); toast(prefs.learnFromChats ? 'Preference learning on' : 'Preference learning off'); };
         if ($('del-stored')) $('del-stored').onclick = async () => {
           if (!(await askSure(`Delete ${storedCount} previously saved chat${storedCount === 1 ? '' : 's'} from this browser? This cannot be undone.`, 'Delete saved chats'))) return;
-          store.remove('ox.convos');
+          store.remove('ox.convos'); postJson('/ox/chats', { chats: [] }).catch(() => {});
           if (prefs.saveChatHistory) { convos = []; current = null; renderLists(); renderChat(); }
           toast('Saved chats deleted'); renderSection();
         };
@@ -5994,6 +6029,24 @@ files: [src/billing/**]
   setBusy(false); resize();
   loadModels();
   renderChat(); renderLists();
+  // Your chats and settings from the file, joined with whatever this page holds.
+  getJson('/ox/chats').then(({ chats = [], prefs: savedPrefs = null }) => {
+    if (savedPrefs && !prefsWereHere) { Object.assign(prefs, savedPrefs); store.set('ox.prefs', prefs); applyPrefs(); }
+    if (prefs.saveChatHistory && chats.length) {
+      const mine = new Map(convos.map((c) => [c.id, c]));
+      for (const c of chats) {
+        const here = mine.get(c.id);
+        if (!here) convos.push(settle({ at: Number(String(c.id).slice(1)) || Date.now(), ...c }));
+        else if (!here.running && (c.messages?.length ?? 0) > (here.messages?.length ?? 0)) Object.assign(here, settle(c));
+      }
+      convos.sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+      current ??= convos.find((c) => !c.archived)?.id ?? null;
+      renderLists(); renderChat();
+    }
+    chatsLoaded = true;
+    if (prefs.saveChatHistory) { store.set('ox.convos', savedChats()); pushChats(); }
+    if (!savedPrefs) postJson('/ox/chats', { prefs }).catch(() => {});
+  }).catch(() => {});
   // A request from another of your computers, and messages from them: asked here,
   // wherever you are in the app, as well as in the island.
   const meshAsks = new Map();

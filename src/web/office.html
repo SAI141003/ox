@@ -367,6 +367,23 @@ function render() {
   floorAt = f.id;
   const msg = document.getElementById('floormsg');
   msg.style.display = f.error ? 'block' : 'none'; msg.textContent = f.error ?? '';
+  // The owner of that computer is asked there, the same as anything else on the mesh.
+  if (f.needsAccess) {
+    const ask = document.createElement('button');
+    ask.textContent = 'Ask for access';
+    ask.style.cssText = 'display:block;margin:8px auto 0;padding:4px 12px;border-radius:6px;border:1px solid currentColor;background:none;color:inherit;font:inherit;cursor:pointer;pointer-events:auto';
+    ask.onclick = async () => {
+      ask.disabled = true; ask.textContent = `Waiting for an answer on ${f.machine}…`;
+      try {
+        const r = await fetch('/ox/mesh/agents/ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ machine: f.machine }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(/unknown request/.test(j.error?.message ?? '') ? `${f.machine} runs an older ox: update it first` : j.error?.message ?? 'No answer');
+        location.reload();
+      } catch (e) { ask.textContent = e.message; }
+    };
+    msg.style.pointerEvents = 'auto';
+    msg.append(ask);
+  }
   const ss = f.sessions.filter((s) => (s.idleSec ?? 0) < 30 * 60);
   stats.agents = ss.length; sync(ss); showFloors();
 }
@@ -399,7 +416,7 @@ if (demo) {
   floors = [
     { id: 'this', name: 'MacBook Air', machine: 'MacBook Air', sessions: [{ id: 'c1', tool: 'Claude Code', project: 'snake', doing: 'editing index.html', idleSec: 1 }, { id: 'x1', tool: 'Codex', project: 'snake', doing: '$ node test-ai.mjs', idleSec: 2 }, { id: 'cu', tool: 'Cursor', project: 'site', doing: 'editing hero.tsx', idleSec: 1 }, { id: 'g1', tool: 'Gemini CLI', project: 'docs', doing: 'reading README.md', idleSec: 2 }, { id: 'co', tool: 'Copilot', project: 'api', state: 'needs-you', doing: 'waiting for permission', idleSec: 3 }, { id: 'oc', tool: 'OpenCode', project: 'cli', state: 'idle', idleSec: 200 }, { id: 'h1', tool: 'Hermes', project: 'notes', state: 'idle', idleSec: 900 }] },
     { id: 'p1', name: 'Studio (GPU)', machine: 'Studio Mac', sessions: [{ id: 'a1', tool: 'Antigravity', project: 'ml', doing: '$ python train.py', idleSec: 1 }, { id: 'o1', tool: 'ox', project: 'evals', doing: 'running a command', idleSec: 2 }] },
-    { id: 'p2', name: 'Old laptop', machine: 'ThinkPad', sessions: [], error: 'ThinkPad does not share its agents: on ThinkPad, run  ox mesh allow "MacBook Air" agents' },
+    { id: 'p2', name: 'Old laptop', machine: 'ThinkPad', sessions: [], needsAccess: true, error: 'ThinkPad has not shared its sessions with this computer.' },
   ];
   render();
   if (false) sync([{ id: 'c1', tool: 'Claude Code', project: 'snake', doing: 'editing index.html', idleSec: 1 }, { id: 'x1', tool: 'Codex', project: 'snake', doing: '$ node test-ai.mjs', idleSec: 2 }, { id: 'c2', tool: 'Claude Code', project: 'site', doing: 'waiting for permission', state: 'needs-you', idleSec: 3 }, { id: 'c3', tool: 'Claude Code', project: 'api', state: 'idle', idleSec: 120 }]);
