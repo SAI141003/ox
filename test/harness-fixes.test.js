@@ -126,3 +126,15 @@ test('the rule to say a task cannot be done is in every prompt; the basics are n
   for (const n of ['web_search', 'code_graph', 'subagent']) assert.ok(line.includes(n), n);
   assert.match(line, /load_tools/);
 });
+
+test('with nobody watching, files that run later with your rights are refused; others are not', async () => {
+  const { protectedPathError } = await import('../src/tools/fs.js');
+  const home = os.homedir();
+  for (const f of ['.zshrc', '.ssh/authorized_keys', '.claude/settings.json', 'Library/LaunchAgents/x.plist', '.config/autostart/x.desktop']) {
+    assert.match(protectedPathError(path.join(home, f), { yolo: true }, 'write_file')?.content ?? '', /nobody watching/, f);
+    assert.equal(protectedPathError(path.join(home, f), {}, 'write_file'), null, `${f}: approvals decide when a person is there`);
+  }
+  assert.equal(protectedPathError(path.join(home, 'project/a.js'), { yolo: true }, 'write_file'), null);
+  assert.equal(protectedPathError(path.join(home, '.zshrc-notes'), { yolo: true }, 'write_file'), null);
+  assert.equal(protectedPathError('/tmp/.zshrc', { yolo: true }, 'write_file'), null);
+});

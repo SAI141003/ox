@@ -383,6 +383,22 @@ function gitCheck(p, tool) {
   return null;
 }
 
+// What runs later with your full rights: shell startup, SSH access, background jobs,
+// other agents' settings. Writing here is how sandboxed agents escaped in published
+// attacks. With a person there, the normal approval applies; with nobody watching
+// (yolo), it is refused.
+const STARTUP_FILES = new Set(['.zshrc', '.zshenv', '.zprofile', '.zlogin', '.bashrc', '.bash_profile', '.bash_login', '.profile', '.gitconfig']);
+const STARTUP_DIRS = ['.ssh', '.claude', '.codex', '.cursor', '.gemini', '.factory', path.join('Library', 'LaunchAgents'), path.join('.config', 'autostart'), path.join('.config', 'systemd')];
+export function protectedPathError(p, ctx, tool) {
+  if (!ctx?.yolo) return null;
+  const rel = path.relative(os.homedir(), path.resolve(p));
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  if (STARTUP_FILES.has(rel) || STARTUP_DIRS.some((d) => rel === d || rel.startsWith(d + path.sep))) {
+    return err(`${tool}: refusing to change '${p}' with nobody watching: it runs later with your full rights. Do this one with approvals on.`);
+  }
+  return null;
+}
+
 function findAll(haystack, needle) {
   if (!needle) return [];
   const hits = [];
@@ -625,6 +641,8 @@ async function writeFileInner(args = {}, ctx = {}) {
   if (badPath) return badPath;
   const badGit = gitCheck(p, 'write_file');
   if (badGit) return badGit;
+  const guarded = protectedPathError(p, ctx, 'write_file');
+  if (guarded) return guarded;
   const secret = secretError(p, ctx, 'write_file');
   if (secret) return secret;
   if (typeof args.content !== 'string') {
@@ -695,6 +713,8 @@ async function editFileInner(args = {}, ctx = {}) {
   if (badPath) return badPath;
   const badGit = gitCheck(p, 'edit_file');
   if (badGit) return badGit;
+  const guarded = protectedPathError(p, ctx, 'edit_file');
+  if (guarded) return guarded;
   const secret = secretError(p, ctx, 'edit_file');
   if (secret) return secret;
   // Changed under us since this run read it (another agent, a formatter, you): the edit
