@@ -907,6 +907,7 @@ export const LIVE_UI_GUIDE = [
   '```openui',
   'root = Explainer("How a request flows", ["Input: the app receives the message", "Route: Ox chooses a model and tools", "Respond: the model streams an answer"], true)',
   '```',
+  'A form must lead somewhere: when choices are not the whole answer, end with a button that acts on them, like Button("Run it", @ToAssistant("Run " + $model + " on my image")). Answer in the chat: never save a block to a file.',
   'Write one block like these, filled with what the user asked for, then at most one short sentence.',
   'Every $var a line reads must be declared. Use 0 - x for a negative number. For anything the components cannot show, a block fenced with ```html-live holds one self-contained HTML snippet (inline style and script, no network).',
 ].join('\n');
@@ -999,7 +1000,7 @@ async function handleChatCompletions(req, res) {
   }
   let target;
   try {
-    target = resolveBot(agentDef ? (agentBotSpec(agentDef) ?? defaultBotSpec({}, process.env) ?? 'ox-grok') : String(targetModel), { bots: readConfigDoc().bots ?? {} });
+    target = resolveBot(agentDef ? (agentBotSpec(agentDef) ?? defaultBotSpec(readConfigDoc(), process.env) ?? 'ox-grok') : String(targetModel), { bots: readConfigDoc().bots ?? {} });
     target.temperature = temperature0;
   } catch {
     target = { model: targetModel, temperature: temperature0 };
@@ -1097,7 +1098,9 @@ async function handleChatCompletions(req, res) {
   } catch {}
   // `ox_ui: 'live'` is sent by ox's own app, which can run interactive answers.
   // About 600 tokens: sent only when the message asks for something to use.
-  const liveUi = body.ox_ui === 'live' && (tool.canvas || wantsUi) && !wantsMedia ? LIVE_UI_GUIDE : '';
+  // A request to do something is done, not drawn: "can run yolo model" got a reference card
+  // to copy commands from, and the model saved that card as a file.
+  const liveUi = body.ox_ui === 'live' && (tool.canvas || (wantsUi && !wantsAction)) && !wantsMedia ? LIVE_UI_GUIDE : '';
   const howTo = [
     tool.research ? RESEARCH_BRIEF : tool.web ? 'Search the web for this and answer from what you find, naming each source.' : '',
     tool.think ? 'Think this through carefully before answering: weigh the alternatives, check your working, then give the answer.' : '',
@@ -2148,7 +2151,8 @@ async function followupsRoute(b) {
   const spec = String(b.model ?? '').trim();
   let botSpec = spec;
   if (spec.startsWith('agent:')) { const a = loadAgent(spec.slice(6)); botSpec = (a && agentBotSpec(a)) || ''; }
-  if (!botSpec) botSpec = defaultBotSpec({}, process.env) ?? 'ox-grok';
+  // "auto" is the chat box's setting, not a model: every request with it failed, unseen.
+  if (!botSpec || botSpec === 'auto') botSpec = defaultBotSpec(readConfigDoc(), process.env) ?? 'ox-grok';
   const target = resolveBot(botSpec, { bots: readConfigDoc().bots ?? {} });
   const { followups } = await import('./followups.js');
   const r = await followups({ target, question: b.question, answer: b.answer });
@@ -2165,7 +2169,7 @@ async function optimizeRoute(b) {
   let spec = String(b.model ?? '').trim();
   if (spec === 'auto' || !spec) { await warmLocal(); spec = autoModel([{ role: 'user', content: 'hi' }]).id; }
   if (spec.startsWith('agent:')) { const a = loadAgent(spec.slice(6)); spec = (a && agentBotSpec(a)) || ''; }
-  if (!spec) spec = defaultBotSpec({}, process.env) ?? 'ox-grok';
+  if (!spec) spec = defaultBotSpec(readConfigDoc(), process.env) ?? 'ox-grok';
   const target = resolveBot(spec, { bots: readConfigDoc().bots ?? {} });
   const { optimizePrompt } = await import('./prompt-optimizer.js');
   const r = await optimizePrompt({ target, text: b.text });

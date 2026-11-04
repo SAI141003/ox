@@ -1882,13 +1882,30 @@
     c.done = closed;
     return `<div class="ui ol" data-ol="${esc(key)}">${olHtml(c)}</div>`;
   }
+  function deadEndForm(root) {
+    const kinds = new Set();
+    const walk = (n) => {
+      if (Array.isArray(n)) { n.forEach(walk); return; }
+      if (!n || typeof n !== 'object') return;
+      if (n.type) kinds.add(n.type);
+      Object.values(n.props ?? n).forEach((v) => { if (v && typeof v === 'object') walk(v); });
+    };
+    walk(root);
+    const asks = ['Select', 'Slider', 'Input', 'Checkbox', 'Radio', 'Textarea', 'Toggle', 'Switch'].some((k) => kinds.has(k));
+    const acts = kinds.has('Button') || kinds.has('Buttons');
+    const answers = ['Stat', 'Chart', 'Table', 'Gauge', 'Metric'].some((k) => kinds.has(k));
+    return asks && !acts && !answers;
+  }
   function olHtml(c) {
     const ev = c.canvas.last ?? c.canvas.evaluate();
     c.actions = [];
     // While it streams, a half-written last line can leave no root for a moment:
     // keep the last drawing up instead of flashing back to "Drawing…".
     if (!ev.root && c.lastBody) { c.actions = c.lastActions; return c.lastBody; }
-    const body = ev.root ? canvasNode(ev.root, c) : '<div class="ui-box muted small">Drawing…</div>';
+    let body = ev.root ? canvasNode(ev.root, c) : '<div class="ui-box muted small">Drawing…</div>';
+    // A form with no button and nothing that answers it live was a dead end, whatever the
+    // model remembered to write: this sends the choices back so ox can carry on.
+    if (ev.root && c.done && deadEndForm(ev.root)) body += '<div style="margin-top:10px"><button class="btn" data-ol-go>Go ahead with these</button></div>';
     if (ev.root) { c.lastBody = body; c.lastActions = c.actions; }
     // OpenUI's rule: bad lines are dropped and the rest renders. Say so, briefly.
     const errs = [...(ev.parseErrors ?? []), ...(ev.errors ?? [])].filter((e) => (e.code !== 'root' || ev.root) && e.code !== 'ignored');
@@ -1947,6 +1964,11 @@
       });
       el.addEventListener('click', async (e) => {
         if (uiLocalClick(e)) return;
+        if (e.target.closest('[data-ol-go]')) {
+          const picks = Object.entries(c.canvas.state ?? {}).map(([k, v]) => `${String(k).replace(/^\$/, '')}: ${v}`).join(', ');
+          $('input').value = `Go ahead with these choices: ${picks}`; resize(); send();
+          return;
+        }
         const b = e.target.closest('[data-cv-act]'); if (!b) return;
         const out = await c.canvas.act(c.actions[Number(b.dataset.cvAct)], olQuery);
         if (out.rerender) redraw();
@@ -2946,7 +2968,7 @@
       if (body && c.id === current) paint(body, reply);
       saveConvos(); renderLists();
       // Three things to ask next, made after the answer so it never waits on them.
-      if (!group && !opts.reply && reply.content && !reply.error && prefs.followups === true && !c.incognito) {
+      if (!group && !opts.reply && reply.content && !reply.error && prefs.followups !== false && !c.incognito) {
         postJson('/ox/followups', { model, question: text, answer: reply.content })
           .then((f) => { if (f.items?.length) { reply.follow = f.items; if (c === convo()) paint(body, reply); saveConvos(); } })
           .catch(() => {});
@@ -5390,7 +5412,7 @@ files: [src/billing/**]
           <div class="sblock"><div class="shead">${icon('chat')}Chat</div><p class="sdesc">How this app behaves. Kept in this browser.</p>
           ${row('Default mode', 'What new chats start in. Auto picks per message.', `<select id="s-mode">${['auto', 'code', 'ask', 'plan', 'debug', 'data', 'orchestrate'].map((m) => `<option value="${m}">${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}</select>`)}
           ${row('Send with', 'The other key adds a new line.', seg('sendKey', [['enter', 'Enter'], ['mod', `${MOD}+Enter`]], prefs.sendKey))}
-          ${row('Suggest follow-ups', 'Three questions to ask next under each answer. Costs one small extra model call per answer (about 250 tokens).', sw('s-follow', prefs.followups === true))}
+          ${row('Suggest next steps', 'Three things to do next under each answer. Costs one small extra model call per answer (about 250 tokens).', sw('s-follow', prefs.followups !== false))}
           ${row('Activity detail', prefs.activity === 'compact' ? 'Compact: every step folded into one line you can open' : prefs.activity === 'detailed' ? 'Detailed: every step with its full arguments' : 'Normal: each step with the file or a short preview', seg('activity', [['compact', 'Compact'], ['normal', 'Normal'], ['detailed', 'Detailed']], prefs.activity || 'normal'))}
           ${row('Changed files', 'List the files each turn changed when it finishes.', sw('s-changed', prefs.changedFiles !== false))}
           ${row('What\u2019s new', 'Show what changed after ox updates.', sw('s-whatsnew', prefs.whatsNew !== false))}</div>`;

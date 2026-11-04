@@ -20,7 +20,10 @@ export async function quickText(target, { system, user, maxTokens = 200, signal 
     return { text: text || final, usage };
   }
   const messages = [{ role: 'system', content: system }, { role: 'user', content: user }];
-  for await (const raw of streamVia(target, { model: target?.model, messages, maxTokens, signal })) {
+  // A small call has no room to think: models spent the whole allowance on hidden reasoning
+  // and came back empty (80 of 80 tokens, no text), so next-step suggestions never appeared.
+  const quick = maxTokens <= 300 ? { reasoningEffort: 'none' } : {};
+  for await (const raw of streamVia(target, { model: target?.model, messages, maxTokens, signal, ...quick })) {
     const ev = normalizeStreamEvent(raw);
     if (!ev) continue;
     if (ev.kind === 'text') text += ev.text;
