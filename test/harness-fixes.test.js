@@ -295,3 +295,25 @@ test('ox ask: names map to plans, a read stays read-only, work lands, and no age
   const { classifyTool } = await import('../src/resource-class.js');
   assert.equal(classifyTool('ask_agent'), 'approval_gated');
 });
+
+test('memory: a request is not a memory, a fact stops growing, and a pass leaves no pile of lines', async () => {
+  const { worthKeeping } = await import('../src/memory-extract.js');
+  assert.equal(worthKeeping('Clear caches and logs in my mac'), false);
+  assert.equal(worthKeeping('I moved to Berlin last spring with my family'), true);
+  const { remember, memoryFile, load } = await import('../src/memory-graph.js');
+  const { sleep } = await import('../src/memory-layer.js');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-mem-'));
+  const file = memoryFile('user', { home });
+  const { memory } = remember('My favourite food is biryani', { file, scope: 'user', kind: 'preference' });
+  for (let i = 0; i < 60; i++) sleep({ file, home, recalls: new Map([[memory.id, 4]]) });
+  assert.ok(load(file).find((m) => m.id === memory.id).strength <= 8);
+  assert.equal(fs.readFileSync(file, 'utf8').trim().split('\n').length, 1);
+});
+
+test('the background memory pass spends no model of yours unless you named one', async () => {
+  const { learnInBackground, queueForExtraction } = await import('../src/memory-extract.js');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-mem-'));
+  queueForExtraction(['I moved to Berlin last spring with my family'], { home });
+  const r = await learnInBackground({ home, env: { OLLAMA_HOST: 'http://127.0.0.1:9' } });
+  assert.deepEqual([r.read, r.model ?? null], [0, null]);
+});

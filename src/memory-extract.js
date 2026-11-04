@@ -23,7 +23,7 @@ const inboxFile = (home = os.homedir()) => path.join(path.dirname(memoryFile('us
 
 // A statement about the user or their world, not a question or a request to do something now.
 const FIRST_PERSON = /\b(i|i'm|im|i've|we|we're|we've|my|our)\b/i;
-const REQUEST = /^(?:can|could|would|will) (?:you|u)\b|^(?:please\s+)?(?:fix|make|build|write|create|add|remove|delete|run|open|show|tell|find|check|explain|help|give|send|update|change|refactor|deploy|install)\b/i;
+const REQUEST = /^(?:can|could|would|will) (?:you|u)\b|^(?:please\s+)?(?:clear|clean|install|update|fix|make|build|write|create|add|remove|delete|run|open|show|tell|find|check|explain|help|give|send|update|change|refactor|deploy|install)\b/i;
 export function worthKeeping(sentence) {
   const s = String(sentence ?? '').trim();
   if (s.length < 12 || s.length > 300 || /\?\s*$/.test(s)) return false;
@@ -106,7 +106,9 @@ export async function learnInBackground({ home = os.homedir(), env = process.env
   const { resolveBot } = await import('./bots.js');
   const { quickText } = await import('./quick-text.js');
   const config = loadConfig();
-  if (!spec) { try { spec = await (await import('./working-model.js')).workingModelSpec(config, { say: () => {} }); } catch {} }
+  // Your model only if you said so (memoryLearnBot). Running this on a plan costs thousands of
+  // tokens a pass for a few facts, unasked. Without one, what you said waits in the inbox.
+  if (!spec && config.memoryLearnBot) spec = String(config.memoryLearnBot);
   let out = { read: 0, learned: [], left: 0 };
   if (spec && readInbox({ home }).length) {
     const target = resolveBot(spec, config);

@@ -2864,7 +2864,8 @@ const ROUTES = [
     const pinned = typeof body?.bot === 'string' && body.bot ? body.bot : null;
     const A = await import('./ask-agent.js');
     const buildConfig = readConfigDoc();
-    const lineup = Array.isArray(body?.bots) ? body.bots.map(String) : pinned ? [] : await A.teamLineup(buildConfig).catch(() => []);
+    // One model for the whole team unless you turn the mix on: more carriers, more tokens.
+    const lineup = Array.isArray(body?.bots) ? body.bots.map(String) : body?.mix === true && !pinned ? await A.teamLineup(buildConfig).catch(() => []) : [];
     const askWith = async (spec, q) => (await (await import('./quick-text.js')).quickText(resolveBot(spec, buildConfig), { ...q, maxTokens: 4000 })).text;
     const room = BR.startBuild({ task, dir, agents: body?.agents, ask, askWith, bots: lineup.length > 1 ? lineup : [], bot: pinned, sessionId: typeof body?.sessionId === 'string' ? body.sessionId : null });
     return { id: room.id, dir };

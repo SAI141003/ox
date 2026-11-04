@@ -122,6 +122,7 @@
   .nav-more { display: flex; flex-direction: column; gap: 1px; }
   .nav-more[hidden] { display: none; }
   .nav button[hidden] { display: none; }
+  #team-mix-wrap[hidden] { display: none; }
   #bots .card .d { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .nav-more-btn[aria-expanded="true"] [data-i] { transform: rotate(45deg); }
   .nav button { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; color: var(--muted); text-align: left; font-size: 13.5px; }
@@ -950,6 +951,7 @@
               <option value="auto">Auto</option><option value="code">Code</option><option value="ask">Ask</option><option value="plan">Plan</option>
               <option value="debug">Debug</option><option value="data">Data</option><option value="orchestrate">Orchestrate</option><option value="team">Team</option>
             </select>
+            <label class="pill" id="team-mix-wrap" hidden title="Off: the whole team uses this session's model. On: each part gets its own model, one per service you have connected. Uses more tokens."><input type="checkbox" id="team-mix"> Mixed models</label>
             <span class="tool-chips" id="tool-chips"></span>
             <span class="grow"></span>
             <label class="pill" title="Model or agent (⌘⇧M)"><select id="model" aria-label="Model"></select></label>
@@ -2343,7 +2345,7 @@
     try {
       // A later task in the same chat builds on the same project.
       // Where: the server decides from the session's folder (in it when it is a project, else a new folder in it).
-      const j = await postJson('/ox/builds', { task, cwd: c.cwd || about?.cwd || undefined, sessionId: c.id, agents: prefs.teamSize || undefined });
+      const j = await postJson('/ox/builds', { task, cwd: c.cwd || about?.cwd || undefined, sessionId: c.id, agents: prefs.teamSize || undefined, mix: prefs.teamMix === true });
       // The session follows the project the team builds: its chat, terminal and files are there now.
       c.buildDir = j.dir; c.cwd = j.dir; showRepo();
       (c.builds ??= []).push({ id: j.id, task, at: Date.now() });
@@ -2886,7 +2888,10 @@
   });
   $('send').onclick = () => send();
   try { $('mode').value = store.get('ox.mode', null) || store.get('ox.prefs', {}).defaultMode || 'auto'; } catch {}
-  $('mode').onchange = () => { store.set('ox.mode', $('mode').value); showMode(); };
+  const showTeamMix = () => { $('team-mix-wrap').hidden = $('mode').value !== 'team'; $('team-mix').checked = prefs.teamMix === true; };
+  $('team-mix').onchange = () => { prefs.teamMix = $('team-mix').checked; savePrefs(); };
+  $('mode').onchange = () => { store.set('ox.mode', $('mode').value); showMode(); showTeamMix(); };
+  showTeamMix();
 
   async function loadModels() {
     const sel = $('model');

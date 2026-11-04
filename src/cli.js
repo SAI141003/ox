@@ -6281,7 +6281,7 @@ async function runSubcommand(cmd, args) {
         const BR = await import('./build-room.js');
         const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
         const task = args.filter((a, i) => !a.startsWith('-') && !['--agents', '--dir', '--bot', '--bots', '--model'].includes(args[i - 1])).join(' ').trim();
-        if (!task) { console.log(c.red('usage: ox build --team "<task>" [--agents 2-4] [--dir <folder>] [--bot <one model for all> | --bots a,b,c]')); process.exitCode = 2; return; }
+        if (!task) { console.log(c.red('usage: ox build --team "<task>" [--agents 2-4] [--dir <folder>] [--bot <model> | --mix | --bots a,b,c]')); process.exitCode = 2; return; }
         const dir = path.resolve(val('--dir') ?? process.cwd());
         const config = loadConfig({ cwd: dir });
         const { workingModelSpec } = await import('./working-model.js');
@@ -6290,8 +6290,10 @@ async function runSubcommand(cmd, args) {
         const ask = async ({ system, user }) => (await quickText(target, { system, user, maxTokens: 4000 })).text;
         const askWith = async (spec, { system, user }) => (await quickText(resolveBot(spec, config), { system, user, maxTokens: 4000 })).text;
         const pinned = val('--bot') ?? val('--model');
-        const bots = val('--bots') ? val('--bots').split(',').map((s) => s.trim()).filter(Boolean) : pinned ? [] : await (await import('./ask-agent.js')).teamLineup(config);
-        if (bots.length > 1) console.log(c.dim(`team models: ${bots.join(', ')} (one model for all: --bot)`));
+        // One model for the whole team unless you ask for a mix (--mix, --bots, or teamMix in config).
+        const wantMix = args.includes('--mix') || (config.teamMix === true && !args.includes('--no-mix'));
+        const bots = val('--bots') ? val('--bots').split(',').map((s) => s.trim()).filter(Boolean) : wantMix && !pinned ? await (await import('./ask-agent.js')).teamLineup(config) : [];
+        if (bots.length > 1) console.log(c.dim(`team models: ${bots.join(', ')}`));
         const room = new BR.BuildRoom({ task, dir, agents: val('--agents') ?? 3, ask, askWith, bot: pinned, bots: bots.length > 1 ? bots : [] });
         const tint = { 'Agent 1': c.cyan ?? ((s) => s), 'Agent 2': c.green ?? ((s) => s), 'Agent 3': c.yellow ?? ((s) => s), 'Agent 4': c.magenta ?? ((s) => s) };
         const who = (a) => (tint[a] ?? c.bold)(a);

@@ -458,7 +458,9 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
           if (call) call.ok = !ev.isError;
         }
         if (ev.type === 'usage-total') {
-          Object.assign(ev, budget.snapshot());
+          // A plan's tokens never reach the budget: its own count stands, not a zero over it.
+          const snap = budget.snapshot();
+          Object.assign(ev, snap, { inputTokens: Math.max(snap.inputTokens ?? 0, ev.inputTokens ?? 0), outputTokens: Math.max(snap.outputTokens ?? 0, ev.outputTokens ?? 0) });
         }
         if (ev.type === 'tool-start') {
           toolCallCount++;

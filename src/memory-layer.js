@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { load, memoryFile, profile, tokens, entities, KINDS } from './memory-graph.js';
+import { compact, load, memoryFile, profile, tokens, entities, KINDS } from './memory-graph.js';
 import { screenPersistText } from './memory.js';
 import { memoryHome, noteMemoryEvent, readMemoryEvents } from './memory-events.js';
 
@@ -72,6 +72,9 @@ export function retention(m, now = Date.now()) {
 const live = (m) => m.state === 'active' && m.latest !== false;
 
 /** One consolidation pass over a graph file. Returns what it did. */
+// A profile fact is recalled on every run, so without a ceiling it outgrows everything else.
+const MAX_STRENGTH = 8;
+
 export function sleep({ file, home, now = Date.now(), recalls = null, dry = false, record = true } = {}) {
   const all = load(file);
   const changed = new Map();
@@ -84,7 +87,7 @@ export function sleep({ file, home, now = Date.now(), recalls = null, dry = fals
   for (const m of all) {
     const n = counts.get(m.id);
     if (!n || !live(m)) continue;
-    put({ ...m, strength: (m.strength ?? 1) + Math.min(1, n * 0.25), lastSeen: now, recalled: (m.recalled ?? 0) + n });
+    put({ ...m, strength: Math.min(MAX_STRENGTH, (m.strength ?? 1) + Math.min(1, n * 0.25)), lastSeen: now, recalled: (m.recalled ?? 0) + n });
     did.reinforced++;
   }
 
@@ -121,6 +124,7 @@ export function sleep({ file, home, now = Date.now(), recalls = null, dry = fals
   if (!dry && changed.size) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, [...changed.values()].map((r) => JSON.stringify(r)).join('\n') + '\n', { mode: 0o600 });
+    compact(file);   // the log holds what is true now, not one line per pass
   }
   if (!dry && record) {
     const after = load(file).filter(live).length;
@@ -221,7 +225,10 @@ export function sleepAll({ home = os.homedir(), cwd = process.cwd(), now = Date.
 export function startSleepCycle({ home = os.homedir(), cwd = process.cwd(), everyMs = 6 * 3600_000 } = {}) {
   if (process.env.NODE_TEST_CONTEXT || process.env.OX_MEMORY === '0') return () => {};
   // The rule-based tidy, then learning what the rules missed (memory-extract.js).
+  // Every 6 hours means every 6 hours: not again each time ox starts, which rewrote
+  // memory on each launch and could spend a model's tokens each time.
   const run = () => {
+    if (Date.now() - (readLayerMeta({ home }).lastSleep ?? 0) < everyMs - 60_000) return;
     try { sleepAll({ home, cwd }); } catch {}
     import('./memory-extract.js').then((x) => x.learnInBackground({ home })).catch(() => {});
   };

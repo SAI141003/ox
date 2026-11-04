@@ -192,6 +192,7 @@
       <input id="task" class="field grow" placeholder="What should the team build? e.g. a budgeting app with a REST API and tests" autocomplete="off">
       <input id="dir" class="field mono" style="width:220px" placeholder="folder (new one if empty)" title="Where the project goes. Leave empty for a new folder in ~/ox-builds.">
       <select id="agents" class="field" style="width:auto" title="How many agents build at once"><option value="" selected>As many as it needs</option><option value="2">Up to 2</option><option value="3">Up to 3</option><option value="4">Up to 4</option><option value="6">Up to 6</option><option value="8">Up to 8</option></select>
+      <label class="small" style="display:flex;align-items:center;gap:6px;white-space:nowrap" title="Off: one model for the whole team. On: each part gets its own model, one per service you have connected. Uses more tokens."><input type="checkbox" id="mix"> Mixed models</label>
       <button class="btn primary" id="go">Build</button>
     </form>
     <div id="running" class="grow" style="display:none;align-items:center;gap:10px;min-width:0">
@@ -559,7 +560,7 @@ $('start').onsubmit = async (ev) => {
   if (!task) { $('task').focus(); return; }
   $('go').disabled = true;
   try {
-    const j = await postJson('/ox/builds', { task, dir: $('dir').value.trim() || undefined, agents: Number($('agents').value) || undefined });
+    const j = await postJson('/ox/builds', { task, dir: $('dir').value.trim() || undefined, agents: Number($('agents').value) || undefined, mix: $('mix').checked });
     openBuild(j.id);
   } catch (e) { alert(e.message); }
   finally { $('go').disabled = false; }
