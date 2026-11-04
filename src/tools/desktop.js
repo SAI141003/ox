@@ -9,14 +9,16 @@
 // resize, move, minimise, maximise or restore it, open an app, dismiss a
 // notification. ox's rules stay on top: a control that sends, pays or deletes
 // is never touched; quitting apps and physical mouse input are not offered.
+import os from 'node:os';
+import path from 'node:path';
 import * as macControl from '../mac-control.js';
 
-export const DESKTOP_READS = Object.freeze(['find', 'get', 'is', 'windows', 'apps', 'notifications']);
-export const DESKTOP_ACTS = Object.freeze(['set_value', 'clear', 'focus', 'select', 'toggle', 'check', 'uncheck', 'expand', 'collapse', 'scroll', 'scroll_to', 'focus_window', 'resize_window', 'move_window', 'minimize', 'maximize', 'restore', 'launch', 'dismiss_notification']);
+export const DESKTOP_READS = Object.freeze(['map', 'drill', 'find', 'get', 'is', 'windows', 'apps', 'notifications', 'surfaces', 'displays', 'wait', 'screenshot']);
+export const DESKTOP_ACTS = Object.freeze(['click', 'double_click', 'right_click', 'type', 'hover', 'drag', 'clipboard_get', 'clipboard_set', 'clipboard_clear', 'notification_action', 'dismiss_all_notifications', 'open_surface', 'set_value', 'clear', 'focus', 'select', 'toggle', 'check', 'uncheck', 'expand', 'collapse', 'scroll', 'scroll_to', 'focus_window', 'resize_window', 'move_window', 'minimize', 'maximize', 'restore', 'launch', 'dismiss_notification']);
 
 export const DESKTOP_TOOL_SCHEMAS = Object.freeze([{
   name: 'desktop',
-  description: 'Work in a desktop app through its accessibility tree (agent-desktop; no pointer moved, no focus taken). Cheapest first: action "find" with text/role returns just the matching controls; "get"/"is" read one. Acting (set_value, clear, focus, select, toggle, check, uncheck, expand, collapse, scroll, scroll_to) takes the control by name; window actions (focus_window, resize_window, move_window, minimize, maximize, restore, launch) take the app; notifications/dismiss_notification read and clear Notification Center. Never sends, pays or deletes.',
+  description: 'Work in a desktop app through its accessibility tree (agent-desktop; no pointer moved, no focus taken). Cheapest first: action "find" with text/role returns just the matching controls; "get"/"is" read one. For a dense app, "map" gives a shallow outline with refs like @s1:e3 and how much is inside each; "drill" with one of those refs reads that region. An element can be its name or such a ref. After an async step use "wait", not a pause. Acting (set_value, clear, focus, select, toggle, check, uncheck, expand, collapse, scroll, scroll_to) takes the control by name; window actions (focus_window, resize_window, move_window, minimize, maximize, restore, launch) take the app; notifications/dismiss_notification read and clear Notification Center. Never sends, pays or deletes.',
   parameters: {
     type: 'object',
     properties: {
@@ -24,7 +26,11 @@ export const DESKTOP_TOOL_SCHEMAS = Object.freeze([{
       app: { type: 'string', description: 'The app, e.g. "Notes" (default: the app in front)' },
       element: { type: 'string', description: 'The control: its name or label, or its number from ui_elements' },
       role: { type: 'string', description: 'Narrow by role: button, textfield, checkbox, row, menuitem …' },
-      text: { type: 'string', description: 'find: text in a control\'s name, value or label' },
+      text: { type: 'string', description: 'find: text in a control\'s name, value or label; type: the text; wait: text to wait for; clipboard_set: the text' },
+      to: { type: 'string', description: 'drag: the control to drop on, by name or ref' },
+      ms: { type: 'number', description: 'wait: how long at most, up to 15000' },
+      window: { type: 'string', description: 'wait: a window title to wait for' },
+      surface: { type: 'string', description: 'open_surface: dock, menu-bar-extras, start-menu, taskbar, system-tray' },
       value: { type: 'string', description: 'set_value: the new value; select: the option' },
       property: { type: 'string', description: 'get: text, value, title, bounds, role, states; is: visible, enabled, checked, focused, expanded, selected' },
       direction: { type: 'string', enum: ['up', 'down', 'left', 'right'] },
@@ -37,11 +43,36 @@ export const DESKTOP_TOOL_SCHEMAS = Object.freeze([{
 }]);
 
 const err = (content) => ({ content, isError: true });
+
+// What each ref from a map or drill is, so ox's rules can read it before acting: a
+// bare ref says nothing about whether the control sends, pays or deletes.
+const KNOWN_REFS = new Map();
+const learnRef = (n) => { if (KNOWN_REFS.size > 2000) KNOWN_REFS.clear(); KNOWN_REFS.set(n.ref_id, { ref: n.ref_id, role: String(n.role ?? 'control'), name: n.name ?? '', description: n.description ?? '' }); };
+
+/** A snapshot as short lines: ref, role, name, and how much a cut branch still holds. */
+export function describeTree(tree, { max = 400 } = {}) {
+  const lines = [];
+  const walk = (n, depth) => {
+    if (!n || lines.length >= max) return;
+    if (n.ref_id) learnRef(n);
+    const label = [n.name, n.value != null && n.value !== '' ? `= ${String(n.value).slice(0, 80)}` : null].filter(Boolean).join(' ');
+    if (n.ref_id || label || n.children_count) lines.push(`${' '.repeat(depth)}${n.ref_id ? `${n.ref_id} ` : ''}${n.role ?? 'group'}${label ? ` "${String(label).slice(0, 120)}"` : ''}${n.children_count ? ` (${n.children_count} inside)` : ''}`);
+    for (const c of n.children ?? []) walk(c, depth + 1);
+  };
+  walk(tree, 0);
+  return lines.join('\n') || 'nothing to show';
+}
 const why = (r) => [r?.error?.message, r?.error?.suggestion].filter(Boolean).join(' ') || 'agent-desktop failed';
 
 /** A control of the app, by name or number, refusing the ones that send, pay or delete. */
-async function target(A, { app, element, role }) {
-  const list = await A.listElements(app);
+async function target(A, { app, element, role }, opts = {}) {
+  if (/^@/.test(String(element ?? '').trim())) {
+    const known = KNOWN_REFS.get(String(element).trim());
+    if (!known) return { error: `${element} is not from a map or drill in this run: use "map" again` };
+    if (macControl.isRisky(known)) return { error: `ox does not touch "${known.name || known.description}": that sends, pays or deletes. It is left for you.` };
+    return { el: known };
+  }
+  const list = await A.listElements(app, opts);
   if (list.error) return { error: list.error };
   const q = String(element ?? '').trim();
   if (!q) return { error: 'element is required: the control\'s name or label' };
@@ -55,6 +86,22 @@ async function target(A, { app, element, role }) {
 export function commandFor(a, ref = null) {
   const app = a.app ? ['--app', String(a.app)] : [];
   switch (a.action) {
+    case 'map': return ['snapshot', ...app, '--skeleton', '-i', '--compact'];
+    case 'drill': return ['snapshot', '--root', ref, '-i', '--compact'];
+    case 'surfaces': return ['list-surfaces', ...app];
+    case 'displays': return ['list-displays'];
+    case 'wait': return ['wait', ...app, ...(a.text ? ['--text', String(a.text)] : a.window ? ['--window', String(a.window)] : [String(Math.max(1, Math.min(15000, Number(a.ms) || 1000)))]), ...(a.text || a.window ? ['--timeout', String(Math.max(1, Math.min(15000, Number(a.ms) || 10000)))] : [])];
+    case 'screenshot': return ['screenshot', ...app, String(a.path)];
+    case 'click': case 'double_click': case 'right_click': return [a.action.replace('_', '-'), ref];
+    case 'type': return ['type', ref, String(a.text ?? '')];
+    case 'hover': return ['--headed', 'hover', ref];
+    case 'drag': return ['--headed', 'drag', '--from', ref, '--to', a.toRef];
+    case 'clipboard_get': return ['clipboard-get'];
+    case 'clipboard_set': return ['clipboard-set', String(a.text ?? '')];
+    case 'clipboard_clear': return ['clipboard-clear'];
+    case 'notification_action': return ['notification-action', String(Math.max(1, Math.round(Number(a.index) || 1))), String(a.value ?? '')];
+    case 'dismiss_all_notifications': return ['dismiss-all-notifications', ...app];
+    case 'open_surface': return ['open-system-surface', '--surface', String(a.surface ?? '')];
     case 'find': return ['find', ...app, ...(a.text ? ['--text', String(a.text)] : []), ...(a.role ? ['--role', String(a.role)] : []), ...(a.element ? ['--name', String(a.element)] : [])];
     case 'get': return ['get', ref, '--property', String(a.property || 'text')];
     case 'is': return ['is', ref, '--property', String(a.property || 'visible')];
@@ -75,7 +122,7 @@ export function commandFor(a, ref = null) {
   }
 }
 
-const NEEDS_CONTROL = new Set(['get', 'is', 'set_value', 'select', 'scroll', 'scroll_to', 'clear', 'focus', 'toggle', 'check', 'uncheck', 'expand', 'collapse']);
+const NEEDS_CONTROL = new Set(['drill', 'click', 'double_click', 'right_click', 'type', 'hover', 'drag', 'get', 'is', 'set_value', 'select', 'scroll', 'scroll_to', 'clear', 'focus', 'toggle', 'check', 'uncheck', 'expand', 'collapse']);
 
 /** find's answer, short: one line per control (role, name, value, state), not the JSON. */
 export function describeFound(data) {
@@ -86,25 +133,41 @@ export function describeFound(data) {
 
 export async function desktop(args = {}, ctx = {}) {
   const A = await import('../agent-desktop.js');
-  if (!A.available(ctx.env ?? process.env)) return err('desktop needs agent-desktop: npm install -g agent-desktop (then give it Accessibility in System Settings)');
+  if (!A.available(ctx.env ?? process.env)) return err('desktop needs agent-desktop: ox desktop install, or npm install -g agent-desktop (then give it Accessibility in System Settings)');
   const a = { ...args, action: String(args.action ?? '') };
   if (![...DESKTOP_READS, ...DESKTOP_ACTS].includes(a.action)) return err(`desktop: action is one of ${[...DESKTOP_READS, ...DESKTOP_ACTS].join(', ')}`);
   if (a.action === 'launch' && !a.app) return err('launch: which app?');
   if (a.action === 'resize_window' && !(Number(a.width) > 0 && Number(a.height) > 0)) return err('resize_window: width and height are needed');
   if (a.action === 'move_window' && !(Number.isFinite(Number(a.x)) && Number.isFinite(Number(a.y)))) return err('move_window: x and y are needed');
+  // ox's rule, for every way of typing: a line break would press Return.
+  if (a.action === 'type' && /[\r\n]/.test(String(a.text ?? ''))) return err('type: ox never presses Return, and a line break would. Send the text without it; the last step stays yours.');
+  if (a.action === 'notification_action' && macControl.isRisky({ name: a.value })) return err(`ox does not press "${a.value}" on a notification: that sends, pays or deletes. It is left for you.`);
+  if (a.action === 'screenshot') { a.path = path.join(os.tmpdir(), `ox-desktop-${process.pid}-${Date.now()}.png`); }
+  const scope = await A.desktopScope(ctx);
   let ref = null, label = a.app || 'the app in front';
   if (NEEDS_CONTROL.has(a.action)) {
-    const t = await target(A, a);
+    const t = await target(A, a, { scope, env: ctx.env ?? process.env });
     if (t.error) return err(t.error);
     ref = t.el.ref; label = `${t.el.role} "${t.el.name || t.el.description || ''}"`;
+    if (a.action === 'drag') {
+      const d = await target(A, { app: a.app, element: a.to }, { scope, env: ctx.env ?? process.env });
+      if (d.error) return err(`drag: ${d.error}`);
+      a.toRef = d.el.ref;
+    }
   }
   if (DESKTOP_ACTS.includes(a.action) && ctx?.requestApproval) {
     const ok = await ctx.requestApproval('desktop', { action: a.action, app: a.app ?? null, element: a.element ?? null }, `${a.action.replace('_', ' ')} ${label}${a.value != null ? ` → "${String(a.value).slice(0, 60)}"` : ''}?`);
     if (!ok) return err(`declined: ${a.action} ${label}`);
   }
   const cmd = commandFor(a, ref);
-  const r = await A.run(cmd, { env: ctx.env ?? process.env });
-  if (!r.ok) return err(`${a.action}: ${why(r)}`);
+  const r = await A.run(cmd, { env: ctx.env ?? process.env, scope, timeoutMs: a.action === 'wait' ? 20_000 : 15_000 });
+  if (!r.ok) {
+    if (/session/i.test(String(r.error?.code ?? ''))) A.forgetDesktopSession();
+    return err(`${a.action}: ${why(r)}`);
+  }
+  if (a.action === 'map' || a.action === 'drill') return { content: describeTree(r.data?.tree) };
+  if (a.action === 'screenshot') return { content: `saved: ${a.path}` };
+  if (a.action === 'clipboard_get') return { content: JSON.stringify(r.data).slice(0, 4000) };
   if (a.action === 'find') return { content: describeFound(r.data) };
   if (a.action === 'get' || a.action === 'is') return { content: `${label} ${a.property || (a.action === 'get' ? 'text' : 'visible')}: ${JSON.stringify(r.data?.value ?? r.data)}` };
   if (DESKTOP_READS.includes(a.action)) return { content: JSON.stringify(r.data).slice(0, 4000) };

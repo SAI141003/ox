@@ -77,3 +77,38 @@ test('ox swarm --app reviews a desktop app read-only: a nameless or tiny button 
     fs.rmSync(out, { recursive: true, force: true });
   }
 });
+
+test('map and drill read as short lines with refs, and teach ox what each ref is', async () => {
+  const { describeTree } = await import('../src/tools/desktop.js');
+  const text = describeTree({ role: 'window', name: 'Mail', children: [{ role: 'group', ref_id: '@s1:e5', name: 'Sidebar', children_count: 12 }, { role: 'button', name: 'Send', ref_id: '@s1:e3' }] });
+  assert.match(text, /@s1:e5 group "Sidebar" \(12 inside\)/);
+  assert.match(text, /@s1:e3 button "Send"/);
+});
+
+test('a ref gets no way around the rules: Send stays refused, unknown refs too, and no Return in text', async () => {
+  const { desktop, describeTree } = await import('../src/tools/desktop.js');
+  describeTree({ role: 'window', children: [{ role: 'button', name: 'Send', ref_id: '@s1:e3' }, { role: 'textfield', name: 'Subject', ref_id: '@s1:e1' }] });
+  const yes = { requestApproval: async () => true };
+  assert.match((await desktop({ action: 'click', element: '@s1:e3' }, yes)).content, /does not touch "Send"/);
+  assert.match((await desktop({ action: 'click', element: '@s9:e9' }, yes)).content, /not from a map or drill/);
+  assert.match((await desktop({ action: 'type', element: '@s1:e1', text: 'hi\nthere' }, yes)).content, /never presses Return/);
+  assert.match((await desktop({ action: 'notification_action', index: 1, value: 'Delete' }, yes)).content, /does not press "Delete"/);
+  const typed = await desktop({ action: 'type', element: '@s1:e1', text: 'hi' }, yes);
+  assert.equal(typed.isError, undefined, typed.content);
+});
+
+test('each agent acts under its own id in one session', async () => {
+  const A = await import('../src/agent-desktop.js');
+  assert.equal(A.agentIdOf({ agentName: 'Lead dev!' }), 'Lead-dev-');
+  assert.equal(A.agentIdOf({}, {}), 'ox');
+  assert.match(A.agentIdOf({ depth: 2 }, {}), /^helper-\d+-2$/);
+});
+
+test('the installer refuses a file that does not match the pinned checksum', async () => {
+  const A = await import('../src/agent-desktop.js');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-ad-'));
+  const bad = async () => ({ ok: true, arrayBuffer: async () => new TextEncoder().encode('not the file').buffer });
+  await assert.rejects(A.installAgentDesktop({ env: { OX_HOME: home }, platform: 'darwin', arch: 'arm64', fetchImpl: bad }), /does not match its published checksum/);
+  assert.equal(fs.existsSync(path.join(home, 'vendor', 'agent-desktop')), false);
+  assert.equal(Object.keys(A.AGENT_DESKTOP_FILES).length, 6);
+});

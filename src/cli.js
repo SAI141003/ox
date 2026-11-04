@@ -214,7 +214,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'knowledge', 'ecc', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
+const SUBCOMMANDS = new Set(['desktop', 'version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'knowledge', 'ecc', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -6128,6 +6128,22 @@ async function runSubcommand(cmd, args) {
         }
       } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; return; }
       console.log(SUB_USAGE.hf); process.exitCode = 2;
+      return;
+    }
+    case 'desktop': {
+      // agent-desktop (vercel-labs/agent-desktop, Apache-2.0): ox's hands in any desktop app.
+      const A = await import('./agent-desktop.js');
+      const sub = String(args[0] ?? 'status').toLowerCase();
+      if (sub === 'install') {
+        console.log(c.dim(`downloading agent-desktop ${A.AGENT_DESKTOP_VERSION} from vercel-labs/agent-desktop…`));
+        const r = await A.installAgentDesktop();
+        console.log(`${c.green('✓')} agent-desktop ${r.version}, checksum ok: ${r.bin}`);
+        return;
+      }
+      const bin = A.agentDesktopBin();
+      if (!bin) { console.log('agent-desktop is not installed: ox desktop install'); process.exitCode = 1; return; }
+      const r = await A.run(['status']);
+      console.log(r.ok ? `agent-desktop ${r.data?.version} at ${bin}\n  accessibility: ${r.data?.permissions?.accessibility?.state}\n  screen recording: ${r.data?.permissions?.screen_recording?.state}` : `agent-desktop at ${bin} did not answer: ${r.error?.message}`);
       return;
     }
     case 'ecc': {

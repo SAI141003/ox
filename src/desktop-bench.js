@@ -28,13 +28,14 @@ export function gpt4oImageTokens(w, h) {
 export const textTokens = (text) => tokensOf([{ role: 'user', content: String(text ?? '') }]);
 
 /** The report from what was measured. → { rows, best, times } */
-export function report({ width, height, snapshotJson, controlsText, findText }) {
+export function report({ width, height, snapshotJson, controlsText, findText, skeletonText }) {
   const rows = [];
   if (width && height) {
     rows.push({ how: 'screenshot (Claude)', tokens: claudeImageTokens(width, height) });
     rows.push({ how: 'screenshot (GPT-4o)', tokens: gpt4oImageTokens(width, height) });
   }
   if (snapshotJson) rows.push({ how: 'accessibility snapshot, full JSON', tokens: textTokens(snapshotJson) });
+  if (skeletonText) rows.push({ how: 'ox desktop map (skeleton outline)', tokens: textTokens(skeletonText) });
   if (controlsText) rows.push({ how: 'ox ui_elements (one line per control)', tokens: textTokens(controlsText) });
   if (findText) rows.push({ how: 'ox desktop find (only the match)', tokens: textTokens(findText) });
   const shot = rows.find((r) => r.how === 'screenshot (Claude)')?.tokens ?? null;
@@ -68,6 +69,8 @@ export async function measure(app, { find = null } = {}) {
   } else out.shotError = shot.error?.message ?? 'no screenshot';
   const snap = await A.run(['snapshot', '--app', app, '--compact', '--max-depth', '25'], { timeoutMs: 30_000 });
   if (snap.ok) out.snapshotJson = JSON.stringify(snap.data); else out.snapError = snap.error?.message;
+  const skel = await A.run(['snapshot', '--app', app, '--skeleton', '-i', '--compact'], { timeoutMs: 30_000 });
+  if (skel.ok) out.skeletonText = (await import('./tools/desktop.js')).describeTree(skel.data?.tree);
   const list = await A.listElements(app);
   if (!list.error) out.controlsText = describeElements(list); else out.listError = list.error;
   if (find) {
