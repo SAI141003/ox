@@ -60,6 +60,7 @@
 // discarded. Hook errors are swallowed, not logged.
 
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -87,10 +88,40 @@ function readJsonFile(file) {
   }
 }
 
+const warnedHooks = new Set();
+const trustFile = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'trusted-hooks.json');
+const hooksDigest = (cwd) => {
+  try { return crypto.createHash('sha256').update(fs.readFileSync(path.join(cwd, '.ox', 'hooks.json'))).digest('hex'); } catch { return null; }
+};
+/** Trust is for these exact contents in this exact folder: a change asks again. */
+export function projectHooksTrusted(cwd = process.cwd()) {
+  const digest = hooksDigest(cwd);
+  if (!digest) return false;
+  try { return JSON.parse(fs.readFileSync(trustFile(), 'utf8'))[path.resolve(cwd)] === digest; } catch { return false; }
+}
+export function trustProjectHooks(cwd = process.cwd()) {
+  const digest = hooksDigest(cwd);
+  if (!digest) throw new Error(`no .ox/hooks.json in ${cwd}`);
+  let doc = {};
+  try { doc = JSON.parse(fs.readFileSync(trustFile(), 'utf8')) ?? {}; } catch {}
+  doc[path.resolve(cwd)] = digest;
+  fs.mkdirSync(path.dirname(trustFile()), { recursive: true });
+  fs.writeFileSync(trustFile(), JSON.stringify(doc, null, 2), { mode: 0o600 });
+  return digest;
+}
+
 // Load hooks config: project .ox/hooks.json overrides global ~/.ox/config.json.
 export function loadHooksConfig(cwd = process.cwd()) {
   const globalDoc = readJsonFile(path.join(os.homedir(), '.ox', 'config.json')) || {};
-  const projectDoc = readJsonFile(path.join(cwd, '.ox', 'hooks.json')) || {};
+  // A repository's hooks are its author's commands: a clone must not run them on this
+  // machine until you say so (the same hole behind real CVEs in other agents).
+  const projectFile = path.join(cwd, '.ox', 'hooks.json');
+  const trusted = projectHooksTrusted(cwd);
+  if (!trusted && fs.existsSync(projectFile) && !warnedHooks.has(projectFile)) {
+    warnedHooks.add(projectFile);
+    process.stderr.write(`ox: not running the hooks in ${projectFile}: this repository's own commands. Read them, then: ox hooks trust\n`);
+  }
+  const projectDoc = (trusted ? readJsonFile(projectFile) : null) || {};
   const merged = {};
   for (const ev of HOOK_EVENTS) {
     const globalList = Array.isArray(globalDoc?.hooks?.[ev]) ? globalDoc.hooks[ev] : [];

@@ -7008,6 +7008,12 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'hooks': {
+      if (args[0] === 'trust') {
+        const H = await import('./hooks.js');
+        H.trustProjectHooks(process.cwd());
+        console.log(`${c.green('✓')} this folder's .ox/hooks.json may run, as it is now. A change to it asks again.`);
+        return;
+      }
       const ah = await import('./agent-hooks.js');
       const sub = args[0] ?? 'status';
       const agent = args[1] ?? 'claude';

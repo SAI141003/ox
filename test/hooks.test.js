@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import {
+import { trustProjectHooks,
   HOOK_EVENTS,
   loadHooksConfig,
   fireHooks,
@@ -53,7 +53,7 @@ test('loadHooksConfig: loads project .ox/hooks.json', () => {
       },
     })
   );
-  const config = loadHooksConfig(tmp);
+  const config = (trustProjectHooks(tmp), loadHooksConfig(tmp));
   assert.equal(config.PreToolUse.length, 1);
   assert.equal(config.PreToolUse[0].matcher, 'Bash');
   assert.equal(config.PreToolUse[0].command, 'echo blocked');
