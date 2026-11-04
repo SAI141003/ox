@@ -47,3 +47,10 @@ test('agents are known from the start, so a spoken request can name one', () => 
   assert.match(tray, /chat\.folder"\)[^\n]*\n[^\n]*\n\s*loadAgents\(\)/);
 });
 
+test('a look at the screen never picks the Claude plan by itself', () => {
+  const cli = fs.readFileSync(new URL('../src/cli.js', import.meta.url), 'utf8');
+  const block = cli.slice(cli.indexOf('A look at the screen should come back'), cli.indexOf('opts.sayFailure = plainFailure'));
+  assert.match(block, /runnable\('chatgpt-plan'\)/);
+  assert.doesNotMatch(block, /'claude-plan'/);
+});
+
