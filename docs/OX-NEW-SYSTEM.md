@@ -10,7 +10,7 @@ ox is a coding agent that has to prove its work. It writes a failing test before
 
 **Asking first.** If a paired machine wants something it hasn't been allowed, its owner gets a card in the app or island with Allow, Always or Deny.
 
-**Connections you can read.** Each machine shows whether it's connected, how fast, and what each side allows. You can disconnect and reconnect without a new code, or remove a machine completely. Messages between computers say "delivered" only when the other machine confirms it.
+**Connections you can read.** Each machine shows whether it's connected, how fast, and what each side allows. You can disconnect, reconnect without a new code, or remove a machine. Messages between computers say "delivered" only when the other machine confirms it.
 
 **Faster transfers.** Files can now be any size, up from 8 MB, and each is checked with SHA-256 before it takes its name. Dropping a layer of encoding cut the bytes on the wire from 1.78× the file to 1.00×. On one Mac, downloads went from about 60–100 MB/s to 190–615 MB/s.
 
@@ -24,7 +24,7 @@ ox is a coding agent that has to prove its work. It writes a failing test before
 
 ## The bots system
 
-A bot is simply who answers: a model from a provider, a plan you already pay for, a model on your own machine, your own endpoint, or a model on another of your computers. Pick one, or leave it on Auto and ox chooses for the task. You can also make your own agents, each with its own instructions, mode and tools.
+A bot is simply who answers: a model from a provider, a plan you already pay for, a model on your own machine, your own endpoint, or a model on another of your computers. Pick one, or leave it on Auto and ox chooses for the task. You can also make your own agents.
 
 You choose who gets your prompt. If you name a model and it can't answer, ox only moves to another model from the same provider, or to backups you listed yourself, and it says when it does.
 
@@ -32,7 +32,7 @@ You choose who gets your prompt. If you name a model and it can't answer, ox onl
 
 ox's memory lives on your machine, as a graph of facts rather than a growing pile of notes. When something changes ("works at Stripe" replacing "works at Google"), the new fact takes over and the old one keeps its dates, so ox can still answer what was true in March.
 
-Recall mixes text match, related facts, how recent something is and how much it matters. A short profile goes in front of every run, so ox starts already knowing you.
+A short profile goes in front of every run, so ox starts already knowing you.
 
 A background pass runs every six hours and never deletes anything. It folds duplicates together and retires events whose day has passed. Facts that keep getting used grow stronger, and ones nobody uses go quiet. A lesson only becomes a how-to procedure after it has been verified twice.
 

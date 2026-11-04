@@ -10,7 +10,10 @@ test('each action becomes the agent-desktop command, nothing that quits apps or 
   assert.deepEqual(commandFor({ action: 'move_window', app: 'Notes', x: -100, y: 40 }), ['move-window', '--app', 'Notes', '--x=-100', '--y=40']);
   assert.deepEqual(commandFor({ action: 'focus_window', app: 'Notes' }), ['focus-window', '--app', 'Notes']);
   assert.deepEqual(commandFor({ action: 'select', value: 'Large' }, '@s1:e2'), ['select', '@s1:e2', 'Large']);
-  for (const a of DESKTOP_ACTS) assert.ok(!/close|quit|mouse|key-down|drag/.test(a), a);
+  for (const a of DESKTOP_ACTS) assert.ok(!/close|quit|mouse|key-down/.test(a), a);
+  // Only these two move the real pointer, because agent-desktop allows them no other way.
+  const headed = DESKTOP_ACTS.filter((a) => (commandFor({ action: a, value: 'x', app: 'x', surface: 'dock', text: 'x', toRef: '@s1:e2' }, '@s1:e1') ?? []).includes('--headed'));
+  assert.deepEqual(headed, ['hover', 'drag']);
   assert.equal(commandFor({ action: 'close_app' }), null);
 });
 
