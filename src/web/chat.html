@@ -1831,6 +1831,27 @@
   // which the app's security policy blocks: a large blank box.
   // macOS System Settings panes an answer may open (x-apple.systempreferences:…).
   const SETTINGS_URL = /^x-apple\.systempreferences:[\w.\-]*(\?[\w.\-=&]*)?$/i;
+  // A made picture opens over the page. As a link it replaced the whole app window, and
+  // the app has no back button, so a missing file left only an error on screen.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest?.('a[href^="/ox/media/"]');
+    if (!a || e.metaKey || e.ctrlKey) return;
+    e.preventDefault();
+    const over = document.createElement('div');
+    over.id = 'media-over';
+    over.style.cssText = 'position:fixed;inset:0;z-index:9999;display:grid;place-items:center;background:rgba(0,0,0,.85);cursor:zoom-out';
+    const img = new Image();
+    img.src = a.getAttribute('href');
+    img.alt = 'made by ox';
+    img.style.cssText = 'max-width:92vw;max-height:92vh;border-radius:12px';
+    const close = () => { over.remove(); document.removeEventListener('keydown', onKey); };
+    const onKey = (k) => { if (k.key === 'Escape') close(); };
+    img.onerror = () => { close(); toast('That file is not here any more'); };
+    over.append(img);
+    over.onclick = close;
+    document.addEventListener('keydown', onKey);
+    document.body.append(over);
+  });
   document.addEventListener('click', (e) => {
     const b = e.target.closest?.('[data-open-settings]');
     if (b) postJson('/ox/open-settings', { url: b.dataset.openSettings }).catch((err) => toast(err.message));

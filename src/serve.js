@@ -192,7 +192,15 @@ function sendSSEDone(res) {
 // The one error body shape. `param` names the request field at fault and `code`
 // is the machine-readable reason; both are null when they do not apply, which is
 // what OpenAI sends rather than omitting the keys.
+// A window that lands on a dead address had raw JSON and no way back: the app has no
+// address bar. Only a page load asks for HTML; API calls still get JSON.
+const NOT_HERE_PAGE = '<!doctype html><meta charset="utf-8"><title>ox</title><body style="margin:0;height:100vh;display:grid;place-items:center;background:#0E0F12;color:#C9CDD4;font:15px -apple-system,system-ui,sans-serif;text-align:center"><div><p>That page or file is not here any more.</p><p><a href="/" style="color:#fff">Back to ox</a></p></div>';
 function sendError(res, status, message, type = 'invalid_request_error', code = null, param = null) {
+  if (status === 404 && res.req?.method === 'GET' && /\btext\/html\b/.test(res.req.headers?.accept ?? '')) {
+    res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(NOT_HERE_PAGE);
+    return;
+  }
   sendJson(res, status, { error: { message, type, param, code } });
 }
 
@@ -809,10 +817,55 @@ const MEDIA_ART = /^\s*(?:(?:can|could|would) you\s+|please\s+)?(?:draw|paint|sk
 // chart", "create a React component that shows an image"), or a file is named.
 // Scene words after a drawing request ("draw a cat on a table") do not count.
 const MEDIA_NOT = /\b(?:build|create|make|write|generate|design|code|scaffold)\b(?:\s+[\w'-]+){0,3}?\s+(?:website|web ?page|webpage|page|site|app|html|css|component|slides?|deck|chart|graph|diagram|table|repo|repository|codebase|function|class|module|script|file|files)\b|[\w-]+\.(?:js|ts|tsx|jsx|py|go|rs|html|css|json|md)\b/i;
+// Mistyped ("crreate and image", "creat an imge"): the request was missed, and the answer
+// showed a found photo instead of the picture asked for. Real words stay as they are:
+// "created" is not a request, and a mage or a proto is not a picture.
+const MEDIA_SPELLED = ['create', 'generate', 'image', 'picture', 'video', 'sketch', 'photo', 'drawing', 'illustration'];
+const NOT_MEDIA_TYPO = new Set(['mage', 'proto', 'vide', 'crates', 'imago']);
+function typoDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
+}
+function spellMediaWords(text) {
+  return text.replace(/[a-z]{4,}/gi, (word) => {
+    const w = word.toLowerCase();
+    if (w === 'vedio') return 'video';
+    if (MEDIA_SPELLED.includes(w) || NOT_MEDIA_TYPO.has(w) || /(?:ed|es|ing|s)$/.test(w) && !w.endsWith('ss')) return word;
+    return MEDIA_SPELLED.find((m) => typoDistance(w, m) <= (m.length >= 9 ? 2 : 1)) ?? word;
+  });
+}
 export function wantsMediaMade(text, lastUser = null) {
-  const t = String(text ?? '');
+  const t = spellMediaWords(String(text ?? ''));
   if (Array.isArray(lastUser?.images) && lastUser.images.length) return false;
+  // A video game is something to build, not a clip.
+  if (/\bvideo\s*games?\b/i.test(t)) return false;
   return (MEDIA_MADE.test(t) || MEDIA_ART.test(t)) && !MEDIA_NOT.test(t);
+}
+// A plan's turn runs inside its own CLI and sandbox, where ox's image tool is not: asked
+// for a picture it wrote an SVG instead, with nothing in the chat or the gallery. A picture
+// asked for goes straight to the tool, and needs no model to choose it.
+export function mediaBrief(said) {
+  const t = spellMediaWords(String(said ?? '')).trim();
+  const kind = /\b(?:video|clip|animation)\b/i.test(t) ? 'video' : 'image';
+  const subject = /\b(?:image|picture|pic|photo|illustration|video|clip|animation|drawing|sketch)\s+of\s+(.+)$/is.exec(t)?.[1];
+  return { prompt: (subject ?? t).trim(), kind };
+}
+async function* makeMediaDirectly(said, ctx) {
+  const id = 'media-direct';
+  const { prompt, kind } = mediaBrief(said);
+  const started = Date.now();
+  yield { type: 'tool-start', id, name: 'create_media', argsPreview: prompt.slice(0, 120) };
+  const { createMediaTool } = await import('./tools/media.js');
+  const r = await createMediaTool({ prompt, kind }, ctx);
+  yield { type: 'tool-end', id, name: 'create_media', isError: r.isError, ms: Date.now() - started, content: r.content, output: r.content };
+  yield { type: 'text-delta', text: r.isError ? String(r.content).replace(/^create_media:\s*/, '') : `Here is your ${kind}. It is in Studio too.` };
 }
 export const WANTS_UI =/\b(calculat\w*|convert\w*|compar\w*|table|chart|graph|plot|slider|interactive|estimat\w*|budget|breakdown|checklist|options|pros and cons|form|dashboard|visuali[sz]\w*|diagram|flow(?:chart)?|timeline|roadmap|itinerar\w*|schedule|planner|plan (?:out|a|an|the|my|our|your)|step(?:s|[- ]by[- ]step)?|walk me through|explain how|how does .{1,50} work|decision matrix|help me choose|which (?:one|option|model|tool)|recommend(?:ation)?\s+(?:for|between)|track(?:er|ing)?|calculator|quiz|poll|rank(?:ing)?|scorecard|status|progress|report|summar(?:y|i[sz]\w*)|organize|organise|flash ?cards?|study (?:cards?|set|guide)|timer|countdown|stopwatch|pomodoro|carousel|date picker|practice (?:questions|test)|memori[sz]e)\b/i;
 // OpenUI Lang (thesysdev/openui), the way OpenUI does it: the prompt is built
@@ -1166,7 +1219,10 @@ async function handleChatCompletions(req, res) {
     const stopRun = new AbortController();
     res.on('close', () => { if (!res.writableEnded) stopRun.abort(); });
     try {
-      for await (const event of runAgent({ target, messages, ctx, config, maxIterations: 40, signal: stopRun.signal })) {
+      const events = turnMode.media && target?.provider === 'subscription'
+        ? makeMediaDirectly(said, ctx)
+        : runAgent({ target, messages, ctx, config, maxIterations: 40, signal: stopRun.signal });
+      for await (const event of events) {
         if (stopRun.signal.aborted) break;
         const delta = textDelta(event);
         const last = delta || finalText(event, fullContent);

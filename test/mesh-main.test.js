@@ -81,6 +81,8 @@ test('switching main: the new main gets the set, and the old loses only what the
     assert.equal(asks(A).length, 0);
     assert.deepEqual(on(idB, ha), [...M.MAIN_GRANTS].sort());
     assert.equal(A.mainNow().name, 'Two');
+    // The notice travels: a slow machine hears it a moment after setMain returns.
+    await until(() => B.mainNow().self === true);
     assert.equal(B.mainNow().self, true, 'Two hears it is main');
     assert.deepEqual(on(idA, hb), ['message', 'status'], 'One keeps what the owner gave it, and only that');
   } finally { await close(); }
