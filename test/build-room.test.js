@@ -380,3 +380,48 @@ test('a part no reviewer could reach is not merged, and the work stays on its br
   assert.match(done.summary, /no reviewer could be reached/);
   assert.equal(fs.existsSync(path.join(dir, 'x.js')), false);
 });
+
+test('a mixed team: each part on its own model, reviewed on a teammate\'s, and a dead model hands over', async () => {
+  const dir = path.join(root, 'mixed');
+  const reviewedOn = [];
+  const ask = async ({ system }) => (system === B.PLAN_SYSTEM
+    ? JSON.stringify({ summary: 's', parts: [{ title: 'A', files: ['a.js'], brief: 'a' }, { title: 'B', files: ['b.js'], brief: 'b' }] })
+    : JSON.stringify({ verdict: 'pass', comments: [] }));
+  const askWith = async (bot) => { reviewedOn.push(bot); return JSON.stringify({ verdict: 'pass', comments: [] }); };
+  const usedBy = {};
+  const base = fakeBuilder(({ name }) => ({ files: [[name === 'Agent 1' ? 'a.js' : 'b.js', 'export const x = 1;\n']] }));
+  const spawnBuilder = (o) => {
+    (usedBy[o.name] ??= []).push(o.bot);
+    if (o.bot === 'dead') {
+      async function* lines() { yield JSON.stringify({ type: 'error', error: 'HTTP 429 Too Many Requests' }); }
+      return { lines: lines(), done: Promise.resolve(1), kill() {} };
+    }
+    return base(o);
+  };
+  const room = new B.BuildRoom({ task: 'x', dir, ask, askWith, spawnBuilder, bots: ['good', 'dead'], env });
+  const seen = [];
+  room.on('event', (e) => seen.push(e));
+  await room.run();
+  const plan = seen.find((e) => e.type === 'plan');
+  assert.deepEqual(plan.parts.map((p) => [p.model, p.reviewModel]), [['good', 'dead'], ['dead', 'good']]);
+  assert.deepEqual(usedBy['Agent 1'], ['good']);
+  assert.equal(usedBy['Agent 2'][0], 'dead');
+  assert.equal(usedBy['Agent 2'].at(-1), 'good', 'a dead model hands its part to a teammate\'s');
+  assert.ok(seen.some((e) => e.type === 'model' && e.to === 'good'));
+  assert.equal(seen.find((e) => e.type === 'done').ok, true);
+  assert.ok(reviewedOn.length >= 2);
+  assert.ok(fs.existsSync(path.join(dir, 'b.js')));
+});
+
+test('the plan survives a model being down: the next model of the team divides the work', async () => {
+  const dir = path.join(root, 'planner-down');
+  const ask = async () => { throw new Error('502'); };
+  const askWith = async (bot, { system }) => (system === B.PLAN_SYSTEM
+    ? JSON.stringify({ summary: 's', parts: [{ title: 'A', files: ['a.js'], brief: 'a' }, { title: 'B', files: ['b.js'], brief: 'b' }] })
+    : JSON.stringify({ verdict: 'pass', comments: [] }));
+  const room = new B.BuildRoom({ task: 'x', dir, ask, askWith, bots: ['one', 'two'], env, spawnBuilder: fakeBuilder(({ name }) => ({ files: [[name === 'Agent 1' ? 'a.js' : 'b.js', 'export const x = 1;\n']] })) });
+  const seen = [];
+  room.on('event', (e) => seen.push(e));
+  await room.run();
+  assert.equal(seen.find((e) => e.type === 'plan').parts.length, 2);
+});

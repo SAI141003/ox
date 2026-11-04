@@ -303,7 +303,7 @@ export class BuildRoom extends EventEmitter {
    * @param {Function} o.ask         ({ system, user }) → text: the planner and the reviewers
    * @param {Function} [o.spawnBuilder] ({ cwd, prompt, name }) → { lines, done, kill }
    */
-  constructor({ task, dir, agents = 3, ask, spawnBuilder = spawnOxBuilder, bot = null, env = process.env, id = null, sessionId = null }) {
+  constructor({ task, dir, agents = 3, ask, spawnBuilder = spawnOxBuilder, bot = null, bots = null, askWith = null, env = process.env, id = null, sessionId = null }) {
     super();
     this.sessionId = sessionId ? String(sessionId).slice(0, 120) : null;
     this.id = id ?? `${new Date().toISOString().slice(0, 10)}-${slugOf(task).slice(0, 24)}-${randomUUID().slice(0, 6)}`;
@@ -314,6 +314,10 @@ export class BuildRoom extends EventEmitter {
     this.ask = ask;
     this.spawnBuilder = spawnBuilder;
     this.bot = bot;
+    // A mixed team: each part gets its own model, and is reviewed on a teammate's. Named by
+    // you or chosen from what you have connected (src/ask-agent.js teamLineup).
+    this.bots = Array.isArray(bots) ? bots.filter(Boolean) : [];
+    this.askWith = askWith;
     this.events = [];
     this.files = new Map();   // path → { lines, owners }
     this.runs = new Set();
@@ -357,13 +361,22 @@ export class BuildRoom extends EventEmitter {
     // A run cut off by the model (rate limit, a stalled stream) is tried again
     // after a pause, carrying on from what is already in the copy; it does not
     // count as a review round.
+    const resume = `${prompt}\n\nYou were cut off by a model error. Your copy already has what you wrote so far: look at it and carry on from there.`;
     let r = await this.runBuilderOnce(member, prompt);
     for (let wait = 30; r.modelError && !this.stopped && wait <= 60; wait *= 2) {
       this.status(member.name, 'waiting', `the model is busy; trying again in ${wait}s`);
       await new Promise((ok) => setTimeout(ok, wait * 1000 * this.retryScale));
       if (this.stopped) break;
       this.status(member.name, 'writing', 'carrying on');
-      r = await this.runBuilderOnce(member, `${prompt}\n\nYou were cut off by a model error. Your copy already has what you wrote so far: look at it and carry on from there.`);
+      r = await this.runBuilderOnce(member, resume);
+    }
+    // Still down: a teammate's model takes the part over, from the same copy.
+    for (const other of this.bots.filter((b) => b !== member.bot)) {
+      if (!r.modelError || this.stopped) break;
+      this.emitEv({ type: 'model', agent: member.name, from: member.bot, to: other });
+      this.status(member.name, 'writing', `${member.bot} is down; carrying on with ${other}`);
+      member.bot = other;
+      r = await this.runBuilderOnce(member, resume);
     }
     return r;
   }
@@ -382,7 +395,7 @@ export class BuildRoom extends EventEmitter {
     const told = this.notes.get(name)?.splice(0) ?? [];
     if (told.length) prompt = `${prompt}\n\nTHE OWNER TOLD YOU, AND IT COMES FIRST:\n${told.map((t) => `- ${t}`).join('\n')}`;
     let modelError = false;
-    const run = this.spawnBuilder({ cwd: wt, prompt, name, bot: this.bot });
+    const run = this.spawnBuilder({ cwd: wt, prompt, name, bot: member.bot ?? this.bot });
     this.runs.add(run);
     const calls = new Map();
     let said = '';
@@ -443,8 +456,12 @@ export class BuildRoom extends EventEmitter {
     const material = reviewMaterial(member.wt, own);
     if (!material.trim()) return { verdict: 'pass', comments: [] };
     let r = null;
-    for (let tries = 0; tries < 2 && !r; tries++) {
-      try { r = parseReview(await this.ask({ system: REVIEW_SYSTEM, user: `THE PART: ${member.part.title}\n${member.part.brief}\nFiles it owns: ${member.part.files.join(', ') || '(its own)'}\n\n${material}` })); } catch {}
+    // Its reviewing teammate's model first, then the team's others (the author's own last),
+    // then the planner's. Only when none of them answers is the part left unreviewed.
+    const named = this.askWith ? [...new Set([member.reviewerBot, ...this.bots.filter((b) => b !== member.bot), member.bot])].filter(Boolean) : [];
+    const askers = [...named.map((b) => (q) => this.askWith(b, q)), this.ask, this.ask];
+    for (let tries = 0; tries < askers.length && !r; tries++) {
+      try { r = parseReview(await askers[tries]({ system: REVIEW_SYSTEM, user: `THE PART: ${member.part.title}\n${member.part.brief}\nFiles it owns: ${member.part.files.join(', ') || '(its own)'}\n\n${material}` })); } catch {}
     }
     const unreached = !r;
     r ??= { verdict: 'pass', comments: [{ file: '', line: 0, severity: 'suggestion', comment: 'The reviewer could not be reached; ox\'s security check and the tests decided.' }] };
@@ -612,17 +629,28 @@ export class BuildRoom extends EventEmitter {
       this.status('Planner', 'planning', this.task.slice(0, 80));
       const tree = git(this.dir, ['ls-files']).stdout.split('\n').filter(Boolean).slice(0, 200).join('\n');
       let answer = '';
-      try { answer = await this.ask({ system: PLAN_SYSTEM, user: `TASK: ${this.task}\n\nAs many parts as the task really splits into (each worth an agent of its own), at most ${this.maxAgents}.\n\nFILES ALREADY IN THE PROJECT:\n${tree || '(none: an empty project)'}` }); } catch (e) { this.emitEv({ type: 'note', agent: 'Planner', text: `planner failed: ${String(e?.message ?? e).slice(0, 200)}` }); }
+      const planUser = `TASK: ${this.task}\n\nAs many parts as the task really splits into (each worth an agent of its own), at most ${this.maxAgents}.\n\nFILES ALREADY IN THE PROJECT:\n${tree || '(none: an empty project)'}`;
+      // A plan decides how the work divides, so a model that is down must not turn it into one
+      // big part: every model of the team gets to try.
+      for (const planner of [this.ask, ...this.bots.map((b) => (q) => this.askWith?.(b, q))]) {
+        try { answer = String(await planner({ system: PLAN_SYSTEM, user: planUser }) ?? ''); } catch { answer = ''; }
+        if (/"parts"\s*:/.test(answer) || this.stopped) break;
+      }
+      if (!/"parts"\s*:/.test(answer)) this.emitEv({ type: 'note', agent: 'Planner', text: 'no model could write a plan, so this is one part' });
       const plan = parsePlan(answer, this.task, this.maxAgents);
       this.plan = plan;
       if (this.stopped) return;
       const team = plan.parts.map((part, i) => ({ name: `Agent ${i + 1}`, part }));
       team.forEach((m, i) => {
         m.reviewer = team.length > 1 ? team[(i + 1) % team.length].name : 'Reviewer';
+        if (this.bots.length) {
+          m.bot = this.bots[i % this.bots.length];
+          m.reviewerBot = this.bots[(i + 1) % this.bots.length];
+        }
         m.settledPromise = new Promise((r) => { m.settle = () => { m.settled = true; r(); }; });
       });
       this.team = team;
-      this.emitEv({ type: 'plan', summary: plan.summary, stack: plan.stack, test: plan.test, parts: team.map((m) => ({ agent: m.name, reviewer: m.reviewer, title: m.part.title, files: m.part.files, brief: m.part.brief })) });
+      this.emitEv({ type: 'plan', summary: plan.summary, stack: plan.stack, test: plan.test, parts: team.map((m) => ({ agent: m.name, reviewer: m.reviewer, model: m.bot ?? this.bot ?? null, reviewModel: m.reviewerBot ?? null, title: m.part.title, files: m.part.files, brief: m.part.brief })) });
       this.status('Planner', 'done', `${team.length} part${team.length === 1 ? '' : 's'}`);
       // A worktree and a branch each.
       for (const m of team) {
@@ -663,7 +691,7 @@ export class BuildRoom extends EventEmitter {
       this.emitEv({
         type: 'done', ok, dir: this.dir, merged, parts: team.length,
         branch: this.teamBranch ?? null,
-        summary: `${merged} of ${team.length} part${team.length === 1 ? '' : 's'} ${team.some((m) => m.noTests) ? `(${team.filter((m) => m.noTests).length} with no tests) ` : ''}${team.some((m) => m.unreviewed) ? `merged, ${team.filter((m) => m.unreviewed).length} with no review because the reviewer could not be reached,` : 'reviewed and merged'}${this.teamBranch ? ` on branch ${this.teamBranch} (in your project: git merge ${this.teamBranch})` : ''}${final ? `; the whole project's tests ${final.ok ? 'pass' : 'fail'}` : ''}.${left.length ? ` Not merged: ${left.join('; ')}.` : ''}`,
+        summary: `${merged} of ${team.length} part${team.length === 1 ? '' : 's'} ${team.some((m) => m.noTests) ? `(${team.filter((m) => m.noTests).length} with no tests) ` : ''}${team.some((m) => m.unreviewed && m.result?.merged) ? `merged, ${team.filter((m) => m.unreviewed && m.result?.merged).length} with no review because the reviewer could not be reached,` : 'reviewed and merged'}${this.teamBranch ? ` on branch ${this.teamBranch} (in your project: git merge ${this.teamBranch})` : ''}${final ? `; the whole project's tests ${final.ok ? 'pass' : 'fail'}` : ''}.${left.length ? ` Not merged: ${left.join('; ')}.` : ''}`,
       });
     } catch (e) {
       this.state = 'done';

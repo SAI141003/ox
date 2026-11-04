@@ -385,7 +385,7 @@ function renderSide() {
     codeKey = `plan:${!!B.plan}`;
     $('code').innerHTML = B.plan
       ? `<div class="plan"><div class="cap" style="padding:0 0 10px">The plan</div><p>${esc(B.plan.summary)}</p>${B.plan.stack ? `<p class="dim">Stack: ${esc(B.plan.stack)}${B.plan.test ? ` · tests: <span class="mono">${esc(B.plan.test)}</span>` : ''}</p>` : ''}
-        <div class="cards">${B.plan.parts.map((p) => `<div class="card" style="--c:${col(p.agent)}"><div class="h"><span class="dot" style="background:${col(p.agent)}"></span><b>${esc(p.agent)}</b><span class="dim">reviewed by ${esc(p.reviewer)}</span></div><div class="t">${esc(p.title)}</div><div class="mono dim f">${esc(p.files.join('  ') || 'its own files')}</div><div class="b">${esc(p.brief)}</div></div>`).join('')}</div></div>`
+        <div class="cards">${B.plan.parts.map((p) => `<div class="card" style="--c:${col(p.agent)}"><div class="h"><span class="dot" style="background:${col(p.agent)}"></span><b>${esc(p.agent)}</b><span class="dim">${p.model ? `on ${esc(p.model)}, ` : ''}reviewed by ${esc(p.reviewer)}${p.reviewModel && p.reviewModel !== p.model ? ` on ${esc(p.reviewModel)}` : ''}</span></div><div class="t">${esc(p.title)}</div><div class="mono dim f">${esc(p.files.join('  ') || 'its own files')}</div><div class="b">${esc(p.brief)}</div></div>`).join('')}</div></div>`
       : '<div class="empty"><div><h1>Planning…</h1><div>The planner is splitting the task into parts that can be built at the same time.</div></div></div>';
   }
   renderFeed();
