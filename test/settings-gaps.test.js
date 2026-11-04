@@ -220,3 +220,12 @@ test('after your backup model, fast tool-callers follow, so an overload never la
   assert.equal(new Set(withFastFallbacks([FAST_FALLBACKS[0]], env)).size, FAST_FALLBACKS.length, 'no duplicates');
   assert.deepEqual(withFastFallbacks(['a'], { OX_NO_FAST_FALLBACK: '1' }), ['a']);
 });
+
+test('a model you named is not answered by another company unless you listed that fallback', async () => {
+  const { automaticFallbackAllowed } = await import('../src/bots.js');
+  const nvidia = { provider: 'nvidia', model: 'a' };
+  assert.equal(automaticFallbackAllowed(nvidia, { provider: 'xai', model: 'g' }, true), false);
+  assert.equal(automaticFallbackAllowed(nvidia, { provider: 'nvidia', model: 'b' }, true), true);
+  assert.equal(automaticFallbackAllowed(nvidia, { provider: 'xai', model: 'g' }, false), true, 'Auto or the default may move');
+  for (const f of ['../src/headless.js', '../src/serve.js']) assert.match(fs.readFileSync(new URL(f, import.meta.url), 'utf8'), /automaticFallbackAllowed\(t, target,/);
+});

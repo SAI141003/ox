@@ -21,7 +21,7 @@ import { makeSubagentToolHandler, listSubagents } from './subagent.js';
 import { makeAgentTeamsHandler } from './agent-teams.js';import { listToolSchemas } from './tools/index.js';
 import { McpHub } from './mcp.js';
 import { setMcpSearchHub } from './tools/web.js';
-import { defaultBotSpec, resolveBot, withFastFallbacks } from './bots.js';
+import { automaticFallbackAllowed, defaultBotSpec, resolveBot, withFastFallbacks } from './bots.js';
 import {
   c, renderError, renderToolEnd, renderToolStart, streamText, truncate,
   SubagentTicker,
@@ -128,6 +128,7 @@ export async function assembleCtx({ config, target, opts = {}, auxTarget = null 
       // The automatic fast ones only when they can run here, and silently.
       if (auto && (t.subscription || (t.keyEnv && !process.env[t.keyEnv]))) continue;
       if (auto && t.provider === target?.provider && t.model === target?.model) continue;
+      if (auto && !automaticFallbackAllowed(t, target, !!(opts.bot || opts.model))) continue;
       fallbackTargets.push(t);
     } catch (err) {
       if (!auto && !fbWarned.has(spec)) {

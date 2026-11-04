@@ -341,6 +341,15 @@ export function resolveBot(nameOrSpec, config = {}, env = process.env) {
 // while Nemotron Ultra took 58 s for one word.
 export const FAST_FALLBACKS = Object.freeze(['nvidia:minimaxai/minimax-m3.1-flash', 'ox-haiku', 'ox-flash', 'ox-grok-fast', 'ox-groq', 'nvidia:deepseek-ai/deepseek-v4.1-flash']);
 
+/**
+ * May an automatic fallback (not one you listed) answer for this run? When you
+ * named a model, only another model of that same provider may: otherwise a prompt
+ * meant for one company would go to another, on a missing key or a slow minute.
+ */
+export function automaticFallbackAllowed(fallback, primary, explicit) {
+  return !explicit || fallback?.provider === primary?.provider;
+}
+
 export function withFastFallbacks(specs = [], env = process.env) {
   const chosen = (Array.isArray(specs) ? specs : []).filter(Boolean);
   // Off in tests unless one asks for it: their fallback chains are exact.
