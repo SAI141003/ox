@@ -115,7 +115,13 @@ function renderHead() {
   const m = current(); if (!m) return;
   const canChoose = !isMain(m) && (m.self ? data.machines.length > 1 : m.up);
   $('head').innerHTML = `<h1>${esc(m.name)}${isMain(m) ? '<span class="star">Main</span>' : ''}</h1><div class="sub">${esc(statusLine(m))}</div>
-    <div class="row">${canChoose ? `<button class="btn" id="make-main">${m.self ? 'Make this the main computer' : `Make ${esc(m.name)} the main computer`}</button>` : ''}<span class="note" id="main-state" role="status" aria-live="polite">${isMain(m) ? (m.self ? 'The computers that accepted this one share their sessions, tasks, models and files with it.' : `This computer shares its sessions, tasks, models and files with ${esc(m.name)}.`) : ''}</span></div>`;
+    <div class="row">${canChoose ? `<button class="btn" id="make-main">${m.self ? 'Make this the main computer' : `Make ${esc(m.name)} the main computer`}</button>` : ''}<span class="note" id="main-state" role="status" aria-live="polite">${isMain(m) ? (m.self ? 'The computers that accepted this one share their sessions, tasks, models and files with it.' : `This computer shares its sessions, tasks, models and files with ${esc(m.name)}.`) : ''}</span></div>${reachBlock(m)}`;
+  if ($('addr-f')) $('addr-f').onsubmit = async (ev) => {
+    ev.preventDefault();
+    $('addr-s').textContent = 'Saving…';
+    try { const r = await api('/ox/mesh/address', { machine: m.id, address: $('addr-t').value }); $('addr-s').textContent = `Trying ${r.addr}…`; setTimeout(refresh, 1500); }
+    catch (e) { $('addr-s').textContent = e.message; }
+  };
   if ($('make-main')) $('make-main').onclick = async () => {
     const state = $('main-state');
     const ok = m.self
@@ -133,6 +139,17 @@ function renderHead() {
   };
 }
 
+const isTail = (a) => { const [x, y] = String(a).split('.').map(Number); return x === 100 && y >= 64 && y <= 127; };
+function reachBlock(m) {
+  if (m.self) {
+    const list = m.addrs || [];
+    const tail = list.some(isTail);
+    return `<div class="note" style="margin-top:8px"><b>Reachable at:</b> ${esc(list.join(', ') || 'no network right now')}<br>${tail ? 'Tailscale is on: your other computers can reach this one from anywhere.' : 'This only works on the same network. To connect when you are away, install Tailscale on both computers and sign in to the same account. They then find each other by themselves.'}</div>`;
+  }
+  const others = (m.addrs || []).filter((a) => a !== m.addr);
+  const tail = (m.addrs || []).some(isTail);
+  return `<form class="row" id="addr-f" autocomplete="off"><input class="field" id="addr-t" value="${esc(m.addr || '')}" aria-label="Address of ${esc(m.name)}" spellcheck="false" style="max-width:240px"><button class="btn" type="submit">Set address</button><span class="note" id="addr-s" role="status" aria-live="polite">${others.length ? `Also tries: ${esc(others.join(', '))}. ` : ''}${tail ? 'Reachable from anywhere over Tailscale.' : 'Same network only, until both computers have Tailscale.'}</span></form>`;
+}
 function tabsFor(m) { return m.self ? [['sessions', 'Sessions']] : [['sessions', 'Sessions'], ['messages', 'Messages'], ['files', 'Files'], ['screen', 'Screen & control']]; }
 function renderTabs() {
   const m = current(); if (!m) return;

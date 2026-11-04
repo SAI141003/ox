@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -284,4 +285,74 @@ test('the app offers disconnect, reconnect and remove', () => {
   assert.match(page, /p\.paused \? 'Reconnect' : 'Disconnect'/);
   assert.match(page, /\/ox\/mesh\/\$\{back \? 'reconnect' : 'disconnect'\}/);
   assert.match(page, /id="od-remove">Remove this computer/);
+});
+
+const closedPort = () => new Promise((r) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(`127.0.0.1:${p}`)); }); });
+const placesOf = (h, addr, addrs) => {
+  const f = path.join(h, 'mesh', 'peers.json');
+  const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+  const p = Object.values(j.peers)[0];
+  p.addr = addr; p.addrs = addrs;
+  fs.writeFileSync(f, JSON.stringify(j));
+};
+const nodeAt = (h) => M.startNode({ home: h, port: 0, proxyPort: 0, beacon: false, heartbeat: false, host: '127.0.0.1' });
+
+test('a machine that moved is found at its other addresses, and the one that works is kept', async () => {
+  const { A, ha, close } = await pair();
+  try {
+    await A.testLink('Laptop');
+    const good = Object.values(M.readPeers({ home: ha }))[0].addr;
+    await A.close();
+    const dead = await closedPort();
+    placesOf(ha, dead, [dead, good]); // it left the Wi-Fi: this address is dead, another works
+    const again = await nodeAt(ha);
+    try {
+      assert.equal((await again.testLink('Laptop')).ok, true);
+      assert.equal(Object.values(M.readPeers({ home: ha }))[0].addr, good, 'the working address is remembered');
+    } finally { await again.close(); }
+  } finally { await close(); }
+});
+
+test('a machine tells the other where else it can be reached', async () => {
+  const { A, ha, close } = await pair();
+  try {
+    await A.heartbeat();
+    const p = Object.values(M.readPeers({ home: ha }))[0];
+    for (const a of p.addrs ?? []) assert.match(a, /:\d+$/);
+    assert.ok(A.status().peers[0].addrs.includes(p.addr));
+    assert.ok(Array.isArray(A.status().me.addrs));
+  } finally { await close(); }
+});
+
+test('nothing reachable says so, names what it tried, and says what would connect it', async () => {
+  const { A, ha, close } = await pair();
+  try {
+    await A.close();
+    const dead = await closedPort();
+    placesOf(ha, dead, [dead]);
+    const again = await nodeAt(ha);
+    try { await assert.rejects(again.testLink('Laptop'), /is not reachable at 127\.0\.0\.1.*Tailscale on both computers/); } finally { await again.close(); }
+  } finally { await close(); }
+});
+
+test('an address now used by another computer is refused by its key, and nothing is sent', async () => {
+  const { A, ha, close } = await pair();
+  const stranger = await nodeAt(home());
+  try {
+    await A.close();
+    const there = `127.0.0.1:${stranger.port}`;
+    placesOf(ha, there, [there]);
+    const again = await nodeAt(ha);
+    try { await assert.rejects(again.testLink('Laptop'), /not a paired machine|key changed/); } finally { await again.close(); }
+  } finally { await stranger.close(); await close(); }
+});
+
+test('addresses: a plain host gets the mesh port, nonsense is refused, Tailscale is recognised', () => {
+  const h = home();
+  fs.mkdirSync(path.join(h, 'mesh'), { recursive: true });
+  fs.writeFileSync(path.join(h, 'mesh', 'peers.json'), JSON.stringify({ peers: { X: { id: 'X', name: 'Far', grants: {} } } }));
+  assert.equal(M.setAddress('Far', '100.101.102.103', { home: h }).addr, `100.101.102.103:${M.PORT}`);
+  assert.throws(() => M.setAddress('Far', 'not an address!', { home: h }), /an address looks like/);
+  assert.equal(M.isTailscale('100.101.102.103:47870'), true);
+  assert.equal(M.isTailscale('192.168.1.20:47870'), false);
 });

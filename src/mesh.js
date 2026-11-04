@@ -207,6 +207,29 @@ function acceptMain(id, o = {}) {
   return writeMain(id, Date.now(), o);
 }
 
+// ---------------------------------------------------------------- reaching a machine
+
+const ADDRESS = /^[\w.-]+:\d{1,5}$/;
+/** Tailscale's range, so the screen can say how a computer is reachable from anywhere. */
+export const isTailscale = (addr) => { const [a, b] = String(addr).split('.').map(Number); return a === 100 && b >= 64 && b <= 127; };
+/** Everywhere this computer can be reached on the networks it is on now. */
+export function myAddresses(port) {
+  return Object.values(os.networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => `${i.address}:${port}`);
+}
+/** Where a paired machine is, as you know better. Connecting still takes its key: a wrong address only fails. */
+export function setAddress(ref, addr, o = {}) {
+  const p = findPeer(ref, o);
+  if (!p) throw new Error(`no paired machine ${ref}`);
+  const place = String(addr ?? '').trim();
+  const full = /:\d+$/.test(place) ? place : `${place}:${PORT}`;
+  if (!ADDRESS.test(full)) throw new Error('an address looks like 100.101.102.103 or 192.168.1.20:47870');
+  const peers = readPeers(o);
+  peers[p.id].addr = full;
+  peers[p.id].addrs = [...new Set([full, ...(peers[p.id].addrs ?? [])])].slice(0, 8);
+  writePeers(peers, o);
+  return peers[p.id];
+}
+
 /** Disconnect (keeps the pairing) or reconnect. Nothing passes either way while it is set. */
 export function setPaused(ref, on, o = {}) {
   const p = findPeer(ref, o);
@@ -606,7 +629,7 @@ export async function startNode(o = {}) {
     if (msg.op === 'ping') return reply({ name: me.name, at: Date.now() });
     if (msg.op === 'stats') { if (!grants.status) return refuse('status is not allowed'); return reply(await stats({ ollamaUrl, runs: o.runs?.() ?? 0, plans: (await o.plans?.()) ?? null })); }
     // What this machine lets the asker do, so its screen can say so before it tries.
-    if (msg.op === 'peer-info') return reply({ version: OX_VERSION, name: me.name, grants: Object.fromEntries(Object.entries(grants).map(([k, on]) => [k, !!on || hasTemp(peer, k)])), approvals: !!o.approvals, main: readMain(o) });
+    if (msg.op === 'peer-info') return reply({ version: OX_VERSION, name: me.name, grants: Object.fromEntries(Object.entries(grants).map(([k, on]) => [k, !!on || hasTemp(peer, k)])), approvals: !!o.approvals, main: readMain(o), addrs: myAddresses(port) });
     // Another computer asks to be main. Only this computer's owner can say yes.
     if (msg.op === 'main-request') {
       if (!o.approvals) return refuse(`${me.name} has nobody to ask: open OX there`);
@@ -792,10 +815,30 @@ export async function startNode(o = {}) {
   async function channel(peer) {
     const have = conns.get(peer.id);
     if (have && !have.ch.sock.destroyed) return have;
-    const [host, p] = String(peer.addr ?? '').split(':');
     if (peer.paused) throw new Error(`you disconnected ${peer.name}; reconnect it in Settings › Offline & devices`);
-    if (!host) throw new Error(`no address for ${peer.name} yet (it announces itself on the network, or pair with --at)`);
-    const { ch } = await connect({ host, port: Number(p) || PORT, me, mode: 'auth', expect: peer, myPort: port });
+    // Where it was last, then everywhere else it said it can be reached (Wi-Fi at
+    // home, its Tailscale address when away). The key is checked at each: an old
+    // address that now belongs to someone else only fails.
+    const places = [...new Set([peer.addr, ...(peer.addrs ?? [])].filter(Boolean))];
+    if (!places.length) throw new Error(`no address for ${peer.name} yet (it announces itself on the network, or set one in Machines)`);
+    let ch = null, last = null;
+    for (const place of places) {
+      const [host, p] = String(place).split(':');
+      try {
+        ({ ch } = await connect({ host, port: Number(p) || PORT, me, mode: 'auth', expect: peer, myPort: port, timeoutMs: places.length > 1 ? 3000 : 8000 }));
+        if (place !== peer.addr) {
+          const peers = readPeers(o);
+          if (peers[peer.id]) { peers[peer.id].addr = place; writePeers(peers, o); }
+          note(`reached ${peer.name} at ${place}`);
+        }
+        break;
+      } catch (e) {
+        // That was the machine, and it said no: another address would not change its mind.
+        if (/disconnected|not a paired|key changed|signature|does not match/.test(e.message)) throw e;
+        last = e;
+      }
+    }
+    if (!ch) throw new Error(`${peer.name} is not reachable at ${places.join(', ')} (${last?.message ?? 'no answer'}). If it is on another network, Tailscale on both computers connects them from anywhere.`);
     const entry = { ch, pending: new Map() };
     ch.handlers.add((msg) => {
       const w = entry.pending.get(msg.rid);
@@ -848,6 +891,14 @@ export async function startNode(o = {}) {
         // An older ox does not know this one: it stays "unknown", not "refused".
         m.info = await ask(peer, 'peer-info', {}, { timeoutMs: 4000 }).catch(() => null);
         // Newer news of which computer is main: the label only, never a permission.
+        // Everywhere it says it can be reached, for when the address in use stops working.
+        const told = (m.info?.addrs ?? []).filter((a) => ADDRESS.test(String(a))).slice(0, 8);
+        if (told.length) {
+          const peers = readPeers(o);
+          const now = peers[peer.id];
+          const merged = [...new Set([now?.addr, ...told, ...(now?.addrs ?? [])].filter(Boolean))].slice(0, 8);
+          if (now && JSON.stringify(merged) !== JSON.stringify(now.addrs ?? [])) { now.addrs = merged; writePeers(peers, o); }
+        }
         const heard = m.info?.main;
         if (heard?.id && heard.at > (readMain(o)?.at ?? 0)) writeMain(heard.id, heard.at, o);
       } catch (e) { m.error = e.message; m.rttMs = null; }
@@ -1043,10 +1094,10 @@ export async function startNode(o = {}) {
     status() {
       const machines = handle.machines();
       return {
-        me: { id: me.id, name: identity(o).name, port, proxyPort },
+        me: { id: me.id, name: identity(o).name, port, proxyPort, addrs: myAddresses(port) },
         main: handle.mainNow(),
         self: state.self ?? null,
-        peers: Object.values(readPeers(o)).map((p) => ({ id: p.id, name: p.name, addr: p.addr ?? null, grants: p.grants, paused: !!p.paused, pairedAt: p.pairedAt, live: machines.find((x) => x.id === p.id) ?? null })),
+        peers: Object.values(readPeers(o)).map((p) => ({ id: p.id, name: p.name, addr: p.addr ?? null, addrs: p.addrs ?? [], grants: p.grants, paused: !!p.paused, pairedAt: p.pairedAt, live: machines.find((x) => x.id === p.id) ?? null })),
         alerts: allAlerts(),
         invite: state.invite && Date.now() < state.invite.expires ? { open: true, expires: state.invite.expires } : { open: false },
         seen: [...(state.seen?.values() ?? [])].filter((x) => Date.now() - x.at < 15_000 && !readPeers(o)[x.id]),

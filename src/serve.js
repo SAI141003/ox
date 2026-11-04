@@ -28,7 +28,7 @@ import { quickReply } from './quick-reply.js';
 import { createServer } from 'http';
 import { createHash, timingSafeEqual } from 'crypto';
 import { runAgent } from './agent.js';
-import { BOTS, KEY_ENV, resolveBot, defaultBotSpec, withFastFallbacks } from './bots.js';
+import { BOTS, KEY_ENV, automaticFallbackAllowed, resolveBot, defaultBotSpec, withFastFallbacks } from './bots.js';
 
 import { readFile } from 'fs/promises';
 import { join, resolve, extname, dirname, basename, sep } from 'path';
@@ -1082,10 +1082,12 @@ async function handleChatCompletions(req, res) {
   // not the chat's own. A plan's turn runs inside its CLI and is not bounced.
   try {
     const fdoc = readConfigDoc() ?? {};
-    const specs = withFastFallbacks(fdoc.fallback_bots ?? fdoc.fallbackBots ?? []);
+    const listed = fdoc.fallback_bots ?? fdoc.fallbackBots ?? [];
+    const specs = withFastFallbacks(listed);
+    const named = !!model && model !== 'auto'; // picked in the chat, not Auto or the default
     ctx.fallbackTargets = specs
       .filter((sp) => runnable(sp))
-      .map((sp) => { try { return resolveBot(sp, { bots: fdoc.bots ?? {} }); } catch { return null; } })
+      .map((sp) => { try { const t = resolveBot(sp, { bots: fdoc.bots ?? {} }); return listed.includes(sp) || automaticFallbackAllowed(t, target, named) ? t : null; } catch { return null; } })
       .filter((t) => t && t.provider !== 'subscription' && !(t.provider === target?.provider && t.model === target?.model));
   } catch {}
   // Delegation in the app, as in the terminal (src/headless.js): the subagent
@@ -2612,9 +2614,9 @@ const ROUTES = [
     const S = await import('./mesh-services.js');
     const node = await meshUp();
     const st = node.status();
-    const here = { id: st.me.id, name: st.me.name, self: true, up: true, sessions: A.liveAgents({ fresh: true }).map(S.sessionRow), stats: st.self ?? null, error: null };
+    const here = { id: st.me.id, name: st.me.name, self: true, up: true, sessions: A.liveAgents({ fresh: true }).map(S.sessionRow), stats: st.self ?? null, error: null, addrs: st.me.addrs ?? [] };
     const others = await Promise.all(st.peers.map(async (p) => {
-      const row = { id: p.id, name: p.name, self: false, paused: p.paused, addr: p.addr, up: !p.paused && !!p.live?.lastSeen && !p.live?.error, rttMs: p.live?.rttMs ?? null, version: p.live?.version ?? null, binary: !!p.live?.binary, stats: p.live?.stats ?? null, grants: p.grants, theirGrants: p.live?.theirGrants ?? null, linkError: p.live?.error ?? null, sessions: null, error: null };
+      const row = { id: p.id, name: p.name, self: false, paused: p.paused, addr: p.addr, addrs: p.addrs ?? [], up: !p.paused && !!p.live?.lastSeen && !p.live?.error, rttMs: p.live?.rttMs ?? null, version: p.live?.version ?? null, binary: !!p.live?.binary, stats: p.live?.stats ?? null, grants: p.grants, theirGrants: p.live?.theirGrants ?? null, linkError: p.live?.error ?? null, sessions: null, error: null };
       if (!row.up) return row;
       try { row.sessions = (await node.ask(p.id, 'agents', {}, { timeoutMs: 6000 })).sessions ?? []; }
       catch (e) { row.error = e.message; row.needsAgents = /does not allow/.test(e.message); }
@@ -2696,7 +2698,7 @@ const ROUTES = [
     // The peer repeats validation and enforces the actual write boundary.
     return (await meshUp()).ask(machine, 'push', { path: target, data, overwrite: body?.overwrite === true }, { timeoutMs: 60_000 });
   }) },
-  { method: 'POST', pattern: /^\/ox\/mesh\/(invite|join|name|allow|deny|forget|disconnect|reconnect|choose)\/?$/, handler: appRoute(async (body, m) => {
+  { method: 'POST', pattern: /^\/ox\/mesh\/(invite|join|name|allow|deny|forget|disconnect|reconnect|address|choose)\/?$/, handler: appRoute(async (body, m) => {
     const M = await import('./mesh.js');
     switch (m[1]) {
       case 'invite': {
@@ -2729,6 +2731,7 @@ const ROUTES = [
       case 'name': return { name: M.setName(String(body?.name ?? '')) };
       case 'allow': case 'deny': return { peer: M.setGrant(String(body?.machine ?? ''), String(body?.grant ?? ''), m[1] === 'allow') };
       case 'forget': return meshNode ? meshNode.remove(String(body?.machine ?? '')) : { forgot: M.forget(String(body?.machine ?? '')).name };
+      case 'address': { const out = M.setAddress(String(body?.machine ?? ''), body?.address); (await meshUp()).heartbeat?.().catch(() => {}); return { name: out.name, addr: out.addr }; }
       case 'disconnect': return (await meshUp()).disconnect(String(body?.machine ?? ''));
       case 'reconnect': return (await meshUp()).reconnect(String(body?.machine ?? ''));
       default: {

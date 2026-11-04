@@ -578,6 +578,7 @@ function usageAll() {
     '  ox mesh push <local file> <machine>:<destination> [--overwrite]   copy a small file there (requires files-write)',
     '  ox mesh share <machine> <folder>…  which folders of THIS machine that one may browse (default: home)',
     '  ox mesh audit · ox mesh lockdown  what other machines asked here · every machine back to status only',
+    '  ox mesh address <machine> <host[:port]>   where it is when it moved (its Tailscale address, say)',
     '  ox mesh disconnect <machine>      stop all traffic both ways, keep the pairing (reconnect brings it back)',
     '  ox mesh forget <machine>          unpair',
     '  ox mesh up [--port n]             run this machine\'s node in the foreground (the OX app runs it too)',
@@ -4031,6 +4032,12 @@ async function cmdMesh(args = []) {
       } finally { await node.close(); }
       return;
     }
+    if (sub === 'address') {
+      if (!args[1] || !args[2]) throw new Error('usage: ox mesh address <machine> <host[:port]>   (for example its Tailscale address)');
+      const pr = M.setAddress(args[1], args[2]);
+      console.log(`${c.green('✓')} ${pr.name} is tried at ${pr.addr} first`);
+      return;
+    }
     if (sub === 'disconnect' || sub === 'reconnect') {
       if (!args[1]) throw new Error(`usage: ox mesh ${sub} <machine>`);
       const pr = M.setPaused(args[1], sub === 'disconnect');
@@ -4113,7 +4120,7 @@ async function cmdMesh(args = []) {
         throw new Error('remote control action is one of list, click, type, key');
       } finally { await node.close(); }
     }
-    console.error('usage: ox mesh [status|name|invite|join|allow|deny|disconnect|reconnect|forget|up|models|run|screen|control|describe|agents|ls|pull|push|share|audit|lockdown] — ox help for details');
+    console.error('usage: ox mesh [status|name|invite|join|allow|deny|address|disconnect|reconnect|forget|up|models|run|screen|control|describe|agents|ls|pull|push|share|audit|lockdown] — ox help for details');
     process.exitCode = 1;
   } catch (e) {
     console.error(c.red(e.message));
@@ -7620,7 +7627,8 @@ async function runSubcommand(cmd, args) {
         console.log(c.bold(`Seeing ${app}${m.width ? ` (${m.width}×${m.height} px window)` : ''}`));
         for (const r of m.rows) console.log(`  ${String(r.tokens).padStart(7)} tokens  ${r.how}`);
         for (const e of [m.shotError, m.snapError, m.listError].filter(Boolean)) console.log(c.dim(`  (${e})`));
-        if (m.times) console.log(`${c.green(`ox reads it in ${m.times}× fewer tokens than a screenshot`)}${m.findTimes ? c.green(`, ${m.findTimes}× with a targeted find`) : ''}`);
+        if (m.times >= 1) console.log(`${c.green(`ox reads it in ${m.times}× fewer tokens than a screenshot`)}${m.findTimes ? c.green(`, ${m.findTimes}× with a targeted find`) : ''}`);
+        else if (m.times) console.log(`${c.yellow('a screenshot costs less than the text view on this window')}${m.findTimes ? c.green(`; a targeted find is ${m.findTimes}× smaller than a screenshot`) : ''}`);
         return;
       }
       if (action === 'list') {
