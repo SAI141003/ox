@@ -18,6 +18,8 @@ ox is a coding agent that has to prove its work. It writes a failing test before
 
 **Updates that install themselves.** Downloaded copies can now update from inside the app, after a checksum check. A new release only goes live once every build has passed, so the installer never hands out a half-uploaded one. Turn on checks once, or tick automatic.
 
+**Working in any app.** ox reads desktop apps through their accessibility tree and acts on specific controls, using Vercel Labs' agent-desktop. Several agents can work at once, each with its own named cursor. An outline of a Finder window cost 773 tokens against 25,292 for the full tree. Anything that sends, pays or deletes stays yours to press.
+
 **Chats that stay.** Chats and settings now live in a file on your machine, so an update can't lose them.
 
 ## The bots system
@@ -46,4 +48,4 @@ Not everything wins. On a small Finder window, ox's text view of the screen cost
 
 ## What hasn't been proven yet
 
-Most of the mesh has only run as two apps on one Mac. Between two real laptops we've tested the link and listing sessions, on Wi-Fi only. The away-from-home path hasn't run over real Tailscale. Real clicks and typing were tested on the same Mac, not from another one. In-app updates are Mac-only for now; Windows and Linux reinstall. The Windows installer change hasn't run on Windows, and the Mac app still isn't notarized.
+Most of the mesh has only run as two apps on one Mac. Between two real laptops we've tested the link and listing sessions, on Wi-Fi only. The away-from-home path hasn't run over real Tailscale. Screen control between two laptops hasn't been tried, only on one Mac. In-app updates are Mac-only for now; Windows and Linux reinstall. The Windows installer change hasn't run on Windows, and the Mac app still isn't notarized.
