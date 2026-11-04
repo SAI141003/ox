@@ -453,6 +453,7 @@ export async function readFileTool(args = {}, ctx = {}) {
   let raw;
   try {
     raw = await fsp.readFile(p, 'utf8');
+    noteRead(p, ctx);
   } catch (e) {
     return err(`read_file: cannot read ${p} — ${e?.code === 'ENOENT' ? 'file not found' : e?.message ?? e}`);
   }
@@ -614,6 +615,12 @@ async function creationOutsideWorkspaceGate(p, ctx, content) {
 }
 
 export async function writeFileTool(args = {}, ctx = {}) {
+  const r = await writeFileInner(args, ctx);
+  if (!r?.isError) { const { path: p } = resolvePathArg(args.path, 'write_file', ctx); if (p) noteRead(p, ctx); }
+  return r;
+}
+
+async function writeFileInner(args = {}, ctx = {}) {
   const { path: p, error: badPath } = resolvePathArg(args.path, 'write_file', ctx);
   if (badPath) return badPath;
   const badGit = gitCheck(p, 'write_file');
@@ -667,13 +674,33 @@ export async function writeFileTool(args = {}, ctx = {}) {
   return withSyntaxAdvisory(touched(ok(diff.trim() ? `${summary}\n${diff}` : summary), p, ctx), p, ctx);
 }
 
+function noteRead(p, ctx) {
+  try { (ctx.readStamps ??= new Map()).set(p, fs.statSync(p).mtimeMs); } catch {}
+}
+function staleSinceRead(p, ctx) {
+  const seen = ctx.readStamps?.get(p);
+  if (seen == null) return false;
+  try { return fs.statSync(p).mtimeMs !== seen; } catch { return false; }
+}
+
+// Its own edit is not "changed under us": what it wrote is what it now knows.
 export async function editFileTool(args = {}, ctx = {}) {
+  const r = await editFileInner(args, ctx);
+  if (!r?.isError) { const { path: p } = resolvePathArg(args.path, 'edit_file', ctx); if (p) noteRead(p, ctx); }
+  return r;
+}
+
+async function editFileInner(args = {}, ctx = {}) {
   const { path: p, error: badPath } = resolvePathArg(args.path, 'edit_file', ctx);
   if (badPath) return badPath;
   const badGit = gitCheck(p, 'edit_file');
   if (badGit) return badGit;
   const secret = secretError(p, ctx, 'edit_file');
   if (secret) return secret;
+  // Changed under us since this run read it (another agent, a formatter, you): the edit
+  // would be planned against text that is gone.
+  const stale = staleSinceRead(p, ctx);
+  if (stale) return err(`edit_file: ${p} changed since you read it. Read it again, then edit.`);
   const oldString = args.old_string;
   const newString = args.new_string ?? '';
   if (typeof oldString !== 'string' || oldString === '') {

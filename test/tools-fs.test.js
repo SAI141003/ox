@@ -420,7 +420,8 @@ test('tool output inside the cwd shows the path RELATIVE to the cwd', async (t) 
   assert.match(wrote.content, new RegExp(`^--- a/${rel}$`, 'm'), 'the diff header is relativized, not stripped');
   assert.match(wrote.content, new RegExp(`^\\+\\+\\+ b/${rel}$`, 'm'));
 
-  const edited = await editFileTool({ path: abs, old_string: 'const x = 2;', new_string: 'const x = 3;' }, ctx);
+  // A fresh run: this one read the file before the write above, so it would be told to read it again.
+  const edited = await editFileTool({ path: abs, old_string: 'const x = 2;', new_string: 'const x = 3;' }, { cwd: dir });
   assert.ok(edited.content.startsWith(`Edited ${rel}: `), `edit_file header: ${edited.content.slice(0, 80)}`);
   assert.ok(!edited.content.includes(dir), 'edit_file leaked the absolute cwd');
   assert.match(edited.content, new RegExp(`^--- a/${rel}$`, 'm'), 'edit_file diff header is relativized');
