@@ -955,6 +955,29 @@ export function describeLargestSegment(breakdown) {
   return `${l.label} is the largest segment — ${l.tokens} of ${breakdown.total.tokens} tokens (${pct.toFixed(1)}%)`;
 }
 
+/**
+ * Old tool output, once the conversation is getting full: what a tool said many steps
+ * ago is rarely needed again, and running it again is cheap. Keeps the newest results,
+ * and each call's id and pairing, so the transcript stays valid. Done in one step when
+ * it saves a lot, because each change costs a cached prefix.
+ * Independent test: about half the cost (JetBrains, arXiv 2508.21433), though solve rate
+ * fell on 2 of 5 model setups there, so it only starts well before compaction would.
+ * → { messages, savedChars }
+ */
+export function maskOldToolOutputs(messages, { keepNewest = 8, minChars = 1200 } = {}) {
+  const msgs = Array.isArray(messages) ? messages : [];
+  const tools = msgs.flatMap((m, i) => (m?.role === 'tool' ? [i] : []));
+  const keep = new Set(tools.slice(-keepNewest));
+  let savedChars = 0;
+  const out = msgs.map((m, i) => {
+    if (m?.role !== 'tool' || keep.has(i) || typeof m.content !== 'string' || m.content.length < minChars) return m;
+    const note = `[older output dropped to save tokens (${m.content.length} chars). Run the tool again if you need it.]`;
+    savedChars += m.content.length - note.length;
+    return { ...m, content: note };
+  });
+  return { messages: out, savedChars };
+}
+
 export function staleToolOutputTrim(messages, capChars = 25_000) {
   const msgs = Array.isArray(messages) ? messages.map((m) => ({ ...m })) : [];
   let lastTool = -1;

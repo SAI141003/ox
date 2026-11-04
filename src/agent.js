@@ -3,7 +3,7 @@ import { execSync } from 'node:child_process';
 import { withTrace } from './trace.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import { breakdownContext, buildContext, estimateTokens, instructionScopesFromText, pureCompact, staleToolOutputTrim } from './context.js';
+import { breakdownContext, buildContext, estimateTokens, instructionScopesFromText, maskOldToolOutputs, pureCompact, staleToolOutputTrim } from './context.js';
 import { buildSystemPrompt, renderContractBlock } from './system-prompt.js';
 import { harvestEvidence, mergeGoalTodos, progressSignature, proveGoalItems, renderGoalBlock } from './goal.js';
 import { listToolSchemas, dispatchTool, pruneToolSchemas, narrowToolSchemas } from './tools/index.js';
@@ -12,6 +12,8 @@ import { resolveBot } from './bots.js';
 
 // The tool offer each session settled on (names, in order), so every message
 // of a session sends the same tool list and keeps the prompt cache warm.
+const OLD_OUTPUT_MASK_AT = 0.5;
+const OLD_OUTPUT_MIN_SAVED = 8000;
 export const SESSION_OFFER = new Map();
 function rememberOffer(sid, names) {
   SESSION_OFFER.delete(sid);
@@ -1471,6 +1473,7 @@ async function* runAgentLoop(opts = {}) {
     model: activeModel(),
   }, true);
   yield* flushHookEvents();
+  let forceCompact = false, overflowRetried = false;
   outer: while (true) {
     assertCostBudget();
 
@@ -1552,7 +1555,17 @@ async function* runAgentLoop(opts = {}) {
       if (history[0]?.role === 'system') history[0] = { role: 'system', content: await systemText() };
     }
 
-    const est = payloadTokens(history, tools);
+    let est = payloadTokens(history, tools);
+    // Past half full: drop old tool output first, when it frees real room. Compaction,
+    // which costs a model call, then has less to do or is not needed.
+    if (est > window * OLD_OUTPUT_MASK_AT && process.env.OX_MASK_OLD_OUTPUT !== '0') {
+      const masked = maskOldToolOutputs(history);
+      if (masked.savedChars >= OLD_OUTPUT_MIN_SAVED) {
+        setHistory(masked.messages);
+        est = payloadTokens(history, tools);
+        yield { type: 'warning', text: `dropped old tool output: about ${Math.round(masked.savedChars / 4).toLocaleString('en-US')} tokens freed` };
+      }
+    }
     if (!preCompactionMarked && est >= window * PRE_COMPACTION_THRESHOLD) {
       preCompactionMarked = true;
       try {
@@ -1569,7 +1582,8 @@ async function* runAgentLoop(opts = {}) {
         });
       } catch {}
     }
-    if (est > window * compactAt) {
+    if (est > window * compactAt || forceCompact) {
+      forceCompact = false;
       if (compactionsThisRun >= COMPACTION_MAX_PER_RUN) {
         // The schemas dominate the payload and survive compaction untouched,
         // so summarizing cannot get us back under the threshold. Say so once
@@ -1888,6 +1902,13 @@ async function* runAgentLoop(opts = {}) {
         if (!cls) cls = classifyProviderError(streamError);
         // DeepSeek dsh: context-window overflow → force compaction immediately
         // rather than retrying or bouncing (no provider has more room).
+        if (code === LlmFailure.CONTEXT_WINDOW_EXCEEDED && !overflowRetried) {
+          // Our estimate was short of the provider's count. Once per run: compact and retry.
+          overflowRetried = true;
+          forceCompact = true;
+          yield { type: 'warning', text: 'the provider says the conversation is too long: compacting and trying again' };
+          continue outer;
+        }
         if (code === LlmFailure.CONTEXT_WINDOW_EXCEEDED && !bouncedThisTurn) {
           yield { type: 'error', error: 'context window exceeded — reduce context or enable auto-compaction' };
           break outer;

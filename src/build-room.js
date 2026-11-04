@@ -446,6 +446,7 @@ export class BuildRoom extends EventEmitter {
     for (let tries = 0; tries < 2 && !r; tries++) {
       try { r = parseReview(await this.ask({ system: REVIEW_SYSTEM, user: `THE PART: ${member.part.title}\n${member.part.brief}\nFiles it owns: ${member.part.files.join(', ') || '(its own)'}\n\n${material}` })); } catch {}
     }
+    const unreached = !r;
     r ??= { verdict: 'pass', comments: [{ file: '', line: 0, severity: 'suggestion', comment: 'The reviewer could not be reached; ox\'s security check and the tests decided.' }] };
     const comments = r.comments.map((c) => ({ ...c, by: reviewer }));
     try {
@@ -455,7 +456,8 @@ export class BuildRoom extends EventEmitter {
       }
     } catch {}
     const verdict = comments.some((c) => c.severity === 'must-fix') ? 'changes' : 'pass';
-    this.emitEv({ type: 'review', agent: member.name, reviewer, round, verdict, comments });
+    // Not reached is not approved: the build goes on, and says so.
+    this.emitEv({ type: 'review', agent: member.name, reviewer, round, verdict: unreached && verdict === 'pass' ? 'unreviewed' : verdict, comments });
     this.status(reviewer, 'waiting', '');
     return { verdict, comments };
   }
