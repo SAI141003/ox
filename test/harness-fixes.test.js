@@ -261,3 +261,37 @@ test('a run that ends with a subagent still out brings its work home', () => {
   assert.equal(fs.readFileSync(path.join(dir, 'left.txt'), 'utf8'), 'kept');
   assert.deepEqual(fs.readdirSync(path.join(home, 'worktrees')), []);
 });
+
+test('ox ask: names map to plans, a read stays read-only, work lands, and no agent can ask another', async () => {
+  const A = await import('../src/ask-agent.js');
+  assert.equal(A.agentSpec('codex'), 'chatgpt-plan');
+  assert.equal(A.agentSpec('Claude'), 'claude-plan');
+  assert.equal(A.agentSpec('gemini'), 'gemini-plan');
+  assert.equal(A.agentSpec('nvidia:some/model'), 'nvidia:some/model');
+  const final = (t) => `${JSON.stringify({ type: 'final', message: { content: t } })}\n`;
+  const { dir } = gitRepo();
+  const saved = process.env.OX_HOME;
+  process.env.OX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-wt-home-'));
+  try {
+    const seen = [];
+    const r = await A.askAgent({ agent: 'codex', message: 'look', cwd: dir, run: async (o) => { seen.push(o); return { code: 0, out: final('fine'), err: '' }; } });
+    assert.deepEqual([r.ok, r.reply, r.who, seen[0].work, seen[0].cwd], [true, 'fine', 'chatgpt-plan', false, dir]);
+    const w = await A.askAgent({ agent: 'codex', message: 'make it', mode: 'work', cwd: dir, run: async (o) => { assert.notEqual(o.cwd, dir); fs.writeFileSync(path.join(o.cwd, 'made.txt'), 'x\n'); return { code: 0, out: final('done'), err: '' }; } });
+    assert.match(w.landed, /applied to the project: made\.txt/);
+    assert.equal(fs.existsSync(path.join(dir, 'made.txt')), true);
+    const bad = await A.askAgent({ agent: 'codex', message: 'x', cwd: dir, run: async () => ({ code: 1, out: '', err: 'not signed in' }) });
+    assert.deepEqual([bad.ok, bad.error], [false, 'not signed in']);
+    const deep = await A.askAgent({ agent: 'codex', message: 'x', cwd: dir, env: { OX_ASK_DEPTH: '1' }, run: () => assert.fail('must not run') });
+    assert.match(deep.error, /cannot ask another/);
+    const nokey = await A.askAgent({ agent: 'ox-gpt', message: 'x', cwd: dir, env: {}, run: () => assert.fail('must not run') });
+    assert.match(nokey.error, /no .*KEY/);
+  } finally { if (saved === undefined) delete process.env.OX_HOME; else process.env.OX_HOME = saved; }
+  const t = await A.askAgentTool({ agent: 'claude', message: 'x' }, { yolo: true, cwd: dir, config: {} });
+  assert.match(t.content, /only when you pick it/);
+  const asked = [];
+  const no = await A.askAgentTool({ agent: 'codex', message: 'secret plan' }, { cwd: dir, config: {}, requestApproval: async (n, a, d) => { asked.push(d); return false; } });
+  assert.match(no.content, /did not allow/);
+  assert.match(asked[0], /Ask chatgpt-plan.*secret plan/);
+  const { classifyTool } = await import('../src/resource-class.js');
+  assert.equal(classifyTool('ask_agent'), 'approval_gated');
+});

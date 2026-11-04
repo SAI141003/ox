@@ -214,7 +214,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['desktop', 'version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'knowledge', 'ecc', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
+const SUBCOMMANDS = new Set(['ask', 'desktop', 'version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'knowledge', 'ecc', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -562,6 +562,7 @@ function usageAll() {
     '  ox pr status | comments           CI checks, review state and comments',
     '  ox pr fix [--rounds n]            review comments and failing CI become one ox task; committed and pushed',
     '  ox task run <id> --worktree [--pr]   a task in its own worktree and branch, then a PR from it',
+    '  ox ask <agent> "<message>"       ask Codex, Claude, Gemini or any model from here; --work lets it change files in its own copy',
     '  ox race "<task>" --agents ox,claude-plan,<model>   several agents on one task, side by side; ox race keep <id> <agent>',
     '  ox git clone <url> [dir]          clones that borrow history from one local mirror (no second download)',
     '  ox wiki [--out dir]               the project\'s wiki from its code graph: subsystems, files, what uses what',
@@ -1833,6 +1834,27 @@ async function cmdMcpAdd(args = []) {
   console.log(indentBlock(tpl.setup));
   console.log(c.dim('policy: money-risk tools always ask before they execute'));
   console.log(c.dim(`verify with: ox mcp test ${name}`));
+}
+
+// ox ask <agent> "<message>" [--work]  |  ox ask --session <id> "<message>"  |  ox ask
+async function cmdAsk(args = []) {
+  const A = await import('./ask-agent.js');
+  const config = loadConfig({ cwd: process.cwd() });
+  const si = args.indexOf('--session');
+  const session = si >= 0 ? args[si + 1] : null;
+  const words = args.filter((a, i) => !a.startsWith('--') && (si < 0 || i !== si + 1));
+  if (!words.length) {
+    const { plans, keyed } = await A.reachableAgents(config);
+    console.log(`plans  ${plans.join(', ') || 'none signed in'}`);
+    console.log(`keys   ${keyed.map((k) => `${k.spec} (${k.model})`).join(', ') || 'none'}`);
+    console.log(c.dim('ox ask codex "review my changes"   ·   --work lets it change files, in its own copy   ·   --session <id from ox agents> continues a session'));
+    return;
+  }
+  const agent = session ? null : words.shift();
+  const r = await A.askAgent({ agent, session, message: words.join(' '), mode: args.includes('--work') ? 'work' : 'read', config });
+  if (r.reply) console.log(r.reply);
+  if (r.landed) console.log(c.dim(r.landed));
+  if (!r.ok) { process.stderr.write(`${c.red(`✗ ${r.who ?? 'ox ask'}: ${r.error}`)}\n`); process.exitCode = 1; }
 }
 
 async function cmdMcpRemove(args = []) {
@@ -5002,6 +5024,9 @@ async function runSubcommand(cmd, args) {
     case 'agents':
       await cmdAgents(args);
       return;
+    case 'ask':
+      await cmdAsk(args);
+      return;
     case 'daemon':
       await cmdDaemon(args);
       return;
@@ -6255,23 +6280,27 @@ async function runSubcommand(cmd, args) {
         // The build room (src/build-room.js): planner, builders in parallel, review by another agent, merge.
         const BR = await import('./build-room.js');
         const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
-        const task = args.filter((a, i) => !a.startsWith('-') && !['--agents', '--dir', '--bot', '--model'].includes(args[i - 1])).join(' ').trim();
-        if (!task) { console.log(c.red('usage: ox build --team "<task>" [--agents 2-4] [--dir <folder>] [--bot <model>]')); process.exitCode = 2; return; }
+        const task = args.filter((a, i) => !a.startsWith('-') && !['--agents', '--dir', '--bot', '--bots', '--model'].includes(args[i - 1])).join(' ').trim();
+        if (!task) { console.log(c.red('usage: ox build --team "<task>" [--agents 2-4] [--dir <folder>] [--bot <one model for all> | --bots a,b,c]')); process.exitCode = 2; return; }
         const dir = path.resolve(val('--dir') ?? process.cwd());
         const config = loadConfig({ cwd: dir });
         const { workingModelSpec } = await import('./working-model.js');
         const { quickText } = await import('./quick-text.js');
         const target = resolveBot(val('--bot') ?? val('--model') ?? await workingModelSpec(config, { say: () => {} }), config);
         const ask = async ({ system, user }) => (await quickText(target, { system, user, maxTokens: 4000 })).text;
-        const room = new BR.BuildRoom({ task, dir, agents: val('--agents') ?? 3, ask, bot: val('--bot') ?? val('--model') });
+        const askWith = async (spec, { system, user }) => (await quickText(resolveBot(spec, config), { system, user, maxTokens: 4000 })).text;
+        const pinned = val('--bot') ?? val('--model');
+        const bots = val('--bots') ? val('--bots').split(',').map((s) => s.trim()).filter(Boolean) : pinned ? [] : await (await import('./ask-agent.js')).teamLineup(config);
+        if (bots.length > 1) console.log(c.dim(`team models: ${bots.join(', ')} (one model for all: --bot)`));
+        const room = new BR.BuildRoom({ task, dir, agents: val('--agents') ?? 3, ask, askWith, bot: pinned, bots: bots.length > 1 ? bots : [] });
         const tint = { 'Agent 1': c.cyan ?? ((s) => s), 'Agent 2': c.green ?? ((s) => s), 'Agent 3': c.yellow ?? ((s) => s), 'Agent 4': c.magenta ?? ((s) => s) };
         const who = (a) => (tint[a] ?? c.bold)(a);
         room.on('event', (e) => {
-          if (e.type === 'plan') { console.log(`${c.bold('Plan')}: ${e.summary}`); for (const p of e.parts) console.log(`  ${who(p.agent)} ${p.title} ${c.dim(`(reviewed by ${p.reviewer})`)}`); }
+          if (e.type === 'plan') { console.log(`${c.bold('Plan')}: ${e.summary}`); for (const p of e.parts) console.log(`  ${who(p.agent)} ${p.title} ${c.dim(`(${p.model ? `on ${p.model}, ` : ''}reviewed by ${p.reviewer}${p.reviewModel ? ` on ${p.reviewModel}` : ''})`)}`); }
           else if (e.type === 'file') console.log(`${who(e.agent)} ${c.dim('wrote')} ${e.file} ${c.dim(`+${e.changed.length}`)}`);
           else if (e.type === 'cmd') console.log(`${who(e.agent)} ${c.dim('$')} ${e.command}`);
           else if (e.type === 'tests') console.log(`${who(e.agent)} ${e.ok ? c.green('tests pass') : c.red('tests fail')}${e.whole ? ' (whole project)' : ''}`);
-          else if (e.type === 'review') { console.log(`${who(e.reviewer)} ${e.verdict === 'pass' ? c.green('approved') : c.red('asked for changes')} ${c.dim(`${e.agent}, round ${e.round}`)}`); for (const x of e.comments) console.log(c.dim(`    ${x.file}${x.line ? `:${x.line}` : ''} [${x.severity}] ${x.comment}`)); }
+          else if (e.type === 'review') { console.log(`${who(e.reviewer)} ${e.verdict === 'pass' ? c.green('approved') : e.verdict === 'unreviewed' ? c.red('could not review') : c.red('asked for changes')} ${c.dim(`${e.agent}, round ${e.round}`)}`); for (const x of e.comments) console.log(c.dim(`    ${x.file}${x.line ? `:${x.line}` : ''} [${x.severity}] ${x.comment}`)); }
           else if (e.type === 'merge') console.log(`${who(e.agent)} ${e.ok ? c.green('merged') : c.red(`not merged: ${e.note}`)}`);
           else if (e.type === 'done') console.log(`\n${e.ok ? c.green('✓') : c.red('✗')} ${e.summary}\n${c.dim(e.dir ?? '')}`);
         });

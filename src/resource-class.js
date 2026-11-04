@@ -69,6 +69,8 @@ export function classifyTool(name) {
   if (toolName === 'request_secret') return 'memory_write';
   // set_project (src/tools/project.js): makes a folder and moves the run there; one at a time.
   if (toolName === 'set_project') return 'approval_gated';
+  // ask_agent (src/ask-agent.js): sends your work to another carrier, so you say yes first.
+  if (toolName === 'ask_agent') return 'approval_gated';
   if (MAILBOX_TOOLS.has(toolName)) return 'memory_write';
   if (SESSION_STATE_TOOLS.has(toolName)) return 'memory_write';
   if (TERMINAL_TOOLS.has(toolName)) return 'terminal';

@@ -13,6 +13,7 @@ import { bashTool } from './exec.js';
 import { todoWriteTool } from './todo.js';
 import { estimateTokens } from '../context.js';
 import { subagentToolSchema, makeSubagentToolHandler } from '../subagent.js';
+import { askAgentSchema, askAgentTool } from '../ask-agent.js';
 import {
   open_app, open_url, open_path, open_window, type_text, screenshot, notify,
   ui_elements, click, press_key, draw,
@@ -93,6 +94,7 @@ export const TOOL_IMPLS = {
   load_tools: loadToolsTool,
   install_skill: installSkillTool,
   code_graph: codeGraphTool,
+  ask_agent: askAgentTool,
   create_bot: createBotTool,
   session_recall: sessionRecallTool,
   // ox brain (src/brain.js): your notes, as markdown that opens in Obsidian.
@@ -372,6 +374,10 @@ export function listToolSchemas(ctx = {}, strictSchemas = false) {
   if (ctx.enableSubagents !== false && !schemas.some((x) => x.name === 'subagent')) {
     schemas.push(subagentToolSchema());
   }
+  // Another agent or model. One that was itself asked gets no such tool (src/ask-agent.js).
+  if (ctx.enableSubagents !== false && !Number(process.env.OX_ASK_DEPTH) && !schemas.some((x) => x.name === 'ask_agent')) {
+    schemas.push(askAgentSchema());
+  }
   // Agent-to-agent messaging: the mailbox in src/agent-teams.js finally gets a
   // sender and a reader. Available unless explicitly disabled, and only wired when
   // a handler is actually installed on ctx — offering the schemas with nothing
@@ -617,6 +623,9 @@ export const AGENT_KEYWORDS = Object.freeze([
 // review-ish prompts rather than every prompt, and unlike a web tool it SPENDS
 // MONEY on every invocation. Carrying it on every turn would offer an
 // expensive action that most turns have no use for.
+// Naming another agent is asking for it.
+export const ASK_AGENT_KEYWORDS = Object.freeze(['ask_agent', 'codex', 'chatgpt', 'claude', 'gemini', 'qwen', 'kimi', 'copilot', 'cursor']);
+
 export const CRITIQUE_KEYWORDS = Object.freeze([
   'critique', 'critic', 'critiques', 'second opinion', 'second-opinion',
   'review', 'reviewed', 'reviews', 'reviewing', 'reviewer',
@@ -744,6 +753,7 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
   const webOn = keywordSignal(message, WEB_KEYWORDS) !== null && (!locallyScopedCurrent || explicitWebSignal);
   const webTaskOn = keywordSignal(message, WEB_TASK_KEYWORDS) !== null;
   const critiqueOn = keywordSignal(message, CRITIQUE_KEYWORDS) !== null;
+  const askOn = keywordSignal(message, ASK_AGENT_KEYWORDS) !== null;
   // `agentOn` keeps the mailbox for a LEAD whose own turn is about agents. A
   // SUBAGENT needs it unconditionally, and the offer says which one this is:
   // report_result is injected by runSubagent and is subagent-only (it is absent
@@ -775,6 +785,7 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
     if (CURRENT_PAGE_SIGNAL.test(String(message)) && (CURRENT_PAGE_TOOLS.includes(n) || YOUTUBE_TOOLS.includes(n) || n === 'web_fetch')) keep.add(n);
     if (webTaskOn && WEB_TASK_TOOLS.includes(n)) keep.add(n);
     if (critiqueOn && CRITIQUE_TOOLS.includes(n)) keep.add(n);
+    if (n === 'ask_agent' && askOn) keep.add(n);
     if (agentOn && AGENT_MESSAGE_TOOLS.includes(n)) keep.add(n);
     if (canvasOn && CANVAS_TOOLS.includes(n)) keep.add(n);
     if (mediaOn && MEDIA_TOOLS.includes(n)) keep.add(n);

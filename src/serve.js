@@ -2857,7 +2857,12 @@ const ROUTES = [
     BR.prepareRepo(dir);   // refuses a folder of your own files or uncommitted changes, before anything runs
     const ask = await buildAsk();
     if (!ask) throw new Error('no model is set up: run ox doctor');
-    const room = BR.startBuild({ task, dir, agents: body?.agents, ask, bot: typeof body?.bot === 'string' && body.bot ? body.bot : null, sessionId: typeof body?.sessionId === 'string' ? body.sessionId : null });
+    const pinned = typeof body?.bot === 'string' && body.bot ? body.bot : null;
+    const A = await import('./ask-agent.js');
+    const buildConfig = loadConfig({ cwd: dir });
+    const lineup = Array.isArray(body?.bots) ? body.bots.map(String) : pinned ? [] : await A.teamLineup(buildConfig).catch(() => []);
+    const askWith = async (spec, q) => (await (await import('./quick-text.js')).quickText(resolveBot(spec, buildConfig), { ...q, maxTokens: 4000 })).text;
+    const room = BR.startBuild({ task, dir, agents: body?.agents, ask, askWith, bots: lineup.length > 1 ? lineup : [], bot: pinned, sessionId: typeof body?.sessionId === 'string' ? body.sessionId : null });
     return { id: room.id, dir };
   }) },
   // One agent of a build: ask it what it is doing (from its record), or tell it something for its next step.

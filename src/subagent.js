@@ -516,6 +516,18 @@ function makeRawSubagentHandler({ config, target: mainTarget, auxTarget }) {
     routingNote = `subagent.bot '${mode}' unusable (${err?.message ?? err}); subagents use the main model`;
   }
   return async function subagentTool(args, ctx) {
+    // One subagent on a model of its own. Going to another carrier needs your yes, like ask_agent.
+    let chosen = target;
+    if (typeof args?.bot === 'string' && args.bot.trim()) {
+      const env = { ...process.env, ...(ctx?.env ?? {}) };
+      try { chosen = resolveBot(args.bot.trim(), config, env); } catch (e) { return { content: `subagent: ${e.message}`, isError: true }; }
+      if (chosen.subscription) return { content: `subagent: ${args.bot} runs in its own app; use ask_agent for it.`, isError: true };
+      if (chosen.keyEnv && !env[chosen.keyEnv]) return { content: `subagent: no ${chosen.keyEnv} on this machine for ${args.bot}.`, isError: true };
+      if (chosen.provider !== mainTarget?.provider && typeof ctx?.requestApproval === 'function'
+        && !(await ctx.requestApproval('ask_agent', { agent: args.bot, message: args.task }, `Send this subagent's work to ${chosen.provider} (${chosen.model})`))) {
+        return { content: `subagent: you did not allow sending this to ${chosen.provider}.`, isError: true };
+      }
+    }
     if (routingNote) {
       process.stderr.write(`! ${routingNote}\n`);
       routingNote = null;
@@ -649,7 +661,7 @@ function makeRawSubagentHandler({ config, target: mainTarget, auxTarget }) {
       args,
       ctx,
       config,
-      target,
+      target: chosen,
       auxTarget,
       desc,
       emit: emitter,
@@ -1432,6 +1444,7 @@ export function subagentToolSchema() {
         max_iterations: { type: 'integer', description: 'Cap on agent-loop iterations (5-40).' },
         resume: { type: 'string', description: 'Resume a prior subagent by id (re-loads its lessons).' },
         persona: { type: 'string', description: 'Optional persona/system-prompt override for the subagent.' },
+        bot: { type: 'string', description: 'Optional model for this subagent (a bot or provider:model you have a key for). Plans such as Codex: use ask_agent.' },
       },
       required: ['task'],
       additionalProperties: false,
