@@ -1,0 +1,40 @@
+# ox, as it stands now
+
+ox is a coding agent that has to prove its work. It writes a failing test before a fix, runs it again after, and shows you the result. You can use it in a terminal, in the desktop app, or by voice from the island in your Mac's notch. It runs on your ChatGPT or Claude plan, on an API key, or on a model on your own machine. There is no account and no telemetry, and your keys stay in `~/.ox/keys.json`.
+
+## What's new
+
+**One page for all your computers.** The new Machines page shows every laptop you've paired and what's running on it, session by session. From there you can read a session on another machine and message it, browse and edit its files, or watch its screen and control it. If a file changed while you were editing, ox refuses the save rather than overwrite it.
+
+**A main computer you can choose and change.** Any laptop can become main, but only if the owner of the other laptop says yes. Saying yes gives it a set list of permissions, and when main moves to another laptop those permissions go back. Calling yourself main gets you nothing. Screen and control are never part of the deal. Each one is its own switch on the computer being controlled.
+
+**Asking first.** If a paired machine wants something it hasn't been allowed, its owner gets a card in the app or island with Allow, Always or Deny. Background polling never triggers a card, so it won't nag you.
+
+**Connections you can read.** Each machine shows whether it's connected, how fast, and what each side allows. You can disconnect and reconnect without a new code, or remove a machine completely. Messages between computers say "delivered" only when the other machine confirms it.
+
+**Faster transfers.** Files can now be any size, up from 8 MB, and each is checked with SHA-256 before it takes its name. Dropping a layer of encoding cut the bytes on the wire from 1.78× the file to 1.00×. On one Mac, downloads went from about 60–100 MB/s to 190–615 MB/s.
+
+**Away from home.** Paired laptops learn each other's addresses and try them in turn, so with Tailscale on both they should find each other from anywhere. ox has no relay, so nothing passes through a server of ours.
+
+**Updates that install themselves.** Downloaded copies can now update from inside the app, after a checksum check. A new release only goes live once every build has passed, so the installer never hands out a half-uploaded one. Turn on update checks once, and tick automatic if you want it hands-off.
+
+## The memory layer
+
+ox's memory lives on your machine, as a graph of facts rather than a growing pile of notes. When something changes ("works at Stripe" replacing "works at Google"), the new fact takes over and the old one keeps its dates, so ox can still answer what was true in March. "Next Friday" is saved as the actual date.
+
+Recall mixes text match, related facts, how recent something is and how much it matters. A short profile goes in front of every run, so ox starts already knowing you.
+
+A background pass runs every six hours and never deletes anything. It folds duplicates together and retires events whose day has passed. Facts that keep getting used grow stronger, and ones nobody uses go quiet. A lesson only becomes a how-to procedure after it has been verified twice.
+
+## How we keep token use down
+
+- **A small prompt.** Against Hermes on the same model, ox sends about 2,000 tokens per request instead of about 11,000, and makes one request per answer instead of three.
+- **Only the tools a turn needs.** A simple turn might get 8 tools out of 49, and that list stays the same across a session.
+- **Skills as an index.** Hundreds of skills cost around 600 tokens a turn, because only an index is sent.
+- **Answers from a graph.** Asking the code graph took 132× fewer tokens than opening whole files, on five questions about ox itself. For docs and memory, the figure was 39×.
+
+Not everything wins. On a small Finder window, ox's text view of the screen cost more than a screenshot would (915 tokens against 103 to 255), so that saving depends on the window.
+
+## What hasn't been proven yet
+
+Most of the mesh has only run as two apps on one Mac. Between two real laptops we've tested the link and listing sessions, on Wi-Fi only. The away-from-home path hasn't run over real Tailscale. Real clicks and typing were tested on the same Mac, not from another one. In-app updates are Mac-only for now; Windows and Linux reinstall. The Windows installer change hasn't run on Windows, and the Mac app still isn't notarized.
