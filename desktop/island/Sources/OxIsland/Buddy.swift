@@ -138,7 +138,7 @@ final class Buddy: NSObject, ObservableObject {
                 let said = !self.heard.trimmingCharacters(in: .whitespaces).isEmpty
                 // Clicked: words, then a pause; the recognizer's own end of sentence; nothing at all for 8 s.
                 // Held key: until it is let go. Either way 45 s at most, so a lost key-up never leaves the mic on.
-                if (byClick && ((said && (quiet > 1.3 || self.finalHeard)) || (!said && total > 8))) || total > 45 {
+                if (byClick && ((said && (quiet > 0.9 || self.finalHeard)) || (!said && total > 8))) || total > 45 {
                     t.invalidate()
                     IslandLog.write("voice: end of speech (\(said ? "after a pause" : "nothing said"), \(String(format: "%.1f", total)) s)")
                     self.stopListening()

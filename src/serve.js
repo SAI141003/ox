@@ -2801,8 +2801,12 @@ const ROUTES = [
       default: {
         if (!meshNode) throw new Error('the mesh is not running in this app');
         const out = meshNode.choose(String(body?.alert ?? ''), body?.option ?? {});
-        // Your choice of another machine's model: the next turns use it (switch back in Settings).
-        if (out.model) { resolveBot(out.model, { bots: readConfigDoc().bots ?? {} }); (await import('./config.js')).saveConfigDoc((doc) => { doc.defaultBot = out.model; }); }
+        // Your choice of another machine's model: the next turns use it for a while, then your own default again.
+        if (out.model) {
+          resolveBot(out.model, { bots: readConfigDoc().bots ?? {} });
+          const C = await import('./config.js');
+          C.saveConfigDoc((doc) => { doc.borrowedBot = { spec: out.model, until: Date.now() + C.BORROW_MS }; });
+        }
         return out;
       }
     }

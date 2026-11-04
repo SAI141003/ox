@@ -320,3 +320,13 @@ test('dev servers on another machine: start its own dev command there, read its 
     for (const d of [site, plain]) { try { fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch {} }
   }
 });
+
+test('a model borrowed from a mesh alert lasts a while and never becomes the default', async () => {
+  const { borrowedBot } = await import('../src/config.js');
+  assert.equal(borrowedBot({ borrowedBot: { spec: 'mesh:B/nvidia', until: 2000 } }, 1000), 'mesh:B/nvidia');
+  assert.equal(borrowedBot({ borrowedBot: { spec: 'mesh:B/nvidia', until: 1000 } }, 2000), undefined, 'over: back to your own default');
+  assert.equal(borrowedBot({}, 1000), undefined);
+  const serve = fs.readFileSync(new URL('../src/serve.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(serve, /doc\.defaultBot = out\.model/);
+});
+
