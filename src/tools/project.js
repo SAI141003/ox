@@ -20,6 +20,29 @@ export const PROJECT_TOOL_SCHEMAS = Object.freeze([{
   },
 }]);
 
+// A task of its own, noticed along the way: offered to you as a card, and started only if you say so.
+export const SIDE_SESSION_SCHEMA = Object.freeze({
+  name: 'start_session',
+  description: 'Offer the user a separate, self-contained task (a bug you noticed, a follow-up that is not part of this request) as its own chat in this project. They choose whether it starts. Never for part of what they asked you to do.',
+  parameters: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', description: 'A few words naming the task' },
+      task: { type: 'string', description: 'A complete brief: that chat will not see this one' },
+    },
+    required: ['title', 'task'],
+  },
+});
+
+export async function start_session(args = {}, ctx = {}) {
+  const title = String(args.title ?? '').trim().slice(0, 80);
+  const task = String(args.task ?? '').trim().slice(0, 4000);
+  if (!title || !task) return { content: 'start_session: give a title and a task.', isError: true };
+  if (typeof ctx.onSideSession !== 'function') return { content: 'start_session: only in the app. Tell the user about the task instead.', isError: true };
+  ctx.onSideSession({ title, task });
+  return { content: 'Offered to the user as its own chat; they decide. Do not do that work here: carry on with this task.' };
+}
+
 export async function set_project(args = {}, ctx = {}) {
   const home = os.homedir();
   const from = typeof ctx.cwd === 'string' && ctx.cwd ? ctx.cwd : process.cwd();

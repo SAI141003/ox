@@ -24,6 +24,10 @@
 // executes code on this machine. See authExposure() for the rule, the messages,
 // and the explicit opt-in escape hatch.
 
+import { allowKey, allowWords, stepOutput } from './chat-steps.js';
+import { offThread } from './off-thread.js';
+import { needsFingerprint } from './approval-guard.js';
+import { redactSecrets } from './session.js';
 import { quickReply } from './quick-reply.js';
 import { createServer } from 'http';
 import { createHash, timingSafeEqual } from 'crypto';
@@ -122,21 +126,30 @@ let appApprovalSeq = 0;
 const appChatSteers = new Map();
 const MAX_APP_STEERS = 8;
 const MAX_APP_STEER_CHARS = 4000;
-export function appApprover(res, model, { timeoutMs = Number(process.env.OX_APP_APPROVAL_MS) || 10 * 60_000 } = {}) {
+// "Allow for this chat": what you said yes to, per chat, until ox restarts. Never for a step
+// that cannot be taken back, or one that needs your fingerprint.
+const appChatAllowed = new Map();
+const canAllowForChat = (tool, detail) => {
+  const key = allowKey(tool, detail);
+  return key && !ORCHESTRATE_STILL_ASKS.test(`${tool} ${detail}`) && !needsFingerprint(tool, detail) ? key : null;
+};
+export function appApprover(res, model, { timeoutMs = Number(process.env.OX_APP_APPROVAL_MS) || 10 * 60_000, sessionId = null } = {}) {
   const mine = new Set();
   res.on?.('close', () => { for (const id of mine) answerAppApproval(id, 'deny'); });
   return (tool, args = {}, detail = '') => new Promise((resolve) => {
     if (res.writableEnded || res.destroyed) { resolve(false); return; }
+    const forChat = sessionId ? canAllowForChat(tool, detail) : null;
+    if (forChat && appChatAllowed.get(sessionId)?.has(forChat)) { resolve(true); return; }
     const id = `ap-${Date.now().toString(36)}-${++appApprovalSeq}`;
     const timer = setTimeout(() => answerAppApproval(id, 'deny'), timeoutMs);
     timer.unref?.();
     mine.add(id);
-    appApprovals.set(id, { timer, tool: String(tool), preview: String(detail || '').slice(0, 400), model: String(model ?? ''), createdAt: Date.now(), resolve: (decision) => {
+    appApprovals.set(id, { timer, tool: String(tool), preview: String(detail || '').slice(0, 400), model: String(model ?? ''), createdAt: Date.now(), forChat, sessionId, resolve: (decision) => {
       mine.delete(id);
       if (!res.writableEnded && !res.destroyed) sendSSE(res, { ...createChatCompletionChunk(model, ''), ox: { type: 'approval-resolved', id, decision } });
       resolve(decision === 'allow');
     } });
-    sendSSE(res, { ...createChatCompletionChunk(model, ''), ox: { type: 'approval', id, tool: String(tool), preview: String(detail || '').slice(0, 400) } });
+    sendSSE(res, { ...createChatCompletionChunk(model, ''), ox: { type: 'approval', id, tool: String(tool), preview: String(detail || '').slice(0, 400), ...(forChat ? { always: allowWords(forChat) } : {}) } });
   });
 }
 // In Orchestrate these still ask: steps that cannot be taken back or that act outside the project.
@@ -689,12 +702,12 @@ export async function mediaMadeSince(since, { history, run = null, said = '' } =
   } catch { return []; }
 }
 
-function oxToolEvent(event) {
+function oxToolEvent(event, { forApp = false } = {}) {
   const file = event.type === 'tool-start' ? toolFile(event) : null;
   const media = madeMedia(event);
   return event.type === 'tool-start'
-    ? { type: 'tool-start', id: event.id ?? null, name: String(event.name ?? 'tool'), preview: String(event.argsPreview ?? '').slice(0, 120), ...(Array.isArray(event.plan) ? { plan: event.plan } : {}), ...(file ? { file: file.slice(0, 300) } : {}), ...(Array.isArray(event.files) && event.files.length ? { files: event.files.slice(0, 50).map((f) => String(f).slice(0, 300)) } : {}) }
-    : { type: 'tool-end', id: event.id ?? null, name: String(event.name ?? 'tool'), isError: event.isError === true, ...(event.meta?.canvas?.tree ? { canvas: event.meta.canvas.tree } : {}), ...(media.length ? { media } : {}) };
+    ? { type: 'tool-start', id: event.id ?? null, name: String(event.name ?? 'tool'), preview: String(event.argsPreview ?? '').slice(0, 120), ...(event.step ? { step: event.step } : {}), ...(Array.isArray(event.plan) ? { plan: event.plan } : {}), ...(file ? { file: file.slice(0, 300) } : {}), ...(Array.isArray(event.files) && event.files.length ? { files: event.files.slice(0, 50).map((f) => String(f).slice(0, 300)) } : {}) }
+    : { type: 'tool-end', id: event.id ?? null, name: String(event.name ?? 'tool'), isError: event.isError === true, ms: Number(event.ms) || 0, ...(forApp ? { output: redactSecrets(stepOutput(event.output ?? event.content)) } : {}), ...(event.meta?.canvas?.tree ? { canvas: event.meta.canvas.tree } : {}), ...(media.length ? { media } : {}) };
 }
 
 function textDelta(event) {
@@ -1114,9 +1127,10 @@ async function handleChatCompletions(req, res) {
     // the app can answer the card (it sends ox_mode); a plain OpenAI client
     // keeps the old answer, no, rather than waiting on a card it never shows.
     const fromApp = Boolean(body.ox_mode || body.ox_ui);
-    if (fromApp || target?.provider === 'subscription') ctx.requestApproval = appApprover(res, targetModel);
+    if (fromApp || target?.provider === 'subscription') ctx.requestApproval = appApprover(res, targetModel, { sessionId: typeof body.ox_session_id === 'string' ? body.ox_session_id.slice(0, 128) : null });
     if (fromApp) ctx.requestSecret = appSecretAsker(res, targetModel);
     // set_project (src/tools/project.js) moved the run: the app's session follows to the new folder.
+    if (fromApp) ctx.onSideSession = ({ title, task }) => { if (!res.writableEnded && !res.destroyed) sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'side-offer', title, task } }); };
     if (fromApp) ctx.onProject = (dir) => { if (!res.writableEnded && !res.destroyed) sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'project', cwd: dir } }); };
     // Orchestrate, chosen by you, runs on its own: its helpers' edits and
     // commands in the project go ahead without a card each. What cannot be
@@ -1184,10 +1198,14 @@ async function handleChatCompletions(req, res) {
           sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'steer', text: String(event.text ?? '') } });
         } else if (event.type === 'thinking') {
           sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'thinking', chars: Number(event.chars) || 0 } });
+        } else if (event.type === 'continuation-retry') {
+          sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'retry', attempt: Number(event.attempt) || 1, reason: String(event.reason ?? '').slice(0, 200) } });
+        } else if (event.type === 'fallback') {
+          sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: { type: 'fallback', from: String(event.from ?? ''), to: String(event.to ?? ''), reason: String(event.reason ?? '').slice(0, 200) } });
         } else if (event.type === 'tool-start' || event.type === 'tool-end') {
           // What the agent is doing, as an `ox` extension on an empty chunk:
           // OpenAI clients ignore the unknown field, the web chat draws it.
-          sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: oxToolEvent(event) });
+          sendSSE(res, { ...createChatCompletionChunk(targetModel, ''), ox: oxToolEvent(event, { forApp: Boolean(body.ox_mode || body.ox_ui) }) });
           if (event.type === 'tool-end') { const c = shortcutCalls.find((x) => x.id === event.id && x.ok === null); if (c) c.ok = !event.isError; }
         } else if (event.type === 'assistant-turn' && Array.isArray(event.message?.tool_calls)) {
           for (const tc of event.message.tool_calls) { let a = {}; try { a = JSON.parse(tc.function?.arguments ?? '{}'); } catch {} shortcutCalls.push({ id: tc.id, name: tc.function?.name ?? '?', args: a, ok: null }); }
@@ -1857,7 +1875,7 @@ export function sayPlan(steps) {
 let briefCache = null;
 export async function cachedBrief({ maxAgeMs = 5 * 60_000 } = {}) {
   if (briefCache && Date.now() - briefCache.at < maxAgeMs) return briefCache.value;
-  const value = await (await import('./today.js')).brief();
+  const value = await offThread('./today.js', 'brief');
   briefCache = { at: Date.now(), value };
   return value;
 }
@@ -1924,9 +1942,9 @@ export async function voiceTurn(body) {
   if (done.handled) return { route: 'offline', handled: true, ok: done.ok !== false, say: done.message, ms: Date.now() - started };
   // The island asks this first while a coding run is open: an errand ("play
   // Billie Jean", "volume down") is done here and never sent into that run.
-  if (body?.offlineOnly === true) return { route: 'live', handled: false, why: 'not a small task', ms: Date.now() - started };
   if (SCREEN_ACT.test(text) && !body?.image) return { route: 'screen-act', handled: false, why: 'it needs a look at your screen, then to act on it', ms: Date.now() - started };
   if (SCREEN.test(text) && !body?.image) return { route: 'screen', handled: false, why: 'it needs a look at your screen', ms: Date.now() - started };
+  if (body?.offlineOnly === true) return { route: 'live', handled: false, why: 'not a small task', ms: Date.now() - started };
   const { assistantName } = await import('./identity.js');
   // Small talk and questions: one short answer. Anything that acts: an agent.
   await warmLocal();
@@ -2292,7 +2310,7 @@ const extrasJobs = {};
 let accountsMemo = null;
 async function accountsCached() {
   if (accountsMemo && Date.now() - accountsMemo.at < 60_000) return accountsMemo.v;
-  const v = await (await appApi()).accountsView(process.env, null);
+  const v = await offThread('./app-api.js', 'accountsView');
   accountsMemo = { at: Date.now(), v };
   return v;
 }
@@ -2317,7 +2335,7 @@ function warmCaches() {
     import('./personal-train.js').then((T) => T.ensureServing({ readConfigDoc, saveConfigDoc })).catch(() => {});
     Promise.resolve().then(() => cachedBrief()).catch(() => {});
     accountsCached().catch(() => {});
-    import('./usage-log.js').then((U) => { codeCache['code:30'] ??= { at: Date.now(), v: U.codeChanges({ days: 30 }) }; }).catch(() => {});
+    if (!codeCache['code:30']) offThread('./usage-log.js', 'codeChanges', [{ days: 30 }]).then((v) => { codeCache['code:30'] ??= { at: Date.now(), v }; }).catch(() => {});
   }, 1500).unref?.();
 }
 const ROUTES = [
@@ -2568,7 +2586,7 @@ const ROUTES = [
     throw new Error('action: apply, dismiss or now');
   }) },
   // Needs you (src/needs-you.js): what only you can move, across GitHub, ox and Mail, with links.
-  { method: 'GET', pattern: /^\/ox\/needs\/?$/, handler: appRoute(async () => (await import('./needs-you.js')).needsYou()) },
+  { method: 'GET', pattern: /^\/ox\/needs\/?$/, handler: appRoute(async () => offThread('./needs-you.js', 'needsYou')) },
   // ox updates itself from the notch (src/self-update.js): asked once, at most one notice a day.
   { method: 'GET', pattern: /^\/ox\/update\/?$/, handler: appRoute(async () => { const U = await import('./self-update.js'); const st = U.readState(); return { notice: U.notice(), allowed: st.allowed ?? null, autoApply: st.autoApply === true, available: st.available ?? null, problem: st.problem ?? null, updatedTo: st.updatedTo ?? null, applying: st.applying ?? null, current: st.current ?? null, upToDate: st.upToDate === true }; }) },
   { method: 'POST', pattern: /^\/ox\/update\/?$/, handler: appRoute(async (body) => {
@@ -2831,6 +2849,13 @@ const ROUTES = [
     const sessionId = typeof body?.sessionId === 'string' ? body.sessionId.slice(0, 128) : '';
     const text = typeof body?.text === 'string' ? body.text.trim() : '';
     if (!sessionId || !text) throw new Error('Choose an active session and enter a steering instruction');
+    // Taken back before ox reached it. Too late is said, so the page can show it went in.
+    if (body?.cancel === true) {
+      const pending = appChatSteers.get(sessionId)?.pending;
+      const at = pending ? pending.indexOf(text) : -1;
+      if (at >= 0) pending.splice(at, 1);
+      return { ok: true, removed: at >= 0 };
+    }
     if (text.length > MAX_APP_STEER_CHARS) throw new Error(`Steering instructions must be ${MAX_APP_STEER_CHARS} characters or fewer`);
     const state = appChatSteers.get(sessionId);
     if (!state) throw new Error('That session is no longer running');
@@ -2839,7 +2864,14 @@ const ROUTES = [
     return { ok: true, queued: state.pending.length };
   }) },
   { method: 'POST', pattern: /^\/ox\/approval\/?$/, handler: appRoute(async (body) => {
-    let decision = body?.decision === 'allow' ? 'allow' : 'deny';
+    const always = body?.decision === 'always';
+    let decision = body?.decision === 'allow' || always ? 'allow' : 'deny';
+    // Offered only where it can be remembered; anything else is a plain yes for this one step.
+    const waiting = appApprovals.get(String(body?.id ?? ''));
+    if (always && waiting?.forChat && waiting.sessionId) {
+      if (!appChatAllowed.has(waiting.sessionId)) appChatAllowed.set(waiting.sessionId, new Set());
+      appChatAllowed.get(waiting.sessionId).add(waiting.forChat);
+    }
     // Sends, pays, deletes: allowed only with Touch ID (src/approval-guard.js), so a script
     // that can reach this server still cannot approve them.
     if (decision === 'allow') {
@@ -2874,8 +2906,7 @@ const ROUTES = [
   }) },
   // Other agents' sessions (src/agents-live.js): read one, message it, open it in Terminal.
   { method: 'GET', pattern: /^\/ox\/agents\/?$/, handler: appRoute(async () => {
-    const A = await import('./agents-live.js');
-    return { sessions: A.liveAgents(), detected: A.detectedCodingTools() };
+    return offThread('./agents-live.js', 'agentsView');
   }) },
   // The office's floors: this Mac, then every paired machine (its agents over
   // ox mesh, when it shares them), each with the name you gave its floor.
@@ -3183,7 +3214,8 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/workspace\/?$/, handler: appRoute(async (_b, _m, req) => {
     const A = await appApi();
     const since = new URL(req.url, 'http://x').searchParams.get('since');
-    return { projects: A.projectsView(), worktrees: A.worktreesView(), server: A.serverView({ port: req.socket.localPort, startedAt: SERVER_STARTED }), whatsNew: A.whatsNew(since) };
+    const [projects, worktrees] = await Promise.all([offThread('./app-api.js', 'projectsView'), offThread('./app-api.js', 'worktreesView')]);
+    return { projects, worktrees, server: A.serverView({ port: req.socket.localPort, startedAt: SERVER_STARTED }), whatsNew: A.whatsNew(since) };
   }) },
   { method: 'POST', pattern: /^\/ox\/workspace\/?$/, handler: appRoute(async (b) => {
     if (b.action === 'remove-worktree') return (await appApi()).removeWorktree(String(b.repo ?? ''), String(b.path ?? ''));
@@ -3235,7 +3267,7 @@ const ROUTES = [
     // The week's code too (files, lines, commits from git) for the island's recap.
     // git log over the week takes seconds: kept 10 minutes.
     const key = `code:${days}`;
-    if (days <= 31 && !(codeCache[key] && Date.now() - codeCache[key].at < 600_000)) codeCache[key] = { at: Date.now(), v: U.codeChanges({ days }) };
+    if (days <= 31 && !(codeCache[key] && Date.now() - codeCache[key].at < 600_000)) codeCache[key] = { at: Date.now(), v: await offThread('./usage-log.js', 'codeChanges', [{ days }]) };
     return { ...U.summarize({ days }), code: days <= 31 ? codeCache[key].v : null };
   }) },
   { method: 'GET', pattern: /^\/ox\/map\/?$/, handler: appRoute(async () => (await import('./project-map.js')).projectMap(process.cwd())) },
@@ -3619,7 +3651,15 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
   }
   if (!process.env.NODE_TEST_CONTEXT && process.env.OX_MESH !== '0'
     && existsSync(join(process.env.OX_HOME || join(homedir(), '.ox'), 'mesh', 'identity.json'))) {
-    meshUp().catch((e) => console.log(`[mesh] not started: ${e.code === 'EADDRINUSE' ? 'another ox already runs this machine\'s node' : e.message}`));
+    // Another ox holding the node may be on its way out (a handover, a leftover server):
+    // keep trying quietly, or the machines stay gone until the next restart.
+    let meshSaid = false;
+    const startMesh = () => meshUp().catch((e) => {
+      if (!meshSaid) console.log(`[mesh] not started: ${e.code === 'EADDRINUSE' ? 'another ox already runs this machine\'s node' : e.message}`);
+      meshSaid = true;
+      if (e.code === 'EADDRINUSE') setTimeout(startMesh, 30_000).unref();
+    });
+    startMesh();
   }
   // OX on your iPhone (src/phone-bridge.js): only once a phone is paired.
   if (!process.env.NODE_TEST_CONTEXT && process.env.OX_PHONE !== '0'
@@ -3634,7 +3674,15 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
   }
 
   boundHost = host;
-  const server = createServer(handleRequest);
+  // One request going wrong is that request's error. It used to end the server, and every chat with it.
+  const server = createServer((req, res) => {
+    handleRequest(req, res).catch((e) => {
+      process.stderr.write(`[serve] ${req.method} ${req.url}: ${e?.stack ?? e}\n`);
+      if (res.writableEnded || res.destroyed) return;
+      if (res.headersSent) { res.write(`data: ${JSON.stringify({ error: { message: `ox hit a bug on this request: ${e?.message ?? e}`, type: 'server_error' } })}\n\ndata: [DONE]\n\n`); res.end(); return; }
+      sendError(res, 500, `ox hit a bug on this request: ${e?.message ?? e}`, 'server_error', null, null);
+    });
+  });
 
   return new Promise((resolve, reject) => {
     server.on('error', reject);
@@ -3662,7 +3710,8 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       // the app quit). Once the app's is back, two servers ran side by side for
       // good: two model workers, two sleep passes, and the island's voice and its
       // run list talking to different servers. The island's own one steps aside.
-      if (islandServer && !process.env.NODE_TEST_CONTEXT) {
+      // So does an app server that app.json no longer names: it can only be left over.
+      if ((islandServer || process.env.OX_APP === '1') && !process.env.NODE_TEST_CONTEXT) {
         const appFile = join(process.env.OX_HOME || join(homedir(), '.ox'), 'app.json');
         const yieldTimer = setInterval(() => {
           let pid = 0;
@@ -3670,7 +3719,7 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
           let alive = false;
           try { if (pid && pid !== process.pid) { process.kill(pid, 0); alive = true; } } catch {}
           if (!alive || busyRequests > 0) return;
-          console.log("[serve] the app's server is running: the island's own one steps aside");
+          console.log("[serve] the app's server is running: this one steps aside");
           clearInterval(yieldTimer);
           server.close(); announced?.(); setTimeout(() => process.exit(0), 300);
         }, 30_000);
@@ -3678,12 +3727,13 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       }
       if ((process.env.OX_APP === '1' || islandServer) && !process.env.NODE_TEST_CONTEXT) {
         const startedAt = Date.now();
-        import('./code-stamp.js').then(({ codeStamp, onCodeChange }) => {
+        import('./code-stamp.js').then(({ codeStamp, onCodeChange, CODE_QUIET_MS }) => {
           // Told by the file system when ox's code changes (no polling while idle);
           // then checked every 30 s until nothing is being worked on.
           let changed = false, timer = null;
           const check = () => {
-            if (busyRequests > 0 || codeStamp() <= startedAt) return;
+            const stamp = codeStamp();
+            if (busyRequests > 0 || stamp <= startedAt || Date.now() - stamp < CODE_QUIET_MS) return;
             console.log('[serve] ox was updated: handing over to a fresh server');
             // Started fresh by ox itself (src/app.js ensureServer), window open or not: the
             // island's voice must never find no server. ensureServer stops this one.

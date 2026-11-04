@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isAdhoc, signApp } from './sign-local.js';
 
 const RISKY = /\b(send|pay|payment|buy|purchase|order|checkout|check out|delete|remove|erase|trash|submit|confirm|transfer|post|publish|tweet|reply all|sign out|log out|logout|unsubscribe|accept|agree|install|uninstall|empty|call|facetime)\b/i;
 
@@ -98,6 +99,8 @@ function helper() {
     bin = handsPath();
   }
   if (!bin) return null;
+  // A fresh build is ad hoc, and macOS would forget its Accessibility: signed the same way as the island's copy.
+  if (bin.includes(`${path.sep}.build${path.sep}`) && !process.env.NODE_TEST_CONTEXT) { try { if (isAdhoc(bin)) signApp(bin, 'dev.ox.island'); } catch {} }
   child = spawn(bin, ['serve'], { stdio: ['pipe', 'pipe', 'ignore'] });
   buf = '';
   child.stdout.setEncoding('utf8');

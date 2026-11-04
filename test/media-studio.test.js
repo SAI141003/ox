@@ -160,3 +160,13 @@ test('device models run their own operation even with a source image', async () 
   assert.equal(deviceOp('mac-edit'), 'edit');
   assert.equal(deviceOp('mac-image'), 'image');
 });
+
+test('provider local with no server running does not stop this Mac making the image', async () => {
+  const { pick, createMediaTool } = await import('../src/tools/media.js');
+  assert.equal(pick({ kind: 'image', provider: 'device' }, {}).provider, 'device');
+  const refused = async () => { throw new Error('nothing there'); };
+  // No Mac model and no key here: the point is that the dead server was checked, not trusted.
+  const r = await createMediaTool({ prompt: 'a dog', provider: 'local' }, { env: { OX_STUDIO_LOCAL: '0', OX_SD_URL: 'http://127.0.0.1:9' }, fetchImpl: refused });
+  assert.equal(r.isError, true);
+  assert.match(r.content, /Stable Diffusion server/);
+});

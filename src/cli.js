@@ -7157,6 +7157,11 @@ async function runSubcommand(cmd, args) {
         console.log(`VoxCPM:       ${e.voxcpm ? c.green('installed') : c.dim(`not installed: ${e.install.voxcpm}`)}`);
         return;
       }
+      if (args[0] === '--serve') {
+        // One JSON line in, one out: the island's voice, kept in memory (Buddy.swift SpeakWorker).
+        await tts.serveSpeech();
+        return;
+      }
       const VALUED = new Set(['--engine', '--voice', '--out', '--model']);
       const text = args.filter((a, i) => !a.startsWith('--') && !VALUED.has(args[i - 1])).join(' ');
       const r = await tts.speak(text, { engine: flag('--engine') ?? 'auto', voice: flag('--voice') ?? null, out: flag('--out') ?? null, model: flag('--model') ?? null });
@@ -7726,6 +7731,23 @@ async function runSubcommand(cmd, args) {
         const r = G.benchGraph(process.cwd(), qs.length ? { questions: qs } : {});
         for (const x of r.rows) console.log(`  ${String(x.graph).padStart(6)} vs ${String(x.opened).padStart(8)} tokens  ${x.times}×  ${x.question}`);
         console.log(c.green(`the code graph answered in ${r.times}× fewer tokens than opening the ${r.rows.reduce((s, x) => s + x.files, 0)} files it pointed to`) + c.dim(` (whole project: ${r.projectTokens.toLocaleString('en-US')} tokens)`));
+        return;
+      }
+      if (action === 'point') {
+        // How well Buddy points: rendered screens and real apps, each point scored (src/point-bench.js).
+        const val = (f) => { const i = restArgs.indexOf(f); return i >= 0 ? restArgs[i + 1] : null; };
+        const P = await import('./point-bench.js');
+        const say = restArgs.includes('--verbose') ? (x) => console.log(`  ${x.hit ? 'hit ' : 'MISS'} ${String(x.error ?? '-').padStart(5)} px ${String(x.ms).padStart(6)} ms  ${String(x.theme).padEnd(10)} ${x.kind.padEnd(6)} ${x.ask}${x.point ? '' : `  [no point] ${x.said} ${x.err}`}`) : () => {};
+        const common = { bot: val('--bot'), say, see: restArgs.includes('--pixels') ? false : restArgs.includes('--numbered') ? true : 'snap' };
+        const r = restArgs.includes('--real')
+          ? await P.runRealBench(common)
+          : await P.runPointBench({ ...common, scenes: Number(val('--scenes')) || 2, ...(val('--themes') ? { themes: val('--themes').split(',') } : {}) });
+        const line = (name, k) => console.log(`${name.padEnd(10)} ${String(k.hit).padStart(3)}/${String(k.n).padEnd(3)} ${String(k.hitRate).padStart(3)}%  median ${String(k.medianError ?? '-').padStart(4)} px  p90 ${String(k.p90Error ?? '-').padStart(4)} px  ${k.noPoint ? `${k.noPoint} no point  ` : ''}${k.medianMs} ms  ${k.medianTokens} tokens in`);
+        console.log(`${{ snap: 'the picture, then tied to the screen', true: 'words and controls, chosen by number', false: 'the picture alone' }[common.see]}, on ${common.bot ?? 'your default'}`);
+        line('all', r.all);
+        for (const [k, v] of Object.entries(r.byKind)) line(k, v);
+        for (const [k, v] of Object.entries(r.byTheme)) line(k, v);
+        if (r.seeMs) console.log(`reading the words took ${r.seeMs} ms a screen`);
         return;
       }
       if (action === 'desktop') {
@@ -10514,10 +10536,34 @@ export async function main(argv = []) {
     return;
   }
   if (print && flags.buddy) {
-    const { buddyGuidance, pngSize, shrinkShot } = await import('./buddy.js');
+    const { buddyGuidance, parsePoint, plainFailure, pngSize, shrinkShot } = await import('./buddy.js');
+    const { seeShots, rewritePoints } = await import('./see.js');
     let size = null;
-    try { if (flags.images?.[0]) shrinkShot(flags.images[0]); size = pngSize(fs.readFileSync(flags.images?.[0])); } catch {}
-    words.push(`\n\n${buddyGuidance({ size, voice: true, act: !!flags.buddyAct })}`);
+    let seen = null;
+    if (flags.images?.length) {
+      try {
+        for (let i = 0; i < flags.images.length; i++) flags.images[i] = shrinkShot(flags.images[i]);
+        if (process.env.OX_BUDDY_SEE !== '0') seen = await seeShots(flags.images);
+        size = pngSize(fs.readFileSync(flags.images[0]));
+      } catch (e) {
+        seen = { cannotSee: `I can't see that: ${e?.message ?? e}` };
+      }
+      // Nothing to look at: said plainly, with no model asked to describe an empty picture.
+      if (seen?.cannotSee) {
+        console.log(seen.cannotSee);
+        if (ipcServer) await closeIpcBridge();
+        return;
+      }
+    }
+    // The model answers from the picture and ox ties its point to the screen afterwards. A numbered list
+    // in the prompt did worse (ox bench point --numbered: 19 of 24 against 24 of 24; it chose wrong rows).
+    const shown = process.env.OX_BUDDY_SEE !== 'numbered' && seen ? { ...seen, items: [], text: '' } : seen;
+    words.push(`\n\n${buddyGuidance({ size, voice: true, act: !!flags.buddyAct, seen: shown })}`);
+    if (!flags.buddyAct) process.env.OX_QUICK_LOOK = '1';
+    opts.sayFailure = plainFailure;
+    opts.rewriteReply = (text) => rewritePoints(text, seen, parsePoint, {
+      log: ({ tag, resolved }) => { if (!resolved || process.env.OX_BUDDY_LOG) process.stderr.write(`· ${resolved ? `${tag} → ${resolved.x},${resolved.y} (${resolved.how})` : `dropped ${tag}: it could not be tied to the screen`}\n`); },
+    });
   }
   if (print) {
     let initialMessages = [];

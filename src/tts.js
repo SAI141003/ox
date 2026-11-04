@@ -190,3 +190,32 @@ export async function speak(text, { engine = 'auto', voice = null, out = null, m
   const r = await runQuiet(c.cmd, c.args, c.env);
   return r.ok ? { ok: true, engine: 'system', out, message: out ? `wrote ${out}` : 'spoken' } : { ok: false, engine: 'system', message: r.err || 'the system voice failed' };
 }
+
+/**
+ * Stays running and says one sentence per request: { id, text, out } in, { id, ok } out.
+ * The model loads on the first line and stays loaded; it ends when the island closes the pipe.
+ */
+export async function serveSpeech({ input = process.stdin, write = (o) => process.stdout.write(`${JSON.stringify(o)}\n`), env = process.env } = {}) {
+  const { default: readline } = await import('node:readline');
+  const { kokoroVoices, stopKokoro } = await import('./kokoro.js');
+  const ready = kokoroStatus().ready && env.OX_TTS_ENGINE !== 'system';
+  // Loaded before the first answer needs it.
+  if (ready) kokoroVoices().catch(() => {});
+  let chain = Promise.resolve();
+  const lines = readline.createInterface({ input });
+  lines.on('line', (line) => {
+    chain = chain.then(async () => {
+      let req = null;
+      try {
+        req = JSON.parse(line);
+        const r = await speak(String(req.text ?? ''), { engine: 'auto', out: req.out ?? null, env });
+        write({ id: req.id, ok: !!r.ok, engine: r.engine ?? null });
+      } catch (e) {
+        write({ id: req?.id ?? null, ok: false, error: String(e?.message ?? e).slice(0, 200) });
+      }
+    });
+  });
+  await new Promise((resolve) => { lines.on('close', resolve); });
+  await chain;
+  stopKokoro();
+}

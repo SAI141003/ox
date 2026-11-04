@@ -29,6 +29,7 @@ import {
 import { loadHooksConfig } from './hooks.js';
 import { createEventBroadcaster, createIpcApprover } from './ipc.js';
 import { createLedger, renderLedger } from './ledger.js';
+import { tagStream } from './see.js';
 
 const AUTO_MAX_ITERATIONS = 80;
 
@@ -430,6 +431,7 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
     }
     const ledger = createLedger();
     try {
+      const replyStream = opts.rewriteReply ? tagStream(streamText, opts.rewriteReply) : { write: streamText, end() {} };
       for await (const ev of runAgent({
         target,
         auxTarget,
@@ -530,6 +532,10 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
             } catch {}
           }
         }
+        if (opts.rewriteReply && ev.type === 'final' && typeof ev.message?.content === 'string') {
+          replyStream.end();
+          ev.message = { ...ev.message, content: opts.rewriteReply(ev.message.content) };
+        }
         if (opts.json) {
           if (ev.type === 'history' && process.env.OX_REDACT !== '0') {
             console.log(
@@ -550,7 +556,7 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
         } else {
           switch (ev.type) {
             case 'text-delta':
-              streamText(ev.text);
+              replyStream.write(ev.text);
               break;
             case 'tool-start': {
               let args = {};
@@ -669,6 +675,7 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
             case 'error':
               failed = true;
               console.error(renderError(new Error(ev.error)));
+              if (opts.sayFailure) console.log(opts.sayFailure(ev.error));
               break;
           }
         }
@@ -682,6 +689,7 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
       } else {
         failed = true;
         console.error(renderError(err));
+        if (opts.sayFailure) console.log(opts.sayFailure(err?.message ?? err));
       }
     }
     // Which agent spent what. Printed when work was delegated; always in --json.

@@ -71,6 +71,9 @@ case "$(uname -s)" in
     mv "$tmp/OX.app" "$apps/OX.app"
     # 4. Only the copy just verified: OX.app is not notarized, so macOS would block it.
     xattr -dr com.apple.quarantine "$apps/OX.app" 2>/dev/null || true
+    # Signed by this Mac, the same way every time: macOS forgets Screen Recording and
+    # Accessibility when an app's signature changes, and a release is ad hoc.
+    "$apps/OX.app/Contents/Resources/node" "$apps/OX.app/Contents/Resources/ox/bin/ox.js" island sign-setup --app "$apps/OX.app" >/dev/null 2>&1 || true
     mkdir -p "$HOME/.local/bin"
     printf '#!/bin/sh\nexec "%s/OX.app/Contents/Resources/node" "%s/OX.app/Contents/Resources/ox/bin/ox.js" "$@"\n' "$apps" "$apps" > "$HOME/.local/bin/ox"
     chmod 755 "$HOME/.local/bin/ox"

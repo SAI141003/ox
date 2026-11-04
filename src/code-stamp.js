@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+// How long ox's code must sit unchanged before a running server counts as out of date.
+export const CODE_QUIET_MS = 60_000;
+
 /**
  * Call `fn` when a file under bin/ or src/ changes, through the file system's own
  * notices (FSEvents on macOS), so nothing runs while nothing changes. false when

@@ -193,3 +193,24 @@ test('who built it: no gh, or gh not signed in, is no verdict; signed in, a fail
   assert.deepEqual(attest('f', runner({})), { checked: true });
   assert.throws(() => attest('f', runner({ attestation: 1 })), /could not verify who built/);
 });
+
+test('apply: a download is signed for this Mac before it replaces the app, so permissions carry over', async () => {
+  const { root, app } = installedCopy('0.1.7');
+  const order = [];
+  const r = await applyDownload({
+    root, fetchImpl: fakeRelease().fetchImpl, platform: 'darwin', arch: 'arm64', verify: () => ({ checked: true }), unpack: unpackTo('0.1.8'),
+    sign: (newApp, oldApp) => order.push(['sign', path.basename(newApp), oldApp]),
+    install: () => order.push(['install']),
+    relaunch: () => {},
+  });
+  assert.equal(r.ok, true, r.why);
+  assert.deepEqual(order, [['sign', 'OX.app', app], ['install']]);
+});
+
+test('apply: signing failing does not stop an update that passed its checks', async () => {
+  const { root } = installedCopy('0.1.7');
+  let installed = false;
+  const r = await applyDownload({ root, fetchImpl: fakeRelease().fetchImpl, platform: 'darwin', arch: 'arm64', verify: () => ({ checked: true }), unpack: unpackTo('0.1.8'), sign: () => { throw new Error('no keychain'); }, install: () => { installed = true; }, relaunch: () => {} });
+  assert.equal(r.ok, true);
+  assert.equal(installed, true);
+});

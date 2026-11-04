@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { signDownload } from './sign-local.js';
 
 export const REPO = 'SAI141003/ox';
 const LATEST = `https://api.github.com/repos/${REPO}/releases/latest`;
@@ -96,6 +97,9 @@ function extract(archive, dest) {
   if (r.status !== 0) throw new Error('could not unpack the download');
 }
 
+// The same signature as last time, so macOS keeps Screen Recording and Accessibility.
+function keepPermissions(newApp, oldApp) { return signDownload(newApp, bundleId(oldApp) ?? bundleId(newApp)); }
+
 function bundleId(app) {
   const r = spawnSync('plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', path.join(app, 'Contents', 'Info.plist')], { encoding: 'utf8' });
   return r.status === 0 ? r.stdout.trim() : null;
@@ -142,6 +146,7 @@ export async function applyDownload({
   unpack = extract,
   install = replaceApp,
   relaunch = relaunchApp,
+  sign = keepPermissions,
 } = {}) {
   const steps = [];
   const step = (t) => { steps.push(t); say(t); };
@@ -186,6 +191,7 @@ export async function applyDownload({
     }
 
     step(`Installing ${rel.version}`);
+    try { sign(newApp, appPath); } catch {}
     install(appPath, newApp);
     step(`Updated to ${rel.version}, restarting OX`);
     relaunch(appPath);

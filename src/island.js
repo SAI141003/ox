@@ -266,7 +266,18 @@ export async function cmdIsland(args = [], { log = console.log, err = (s) => pro
   }
   // A fixed signature, so rebuilds stop losing Accessibility (src/sign-local.js).
   if (action === 'sign-setup') {
-    try { return (await import('./sign-local.js')).createLocalIdentity({ log }) ? 0 : 1; } catch (e) { err(`ox island sign-setup: ${e.message}`); return 1; }
+    try {
+      const S = await import('./sign-local.js');
+      if (!S.createLocalIdentity({ log })) return 1;
+      // `--app <path>`: the installer's copy, so its permissions last through updates.
+      const at = args.indexOf('--app');
+      if (at >= 0 && args[at + 1]) {
+        const app = args[at + 1];
+        const id = spawnSyncImported('plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', `${app}/Contents/Info.plist`], { encoding: 'utf8' }).stdout?.trim() || null;
+        log(`${app}: ${S.signDownload(app, id)}`);
+      }
+      return 0;
+    } catch (e) { err(`ox island sign-setup: ${e.message}`); return 1; }
   }
   // A new version of the island (after an update): stop it, rebuild, start it.
   if (action === 'restart') {

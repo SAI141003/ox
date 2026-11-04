@@ -250,7 +250,7 @@ final class OxBridge: ObservableObject {
                     // coding or screen run, "send a message to Ravi" showed "Looking at your
                     // screen…" and nothing happened. Only words addressed to that run go to it.
                     if live, Self.addressesRun(text), self.ask(text, imagePaths: shots, audioPath: audio) { return }
-                    self.chat.send(text, bridge: self, onReply: { reply in MainActor.assumeIsolated { self.buddy.speak(reply) } }, triedOffline: true)
+                    self.chat.send(text, bridge: self, shots: shots, onReply: { reply in MainActor.assumeIsolated { self.buddy.speak(reply) } }, triedOffline: true)
                 }
                 return true
             }

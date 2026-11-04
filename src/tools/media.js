@@ -25,7 +25,7 @@ export const MEDIA_TOOL_SCHEMAS = [
       properties: {
         prompt: { type: 'string', description: 'What to make: subject, style, composition, lighting; for video also the motion and camera.' },
         kind: { type: 'string', enum: ['image', 'video'], description: 'Image or video; used to pick a model when none is given.' },
-        provider: { type: 'string', enum: ['higgsfield', 'fal', 'openai', 'openrouter', 'local'] },
+        provider: { type: 'string', enum: ['device', 'higgsfield', 'fal', 'openai', 'openrouter', 'local'], description: "Usually leave this out: ox picks what works. device is this Mac's own chip; local is a separate Stable Diffusion server, not this Mac." },
         edit_image: { type: 'string', description: 'Edit this image (a local path or https URL) as the prompt says, instead of making a new one: "make the sky sunset orange", "remove the person on the left".' },
         model: { type: 'string', description: 'Model id for that provider (ox create --models lists them).' },
         settings: { type: 'object', description: "The model's own settings, e.g. { aspectRatio: '16:9', duration: 5, resolution: '1080p' }." },
@@ -66,6 +66,12 @@ export function pick({ kind = 'image', provider, model, edit = false } = {}, env
   return { provider: p, model: m };
 }
 
+// A Stable Diffusion server someone started themselves (Forge, Draw Things...).
+async function sdServerAnswers(env, fetchImpl = globalThis.fetch) {
+  const base = (env.OX_SD_URL || process.env.OX_SD_URL || 'http://127.0.0.1:7860').replace(/\/$/, '');
+  try { await fetchImpl(base, { signal: AbortSignal.timeout(800) }); return true; } catch { return false; }
+}
+
 export async function createMediaTool(args = {}, ctx = {}) {
   const prompt = String(args.prompt ?? '').trim();
   if (!prompt) return err('create_media: a prompt is required.');
@@ -73,7 +79,10 @@ export async function createMediaTool(args = {}, ctx = {}) {
   const env = ctx.env ?? process.env;
   // Small models name a provider at random ("higgsfield" with no key), which
   // only ever failed: a named provider with no key here is dropped for one that works.
-  const usable = (p) => !p || p === 'local' || (PROVIDERS[p] && (!PROVIDERS[p].key || !!env[PROVIDERS[p].key]));
+  // Models read "local" as "on this machine", but it means a separate server: with
+  // none running it failed every time, even with this Mac's own model set up.
+  const localUp = args.provider === 'local' && await sdServerAnswers(env, ctx.fetchImpl);
+  const usable = (p) => !p || (p === 'local' ? localUp : p === 'device' || (PROVIDERS[p] && (!PROVIDERS[p].key || !!env[PROVIDERS[p].key])));
   // Only a provider that was named and rejected takes its model with it; a model
   // asked for with the provider left automatic is kept.
   const rejected = !!args.provider && !usable(args.provider);

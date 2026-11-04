@@ -70,6 +70,7 @@ import { modeBlock, modeRefusal, grantRefusal } from './modes.js';
 import { runSubscriptionTurn } from './subscriptions.js';
 import { withUsageLog } from './usage-log.js';
 import { stuckWatcher } from './trace.js';
+import { stepLabel, stepOutput } from './chat-steps.js';
 
 const SUMMARY_PREFIX = '[ox: summary of earlier conversation turns]\n';
 const VERIFY_MAX_ROUNDS = 2;
@@ -2312,7 +2313,7 @@ async function* runAgentLoop(opts = {}) {
         : null;
       // The file a write or edit touches, so "changed files" can be listed when the turn ends.
       const file = /^(write_file|edit_file|multi_edit|apply_patch|create_file)$/.test(name) && typeof (args?.path ?? args?.file_path) === 'string' ? (args.path ?? args.file_path) : null;
-      yield { type: 'tool-start', id: call.id, name, argsPreview: truncate(JSON.stringify(args), 120), ...(plan ? { plan } : {}), ...(file ? { file } : {}) };
+      yield { type: 'tool-start', id: call.id, name, argsPreview: truncate(JSON.stringify(args), 120), step: stepLabel(name, args), ...(plan ? { plan } : {}), ...(file ? { file } : {}) };
       const started = Date.now();
       let result;
       let neutral = false;
@@ -2492,6 +2493,7 @@ async function* runAgentLoop(opts = {}) {
         isError,
         ms: Date.now() - started,
         bytes: content.length,
+        output: stepOutput(content),
         ...(result?.meta !== undefined ? { meta: result.meta } : {}),
         // The paths a mutating tool ACTUALLY wrote, in the same shape the
         // subagent accumulator already reads. Before this the field existed

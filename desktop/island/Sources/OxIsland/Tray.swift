@@ -743,9 +743,12 @@ final class IslandChat: ObservableObject {
     @Published private(set) var busy = false
     /// Your agents (`ox agent new`), and which one you are talking to (nil = ox).
     @Published private(set) var agents: [Agent] = []
-    @Published var agent: String? = UserDefaults.standard.string(forKey: "chat.agent") {
-        didSet { UserDefaults.standard.set(agent, forKey: "chat.agent") }
-    }
+    /// Picked by hand for this sitting only. ox decides by itself by default: a saved pick
+    /// sent every request through one agent, for good, without saying so.
+    @Published var agent: String? = {
+        UserDefaults.standard.removeObject(forKey: "chat.agent")
+        return nil
+    }()
     private var startedFor: Set<String> = []
     @Published var folder: String {
         didSet { UserDefaults.standard.set(folder, forKey: "chat.folder"); startedFor = [] }
@@ -777,11 +780,14 @@ final class IslandChat: ObservableObject {
     private var onReply: ((String) -> Void)?
     /// What you sent while ox was busy: done next, in order (it used to be dropped).
     private var queued: [(text: String, bridge: OxBridge, onReply: ((String) -> Void)?)] = []
+    /// The picture from when you pressed the key: what you were looking at when you asked.
+    private var keyPressShots: [String] = []
 
     private var lastSent: (text: String, at: Date)?
-    func send(_ raw: String, bridge: OxBridge, onReply: ((String) -> Void)? = nil, triedOffline: Bool = false) {
+    func send(_ raw: String, bridge: OxBridge, shots: [String] = [], onReply: ((String) -> Void)? = nil, triedOffline: Bool = false) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        if !busy { keyPressShots = shots }
         // The same words twice within 3 s are one request (a mic, a hotkey and a
         // tap can all end the same utterance): done once, never two or three times.
         if !triedOffline {
@@ -804,7 +810,7 @@ final class IslandChat: ObservableObject {
                     onReply?(r.say)
                     return
                 }
-                self.send(text, bridge: bridge, onReply: onReply, triedOffline: true)
+                self.send(text, bridge: bridge, shots: shots, onReply: onReply, triedOffline: true)
             }
             return
         }
@@ -829,8 +835,19 @@ final class IslandChat: ObservableObject {
             lines.append(Line(mine: false, text: part.said))
             text = rest
         }
-        if let name = agent {
-            run(text, extra: ["--agent", name], key: name, who: name)
+        // ox chooses the path itself (errands, a quick answer, a look at the screen, an agent
+        // run). A named agent gets the request; one picked by hand gets what is typed, never
+        // what is spoken: every spoken request ran as a slow agent run with no arrow.
+        let spoken = onReply != nil
+        if let name = Self.namedAgent(in: text, agents: agents.map(\.name)) ?? (spoken ? nil : agent) {
+            // A chosen agent takes the work, but it gets no picture of the screen and cannot
+            // point: "what am I looking at" or "point at..." ran as a long agent run with no arrow.
+            busy = true
+            VoiceServer.ask(text, offlineOnly: true) { [weak self] r in
+                guard let self else { return }
+                if let r, self.screenRoute(r.route, text: text, bridge: bridge, ms: 0) { return }
+                self.run(text, extra: ["--agent", name], key: name, who: name)
+            }
             return
         }
         // A coding run is open: errands are still done offline first, the rest goes to that run.
@@ -866,30 +883,7 @@ final class IslandChat: ObservableObject {
                 self.reply(r.say ?? "Done.", who: nil)
                 return
             }
-            if let r, r.route == "screen" {
-                // A question about the screen: answered from a picture of it, read-only.
-                guard let shot = MainActor.assumeIsolated({ Buddy.captureScreen() }) else {
-                    // You asked about the screen: ask macOS once, which adds this OX Island (its current signature) to the list.
-                    let asked = CGRequestScreenCaptureAccess()
-                    IslandLog.write("screen question, but Screen Recording is off for OX Island (asked macOS: \(asked))")
-                    self.busy = false
-                    self.reply("I need to see your screen for that: turn on Screen Recording for OX Island in System Settings, Privacy and Security.", who: nil)
-                    return
-                }
-                IslandLog.write("screen question: looking at the screen after \(ms) ms")
-                self.lines.append(Line(mine: false, text: "Looking…"))
-                self.run(text, extra: ["--mode", "ask", "--buddy", "--image", shot], key: "ox-screen", who: nil)
-                return
-            }
-            if let r, r.route == "screen-act" {
-                // Do it on my screen: it looks first, then acts through the desktop tool; each action asks here.
-                let shot = MainActor.assumeIsolated { Buddy.captureScreen() }
-                IslandLog.write("screen action after \(ms) ms (screenshot: \(shot != nil))")
-                self.lines.append(Line(mine: false, text: "On it…"))
-                MainActor.assumeIsolated { bridge.buddy.speak("On it.") }
-                self.run(text, extra: ["--mode", "auto", "--buddy", "--act"] + (shot.map { ["--image", $0] } ?? []), key: "ox-screen", who: nil)
-                return
-            }
+            if let r, self.screenRoute(r.route, text: text, bridge: bridge, ms: ms) { return }
             if let r, r.route == "agent" {
                 IslandLog.write("agent run (\(r.why ?? "")) after \(ms) ms")
                 self.lines.append(Line(mine: false, text: "On it…"))
@@ -899,6 +893,56 @@ final class IslandChat: ObservableObject {
             }
             IslandLog.write("no running ox answered (\(ms) ms): starting ox for it")
             self.runLocally(text)
+        }
+    }
+
+    /// The agent a spoken request is addressed to: "Jarvis, ...", "ask Jarvis to ...", "tell Jarvis ...".
+    static func namedAgent(in text: String, agents: [String]) -> String? {
+        let t = text.lowercased()
+        return agents.first { name in
+            let n = NSRegularExpression.escapedPattern(for: name.lowercased())
+            return t.range(of: "^(hey |ok |okay )?\\b\(n)\\b[,:]|^(hey |ok |okay )?\\b\(n)\\s|^(ask|tell|have|get) \(n)\\b", options: .regularExpression) != nil
+        }
+    }
+
+    /// A request about the screen goes to Buddy's own look, which sees it and can point. False for anything else.
+    private func screenRoute(_ route: String?, text: String, bridge: OxBridge, ms: Int) -> Bool {
+        if route == "screen" {
+            // A question about the screen: answered from a picture of it, read-only.
+            let shots = takeShots(bridge)
+            guard !shots.isEmpty else {
+                // You asked about the screen: ask macOS once, which adds this OX Island (its current signature) to the list.
+                let asked = CGRequestScreenCaptureAccess()
+                IslandLog.write("screen question, but Screen Recording is off for OX Island (asked macOS: \(asked))")
+                busy = false
+                reply("I need to see your screen for that: turn on Screen Recording for OX Island in System Settings, Privacy and Security.", who: nil)
+                return true
+            }
+            IslandLog.write("screen question: looking at the screen after \(ms) ms")
+            lines.append(Line(mine: false, text: "Looking…"))
+            run(text, extra: ["--mode", "ask", "--buddy"] + shots.flatMap { ["--image", $0] }, key: "ox-screen", who: nil)
+            return true
+        }
+        if route == "screen-act" {
+            // Do it on my screen: it looks first, then acts through the desktop tool; each action asks here.
+            let shots = takeShots(bridge)
+            IslandLog.write("screen action after \(ms) ms (screens: \(shots.count))")
+            lines.append(Line(mine: false, text: "On it…"))
+            MainActor.assumeIsolated { bridge.buddy.speak("On it.") }
+            run(text, extra: ["--mode", "auto", "--buddy", "--act"] + shots.flatMap { ["--image", $0] }, key: "ox-screen", who: nil)
+            return true
+        }
+        return false
+    }
+
+    /// The picture from the key press, or one taken now when you typed or used the wake word.
+    private func takeShots(_ bridge: OxBridge) -> [String] {
+        let given = keyPressShots
+        keyPressShots = []
+        if !given.isEmpty { return given }
+        return MainActor.assumeIsolated {
+            bridge.buddy.clearOverlays()
+            return Buddy.captureScreens()
         }
     }
 
@@ -930,14 +974,17 @@ final class IslandChat: ObservableObject {
             guard let self else { return }
             self.busy = false
             self.startedFor.insert(key)
-            let answer = Shelf.clean(out)
-            self.reply(code == 0 ? (answer.isEmpty ? "Done." : answer) : "stopped: \(answer.isEmpty ? "exit \(code)" : answer)", who: who)
+            // "! provider fallback active…" is a notice for a terminal, not words to say aloud.
+            let answer = Shelf.clean(out).split(separator: "\n", omittingEmptySubsequences: false).filter { !$0.hasPrefix("! ") }.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            // A look at the screen ends in its own plain last line, even when the model failed.
+            let plain = key == "ox-screen" ? answer.split(separator: "\n").last.map(String.init) : nil
+            self.reply(code == 0 ? (answer.isEmpty ? "Done." : answer) : plain ?? "stopped: \(answer.isEmpty ? "exit \(code)" : answer)", who: who)
         }
     }
 
     private func reply(_ text: String, who: String?) {
         // Circles and arrows are drawn over the screen (Buddy.speak), not shown as tags here.
-        let shown = Buddy.parseMarks(text).0.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shown = Buddy.parseMarks(text).0.replacingOccurrences(of: #"\[POINT:[^\]]*\]"#, with: "", options: [.regularExpression, .caseInsensitive]).trimmingCharacters(in: .whitespacesAndNewlines)
         lines.append(Line(mine: false, text: shown.isEmpty ? text : shown, who: who))
         IslandLog.write("replied: \(text.prefix(200))")
         onReply?(text)
