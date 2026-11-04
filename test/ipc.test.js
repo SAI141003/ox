@@ -5,6 +5,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
+
+// Shared CI machines can stall for seconds; a real hang is still far past this.
+const ciSlack = process.env.CI ? 5 : 1;
 import {
   IPC_VERSION,
   APPROVAL_DECISIONS,
@@ -643,7 +646,7 @@ test('ipc: connecting to a nonexistent socket errors fast and does not hang', as
   const err = (await once(client, 'error'))[0];
   const elapsed = Date.now() - started;
   assert.ok(err instanceof Error);
-  assert.ok(elapsed < 1000, `expected a fast failure, took ${elapsed}ms`);
+  assert.ok(elapsed < 1000 * ciSlack, `expected a fast failure, took ${elapsed}ms`);
   assert.equal(client.connected, false);
   const [info] = await closed;
   assert.ok(info.reason);

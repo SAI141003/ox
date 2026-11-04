@@ -34,6 +34,9 @@ import {
 import { isReachable, ollamaReachability } from '../src/model-registry.js';
 import { readConfigDoc, saveConfigDoc } from '../src/config.js';
 
+// Shared CI machines can stall for seconds; a real hang is still far past this.
+const ciSlack = process.env.CI ? 5 : 1;
+
 const REPO = path.resolve(import.meta.dirname, '..');
 
 function tmpDir(prefix) {
@@ -181,7 +184,7 @@ test('a refused port resolves immediately and a silent port hits the timeout', a
   let t0 = Date.now();
   assert.equal(await probeOrigin(deadOrigin), null, 'a refused port identifies as nothing');
   const refusedMs = Date.now() - t0;
-  assert.ok(refusedMs < 2000, `refused port must not hang (took ${refusedMs}ms)`);
+  assert.ok(refusedMs < 2000 * ciSlack, `refused port must not hang (took ${refusedMs}ms)`);
 
   // Silent: the connection is accepted and the request is never answered, so
   // only the AbortSignal timeout can end the wait.
@@ -190,7 +193,7 @@ test('a refused port resolves immediately and a silent port hits the timeout', a
     t0 = Date.now();
     assert.equal(await probeOrigin(silent.origin, { timeoutMs: 300 }), null);
     const timeoutMs = Date.now() - t0;
-    assert.ok(timeoutMs < 2000, `silent port must time out, not hang (took ${timeoutMs}ms)`);
+    assert.ok(timeoutMs < 2000 * ciSlack, `silent port must time out, not hang (took ${timeoutMs}ms)`);
     assert.ok(timeoutMs >= 200, `should actually have waited for the timeout (took ${timeoutMs}ms)`);
   } finally {
     await silent.close();

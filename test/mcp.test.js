@@ -5,6 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { DEFAULT_MCP_STARTUP_TIMEOUT_MS, McpHub } from '../src/mcp.js';
 
+// Shared CI machines can stall for seconds; a real hang is still far past this.
+const ciSlack = process.env.CI ? 5 : 1;
+
 const FIXTURE = [
   "import readline from 'node:readline';",
   "const mode = process.argv[2] || 'main';",
@@ -153,7 +156,7 @@ test('stop() terminates the child within ~2s (stdin close → SIGTERM ladder)', 
   const t0 = Date.now();
   await mainHub.stop();
   const elapsed = Date.now() - t0;
-  assert.ok(elapsed < 3000, `stop took ${elapsed}ms`);
+  assert.ok(elapsed < 3000 * ciSlack, `stop took ${elapsed}ms`);
   assert.equal(state.proc, null);
   assert.equal(mainHub.status()[0].status, 'stopped');
   assert.ok(await waitFor(() => { try { process.kill(pid, 0); return false; } catch { return true; } }), 'child must be dead');

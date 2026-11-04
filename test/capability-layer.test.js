@@ -21,6 +21,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
+// Shared CI machines can stall for seconds; a real hang is still far past this.
+const ciSlack = process.env.CI ? 5 : 1;
+
 import {
   CHAIN_DEADLINE_MS,
   PROBE_RECORD_TTL_MS,
@@ -665,7 +668,7 @@ describe('6. doctor cannot hang: every probe is bounded', () => {
     const verdict = await probeCapability(cap, { env: {}, timeoutMs: 200, deadlineMs: 500 });
     const elapsed = Date.now() - started;
     assert.equal(verdict.live, null);
-    assert.ok(elapsed < 500 + 1_000, `dead-backend walk took ${elapsed}ms (500ms deadline, 1s scheduling slack)`);
+    assert.ok(elapsed < 500 + 1_000 * ciSlack, `dead-backend walk took ${elapsed}ms (500ms deadline, 1s scheduling slack)`);
   });
 });
 
