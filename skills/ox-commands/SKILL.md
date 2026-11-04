@@ -10,8 +10,8 @@ ox is installed (`ox`). When a request matches one of these, run the ox command 
 - **Web:** `ox browse` (the fast browser), `ox research` (what Reddit, Hacker News and YouTube say, with links), `ox library` (your saved articles and PDFs), `ox pages` (finished reports from agents and routines, with their sources)
 - **Code:** `ox pr` (branch, checks, push and a pull request), `ox env` (how this repo installs, lints, builds and tests), `ox wiki` (a wiki of this project from its code graph), `ox graph` (map the code), `ox race` (two or more models do the same task in their own worktrees), `ox review` (a code review of your changes), `ox trace` (each run), `ox usage` (tokens and spend by model and day)
 - **Agents:** `ox org` (a company of agents), `ox task` (the task board), `ox ask` (ask Codex, Gemini or any other model), `ox agents` (every agent running on this Mac), `ox schedule` (runs on a timer), `ox needs` (what waits on you), `ox flow` (automations, and n8n templates turned into ox flows), `ox mesh` (your other machines)
-- **Connect:** `ox skill` (skills), `ox market` (search and install skills and plugins), `ox mcp` (MCP servers ox uses), `ox commands` (these commands, also inside Claude Code and Codex)
-- **Voice:** `ox dictation` (how dictated text is written), `ox speak` (say it out loud), `ox island` (the notch island)
+- **Connect:** `ox skill` (skills), `ox teach` (show ox how), `ox market` (search and install skills and plugins), `ox mcp` (MCP servers ox uses), `ox commands` (these commands, also inside Claude Code and Codex)
+- **Voice:** `ox voice` (how ox hears you), `ox dictation` (how dictated text is written), `ox speak` (say it out loud), `ox island` (the notch island)
 - **System:** `ox doctor` (checks), `ox models` (the models ox can use right now), `ox secure` (find security problems in this code), `ox update` (update ox)
 
 Every command takes `--help`. Report what the command printed; do not claim a result it did not print.

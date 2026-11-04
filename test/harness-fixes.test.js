@@ -341,3 +341,26 @@ test('compaction does not use a small model on this machine unless you named it'
   assert.equal(compactionModelChoice({ auxBot: 'ox-ollama' }, { aux: small, main }).target, small);
   assert.equal(compactionModelChoice({}, { aux: { model: 'llama:32b', provider: 'ollama' }, main }).target.model, 'llama:32b');
 });
+
+test('ox teach: a recording becomes a skill; a secret or no clear task saves nothing', async () => {
+  const T = await import('../src/teach.js');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-teach-'));
+  const saved = process.env.OX_HOME;
+  process.env.OX_HOME = path.join(home, '.ox');
+  try {
+    const video = path.join(home, 'how.mov');
+    fs.writeFileSync(video, 'x');
+    const see = () => ({ duration: 9, frames: [], text: 'now I press export' });
+    const answer = (obj) => async ({ prompt }) => { assert.match(prompt, /now I press export/); return { code: 0, err: '', out: `${JSON.stringify({ type: 'final', message: { content: JSON.stringify(obj) } })}\n` }; };
+    const r = await T.learnFromRecording(video, { see, ask: answer({ name: 'Export Report', description: 'Use when exporting the report', body: '## Steps\n1. Press the Export button' }) });
+    assert.equal(r.name, 'export-report');
+    const text = fs.readFileSync(r.file, 'utf8');
+    assert.match(text, /name: export-report/);
+    assert.match(text, /desktop` tool/);
+    assert.ok(text.includes(video));
+    await assert.rejects(T.learnFromRecording(video, { see, ask: answer({ name: 'x', description: '', body: '' }) }), /clear task/);
+    await assert.rejects(T.learnFromRecording(video, { see, name: 'leak', ask: answer({ name: 'leak', description: 'd', body: 'type the key sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789' }) }), /password or key/);
+    assert.equal(fs.existsSync(path.join(home, '.ox', 'skills', 'leak')), false);
+    await assert.rejects(T.learnFromRecording(video, { see, ask: answer({ name: 'Export Report', description: 'd', body: 'b' }) }), /exists/);
+  } finally { if (saved === undefined) delete process.env.OX_HOME; else process.env.OX_HOME = saved; }
+});

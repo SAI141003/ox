@@ -214,7 +214,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['ask', 'desktop', 'version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'knowledge', 'ecc', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
+const SUBCOMMANDS = new Set(['ask', 'teach', 'desktop', 'version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'knowledge', 'ecc', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -1834,6 +1834,38 @@ async function cmdMcpAdd(args = []) {
   console.log(indentBlock(tpl.setup));
   console.log(c.dim('policy: money-risk tools always ask before they execute'));
   console.log(c.dim(`verify with: ox mcp test ${name}`));
+}
+
+// ox teach <recording> [--name N] [--bot B] [--force]  |  ox teach --record <seconds> [--voice] [--name N]
+async function cmdTeach(args = []) {
+  const T = await import('./teach.js');
+  const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
+  const takesValue = ['--name', '--bot', '--record'];
+  let file = args.find((a, i) => !a.startsWith('--') && !takesValue.includes(args[i - 1]));
+  if (!file && !args.includes('--record')) {
+    console.log('usage: ox teach <recording> [--name N] [--bot B]   a screen recording becomes a skill');
+    console.log('       ox teach --record <seconds> [--voice]        record now, talking through it with --voice');
+    return;
+  }
+  try {
+    if (!file) {
+      const seconds = Number(val('--record')) || 60;
+      console.log(c.dim(`recording your screen for ${seconds} s. Do the task now${args.includes('--voice') ? ', and say what you are doing' : ''}.`));
+      file = T.recordScreen({ seconds, voice: args.includes('--voice') });
+      console.log(c.dim(`recorded ${file}`));
+    }
+    const config = loadConfig({ cwd: process.cwd() });
+    const { workingModelSpec } = await import('./working-model.js');
+    const { runnable, refreshPlans } = await import('./serve.js');
+    await refreshPlans().catch(() => {});
+    // It has to see the frames: your ChatGPT plan does; otherwise your own model, if it can.
+    const bot = val('--bot') ?? (runnable('chatgpt-plan') ? 'chatgpt-plan' : await workingModelSpec(config, { say: () => {} }));
+    console.log(c.dim(`frames and what you said go to ${bot}; the recording itself stays here`));
+    const r = await T.learnFromRecording(file, { name: val('--name'), bot, force: args.includes('--force') });
+    console.log(`${c.green('✓ skill')} ${c.bold(r.name)}  ${c.dim(r.file)}`);
+    console.log(c.dim(`  ${r.description}`));
+    console.log(`\n${r.body}`);
+  } catch (e) { process.stderr.write(`${c.red(`✗ ${e.message}`)}\n`); process.exitCode = 1; }
 }
 
 // ox ask <agent> "<message>" [--work]  |  ox ask --session <id> "<message>"  |  ox ask
@@ -5026,6 +5058,9 @@ async function runSubcommand(cmd, args) {
       return;
     case 'ask':
       await cmdAsk(args);
+      return;
+    case 'teach':
+      await cmdTeach(args);
       return;
     case 'daemon':
       await cmdDaemon(args);
@@ -8507,50 +8542,6 @@ async function replWithBudget(config, opts, flags, budget) {
         if (result.compressed) console.log(c.dim(result.compressed.slice(0, 400)));
         return;
       }
-      case '/voice': {
-        if (!hub) {
-          console.log(c.dim('no MCP servers configured'));
-          return;
-        }
-        const rows = hub.status().filter((r) => r.server === 'voice' || r.server.includes('voice'));
-        if (!rows.length) {
-          console.log(c.dim('no voice MCP server configured (add with: ox mcp add voice)'));
-          return;
-        }
-        for (const r of rows) {
-          const dot = r.status === 'ok' ? c.green('●') : c.yellow('●');
-          console.log(`${dot} ${r.server}: ${r.status} (${r.tools} tools)`);
-          if (r.stderrTail) console.log(c.dim(truncate(r.stderrTail, 300)));
-        }
-        const tmpl = getTemplate('voice');
-        if (tmpl) {
-          console.log(c.dim(`\ntools: ${tmpl.name} — ${tmpl.title}`));
-          console.log(c.dim(tmpl.desc));
-        }
-        return;
-      }
-      case '/video': {
-        if (!hub) {
-          console.log(c.dim('no MCP servers configured'));
-          return;
-        }
-        const rows = hub.status().filter((r) => r.server === 'video' || r.server.includes('video'));
-        if (!rows.length) {
-          console.log(c.dim('no video MCP server configured (add with: ox mcp add video)'));
-          return;
-        }
-        for (const r of rows) {
-          const dot = r.status === 'ok' ? c.green('●') : c.yellow('●');
-          console.log(`${dot} ${r.server}: ${r.status} (${r.tools} tools)`);
-          if (r.stderrTail) console.log(c.dim(truncate(r.stderrTail, 300)));
-        }
-        const tmpl = getTemplate('video');
-        if (tmpl) {
-          console.log(c.dim(`\ntools: ${tmpl.name} — ${tmpl.title}`));
-          console.log(c.dim(tmpl.desc));
-        }
-        return;
-      }
       case '/benchmark': {
         const { AGENT_BENCHMARKS, formatReport, computeStats } = await import('./benchmark.js');
         const sub = rest.trim().toLowerCase();
@@ -9205,6 +9196,7 @@ async function replWithBudget(config, opts, flags, budget) {
         return;
       }
       case '/reflect': {
+        if (!messages.length) { console.log(c.dim('nothing to reflect on yet: this session has no messages')); return; }
         try {
           const result = await reflectSession({
             cwd: config.cwd,

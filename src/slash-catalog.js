@@ -41,10 +41,12 @@ export const COMMANDS = Object.freeze([
   { name: 'mesh', usage: '/mesh [describe | agents | ls machine:path | audit]', what: 'your other machines: what they have and run', group: 'Agents', app: true },
   // Skills and connections
   { name: 'skill', usage: '/skill <name> | add <folder|owner/repo> | from <book.pdf>', what: 'skills: read one, install one, or make one from a book', group: 'Connect', app: true },
+  { name: 'teach', usage: '/teach <recording> [--name N] | --record <seconds> [--voice]', what: 'show ox how: a screen recording becomes a skill it can follow', group: 'Connect', app: true, slow: true },
   { name: 'market', usage: '/market [<words> | install <name>]', what: 'search and install skills and plugins', group: 'Connect', app: true },
   { name: 'mcp', usage: '/mcp [ls | add <name> | test <name>]', what: 'MCP servers ox uses', group: 'Connect', app: true },
   { name: 'commands', usage: '/commands [install [--claude] [--codex] | list]', what: 'these commands, also inside Claude Code and Codex', group: 'Connect', app: true },
   // Voice and the island
+  { name: 'voice', usage: '/voice [status | setup [model] | test --text "<words>"]', what: 'how ox hears you: microphone, whisper, cleanup', group: 'Voice', app: true },
   { name: 'dictation', usage: '/dictation [show | style <as-said|natural|polished> | translate <language|off>]', what: 'how dictated text is written', group: 'Voice', app: true },
   { name: 'speak', usage: '/speak "<text>"', what: 'say it out loud', group: 'Voice', app: true },
   { name: 'island', usage: '/island [start | stop | status | sound <name> | silent | heal]', what: 'the notch island; silent: AirPods mouthed words; heal: it fixes itself from its log', group: 'Voice', app: true },

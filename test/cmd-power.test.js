@@ -50,8 +50,8 @@ test('handlePowerCommand: /review errors outside a git repo', async () => {
 
 test('handlePowerCommand: /test with no path asks which file', async () => {
   const r = await handlePowerCommand('test', '', { cwd: process.cwd() });
-  assert.equal(r.type, 'injected');
-  assert.match(r.payload, /which file/);
+  assert.equal(r.type, 'output');
+  assert.match(r.payload, /usage/);
 });
 
 test('handlePowerCommand: /test with a non-existent path returns error', async () => {
@@ -115,7 +115,7 @@ test('handlePowerCommand: /fix with no linter detected returns error', async () 
 
 test('handlePowerCommand: /migrate with no description asks for one', async () => {
   const r = await handlePowerCommand('migrate', '', { cwd: process.cwd() });
-  assert.equal(r.type, 'injected');
+  assert.equal(r.type, 'output');
   assert.match(r.payload, /Describe the migration/);
 });
 

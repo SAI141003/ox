@@ -2657,7 +2657,8 @@
     // nothing), which is what left a group chat's second bot empty.
     const turnStart = c.messages.length - 1 - [...c.messages].reverse().findIndex((m) => m.role === 'user');
     const others = c.messages.slice(turnStart + 1).filter((m) => m !== reply && m.role === 'assistant' && m.content && !m.compare);
-    let history = c.messages.slice(0, turnStart + 1).filter((m) => !m.compare || m.compare === model).map((m) => ({ role: m.role, content: m.bot && m.role === 'assistant' ? `${m.bot}: ${m.content}` : m.content, ...(m.images ? { images: m.images } : {}) }));
+    const compacted = c.compacted?.summary ? [{ role: 'user', content: `[ox: summary of earlier conversation turns]\n${c.compacted.summary}` }] : [];
+    let history = c.messages.slice(c.compacted?.upto ?? 0, turnStart + 1).filter((m) => !m.local && (!m.compare || m.compare === model)).map((m) => ({ role: m.role, content: m.bot && m.role === 'assistant' ? `${m.bot}: ${m.content}` : m.content, ...(m.images ? { images: m.images } : {}) }));
     if (group) {
       const names = group.filter((b) => b !== bot);
       const said = others.map((m) => `${m.bot} said: ${m.content}`).join('\n\n');
@@ -2672,7 +2673,7 @@
     try {
       const res = await api('/v1/chat/completions', {
         method: 'POST', signal,
-        body: JSON.stringify({ model, ox_session_id: c.id, ...(c.cwd ? { ox_cwd: c.cwd } : {}), ox_mode: c.mode || $('mode').value, ox_ui: 'live', ox_remember_preferences: prefs.learnFromChats === true, ...(c.incognito ? { ox_incognito: true } : {}), ...toolFlags(c.tools), stream: true, messages: history }),
+        body: JSON.stringify({ model, ox_session_id: c.id, ...(c.cwd ? { ox_cwd: c.cwd } : {}), ox_mode: c.mode || $('mode').value, ox_ui: 'live', ox_remember_preferences: prefs.learnFromChats === true, ...(c.incognito ? { ox_incognito: true } : {}), ...toolFlags(c.tools), stream: true, messages: [...compacted, ...history] }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error?.message || `HTTP ${res.status}`);
       const reader = res.body.getReader();
@@ -2751,6 +2752,12 @@
         if (runningControllers.get(c.id) === controller) runningControllers.delete(c.id);
         setBusy(false, c.id);
         if (c.id === current) resize();
+        // Filling up: summarize now, once, so the next messages do not carry all of it.
+        const full = c.context?.window ? c.context.tokens / c.context.window : 0;
+        if (ok && full >= THRESHOLD_COMPACT && c.compactedAtTokens !== c.context.tokens) {
+          c.compactedAtTokens = c.context.tokens;
+          compactChat(c).catch(() => {});
+        }
       }
       if (body && c.id === current) paint(body, reply);
       saveConvos(); renderLists();
@@ -2827,7 +2834,7 @@
     const v = $('input').value, menu = $('slash-menu');
     const m = /^\/([\w-]*)$/.exec(v);
     if (!m) { menu.classList.remove('on'); slashShown = []; return; }
-    const q = m[1].toLowerCase(), all = await slashList();
+    const q = m[1].toLowerCase(), all = [...SESSION_COMMANDS, ...await slashList()];
     slashShown = [...all.filter((c) => c.name.startsWith(q)), ...all.filter((c) => !c.name.startsWith(q) && (c.name.includes(q) || (q.length >= 3 && new RegExp(`\\b${q}`).test(c.what.toLowerCase()))))];
     if (!slashShown.length) { menu.classList.remove('on'); return; }
     slashPick = Math.min(slashPick, slashShown.length - 1);
@@ -2840,7 +2847,7 @@
   function slashTake(i) {
     const c = slashShown[i];
     if (!c) return;
-    $('input').value = `/${c.name} `;
+    $('input').value = `/${c.name}${c.group === 'This chat' && !c.usage.includes('[') ? '' : ' '}`;
     $('slash-menu').classList.remove('on');
     $('input').focus(); resize();
     const hint = c.usage.replace(/^\/\S+\s*/, '');
@@ -2849,11 +2856,101 @@
   $('input').addEventListener('input', () => { slashPick = 0; slashUpdate(); if (!$('input').value) $('input').placeholder = 'Describe what you need'; });
   $('input').addEventListener('blur', () => setTimeout(() => $('slash-menu').classList.remove('on'), 120));
   // A typed ox command: the quick ones run here and show their output; the rest go to ox as a request.
+  // The session's own commands, as in the terminal: these change this chat, so they run here.
+  const SESSION_COMMANDS = [
+    { name: 'help', usage: '/help', what: 'what you can type here', group: 'This chat' },
+    { name: 'new', usage: '/new', what: 'start a new session', group: 'This chat' },
+    { name: 'clear', usage: '/clear', what: 'start fresh (this chat stays in your list)', group: 'This chat' },
+    { name: 'compact', usage: '/compact', what: 'summarize earlier turns now, to use fewer tokens', group: 'This chat' },
+    { name: 'model', usage: '/model [name]', what: 'show or change this chat\'s model', group: 'This chat' },
+    { name: 'mode', usage: '/mode [name]', what: 'show or change the mode', group: 'This chat' },
+    { name: 'plan', usage: '/plan', what: 'plan mode: reads only, changes nothing', group: 'This chat' },
+    { name: 'cost', usage: '/cost', what: 'tokens this chat has used, and how many came from the cache', group: 'This chat' },
+    { name: 'context', usage: '/context', what: 'how full this chat\'s context is', group: 'This chat' },
+  ];
+  const THRESHOLD_COMPACT = 0.75;
+  async function compactChat(c) {
+    const from = c.compacted?.upto ?? 0;
+    const msgs = c.messages.slice(from).filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content && !m.pending && !m.compare && !m.local);
+    const r = await postJson('/ox/chat/compact', { messages: [...(c.compacted?.summary ? [{ role: 'user', content: `[ox: summary of earlier conversation turns]\n${c.compacted.summary}` }] : []), ...msgs.map((m) => ({ role: m.role, content: m.content }))], model: c.model || $('model').value || undefined });
+    if (!r.summary) return null;
+    const kept = msgs.slice(msgs.length - r.keep)[0];
+    c.compacted = { summary: r.summary, upto: kept ? c.messages.indexOf(kept) : c.messages.length, at: Date.now() };
+    saveConvos();
+    return r;
+  }
+  function chatTokens(c) {
+    const rows = c.messages.filter((m) => m.role === 'assistant');
+    const sum = (k) => rows.reduce((a, m) => a + (Number(m[k]) || 0), 0);
+    return { in: sum('tokensIn'), out: sum('tokensOut'), cached: sum('tokensCached') };
+  }
+  function sayLocal(text, reply) {
+    const c = convo() ?? (newConvo(), convo());
+    if (!c.messages.length) c.title = text.slice(0, 60);
+    c.messages.push({ role: 'user', content: text, local: true }, { role: 'assistant', content: reply, local: true });
+    $('input').value = ''; $('input').placeholder = 'Describe what you need'; resize();
+    saveConvos(); renderChat(); renderLists();
+    return c;
+  }
+  async function runSessionCommand(name, arg, text) {
+    const c = convo();
+    if (name === 'new' || name === 'clear') { newConvo(); $('input').value = ''; resize(); toast('New session'); return true; }
+    if (name === 'help') {
+      const all = await slashList();
+      const lines = (list) => list.map((x) => `- \`${x.usage}\` ${x.what}`).join('\n');
+      sayLocal(text, `**This chat**\n${lines(SESSION_COMMANDS)}\n\n**ox's tools**\n${lines(all.filter((x) => x.app))}\n\nThe rest (${all.filter((x) => !x.app).map((x) => `/${x.name}`).join(', ')}) are done by asking ox.`);
+      return true;
+    }
+    if (name === 'plan') { $('mode').value = 'plan'; $('mode').onchange(); sayLocal(text, 'Plan mode: ox reads and plans, and changes nothing.'); return true; }
+    if (name === 'mode') {
+      const names = [...$('mode').options].map((o) => o.value);
+      if (arg && !names.includes(arg.toLowerCase())) { sayLocal(text, `No mode called ${arg}. Modes: ${names.join(', ')}.`); return true; }
+      if (arg) { $('mode').value = arg.toLowerCase(); $('mode').onchange(); }
+      sayLocal(text, `Mode: ${$('mode').value}.${arg ? '' : ` Others: ${names.join(', ')}.`}`);
+      return true;
+    }
+    if (name === 'model') {
+      const opts = [...$('model').options].map((o) => o.value).filter(Boolean);
+      if (arg) {
+        const hit = opts.find((v) => v === arg) ?? opts.find((v) => v.toLowerCase().includes(arg.toLowerCase()));
+        if (!hit) { sayLocal(text, `No model matching ${arg}. Choose from the model menu, or \`/model\` for the list.`); return true; }
+        $('model').value = hit; $('model').onchange?.();
+      }
+      sayLocal(text, `Model: ${$('model').value || 'Auto'}.${arg ? '' : `\n\n${opts.map((v) => `- ${v}`).join('\n')}`}`);
+      return true;
+    }
+    if (name === 'cost') {
+      const t = c ? chatTokens(c) : { in: 0, out: 0, cached: 0 };
+      sayLocal(text, t.in || t.out ? `This chat: ${t.in.toLocaleString()} in, ${t.out.toLocaleString()} out.${t.in ? ` ${t.cached.toLocaleString()} of the input came from the cache (${Math.round((t.cached / t.in) * 100)}%).` : ''}${c?.compacted ? ' Earlier turns are summarized.' : ''}` : 'No tokens used in this chat yet.');
+      return true;
+    }
+    if (name === 'context') {
+      sayLocal(text, `${(c && contextMeter(c)) || 'Nothing sent yet.'}${c?.compacted ? `\n\nEarlier turns are summarized (${new Date(c.compacted.at).toLocaleTimeString()}).` : ''}\n\nIt summarizes itself at ${Math.round(THRESHOLD_COMPACT * 100)}%.`);
+      return true;
+    }
+    if (name === 'compact') {
+      if (!c?.messages.length) { sayLocal(text, 'Nothing to summarize yet.'); return true; }
+      const cc = sayLocal(text, 'Summarizing earlier turns…');
+      const reply = cc.messages.at(-1);
+      try {
+        const r = await compactChat(cc);
+        reply.content = r ? 'Earlier turns are summarized. The next message sends the summary and the recent turns.' : 'Too short to summarize yet.';
+      } catch (e) { reply.content = `Not summarized, and the chat is as it was: ${e.message}`; }
+      saveConvos(); renderChat();
+      return true;
+    }
+    return false;
+  }
   async function runSlash(text) {
     const cmds = await slashList();
-    const m = /^\/([\w-]+)/.exec(text);
+    const m = /^\/([\w-]+)(?!\/)(?:\s+(.*))?$/s.exec(text);
+    if (m && SESSION_COMMANDS.some((x) => x.name === m[1].toLowerCase())) return runSessionCommand(m[1].toLowerCase(), (m[2] ?? '').trim(), text);
     const cmd = m && cmds.find((c) => c.name === m[1].toLowerCase());
-    if (!cmd) return false;
+    if (!cmd) {
+      // One word that is no command: said plainly, not sent to a model as a message. A sentence or a path is a message.
+      if (m && !m[2]) { sayLocal(text, `\`/${m[1]}\` is not a command here. \`/help\` lists them.`); return true; }
+      return false;
+    }
     if (!cmd.app) { $('input').value = `Use the ox command for this: ox ${text.slice(1)}`; return false; }
     if (!convo()) newConvo();
     const c = convo();

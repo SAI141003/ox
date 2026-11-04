@@ -252,7 +252,8 @@ export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
     // a turn for five minutes before the connection gave up (seen: 330 s on a
     // free NVIDIA endpoint). A watchdog aborts after OX_STREAM_FIRST_MS with no
     // reply or OX_STREAM_IDLE_MS with no bytes, and the agent loop retries.
-    const firstMs = Number(process.env.OX_STREAM_FIRST_MS) || 120_000;
+    // A local model may be loading into memory; a service that has said nothing for a minute will not.
+    const firstMs = Number(process.env.OX_STREAM_FIRST_MS) || (apiKey ? 60_000 : 120_000);
     const idleMs = Number(process.env.OX_STREAM_IDLE_MS) || 90_000;
     const watch = new AbortController();
     let stalled = null;

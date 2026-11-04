@@ -121,7 +121,7 @@ function cmdReview({ cwd }) {
 
 function cmdTest({ cwd, rest }) {
   if (!rest.trim()) {
-    return { type: 'injected', payload: 'Ask me which file to generate tests for, then read it and write tests using the existing test framework detected in the project.' };
+    return { type: 'output', payload: 'usage: /test <file>' };
   }
   const filePath = path.isAbsolute(rest) ? rest : path.join(cwd, rest);
   const content = readIfExists(filePath);
@@ -136,7 +136,7 @@ function cmdTest({ cwd, rest }) {
 
 function cmdExplain({ cwd, rest }) {
   if (!rest.trim()) {
-    return { type: 'injected', payload: 'Ask me which file or code snippet to explain.' };
+    return { type: 'output', payload: 'usage: /explain <file or question>' };
   }
   const filePath = path.isAbsolute(rest) ? rest : path.join(cwd, rest);
   const content = readIfExists(filePath);
@@ -166,7 +166,7 @@ function cmdFix({ cwd }) {
 
 function cmdRefactor({ cwd, rest }) {
   if (!rest.trim()) {
-    return { type: 'injected', payload: 'Ask me which file to suggest refactorings for.' };
+    return { type: 'output', payload: 'usage: /refactor <file>' };
   }
   const filePath = path.isAbsolute(rest) ? rest : path.join(cwd, rest);
   const content = readIfExists(filePath);
@@ -181,7 +181,7 @@ function cmdRefactor({ cwd, rest }) {
 
 function cmdDoc({ cwd, rest }) {
   if (!rest.trim()) {
-    return { type: 'injected', payload: 'Ask me which file to generate documentation for.' };
+    return { type: 'output', payload: 'usage: /doc <file>' };
   }
   const filePath = path.isAbsolute(rest) ? rest : path.join(cwd, rest);
   const content = readIfExists(filePath);
@@ -196,7 +196,7 @@ function cmdDoc({ cwd, rest }) {
 
 function cmdMigrate({ rest }) {
   if (!rest.trim()) {
-    return { type: 'injected', payload: 'Describe the migration you want to perform (e.g. "convert require() to import", "upgrade to TypeScript 5.5", "migrate from Mocha to Vitest").' };
+    return { type: 'output', payload: 'usage: /migrate <what to change>. Describe the migration you want to perform (e.g. "convert require() to import", "upgrade to TypeScript 5.5", "migrate from Mocha to Vitest").' };
   }
   return {
     type: 'injected',

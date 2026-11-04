@@ -2452,6 +2452,35 @@ const ROUTES = [
     return D.fixPr(dir, {});
   }) },
   { method: 'GET', pattern: /^\/ox\/day\/?$/, handler: appRoute(dayView) },
+  // A chat's history is sent again on every message: once it is summarized here, the app sends the
+  // summary and the recent turns, and no later message pays to summarize the same turns again.
+  { method: 'POST', pattern: /^\/ox\/chat\/compact\/?$/, handler: appRoute(async (body) => {
+    const { pureCompact } = await import('./context.js');
+    const { summarizeMessages } = await import('./agent.js');
+    const { compactionKnobs, compactionModelChoice, compactionPassKnobs, loadConfig, resolveAuxTarget } = await import('./config.js');
+    const messages = Array.isArray(body?.messages) ? body.messages.map((m) => ({ role: String(m?.role ?? 'user'), content: String(m?.content ?? '') })) : [];
+    const cfg = loadConfig();
+    const { toSummarize, tail } = pureCompact(messages, compactionKnobs(cfg).keepTurns);
+    if (toSummarize.length < 2) return { summary: null, keep: messages.length };
+    const { workingModelSpec } = await import('./working-model.js');
+    const named = typeof body?.model === 'string' && body.model && body.model !== 'auto' && !body.model.startsWith('agent:') ? body.model : null;
+    const main = resolveBot(named ?? await workingModelSpec(cfg, { say: () => {} }), cfg);
+    const choice = compactionModelChoice(cfg, { aux: resolveAuxTarget(cfg), main });
+    const knobs = { wordBudget: compactionPassKnobs(cfg).wordBudget, fallbackTarget: main };
+    let r = null;
+    try { r = await summarizeMessages(choice.target ?? main, toSummarize, undefined, knobs); } catch (e) {
+      // Your default may be a computer that is off. With no model named, any other you have can summarize.
+      if (named) throw e;
+      const { reachableAgents } = await import('./ask-agent.js');
+      const { plans, keyed } = await reachableAgents(cfg);
+      const other = keyed[0]?.spec ?? plans.find((p) => p !== 'claude-plan');
+      if (!other) throw e;
+      const t = resolveBot(other, cfg);
+      r = await summarizeMessages(t, toSummarize, undefined, { ...knobs, fallbackTarget: t });
+    }
+    if (!r?.text) throw new Error('the summary came back empty: the chat is as it was');
+    return { summary: r.text, keep: tail.length, inputTokens: r.usage?.inputTokens ?? null, outputTokens: r.usage?.outputTokens ?? null };
+  }) },
   // Slash commands in the app (src/slash-catalog.js): the menu, and running one of the inline-safe ones.
   { method: 'GET', pattern: /^\/ox\/commands\/?$/, handler: appRoute(async () => ({ commands: (await import('./slash-catalog.js')).COMMANDS })) },
   { method: 'POST', pattern: /^\/ox\/commands\/run\/?$/, handler: appRoute(async (body) => {
