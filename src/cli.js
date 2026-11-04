@@ -1871,7 +1871,11 @@ async function cmdMcpRemove(args = []) {
     (async () => {
       delete doc.mcpServers[name];
       try {
+        // Your own edit stays trusted; removing a line must not bless a repository's file.
+        const { projectFileTrusted, trustProjectFile } = await import('./project-trust.js');
+        const keepTrust = target !== 'global' && projectFileTrusted(process.cwd(), '.mcp.json');
         fs.writeFileSync(file, `${JSON.stringify(doc, null, 2)}\n`);
+        if (keepTrust) trustProjectFile(process.cwd(), '.mcp.json');
       } catch (err) {
         process.stderr.write(`${c.red(`✗ write failed (${destLabel}): ${err.message}`)}\n`);
         process.exitCode = 3;
@@ -6341,6 +6345,7 @@ async function runSubcommand(cmd, args) {
       console.log(`${proof.verdict === 'proven' ? c.green('✓ proven') : c.red('✗ not proven')}${proof.reasons.length ? `: ${proof.reasons.join('; ')}` : ''}`);
       for (const x of proof.integrity.problems) console.log(c.red(`  ${x.file}: ${x.detail}`));
       if (proof.mutation.total) console.log(c.dim(`  mutation check: ${proof.mutation.killed}/${proof.mutation.total} small breaks caught`));
+      if (proof.cleanCheckout?.ok === true) console.log(c.dim('  clean copy: the tests pass there too')); else if (proof.cleanCheckout?.skipped) console.log(c.dim(`  clean copy: ${proof.cleanCheckout.skipped}`));
       if (proof.heldOut.skipped) console.log(c.dim(`  held-out tests: ${proof.heldOut.skipped}`)); else console.log(c.dim(`  held-out tests: ${proof.heldOut.ok ? 'pass' : 'fail'}`));
       console.log(c.dim(`  proof: ${where} (every command and its exit code)`));
       if (proof.verdict !== 'proven') process.exitCode = 1;

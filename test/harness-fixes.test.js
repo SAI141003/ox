@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { maskOldToolOutputs } from '../src/context.js';
 import { buildSystemPrompt } from '../src/system-prompt.js';
 import { loadHooksConfig, projectHooksTrusted, trustProjectHooks } from '../src/hooks.js';
@@ -137,4 +138,20 @@ test('with nobody watching, files that run later with your rights are refused; o
   assert.equal(protectedPathError(path.join(home, 'project/a.js'), { yolo: true }, 'write_file'), null);
   assert.equal(protectedPathError(path.join(home, '.zshrc-notes'), { yolo: true }, 'write_file'), null);
   assert.equal(protectedPathError('/tmp/.zshrc', { yolo: true }, 'write_file'), null);
+});
+
+test('removing a server from a trusted .mcp.json keeps it trusted; an untrusted file stays untrusted', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-mcp-h-'));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-mcp-p-'));
+  const cli = path.resolve('bin/ox.js');
+  const env = { ...process.env, HOME: home, OX_HOME: path.join(home, '.ox') };
+  delete env.OX_TRUST_PROJECT_FILES;
+  const trust = (fn) => spawnSync(process.execPath, ['--input-type=module', '-e', `import * as t from ${JSON.stringify(path.resolve('src/project-trust.js'))}; ${fn}`], { cwd, encoding: 'utf8', env }).stdout.trim();
+  const removeOne = (name) => spawnSync(process.execPath, [cli, 'mcp', 'remove', name], { cwd, encoding: 'utf8', input: '', env });
+  fs.writeFileSync(path.join(cwd, '.mcp.json'), JSON.stringify({ mcpServers: { a: { command: 'true' }, b: { command: 'true' }, c: { command: 'true' } } }));
+  assert.equal(removeOne('a').status, 0);
+  assert.equal(trust("console.log(t.projectFileTrusted(process.cwd(), '.mcp.json'))"), 'false', 'editing a file you never trusted must not bless it');
+  trust("t.trustProjectFile(process.cwd(), '.mcp.json')");
+  assert.equal(removeOne('b').status, 0);
+  assert.equal(trust("console.log(t.projectFileTrusted(process.cwd(), '.mcp.json'))"), 'true');
 });
