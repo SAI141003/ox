@@ -38,7 +38,7 @@ A background pass runs every six hours and never deletes anything. It folds dupl
 
 ## How we keep token use down
 
-- **A small prompt.** In a side-by-side test against another open-source agent on the same model, ox sent about 2,000 tokens per request instead of about 11,000, and made one request per answer instead of three.
+- **A small prompt.** In a side-by-side test against another open-source agent on the same model, ox sent about 2,400 tokens on the first request instead of about 11,000. Cost over a whole task hasn't been compared yet.
 - **Only the tools a turn needs.** A simple turn might get 8 tools out of 49, and that list stays the same across a session.
 - **Skills as an index.** Hundreds of skills cost around 600 tokens a turn, because only an index is sent.
 - **Keeping out of other tools' way.** Skills from ox's big library now live in ox's own folder. That cut a ChatGPT plan test task from about 42,000 tokens to 31,000, and full-price tokens by 57%. The rest is mostly that plan's own prompt, so a plan run will always use more than a direct model call.
