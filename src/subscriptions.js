@@ -63,7 +63,9 @@ export const SUBSCRIPTION_CLIS = Object.freeze({
       ...(process.env.OX_CODEX_PLUGINS === '1' ? [] : ['-c', 'features.plugins=false']),
       // ox's Mac actions (open an app or a page, notes, to-dos, music…) as an MCP
       // server, so a run on the ChatGPT plan can act on this Mac too.
-      ...macMcpArgs(),
+      // A quick look at the screen needs no Mac actions, no project rules, no saved run and little thought:
+      // measured 41-66 s at the default effort against 7-21 s like this, pointing as well.
+      ...(process.env.OX_QUICK_LOOK === '1' ? ['--ephemeral', '--ignore-rules', '-c', 'model_reasoning_effort="low"', '-c', 'project_doc_max_bytes=0'] : macMcpArgs()),
       '--sandbox', approval === 'read' ? 'read-only' : 'workspace-write',
       // Write inside the workspace without stopping to ask (what --full-auto meant;
       // newer Codex renamed that flag, the config key works on every version).

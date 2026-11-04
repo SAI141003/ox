@@ -382,6 +382,34 @@
   .step { display: flex; align-items: center; gap: 8px; font: 12.5px var(--mono); color: var(--muted); padding: 3px 0; min-width: 0; }
   .step b { color: var(--text); font-weight: 600; }
   .step span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-text { margin: 0 0 10px; } .tl-text:last-child { margin-bottom: 0; }
+  .st { margin: 0; } .st > summary { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); padding: 3px 0; list-style: none; cursor: pointer; min-width: 0; }
+  .st > summary::-webkit-details-marker { display: none; }
+  .st > summary > span:not(.what):not(.took):not(.dot) { flex: none; }
+  .row.child { padding-left: 24px; } .row.child .t { font-size: 12.5px; }
+  .side-card { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 12px; margin: 0 0 10px; font-size: 13.5px; }
+  .side-card .why { color: var(--muted); font-size: 12.5px; margin: 2px 0 8px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .st > summary .what { font: 12.5px var(--mono); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .st > summary .took { color: var(--dim); font-size: 11.5px; margin-left: auto; white-space: nowrap; }
+  .st.plain > summary { cursor: default; }
+  .st.bad > summary .what { color: var(--err, #e5484d); }
+  .st-out { margin: 2px 0 8px 16px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; font: 11.5px/1.45 var(--mono); max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; color: var(--muted); }
+  .st-out .del { color: #e5484d; } .st-out .add { color: #30a46c; }
+  .st-group { margin: 0; } .st-group > summary { font-size: 13px; color: var(--muted); padding: 3px 0; cursor: pointer; list-style: none; display: flex; gap: 8px; align-items: center; }
+  .st-group > summary::-webkit-details-marker { display: none; }
+  .st-group > .st-in { margin-left: 16px; }
+  .tl-steps { margin: 0 0 10px; }
+  .tl-you { margin: 6px 0 10px; padding: 6px 10px; border-left: 2px solid var(--line2); font-size: 13.5px; } .tl-you .k { display: block; font-size: 11px; color: var(--dim); }
+  .now { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin: 6px 0 2px; min-width: 0; }
+  .now .sp { width: 11px; height: 11px; flex: none; border-radius: 50%; border: 2px solid var(--line2); border-top-color: var(--text); animation: nowspin .9s linear infinite; }
+  .now .w { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; } .now .el { color: var(--dim); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  @keyframes nowspin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .now .sp { animation: none; } }
+  .msg.busy .msg-tools, .msg.busy .msg-usage { display: none; }
+  .run-plan { margin: 0 0 8px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); font-size: 13px; }
+  .run-plan summary { cursor: pointer; list-style: none; display: flex; gap: 8px; align-items: center; min-width: 0; color: var(--text); } .run-plan summary::-webkit-details-marker { display: none; }
+  .run-plan summary .n { color: var(--muted); font-size: 12px; white-space: nowrap; } .run-plan summary .w { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run-plan .wl { padding-left: 2px; } .run-plan[open] summary { margin-bottom: 4px; }
   .routed { display: inline-flex; gap: 6px; margin: 0 0 8px; font-size: 12px; color: var(--dim); }
   .err { color: var(--red); }
   .typing { display: inline-flex; gap: 4px; padding-top: 6px; }
@@ -936,6 +964,7 @@
       <div class="thread" id="thread"><div class="inner" id="inner"></div></div>
       <div class="composer">
         <div class="slash-menu" id="slash-menu" role="listbox" aria-label="ox commands"></div>
+        <details class="run-plan" id="run-plan" hidden></details>
         <div class="queued" id="queued" hidden></div>
         <div class="cbox">
           <div class="attached" id="attached"></div>
@@ -1496,10 +1525,14 @@
     const match = (t) => !q || String(t).toLowerCase().includes(q);
     const live = convos.filter((c) => !c.archived && match(c.title));
     const pinned = live.filter((c) => c.pinned);
-    const rest = live.filter((c) => !c.pinned);
+    // A side session sits under the chat it came from.
+    const ids = new Set(live.map((c) => c.id));
+    const childOf = (id) => live.filter((c) => c.parent === id);
+    const rest = live.filter((c) => !c.pinned && !(c.parent && ids.has(c.parent)));
     const term = terminalSessions.filter((s) => match(s.title));
     let html = '';
-    const rowFor = (c) => `<div class="row${view === 'chat' && !readonly && c.id === current ? ' on' : ''}" data-c="${esc(c.id)}" role="button" tabindex="0">
+    const rowFor = (c) => rowOne(c) + childOf(c.id).map((k) => rowOne(k, true)).join('');
+    const rowOne = (c, child = false) => `<div class="row${child ? ' child' : ''}${view === 'chat' && !readonly && c.id === current ? ' on' : ''}" data-c="${esc(c.id)}" role="button" tabindex="0">
       ${c.incognito ? `<span style="color:var(--muted)" title="incognito">${icon('incog')}</span>` : `<span class="dot${c.running ? ' run' : ''}"></span>`}<span class="t">${esc(c.title)}</span><span class="age">${ago(c.updated || c.at)}</span>
       <span class="acts"><button data-act="pin" title="${c.pinned ? 'Unpin' : 'Pin'}" aria-label="Pin">${icon('pin')}</button><button data-act="archive" title="Archive" aria-label="Archive">${icon('archive')}</button><button data-act="del" title="Delete" aria-label="Delete">${icon('trash')}</button></span></div>`;
     if (pinned.length) html += `<div class="group cap">Pinned</div>${pinned.map(rowFor).join('')}`;
@@ -2012,6 +2045,87 @@
     }
     while (el.childNodes.length > next.length) el.removeChild(el.lastChild);
   }
+  // ---------- A run, as it happened: words, steps and what you added, in order.
+  const PAGE_OPENED = Date.now();
+  const stepOpen = new Map();
+  document.addEventListener('toggle', (e) => { const k = e.target?.dataset?.open; if (k) stepOpen.set(k, e.target.open); }, true);
+  const openAttr = (key, byDefault = false) => ((stepOpen.get(key) ?? byDefault) ? ' open' : '');
+  // Steps from before steps had words, and tools with no words of their own.
+  function stepOf(t) {
+    if (t.step) return t.step;
+    const p = String(t.preview || ''), one = (k) => new RegExp(`"${k}":"((?:[^"\\\\]|\\\\.)*)`).exec(p)?.[1]?.replace(/\\"/g, '"');
+    const N = { bash: ['Ran', 'Running', 'command', 'run'], read_file: ['Read', 'Reading', 'path', 'look'], edit_file: ['Edited', 'Editing', 'path', 'edit'], write_file: ['Wrote', 'Writing', 'path', 'edit'], grep: ['Searched for', 'Searching for', 'pattern', 'look'], glob: ['Looked for', 'Looking for', 'pattern', 'look'], list_dir: ['Listed', 'Listing', 'path', 'look'] }[t.name];
+    return N ? { v: N[0], vi: N[1], what: t.file || one(N[2]) || p, kind: N[3] } : { v: String(t.name).replace(/_/g, ' '), vi: String(t.name).replace(/_/g, ' '), what: t.file || (p.startsWith('{') ? '' : p), kind: 'run' };
+  }
+  const tookWords = (ms) => (ms >= 1000 ? `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s` : '');
+  function stepHtml(msg, t, i) {
+    const s = stepOf(t), bad = t.state === 'err', denied = t.denied, live = !t.state && msg.running;
+    const d = s.diff, lines = (x) => String(x ?? '').split('\n');
+    const diff = d ? [...(d.removed ? lines(d.removed).map((l) => `<span class="del">- ${esc(l)}</span>`) : []), ...(d.added ? lines(d.added).map((l) => `<span class="add">+ ${esc(l)}</span>`) : [])].join('\n') : '';
+    const counts = d ? [d.added ? `+${lines(d.added).length}` : '', d.removed ? `−${lines(d.removed).length}` : ''].filter(Boolean).join(' ') : '';
+    const out = t.output ? esc(t.output) : '';
+    const inner = [diff, s.kind === 'edit' && !bad ? '' : out].filter(Boolean).join('\n\n');
+    const head = `<summary><span class="dot ${bad ? 'err' : t.state === 'ok' ? 'ok' : live ? 'run' : ''}"></span><span>${esc(live ? s.vi : s.v)}</span><span class="what">${esc(s.what || '')}</span>${denied ? '<span class="took">you said no</span>' : counts || t.ms ? `<span class="took">${esc([counts, tookWords(t.ms)].filter(Boolean).join(' · '))}</span>` : ''}</summary>`;
+    const key = `${msg.key}:s${i}`;
+    if (!inner) return `<details class="st plain${bad ? ' bad' : ''}" data-open="${key}">${head}</details>`;
+    return `<details class="st${bad ? ' bad' : ''}" data-open="${key}"${openAttr(key, bad || prefs.activity === 'detailed')}>${head}<div class="st-out">${inner}</div></details>`;
+  }
+  function stepsHtml(msg, run, tools) {
+    const shown = run.map((i) => ({ i, t: tools[i] })).filter((x) => x.t);
+    if (!shown.length) return '';
+    const fold = (list, words, key) => {
+      const ok = list.every((x) => x.t.state === 'ok'), err = list.some((x) => x.t.state === 'err');
+      return `<details class="st-group" data-open="${key}"${openAttr(key, err)}><summary><span class="dot ${err ? 'err' : ok ? 'ok' : 'run'}"></span><span>${esc(words)}</span></summary><div class="st-in">${list.map((x) => stepHtml(msg, x.t, x.i)).join('')}</div></details>`;
+    };
+    // Everything between two things it said, as one line you can open.
+    const count = (n, one, many = `${one}s`) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
+    const runWords = (list) => {
+      const by = (f) => list.filter((x) => f(x.t, stepOf(x.t)));
+      const reads = by((t) => t.name === 'read_file').length, looks = by((t, s) => s.kind === 'look' && t.name !== 'read_file').length;
+      const edits = [...new Set(by((t, s) => s.kind === 'edit').map((x) => stepOf(x.t).what))], runs = by((t, s) => s.kind === 'run').length;
+      const failed = by((t) => t.state === 'err').length;
+      const bits = [reads ? `read ${count(reads, 'file')}` : '', looks ? `searched ${looks === 1 ? 'once' : `${looks} times`}` : '', edits.length ? `edited ${edits.length === 1 ? edits[0].split('/').pop() : count(edits.length, 'file')}` : '', runs ? `ran ${count(runs, 'command')}` : '', failed ? `${failed} failed` : ''].filter(Boolean).join(', ');
+      return bits.charAt(0).toUpperCase() + bits.slice(1);
+    };
+    if (shown.length > 1 && prefs.activity !== 'detailed') return `<div class="tl-steps">${fold(shown, runWords(shown), `${msg.key}:g${run[0]}`)}</div>`;
+    return `<div class="tl-steps">${shown.map((x) => stepHtml(msg, x.t, x.i)).join('')}</div>`;
+  }
+  function paintTimeline(msg, timeline, tools) {
+    let html = '', run = [];
+    const flush = () => { html += stepsHtml(msg, run, tools); run = []; };
+    timeline.forEach((e, n) => {
+      if (e.k === 'tool') { run.push(e.i); return; }
+      flush();
+      if (e.k === 'text') html += `<div class="tl-text">${md(e.text, n === 0 ? msg.key : `${msg.key}.${n}`)}</div>`;
+      if (e.k === 'side') html += e.state === 'started'
+        ? `<div class="small muted" style="margin:0 0 8px">Started in its own session: <a href="#" data-open-chat="${esc(e.id)}">${esc(e.title)}</a></div>`
+        : e.state === 'no' ? '' : `<div class="side-card"><b>${esc(e.title)}</b><div class="why">${esc(e.task)}</div><div class="ask-btns"><button class="btn primary small" data-side="${n}" data-side-do="start">Start session</button><button class="btn ghost small" data-side="${n}" data-side-do="no">Not now</button></div></div>`;
+      if (e.k === 'note') html += `<div class="small muted" style="margin:0 0 8px">${esc(e.text)}</div>`;
+      if (e.k === 'you') html += `<div class="tl-you"><span class="k">You, while it worked</span>${esc(e.text)}</div>`;
+    });
+    flush();
+    return html;
+  }
+  // What it is doing right now, and for how long. Never a run that looks finished, or stuck on three dots.
+  function nowLine(msg, tools) {
+    const waiting = (msg.asks || []).some((a) => !a.state) || (msg.secrets || []).some((x) => !x.state);
+    const live = [...tools].reverse().find((t) => !t.state);
+    const s = live && stepOf(live);
+    const words = waiting ? 'Waiting for you' : msg.retry ? msg.retry : s ? `${s.vi} ${s.what || ''}` : msg.thinking ? 'Thinking' : tools.length || msg.content ? 'Working out the next step' : msg.modelName ? `Waiting for ${msg.modelName}` : 'Starting';
+    return `<div class="now"><span class="sp"></span><span class="w">${esc(words)}</span><span class="el" data-since="${msg.startedAt}">${elapsedWords(Date.now() - msg.startedAt)}</span></div>`;
+  }
+  const elapsedWords = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`; };
+  setInterval(() => { document.querySelectorAll('.now .el[data-since]').forEach((el) => { el.textContent = elapsedWords(Date.now() - Number(el.dataset.since)); }); }, 1000);
+  // The plan stays in view above the box while a long run scrolls by.
+  function renderRunPlan(c) {
+    const el = $('run-plan'), reply = c?.messages?.findLast?.((m) => m.running && (m.startedAt ?? 0) >= PAGE_OPENED);
+    const plan = reply?.plan;
+    el.hidden = !(Array.isArray(plan) && plan.length);
+    if (el.hidden) return;
+    const done = plan.filter((t) => t.status === 'completed').length, now = plan.find((t) => t.status === 'in_progress') ?? plan.find((t) => t.status !== 'completed');
+    const PI = { completed: 'ok', in_progress: 'run', blocked: 'err' };
+    morph(el, `<summary><span class="n">${done}/${plan.length}</span><span class="w">${esc(now?.content ?? 'Finishing')}</span></summary>${plan.map((t) => `<div class="wl ${esc(t.status)}"><span class="dot ${PI[t.status] ?? ''}"></span><span>${esc(t.content)}</span></div>`).join('')}`);
+  }
   function paint(body, msg) {
     if (msg.role === 'user') {
       body.textContent = msg.content;
@@ -2020,6 +2134,7 @@
       return;
     }
     const tools = msg.tools || [];
+    const runningNow = !!msg.running && (msg.startedAt ?? 0) >= PAGE_OPENED;
     let steps = tools.map((t) => `<div class="step"><span class="dot ${t.state === 'ok' ? 'ok' : t.state === 'err' ? 'err' : 'run'}"></span><b>${esc(t.name)}</b><span>${esc(prefs.activity === 'detailed' ? t.preview || '' : (t.file || t.preview || ''))}</span></div>`).join('');
     // Activity detail (Settings › General): compact folds every step into one line.
     if (steps && prefs.activity === 'compact') {
@@ -2031,11 +2146,13 @@
     const changedHtml = changed.length ? `<div class="changed"><div class="cap" style="display:flex;align-items:center">Changed ${changed.length} file${changed.length === 1 ? '' : 's'}<span style="flex:1"></span>${lastReply && !msg.undone ? '<button class="btn ghost" data-undo-turn style="padding:2px 10px;font-size:12px">Undo this turn</button>' : msg.undone ? '<span class="small muted">undone</span>' : ''}</div>${changed.map((f) => `<div class="mono small">${esc(f)}</div>`).join('')}</div>` : '';
     msg.key ??= `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     // A reasoning model thinking: said, with how much, instead of bare dots for minutes.
-    const text = msg.content ? md(msg.content, msg.key) : (msg.pending ? `<span class="typing"><i></i><i></i><i></i></span>${msg.thinking ? `<span class="muted small" style="margin-left:8px">Thinking… ${msg.thinking.toLocaleString()} characters so far</span>` : ''}` : '');
+    // What happened, in the order it happened. Chats from before this have no timeline: steps, then the words.
+    const timeline = msg.timeline ?? [...tools.map((t, i) => ({ k: 'tool', i })), ...(msg.content ? [{ k: 'text', text: msg.content }] : [])];
+    const text = paintTimeline(msg, timeline, tools) + (runningNow ? nowLine(msg, tools) : '');
     const routed = (msg.compare ? `<span class="botname">${esc(msg.compare)}</span>` : '') + (msg.bot ? `<span class="botname">${esc(msg.bot)}</span>` : '') + (msg.routed ? `<span class="routed">${icon('mode')}${esc(msg.routed)}</span>` : '');
     if (msg.bot) { const who = body.closest('.msg')?.querySelector('.who'); if (who && !who.dataset.bot) { who.dataset.bot = msg.bot; who.classList.add('botwho'); who.innerHTML = botFace(msg.bot, botShapes[msg.bot], 26, botColors[msg.bot]); } }
     const PI = { completed: ['ok', '✓'], in_progress: ['run', '›'], blocked: ['err', '!'], pending: ['', ''] };
-    const plan = Array.isArray(msg.plan) && msg.plan.length
+    const plan = Array.isArray(msg.plan) && msg.plan.length && !runningNow
       ? `<div class="worklog"><div class="cap" style="margin-bottom:6px">Plan · ${msg.plan.filter((t) => t.status === 'completed').length}/${msg.plan.length} done</div>${msg.plan.map((t) => `<div class="wl ${t.status}"><span class="dot ${PI[t.status]?.[0] ?? ''}"></span><span>${esc(t.content)}</span></div>`).join('')}</div>`
       : '';
     const canv = (msg.canvases || []).map((c) => `<div class="ui cv">${canvasNode(c.tree)}</div>`).join('');
@@ -2044,20 +2161,29 @@
       : `<a href="${esc(u)}" target="_blank" rel="noopener"><img class="made" src="${esc(u)}" alt="made by ox" style="max-width:min(100%,520px);border-radius:12px;display:block;margin:8px 0"></a>`).join('');
     // "Write: /path" is shown as Write and the path.
     const askWhat = (a) => { const p = String(a.preview || ''), t = `${a.tool}: `; return p.startsWith(t) ? p.slice(t.length) : p; };
-    const asks = (msg.asks || []).map((a) => a.state
-      ? `<div class="ask-done small dim">${a.state === 'allow' ? 'Allowed' : 'Denied'} · <b>${esc(a.tool)}</b> <span class="mono">${esc(askWhat(a))}</span></div>`
-      : `<div class="ask-card" data-ask-id="${esc(a.id)}"><div class="cap">Waiting for your OK</div><div><b>${esc(a.tool)}</b> <span class="mono small">${esc(askWhat(a))}</span></div><div class="ask-btns"><button class="btn primary small" data-ask-answer="allow">Allow</button><button class="btn ghost small" data-ask-answer="deny">Deny</button></div></div>`).join('');
+    // Waiting on you: asked at the bottom where you are looking. Answered: a no stays on its step; a yes needs no line.
+    const asks = (msg.asks || []).filter((a) => !a.state).map((a) => `<div class="ask-card" data-ask-id="${esc(a.id)}"><div class="cap">Waiting for your OK</div><div><b>${esc(a.tool)}</b> <span class="mono small">${esc(askWhat(a))}</span></div><div class="ask-btns"><button class="btn primary small" data-ask-answer="allow">Allow</button>${a.always ? `<button class="btn ghost small" data-ask-answer="always">${esc(a.always)}</button>` : ''}<button class="btn ghost small" data-ask-answer="deny">Deny</button></div></div>`).join('');
     // An agent asking for a key: a private field; the value goes to ox's key store, never into the chat.
     const secrets = (msg.secrets || []).map((x) => x.state
       ? `<div class="ask-done small dim">${x.state === 'saved' ? 'Saved on this machine' : 'Not given'} · <b class="mono">${esc(x.name)}</b></div>`
       : `<form class="ask-card" data-secret-id="${esc(x.id)}" autocomplete="off"><div class="cap">ox needs a key</div><div><b class="mono">${esc(x.name)}</b> <span class="small muted">${esc(x.why || '')}</span></div><input class="field mono" type="password" name="v" placeholder="Paste it here: it is saved on this Mac and never shown to the model" autocomplete="off" spellcheck="false" style="margin:8px 0"><div class="ask-btns"><button class="btn primary small" type="submit">Save</button><button class="btn ghost small" type="button" data-secret-skip>Skip</button></div></form>`).join('');
-    morph(body, routed + plan + (steps ? `<div class="steps${prefs.activity === 'detailed' ? ' detailed' : ''}">${steps}</div>` : '') + asks + secrets + canv + made + text + changedHtml + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : ''));
+    morph(body, routed + plan + canv + made + text + asks + secrets + changedHtml + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : ''));
+    body.dataset.msgKey = msg.key;
+    body.closest('.msg')?.classList.toggle('busy', runningNow);
+    body.querySelectorAll('[data-side]').forEach((b) => (b.onclick = () => {
+      const e = msg.timeline?.[Number(b.dataset.side)], parent = convos.find((x) => x.messages?.includes(msg));
+      if (!e || !parent) return;
+      if (b.dataset.sideDo === 'no') e.state = 'no';
+      else { e.state = 'started'; e.id = startSide(parent, e.title, e.task); }
+      saveConvos(); paint(body, msg);
+    }));
+    body.querySelectorAll('[data-open-chat]').forEach((a) => (a.onclick = (ev) => { ev.preventDefault(); if (convos.some((x) => x.id === a.dataset.openChat)) { current = a.dataset.openChat; readonly = null; show('chat'); renderChat(); renderLists(); } }));
     body.querySelectorAll('[data-ask-answer]').forEach((b) => (b.onclick = () => {
       const card = b.closest('[data-ask-id]');
       const a = (msg.asks || []).find((x) => x.id === card.dataset.askId);
       card.querySelectorAll('button').forEach((x) => (x.disabled = true));
       postJson('/ox/approval', { id: card.dataset.askId, decision: b.dataset.askAnswer })
-        .then(() => { if (a) { a.state = b.dataset.askAnswer; paint(body, msg); } })
+        .then(() => { if (a) { a.state = b.dataset.askAnswer === 'deny' ? 'deny' : 'allow'; paint(body, msg); } })
         .catch((e) => { if (a) a.state = 'deny'; paint(body, msg); toast(plainDash(e.message)); });
     }));
     body.querySelectorAll('[data-secret-id]').forEach((f) => {
@@ -2093,6 +2219,7 @@
     if (msg.role === 'assistant' && !msg.pending && (msg.tokens || msg.ms)) {
       if (!use) { use = document.createElement('div'); use.className = 'msg-usage'; m.querySelector('.msg-tools')?.before(use); }
       use.textContent = [
+        tools.length ? `${tools.length} step${tools.length === 1 ? '' : 's'}` : '',
         msg.tokens ? `${msg.tokens.toLocaleString()} tokens` : '',
         msg.tokensIn != null ? `${msg.tokensIn.toLocaleString()} in · ${(msg.tokensOut ?? 0).toLocaleString()} out` : '',
         msg.tokensCached ? `${msg.tokensCached.toLocaleString()} from cache` : '',
@@ -2113,6 +2240,7 @@
     $('title').textContent = readonly ? readonly.title : convo()?.title || 'New session';
     updateUsageMeter(convo());
     renderQueued();
+    renderRunPlan(convo());
     // Back on a chat whose answer ended while you were elsewhere: what you queued goes now.
     setBusy(!!currentController(), current);
     if (!currentController() && convo()?.queued?.length) setTimeout(drainQueue, 0);
@@ -2141,6 +2269,8 @@
       return;
     }
     for (const m of c.messages) {
+      // What you added mid-run shows where it went in, inside the answer.
+      if (m.inline) continue;
       const el = bubble(m.role);
       paint(el, m);
       if (m.build) el.insertAdjacentHTML('beforeend', `<div style="margin-top:8px"><button class="btn small" data-open-team="${esc(m.build)}">${icon('team')}Show the team</button></div>`);
@@ -2211,26 +2341,30 @@
     if (!item.text && !item.files && !item.pics.length) return;
     (c.queued ??= []).push(item);
     input.value = ''; resize(); renderQueued(); saveConvos();
+    // Words alone go in at ox's next step, as you would tell a person mid-task. If this run cannot
+    // take them (it has no more steps, or it is one long call to a plan), they go next.
+    if (item.text && !item.files && !item.pics.length && runningControllers.has(c.id)) {
+      postJson('/ox/chat/steer', { sessionId: c.id, text: item.text }).then(() => { item.steering = true; if (c.id === current) renderQueued(); saveConvos(); }).catch(() => {});
+    }
   }
   function renderQueued() {
     const c = convo(), el = $('queued');
     const q = c?.queued ?? [];
     el.hidden = !q.length;
     const canSteer = !!currentController();
-    el.innerHTML = q.map((x, i) => `<div class="q"><span class="k">${i === 0 ? 'Next' : 'Then'}</span><span class="t">${esc(x.text || (x.pics.length ? 'Photo' : 'Files'))}</span>${canSteer && x.text ? `<button class="btn ghost small" data-steer="${i}" title="Send this instruction to the active run at its next safe step">Steer now</button>` : ''}<button class="iconbtn" data-unqueue="${i}" title="Remove" aria-label="Remove queued message">${icon('x')}</button></div>`).join('');
+    el.innerHTML = q.map((x, i) => `<div class="q"><span class="k">${x.steering ? 'At the next step' : i === 0 ? 'When this ends' : 'Then'}</span><span class="t">${esc(x.text || (x.pics.length ? 'Photo' : 'Files'))}</span><button class="iconbtn" data-unqueue="${i}" title="Remove" aria-label="Remove queued message">${icon('x')}</button></div>`).join('');
     // Nothing running (the page reloaded, or the run ended in an error): the queue would
     // wait forever, so it can be sent now.
     if (q.length && !canSteer && c && !runningControllers.has(c.id)) el.insertAdjacentHTML('beforeend', '<div class="q" style="justify-content:flex-end"><button class="btn small" id="q-send-now">Send now</button></div>');
     $('q-send-now')?.addEventListener('click', () => drainQueue(c.id));
-    el.querySelectorAll('[data-unqueue]').forEach((b) => (b.onclick = () => { c.queued.splice(Number(b.dataset.unqueue), 1); renderQueued(); saveConvos(); }));
-    el.querySelectorAll('[data-steer]').forEach((b) => (b.onclick = async () => {
-      const index = Number(b.dataset.steer), item = c.queued[index];
-      if (!item?.text || !runningControllers.has(c.id)) return;
-      b.disabled = true;
-      try {
-        await postJson('/ox/chat/steer', { sessionId: c.id, text: item.text });
-        c.queued.splice(index, 1); renderQueued(); saveConvos(); toast('Steering: it appears in the chat when ox takes it, at its next step');
-      } catch (e) { toast(`Could not steer: ${e.message}`); b.disabled = false; }
+    el.querySelectorAll('[data-unqueue]').forEach((b) => (b.onclick = async () => {
+      const item = c.queued[Number(b.dataset.unqueue)];
+      if (!item) return;
+      c.queued.splice(c.queued.indexOf(item), 1); renderQueued(); saveConvos();
+      if (item.steering) {
+        const r = await postJson('/ox/chat/steer', { sessionId: c.id, text: item.text, cancel: true }).catch(() => null);
+        if (r && !r.removed) toast('Too late: ox had already read that one');
+      }
     }));
     syncSendButton();
   }
@@ -2239,6 +2373,7 @@
     const c = convos.find((x) => x.id === sessionId);
     if (runningControllers.has(sessionId) || !c?.queued?.length) return;
     const items = c.queued.splice(0);
+    items.forEach((x) => { delete x.steering; });
     renderQueued(); saveConvos();
     // You stopped the answer yourself: the queued words come back to the box, unsent.
     if (c.messages.at(-1)?.error === 'Stopped.') {
@@ -2255,8 +2390,8 @@
     const typed = !!$('input').value.trim() || attachments.length || photos.length;
     const b = $('send');
     b.innerHTML = icon(typed ? 'up' : 'stop');
-    b.setAttribute('aria-label', typed ? 'Queue this message; it goes when the current answer ends' : 'Stop (Esc)');
-    b.title = typed ? 'Sends when the current answer ends (it is not stopped)' : 'Stop (Esc)';
+    b.setAttribute('aria-label', typed ? 'Add this; ox reads it at its next step' : 'Stop (Esc)');
+    b.title = typed ? 'Ox reads this at its next step (the work is not stopped)' : 'Stop (Esc)';
   }
 
   async function send(queued = null, sessionId = current) {
@@ -2302,7 +2437,7 @@
     if (teamTask) { if (!queued) { input.value = ''; resize(); } await startTeam(c, teamTask, text); drainQueue(c.id); return; }
     if (c.mode === 'team') c.mode = 'auto';
     if (!c.tools && Object.keys(draftTools).length) c.tools = { ...draftTools };
-    if (!c.messages.length && !c.group) c.title = text.replace(/\s+/g, ' ').slice(0, 60);
+    if (!c.messages.some((m) => !m.local) && !c.group) c.title = text.replace(/\s+/g, ' ').slice(0, 60);
     c.messages.push({ role: 'user', content: text, ...(pics.length ? { images: pics.map((x) => ({ mediaType: x.mediaType, data: x.data })), thumbs: pics.map((x) => x.thumb) } : {}) });
     if (!queued) { input.value = ''; resize(); }
     // A group chat: every bot answers in turn and sees what the others said, so
@@ -2642,7 +2777,8 @@
 
   // One answer from one model (or one bot in a group).
   async function replyOnce(c, text, bot, group, opts = {}) {
-    const reply = opts.reply ?? { role: 'assistant', content: '', tools: [], pending: true, ...(bot ? { bot } : {}) };
+    const reply = opts.reply ?? { role: 'assistant', content: '', tools: [], timeline: [], pending: true, ...(bot ? { bot } : {}) };
+    reply.running = true; reply.startedAt = Date.now(); reply.timeline ??= [];
     if (bot && !Object.hasOwn(botCharacters, bot)) { try { await loadBotFaceRegistry(); } catch {} }
     if (bot) setBotEmotion(bot, 'thinking');
     const t0 = performance.now();
@@ -2651,7 +2787,7 @@
       c.updated = Date.now(); c.running = true;
       saveConvos(); renderChat(); renderLists();
     }
-    const body = opts.body ?? (c.id === current ? $('inner').lastElementChild?.querySelector('.body') : null);
+    let body = opts.body ?? (c.id === current ? $('inner').lastElementChild?.querySelector('.body') : null);
     const model = opts.model ?? (bot ? `agent:${bot}` : (c.model || $('model').value || undefined));
     // Earlier answers from other bots or models in this turn travel as quoted
     // context, never as this model's own turn: a conversation ending on an
@@ -2660,7 +2796,7 @@
     const turnStart = c.messages.length - 1 - [...c.messages].reverse().findIndex((m) => m.role === 'user');
     const others = c.messages.slice(turnStart + 1).filter((m) => m !== reply && m.role === 'assistant' && m.content && !m.compare);
     const compacted = c.compacted?.summary ? [{ role: 'user', content: `[ox: summary of earlier conversation turns]\n${c.compacted.summary}` }] : [];
-    let history = c.messages.slice(c.compacted?.upto ?? 0, turnStart + 1).filter((m) => !m.local && (!m.compare || m.compare === model)).map((m) => ({ role: m.role, content: m.bot && m.role === 'assistant' ? `${m.bot}: ${m.content}` : m.content, ...(m.images ? { images: m.images } : {}) }));
+    let history = c.messages.slice(c.compacted?.upto ?? 0, turnStart + 1).filter((m) => !m.local && (m.role !== 'assistant' || m.content) && (!m.compare || m.compare === model)).map((m) => ({ role: m.role, content: m.bot && m.role === 'assistant' ? `${m.bot}: ${m.content}` : m.content, ...(m.images ? { images: m.images } : {}) }));
     if (group) {
       const names = group.filter((b) => b !== bot);
       const said = others.map((m) => `${m.bot} said: ${m.content}`).join('\n\n');
@@ -2698,33 +2834,54 @@
             c.context = { tokens: Number(ox.tokens) || 0, window: Number(ox.window) || 0, historyTokens: Number(ox.historyTokens) || 0, schemaTokens: Number(ox.schemaTokens) || 0, at: Date.now() };
             updateUsageMeter(c);
           }
-          if (ox?.type === 'thinking') reply.thinking = Number(ox.chars) || 0;
+          if (ev.model && !reply.modelName) reply.modelName = String(ev.model);
+          if (ox?.type === 'thinking') { reply.thinking = Number(ox.chars) || 0; reply.retry = null; }
+          // It says so when a model stops answering, instead of a line that never changes.
+          if (ox?.type === 'retry') reply.retry = /429|too many|rate/i.test(ox.reason) ? `${reply.modelName ?? 'The model'} is busy. Trying again (${ox.attempt} of 3)` : `${reply.modelName ?? 'The model'} stopped answering. Trying again (${ox.attempt} of 3)`;
+          if (ox?.type === 'fallback' && ox.to) { reply.retry = null; reply.modelName = ox.to; reply.timeline.push({ k: 'note', text: `${ox.from || 'That model'} could not answer, so ${ox.to} took over.` }); }
+          if (ox?.type === 'tool-start') reply.retry = null;
           // Your steer went in: it shows in the chat as yours, just before this answer.
           if (ox?.type === 'steer' && ox.text) {
             const at = c.messages.indexOf(reply);
-            c.messages.splice(at >= 0 ? at : c.messages.length, 0, { role: 'user', content: String(ox.text), steer: true });
-            saveConvos(); if (current === c.id) renderChat();
+            c.messages.splice(at >= 0 ? at : c.messages.length, 0, { role: 'user', content: String(ox.text), steer: true, inline: true });
+            reply.timeline.push({ k: 'you', text: String(ox.text) });
+            const taken = (c.queued ?? []).findIndex((x) => x.steering && x.text === String(ox.text));
+            if (taken >= 0) c.queued.splice(taken, 1);
+            saveConvos(); if (current === c.id) renderQueued();
           }
           // It came after ox's last step: sent next, first in line.
           if (ox?.type === 'steer-late' && Array.isArray(ox.texts) && ox.texts.length) {
-            c.queued = [...ox.texts.map((text) => ({ text, files: '', pics: [], model: reply.model ?? null, mode: null })), ...(c.queued || [])];
+            c.queued = [...ox.texts.map((text) => ({ text, files: '', pics: [], model: reply.model ?? null, mode: null })), ...(c.queued || []).filter((x) => !(x.steering && ox.texts.includes(x.text)))];
             saveConvos(); if (current === c.id) renderQueued();
           }
+          if (ox?.type === 'side-offer' && ox.title && ox.task) reply.timeline.push({ k: 'side', title: String(ox.title), task: String(ox.task), state: '' });
           if (ox?.type === 'media' && Array.isArray(ox.media)) reply.media = [...new Set([...(reply.media || []), ...ox.media])];
-          if (ox?.type === 'tool-start' && Array.isArray(ox.plan)) reply.plan = ox.plan;
-          else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '', ...(ox.file ? { file: ox.file } : {}), ...(ox.files ? { files: ox.files } : {}) });
-          if (ox?.type === 'tool-end') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) t.state = ox.isError ? 'err' : 'ok'; if (Array.isArray(ox.media) && ox.media.length) reply.media = [...new Set([...(reply.media || []), ...ox.media])]; if (ox.canvas) { reply.canvases = (reply.canvases || []).filter((x) => x.id !== ox.id); reply.canvases.push({ id: ox.id, tree: ox.canvas }); } }
+          if (ox?.type === 'tool-start' && Array.isArray(ox.plan)) { reply.plan = ox.plan; if (c.id === current) renderRunPlan(c); }
+          else if (ox?.type === 'tool-start') reply.tools.push({ id: ox.id, name: ox.name, preview: ox.preview, state: '', ...(ox.step ? { step: ox.step } : {}), ...(ox.file ? { file: ox.file } : {}), ...(ox.files ? { files: ox.files } : {}) });
+          if (ox?.type === 'tool-start' && !Array.isArray(ox.plan)) reply.timeline.push({ k: 'tool', i: reply.tools.length - 1 });
+          if (ox?.type === 'tool-end' && ox.name !== 'todo_write') { const t = reply.tools.find((x) => x.id === ox.id) || reply.tools.at(-1); if (t) { t.state = ox.isError ? 'err' : 'ok'; if (ox.ms) t.ms = ox.ms; if (ox.output) t.output = ox.output; } if (Array.isArray(ox.media) && ox.media.length) reply.media = [...new Set([...(reply.media || []), ...ox.media])]; if (ox.canvas) { reply.canvases = (reply.canvases || []).filter((x) => x.id !== ox.id); reply.canvases.push({ id: ox.id, tree: ox.canvas }); } }
           // A step waiting on your yes (a plan's write, a command): Allow / Deny here.
-          if (ox?.type === 'approval') (reply.asks ??= []).push({ id: ox.id, tool: ox.tool, preview: ox.preview, state: '' });
+          if (ox?.type === 'approval') (reply.asks ??= []).push({ id: ox.id, tool: ox.tool, preview: ox.preview, state: '', ...(ox.always ? { always: ox.always } : {}) });
           if (ox?.type === 'secret') (reply.secrets ??= []).push({ id: ox.id, name: ox.name, why: ox.why, state: '' });
           // The run moved to a new project folder: this session works there from now on.
           if (ox?.type === 'project' && ox.cwd) { c.cwd = ox.cwd; delete c.buildDir; prefs.recentRepos = [ox.cwd, ...(prefs.recentRepos ?? []).filter((x) => x !== ox.cwd)].slice(0, 12); savePrefs(); saveConvos(); if (c.id === current) showRepo(); }
           if (ox?.type === 'secret-resolved') { const x = (reply.secrets || []).find((y) => y.id === ox.id); if (x) x.state = ox.saved ? 'saved' : 'skipped'; }
-          if (ox?.type === 'approval-resolved') { const a = (reply.asks || []).find((x) => x.id === ox.id); if (a) a.state = ox.decision === 'allow' ? 'allow' : 'deny'; }
+          if (ox?.type === 'approval-resolved') {
+            const a = (reply.asks || []).find((x) => x.id === ox.id);
+            if (a) a.state = ox.decision === 'allow' ? 'allow' : 'deny';
+            if (a?.state === 'deny') { const t = [...reply.tools].reverse().find((x) => !x.state); if (t) t.denied = true; }
+          }
           // The server redrew an interactive answer that did not load.
-          if (ox?.type === 'replace' && typeof ox.content === 'string') reply.content = ox.content;
+          if (ox?.type === 'replace' && typeof ox.content === 'string') { reply.content = ox.content; reply.timeline = [...reply.timeline.filter((e) => e.k !== 'text'), { k: 'text', text: ox.content }]; }
           const delta = ev.choices?.[0]?.delta?.content;
-          if (delta) { reply.content += delta; if (bot) setBotEmotion(bot, 'happy'); }
+          if (delta) {
+            // Words after a step are a new paragraph, here and in what the next message remembers.
+            const lastBit = reply.timeline.at(-1);
+            if (lastBit?.k === 'text') lastBit.text += delta;
+            else { if (reply.content) reply.content += '\n\n'; reply.timeline.push({ k: 'text', text: delta }); }
+            reply.content += delta; reply.retry = null;
+            if (bot) setBotEmotion(bot, 'happy');
+          }
           if (ev.usage) {
             reply.tokens = (ev.usage.prompt_tokens || 0) + (ev.usage.completion_tokens || 0);
             reply.tokensIn = ev.usage.prompt_tokens || 0; reply.tokensOut = ev.usage.completion_tokens || 0;
@@ -2733,6 +2890,8 @@
             updateUsageMeter(c);
           }
           reply.pending = !reply.content;
+          // The chat was redrawn or you came back to it: the answer is drawn on what is on screen now.
+          if (c.id === current && !body?.isConnected) body = reply.key ? $('inner').querySelector(`[data-msg-key="${reply.key}"]`) : null;
           if (body && c.id === current) { paint(body, reply); scrollDown(); }
         }
       }
@@ -2741,7 +2900,9 @@
       reply.error = e.name === 'AbortError' ? 'Stopped.' : /^(load failed|failed to fetch|networkerror)/i.test(String(e.message)) ? 'ox stopped answering, most likely because it restarted. Send it again.' : plainDash(e.message);
       ok = false;
     } finally {
-      reply.pending = false; c.updated = Date.now();
+      reply.pending = false; reply.running = false; c.updated = Date.now();
+      try { if (c.parent) sideFinished(c, reply); } catch {}
+      if (c.id === current) renderRunPlan(c);
       if (bot) {
         const finalEmotion = reply.error ? 'sad' : 'happy';
         setBotEmotion(bot, finalEmotion);
@@ -2863,6 +3024,7 @@
     { name: 'help', usage: '/help', what: 'what you can type here', group: 'This chat' },
     { name: 'new', usage: '/new', what: 'start a new session', group: 'This chat' },
     { name: 'clear', usage: '/clear', what: 'start fresh (this chat stays in your list)', group: 'This chat' },
+    { name: 'side', usage: '/side <task>', what: 'start a task in its own session, nested under this one', group: 'This chat' },
     { name: 'compact', usage: '/compact', what: 'summarize earlier turns now, to use fewer tokens', group: 'This chat' },
     { name: 'model', usage: '/model [name]', what: 'show or change this chat\'s model', group: 'This chat' },
     { name: 'mode', usage: '/mode [name]', what: 'show or change the mode', group: 'This chat' },
@@ -2881,6 +3043,26 @@
     saveConvos();
     return r;
   }
+  // A task of its own: its own chat, same project and model, under this one in the list. This chat carries on.
+  function startSide(parent, title, task) {
+    const c = { id: newConvoId(), at: Date.now(), title, messages: [], parent: parent.id, ...(parent.cwd ? { cwd: parent.cwd } : {}), model: parent.model, mode: parent.mode };
+    convos.unshift(c); saveConvos(); renderLists();
+    send({ text: task, files: '', pics: [], model: parent.model || $('model').value, mode: parent.mode || $('mode').value }, c.id);
+    return c.id;
+  }
+  // It finished: said in the chat it came from, whatever you are looking at.
+  function sideFinished(c, reply) {
+    const parent = c.parent && convos.find((x) => x.id === c.parent);
+    if (!parent) return;
+    const said = String(reply.content ?? '').replace(/\s+/g, ' ').slice(0, 220);
+    const line = reply.error ? `Side session “${c.title}” stopped: ${reply.error}` : `Side session “${c.title}” finished. ${said}`;
+    const live = parent.messages.findLast?.((m) => m.running);
+    if (live) (live.timeline ??= []).push({ k: 'note', text: line });
+    else parent.messages.push({ role: 'assistant', content: line, local: true });
+    saveConvos();
+    if (parent.id === current) renderChat();
+    toast(line.slice(0, 90));
+  }
   function chatTokens(c) {
     const rows = c.messages.filter((m) => m.role === 'assistant');
     const sum = (k) => rows.reduce((a, m) => a + (Number(m[k]) || 0), 0);
@@ -2888,7 +3070,6 @@
   }
   function sayLocal(text, reply) {
     const c = convo() ?? (newConvo(), convo());
-    if (!c.messages.length) c.title = text.slice(0, 60);
     c.messages.push({ role: 'user', content: text, local: true }, { role: 'assistant', content: reply, local: true });
     $('input').value = ''; $('input').placeholder = 'Describe what you need'; resize();
     saveConvos(); renderChat(); renderLists();
@@ -2896,6 +3077,13 @@
   }
   async function runSessionCommand(name, arg, text) {
     const c = convo();
+    if (name === 'side') {
+      if (!arg) { sayLocal(text, 'Say what it should do: `/side <task>`. It runs on its own, in this project, under this chat in the list.'); return true; }
+      startSide(c ?? (newConvo(), convo()), arg.replace(/\s+/g, ' ').slice(0, 60), arg);
+      $('input').value = ''; resize();
+      toast('Started in its own session');
+      return true;
+    }
     if (name === 'new' || name === 'clear') { newConvo(); $('input').value = ''; resize(); toast('New session'); return true; }
     if (name === 'help') {
       const all = await slashList();
@@ -2944,9 +3132,9 @@
     return false;
   }
   async function runSlash(text) {
-    const cmds = await slashList();
     const m = /^\/([\w-]+)(?!\/)(?:\s+(.*))?$/s.exec(text);
     if (m && SESSION_COMMANDS.some((x) => x.name === m[1].toLowerCase())) return runSessionCommand(m[1].toLowerCase(), (m[2] ?? '').trim(), text);
+    const cmds = await slashList();
     const cmd = m && cmds.find((c) => c.name === m[1].toLowerCase());
     if (!cmd) {
       // One word that is no command: said plainly, not sent to a model as a message. A sentence or a path is a message.
@@ -4248,8 +4436,11 @@ files: [src/billing/**]
       if (node.dataset.botFace === name) node.setAttribute('emotion', emotion);
     });
   }
+  // Both callers run on opening the app, and the answer is about 500 KB: share one request.
+  let botsInFlight = null;
+  const getBots = () => (botsInFlight ??= getJson('/ox/bots').finally(() => { botsInFlight = null; }));
   async function loadBotFaceRegistry() {
-    const B = await getJson('/ox/bots');
+    const B = await getBots();
     botShapes = Object.fromEntries(B.mine.map((b) => [b.name, b.shape]));
     botColors = Object.fromEntries(B.mine.map((b) => [b.name, b.color]));
     botCharacters = Object.fromEntries(B.mine.map((b) => [b.name, b.character || 'ox']));
@@ -4265,7 +4456,7 @@ files: [src/billing/**]
     const el = $('bots');
     el.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
     let B;
-    try { B = await getJson('/ox/bots'); } catch (e) { el.innerHTML = `<div class="box">${esc(e.message)} <button class="btn" id="bots-retry">Retry</button></div>`; $('bots-retry').onclick = loadBots; return; }
+    try { B = await getBots(); } catch (e) { el.innerHTML = `<div class="box">${esc(e.message)} <button class="btn" id="bots-retry">Retry</button></div>`; $('bots-retry').onclick = loadBots; return; }
     if (B.mine.some((b) => b.character === 'mochi')) await ensureMochiAvatar();
     botCharacters = Object.fromEntries(B.mine.map((b) => [b.name, b.character || 'ox']));
     botColorways = Object.fromEntries(B.mine.map((b) => [b.name, b.colorway || 'matcha']));

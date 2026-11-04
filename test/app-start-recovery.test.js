@@ -28,3 +28,10 @@ test('AppleScript runs one at a time, through one function', () => {
   }
   assert.match(fs.readFileSync(new URL('OxAppleScript.swift', dir), 'utf8'), /appleScriptLock\.lock\(\)/);
 });
+
+test('a screen question looks at the screen even when an agent is chosen, or there is no arrow', () => {
+  const tray = fs.readFileSync(new URL('Tray.swift', dir), 'utf8');
+  assert.match(tray, /if let name = Self\.namedAgent\(in: text, agents: agents\.map\(\\\.name\)\) \?\? \(spoken \? nil : agent\) \{[\s\S]{0,500}screenRoute\(r\.route/);
+  assert.match(tray, /removeObject\(forKey: "chat\.agent"\)/, 'no pick is kept across restarts');
+  assert.match(tray, /func screenRoute[\s\S]{0,1500}"--buddy"/);
+});

@@ -65,23 +65,67 @@ async function answers(url, ms = 1500) {
   } catch { return false; }
 }
 
+// One caller at a time. Opening the window, the island and a server handing over
+// can all ask at once; each used to start its own server on the next port, and
+// only the last was remembered, so the others ran on for good holding ports.
+const LOCK = () => `${STATE()}.lock`;
+const LOCK_STALE_MS = 90_000;
+const LOCK_WAIT_MS = 30_000;
+async function oneAtATime(fn) {
+  const file = LOCK();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const until = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      fs.writeFileSync(file, String(process.pid), { flag: 'wx' });
+      break;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      let stale = false;
+      try {
+        const holder = Number(fs.readFileSync(file, 'utf8'));
+        stale = !alive(holder) || Date.now() - fs.statSync(file).mtimeMs > LOCK_STALE_MS;
+      } catch { continue; } // gone between the two looks: try again
+      if (stale) { try { fs.unlinkSync(file); } catch {} continue; }
+      if (Date.now() > until) throw new Error('another ox is still starting the server');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+  try { return await fn(); } finally { try { fs.unlinkSync(file); } catch {} }
+}
+
 // The app's server: reused when it is up and serving this folder, else started.
-export async function ensureServer({ cwd = process.cwd(), log = () => {} } = {}) {
+export function ensureServer(opts = {}) {
+  return oneAtATime(() => reuseOrStart(opts));
+}
+
+async function reuseOrStart({ cwd = process.cwd(), log = () => {} } = {}) {
   const st = readState();
   // Reused only when it runs the current code: a server started before ox was
   // updated keeps serving the old app until it is replaced.
-  const { codeStamp } = await import('./code-stamp.js');
-  const fresh = st.startedAt && Date.parse(st.startedAt) >= codeStamp();
-  if (st.pid && alive(st.pid) && st.cwd === cwd && st.url && fresh && (await answers(st.url))) return st;
+  // Code still being edited is not an update yet: restarting on every save made
+  // opening the app wait on a cold start. The server hands over once edits stop.
+  const { codeStamp, CODE_QUIET_MS } = await import('./code-stamp.js');
+  const stamp = codeStamp();
+  const fresh = st.startedAt && (Date.parse(st.startedAt) >= stamp || Date.now() - stamp < CODE_QUIET_MS);
+  if (st.pid && alive(st.pid) && st.cwd === cwd && st.url && fresh) {
+    // A server that is alive but slow to answer is busy, not gone. Killing it started
+    // another that was just as busy at first, so the app never settled and every
+    // request running on it was cut off. Wait for it instead.
+    for (let i = 0; i < 25; i++) if (await answers(st.url, 2000)) return st;
+    log('the ox server stopped answering: starting a fresh one');
+  }
   if (st.pid && alive(st.pid) && !fresh) log('ox was updated since its server started: starting a fresh one');
-  if (st.pid && alive(st.pid)) {
+  const stopped = st.pid && alive(st.pid);
+  if (stopped) {
     try { process.kill(st.pid); } catch {}
     // Let it let go of its port, so the app keeps the same address.
     for (let i = 0; i < 40 && alive(st.pid); i++) await new Promise((r) => setTimeout(r, 50));
   }
   // The same port whenever it can be: the page's own storage belongs to the address.
   const wanted = st.port || 47800;
-  for (let i = 0; i < 25 && !(await canBind(wanted)); i++) await new Promise((r) => setTimeout(r, 200));
+  // Worth waiting only for the server just stopped; anything else holding it is not leaving.
+  for (let i = 0; i < (stopped ? 25 : 2) && !(await canBind(wanted)); i++) await new Promise((r) => setTimeout(r, 200));
   const port = await freePort(wanted);
   const child = spawn(process.execPath, [OX_CLI, 'serve', '--port', String(port)], {
     cwd, detached: true, stdio: 'ignore', windowsHide: true, env: { ...process.env, OX_APP: '1' },

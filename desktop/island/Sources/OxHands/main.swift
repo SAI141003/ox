@@ -16,10 +16,13 @@
 //   ox-hands press --app <app> --path 0.3.1
 //   ox-hands click <x> <y> [--double]
 //   ox-hands find <text> [--app <app>]   words on screen (Vision), for unnamed controls
+//   ox-hands see <image>                 every word in an image with its box (Vision), and whether it is blank
+//   ox-hands context                     cursor, displays, front app; window and selection if allowed
 //   ox-hands type <text> [--app <app>]
 //   ox-hands key <code> [--mods cmd,shift,option,ctrl] [--times N] [--app <app>]
 import AppKit
 import CoreImage
+import ImageIO
 import Vision
 import ApplicationServices
 import Foundation
@@ -272,6 +275,84 @@ func labels(_ el: AXUIElement) -> [String: Any] {
 // An app that hangs must not hang ox: each Accessibility question waits 0.6 s at most.
 let axTimeoutSet: Void = { AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.6) }()
 
+/// Every line and word in an image, in its own pixels from the top left, and whether it is one flat colour.
+/// Needs no permission: it only reads a file.
+func seeImage(_ file: String) -> [String: Any] {
+    guard let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: file) as CFURL, nil),
+          let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return ["error": "could not read the image \(file)"] }
+    let w = Double(img.width), h = Double(img.height)
+    // A small grey copy: a screen with anything on it is never one flat colour.
+    let side = 64
+    var grey = [UInt8](repeating: 0, count: side * side)
+    grey.withUnsafeMutableBytes { raw in
+        if let c = CGContext(data: raw.baseAddress, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side, space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) {
+            c.interpolationQuality = .medium
+            c.draw(img, in: CGRect(x: 0, y: 0, width: side, height: side))
+        }
+    }
+    let mean = grey.reduce(0.0) { $0 + Double($1) } / Double(grey.count)
+    let spread = (grey.reduce(0.0) { $0 + pow(Double($1) - mean, 2) } / Double(grey.count)).squareRoot()
+    let req = VNRecognizeTextRequest()
+    req.recognitionLevel = .accurate
+    req.usesLanguageCorrection = false
+    do { try VNImageRequestHandler(cgImage: img).perform([req]) } catch { return ["error": "could not read the words: \(error.localizedDescription)", "width": w, "height": h] }
+    func box(_ r: CGRect) -> [String: Double] {
+        ["x": (r.minX * w).rounded(), "y": ((1 - r.maxY) * h).rounded(), "w": (r.width * w).rounded(), "h": (r.height * h).rounded()]
+    }
+    var lines: [[String: Any]] = []
+    for o in req.results ?? [] {
+        guard let c = o.topCandidates(1).first, !c.string.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+        var line: [String: Any] = box(o.boundingBox)
+        line["text"] = c.string
+        line["confidence"] = Double(c.confidence)
+        var words: [[String: Any]] = []
+        c.string.enumerateSubstrings(in: c.string.startIndex..<c.string.endIndex, options: .byWords) { word, range, _, _ in
+            guard let word, let r = try? c.boundingBox(for: range)?.boundingBox else { return }
+            var e: [String: Any] = box(r)
+            e["text"] = word
+            words.append(e)
+        }
+        line["words"] = words
+        lines.append(line)
+    }
+    return ["width": w, "height": h, "blank": spread < 1.5, "spread": spread, "lines": lines, "ms": ms()]
+}
+
+/// What is around the question. Cursor and displays need no permission; the window and selection need Accessibility.
+func context() -> [String: Any] {
+    var out: [String: Any] = ["access": AXIsProcessTrusted(), "screenAccess": CGPreflightScreenCaptureAccess(), "ms": 0]
+    if let p = CGEvent(source: nil)?.location { out["cursor"] = ["x": Double(p.x), "y": Double(p.y)] }
+    var count: UInt32 = 0
+    CGGetActiveDisplayList(0, nil, &count)
+    var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+    CGGetActiveDisplayList(count, &ids, &count)
+    out["displays"] = ids.enumerated().map { i, id -> [String: Any] in
+        let b = CGDisplayBounds(id)
+        return ["index": i + 1, "x": Double(b.minX), "y": Double(b.minY), "w": Double(b.width), "h": Double(b.height), "scale": Double(CGDisplayPixelsWide(id)) / max(Double(b.width), 1), "main": CGDisplayIsMain(id) != 0]
+    }
+    if let app = frontApp() {
+        out["app"] = app.localizedName ?? ""
+        out["bundle"] = app.bundleIdentifier ?? ""
+        if AXIsProcessTrusted() {
+            let ax = AXUIElementCreateApplication(app.processIdentifier)
+            if let w = frontWindow(ax) {
+                out["window"] = str(attr(w, kAXTitleAttribute))
+                if let f = frame(pos: attr(w, kAXPositionAttribute), size: attr(w, kAXSizeAttribute)) { out["windowFrame"] = f }
+            }
+            if let f = attr(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute), CFGetTypeID(f) == AXUIElementGetTypeID() {
+                let el = f as! AXUIElement
+                // Never what is in a password box.
+                if str(attr(el, kAXSubroleAttribute)) != "AXSecureTextField" {
+                    let sel = str(attr(el, kAXSelectedTextAttribute))
+                    if !sel.isEmpty { out["selection"] = String(sel.prefix(500)) }
+                }
+            }
+        }
+    }
+    out["ms"] = ms()
+    return out
+}
+
 func handle(_ args: [String]) -> [String: Any] {
     _ = axTimeoutSet
     argv = args
@@ -280,6 +361,11 @@ func handle(_ args: [String]) -> [String: Any] {
     do {
         guard let cmd = argv.first else { try emit(["error": "usage: ox-hands serve | trusted | activate | list | at | press | click | type | key"]) }
         if cmd == "trusted" { try emit(["trusted": AXIsProcessTrusted()]) }
+        if cmd == "see" {
+            guard argv.count > 1 else { try emit(["error": "see <image>"]) }
+            try emit(seeImage(argv[1]))
+        }
+        if cmd == "context" { try emit(context()) }
         // Bringing an app forward needs no Accessibility (NSRunningApplication / NSWorkspace).
         if !AXIsProcessTrusted() && cmd != "activate" { try emit(["error": accessHint, "access": false]) }
         switch cmd {

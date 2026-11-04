@@ -373,10 +373,12 @@ test('a Retina screenshot is made small enough to send', async () => {
   const png = (w) => { const b = Buffer.alloc(24); b.writeUInt32BE(0x89504e47, 0); b.writeUInt32BE(w, 16); b.writeUInt32BE(100, 20); return b; };
   const calls = [];
   fs.writeFileSync(f, png(2940));
-  shrinkShot(f, { run: (...a) => calls.push(a) });
-  assert.deepEqual(calls[0].slice(0, 2), ['sips', ['--resampleWidth', '1568', f]]);
+  const out = shrinkShot(f, { run: (...a) => calls.push(a) });
+  assert.deepEqual(calls[0][1].slice(0, 3), ['--resampleWidth', '1568', f]);
+  assert.notEqual(out, f, 'your file is left alone');
+  assert.equal(fs.existsSync(out.replace(/\.png$/, '.full.png')), true);
   fs.writeFileSync(f, png(1200));
-  shrinkShot(f, { run: () => assert.fail('already small') });
+  assert.equal(shrinkShot(f, { run: () => assert.fail('already small') }), f);
 });
 
 test('teach picks frames evenly, first and last in', async () => {

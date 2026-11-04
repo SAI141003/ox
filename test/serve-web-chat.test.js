@@ -262,11 +262,11 @@ test('two app sessions run independently and a steer reaches only its session at
   assert.doesNotMatch(JSON.stringify(reqTwo.at(-1).messages), /Only one:/);
 });
 
-test('the chat page keeps runs per session and offers an explicit Steer now action', async () => {
+test('the chat page keeps runs per session and steers a queued message in at the next step', async () => {
   const html = await (await fetch(`${base}/`)).text();
   assert.match(html, /const runningControllers = new Map\(\)/);
-  assert.match(html, /data-steer/);
-  assert.match(html, /Steer now/);
+  assert.match(html, /\/ox\/chat\/steer/);
+  assert.match(html, /At the next step/);
   for (const text of ['Files and folders', 'Set a goal', 'Plan mode', 'Record a skill', 'Sketch', 'Plugins and connectors', 'Connect GitHub', 'Connect Notion', 'Documents and PDFs', 'Spreadsheet analysis', 'Create slide videos', 'Code review', 'Mini and pets']) assert.ok(html.includes(text), `${text} is reachable from the plus menu`);
   assert.match(html, /webkitdirectory directory multiple/);
   assert.match(html, /id="sketch-board"/);

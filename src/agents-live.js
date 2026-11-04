@@ -798,3 +798,8 @@ export async function openInTerminal(id, { home = os.homedir(), dryRun = false }
   spawnSync('osascript', ['-e', `tell application "Terminal" to do script ${JSON.stringify(line)}`, '-e', 'tell application "Terminal" to activate'], { timeout: 10000 });
   return { line, opened: true };
 }
+
+// What the app's agents page shows, as one call (run off the server's thread: it runs commands).
+export function agentsView() {
+  return { sessions: liveAgents(), detected: detectedCodingTools() };
+}

@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Carbon.HIToolbox
+import ImageIO
 import Speech
 import SwiftUI
 
@@ -86,7 +87,7 @@ final class Buddy: NSObject, ObservableObject {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private let synth = AVSpeechSynthesizer()
-    private var shot: String?
+    private var shot: [String] = []
     private var mouthWork: [DispatchWorkItem] = []
     private var wordCount = 0
     private var pendingPoint: ScreenPoint?
@@ -183,11 +184,15 @@ final class Buddy: NSObject, ObservableObject {
         starting = true
         heard = ""
         saying = ""
+        // Its own marks must not be in the picture of your screen.
+        clearOverlays()
+        // Warm before it is needed: the voice is ready by the time the answer is.
+        if Self.naturalVoice { SpeakWorker.shared.warm() }
         // The screen is captured beside the microphone, not before it: done
         // first, it held the mic back 0.25-0.45 s and the first words were lost.
-        shot = nil
+        shot = []
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let s = Self.captureScreen()
+            let s = Self.captureScreens()
             DispatchQueue.main.async { self?.shot = s }
         }
         SFSpeechRecognizer.requestAuthorization { status in
@@ -288,6 +293,7 @@ final class Buddy: NSObject, ObservableObject {
         endWatch?.invalidate(); endWatch = nil
         handsFree = false
         guard phase == .listening else { return }
+        questionAt = Date()
         // Leave "listening" at once: a second stop in the next 1.5 s (key release,
         // end of speech, a tap) ran this again and sent the same words 2-3 times.
         phase = .thinking
@@ -328,13 +334,13 @@ final class Buddy: NSObject, ObservableObject {
                         IslandLog.write("voice heard again from the recording: \"\(again)\"")
                         guard !again.isEmpty, !again.hasPrefix("[") else {
                             // Whisper heard nothing either: the live words, if there were any.
-                            if !text.isEmpty, self.send?(text, self.shot.map { [$0] } ?? [], audioPath) == true { self.gesture = .think; return }
+                            if !text.isEmpty, self.send?(text, self.shot, audioPath) == true { self.gesture = .think; return }
                             self.phase = .idle
                             self.show(self.noSignalAdvice())
                             return
                         }
                         self.heard = again
-                        guard self.send?(again, self.shot.map { [$0] } ?? [], audioPath) == true else { self.show("I can't find ox on this Mac. Open the OX app once, then ask me again."); return }
+                        guard self.send?(again, self.shot, audioPath) == true else { self.show("I can't find ox on this Mac. Open the OX app once, then ask me again."); return }
                         self.gesture = .think
                     }
                 }.resume()
@@ -345,7 +351,7 @@ final class Buddy: NSObject, ObservableObject {
                 self.show(self.noSignalAdvice())
                 return
             }
-            guard self.send?(text, self.shot.map { [$0] } ?? [], audioPath) == true else {
+            guard self.send?(text, self.shot, audioPath) == true else {
                 IslandLog.write("voice: nobody took it (ox not found)")
                 self.show("I can't find ox on this Mac. Open the OX app once, then ask me again.")
                 return
@@ -368,7 +374,7 @@ final class Buddy: NSObject, ObservableObject {
     func speak(_ reply: String) {
         let (marked, marks) = Self.parseMarks(reply)
         let (say, point) = Self.parsePoint(marked)
-        let text = say.isEmpty ? "Done." : say
+        let text = say.isEmpty ? (point != nil ? "Here." : "Done.") : say
         if !marks.isEmpty { IslandLog.write("marks drawn: \(marks.map { "\($0.kind.lowercased()) \($0.label)" }.joined(separator: ", "))"); showMarks(marks) }
         saying = text
         pendingPoint = point
@@ -377,18 +383,76 @@ final class Buddy: NSObject, ObservableObject {
         gesture = point != nil ? .point : .open
         if let point { showPointer(point) }
         let spoken = Self.speakable(text)
-        guard Self.naturalVoice, OxRunner.available else { systemSpeak(spoken); return }
-        let out = (NSTemporaryDirectory() as NSString).appendingPathComponent("ox-buddy-say-\(Int(Date().timeIntervalSince1970 * 1000)).wav")
+        replyAt = Date()
+        guard Self.naturalVoice, OxRunner.available else { logFirstSound(); systemSpeak(spoken); return }
         let token = UUID()
         speakToken = token
-        OxRunner.run(["speak", spoken, "--out", out], cwd: FileManager.default.homeDirectoryForCurrentUser) { [weak self] code, _ in
+        clearPlayQueue()
+        sayNext(Self.sentences(spoken)[...], token: token)
+    }
+
+    /// One sentence at a time: the first is heard as soon as it is made, and the rest follow it.
+    private func sayNext(_ left: ArraySlice<String>, token: UUID) {
+        guard let sentence = left.first else { making = false; if player == nil, phase == .speaking { finishSpeaking() }; return }
+        making = true
+        let out = (NSTemporaryDirectory() as NSString).appendingPathComponent("ox-buddy-say-\(UUID().uuidString.prefix(8)).wav")
+        SpeakWorker.shared.say(sentence, out: out) { [weak self] ok in
             guard let self, self.speakToken == token, self.phase == .speaking else { try? FileManager.default.removeItem(atPath: out); return }
-            if code == 0, let p = try? AVAudioPlayer(contentsOf: URL(fileURLWithPath: out)) {
-                self.playRecording(p, file: out)
-            } else {
-                self.systemSpeak(spoken)
+            guard ok, let p = try? AVAudioPlayer(contentsOf: URL(fileURLWithPath: out)) else {
+                // No natural voice: what is left, in the system's. It waits for a sentence already playing.
+                self.making = false
+                self.fallbackText = left.joined(separator: " ")
+                if self.player == nil { self.speakFallback() }
+                return
             }
+            if self.player == nil { self.playRecording(p, file: out) } else { self.playQueue.append((p, out)) }
+            self.sayNext(left.dropFirst(), token: token)
         }
+    }
+
+    private func speakFallback() {
+        guard let t = fallbackText else { return }
+        fallbackText = nil
+        logFirstSound()
+        systemSpeak(t)
+    }
+
+    private func logFirstSound() {
+        guard let reply = replyAt else { return }
+        replyAt = nil
+        let now = Date()
+        let fromQuestion = questionAt.map { " · \(Int(now.timeIntervalSince($0) * 1000)) ms from the question" } ?? ""
+        IslandLog.write("voice: first sound \(Int(now.timeIntervalSince(reply) * 1000)) ms after the reply\(fromQuestion)")
+        questionAt = nil
+    }
+
+    private func clearPlayQueue() {
+        for (_, f) in playQueue { try? FileManager.default.removeItem(atPath: f) }
+        playQueue = []
+        making = false
+        fallbackText = nil
+    }
+
+    /// Split so each part can be voiced alone. Short pieces stay with the next, so nothing sounds clipped.
+    nonisolated static func sentences(_ text: String) -> [String] {
+        var out: [String] = []
+        var cur = ""
+        for part in text.split(omittingEmptySubsequences: true, whereSeparator: { $0 == "\n" }).flatMap({ line -> [String] in
+            var bits: [String] = []
+            var b = ""
+            let chars = Array(line)
+            for (i, ch) in chars.enumerated() {
+                b.append(ch)
+                if ".!?".contains(ch), i + 1 == chars.count || chars[i + 1] == " " { bits.append(b); b = "" }
+            }
+            if !b.isEmpty { bits.append(b) }
+            return bits
+        }) {
+            cur += (cur.isEmpty ? "" : " ") + part.trimmingCharacters(in: .whitespaces)
+            if cur.count >= 24 { out.append(cur); cur = "" }
+        }
+        if !cur.isEmpty { if let last = out.popLast() { out.append(last + " " + cur) } else { out.append(cur) } }
+        return out.isEmpty ? [text] : out
     }
 
     /// Kokoro on (the default) or the system voice, from the island's settings.
@@ -397,6 +461,11 @@ final class Buddy: NSObject, ObservableObject {
     }
 
     private var speakToken: UUID?
+    private var playQueue: [(AVAudioPlayer, String)] = []
+    private var making = false
+    private var fallbackText: String?
+    private var questionAt: Date?
+    private var replyAt: Date?
     private var player: AVAudioPlayer?
     private var playerFile: String?
     private var meter: Timer?
@@ -413,6 +482,7 @@ final class Buddy: NSObject, ObservableObject {
     private func playRecording(_ p: AVAudioPlayer, file: String) {
         player = p
         playerFile = file
+        logFirstSound()
         p.isMeteringEnabled = true
         p.delegate = self
         p.play()
@@ -441,6 +511,7 @@ final class Buddy: NSObject, ObservableObject {
     func stopSpeaking() {
         speakToken = nil
         synth.stopSpeaking(at: .immediate)
+        clearPlayQueue()
         stopRecording()
         finishSpeaking()
     }
@@ -483,12 +554,22 @@ final class Buddy: NSObject, ObservableObject {
 
     // MARK: pointer
 
+    /// What it drew last time: closed before it looks, or it sees its own marks.
+    func clearOverlays() {
+        pointer?.close(); pointer = nil
+        marksOverlay?.close(); marksOverlay = nil
+    }
+
     private func showPointer(_ p: ScreenPoint) {
-        guard let screen = Buddy.shotScreen ?? NSScreen.main else { return }
+        // [POINT:…:screen2] is the second picture; there is no pointer for a screen that has gone.
+        let named = p.screen.flatMap { n in n >= 1 && n <= Buddy.shotScreens.count ? Buddy.shotScreens[n - 1] : nil }
+        if p.screen != nil, named == nil { return }
+        guard let screen = named ?? Buddy.shotScreen ?? NSScreen.main else { return }
         // Screenshot pixels -> screen points (AppKit's origin is bottom-left).
         let scale = Buddy.shotPixelScale ?? screen.backingScaleFactor
         let target = CGPoint(x: screen.frame.minX + p.x / scale, y: screen.frame.maxY - p.y / scale)
         pointer?.close()
+        IslandLog.write("pointer: \(p.label) at \(Int(target.x)),\(Int(target.y))")
         let o = PointerOverlay(screen: screen, target: target, label: p.label)
         o.orderFrontRegardless()
         pointer = o
@@ -541,19 +622,26 @@ final class Buddy: NSObject, ObservableObject {
 
     // MARK: helpers
 
-    struct ScreenPoint: Equatable { let x: Double; let y: Double; let label: String }
+    struct ScreenPoint: Equatable { let x: Double; let y: Double; let label: String; var screen: Int? = nil }
 
+    /// [POINT:x,y:label], [POINT:x,y,label] and [POINT:x,y:label:screen2]: the same rules as src/buddy.js.
+    /// A numbered [POINT:#12:label] is turned into x,y by ox before it gets here; one left over points nowhere.
     static func parsePoint(_ reply: String) -> (String, ScreenPoint?) {
-        let pattern = #"\[POINT:\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*(?::\s*([^\]]*))?\]"#
         let ns = reply as NSString
-        let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
-        let say = re?.stringByReplacingMatches(in: reply, range: NSRange(location: 0, length: ns.length), withTemplate: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? reply
-        guard let m = re?.firstMatch(in: reply, range: NSRange(location: 0, length: ns.length)) else { return (say, nil) }
+        let all = NSRange(location: 0, length: ns.length)
+        let any = try? NSRegularExpression(pattern: #"\[POINT:[^\]]*\]"#, options: [.caseInsensitive])
+        let say = any?.stringByReplacingMatches(in: reply, range: all, withTemplate: "").trimmingCharacters(in: .whitespacesAndNewlines) ?? reply
+        let re = try? NSRegularExpression(pattern: #"\[POINT:\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*(?:[:,]\s*([^\]]*?))?\s*\]"#, options: [.caseInsensitive])
+        guard let m = re?.firstMatch(in: reply, range: all) else { return (say, nil) }
         let x = Double(ns.substring(with: m.range(at: 1))) ?? 0
         let y = Double(ns.substring(with: m.range(at: 2))) ?? 0
-        let label = m.range(at: 3).location != NSNotFound ? ns.substring(with: m.range(at: 3)).trimmingCharacters(in: .whitespaces) : ""
-        return (say, ScreenPoint(x: x, y: y, label: label))
+        var label = m.range(at: 3).location != NSNotFound ? ns.substring(with: m.range(at: 3)).trimmingCharacters(in: .whitespaces) : ""
+        var screen: Int?
+        if let r = label.range(of: #"(?:^|[:,]\s*)screen\s*\d+$"#, options: [.regularExpression, .caseInsensitive]) {
+            screen = Int(label[r].filter(\.isNumber))
+            label = String(label[..<r.lowerBound]).trimmingCharacters(in: .whitespaces)
+        }
+        return (say, ScreenPoint(x: x, y: y, label: label, screen: screen))
     }
 
     /// Markdown and code read badly aloud: strip the marks, drop code blocks.
@@ -588,53 +676,104 @@ final class Buddy: NSObject, ObservableObject {
     /// request put its permission window up each time you spoke ("open Chrome"
     /// needs no screenshot). Turn it on once from the island's menu.
     static var shotScreen: NSScreen?
+    static var shotScreens: [NSScreen] = []
     static var shotPixelScale: CGFloat?
 
-    /// The screen the mouse is on, and its number for screencapture's -D (1 is the first active display).
-    static func screenUnderMouse() -> (NSScreen?, Int?) {
+    /// The screen the mouse is on.
+    static func screenUnderMouse() -> NSScreen? {
         let mouse = NSEvent.mouseLocation
-        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) else { return (NSScreen.main, nil) }
-        guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return (screen, nil) }
+        return NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main
+    }
+
+    /// Every display, the one the mouse is on first. For each: `<name>.png` at the screen's own size, which
+    /// the model sees and the pointer's numbers refer to; `<name>.full.png`, every Retina pixel;
+    /// `<name>.json`, where that screen is; and `<name>.see.json`, its words, read while you are still talking.
+    static func captureScreens() -> [String] {
+        guard CGPreflightScreenCaptureAccess() else { return [] }
+        let first = screenUnderMouse()
+        let ordered = (first.map { [$0] } ?? []) + NSScreen.screens.filter { $0 != first }
         var count: UInt32 = 0
         CGGetActiveDisplayList(0, nil, &count)
         var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
         CGGetActiveDisplayList(count, &ids, &count)
-        return (screen, ids.firstIndex(of: id).map { $0 + 1 })
+        let stamp = Int(Date().timeIntervalSince1970 * 1000)
+        var paths: [String] = []
+        var screens: [NSScreen] = []
+        var allSized = true
+        for (i, screen) in ordered.enumerated() {
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
+                  let index = ids.firstIndex(of: id) else { continue }
+            let base = (NSTemporaryDirectory() as NSString).appendingPathComponent("ox-buddy-\(stamp)-\(i + 1)")
+            let full = base + ".full.png", small = base + ".png"
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            p.arguments = ["-x", "-D", String(index + 1), "-t", "png", full]
+            do { try p.run(); p.waitUntilExit() } catch { continue }
+            guard FileManager.default.fileExists(atPath: full) else { continue }
+            if !resized(full, width: Int(screen.frame.width), to: small) {
+                allSized = false
+                try? FileManager.default.copyItem(atPath: full, toPath: small)
+            }
+            let b = CGDisplayBounds(id)
+            let where_: [String: Double] = ["x": Double(b.minX), "y": Double(b.minY), "w": Double(b.width), "h": Double(b.height)]
+            if let d = try? JSONSerialization.data(withJSONObject: where_) { try? d.write(to: URL(fileURLWithPath: base + ".json")) }
+            readWords(full, into: base + ".see.json")
+            paths.append(small)
+            screens.append(screen)
+        }
+        shotScreens = screens
+        shotScreen = screens.first
+        shotPixelScale = allSized ? 1 : nil
+        return paths
     }
 
-    static func captureScreen() -> String? {
-        guard CGPreflightScreenCaptureAccess() else { return nil }
-        let path = (NSTemporaryDirectory() as NSString).appendingPathComponent("ox-buddy-\(Int(Date().timeIntervalSince1970 * 1000)).png")
+    /// The same picture at another width, in this process: sips cost a third of the capture.
+    private static func resized(_ file: String, width: Int, to out: String) -> Bool {
+        guard let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: file) as CFURL, nil),
+              let img = CGImageSourceCreateImageAtIndex(src, 0, nil), img.width > 0, width > 0 else { return false }
+        let height = Int((Double(img.height) * Double(width) / Double(img.width)).rounded())
+        guard let c = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return false }
+        c.interpolationQuality = .high
+        c.draw(img, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let small = c.makeImage(), let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: out) as CFURL, "public.png" as CFString, 1, nil) else { return false }
+        CGImageDestinationAddImage(dest, small, nil)
+        return CGImageDestinationFinalize(dest)
+    }
+
+    /// ox-hands reads the words in the background. The file appears whole or not at all, and ox reads them itself if it is not there yet.
+    private static func readWords(_ file: String, into out: String) {
+        guard let hands = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("OxHands"),
+              FileManager.default.isExecutableFile(atPath: hands.path) else { return }
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        // The display you are on, not always the main one: the pointer flies on the same one.
-        let (screen, index) = screenUnderMouse()
-        shotScreen = screen
-        p.arguments = ["-x"] + (index.map { ["-D", String($0)] } ?? ["-m"]) + ["-t", "png", path]
-        do {
-            try p.run()
+        p.executableURL = hands
+        p.arguments = ["see", file]
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = FileHandle.nullDevice
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard (try? p.run()) != nil else { return }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
             p.waitUntilExit()
-        } catch {
-            return nil
+            guard p.terminationStatus == 0, !data.isEmpty else { return }
+            let tmp = out + ".part"
+            if (try? data.write(to: URL(fileURLWithPath: tmp))) != nil { try? FileManager.default.moveItem(atPath: tmp, toPath: out) }
         }
-        guard FileManager.default.fileExists(atPath: path) else { return nil }
-        // Down to the screen's own points: a Retina PNG is over the image limit, and this way one
-        // screenshot pixel is one point, so the pointer needs no scaling.
-        if let w = screen?.frame.width {
-            let s = Process()
-            s.executableURL = URL(fileURLWithPath: "/usr/bin/sips")
-            s.arguments = ["--resampleWidth", String(Int(w)), path]
-            s.standardOutput = Pipe()
-            s.standardError = Pipe()
-            if (try? s.run()) != nil { s.waitUntilExit(); shotPixelScale = s.terminationStatus == 0 ? 1 : nil }
-        }
-        return path
     }
 }
 
 extension Buddy: AVAudioPlayerDelegate {
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        DispatchQueue.main.async { self.stopRecording(); self.finishSpeaking() }
+        DispatchQueue.main.async {
+            self.stopRecording()
+            if !self.playQueue.isEmpty {
+                let (p, f) = self.playQueue.removeFirst()
+                self.playRecording(p, file: f)
+            } else if self.fallbackText != nil {
+                self.speakFallback()
+            } else if !self.making {
+                self.finishSpeaking()
+            }
+        }
     }
 }
 
@@ -650,6 +789,85 @@ extension Buddy: AVSpeechSynthesizerDelegate {
 
     nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         DispatchQueue.main.async { self.finishSpeaking() }
+    }
+}
+
+// MARK: - the voice, kept warm
+
+/// `ox speak --serve`: one process that keeps the voice model in memory, started when you press the key.
+/// A fresh `ox speak` cost 3-6 s to load it for every reply. Gone after ten quiet minutes, and with the island.
+@MainActor final class SpeakWorker {
+    static let shared = SpeakWorker()
+    private var process: Process?
+    private var input: FileHandle?
+    private var waiting: [Int: (Bool) -> Void] = [:]
+    private var nextId = 0
+    private var buffer = Data()
+    private var idle: DispatchWorkItem?
+
+    func warm() {
+        keepUntilIdle()
+        guard process?.isRunning != true, let (node, cli) = OxRunner.paths() else { return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: node)
+        p.arguments = [cli, "speak", "--serve"]
+        p.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+        var e = ProcessInfo.processInfo.environment
+        e["OX_ISLAND"] = "0"; e["NO_COLOR"] = "1"
+        p.environment = e
+        let stdin = Pipe(), stdout = Pipe()
+        p.standardInput = stdin
+        p.standardOutput = stdout
+        p.standardError = FileHandle.nullDevice
+        stdout.fileHandleForReading.readabilityHandler = { [weak self] h in
+            let d = h.availableData
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.received(d) } }
+        }
+        p.terminationHandler = { [weak self] _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.process = nil
+                    self.input = nil
+                    let left = self.waiting
+                    self.waiting = [:]
+                    for (_, w) in left { w(false) }
+                }
+            }
+        }
+        do { try p.run(); process = p; input = stdin.fileHandleForWriting } catch { IslandLog.write("voice: could not start: \(error.localizedDescription)") }
+    }
+
+    func say(_ text: String, out: String, done: @escaping (Bool) -> Void) {
+        warm()
+        guard let input, process?.isRunning == true else { done(false); return }
+        nextId += 1
+        let id = nextId
+        waiting[id] = done
+        guard let d = try? JSONSerialization.data(withJSONObject: ["id": id, "text": text, "out": out] as [String: Any]) else { waiting[id] = nil; done(false); return }
+        do { try input.write(contentsOf: d + Data("\n".utf8)) } catch { waiting[id] = nil; done(false) }
+    }
+
+    private func received(_ d: Data) {
+        buffer.append(d)
+        while let nl = buffer.firstIndex(of: 10) {
+            let line = buffer.subdata(in: buffer.startIndex..<nl)
+            buffer.removeSubrange(buffer.startIndex...nl)
+            guard let j = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any], let id = j["id"] as? Int, let w = waiting.removeValue(forKey: id) else { continue }
+            w(j["ok"] as? Bool ?? false)
+        }
+    }
+
+    private func keepUntilIdle() {
+        idle?.cancel()
+        let w = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.waiting.isEmpty else { return }
+                try? self.input?.close()
+            }
+        }
+        idle = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 600, execute: w)
     }
 }
 

@@ -42,7 +42,7 @@ import { withWriteLock } from '../write-lock.js';
 import { guardCall, repairArgs } from '../run-guards.js';
 import { request_secret, SECRET_TOOL_SCHEMAS } from './secret.js';
 import { desktop, DESKTOP_TOOL_SCHEMAS } from './desktop.js';
-import { set_project, PROJECT_TOOL_SCHEMAS } from './project.js';
+import { set_project, start_session, PROJECT_TOOL_SCHEMAS, SIDE_SESSION_SCHEMA } from './project.js';
 
 export const TOOL_IMPLS = {
   read_file: readFileTool,
@@ -72,6 +72,7 @@ export const TOOL_IMPLS = {
   request_secret,
   desktop,
   set_project,
+  start_session,
   web_search: webSearchTool,
   library: async (args = {}) => {
     const L = await import('../library.js');
@@ -374,6 +375,8 @@ export function listToolSchemas(ctx = {}, strictSchemas = false) {
   if (ctx.enableSubagents !== false && !schemas.some((x) => x.name === 'subagent')) {
     schemas.push(subagentToolSchema());
   }
+  // The app's chats can offer a task of its own as a new chat; nothing else has anywhere to show the offer.
+  if (typeof ctx.onSideSession === 'function' && !schemas.some((x) => x.name === 'start_session')) schemas.push(SIDE_SESSION_SCHEMA);
   // Another agent or model. One that was itself asked gets no such tool (src/ask-agent.js).
   if (ctx.enableSubagents !== false && !Number(process.env.OX_ASK_DEPTH) && !schemas.some((x) => x.name === 'ask_agent')) {
     schemas.push(askAgentSchema());
@@ -786,6 +789,7 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
     if (webTaskOn && WEB_TASK_TOOLS.includes(n)) keep.add(n);
     if (critiqueOn && CRITIQUE_TOOLS.includes(n)) keep.add(n);
     if (n === 'ask_agent' && askOn) keep.add(n);
+    if (n === 'start_session') keep.add(n);
     if (agentOn && AGENT_MESSAGE_TOOLS.includes(n)) keep.add(n);
     if (canvasOn && CANVAS_TOOLS.includes(n)) keep.add(n);
     if (mediaOn && MEDIA_TOOLS.includes(n)) keep.add(n);
