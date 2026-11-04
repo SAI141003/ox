@@ -74,12 +74,28 @@ function askWithFrames({ spec, prompt, frames, cwd, env }) {
   });
 }
 
+/**
+ * The frames where the screen changed. A task on screen is mostly a still picture with small changes
+ * (a menu opens, a number appears): frames at even times or at scene cuts miss them. Evenly picked
+ * from the changed ones, the first and last always in.
+ */
+export function changedFrames(file, { max = 12, width = 1280, into = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-frames-')), run = spawnSync } = {}) {
+  run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', file, '-vf', `fps=2,mpdecimate=hi=512:lo=200:frac=0.002,scale=${width}:-2`, '-fps_mode', 'vfr', '-frames:v', '600', '-q:v', '4', path.join(into, 'c%04d.jpg')], { stdio: 'ignore', timeout: 300_000 });
+  const all = fs.readdirSync(into).filter((f) => /^c\d+\.jpg$/.test(f)).sort().map((f) => path.join(into, f));
+  return pickEvenly(all, max);
+}
+
+export function pickEvenly(list, max) {
+  if (list.length <= max) return list;
+  return Array.from({ length: max }, (_, i) => list[Math.round((i * (list.length - 1)) / (max - 1))]);
+}
+
 /** A recording → a skill. `ask` stands in for the model in tests. */
 export async function learnFromRecording(file, { name = null, bot = null, force = false, home = os.homedir(), env = process.env, ask = askWithFrames, see = understand, maxFrames = 12 } = {}) {
   const full = path.resolve(file);
   if (!fs.existsSync(full)) throw new Error(`no recording at ${full}`);
-  const raw = see(full, { maxFrames, width: 1280 });
-  const seen = { ...raw, frames: raw.frames.map((f) => (typeof f === 'string' ? f : f.file ?? f.path)) };
+  const raw = see(full, { maxFrames: see === understand ? 1 : maxFrames, width: 1280 });
+  const seen = { ...raw, frames: see === understand ? changedFrames(full, { max: maxFrames, into: path.dirname(raw.frames[0].file) }) : raw.frames.map((f) => (typeof f === 'string' ? f : f.file ?? f.path)) };
   try {
     const prompt = `${TEACH_SYSTEM}\n\nThe recording is ${Math.round(seen.duration)} s long; ${seen.frames.length} frames follow, in time order.\n\nWhat they said:\n${seen.text || '(nothing: there is no speech)'}`;
     const r = await ask({ spec: bot, prompt, frames: seen.frames, cwd: os.tmpdir(), env });

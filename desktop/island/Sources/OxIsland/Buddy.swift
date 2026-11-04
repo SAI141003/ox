@@ -486,7 +486,7 @@ final class Buddy: NSObject, ObservableObject {
     private func showPointer(_ p: ScreenPoint) {
         guard let screen = Buddy.shotScreen ?? NSScreen.main else { return }
         // Screenshot pixels -> screen points (AppKit's origin is bottom-left).
-        let scale = screen.backingScaleFactor
+        let scale = Buddy.shotPixelScale ?? screen.backingScaleFactor
         let target = CGPoint(x: screen.frame.minX + p.x / scale, y: screen.frame.maxY - p.y / scale)
         pointer?.close()
         let o = PointerOverlay(screen: screen, target: target, label: p.label)
@@ -588,6 +588,7 @@ final class Buddy: NSObject, ObservableObject {
     /// request put its permission window up each time you spoke ("open Chrome"
     /// needs no screenshot). Turn it on once from the island's menu.
     static var shotScreen: NSScreen?
+    static var shotPixelScale: CGFloat?
 
     /// The screen the mouse is on, and its number for screencapture's -D (1 is the first active display).
     static func screenUnderMouse() -> (NSScreen?, Int?) {
@@ -616,7 +617,18 @@ final class Buddy: NSObject, ObservableObject {
         } catch {
             return nil
         }
-        return FileManager.default.fileExists(atPath: path) ? path : nil
+        guard FileManager.default.fileExists(atPath: path) else { return nil }
+        // Down to the screen's own points: a Retina PNG is over the image limit, and this way one
+        // screenshot pixel is one point, so the pointer needs no scaling.
+        if let w = screen?.frame.width {
+            let s = Process()
+            s.executableURL = URL(fileURLWithPath: "/usr/bin/sips")
+            s.arguments = ["--resampleWidth", String(Int(w)), path]
+            s.standardOutput = Pipe()
+            s.standardError = Pipe()
+            if (try? s.run()) != nil { s.waitUntilExit(); shotPixelScale = s.terminationStatus == 0 ? 1 : nil }
+        }
+        return path
     }
 }
 

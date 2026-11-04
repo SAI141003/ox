@@ -10514,9 +10514,9 @@ export async function main(argv = []) {
     return;
   }
   if (print && flags.buddy) {
-    const { buddyGuidance, pngSize } = await import('./buddy.js');
+    const { buddyGuidance, pngSize, shrinkShot } = await import('./buddy.js');
     let size = null;
-    try { size = pngSize(fs.readFileSync(flags.images?.[0])); } catch {}
+    try { if (flags.images?.[0]) shrinkShot(flags.images[0]); size = pngSize(fs.readFileSync(flags.images?.[0])); } catch {}
     words.push(`\n\n${buddyGuidance({ size, voice: true, act: !!flags.buddyAct })}`);
   }
   if (print) {

@@ -2269,6 +2269,8 @@
     const activeController = runningControllers.get(sessionId);
     if (activeController && !queued) {
       const typed = input.value.trim() || attachments.length || photos.length;
+      // A command is for ox, not for the model: it runs now, never queued as words to send.
+      if (!attachments.length && !photos.length && /^\/[\w-]+(?!\/)/.test(input.value.trim()) && await runSlash(input.value.trim())) return;
       if (typed) queueFollowUp(); else activeController.abort();
       return;
     }

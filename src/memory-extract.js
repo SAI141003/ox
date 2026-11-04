@@ -24,10 +24,12 @@ const inboxFile = (home = os.homedir()) => path.join(path.dirname(memoryFile('us
 // A statement about the user or their world, not a question or a request to do something now.
 const FIRST_PERSON = /\b(i|i'm|im|i've|we|we're|we've|my|our)\b/i;
 const REQUEST = /^(?:can|could|would|will) (?:you|u)\b|^(?:please\s+)?(?:clear|clean|install|update|fix|make|build|write|create|add|remove|delete|run|open|show|tell|find|check|explain|help|give|send|update|change|refactor|deploy|install)\b/i;
+// Asking for something anywhere in the sentence is a request, however it starts ("In the Calculator on my screen, do it for me").
+const ASKING = /\b(?:do (?:it|this|that) for me|for me[:,.]|tell me|show me|help me|work out|figure out|on my screen|in my (?:mac|computer|laptop|browser))\b/i;
 export function worthKeeping(sentence) {
   const s = String(sentence ?? '').trim();
   if (s.length < 12 || s.length > 300 || /\?\s*$/.test(s)) return false;
-  if (!FIRST_PERSON.test(s) || REQUEST.test(s)) return false;
+  if (!FIRST_PERSON.test(s) || REQUEST.test(s) || ASKING.test(s)) return false;
   return !screenPersistText(s, 'memory', 'ox memory');
 }
 

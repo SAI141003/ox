@@ -299,6 +299,7 @@ test('ox ask: names map to plans, a read stays read-only, work lands, and no age
 test('memory: a request is not a memory, a fact stops growing, and a pass leaves no pile of lines', async () => {
   const { worthKeeping } = await import('../src/memory-extract.js');
   assert.equal(worthKeeping('Clear caches and logs in my mac'), false);
+  assert.equal(worthKeeping('In the Calculator app on my screen, do it for me: clear it, and tell me the result.'), false);
   assert.equal(worthKeeping('I moved to Berlin last spring with my family'), true);
   const { remember, memoryFile, load } = await import('../src/memory-graph.js');
   const { sleep } = await import('../src/memory-layer.js');
@@ -363,4 +364,22 @@ test('ox teach: a recording becomes a skill; a secret or no clear task saves not
     assert.equal(fs.existsSync(path.join(home, '.ox', 'skills', 'leak')), false);
     await assert.rejects(T.learnFromRecording(video, { see, ask: answer({ name: 'Export Report', description: 'd', body: 'b' }) }), /exists/);
   } finally { if (saved === undefined) delete process.env.OX_HOME; else process.env.OX_HOME = saved; }
+});
+
+test('a Retina screenshot is made small enough to send', async () => {
+  const { shrinkShot } = await import('../src/buddy.js');
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-shot-')), 's.png');
+  const png = (w) => { const b = Buffer.alloc(24); b.writeUInt32BE(0x89504e47, 0); b.writeUInt32BE(w, 16); b.writeUInt32BE(100, 20); return b; };
+  const calls = [];
+  fs.writeFileSync(f, png(2940));
+  shrinkShot(f, { run: (...a) => calls.push(a) });
+  assert.deepEqual(calls[0].slice(0, 2), ['sips', ['--resampleWidth', '1568', f]]);
+  fs.writeFileSync(f, png(1200));
+  shrinkShot(f, { run: () => assert.fail('already small') });
+});
+
+test('teach picks frames evenly, first and last in', async () => {
+  const { pickEvenly } = await import('../src/teach.js');
+  assert.deepEqual(pickEvenly([1, 2, 3], 5), [1, 2, 3]);
+  assert.deepEqual(pickEvenly([0, 1, 2, 3, 4, 5, 6, 7, 8], 3), [0, 4, 8]);
 });

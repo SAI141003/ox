@@ -23,6 +23,17 @@ export function captureScreen({ dir = os.tmpdir(), run = execFileSync } = {}) {
   const file = path.join(dir, `ox-screen-${Date.now()}.png`);
   run('screencapture', ['-x', '-m', '-t', 'png', file], { stdio: 'ignore', timeout: 10_000 });
   if (!fs.existsSync(file)) throw new Error('screen capture failed: grant Screen Recording to your terminal in System Settings > Privacy & Security');
+  return shrinkShot(file, { run });
+}
+
+/**
+ * A Retina screen is 7 MB as a PNG, over the 5 MB image limit, so every question about it failed.
+ * Smaller also costs fewer tokens and reads just as well. Returns the same path, made smaller.
+ */
+export function shrinkShot(file, { width = 1568, run = execFileSync } = {}) {
+  const size = (() => { try { return pngSize(fs.readFileSync(file)); } catch { return null; } })();
+  if (!size || size.width <= width) return file;
+  try { run('sips', ['--resampleWidth', String(width), file], { stdio: 'ignore', timeout: 15_000 }); } catch {}
   return file;
 }
 
