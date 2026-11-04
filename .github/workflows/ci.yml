@@ -1,0 +1,24 @@
+# The test suite on every push and pull request. Releases run their own copy.
+name: ci
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['v*']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci --omit=dev --no-audit --no-fund
+      - run: OX_ISLAND=0 OX_LEARN=0 OX_NO_KEYSTORE=1 OX_USAGE_LOG=0 OX_NO_PLUGINS=1 OX_NO_BUILTIN_SKILLS=1 node scripts/verify.mjs --only unit
