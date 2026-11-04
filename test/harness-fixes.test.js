@@ -155,3 +155,13 @@ test('removing a server from a trusted .mcp.json keeps it trusted; an untrusted 
   assert.equal(removeOne('b').status, 0);
   assert.equal(trust("console.log(t.projectFileTrusted(process.cwd(), '.mcp.json'))"), 'true');
 });
+
+test('with nobody watching, bash writing to startup files is refused; reading them is not', async () => {
+  const { bashProtectedWrite } = await import('../src/tools/exec.js');
+  for (const c of ['echo x >> ~/.zshrc', 'echo x > $HOME/.bashrc', 'cat k | tee -a ~/.ssh/authorized_keys', 'cp evil ~/Library/LaunchAgents/a.plist', 'sed -i "" s/a/b/ ~/.profile', 'mv x "$HOME/.claude/settings.json"', 'ln -s x ~/.zshrc']) {
+    assert.ok(bashProtectedWrite(c), c);
+  }
+  for (const c of ['cat ~/.zshrc', 'grep x ~/.ssh/config', 'echo x > ./notes.txt', 'npm test', 'echo ~/.zshrc']) {
+    assert.equal(bashProtectedWrite(c), false, c);
+  }
+});

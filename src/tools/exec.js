@@ -361,10 +361,19 @@ function capCombined(stdout, stderr, query = null) {
   return { stdout: stdout.slice(0, o), stderr: stderr.slice(0, e), truncated: true };
 }
 
+// A command that writes to what runs later with your full rights. Best effort: a shell can
+// always hide a path, so this catches the plain forms and is no boundary. The sandbox is.
+const STARTUP_PATH = '(?:~|\\$HOME|\\$\\{HOME\\})/(?:\\.zshrc|\\.zshenv|\\.zprofile|\\.zlogin|\\.bashrc|\\.bash_profile|\\.bash_login|\\.profile|\\.gitconfig|\\.ssh/|\\.claude/|\\.codex/|\\.cursor/|\\.gemini/|\\.factory/|Library/LaunchAgents/|\\.config/autostart/|\\.config/systemd/)';
+const WRITES_STARTUP = new RegExp(`(?:>>?\\s*["']?${STARTUP_PATH}|\\b(?:tee|cp|mv|ln|sed\\s+-i|install|rsync|dd|chmod|chown|rm|touch)\\b[^;|&]*?["']?${STARTUP_PATH})`);
+export const bashProtectedWrite = (command) => WRITES_STARTUP.test(String(command ?? ''));
+
 export async function bashTool(args = {}, ctx = {}) {
   const command = typeof args.command === 'string' ? args.command : '';
   if (!command.trim()) {
     return err("bash: 'command' is required.");
+  }
+  if (ctx?.yolo && bashProtectedWrite(command)) {
+    return err("bash: refusing to change a startup file, SSH key or another agent's settings with nobody watching: it runs later with your full rights. Do this one with approvals on.");
   }
   const norm = normalizeCommand(command);
   for (const entry of CATASTROPHIC) {
