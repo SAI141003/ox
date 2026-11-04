@@ -18,6 +18,12 @@ ox is a coding agent that has to prove its work. It writes a failing test before
 
 **Updates that install themselves.** Downloaded copies can now update from inside the app, after a checksum check. A new release only goes live once every build has passed, so the installer never hands out a half-uploaded one. Turn on update checks once, and tick automatic if you want it hands-off.
 
+## The bots system
+
+A bot is simply who answers: a model from a provider, a plan you already pay for, a model on your own machine, your own endpoint, or a model on another of your computers. Pick one, or leave it on Auto and ox chooses for the task. You can also make your own agents, each with its own instructions, mode and tools.
+
+You choose who gets your prompt. If you name a model and it can't answer, ox only moves to another model from the same provider, or to backups you listed yourself, and it says when it does.
+
 ## The memory layer
 
 ox's memory lives on your machine, as a graph of facts rather than a growing pile of notes. When something changes ("works at Stripe" replacing "works at Google"), the new fact takes over and the old one keeps its dates, so ox can still answer what was true in March. "Next Friday" is saved as the actual date.
@@ -28,7 +34,7 @@ A background pass runs every six hours and never deletes anything. It folds dupl
 
 ## How we keep token use down
 
-- **A small prompt.** Against Hermes on the same model, ox sends about 2,000 tokens per request instead of about 11,000, and makes one request per answer instead of three.
+- **A small prompt.** In a side-by-side test against another open-source agent on the same model, ox sent about 2,000 tokens per request instead of about 11,000, and made one request per answer instead of three.
 - **Only the tools a turn needs.** A simple turn might get 8 tools out of 49, and that list stays the same across a session.
 - **Skills as an index.** Hundreds of skills cost around 600 tokens a turn, because only an index is sent.
 - **Answers from a graph.** Asking the code graph took 132× fewer tokens than opening whole files, on five questions about ox itself. For docs and memory, the figure was 39×.
