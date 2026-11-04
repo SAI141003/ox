@@ -64,6 +64,7 @@
   .seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); }
   .seg button { padding: 5px 12px; border-radius: 6px; font-size: 13px; color: var(--muted); }
   .seg button.on { background: var(--raise); color: var(--text); box-shadow: 0 0 0 1px var(--line2); }
+  .view > .page-tabs { flex: none; align-self: flex-start; margin: 14px 0 0 24px; }
   @keyframes pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
 
   /* ---------- shell */
@@ -120,6 +121,8 @@
   .nav { padding: 8px 8px 4px; display: flex; flex-direction: column; gap: 1px; }
   .nav-more { display: flex; flex-direction: column; gap: 1px; }
   .nav-more[hidden] { display: none; }
+  .nav button[hidden] { display: none; }
+  #bots .card .d { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .nav-more-btn[aria-expanded="true"] [data-i] { transform: rotate(45deg); }
   .nav button { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; color: var(--muted); text-align: left; font-size: 13.5px; }
   .nav button:hover { background: var(--hover); color: var(--text); }
@@ -416,8 +419,8 @@
   .repo-menu button:hover, .repo-menu button.on { background: var(--hover); }
   .repo-menu .p { font: 11px var(--mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   /* The side panel (Codex-style): a rail on the right; tabs for the team, a terminal, a browser and files, per session. */
-  #v-chat.sp { display: grid; grid-template-columns: minmax(300px, 1fr) 7px var(--sp-w, 46%) 42px; grid-template-rows: minmax(0, 1fr) auto; }
-  #v-chat.rail-only { display: grid; grid-template-columns: minmax(0, 1fr) 42px; grid-template-rows: minmax(0, 1fr) auto; }
+  #v-chat.on.sp { display: grid; grid-template-columns: minmax(300px, 1fr) 7px var(--sp-w, 46%) 42px; grid-template-rows: minmax(0, 1fr) auto; }
+  #v-chat.on.rail-only { display: grid; grid-template-columns: minmax(0, 1fr) 42px; grid-template-rows: minmax(0, 1fr) auto; }
   #v-chat.sp > .thread, #v-chat.rail-only > .thread { grid-column: 1; grid-row: 1; }
   #v-chat.sp > .composer, #v-chat.rail-only > .composer { grid-column: 1; grid-row: 2; }
   #v-chat.sp.sp-max { grid-template-columns: 0 0 1fr 42px; }
@@ -888,7 +891,7 @@
         <button id="nav-more-btn" class="nav-more-btn" aria-expanded="false" aria-controls="nav-more"><span data-i="plus"></span><span class="grow">More</span></button>
         <div id="nav-more" class="nav-more" hidden>
         <button data-view="review"><span data-i="check"></span><span class="grow">Code Review</span></button>
-        <button data-view="gallery"><span data-i="office"></span><span class="grow">Agent gallery</span></button>
+        <button data-view="gallery"><span data-i="office"></span><span class="grow">Agents</span></button>
         <button data-view="flows"><span data-i="flow"></span><span class="grow">Automations</span></button>
         <button data-view="tasks"><span data-i="list"></span><span class="grow">Task board</span></button>
         <button data-view="library"><span data-i="list"></span><span class="grow">Library</span></button>
@@ -1398,11 +1401,27 @@
   const convo = () => convos.find((c) => c.id === current);
 
   // ---------- views
+  // Pages about the same thing share one entry in the sidebar, and tabs at their top.
+  const PAGE_GROUPS = [['gallery', 'canvas'], ['flows', 'sched'], ['tasks', 'mission'], ['caps', 'market']];
+  const groupOf = (v) => PAGE_GROUPS.find((g) => g.includes(v));
+  for (const g of PAGE_GROUPS) for (const v of g.slice(1)) { const b = document.querySelector(`.nav [data-view="${v}"]`); if (b) b.hidden = true; }
+  function pageTabs(v) {
+    document.querySelectorAll('.view > .page-tabs').forEach((t) => t.remove());
+    const g = groupOf(v);
+    if (!g) return;
+    const bar = document.createElement('div');
+    bar.className = 'page-tabs seg';
+    bar.setAttribute('role', 'tablist');
+    bar.innerHTML = g.map((x) => `<button role="tab" data-tab-view="${x}" aria-selected="${x === v}" class="${x === v ? 'on' : ''}">${esc(document.querySelector(`.nav [data-view="${x}"] .grow`)?.textContent ?? x)}</button>`).join('');
+    bar.querySelectorAll('button').forEach((b) => (b.onclick = () => show(b.dataset.tabView)));
+    $(`v-${v}`)?.prepend(bar);
+  }
   function show(v) {
     if (v !== 'chat' && v === besideView) { $('pane2').querySelector('.page, .thread, .split')?.focus?.(); toast(`${viewTitle(v)} is open beside the chat`); return; }
     view = v;
     document.querySelectorAll('.view').forEach((el) => el.classList.toggle('on', el.id === `v-${v}`));
-    document.querySelectorAll('.nav [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
+    document.querySelectorAll('.nav [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === (groupOf(v)?.[0] ?? v)));
+    pageTabs(v);
     if ($('nav-more')?.querySelector(`[data-view="${v}"]`) && $('nav-more').hidden) setNavMore(true);
     $('title').textContent = v === 'map' ? 'Project map' : v === 'studio' ? 'Studio' : v === 'review' ? 'Code Review' : v === 'market' ? 'Marketplace' : v === 'caps' ? 'Capabilities' : v === 'msg' ? 'Messaging' : v === 'sched' ? 'Scheduled' : v === 'bots' ? 'Bots' : v === 'office' ? 'Office' : v === 'flows' ? 'Automations' : v === 'tasks' ? 'Task board' : v === 'gallery' ? 'Agents' : v === 'mission' ? 'Mission map' : v === 'library' ? 'Library' : v === 'canvas' ? 'Sessions canvas' : (readonly ? readonly.title : convo()?.title || 'New session');
     document.body.classList.remove('nav');
@@ -2713,7 +2732,8 @@
         }
       }
     } catch (e) {
-      reply.error = e.name === 'AbortError' ? 'Stopped.' : plainDash(e.message);
+      // What a browser says when the connection drops ("Load failed", "Failed to fetch") means nothing to anyone.
+      reply.error = e.name === 'AbortError' ? 'Stopped.' : /^(load failed|failed to fetch|networkerror)/i.test(String(e.message)) ? 'ox stopped answering, most likely because it restarted. Send it again.' : plainDash(e.message);
       ok = false;
     } finally {
       reply.pending = false; c.updated = Date.now();
@@ -4046,8 +4066,8 @@ files: [src/billing/**]
       ].find(([needle]) => key.includes(needle));
       const letters = String(name || '?').split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase().slice(0, 2) || '?';
       if (!known) return `<span class="market-logo" style="background:linear-gradient(145deg,#363b4b,#20232c)" aria-hidden="true">${esc(letters)}</span>`;
-      const [, slug, color] = known;
-      return `<span class="market-logo" style="background:${color}" title="${esc(name)} logo"><span aria-hidden="true">${esc(letters)}</span><img src="https://cdn.simpleicons.org/${slug}/ffffff" alt="" loading="lazy" onerror="this.remove()"></span>`;
+      const [, , color] = known;
+      return `<span class="market-logo" style="background:${color}" title="${esc(name)} logo"><span aria-hidden="true">${esc(letters)}</span></span>`;
     };
     const list = mkTab === 'plugins'
       ? d.plugins.filter((p) => !mkCat || p.category === mkCat).map((p) => `<div class="card market-card">${marketLogo(p.name, `${p.catalog} ${p.author || ''}`)}<span class="t"><div class="n">${esc(p.name)} ${p.category ? `<span class="badge">${esc(p.category)}</span>` : ''}</div><div class="d"><span>${esc(p.description)}</span></div>${p.author ? `<div class="d" title="${esc(p.catalog)}"><span>${esc(p.author)}</span></div>` : ''}</span>${btn(p.installed, `data-inst-name="${esc(p.name)}" data-inst-cat="${esc(p.catalog)}"`)}</div>`)

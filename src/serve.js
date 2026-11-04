@@ -2204,7 +2204,11 @@ async function meshUp() {
       ...(process.env.OX_MESH_PORT ? { port: Number(process.env.OX_MESH_PORT), proxyPort: Number(process.env.OX_MESH_PROXY_PORT) || 0, beacon: false } : {}),
     });
     return meshNode;
-  })().catch((e) => { meshStarting = null; throw e; });
+  })().catch((e) => {
+    meshStarting = null;
+    if (e.code === 'EADDRINUSE') e.message = 'Another copy of ox on this computer is already connected to your machines. Use that one.';
+    throw e;
+  });
   return meshStarting;
 }
 async function meshView() {
@@ -2859,7 +2863,7 @@ const ROUTES = [
     if (!ask) throw new Error('no model is set up: run ox doctor');
     const pinned = typeof body?.bot === 'string' && body.bot ? body.bot : null;
     const A = await import('./ask-agent.js');
-    const buildConfig = loadConfig({ cwd: dir });
+    const buildConfig = readConfigDoc();
     const lineup = Array.isArray(body?.bots) ? body.bots.map(String) : pinned ? [] : await A.teamLineup(buildConfig).catch(() => []);
     const askWith = async (spec, q) => (await (await import('./quick-text.js')).quickText(resolveBot(spec, buildConfig), { ...q, maxTokens: 4000 })).text;
     const room = BR.startBuild({ task, dir, agents: body?.agents, ask, askWith, bots: lineup.length > 1 ? lineup : [], bot: pinned, sessionId: typeof body?.sessionId === 'string' ? body.sessionId : null });
