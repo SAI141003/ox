@@ -756,6 +756,8 @@ final class IslandChat: ObservableObject {
 
     init() {
         folder = UserDefaults.standard.string(forKey: "chat.folder") ?? FileManager.default.homeDirectoryForCurrentUser.path
+        // A request can name an agent before the chat tray was ever opened.
+        loadAgents()
     }
 
     var folderName: String { (folder as NSString).lastPathComponent }
@@ -814,14 +816,52 @@ final class IslandChat: ObservableObject {
             }
             return
         }
+        // A long run is going: a spoken question about the screen only reads, so it does not wait
+        // for that run to end. It used to sit in the queue, unanswered, for minutes.
+        if busy, onReply != nil {
+            let held = shots
+            VoiceServer.ask(text, offlineOnly: true) { [weak self] r in
+                guard let self else { return }
+                if r?.route == "screen" { self.lookWhileBusy(text, shots: held, bridge: bridge, onReply: onReply) }
+                else { self.enqueue(text, bridge: bridge, onReply: onReply) }
+            }
+            return
+        }
         if busy {
-            queued.append((text, bridge, onReply))
-            lines.append(Line(mine: true, text: text))
-            lines.append(Line(mine: false, text: "Queued: I'll do this next (\(queued.count) waiting)."))
-            IslandLog.write("queued: \(text)")
+            enqueue(text, bridge: bridge, onReply: onReply)
             return
         }
         start(text, bridge: bridge, onReply: onReply, echo: true)
+    }
+
+    private func enqueue(_ text: String, bridge: OxBridge, onReply: ((String) -> Void)?) {
+        guard busy else { start(text, bridge: bridge, onReply: onReply, echo: true); return }
+        queued.append((text, bridge, onReply))
+            lines.append(Line(mine: true, text: text))
+            lines.append(Line(mine: false, text: "Queued: I'll do this next (\(queued.count) waiting)."))
+        IslandLog.write("queued: \(text)")
+    }
+
+    /// Its own short process beside the running one: it touches neither the run nor its reply handler.
+    private func lookWhileBusy(_ text: String, shots given: [String], bridge: OxBridge, onReply: ((String) -> Void)?) {
+        let shots = given.isEmpty ? MainActor.assumeIsolated { () -> [String] in
+            bridge.buddy.clearOverlays()
+            return Buddy.captureScreens()
+        } : given
+        guard !shots.isEmpty else {
+            enqueue(text, bridge: bridge, onReply: onReply)
+            return
+        }
+        IslandLog.write("screen question while a run is going: looking now")
+        lines.append(Line(mine: true, text: text))
+        OxRunner.run(["--mode", "ask", "--buddy"] + shots.flatMap { ["--image", $0] } + ["-p", text], cwd: URL(fileURLWithPath: folder), env: ["OX_MCP": "0"]) { [weak self] _, out in
+            guard let self else { return }
+            let answer = Shelf.clean(out).split(separator: "\n").filter { !$0.hasPrefix("! ") }.last.map(String.init) ?? "I couldn't look at that."
+            let shown = Buddy.parseMarks(answer).0.replacingOccurrences(of: #"\[POINT:[^\]]*\]"#, with: "", options: [.regularExpression, .caseInsensitive]).trimmingCharacters(in: .whitespacesAndNewlines)
+            self.lines.append(Line(mine: false, text: shown.isEmpty ? answer : shown))
+            IslandLog.write("replied (while busy): \(answer.prefix(200))")
+            onReply?(answer)
+        }
     }
 
     private func start(_ text: String, bridge: OxBridge, onReply: ((String) -> Void)?, echo: Bool) {

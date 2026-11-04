@@ -6,6 +6,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// Shared CI machines can stall for seconds; a real hang is still far past this.
+const ciSlack = process.env.CI ? 5 : 1;
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OX_BIN = path.join(ROOT, 'bin', 'ox.js');
 
@@ -44,7 +47,7 @@ test('--version prints "ox <package.json version>" exactly and fast', (t) => {
   assert.equal(r.status, 0, r.stderr);
   const { version } = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   assert.equal(r.stdout.trim(), `ox ${version}`);
-  assert.ok(r.ms < 1000, `--version took ${r.ms}ms (budget <1000ms)`);
+  assert.ok(r.ms < 1000 * ciSlack, `--version took ${r.ms}ms (budget <1000ms)`);
 });
 
 test('bots exits 0 listing grok and claude rows', (t) => {

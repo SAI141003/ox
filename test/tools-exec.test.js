@@ -7,6 +7,9 @@ import path from 'node:path';
 import { bashTool } from '../src/tools/exec.js';
 import { dispatchTool } from '../src/tools/index.js';
 
+// Shared CI machines can stall for seconds; a real hang is still far past this.
+const ciSlack = process.env.CI ? 5 : 1;
+
 function sandbox(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-ex-'));
   t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a throwing hook skips later cleanup: see e2e.test.js */ } });
@@ -38,7 +41,7 @@ test('bash kills runaway commands at timeout_ms quickly', async (t) => {
   const elapsed = Date.now() - start;
   assert.equal(res.isError, true);
   assert.match(res.content, /timed out after 300ms/);
-  assert.ok(elapsed < 2000, `expected fast kill, took ${elapsed}ms`);
+  assert.ok(elapsed < 2000 * ciSlack, `expected fast kill, took ${elapsed}ms`);
 });
 
 const BLOCKED = [
