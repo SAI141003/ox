@@ -175,23 +175,25 @@ export function queryKnowledge(g, question, { budget = 800, seeds: maxSeeds = 8 
   const idf = (w) => Math.log(1 + (pieces.length - df.get(w) + 0.5) / (df.get(w) + 0.5));
   const pairs = q.length > 1 ? q.slice(1).map((w, k) => `${q[k]} ${w}`) : [];
   const K1 = 1.2, B = 0.75;
+  const allWeight = q.reduce((sum, w) => sum + idf(w), 0) || 1;
   const score = (n) => {
     const b = bag.get(n.id);
     if (!b) return 0;
-    let s = 0, hit = 0;
+    let s = 0, hit = 0, weight = 0;
     for (const w of q) {
       const tf = b.tf.get(w) ?? 0;
       let ws = tf ? idf(w) * (tf * (K1 + 1)) / (tf + K1 * (1 - B + B * b.len / avgLen)) : 0;
       if (b.own.has(w)) ws += 2.5 * idf(w);
       else if (b.above.has(w)) ws += 0.4 * idf(w);
-      if (ws) { s += ws; hit++; }
+      if (ws) { s += ws; hit++; weight += idf(w); }
     }
     if (!hit) return 0;
     // Two question words side by side in the text: "sandbox profiles", "prompt cache".
     if (pairs.length) { const seq = b.seq.join(' '); for (const p of pairs) if (seq.includes(p)) s += 1.5; }
     // A heading with next to nothing under it answers nothing.
     const thin = b.len < 12 ? 0.35 : 1;
-    return (s * (hit / q.length) + (n.kind === 'fact' || n.kind === 'note' ? 0.5 : 0)) * thin;
+    // How much of the question it covers, with its rare words counting most.
+    return (s * (weight / allWeight) + (n.kind === 'fact' || n.kind === 'note' ? 0.5 : 0)) * thin;
   };
   const ranked = g.nodes.map((n) => [n, score(n)]).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
   const seeds = ranked.slice(0, maxSeeds).map(([n]) => n);
