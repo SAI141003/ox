@@ -10560,12 +10560,13 @@ export async function main(argv = []) {
     const shown = process.env.OX_BUDDY_SEE !== 'numbered' && seen ? { ...seen, items: [], text: '' } : seen;
     words.push(`\n\n${buddyGuidance({ size, voice: true, act: !!flags.buddyAct, seen: shown })}`);
     if (!flags.buddyAct) process.env.OX_QUICK_LOOK = '1';
-    // A look at the screen should come back in seconds, whatever the default is: the plans
-    // answered in 11 and 18 s where a default that thinks at length took minutes.
+    // A look at the screen should come back in seconds, whatever the default is: the ChatGPT
+    // plan answered in 11 s where a default that thinks at length took minutes. Never the
+    // Claude plan unasked: Anthropic keeps Claude logins for its own apps (src/serve.js).
     if (!flags.buddyAct && !flags.bot && !flags.model) {
       const { runnable, refreshPlans } = await import('./serve.js');
       await refreshPlans().catch(() => {});
-      flags.bot = ['chatgpt-plan', 'claude-plan'].find((b) => runnable(b)) ?? flags.bot;
+      if (runnable('chatgpt-plan')) flags.bot = 'chatgpt-plan';
     }
     opts.sayFailure = plainFailure;
     opts.rewriteReply = (text) => rewritePoints(text, seen, parsePoint, {
