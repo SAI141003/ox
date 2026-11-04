@@ -5,6 +5,7 @@ import { resolveBot, defaultBotSpec, autoDefaultBot } from './bots.js';
 import { pickForRole, STRATEGIES } from './model-registry.js';
 import { resolveMaxCostUsd } from './cost.js';
 import { pluginMcpServers } from './plugins.js';
+import { projectFileTrusted, warnUntrusted } from './project-trust.js';
 
 export const CONFIG_DIR = path.join(os.homedir(), '.ox');
 
@@ -134,7 +135,8 @@ function sanitizePolicyMap(raw) {
 
 export function readMcpPolicyDocs(cwd = process.cwd()) {
   const homeDoc = readJsonFile(path.join(CONFIG_DIR, 'config.json')) || {};
-  const projDoc = readJsonFile(path.join(cwd, '.ox.json')) || {};
+  // A repository cannot pre-approve its own servers (src/project-trust.js).
+  const projDoc = (projectFileTrusted(cwd, '.ox.json') ? readJsonFile(path.join(cwd, '.ox.json')) : null) || {};
   const homePolicy = sanitizePolicyMap(homeDoc.mcpPolicy);
   const projPolicy = sanitizePolicyMap(projDoc.mcpPolicy);
   const origins = {};
@@ -287,7 +289,10 @@ export function loadConfig(overrides = {}) {
 
   const cwd = firstDefined(ov.cwd) || process.cwd();
 
-  const project = readJsonFile(path.join(cwd, '.mcp.json')) || {};
+  // A repository's MCP servers are commands its author chose (src/project-trust.js).
+  const projectMcpTrusted = projectFileTrusted(cwd, '.mcp.json');
+  if (!projectMcpTrusted) warnUntrusted(cwd, '.mcp.json', "this repository's own MCP servers, which run commands", 'ox mcp trust');
+  const project = (projectMcpTrusted ? readJsonFile(path.join(cwd, '.mcp.json')) : null) || {};
   // Plugin-contributed servers rank lowest: your own config always wins a name.
   let fromPlugins = {};
   try {

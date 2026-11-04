@@ -315,7 +315,7 @@ test('keyword lists are case-insensitive word-ish signals with no overlap holes'
 // Exact names only: a bare includes() on "mcp__db__a" is satisfied by
 // "mcp__db__alert", which makes the assertion pass for the wrong reason.
 function listedNames(line) {
-  const body = line.split('available if asked: ')[1] ?? '';
+  const body = line.split('one load_tools call away: ')[1] ?? '';
   return body
     .split(', ')
     .map((n) => n.trim())
@@ -367,7 +367,7 @@ test('10. end-to-end: the withheld inventory reaches the wire system prompt', as
   }
   // the line is a bare name list, capped so it stays cheap on every turn; the
   // overflow is reported as a count rather than silently dropping the tail.
-  const listed = systemLine.split('available if asked: ')[1];
+  const listed = systemLine.split('one load_tools call away: ')[1];
   assert.ok(listed.length < 220, `line must stay cheap, got ${listed.length} chars`);
   if (withheld.length > WITHHELD_LIST_CAP) {
     assert.ok(listed.includes(`+${withheld.length - WITHHELD_LIST_CAP} more`), `overflow counted: ${listed}`);

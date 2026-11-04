@@ -24,6 +24,7 @@ const env = {
   OX_HOME: isolated('.ox'),
   OX_ISLAND: '0',
   OX_LEARN: '0',
+  OX_TRUST_PROJECT_FILES: '1',
   OX_NO_KEYSTORE: '1',
   OX_USAGE_LOG: '0',
   OX_MEMORY_HOME: isolated('.ox', 'memory'),

@@ -459,6 +459,7 @@ export class BuildRoom extends EventEmitter {
     // Not reached is not approved: the build goes on, and says so.
     this.emitEv({ type: 'review', agent: member.name, reviewer, round, verdict: unreached && verdict === 'pass' ? 'unreviewed' : verdict, comments });
     this.status(reviewer, 'waiting', '');
+    if (unreached) member.unreviewed = true;
     return { verdict, comments };
   }
 
@@ -654,7 +655,7 @@ export class BuildRoom extends EventEmitter {
       this.emitEv({
         type: 'done', ok, dir: this.dir, merged, parts: team.length,
         branch: this.teamBranch ?? null,
-        summary: `${merged} of ${team.length} part${team.length === 1 ? '' : 's'} reviewed and merged${this.teamBranch ? ` on branch ${this.teamBranch} (in your project: git merge ${this.teamBranch})` : ''}${final ? `; the whole project's tests ${final.ok ? 'pass' : 'fail'}` : ''}.${left.length ? ` Not merged: ${left.join('; ')}.` : ''}`,
+        summary: `${merged} of ${team.length} part${team.length === 1 ? '' : 's'} ${team.some((m) => m.unreviewed) ? `merged, ${team.filter((m) => m.unreviewed).length} with no review because the reviewer could not be reached,` : 'reviewed and merged'}${this.teamBranch ? ` on branch ${this.teamBranch} (in your project: git merge ${this.teamBranch})` : ''}${final ? `; the whole project's tests ${final.ok ? 'pass' : 'fail'}` : ''}.${left.length ? ` Not merged: ${left.join('; ')}.` : ''}`,
       });
     } catch (e) {
       this.state = 'done';

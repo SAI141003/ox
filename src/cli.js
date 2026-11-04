@@ -1814,7 +1814,11 @@ async function cmdMcpAdd(args = []) {
   doc.mcpServers = { ...(doc.mcpServers ?? {}), [name]: entry };
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
+    // Your own edit stays trusted; a repository's untrusted file does not become trusted by it.
+    const { projectFileTrusted, trustProjectFile } = await import('./project-trust.js');
+    const keepTrust = file === projectFile && (!fs.existsSync(file) || projectFileTrusted(cwd, '.mcp.json'));
     fs.writeFileSync(file, `${JSON.stringify(doc, null, 2)}\n`);
+    if (keepTrust) trustProjectFile(cwd, '.mcp.json');
   } catch (err) {
     process.stderr.write(`${c.red(`✗ write failed (${destLabel}): ${err.message}`)}\n`);
     process.exitCode = 3;
@@ -1981,6 +1985,12 @@ async function cmdMcp(args = []) {
     return;
   }
   const rest = args.slice(1);
+  if (sub === 'trust') {
+    const { trustProjectFile } = await import('./project-trust.js');
+    trustProjectFile(process.cwd(), '.mcp.json');
+    console.log(`${c.green('✓')} this folder's .mcp.json may start its servers, as it is now. A change to it asks again.`);
+    return;
+  }
   if (sub === 'add') {
     await cmdMcpAdd(rest);
     return;

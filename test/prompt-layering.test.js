@@ -57,7 +57,7 @@ test('two identical builds: the static prefix is byte-identical, the dynamic tai
   // A real gap, not a fake one: if the clock had not advanced, assertion 2 below
   // would pass vacuously and this file would be pinning nothing.
   await new Promise((r) => setTimeout(r, 5));
-  const second = await buildPromptLayers({ ...INPUTS, now: new Date(CLOCK.getTime() + 1000) });
+  const second = await buildPromptLayers({ ...INPUTS, now: new Date(CLOCK.getTime() + 86_400_000) });
 
   const prefixA = joinLayers(byKind(first, 'static'));
   const prefixB = joinLayers(byKind(second, 'static'));
@@ -75,7 +75,7 @@ test('two identical builds: the static prefix is byte-identical, the dynamic tai
 
 test('every volatile byte sits behind a byte-identical prefix: the clock used to sit at offset 42', async () => {
   const a = await buildPromptLayers(INPUTS);
-  const b = await buildPromptLayers({ ...INPUTS, now: new Date(CLOCK.getTime() + 1000) });
+  const b = await buildPromptLayers({ ...INPUTS, now: new Date(CLOCK.getTime() + 86_400_000) });
 
   // The general form of the bug this fixes: any layer whose bytes differ must
   // have every other differing layer behind it, so the differing region is a
@@ -93,10 +93,10 @@ test('every volatile byte sits behind a byte-identical prefix: the clock used to
   // the LAST layer, so nothing sits behind it.
   const clock = a[a.length - 1];
   assert.equal(clock.name, 'clock');
-  assert.match(clock.text, /^- date: \d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
+  assert.match(clock.text, /^- date: \d{4}-\d{2}-\d{2}$/);
   assert.equal(
     clock.bytes,
-    Buffer.byteLength(`- date: ${CLOCK.toISOString()}`),
+    Buffer.byteLength(`- date: ${CLOCK.toISOString().slice(0, 10)}`),
     'the clock layer is exactly one line — nothing else rode along with it'
   );
 });
@@ -262,7 +262,8 @@ test('the prompt did not get longer: the reorder is byte-neutral, not merely sma
   // 2533 -> 2731: the 198 bytes are exactly the new-project rule ("A new project or app the
   // current folder is not … set_project"): asked to build an app, ox wrote it into whatever
   // folder it was in, ox's own included, instead of a folder of its own.
-  assert.equal(sum.totalBytes - envBytes, 2731, 'pinned: the reorder is byte-neutral');
+  // 2731 -> 2717: the date is now the day, not the moment (14 bytes shorter).
+  assert.equal(sum.totalBytes - envBytes, 2717, 'pinned: the reorder is byte-neutral');
 
   // The pinned number alone would still pass if a line were added AND another
   // dropped. Rebuild the exact byte sequence the flat string used to emit -- the
