@@ -195,8 +195,10 @@ export const SUBSCRIPTION_CLIS = Object.freeze({
     // ox-secure-ignore: the vendor's own install line, shown to you, never run by ox.
     install: 'curl -fsSL https://app.factory.ai/cli | sh',
     login: 'run `droid` once and sign in',
-    format: 'text',
-    args: ({ prompt, model, approval }) => ['exec', ...(approval === 'yolo' ? ['--auto', 'high'] : approval === 'edits' ? ['--auto', 'low'] : []), ...(model ? ['-m', model] : []), prompt],
+    // One result object at the end, with the answer, the tokens and the session id.
+    // Read-only unless told otherwise, which is droid exec's own default.
+    format: 'droid-json',
+    args: ({ prompt, model, approval }) => ['exec', '-o', 'json', ...(approval === 'yolo' ? ['--auto', 'high'] : approval === 'edits' ? ['--auto', 'low'] : []), ...(model ? ['-m', model] : []), prompt],
   },
   auggie: {
     label: 'Auggie (Augment account)',
@@ -466,7 +468,7 @@ const ACCOUNT_INSTALL_PAGES = Object.freeze({
   openhands: 'https://docs.openhands.dev/openhands/usage/cli',
   iflow: 'https://github.com/iflow-ai/iflow-cli',
   amp: 'https://ampcode.com/manual',
-  droid: 'https://docs.factory.ai/cli/getting-started/overview',
+  droid: 'https://docs.factory.com/cli/getting-started/overview',
   auggie: 'https://docs.augmentcode.com/cli/overview',
 });
 
@@ -578,7 +580,19 @@ function geminiLine(j, st) {
   return ev;
 }
 
-const PARSERS = { 'claude-stream': claudeLine, 'codex-jsonl': codexLine, 'gemini-stream': geminiLine };
+/** Droid's `exec -o json`: one `result` object (docs.factory.com/cli/droid-exec/overview). */
+function droidLine(j, st) {
+  const ev = [];
+  if (j.type !== 'result') return ev;
+  st.done = true;
+  if (j.session_id) markOwn('droid', j.session_id);
+  if (j.is_error) st.error = String(j.result ?? j.subtype ?? 'droid failed');
+  else if (j.result) { ev.push({ type: 'text-delta', text: String(j.result) }); st.text = String(j.result); }
+  if (j.usage) st.usage = { inputTokens: j.usage.input_tokens ?? 0, outputTokens: j.usage.output_tokens ?? 0, cachedInputTokens: j.usage.cache_read_input_tokens ?? 0 };
+  return ev;
+}
+
+const PARSERS = { 'claude-stream': claudeLine, 'codex-jsonl': codexLine, 'gemini-stream': geminiLine, 'droid-json': droidLine };
 
 export function parseLine(format, line, st) {
   const fn = PARSERS[format];
