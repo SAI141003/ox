@@ -648,8 +648,9 @@ export function buildSummarizePrompt(transcript, { wordBudget = 300 } = {}) {
   const budget = Number.isFinite(n) && n > 0 ? Math.round(n) : 300;
   return [
     'Summarize the following coding-agent conversation excerpt so work can continue seamlessly.',
-    `In ${budget} words or fewer preserve: decisions made, files touched (with absolute paths),`,
-    'unresolved bugs/errors with their exact messages, and pending next steps.',
+    `In ${budget} words or fewer preserve: decisions made, files touched (paths exactly as written),`,
+    'values the user asked about, unresolved bugs/errors with their exact messages, and pending next steps.',
+    'Copy names, numbers, codes and paths exactly as they appear below. Never guess or complete one: leave out what you cannot see.',
     '',
     transcript,
   ].join('\n');
@@ -661,7 +662,44 @@ function contractSource(contract) {
     .join('\n');
 }
 
+// What a summary states that the conversation never contained: file paths, and codes or ids with
+// digits in them. A small model wrote CHARLIE-3567 for CHARLIE-9150 and a /home/user path nobody
+// had seen, and from then on the run believed them.
+export function inventedInSummary(summary, source) {
+  const seen = String(source ?? '');
+  const out = new Set();
+  for (const raw of String(summary ?? '').match(/[\w./~-]*\d[\w./~-]*|(?:~|\.{0,2})\/[\w.-]+(?:\/[\w.-]+)+/g) ?? []) {
+    const t = raw.replace(/[.,/-]+$/, '');
+    if (t.length >= 5 && !seen.includes(t)) out.add(t);
+  }
+  return [...out];
+}
+
+/** The summary with every line that states something invented removed. */
+function withoutInvented(summary, invented) {
+  return String(summary).split('\n').filter((l) => !invented.some((t) => l.includes(t))).join('\n').trim();
+}
+
 export async function summarizeMessages(target, toSummarize, signal, opts = {}) {
+  const r = await summarizeOnce(target, toSummarize, signal, opts);
+  if (!r?.text) return r;
+  const source = JSON.stringify(toSummarize);
+  let invented = inventedInSummary(r.text, source);
+  if (!invented.length) return r;
+  // Once more on the better model, when there is one; failing that, keep only what holds.
+  const better = opts.fallbackTarget && opts.fallbackTarget !== target ? opts.fallbackTarget : null;
+  if (better) {
+    try {
+      const again = await summarizeOnce(better, toSummarize, signal, opts);
+      const usage = { inputTokens: r.usage.inputTokens + again.usage.inputTokens, outputTokens: r.usage.outputTokens + again.usage.outputTokens };
+      invented = inventedInSummary(again.text, source);
+      if (again.text) return { text: withoutInvented(again.text, invented), usage };
+    } catch {}
+  }
+  return { ...r, text: withoutInvented(r.text, invented) };
+}
+
+async function summarizeOnce(target, toSummarize, signal, opts = {}) {
   const transcript = toSummarize
     .map((m) => {
       const role = m?.role ?? '?';
@@ -1675,6 +1713,7 @@ async function* runAgentLoop(opts = {}) {
               wordBudget: passKnobs.wordBudget,
               twoPass: passKnobs.twoPass,
               goalContract,
+              fallbackTarget: activeTarget,
             });
             summary = summarized?.text ?? '';
             sumUsage = summarized?.usage ?? sumUsage;

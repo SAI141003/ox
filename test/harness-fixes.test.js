@@ -325,3 +325,19 @@ test('Buddy, asked to act: it is told to use the desktop tool and leave send and
   assert.match(act, /sends, pays, deletes/);
   assert.doesNotMatch(buddyGuidance({ voice: true }), /desktop tool/);
 });
+
+test('a summary cannot state a code or a path the conversation never had', async () => {
+  const { inventedInSummary } = await import('../src/agent.js');
+  const source = 'read big3.txt: The secret code is CHARLIE-9150. src/app/main.js line 40 failed';
+  assert.deepEqual(inventedInSummary('Code CHARLIE-3567 at /home/user/documents/big3.txt', source), ['CHARLIE-3567', '/home/user/documents/big3.txt']);
+  assert.deepEqual(inventedInSummary('Read big3.txt, code CHARLIE-9150; src/app/main.js failed, 3 files', source), []);
+});
+
+test('compaction does not use a small model on this machine unless you named it', async () => {
+  const { compactionModelChoice } = await import('../src/config.js');
+  const main = { model: 'minimax', provider: 'nvidia' };
+  const small = { model: 'qwen2.5:3b-64k', provider: 'ollama' };
+  assert.equal(compactionModelChoice({}, { aux: small, main }).target, main);
+  assert.equal(compactionModelChoice({ auxBot: 'ox-ollama' }, { aux: small, main }).target, small);
+  assert.equal(compactionModelChoice({}, { aux: { model: 'llama:32b', provider: 'ollama' }, main }).target.model, 'llama:32b');
+});

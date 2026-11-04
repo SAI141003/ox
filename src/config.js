@@ -243,13 +243,16 @@ export function compactionModelChoice(config = {}, { aux = null, main = null } =
       separateFromMain: !main?.model || dedicated.model !== main.model,
     };
   }
-  const chosen = aux ?? main ?? null;
+  // Not a small model on this machine, unless you named it: a summary is what the rest of the
+  // run believes, and one of 3 billion parameters made up codes and paths when tested.
+  const smallLocal = !config?.auxBot && aux?.provider === 'ollama' && main && (aux.model === 'auto' || /(?:^|[^0-9.])[0-7](?:\.\d+)?b\b/i.test(String(aux.model ?? '')));
+  const chosen = (smallLocal ? main : aux) ?? main ?? null;
   return {
     target: chosen,
     model: chosen?.model ?? null,
     bot: chosen?.bot ?? null,
     provider: chosen?.provider ?? null,
-    source: aux ? 'aux_bot' : 'main',
+    source: aux && !smallLocal ? 'aux_bot' : 'main',
     separateFromMain: false,
   };
 }

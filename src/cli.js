@@ -11,7 +11,7 @@ import net from 'node:net';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { runAgent, applySubgoal, buildSummarizePrompt, draftContract, draftTitle, parseGates } from './agent.js';
+import { runAgent, applySubgoal, draftContract, draftTitle, parseGates, summarizeMessages } from './agent.js';
 // Persistent goal: an objective kept across turns, compaction and resume. The
 // record is an event in the session transcript, so there is no parallel store to
 // keep in sync and nothing to clean up beyond the transcript itself.
@@ -7963,39 +7963,17 @@ async function replWithBudget(config, opts, flags, budget) {
       console.log(c.dim('nothing to compact'));
       return;
     }
-    const transcript = toSummarize
-      .map((m) => {
-        const role = m?.role ?? '?';
-        if (Array.isArray(m?.tool_calls) && m.tool_calls.length) {
-          return `[${role}] called tools: ${m.tool_calls
-            .map((cc) => `${cc?.function?.name ?? '?'}(${truncate(cc?.function?.arguments ?? '', 200)})`)
-            .join('; ')}`;
-        }
-        if (role === 'tool') return `[tool result for ${m?.tool_call_id ?? '?'}] ${truncate(m?.content ?? '', 400)}`;
-        const body = typeof m?.content === 'string' ? m.content : JSON.stringify(m?.content ?? '');
-        return `[${role}] ${truncate(body, 2000)}`;
-      })
-      .join('\n');
-    const prompt = buildSummarizePrompt(transcript, { wordBudget: compactionPassKnobs(config).wordBudget });
     const ac = new AbortController();
     state.currentAbort = ac;
     let summary = '';
     try {
-      for await (const rawEv of streamVia(auxTarget ?? target, {
-        model: (auxTarget ?? target).model,
-        messages: [{ role: 'user', content: prompt }],
-        signal: ac.signal,
-      })) {
-        const t = typeof rawEv === 'string' ? rawEv : rawEv?.text ?? rawEv?.content ?? '';
-        if (typeof t === 'string' && t) {
-          summary += t;
-          streamText(t);
-        }
-      }
+      // The same checked summary auto-compaction makes: nothing it states that the conversation never said.
+      const main = target;
+      const r = await summarizeMessages(compactionModelChoice(config, { aux: auxTarget, main }).target ?? main, toSummarize, ac.signal, { wordBudget: compactionPassKnobs(config).wordBudget, fallbackTarget: main });
+      summary = r?.text ?? '';
     } catch (err) {
       if (!ac.signal.aborted) console.log(renderError(err));
     } finally {
-      streamText('\n');
       state.currentAbort = null;
     }
     summary = summary.trim();
@@ -8804,7 +8782,7 @@ async function replWithBudget(config, opts, flags, budget) {
         console.log(c.dim('drafting goal contract via aux model…'));
         let contract = null;
         try {
-          contract = await draftContract(auxTarget ?? target, { goal: rest });
+          contract = await draftContract(compactionModelChoice(config, { aux: auxTarget, main: target }).target ?? target, { goal: rest });
         } catch {}
         if (!contract) {
           console.log(c.yellow('⚠ contract drafting failed — goal is still active (verifier unchanged)'));
