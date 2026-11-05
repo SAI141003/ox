@@ -76,3 +76,18 @@ test('ECC stays out of the folder other tools read, and old copies move; nothing
   const { skillScanDirs } = await import('../src/skills.js');
   assert.ok(skillScanDirs({ home: h, cwd: h }).includes(path.join(h, '.ox', 'skills')), 'ox still finds them');
 });
+
+test('SkillSpector refuses a skill it rates unsafe, gets no secrets, and its absence changes nothing', async () => {
+  const { secondScan } = await import('../src/skill-add.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-spector-'));
+  let seen = null;
+  const fake = (status, stdout = '') => (bin, args, o) => { seen = { bin, args, env: o.env }; return { status, stdout }; };
+  const unsafe = secondScan(dir, '', [], { spectorRun: fake(1, '{"risk_score":88}'), env: { PATH: '/x', HOME: '/h', NVIDIA_API_KEY: 'secret' } });
+  assert.deepEqual(unsafe, { ran: true, unsafe: true, score: 88 });
+  assert.deepEqual(Object.keys(seen.env).sort(), ['HOME', 'PATH'], 'no keys reach it');
+  assert.ok(seen.args.includes('--no-llm'));
+  assert.equal(secondScan(dir, '', [], { spectorRun: fake(0, '{"risk_score":5}') }).unsafe, false);
+  assert.deepEqual(secondScan(dir, '', [], { spectorRun: () => ({ error: new Error('ENOENT') }) }), { ran: false });
+  assert.deepEqual(secondScan(dir, '', [], { spectorRun: fake(2) }), { ran: false }, 'it failing is not a verdict');
+  fs.rmSync(dir, { recursive: true, force: true });
+});

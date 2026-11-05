@@ -169,6 +169,13 @@ async function cmdDaemonStart(args, json) {
     return;
   }
   const res = await startDaemon({ already: before });
+  // Another `daemon start` won the race while this one was starting: the daemon is up, which
+  // is what was asked for. It failed here, seen on a slow machine with five at once.
+  if (!res.started && res.reason === 'already-running') {
+    if (json) console.log(JSON.stringify({ t: 'daemon-start', started: false, reason: 'already-running', daemon: res.daemon }));
+    else console.log(`ox daemon already running ${c.dim(`(pid ${res.daemon?.pid})`)}`);
+    return;
+  }
   if (res.started) {
     if (json) console.log(JSON.stringify({ t: 'daemon-start', started: true, daemon: res.daemon }));
     else {
