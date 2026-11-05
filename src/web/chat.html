@@ -1606,9 +1606,41 @@
     } catch (e) { toast(e.message); }
   }
 
+  // ---------- pictures and videos on this computer that an answer names
+  const MEDIA_EXT = 'png|jpe?g|webp|gif|mp4|mov|webm';
+  const IS_MEDIA = new RegExp(`\\.(?:${MEDIA_EXT})$`, 'i');
+  const localMediaUrl = (p) => `/ox/local-media?path=${encodeURIComponent(p)}`;
+  function namedMedia(text, cwd) {
+    const prose = String(text ?? '').replace(/```[\s\S]*?```/g, ' ');
+    const found = [];
+    for (const re of [
+      new RegExp(`<([^<>\\n]+?\\.(?:${MEDIA_EXT}))>`, 'gi'),
+      new RegExp(`\`([^\`\\n]+?\\.(?:${MEDIA_EXT}))\``, 'gi'),
+      new RegExp(`\\]\\(([^)\\s]+?\\.(?:${MEDIA_EXT}))\\)`, 'gi'),
+      // A full path may hold spaces ("Ox Workspace"): it runs to the first media ending on its line.
+      new RegExp(`(?:^|[\\s(])(/[^\\n<>()\`'"]*?\\.(?:${MEDIA_EXT}))(?![\\w/])`, 'gim'),
+      new RegExp(`(?:^|[\\s(])([\\w.-]+/[^\\s<>()\`'"]*\\.(?:${MEDIA_EXT}))(?![\\w/])`, 'gim'),
+    ]) for (const m of prose.matchAll(re)) found.push(m[1].trim());
+    const whole = found.filter((p) => p.startsWith('/'));
+    const full = found
+      .filter((p) => !/^[a-z]+:/i.test(p) && !/\/\.ox\/media\//.test(p) && p.includes('/'))
+      // The tail of a full path already found ("Workspace/runs/bus.jpg") is not another file.
+      .filter((p) => p.startsWith('/') || !whole.some((w) => w.endsWith(`/${p}`) || w.endsWith(` ${p}`)))
+      .map((p) => (p.startsWith('/') ? p : cwd ? `${cwd.replace(/\/$/, '')}/${p.replace(/^\.\//, '')}` : ''))
+      .filter(Boolean);
+    return [...new Set(full)].slice(0, 6);
+  }
+  // [words](/a/file.png) and [words](</a file.png>): a picture opens over the chat; any other
+  // file shows its path, since a page cannot open it.
+  function localLink(words, escapedPath) {
+    const p = escapedPath.replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+    return IS_MEDIA.test(p) ? `<a href="${esc(localMediaUrl(p))}">${words}</a>` : `<a href="#" data-open-file="${esc(p)}">${words}</a>`;
+  }
   // ---------- markdown (small and safe: everything is escaped first)
   function inline(s) {
     return esc(s)
+      .replace(/\[([^\]]+)\]\(&lt;(\/[^\n]*?)&gt;\)/g, (_, w, p) => localLink(w, p))
+      .replace(/\[([^\]]+)\]\((\/[^)\s]+)\)/g, (_, w, p) => localLink(w, p))
       .replace(/`([^`]+)`/g, '<code>$1</code>')
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>')
@@ -1818,7 +1850,7 @@
       case 'Quote': return `<blockquote class="cv-quote">${inline(String(p.text ?? ''))}${p.cite ? `<cite>— ${esc(p.cite)}</cite>` : ''}</blockquote>`;
       case 'Map': return mapNode(p);
       case 'Link': if (SETTINGS_URL.test(String(p.url ?? ''))) return `<button class="chip" data-open-settings="${esc(p.url)}">${esc(p.label || 'Open Settings')}</button>`; return /^https:\/\//.test(String(p.url ?? '')) ? `<a class="cv-link" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${esc(p.label || p.url)} ↗</a>` : `<span class="cv-link">${esc(p.label ?? '')}</span>`;
-      case 'Image': { const src = String(p.src ?? ''); const ok = /^\/ox\/media\/[\w-]+\/[\w.-]+\.(png|jpe?g|webp|gif)$/i.test(src) || /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(src); const ar = Math.max(0.4, Math.min(3, Number(p.aspect) || 1)); return ok ? `<figure class="cv-img" style="aspect-ratio:${ar}"><img alt="${esc(p.alt ?? '')}" src="${esc(src)}">${p.alt ? `<figcaption>${esc(p.alt)}</figcaption>` : ''}</figure>` : `<div class="ui-box muted small">${esc(p.alt || 'picture')}</div>`; }
+      case 'Image': { let src = String(p.src ?? ''); if (src.startsWith('/') && !src.startsWith('/ox/') && /\.(png|jpe?g|webp|gif)$/i.test(src)) src = localMediaUrl(src); const ok = /^\/ox\/media\/[\w-]+\/[\w.-]+\.(png|jpe?g|webp|gif)$/i.test(src) || /^\/ox\/local-media\?path=/.test(src) || /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(src); const ar = Math.max(0.4, Math.min(3, Number(p.aspect) || 1)); return ok ? `<figure class="cv-img" style="aspect-ratio:${ar}"><img alt="${esc(p.alt ?? '')}" src="${esc(src)}">${p.alt ? `<figcaption>${esc(p.alt)}</figcaption>` : ''}</figure>` : `<div class="ui-box muted small">${esc(p.alt || 'picture')}</div>`; }
       case 'Math': { const t = esc(String(p.expr ?? '')).replace(/sqrt\(/g, '√(').replace(/\bpi\b/g, 'π').replace(/&lt;=/g, '≤').replace(/&gt;=/g, '≥').replace(/!=/g, '≠').replace(/\*/g, '·').replace(/\^\(([^)]{1,20})\)|\^([\w.]{1,8})/g, (_, a, b) => `<sup>${a ?? b}</sup>`).replace(/_([\w]{1,6})/g, '<sub>$1</sub>'); return p.block ? `<div class="cv-math block">${t}</div>` : `<span class="cv-math">${t}</span>`; }
       case 'Popover': return `<details class="cv-pop"><summary>${esc(p.label ?? 'More')}</summary><div class="cv-stack">${kids(p.children)}</div></details>`;
       case 'Celebration': return `<div class="cv-party" data-party>${Array.from({ length: 18 }, (_, i) => `<i style="--x:${(i * 37) % 100}%;--d:${(i % 6) * 0.08}s;--c:${['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'][i % 6]}"></i>`).join('')}<b>${esc(p.text || 'Done!')}</b></div>`;
@@ -1831,10 +1863,16 @@
   // which the app's security policy blocks: a large blank box.
   // macOS System Settings panes an answer may open (x-apple.systempreferences:…).
   const SETTINGS_URL = /^x-apple\.systempreferences:[\w.\-]*(\?[\w.\-=&]*)?$/i;
+  document.addEventListener('click', (e) => {
+    const f = e.target.closest?.('[data-open-file]');
+    if (!f) return;
+    e.preventDefault();
+    postJson('/ox/open-file', { path: f.dataset.openFile }).catch((err) => toast(err.message));
+  });
   // A made picture opens over the page. As a link it replaced the whole app window, and
   // the app has no back button, so a missing file left only an error on screen.
   document.addEventListener('click', (e) => {
-    const a = e.target.closest?.('a[href^="/ox/media/"]');
+    const a = e.target.closest?.('a[href^="/ox/media/"], a[href^="/ox/local-media"]');
     if (!a || e.metaKey || e.ctrlKey) return;
     e.preventDefault();
     const over = document.createElement('div');
@@ -2202,6 +2240,12 @@
     const made = (msg.media || []).filter((u) => /^\/ox\/media\/[^/]+\/[^/]+$/.test(u)).map((u) => /\.(mp4|mov|webm)$/i.test(u)
       ? `<video class="made" src="${esc(u)}" controls playsinline preload="metadata" style="max-width:min(100%,520px);border-radius:12px;display:block;margin:8px 0;background:#000"></video>`
       : `<a href="${esc(u)}" target="_blank" rel="noopener"><img class="made" src="${esc(u)}" alt="made by ox" style="max-width:min(100%,520px);border-radius:12px;display:block;margin:8px 0"></a>`).join('');
+    const named = runningNow ? '' : namedMedia(msg.content, sessionDir(convo())).map((p) => {
+      const u = esc(localMediaUrl(p));
+      return /\.(mp4|mov|webm)$/i.test(p)
+        ? `<video class="made" src="${u}" controls playsinline preload="metadata" onerror="this.style.display='none'" style="max-width:min(100%,520px);border-radius:12px;display:block;margin:8px 0;background:#000"></video>`
+        : `<a href="${u}"><img class="made" src="${u}" alt="${esc(p.split('/').pop())}" onerror="this.parentElement.style.display='none'" style="max-width:min(100%,520px);border-radius:12px;display:block;margin:8px 0"></a>`;
+    }).join('');
     // "Write: /path" is shown as Write and the path.
     const askWhat = (a) => { const p = String(a.preview || ''), t = `${a.tool}: `; return p.startsWith(t) ? p.slice(t.length) : p; };
     // Waiting on you: asked at the bottom where you are looking. Answered: a no stays on its step; a yes needs no line.
@@ -2210,7 +2254,7 @@
     const secrets = (msg.secrets || []).map((x) => x.state
       ? `<div class="ask-done small dim">${x.state === 'saved' ? 'Saved on this machine' : 'Not given'} · <b class="mono">${esc(x.name)}</b></div>`
       : `<form class="ask-card" data-secret-id="${esc(x.id)}" autocomplete="off"><div class="cap">ox needs a key</div><div><b class="mono">${esc(x.name)}</b> <span class="small muted">${esc(x.why || '')}</span></div><input class="field mono" type="password" name="v" placeholder="Paste it here: it is saved on this Mac and never shown to the model" autocomplete="off" spellcheck="false" style="margin:8px 0"><div class="ask-btns"><button class="btn primary small" type="submit">Save</button><button class="btn ghost small" type="button" data-secret-skip>Skip</button></div></form>`).join('');
-    morph(body, routed + plan + canv + made + text + asks + secrets + changedHtml + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : ''));
+    morph(body, routed + plan + canv + made + text + named + asks + secrets + changedHtml + (msg.error ? `<p class="err">${esc(msg.error)}</p>` : ''));
     body.dataset.msgKey = msg.key;
     body.closest('.msg')?.classList.toggle('busy', runningNow);
     body.querySelectorAll('[data-side]').forEach((b) => (b.onclick = () => {

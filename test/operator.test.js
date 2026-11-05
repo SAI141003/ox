@@ -88,3 +88,20 @@ test('operator: all 11 tools have schemas', async () => {
     assert.ok(names.includes(expected), `missing ${expected}`);
   }
 });
+
+test('open_path asks for a program but not for a document in your home', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { openableFile } = await import('../src/app-api.js');
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-open-')));
+  const doc = path.join(home, 'photo.jpg'), prog = path.join(home, 'run.command');
+  fs.writeFileSync(doc, 'x'); fs.writeFileSync(prog, 'x');
+  assert.equal(openableFile(doc, { home }), doc);
+  assert.equal(openableFile(prog, { home }), null);
+  const src = fs.readFileSync(new URL('../src/tools/operator.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('export async function open_path'), src.indexOf('export async function open_window'));
+  assert.ok(fn.indexOf('openableFile(full)') < fn.indexOf("requestApproval('open_path'"), 'checked before asking');
+  fs.rmSync(home, { recursive: true, force: true });
+});
+

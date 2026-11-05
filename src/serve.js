@@ -918,6 +918,8 @@ export function cleanImages(list) {
   return list.filter((im) => im && IMAGE_TYPES.has(im.mediaType) && typeof im.data === 'string' && im.data.length < 7_000_000 && /^[A-Za-z0-9+/=]+$/.test(im.data.slice(0, 200)))
     .slice(0, 4).map((im) => ({ mediaType: im.mediaType, data: im.data }));
 }
+const SHOW_WORDS = /\b(?:show|open|see|view|display|image|images|picture|pictures|photo|photos|video|videos|result|results)\b/i;
+export const SHOW_FILE_HINT = 'This app shows any image or video whose full file path you write in your answer. To show one, write its full path. Do not run a command to open it, and do not only describe it.';
 export const RESEARCH_BRIEF = 'Deep research. Search several times from different angles, open and read the best sources (not just the result snippets), compare what they say, and note where they disagree. Then answer with a short summary first, the details after, and each claim followed by its source number, like [1]. End with the numbered list of sources and their links.';
 export const LEARN_BRIEF = 'Guided learning. Teach rather than tell: find out what the user already knows, explain one step at a time in plain words with a small example, then ask one short question to check they followed before moving on. Never dump the whole answer at once.';
 
@@ -1105,6 +1107,8 @@ async function handleChatCompletions(req, res) {
     tool.research ? RESEARCH_BRIEF : tool.web ? 'Search the web for this and answer from what you find, naming each source.' : '',
     tool.think ? 'Think this through carefully before answering: weigh the alternatives, check your working, then give the answer.' : '',
     tool.learn ? LEARN_BRIEF : '',
+    // Asked to see a result, models ran `open`, which fails in a sandbox, or described the picture.
+    body.ox_ui === 'live' && SHOW_WORDS.test(said) ? SHOW_FILE_HINT : '',
   ].filter(Boolean).join('\n\n');
   // Small models follow what sits next to the question, not a guide far up in
   // the system prompt: when the message plainly asks for something to work
@@ -2125,6 +2129,31 @@ async function serveMediaFile(req, res, m) {
   if (!f) { sendError(res, 404, 'Not found', 'invalid_request_error', 'not_found', null); return; }
   const st = await stat(f);
   res.writeHead(200, { 'Content-Type': MEDIA_TYPES[extname(f).toLowerCase()] ?? 'application/octet-stream', 'Content-Length': st.size, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
+  createReadStream(f).pipe(res);
+}
+
+// A file an answer names (src/app-api.js localMediaFile). Another site's page can point an
+// <img> here to learn whether a file exists, so only ox's own page is answered. Ranges,
+// because the app's video player will not play a file without them.
+async function serveLocalMedia(req, res) {
+  if (!authorized(req)) { unauthorized(res); return; }
+  const site = req.headers['sec-fetch-site'];
+  if (site && site !== 'same-origin' && site !== 'none') { sendError(res, 403, 'Forbidden', 'invalid_request_error', 'forbidden', null); return; }
+  const wanted = new URL(req.url, 'http://x').searchParams.get('path') ?? '';
+  const f = (await appApi()).localMediaFile(wanted);
+  if (!f) { sendError(res, 404, 'Not found', 'invalid_request_error', 'not_found', null); return; }
+  const { size } = await stat(f);
+  const head = { 'Content-Type': MEDIA_TYPES[extname(f).toLowerCase()] ?? 'application/octet-stream', 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, no-cache', 'X-Content-Type-Options': 'nosniff' };
+  const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ''));
+  if (range && (range[1] || range[2]) && size > 0) {
+    const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (start > end || start >= size) { res.writeHead(416, { 'Content-Range': `bytes */${size}` }); res.end(); return; }
+    res.writeHead(206, { ...head, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
+    createReadStream(f, { start, end }).pipe(res);
+    return;
+  }
+  res.writeHead(200, { ...head, 'Content-Length': size });
   createReadStream(f).pipe(res);
 }
 
@@ -3325,6 +3354,17 @@ const ROUTES = [
   { method: 'POST', pattern: /^\/ox\/studio\/create\/?$/, handler: appRoute(async (b) => (await appApi()).studioCreate(b)) },
   { method: 'POST', pattern: /^\/ox\/studio\/?$/, handler: appRoute(async (b) => (await appApi()).studioAction(b)) },
   { method: 'GET', pattern: /^\/ox\/media\/([^/]+)\/([^/]+)$/, handler: serveMediaFile },
+  { method: 'GET', pattern: /^\/ox\/local-media\/?$/, handler: serveLocalMedia },
+  // A file link in an answer, clicked: it opens in its usual app. Clicked only, and only
+  // documents and media under your home (src/app-api.js), never a program or script.
+  { method: 'POST', pattern: /^\/ox\/open-file\/?$/, handler: appRoute(async (b) => {
+    const f = (await appApi()).openableFile(String(b?.path ?? ''));
+    if (!f) throw new Error('That file cannot be opened from here');
+    const { spawn } = await import('node:child_process');
+    const opener = process.platform === 'darwin' ? ['open', [f]] : process.platform === 'win32' ? ['explorer', [f]] : ['xdg-open', [f]];
+    spawn(opener[0], opener[1], { stdio: 'ignore', detached: true }).unref();
+    return { opened: true };
+  }) },
   { method: 'GET', pattern: /^\/ox\/usage\/?$/, handler: appRoute(async (_, __, req) => {
     const U = await import('./usage-log.js');
     const days = Math.max(1, Math.min(365, Number(new URL(req.url, 'http://x').searchParams.get('days')) || 30));

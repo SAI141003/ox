@@ -600,6 +600,38 @@ export async function studioAction(b = {}) {
 }
 
 // A finished file, only from inside ~/.ox/media/<id>/.
+// A picture or video on this computer that an answer names, for the app to show. Only those
+// kinds of file, only under your home, never a hidden folder or Library, checked after links
+// are followed: a link named photo.png pointing at a key file is refused.
+const LOCAL_MEDIA = /\.(?:png|jpe?g|webp|gif|mp4|mov|webm)$/i;
+export function localMediaFile(wanted, { home = os.homedir() } = {}) {
+  const asked = String(wanted ?? '');
+  if (!path.isAbsolute(asked) || !LOCAL_MEDIA.test(asked)) return null;
+  let real, root;
+  try { real = fs.realpathSync(asked); root = fs.realpathSync(home); } catch { return null; }
+  if (!LOCAL_MEDIA.test(real)) return null;
+  const rel = path.relative(root, real);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  const parts = rel.split(path.sep);
+  const made = parts[0] === '.ox' && parts[1] === 'media';
+  if (parts[0] === 'Library' || (!made && parts.some((p) => p.startsWith('.')))) return null;
+  try { return fs.statSync(real).isFile() ? real : null; } catch { return null; }
+}
+
+const OPENABLE = /\.(?:png|jpe?g|webp|gif|mp4|mov|webm|pdf|txt|md|csv|tsv|json|log|docx?|xlsx?|pptx?|key|pages|numbers|mp3|wav|m4a)$/i;
+export function openableFile(wanted, { home = os.homedir() } = {}) {
+  const asked = String(wanted ?? '');
+  if (!path.isAbsolute(asked) || !OPENABLE.test(asked)) return null;
+  let real, root;
+  try { real = fs.realpathSync(asked); root = fs.realpathSync(home); } catch { return null; }
+  if (!OPENABLE.test(real)) return null;
+  const rel = path.relative(root, real);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  const parts = rel.split(path.sep);
+  if (parts[0] === 'Library' || parts.some((p) => p.startsWith('.'))) return null;
+  try { return fs.statSync(real).isFile() ? real : null; } catch { return null; }
+}
+
 export async function mediaFile(id, name) {
   const ms = await import('./media-studio.js');
   if (!/^[0-9a-f]{6,20}$/.test(id) || !/^[\w.-]{1,40}$/.test(name) || name.startsWith('.')) return null;
