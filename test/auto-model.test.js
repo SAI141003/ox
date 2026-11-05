@@ -51,3 +51,19 @@ test('"do it yourself" and other go-aheads keep their tools: they are requests t
   }
   assert.equal(M.isPlainQuestion('do you know what a mortgage is?'), true, 'a real question still is one');
 });
+
+test('a quick answer uses your default model with a key, not a plan and its 13,000 tokens', () => {
+  const ox = path.join(process.env.HOME, '.ox');
+  fs.mkdirSync(ox, { recursive: true });
+  const cfg = path.join(ox, 'config.json');
+  fs.writeFileSync(cfg, JSON.stringify({ defaultBot: 'my-model', bots: { 'my-model': { provider: 'nvidia', model: 'vendor/m' } } }));
+  try {
+    const env = { NVIDIA_API_KEY: 'k', OX_NO_KEYSTORE: '1' };
+    const r = autoModel(say('What is a mortgage?'), env);
+    assert.equal(r.id, 'my-model');
+    assert.match(r.why, /quick answer, your default model/);
+  } finally {
+    fs.rmSync(cfg, { force: true });
+  }
+});
+

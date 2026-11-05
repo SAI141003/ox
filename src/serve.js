@@ -422,8 +422,16 @@ export function autoModel(messages = [], env = process.env, { think = false, s1 
   if (localOllama()[0]) local.push(`ox-ollama:${localOllama()[0]}`);
   const can = (id) => runnable(id, env);
   if (light) {
-    const id = local.find(can) ?? FAST_BOTS.find(can) ?? STRONG_BOTS.find(can);
-    if (id) return { id, why: local.includes(id) ? 'a quick answer, on your machine' : FAST_BOTS.includes(id) ? 'a quick answer, the fastest model connected' : 'a quick answer (no small model is connected)' };
+    // Before a plan: its CLI sends about 13,000 tokens of its own with every request (measured:
+    // 13,136 to reply "ok", whatever its settings), so "what is 2 plus 2" cost 14,400 there
+    // against about 1,900 on a model with a key. A plan answers only when nothing else can.
+    let own = null;
+    try {
+      const d = readConfigDoc().defaultBot ?? null;
+      if (d && can(d) && !tinyModel(d) && !resolveBot(d, { bots: readConfigDoc().bots ?? {} }, env).subscription) own = d;
+    } catch {}
+    const id = local.find(can) ?? FAST_BOTS.find(can) ?? own ?? STRONG_BOTS.find(can);
+    if (id) return { id, why: local.includes(id) ? 'a quick answer, on your machine' : FAST_BOTS.includes(id) ? 'a quick answer, the fastest model connected' : id === own ? 'a quick answer, your default model' : 'a quick answer (no small model is connected)' };
   }
   // The model you made your default comes first for real work: you chose it.
   let mine = null;
