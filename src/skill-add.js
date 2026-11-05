@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -257,6 +258,37 @@ export function readReceipts(configDir = CONFIG_DIR) {
 // Installs a skill from a local directory or a GitHub shorthand into
 // <home>/.agents/skills/<name>/ behind the ClawHavoc-style safety gate.
 // Never throws for expected failures — returns a typed result instead.
+// SkillSpector, static checks only, with no API keys in its environment. Exit 1 means it advises
+// against installing; not installed, or failing to run, leaves ox's own scan as the answer.
+export function secondScan(dir, skillMd, files = [], { spectorRun = spawnSync, env = process.env } = {}) {
+  let target = dir;
+  let temp = null;
+  try {
+    if (!target) {
+      temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-skill-scan-'));
+      target = temp;
+      fs.writeFileSync(path.join(temp, 'SKILL.md'), skillMd ?? '');
+      for (const f of files) {
+        const out = path.join(temp, f.rel);
+        if (!out.startsWith(temp + path.sep)) continue;
+        fs.mkdirSync(path.dirname(out), { recursive: true });
+        fs.writeFileSync(out, f.text);
+      }
+    }
+    const r = spectorRun('skillspector', ['scan', target, '--no-llm', '--format', 'json'], {
+      encoding: 'utf8', timeout: 120_000, windowsHide: true, env: { PATH: env.PATH ?? '', HOME: env.HOME ?? '' },
+    });
+    if (r.error || (r.status !== 0 && r.status !== 1)) return { ran: false };
+    let score = null;
+    try { score = JSON.parse(r.stdout).risk_score ?? null; } catch {}
+    return { ran: true, unsafe: r.status === 1, score };
+  } catch {
+    return { ran: false };
+  } finally {
+    if (temp) fs.rmSync(temp, { recursive: true, force: true });
+  }
+}
+
 export async function installSkill(source, opts = {}) {
   const {
     force = false,
@@ -362,6 +394,15 @@ export async function installSkill(source, opts = {}) {
     scannedCount = 1 + extraFiles.length;
   }
   const patternsHit = [...new Set(findings.map((f) => f.pattern))];
+
+  // A second opinion when SkillSpector is installed (ox market: skillspector).
+  const spector = force ? { ran: false } : secondScan(mode === 'local' ? sourceDir : null, rawText, extraFiles, opts);
+  if (spector.unsafe) {
+    return {
+      ok: false, kind: 'unsafe', name, dest, source: displaySource, findings, patternsHit,
+      message: `REFUSED: SkillSpector rates skill '${name}' ${spector.score ?? 'over 50'} of 100, do not install — re-run with --force to install anyway.`,
+    };
+  }
 
   if (findings.length && !force) {
     return {

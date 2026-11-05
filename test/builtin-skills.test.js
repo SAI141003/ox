@@ -45,3 +45,9 @@ test('OX_NO_BUILTIN_SKILLS=1 (the test default) hides them', () => {
   const home = os.tmpdir();
   assert.equal(discoverSkills({ cwd: home, home, builtin: false }).some((s) => s.builtin), false);
 });
+
+test('Ponytail is bundled with its licence', () => {
+  const dir = path.join(BUILTIN_SKILLS_DIR, 'ponytail');
+  assert.match(fs.readFileSync(path.join(dir, 'LICENSE'), 'utf8'), /MIT License/i);
+  assert.match(fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), /github\.com\/DietrichGebert\/ponytail/);
+});

@@ -68,6 +68,16 @@ export const FEATURED = Object.freeze([
     description: 'Open Design: a local-first AI design workspace (motion, slides, UI)' },
   { kind: 'tool', name: 'gbrain', source: 'garrytan/gbrain', license: 'MIT', install: 'git clone https://github.com/garrytan/gbrain', run: 'see its README',
     description: "gbrain (Garry Tan): an opinionated agent brain for OpenClaw and Hermes [ox: ox brain, built in]" },
+  // November 5 2026, read file by file before listing. Hallmark and Archify carry scripts that start
+  // other programs, so ox's scan refuses them: they stay your choice, with --force, never automatic.
+  { kind: 'tool', name: 'hallmark', source: 'Nutlope/hallmark', license: 'MIT', install: 'git clone --depth 1 https://github.com/Nutlope/hallmark && ox skill add ./hallmark/skills/hallmark --force', run: 'ask for a page, or: /hallmark audit <page>',
+    description: 'Hallmark (Nutlope/hallmark): a design skill that holds pages to a floor against AI-looking defaults. ox\'s scan flags its scripts, which start other programs: read them first' },
+  { kind: 'tool', name: 'archify', source: 'tt-a1i/archify', license: 'Apache-2.0', install: 'git clone --depth 1 https://github.com/tt-a1i/archify && ox skill add ./archify/archify --force', run: 'ask for a diagram of an idea, a plan or a repo',
+    description: 'Archify (tt-a1i/archify): checked, interactive diagrams from a sentence or a repo. ox\'s scan flags one script that starts other programs: read it first' },
+  { kind: 'tool', name: 'skillspector', source: 'NVIDIA/SkillSpector', license: 'Apache-2.0', install: 'uv tool install git+https://github.com/NVIDIA/skillspector.git', run: 'skillspector scan ./a-skill --no-llm',
+    description: 'SkillSpector (NVIDIA): scans a skill for injection, data theft and supply-chain risks. Once installed, ox runs it on every skill you add [ox: its own scan runs either way]' },
+  { kind: 'tool', name: 'freellmapi', source: 'tashfeenahmed/freellmapi', license: 'MIT', install: 'git clone https://github.com/tashfeenahmed/freellmapi', run: 'see its README, then point ox at it as a custom endpoint',
+    description: 'FreeLLMAPI: free tiers from many providers behind one endpoint, run by you. Pooling free accounts can break a provider\'s terms: check theirs first' },
   { kind: 'tool', name: 'agent-reach', source: 'Panniantong/Agent-Reach', license: 'MIT', install: 'git clone https://github.com/Panniantong/Agent-Reach', run: 'see its README',
     description: 'Agent Reach: read and search Twitter, Reddit, YouTube and more for your agent [ox: ox research]' },
 ]);

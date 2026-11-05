@@ -3,6 +3,8 @@
 The user's own logo: a white O ring cut by a bladed X, on a dark rounded tile
 lit from the top. Traced from their image (Downloads/IMG_9291.jpg, October 16 2026)
 onto a 100x100 grid, so every size stays crisp; the shapes are theirs.
+Redrawn with real curves in November 2026 (769 straight segments to 69 curves): the
+same shapes, without the wobble of the trace.
 
 | File | Use |
 |---|---|
