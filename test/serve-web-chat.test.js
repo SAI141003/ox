@@ -302,3 +302,58 @@ test('an answer leads somewhere: suggestions are on, and a form without a button
   assert.match(html, /data-ol-go/);
 });
 
+test('a file on this computer is shown only if it is a picture or video in your home', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { localMediaFile } = await import('../src/app-api.js');
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ox-local-')));
+  const at = (...p) => path.join(home, ...p);
+  for (const d of ['work', '.ssh', 'Library', '.ox/media/abc']) fs.mkdirSync(at(d), { recursive: true });
+  for (const f of ['work/bus.jpg', 'work/secret.env', '.ssh/key.png', 'Library/x.png', '.ox/media/abc/1.png']) fs.writeFileSync(at(f), 'x');
+  fs.symlinkSync(at('work/secret.env'), at('work/looks-like.png'));
+  fs.symlinkSync(at('.ssh/key.png'), at('work/link.png'));
+  const shown = (p, opts = { home }) => localMediaFile(p, opts);
+  assert.equal(shown(at('work/bus.jpg')), at('work/bus.jpg'));
+  assert.equal(shown(at('.ox/media/abc/1.png')), at('.ox/media/abc/1.png'));
+  for (const refused of [at('work/secret.env'), at('.ssh/key.png'), at('Library/x.png'), at('work/looks-like.png'), at('work/link.png'), at('work/none.png'), at('work/../../etc/passwd.png'), 'work/bus.jpg', '/etc/passwd', '']) {
+    assert.equal(shown(refused), null, refused);
+  }
+  const { openableFile } = await import('../src/app-api.js');
+  fs.writeFileSync(at('work/report.pdf'), 'x');
+  fs.writeFileSync(at('work/run.command'), 'x');
+  fs.writeFileSync(at('work/run.sh'), 'x');
+  assert.equal(openableFile(at('work/report.pdf'), { home }), at('work/report.pdf'));
+  for (const refused of [at('work/run.command'), at('work/run.sh'), at('.ssh/key.png'), '/etc/hosts.txt']) {
+    assert.equal(openableFile(refused, { home }), null, refused);
+  }
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test('the local media route answers only the app page, and an image an answer names is drawn', async () => {
+  const other = await fetch(`${base}/ox/local-media?path=${encodeURIComponent('/etc/passwd.png')}`, { headers: { 'Sec-Fetch-Site': 'cross-site' } });
+  assert.equal(other.status, 403);
+  const none = await fetch(`${base}/ox/local-media?path=${encodeURIComponent('/etc/passwd')}`);
+  assert.equal(none.status, 404);
+  const html = await (await fetch(`${base}/`)).text();
+  assert.match(html, /function namedMedia/);
+  assert.match(html, /routed \+ plan \+ canv \+ made \+ text \+ named/);
+});
+
+test('the page finds the pictures an answer names, spaces in the path included', async () => {
+  const html = await (await fetch(`${base}/`)).text();
+  const code = html.slice(html.indexOf('const MEDIA_EXT = '), html.indexOf('// [words](/a/file.png)'));
+  const namedMedia = new Function(`${code}; return namedMedia;`)();
+  const cwd = '/Users/me/Ox Workspace';
+  const P = '/Users/me/Ox Workspace/runs/bus.jpg';
+  assert.deepEqual(namedMedia(`Saved to ${P} just now`, cwd), [P]);
+  assert.deepEqual(namedMedia(`Result: ${P}`, cwd), [P]);
+  assert.deepEqual(namedMedia(`[Open](<${P}>)`, cwd), [P]);
+  assert.deepEqual(namedMedia('See `runs/bus.jpg` here', cwd), [P]);
+  assert.deepEqual(namedMedia('File: runs/bus.jpg', cwd), [P]);
+  assert.deepEqual(namedMedia(`${P} and /Users/me/b.png`, cwd), [P, '/Users/me/b.png']);
+  assert.deepEqual(namedMedia('See https://x.com/a/b.png now', cwd), []);
+  assert.deepEqual(namedMedia('use image.jpg as the source', cwd), []);
+  assert.deepEqual(namedMedia('```\nfoo/bar.png\n```', cwd), []);
+});
+

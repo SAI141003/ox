@@ -82,7 +82,7 @@ export const LIBRARY = {
   Quote: { params: [['text', 'any'], ['cite', 'str', true]], desc: 'quotation' },
   Link: { params: [['label', 'str'], ['url', 'str']], desc: 'link that opens a web page (https)' },
   Map: { params: [['places', 'any'], ['title', 'str', true]], desc: 'a real, live map (OpenStreetMap) with the places pinned: places = [["YVR", 49.1947, -123.1792], ["LAX", 33.9416, -118.4085]]; two places also get directions links. Use this for any map; never draw one or embed a map page' },
-  Image: { params: [['src', 'str'], ['alt', 'str', true], ['aspect', 'num', true]], desc: 'a picture ox made or has (/ox/media/… path); for a photo of a real thing use SearchImage' },
+  Image: { params: [['src', 'str'], ['alt', 'str', true], ['aspect', 'num', true]], desc: 'a picture ox made or has (/ox/media/… path, or a file\'s full path); for a photo of a real thing use SearchImage' },
   Math: { params: [['expr', 'str'], ['block', 'bool', true]], desc: 'a formula, shown typeset (x^2, sqrt(), pi, <=, >=)' },
   Popover: { params: [['label', 'str'], ['children', 'nodes']], desc: 'reveal more on click (a hint, the answer, details)' },
   Celebration: { params: [['text', 'str', true]], desc: 'confetti when something is done' },

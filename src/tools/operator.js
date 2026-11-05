@@ -96,6 +96,16 @@ export async function open_url(args = {}, ctx = {}) {
 export async function open_path(args = {}, ctx = {}) {
   const p = args?.path;
   if (!p) return err('operator open_path: path is required');
+  // Asked to open a picture or document, ox opens it. Only programs, scripts and anything
+  // outside your home still ask (src/app-api.js openableFile).
+  const full = path.resolve(ctx?.cwd ?? process.cwd(), String(p).replace(/^~(?=\/)/, os.homedir()));
+  const { openableFile } = await import('../app-api.js');
+  const safe = openableFile(full);
+  if (safe) {
+    const open = osCmd('open_path', safe);
+    if (!open) return err(`No open_path support on ${os.platform()}`);
+    return runCmd(open, `open ${safe}`);
+  }
   if (!ctx?.yolo) {
     if (ctx?.requestApproval) {
       const v = await ctx.requestApproval('open_path', { path: p }, `Open path ${p}?`);
