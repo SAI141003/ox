@@ -1964,6 +1964,15 @@ export function keptFresh(key, make, { maxAgeMs }) {
   return refresh();
 }
 
+// Today and Needs you gathered once the app is opened, before you open them: a server no one
+// uses does nothing (it stays under 1 % CPU idle), and one in use has them ready.
+let pagesWarmed = false;
+function warmPages() {
+  if (pagesWarmed) return;
+  pagesWarmed = true;
+  setTimeout(() => { if (onBattery()) return; cachedBrief().catch(() => {}); keptFresh('needs', () => offThread('./needs-you.js', 'needsYou'), { maxAgeMs: 60_000 }).catch(() => {}); }, 3_000).unref();
+}
+
 export async function cachedBrief({ maxAgeMs = 5 * 60_000 } = {}) {
   return keptFresh('brief', () => offThread('./today.js', 'brief'), { maxAgeMs });
 }
@@ -3674,6 +3683,7 @@ async function handleRequest(req, res) {
   const PLATFORM_ROOT = resolve(process.cwd(), 'platform');
   if (await serveStaticFile(req, res, PLATFORM_ROOT)) return;
   if (req.method === 'GET' && (path === '/' || path === '/chat')) {
+    warmPages();
     await serveChatPage(res);
     return;
   }
@@ -3847,8 +3857,6 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       const todos = () => import('./offline.js').then((O) => O.refreshTodos()).catch(() => {});
       setTimeout(todos, 5_000).unref();
     }
-    // Today and Needs you gathered before they are opened, so the first open is instant too.
-    setTimeout(() => { if (!onBattery()) { cachedBrief().catch(() => {}); keptFresh('needs', () => offThread('./needs-you.js', 'needsYou'), { maxAgeMs: 60_000 }).catch(() => {}); } }, 20_000).unref();
     // The island's local voice model stays loaded (renewed before its 30 min run out).
     warmVoiceModel();
     setInterval(() => { if (!onBattery()) warmVoiceModel(); }, 20 * 60_000).unref();
