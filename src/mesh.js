@@ -22,6 +22,10 @@ import { fileURLToPath } from 'node:url';
 export const PORT = 47870;          // node listener (TCP)
 export const BEACON_PORT = 47871;   // LAN discovery (UDP broadcast)
 export const PROXY_PORT = 47872;    // this machine's local endpoint for mesh model calls
+// A second node on one machine (OX_MESH_PORT, OX_MESH_PROXY_PORT) means these for
+// every command run there, or they would all reach the first machine's node.
+const nodePort = () => Number(process.env.OX_MESH_PORT) || PORT;
+const controlPort = () => Number(process.env.OX_MESH_PROXY_PORT) || PROXY_PORT;
 const HEARTBEAT_MS = 5000;
 const BINARY_FRAME = 0; // never the first byte of a text line
 const MAX_FRAME = 32 * 1024 * 1024;
@@ -545,8 +549,8 @@ export function watchdog(machines, { now = Date.now(), limits = LIMITS } = {}) {
  */
 export async function startNode(o = {}) {
   const me = identity(o);
-  let port = o.port ?? PORT;
-  let proxyPort = o.proxyPort ?? PROXY_PORT;
+  let port = o.port ?? nodePort();
+  let proxyPort = o.proxyPort ?? controlPort();
   const beaconPort = o.beaconPort ?? BEACON_PORT;
   const ollamaUrl = o.ollamaUrl ?? process.env.OX_OLLAMA_URL ?? 'http://127.0.0.1:11434';
   const state = { invite: null, machines: new Map(), alerts: [], log: [] };
@@ -916,7 +920,7 @@ export async function startNode(o = {}) {
 
   // ---- LAN beacon: paired machines find each other's current address
   let beacon = null;
-  if (o.beacon !== false) {
+  if (o.beacon !== false && !process.env.OX_MESH_PORT) {
     beacon = dgram.createSocket({ type: 'udp4', reuseAddr: true });
     beacon.on('message', (buf, rinfo) => {
       try {
@@ -1159,7 +1163,7 @@ export async function planHeadroom() {
 }
 
 /** A node already running on this machine (the app's or `ox mesh up`), through its loopback control. */
-export async function control(what, { proxyPort = PROXY_PORT, method = 'GET', timeoutMs = 3000 } = {}) {
+export async function control(what, { proxyPort = controlPort(), method = 'GET', timeoutMs = 3000 } = {}) {
   const r = await fetch(`http://127.0.0.1:${proxyPort}/mesh-control/${what}`, {
     method, headers: { 'x-ox-mesh': '1', ...(method === 'POST' ? { 'content-type': 'application/json' } : {}) },
     body: method === 'POST' ? '{}' : undefined, signal: AbortSignal.timeout(timeoutMs),
@@ -1193,7 +1197,7 @@ function readKey(name) {
 }
 
 /** Join a machine that has an invite open: pair with its code. */
-export async function join({ code, at = null, name = null, o = {}, wait = 15_000, beaconPort = BEACON_PORT, myPort = PORT }) {
+export async function join({ code, at = null, name = null, o = {}, wait = 15_000, beaconPort = BEACON_PORT, myPort = nodePort() }) {
   const me = identity(o);
   if (name) setName(name, o);
   let target = at;
