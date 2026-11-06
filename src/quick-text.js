@@ -5,7 +5,7 @@ import os from 'node:os';
 import { streamVia } from './providers/index.js';
 import { normalizeStreamEvent } from './agent.js';
 
-export async function quickText(target, { system, user, images = [], maxTokens = 200, signal } = {}) {
+export async function quickText(target, { system, user, images = [], maxTokens = 200, signal, reasoningEffort = null } = {}) {
   let text = '';
   const usage = { inputTokens: 0, outputTokens: 0 };
   if (target?.provider === 'subscription') {
@@ -23,7 +23,9 @@ export async function quickText(target, { system, user, images = [], maxTokens =
   const messages = [{ role: 'system', content: system }, { role: 'user', content: user, ...(images.length ? { images } : {}) }];
   // A small call has no room to think: models spent the whole allowance on hidden reasoning
   // and came back empty (80 of 80 tokens, no text), so next-step suggestions never appeared.
-  const quick = maxTokens <= 300 ? { reasoningEffort: 'none' } : {};
+  // A bigger one (a build plan, a review) is the same trap with a longer fuse: 4,000 of 4,000 tokens went on
+  // thinking, 157 s and no plan, so the team fell back to one agent. It thinks a little and answers.
+  const quick = { reasoningEffort: reasoningEffort ?? (maxTokens <= 300 ? 'none' : 'low') };
   for await (const raw of streamVia(target, { model: target?.model, messages, maxTokens, signal, ...quick })) {
     const ev = normalizeStreamEvent(raw);
     if (!ev) continue;

@@ -3746,8 +3746,34 @@ async function handleRequest(req, res) {
   if (req.method === 'GET' && (path === '/build' || path === '/files' || path === '/coworkers' || path === '/machines' || path === '/web/term.js')) {
     const page = await readFile(new URL(path === '/build' ? './web/build.html' : path === '/files' ? './web/files.html' : path === '/coworkers' ? './web/coworkers.html' : path === '/machines' ? './web/machines.html' : './web/term.js', import.meta.url));
     res.writeHead(200, { 'Content-Type': path === '/web/term.js' ? 'application/javascript; charset=utf-8' : 'text/html; charset=utf-8', 'Content-Length': page.length, 'Cache-Control': 'no-store',
-      'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'", 'X-Content-Type-Options': 'nosniff' });
+      'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'", 'X-Content-Type-Options': 'nosniff' });
     res.end(page);
+    return;
+  }
+  // The page a team is building, live (src/site-preview.js): sandboxed, from the agents' copies.
+  const siteReq = req.method === 'GET' && /^\/ox\/builds\/([\w.-]+)\/site(?:\/(.*))?$/.exec(path);
+  if (siteReq) {
+    if (!authorized(req)) { unauthorized(res); return; }
+    const BR = await import('./build-room.js');
+    const P = await import('./site-preview.js');
+    const roots = BR.buildRoots(siteReq[1]);
+    if (!roots) { sendError(res, 404, 'No such build.', 'invalid_request_error', 'not_found', null); return; }
+    let rel;
+    try { rel = decodeURIComponent(siteReq[2] ?? ''); } catch { rel = null; }
+    if (rel === '') {
+      const entry = P.siteEntry(roots);
+      if (!entry) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': P.SITE_CSP, 'Cache-Control': 'no-store' }); res.end('<!doctype html><title>No page yet</title><body style="font:14px system-ui;color:#888;background:#111;display:grid;place-items:center;height:100vh">No page yet. It appears here as soon as an agent writes one.</body>'); return; }
+      res.writeHead(302, { Location: `/ox/builds/${siteReq[1]}/site/${entry}`, 'Cache-Control': 'no-store' }); res.end();
+      return;
+    }
+    const f = rel == null ? null : P.resolveSiteFile(roots, rel);
+    if (!f) { sendError(res, 404, 'Not found', 'invalid_request_error', 'not_found', null); return; }
+    const ext = extname(f).toLowerCase();
+    const type = { '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ico': 'image/x-icon', ...MEDIA_TYPES }[ext] ?? 'application/octet-stream';
+    let body = await readFile(f);
+    if (ext === '.html' || ext === '.htm') body = Buffer.from(P.injectOverlay(body.toString('utf8'), await readFile(new URL('./web/site-overlay.js', import.meta.url), 'utf8')));
+    res.writeHead(200, { 'Content-Type': type, 'Content-Length': body.length, 'Cache-Control': 'no-store', 'Content-Security-Policy': P.SITE_CSP, 'X-Content-Type-Options': 'nosniff' });
+    res.end(body);
     return;
   }
   // Live streams for the Build page: a build's events, a terminal's output.

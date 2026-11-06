@@ -306,6 +306,9 @@ async function backupExistingFile(p, ctx) {
     return null;
   }
   const root = backupsRootFor(ctx, p);
+  // ox's own copies never reach your commits: `git add -A` in a project put whole files of them
+  // into patches (found by the SWE-bench pilot).
+  try { await fsp.mkdir(root, { recursive: true }); await fsp.writeFile(path.join(root, '.gitignore'), '*\n', { flag: 'wx' }); } catch {}
   let rel = path.relative(path.dirname(root), p);
   if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) rel = path.basename(p);
   for (let attempt = 0; attempt < 10; attempt++) {
