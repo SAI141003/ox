@@ -217,3 +217,29 @@ test('a failed model is one plain sentence, and never a made-up answer', () => {
   assert.match(plainFailure('stream stalled (no reply)'), /can't reach/);
   assert.match(plainFailure('something odd'), /no answer/);
 });
+
+test('a point placed far off still lands on the one thing with its name', async () => {
+  const { resolvePoint } = await import('../src/see.js');
+  const seen = { screens: [{ n: 1, width: 1440, height: 900 }], items: [{ id: 1, screen: 1, text: 'Generate', x: 330, y: 412, w: 70, h: 30 }, { id: 2, screen: 1, text: 'Studio', x: 40, y: 290, w: 60, h: 20 }] };
+  const r = resolvePoint({ x: 214, y: 240, label: 'Generate button' }, seen);
+  assert.equal(r.how, 'named');
+  assert.deepEqual([r.x, r.y], [365, 427]);
+  // Two of that name: the guess stands, no coin toss.
+  const two = { ...seen, items: [...seen.items, { id: 3, screen: 1, text: 'Generate', x: 900, y: 100, w: 70, h: 30 }] };
+  assert.equal(resolvePoint({ x: 214, y: 240, label: 'Generate' }, two).how, 'pixels');
+});
+
+test('the quick look reads only the island\'s own screenshots, and steps aside with no model that can see', async () => {
+  const os = await import('node:os');
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { voiceLook } = await import('../src/serve.js');
+  assert.equal((await voiceLook({ text: 'what is this', images: ['/etc/hosts'] }, {})).why, 'no screenshot');
+  const shot = path.join(fs.realpathSync(os.tmpdir()), `ox-buddy-test-${process.pid}.png`);
+  fs.writeFileSync(shot, Buffer.from('89504e470d0a1a0a', 'hex'));
+  try {
+    const r = await voiceLook({ text: 'what is this', images: [shot] }, {});
+    assert.equal(r.handled, false);
+    assert.match(r.why, /no quick model that can see/);
+  } finally { fs.rmSync(shot, { force: true }); }
+});

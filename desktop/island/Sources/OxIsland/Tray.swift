@@ -88,6 +88,21 @@ enum VoiceServer {
         return nil
     }
 
+    /// A question about the screen in one quick call (POST /ox/voice/look): a fast model that
+    /// can see, with the point tied to the real thing on screen. nil or unhandled: take the full run.
+    static func look(_ text: String, images: [String], done: @escaping (Result?) -> Void) {
+        guard let u = url()?.appendingPathComponent("look") else { done(nil); return }
+        var req = URLRequest(url: u, timeoutInterval: 30)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "content-type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text, "images": images])
+        URLSession.shared.dataTask(with: req) { data, resp, _ in
+            let ok = (resp as? HTTPURLResponse)?.statusCode == 200
+            let r = ok ? data.flatMap { try? JSONDecoder().decode(Result.self, from: $0) } : nil
+            DispatchQueue.main.async { done(r) }
+        }.resume()
+    }
+
     /// offlineOnly: only ox's no-AI router answers (an errand done in ~0.1 s);
     /// anything else comes back unhandled, for the live run to take.
     static func ask(_ text: String, offlineOnly: Bool = false, done: @escaping (Result?) -> Void) {
@@ -960,7 +975,20 @@ final class IslandChat: ObservableObject {
             }
             IslandLog.write("screen question: looking at the screen after \(ms) ms")
             lines.append(Line(mine: false, text: "Looking…"))
-            run(text, extra: ["--mode", "ask", "--buddy"] + shots.flatMap { ["--image", $0] }, key: "ox-screen", who: nil)
+            busy = true
+            let asked = Date()
+            // The quick look first (one call, a few seconds); the full run only when it cannot answer.
+            VoiceServer.look(text, images: shots) { [weak self] r in
+                guard let self else { return }
+                if let r, r.handled, let say = r.say, !say.isEmpty {
+                    IslandLog.write("quick look in \(Int(Date().timeIntervalSince(asked) * 1000)) ms (\(r.model ?? "?"))")
+                    self.busy = false
+                    self.reply(say, who: nil)
+                    return
+                }
+                IslandLog.write("quick look could not answer (\(r?.why ?? "no server")): the full run looks")
+                self.run(text, extra: ["--mode", "ask", "--buddy"] + shots.flatMap { ["--image", $0] }, key: "ox-screen", who: nil)
+            }
             return true
         }
         if route == "screen-act" {

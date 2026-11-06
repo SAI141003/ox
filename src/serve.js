@@ -37,7 +37,7 @@ import { BOTS, KEY_ENV, automaticFallbackAllowed, resolveBot, defaultBotSpec, wi
 import { readFile } from 'fs/promises';
 import { join, resolve, extname, dirname, basename, sep } from 'path';
 import os, { homedir } from 'os';
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, statSync, statfsSync, readdirSync, rmSync } from 'fs';
+import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, statSync, statfsSync, readdirSync, rmSync, realpathSync } from 'fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { createReadStream } from 'fs';
 import { stat, unlink } from 'fs/promises';
@@ -2035,6 +2035,62 @@ export async function voiceTurn(body) {
   }
 }
 
+// Models that read a picture and answer in seconds, quickest first. A plan's CLI is
+// not here: it took 30-47 s a look (its own ~13k-token prompt, a process per question).
+const LOOK_BOTS = ['ox-flash', 'ox-haiku', 'nvidia:minimaxai/minimax-m3.1-flash', 'ox-gpt', 'ox-gemini'];
+export function lookModel(env = process.env) {
+  let chosen = null;
+  try { chosen = readConfigDoc().voice?.lookModel ?? null; } catch {}
+  return [chosen, ...LOOK_BOTS].filter(Boolean).find((id) => runnable(id, env)) ?? null;
+}
+
+// A screenshot the island took: a picture in this user's temp folder, nothing else.
+function islandShot(p) {
+  try {
+    const f = realpathSync(String(p));
+    const tmp = realpathSync(os.tmpdir());
+    return f.startsWith(tmp + sep) && /\.(png|jpe?g)$/i.test(f) && statSync(f).isFile() ? f : null;
+  } catch { return null; }
+}
+
+/**
+ * A question about the screen, answered in one call: the picture to a fast model that can
+ * see, while ox reads the screen's words on this Mac; a [POINT] the model gives is then tied
+ * to the real thing of that name. { handled: false } sends the island to its slower full run.
+ */
+export async function voiceLook(body, env = process.env) {
+  const started = Date.now();
+  const text = String(body?.text ?? '').trim().slice(0, 2000);
+  if (!text) throw new Error('nothing was said');
+  const shots = [].concat(body?.images ?? []).map(islandShot).filter(Boolean).slice(0, 3);
+  if (!shots.length) return { handled: false, why: 'no screenshot', ms: Date.now() - started };
+  const id = lookModel(env);
+  if (!id) return { handled: false, why: 'no quick model that can see is connected', ms: Date.now() - started };
+  const B = await import('./buddy.js');
+  const { seeShots, rewritePoints } = await import('./see.js');
+  const { quickText } = await import('./quick-text.js');
+  const { assistantName } = await import('./identity.js');
+  const small = shots.map((f) => { try { return B.shrinkShot(f); } catch { return f; } });
+  const size = B.pngSize(readFileSync(small[0]));
+  const images = small.map((f) => ({ mediaType: /\.jpe?g$/i.test(f) ? 'image/jpeg' : 'image/png', data: readFileSync(f).toString('base64') }));
+  const guidance = B.buddyGuidance({ size, voice: true, seen: { screens: small.map((_, i) => ({ n: i + 1 })), items: [], text: '' } });
+  // The words on screen are read here while the model looks: neither waits for the other.
+  const seeing = env.OX_BUDDY_SEE === '0' ? Promise.resolve(null) : seeShots(small).catch(() => null);
+  let reply;
+  try {
+    const target = resolveBot(id, { bots: readConfigDoc().bots ?? {} }, env);
+    reply = String((await quickText(target, { system: `You are ${assistantName()}, looking at the user's screen with them.\n${guidance}`, user: text, images, maxTokens: 220, signal: AbortSignal.timeout(25_000) })).text ?? '').trim();
+  } catch (e) {
+    return { handled: false, why: String(e?.message ?? e).slice(0, 200), model: id, ms: Date.now() - started };
+  }
+  if (!reply) return { handled: false, why: `${id} said nothing`, model: id, ms: Date.now() - started };
+  // A reply cut at the token limit can end inside its tag: closed, it still points.
+  reply = reply.replace(/\[POINT:[^\]\n]*$/i, (t) => `${t}]`);
+  const seen = await seeing;
+  const say = seen && !seen.cannotSee ? rewritePoints(reply, seen, B.parsePoint) : reply;
+  return { route: 'look', handled: true, ok: true, say: say.replace(/[*_`#>]+/g, '').trim(), model: id, ms: Date.now() - started };
+}
+
 // While OX Island is running, the local model the voice answers with stays
 // loaded: a cold start took 24 s on this Mac, a warm answer 7 s. Ollama only,
 // on this machine, nothing sent anywhere.
@@ -3201,6 +3257,7 @@ const ROUTES = [
   }) },
   { method: 'POST', pattern: /^\/ox\/flows\/hook\/([a-z0-9-]{1,40})\/?$/, handler: flowHook },
   { method: 'POST', pattern: /^\/ox\/voice\/?$/, handler: appRoute(voiceTurn) },
+  { method: 'POST', pattern: /^\/ox\/voice\/look\/?$/, handler: appRoute((b) => voiceLook(b)) },
   // The island's own recording, when live recognition heard nothing: whisper on this Mac.
   // What a background errand really did (typing, clicking): { pending } until it finishes, then { ok, say }.
   { method: 'GET', pattern: /^\/ox\/voice\/result\/?$/, handler: appRoute(async (_, __, req) => {

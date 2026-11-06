@@ -130,6 +130,10 @@ export function resolvePoint(point, seen) {
     .filter((x) => x.d <= SNAP_PX)
     .sort((a, b) => a.d - b.d)[0];
   if (near) return at(near.i, 'snapped');
+  // Fast models name the thing right and place it wrong (minimax: "Generate" 190 px off). One
+  // thing on that screen with that exact name is the thing, however far the guess was.
+  const named = point.label ? items.filter((i) => i.screen === screen && norm(i.text) === norm(point.label)) : [];
+  if (named.length === 1) return at(named[0], 'named');
   return { x: Math.round(point.x), y: Math.round(point.y), label: point.label, screen, how: 'pixels' };
 }
 

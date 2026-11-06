@@ -124,11 +124,16 @@ final class Buddy: NSObject, ObservableObject {
     @Published private(set) var handsFree = false
     private var lastHeardChange = Date()
     private var listenStarted = Date()
+    // Speech by its sound, for when the live recognizer hears nothing (a quiet microphone):
+    // the words then come from the recording, and the transcript alone said "nothing" while
+    // you were still talking, so it stopped at 8 s mid-sentence.
+    private var lastVoiceAt = Date.distantPast
+    private var noiseFloor: Double = 1
     private var endWatch: Timer?
 
     private func watchForEndOfSpeech() {
         endWatch?.invalidate()
-        listenStarted = Date(); lastHeardChange = Date()
+        listenStarted = Date(); lastHeardChange = Date(); lastVoiceAt = .distantPast; noiseFloor = 1
         let byClick = handsFree
         endWatch = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] t in
             MainActor.assumeIsolated {
@@ -136,9 +141,15 @@ final class Buddy: NSObject, ObservableObject {
                 let quiet = Date().timeIntervalSince(self.lastHeardChange)
                 let total = Date().timeIntervalSince(self.listenStarted)
                 let said = !self.heard.trimmingCharacters(in: .whitespaces).isEmpty
-                // Clicked: words, then a pause; the recognizer's own end of sentence; nothing at all for 8 s.
-                // Held key: until it is let go. Either way 45 s at most, so a lost key-up never leaves the mic on.
-                if (byClick && ((said && (quiet > 0.9 || self.finalHeard)) || (!said && total > 8))) || total > 45 {
+                let voiced = self.lastVoiceAt > self.listenStarted
+                let soundQuiet = Date().timeIntervalSince(self.lastVoiceAt)
+                // Quiet means no new words and no voice: a pause to think is not the end.
+                let still = min(quiet, soundQuiet)
+                // Clicked: speech, then 1.2 s of quiet (the recognizer's end of sentence counts once the
+                // sound has stopped too); nothing at all for 8 s. Held key: until it is let go.
+                // Either way 45 s at most, so a lost key-up never leaves the mic on.
+                let spoke = said || voiced
+                if (byClick && ((spoke && (still > 1.2 || (self.finalHeard && soundQuiet > 0.6))) || (!spoke && total > 8))) || total > 45 {
                     t.invalidate()
                     IslandLog.write("voice: end of speech (\(said ? "after a pause" : "nothing said"), \(String(format: "%.1f", total)) s)")
                     self.stopListening()
@@ -263,8 +274,12 @@ final class Buddy: NSObject, ObservableObject {
             // The level shown and logged is the microphone's own (before the gain), so "no signal" stays true.
             let rms = Double(sqrt(sum / Float(max(n, 1)))) / Double(max(gain, 1))
             DispatchQueue.main.async {
-                self?.peakInputLevel = max(self?.peakInputLevel ?? 0, rms)
-                self?.level = min(1, rms * 12)
+                guard let self else { return }
+                self.peakInputLevel = max(self.peakInputLevel, rms)
+                self.level = min(1, rms * 12)
+                // The room's own hum follows the quietest recent sound; a voice is well above it.
+                self.noiseFloor = min(self.noiseFloor * 1.002, max(rms, 0.0002)) // rises slowly: a long sentence must not become the "hum"
+                if rms > max(0.0015, self.noiseFloor * 3) { self.lastVoiceAt = Date() }
             }
         }
         task = recognizer.recognitionTask(with: req) { [weak self] result, error in

@@ -591,7 +591,7 @@ final class OxBridge: ObservableObject {
 
     // MARK: your machines (ox mesh): alerts with choices, never actions
 
-    struct MeshOption: Equatable { let label: String; let action: String; let model: String?; let to: String? }
+    struct MeshOption: Equatable { let label: String; let action: String; let model: String?; let to: String?; var minutes: Int? = nil }
     struct MeshAlert: Identifiable, Equatable { let id: String; let machine: String; let kind: String; let text: String; let options: [MeshOption] }
     struct MeshMachine: Identifiable, Equatable { let id: String; let name: String; let up: Bool; let load: Double?; let mem: Double? }
     @Published private(set) var meshAlerts: [MeshAlert] = []
@@ -640,7 +640,7 @@ final class OxBridge: ObservableObject {
             let alerts = ((doc["alerts"] as? [[String: Any]]) ?? []).compactMap { a -> MeshAlert? in
                 guard let id = a["id"] as? String, let text = a["text"] as? String else { return nil }
                 let opts = ((a["options"] as? [[String: Any]]) ?? []).map {
-                    MeshOption(label: $0["label"] as? String ?? "", action: $0["action"] as? String ?? "", model: $0["model"] as? String, to: $0["to"] as? String)
+                    MeshOption(label: $0["label"] as? String ?? "", action: $0["action"] as? String ?? "", model: $0["model"] as? String, to: $0["to"] as? String, minutes: $0["minutes"] as? Int)
                 }
                 return MeshAlert(id: id, machine: a["machine"] as? String ?? "", kind: a["kind"] as? String ?? "", text: text, options: opts)
             }
@@ -780,6 +780,7 @@ final class OxBridge: ObservableObject {
         var o: [String: Any] = ["label": option.label, "action": option.action]
         if let m = option.model { o["model"] = m }
         if let t = option.to { o["to"] = t }
+        if let m = option.minutes { o["minutes"] = m }
         // Choosing an action is also a dismissal. Do not immediately poll and
         // redisplay the same heavy-load warning before the action can work.
         dismissMesh(alert)
