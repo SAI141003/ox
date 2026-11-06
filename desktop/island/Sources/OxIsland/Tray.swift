@@ -929,6 +929,21 @@ final class IslandChat: ObservableObject {
         }
         IslandLog.write("screen question while a run is going: looking now")
         lines.append(Line(mine: true, text: text))
+        // The quick look first, as when nothing is running; the full look only when it cannot answer.
+        VoiceServer.look(text, images: shots) { [weak self] r in
+            guard let self else { return }
+            if let r, r.handled, let answer = r.say, !answer.isEmpty {
+                let shown = Buddy.parseMarks(answer).0.replacingOccurrences(of: #"\[POINT:[^\]]*\]"#, with: "", options: [.regularExpression, .caseInsensitive]).trimmingCharacters(in: .whitespacesAndNewlines)
+                self.lines.append(Line(mine: false, text: shown.isEmpty ? answer : shown))
+                IslandLog.write("replied (while busy, quick look \(r.model ?? "?")): \(answer.prefix(200))")
+                onReply?(answer)
+                return
+            }
+            self.fullLookWhileBusy(text, shots: shots, onReply: onReply)
+        }
+    }
+
+    private func fullLookWhileBusy(_ text: String, shots: [String], onReply: ((String) -> Void)?) {
         OxRunner.run(["--mode", "ask", "--buddy"] + shots.flatMap { ["--image", $0] } + ["-p", text], cwd: URL(fileURLWithPath: folder), env: ["OX_MCP": "0"]) { [weak self] _, out in
             guard let self else { return }
             let answer = Shelf.clean(out).split(separator: "\n").filter { !$0.hasPrefix("! ") }.last.map(String.init) ?? "I couldn't look at that."
