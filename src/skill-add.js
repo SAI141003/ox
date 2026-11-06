@@ -40,7 +40,7 @@ function invalid(message, extra = {}) {
   return { ok: false, kind: 'invalid', message, ...extra };
 }
 
-function walkFiles(dir, baseRel = '') {
+function walkFiles(dir, baseRel = '', links = null) {
   const out = [];
   let dirents;
   try {
@@ -51,8 +51,9 @@ function walkFiles(dir, baseRel = '') {
   for (const d of dirents) {
     const rel = baseRel ? `${baseRel}/${d.name}` : d.name;
     const full = path.join(dir, d.name);
-    if (d.isDirectory()) out.push(...walkFiles(full, rel));
+    if (d.isDirectory()) { if (d.name !== '.git') out.push(...walkFiles(full, rel, links)); }
     else if (d.isFile()) out.push({ absPath: full, relPath: rel });
+    else if (d.isSymbolicLink()) links?.push(rel);
   }
   return out;
 }
@@ -88,51 +89,27 @@ export function scanText(relPath, text, baseLine = 0) {
   return findings;
 }
 
-// Scans the SKILL.md body plus every file under scripts/ and references/.
-function skilMdBodyOffset(rawText) {
-  const lines = String(rawText ?? '').split(/\r?\n/);
-  if ((lines[0] ?? '').trim() !== '---') return 0;
-  let close = -1;
-  for (let i = 1; i < lines.length; i++) {
-    if (lines[i].trim() === '---') {
-      close = i;
-      break;
-    }
-  }
-  if (close === -1) return 0;
-  let stripped = 0;
-  for (let i = close + 1; i < lines.length && lines[i].trim() === ''; i++) stripped++;
-  return close + stripped + 1;
-}
-
+// Scans everything the install copies: SKILL.md whole (its description goes into
+// every prompt) and every other file, wherever it sits. Only scripts/ and
+// references/ were read, so a run.sh beside SKILL.md went in unread.
 export function scanSkillSource(sourceDir) {
   let findings = [];
   const scanned = [];
-  for (const sub of ['', 'scripts', 'references']) {
-    const dir = sub ? path.join(sourceDir, sub) : sourceDir;
-    let files;
-    if (sub) files = walkFiles(dir).map((f) => ({ ...f, relPath: `${sub}/${f.relPath}` }));
-    else files = [{ absPath: path.join(dir, 'SKILL.md'), relPath: 'SKILL.md' }];
-    for (const f of files) {
-      let text;
-      try {
-        text = fs.readFileSync(f.absPath, 'utf8');
-      } catch {
-        continue;
-      }
-      scanned.push(f.relPath);
-      if (f.relPath === 'SKILL.md') {
-        const parsed = parseSkillMd(text, f.absPath);
-        if (parsed.ok) {
-          findings = findings.concat(
-            scanText('SKILL.md', parsed.skill.body, skilMdBodyOffset(text))
-          );
-          continue;
-        }
-      }
-      findings = findings.concat(scanText(f.relPath, text));
+  const links = [];
+  for (const f of walkFiles(sourceDir, '', links)) {
+    let buf;
+    try {
+      buf = fs.readFileSync(f.absPath);
+    } catch {
+      continue;
     }
+    scanned.push(f.relPath);
+    // A picture or a compiled file is not text: its bytes matched patterns by chance.
+    if (buf.subarray(0, 8192).includes(0)) continue;
+    findings = findings.concat(scanText(f.relPath, buf.toString('utf8')));
   }
+  // A link is copied as a link: "data.txt" could be ~/.ssh/id_rsa, read the first time the skill opens it.
+  for (const rel of links) findings.push({ file: rel, line: 0, pattern: 'symlink', why: 'a link can point at any file on this machine', excerpt: (() => { try { return fs.readlinkSync(path.join(sourceDir, rel)).slice(0, 80); } catch { return ''; } })() });
   // A script that starts processes matters when the skill runs it, which it
   // can only do by naming it. A repo's own tooling no skill mentions (its test
   // runners, release scripts) is never run by ox: addyosmani/agent-skills was
@@ -368,6 +345,15 @@ export async function installSkill(source, opts = {}) {
   const name = parsed.skill.name;
 
   const dest = path.join(path.resolve(home), '.agents', 'skills', name);
+  // A folder that holds the skills folder: removing the old copy would delete part of the source,
+  // and the copy would go into itself.
+  if (mode === 'local') {
+    let real = sourceDir;
+    try { real = fs.realpathSync(sourceDir); } catch {}
+    if (dest.startsWith(real + path.sep) || dest.startsWith(sourceDir + path.sep)) {
+      return invalid(`skill add: '${src}' holds the skills folder itself — choose the skill's own folder.`);
+    }
+  }
   if (fs.existsSync(dest)) {
     if (!force) {
       return {
@@ -377,6 +363,10 @@ export async function installSkill(source, opts = {}) {
         dest,
         message: `skill '${name}' is already installed at ${dest} — re-run with --force to overwrite.`,
       };
+    }
+    // Replacing a skill with itself deleted it: the copy below had nothing left to copy.
+    if (mode === 'local' && (sourceDir === dest || sourceDir.startsWith(dest + path.sep) || fs.realpathSync(sourceDir) === fs.realpathSync(dest))) {
+      return invalid(`skill add: '${src}' is the installed skill '${name}' itself — nothing to do.`);
     }
     fs.rmSync(dest, { recursive: true, force: true });
   }
@@ -388,8 +378,7 @@ export async function installSkill(source, opts = {}) {
     findings = scan.findings;
     scannedCount = scan.scanned.length;
   } else {
-    const bodyParsed = parseSkillMd(rawText, virtualPath);
-    findings = scanText('SKILL.md', bodyParsed.ok ? bodyParsed.skill.body : rawText);
+    findings = scanText('SKILL.md', rawText);
     for (const f of extraFiles) findings.push(...scanText(f.rel, f.text));
     scannedCount = 1 + extraFiles.length;
   }
@@ -419,7 +408,7 @@ export async function installSkill(source, opts = {}) {
 
   if (mode === 'local') {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.cpSync(sourceDir, dest, { recursive: true });
+    fs.cpSync(sourceDir, dest, { recursive: true, filter: (from) => path.basename(from) !== '.git' });
   } else {
     fs.mkdirSync(dest, { recursive: true });
     fs.writeFileSync(path.join(dest, 'SKILL.md'), rawText);

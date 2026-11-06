@@ -33,7 +33,10 @@ const RUNS = () => path.join(FLOWS_DIR(), 'runs.jsonl');
 const fileOf = (id) => path.join(FLOWS_DIR(), `${id}.json`);
 
 export function slug(name) {
-  return String(name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'flow';
+  const s = String(name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+  if (s) return s;
+  // A name with no Latin letters ("日本語") gets its own id: they all became "flow", each replacing the last.
+  return String(name ?? '').trim() ? `flow-${crypto.createHash('sha256').update(String(name)).digest('hex').slice(0, 8)}` : 'flow';
 }
 
 // ---- checking a flow ------------------------------------------------------------
@@ -61,6 +64,7 @@ export function validateFlow(flow) {
     if (s.type === 'http' && !/^https?:\/\//.test(String(s.url ?? '').replace(/\{\{[^}]*\}\}/g, 'x'))) errs.push(`${at}: url must start with http:// or https://`);
     if (s.type === 'ask' && !String(s.prompt ?? '').trim()) errs.push(`${at}: needs a prompt`);
     if (s.type === 'extract' && !String(s.path ?? '').trim()) errs.push(`${at}: needs a path like items.0.title`);
+    if (s.type === 'extract' && !String(s.from ?? '').trim()) errs.push(`${at}: needs "from", the step to read`);
     if (s.type === 'if' && !['contains', 'equals', 'matches', 'gt', 'lt', 'empty', 'not-empty'].includes(s.op)) errs.push(`${at}: op must be contains, equals, matches, gt, lt, empty or not-empty`);
     if (s.type === 'notify' && !String(s.text ?? '').trim()) errs.push(`${at}: needs text`);
     if (s.type === 'write' && (!String(s.path ?? '').trim() || s.text === undefined)) errs.push(`${at}: needs path and text`);
@@ -80,6 +84,8 @@ export function listFlows() {
 }
 
 export function loadFlow(id) {
+  // No id is no flow (it used to mean the one saved as "flow").
+  if (!String(id ?? '').trim()) return null;
   try { return JSON.parse(fs.readFileSync(fileOf(slug(id)), 'utf8')); } catch { return null; }
 }
 
@@ -88,15 +94,19 @@ export function saveFlow(flow) {
   if (errs.length) throw new Error(`This flow cannot be saved:\n- ${errs.join('\n- ')}`);
   const id = slug(flow.id ?? flow.name);
   const prev = loadFlow(id);
+  // Only an edit, which carries its id, replaces a flow: a new one with a taken name used to overwrite it.
+  if (prev && !flow.id) throw new Error(`There is already an automation called "${prev.name}" (${id}). Give this one another name.`);
   const trigger = { type: 'manual', ...(flow.trigger ?? {}) };
   if (trigger.type === 'webhook' && !trigger.secret) trigger.secret = prev?.trigger?.secret ?? crypto.randomBytes(16).toString('hex');
-  const out = { ...flow, id, trigger, createdAt: prev?.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString() };
+  // The last run stays through an edit: without it a scheduled flow counts as never run, and fires at once.
+  const out = { ...flow, id, trigger, ...(prev?.lastRunAt && !flow.lastRunAt ? { lastRunAt: prev.lastRunAt } : {}), createdAt: prev?.createdAt ?? new Date().toISOString(), updatedAt: new Date().toISOString() };
   fs.mkdirSync(FLOWS_DIR(), { recursive: true, mode: 0o700 });
   fs.writeFileSync(fileOf(id), JSON.stringify(out, null, 2), { mode: 0o600 });
   return out;
 }
 
 export function removeFlow(id) {
+  if (!String(id ?? '').trim()) return false;
   try { fs.unlinkSync(fileOf(slug(id))); return true; } catch { return false; }
 }
 
@@ -164,7 +174,8 @@ function check(op, value, to) {
   switch (op) {
     case 'contains': return v.toLowerCase().includes(t.toLowerCase());
     case 'equals': return v.trim() === t.trim();
-    case 'matches': try { return new RegExp(t, 'i').test(v); } catch { return false; }
+    // A pattern that cannot be read fails the step: reading it as "false" stopped the flow as if nothing matched.
+    case 'matches': try { return new RegExp(t, 'i').test(v); } catch (e) { throw new Error(`"${t}" is not a pattern ox can read (${e.message})`); }
     case 'gt': return Number(v) > Number(t);
     case 'lt': return Number(v) < Number(t);
     case 'empty': return !v.trim();
@@ -214,7 +225,14 @@ async function defaultShell(command, cwd) {
   const { dispatchTool } = await import('./tools/index.js');
   const r = await dispatchTool('bash', { command }, { cwd, approval: 'yolo', mode: 'code' });
   if (r.isError) throw new Error(String(r.content).slice(0, 500));
-  return String(r.content);
+  return shellStdout(String(r.content));
+}
+
+// The command's own output, without the bash tool's "exit 0 / --- stdout ---" frame around it:
+// with the frame, `if equals yes` could never be true, and files and prompts got the frame too.
+export function shellStdout(content) {
+  const m = /(?:^|\n)--- stdout ---\n([\s\S]*?)(?:\n--- stderr ---\n[\s\S]*)?$/.exec(content);
+  return m ? m[1] : content.replace(/^exit 0(?:\n--- stderr ---\n[\s\S]*)?$/, '');
 }
 
 /** Run one flow. `io` swaps the outside world in tests: fetch, ask, notify, shell. */

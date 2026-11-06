@@ -33,13 +33,15 @@ test('a screen question looks at the screen even when an agent is chosen, or the
   const tray = fs.readFileSync(new URL('Tray.swift', dir), 'utf8');
   assert.match(tray, /if let name = Self\.namedAgent\(in: text, agents: agents\.map\(\\\.name\)\) \?\? \(spoken \? nil : agent\) \{[\s\S]{0,500}screenRoute\(r\.route/);
   assert.match(tray, /removeObject\(forKey: "chat\.agent"\)/, 'no pick is kept across restarts');
-  assert.match(tray, /func screenRoute[\s\S]{0,1500}"--buddy"/);
+  // The quick look (one call) first, then the full run with --buddy when it cannot answer.
+  assert.match(tray, /func screenRoute[\s\S]{0,1500}VoiceServer\.look\(text, images: shots\)[\s\S]{0,1200}"--buddy"/);
 });
 
 test('a spoken screen question does not wait behind a long run', () => {
   const tray = fs.readFileSync(new URL('Tray.swift', dir), 'utf8');
   assert.match(tray, /if busy, onReply != nil \{[\s\S]{0,300}lookWhileBusy/);
-  assert.match(tray, /func lookWhileBusy[\s\S]{0,700}"--buddy"/);
+  assert.match(tray, /func lookWhileBusy[\s\S]{0,900}VoiceServer\.look\(text, images: shots\)[\s\S]{0,1200}fullLookWhileBusy/);
+  assert.match(tray, /func fullLookWhileBusy[\s\S]{0,300}"--buddy"/);
 });
 
 test('agents are known from the start, so a spoken request can name one', () => {

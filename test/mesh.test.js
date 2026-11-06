@@ -150,8 +150,8 @@ test('watchdog: sustained load and a plan near its limit become alerts with choi
   alerts = M.watchdog([busy, idle], { now: 61_000 });
   const load = alerts.find((a) => a.kind === 'overloaded');
   assert.match(load.text, /CPU 95 %/);
-  assert.equal(load.options[0].label, 'Move its ox work to Studio Mac');
-  assert.ok(load.options.some((o) => o.action === 'pause') && load.options.some((o) => o.action === 'snooze'));
+  // Only choices ox carries out: moving, pausing and a smaller model did nothing and were dropped.
+  assert.deepEqual(load.options.map((o) => [o.action, o.minutes]), [['snooze', 30], ['snooze', 720]]);
   const down = M.watchdog([{ ...idle, phi: 13 }], { now: 0 })[0];
   assert.equal(down.kind, 'down');
 });
@@ -189,6 +189,9 @@ test('control endpoint: status and invite for local tools only; choices snooze o
     assert.throws(() => A.choose('gone', { action: 'snooze' }), /gone/);
     A.state.alerts = [{ id: 'z', kind: 'overloaded', text: 't', options: [] }];
     assert.equal(A.choose('z', { action: 'pause' }).done, null, 'moving or pausing work is never done by itself');
+    assert.ok(A.state.snoozed.z > Date.now() + 50 * 60_000, 'and an old choice ox cannot do puts the alert away for an hour');
+    A.state.alerts = [{ id: 'w', kind: 'overloaded', text: 't', options: [] }];
+    assert.match(A.choose('w', { action: 'snooze', minutes: 720 }).done, /until tomorrow/);
   } finally { await A.close(); }
 });
 

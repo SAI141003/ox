@@ -4970,7 +4970,7 @@ const SUB_USAGE = {
   hf: 'usage: ox hf search "<words>" | ox hf files <owner/repo> | ox hf pull <owner/repo>[:QUANT]',
   name: 'usage: ox name [<new name> | --reset]  — what ox is called everywhere; it answers to that name when you say it',
   usage: 'usage: ox usage [--days <n>] [--json]  — tokens and cost by model, agent, surface, project and day',
-  market: 'usage: ox market ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
+  market: 'usage: ox market [search] ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
   hook: 'usage: ox hook <claude|codex|gemini|cursor|copilot> [event]  — run by the agent itself with the event on stdin (set up with: ox hooks install <agent>)',
   'hook-relay': 'usage: ox hook-relay <agent> <session id>  — started by ox hook; one per agent session, not run by hand',
   hooks: 'usage: ox hooks install <claude|codex|gemini|cursor|copilot> [--yes] | uninstall <agent> [--yes] | status | safe on|off',
@@ -6833,7 +6833,8 @@ async function runSubcommand(cmd, args) {
           for (const st of r.flow.steps) console.log(`  ${c.green('✓')} ${st.type.padEnd(7)} ${st.name}`);
           for (const k of r.skipped) console.log(`  ${c.yellow('–')} ${k.type.padEnd(14)} ${k.node}`);
           if (r.problems.length) { console.log(c.red(`not saved: ${r.problems.join('; ')}`)); process.exitCode = 1; return; }
-          const saved = F.saveFlow(r.flow);
+          let saved;
+          try { saved = F.saveFlow(r.flow); } catch (e) { if (/already an automation/.test(e.message)) { console.log(c.red(`${e.message} Import it under another name: ox flow import ${id} --name "<new name>"`)); process.exitCode = 1; return; } throw e; }
           console.log(`saved ${saved.id} (off: check it with ox flow show ${saved.id}, run it with ox flow run ${saved.id}, then ox flow on ${saved.id})`);
           return;
         }
@@ -7063,7 +7064,8 @@ async function runSubcommand(cmd, args) {
         } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; }
         return;
       }
-      const r = await mk.search(args.join(' '));
+      // `ox market search x` is what people type: "search" is not part of what they look for.
+      const r = await mk.search((args[0] === 'search' ? args.slice(1) : args).join(' '));
       if (r.featured?.length) {
         console.log(c.dim('  featured (licences checked)'));
         for (const f of r.featured) console.log(`${f.installed ? c.green('✓') : ' '} ${c.bold(f.name)} ${c.dim(`[${f.kind}, ${f.license}]`)}  ${c.dim(f.description.slice(0, 90))}  ${c.dim(`ox market install ${f.name}`)}`);
@@ -7073,7 +7075,7 @@ async function runSubcommand(cmd, args) {
       if (r.repos.length) console.log(c.dim('\n  from GitHub (topic: agent-skills)'));
       for (const x of r.repos.slice(0, 15)) console.log(`${x.installed ? c.green('✓') : ' '} ${c.bold(x.repo)} ${c.dim(`★${x.stars}`)}  ${c.dim(x.description.slice(0, 80))}`);
       for (const e of r.errors) console.log(c.yellow(e));
-      if (!r.plugins.length && !r.repos.length) console.log(c.dim('nothing found'));
+      if (!r.plugins.length && !r.repos.length && !r.featured?.length) console.log(c.dim('nothing found'));
       return;
     }
     case 'hook': {
@@ -7274,10 +7276,35 @@ async function runSubcommand(cmd, args) {
         console.log(c.dim('  ox awake 2h | 30m | 1d   hold it awake for a while, even with no ox running'));
         console.log(c.dim('  ox awake status          show the active timed hold'));
         console.log(c.dim('  ox awake off             let it sleep again'));
-        console.log(c.dim('  ox awake --lid           how to keep running with the lid closed'));
+        console.log(c.dim('  ox awake --lid 2h        keep running with the lid closed for a while (asks for your password)'));
+        console.log(c.dim('  ox awake --lid off       put sleep back now'));
         return;
       }
-      if (a === '--lid' || a === 'lid') { for (const l of aw.lidHelp()) console.log(l); return; }
+      if (a === '--lid' || a === 'lid') {
+        const b = String(args[1] ?? '').toLowerCase();
+        const json = args.includes('--json');
+        // `ox awake --lid 2h`: keeps running with the lid closed; macOS asks for your password once.
+        if (b === 'off' || b === 'stop') {
+          const had = aw.stopLid();
+          if (json) console.log(JSON.stringify({ ok: true, stopped: had }));
+          else console.log(had ? c.green('ok — sleep comes back on within 15 seconds') : c.dim('no lid hold was running'));
+          return;
+        }
+        if (b === 'status' || (!b && json)) { const st = aw.lidStatus(); console.log(json ? JSON.stringify(st) : st.active ? `running with the lid closed until ${st.until.toLocaleString()}` : st.stale ? c.yellow('sleep is still off from an earlier hold: ox awake --lid 1m puts it back after a minute') : c.dim('no lid hold')); return; }
+        if (b) {
+          const secs = aw.parseDuration(b);
+          if (!secs) { console.log(c.red(`not a duration: '${args[1]}' (try 45m, 2h, 1d; at most 7d)`)); process.exitCode = 3; return; }
+          try {
+            const t = aw.startLid(secs);
+            if (json) console.log(JSON.stringify({ ok: true, until: t.until.toISOString() }));
+            else console.log(c.green(`runs with the lid closed until ${t.until.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`) + c.dim(' — sleep comes back on then, at 10 % battery, or with: ox awake --lid off'));
+          } catch (e) { if (json) console.log(JSON.stringify({ ok: false, error: e.message })); else console.log(c.red(e.message)); process.exitCode = 1; }
+          return;
+        }
+        for (const l of aw.lidHelp()) console.log(l);
+        if (process.platform === 'darwin') console.log(c.dim('Or let ox do both for a while: ox awake --lid 2h (macOS asks for your password; sleep comes back on by itself).'));
+        return;
+      }
       if (a === 'off' || a === 'stop') {
         console.log(aw.stopTimed() ? c.green('ok — the computer can sleep again') : c.dim('nothing was being held'));
         return;

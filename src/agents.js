@@ -122,9 +122,12 @@ export function renameAgent(from, to, { saveConfig } = {}) {
   const agent = AGENT_NAME.test(String(from)) ? loadAgent(from) : null;
   if (!agent) throw new Error(`no agent '${from}'`);
   if (next === from) return agent;
-  if (loadAgent(next)) throw new Error(`there is already an agent called '${next}'`);
+  // On a Mac's disk Keep.json and keep.json are one file: a change of case is a move, not a taken name.
+  const sameFile = next.toLowerCase() === String(from).toLowerCase() && !listAgents().includes(next);
+  if (!sameFile && loadAgent(next)) throw new Error(`there is already an agent called '${next}'`);
+  if (sameFile) fs.renameSync(agentFile(from), agentFile(next));
   const saved = saveAgent(next, { ...agent, name: next });
-  deleteAgent(from);
+  if (!sameFile) deleteAgent(from);
   saveConfig?.((doc) => { if (doc.defaultBot === `agent:${from}`) doc.defaultBot = `agent:${next}`; });
   return saved;
 }

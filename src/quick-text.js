@@ -5,7 +5,7 @@ import os from 'node:os';
 import { streamVia } from './providers/index.js';
 import { normalizeStreamEvent } from './agent.js';
 
-export async function quickText(target, { system, user, maxTokens = 200, signal } = {}) {
+export async function quickText(target, { system, user, images = [], maxTokens = 200, signal } = {}) {
   let text = '';
   const usage = { inputTokens: 0, outputTokens: 0 };
   if (target?.provider === 'subscription') {
@@ -17,9 +17,10 @@ export async function quickText(target, { system, user, maxTokens = 200, signal 
       else if (e.type === 'usage' && e.usage) { usage.inputTokens += e.usage.inputTokens ?? 0; usage.outputTokens += e.usage.outputTokens ?? 0; }
       else if (e.type === 'error') throw new Error(String(e.error));
     }
-    return { text: text || final, usage };
+    // A plan says a line while it works ("I'll check what's open…") and then answers: the answer is its last message.
+    return { text: final || text, usage };
   }
-  const messages = [{ role: 'system', content: system }, { role: 'user', content: user }];
+  const messages = [{ role: 'system', content: system }, { role: 'user', content: user, ...(images.length ? { images } : {}) }];
   // A small call has no room to think: models spent the whole allowance on hidden reasoning
   // and came back empty (80 of 80 tokens, no text), so next-step suggestions never appeared.
   const quick = maxTokens <= 300 ? { reasoningEffort: 'none' } : {};

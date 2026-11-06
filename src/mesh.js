@@ -22,6 +22,10 @@ import { fileURLToPath } from 'node:url';
 export const PORT = 47870;          // node listener (TCP)
 export const BEACON_PORT = 47871;   // LAN discovery (UDP broadcast)
 export const PROXY_PORT = 47872;    // this machine's local endpoint for mesh model calls
+// A second node on one machine (OX_MESH_PORT, OX_MESH_PROXY_PORT) means these for
+// every command run there, or they would all reach the first machine's node.
+const nodePort = () => Number(process.env.OX_MESH_PORT) || PORT;
+const controlPort = () => Number(process.env.OX_MESH_PROXY_PORT) || PROXY_PORT;
 const HEARTBEAT_MS = 5000;
 const BINARY_FRAME = 0; // never the first byte of a text line
 const MAX_FRAME = 32 * 1024 * 1024;
@@ -501,7 +505,7 @@ export function watchdog(machines, { now = Date.now(), limits = LIMITS } = {}) {
   const helpers = (m) => idle.filter((x) => x.id !== m.id);
   for (const m of machines) {
     const s = m.stats;
-    if (m.phi >= limits.phiDown) { alerts.push({ id: `${m.id}:down`, machine: m.name, kind: 'down', text: `${m.name} is not answering.`, options: [{ label: 'Wait for it', action: 'wait' }, { label: 'Move its work to another machine', action: 'move' }] }); continue; }
+    if (m.phi >= limits.phiDown) { alerts.push({ id: `${m.id}:down`, machine: m.name, kind: 'down', text: `${m.name} is not answering.`, options: [{ label: 'Wait for it', action: 'wait' }] }); continue; }
     if (m.phi >= limits.phiSuspect) { alerts.push({ id: `${m.id}:slow`, machine: m.name, kind: 'slow', text: `${m.name} is answering late (it may be asleep or on a weak network).`, options: [{ label: 'Wait', action: 'wait' }] }); continue; }
     if (!s) continue;
     const over = [];
@@ -517,9 +521,10 @@ export function watchdog(machines, { now = Date.now(), limits = LIMITS } = {}) {
     if (s.battery != null && s.battery <= limits.battery && s.charging === false) over.push(`battery ${Math.round(s.battery * 100)} %`);
     if (s.diskFreeGb != null && s.diskFreeGb < limits.diskGb) over.push(`${s.diskFreeGb} GB disk free`);
     if (over.length) {
-      const opts = helpers(m).slice(0, 2).map((h) => ({ label: `Move its ox work to ${h.name}`, action: 'move', to: h.id }));
+      // Only choices ox carries out: "move its work", "a smaller model" and "pause" were offered
+      // and did nothing, so the same alert came back every few minutes.
       alerts.push({ id: `${m.id}:load`, machine: m.name, kind: 'overloaded', text: `${m.name} is under heavy load (${over.join(', ')}).`,
-        options: [...opts, { label: 'Use a smaller model there', action: 'smaller' }, { label: 'Pause its ox tasks', action: 'pause' }, { label: 'Check again in 5 minutes', action: 'snooze' }] });
+        options: [{ label: 'Check again in 30 minutes', action: 'snooze', minutes: 30 }, { label: 'Not today', action: 'snooze', minutes: 12 * 60 }] });
     }
     // Credits: before the plan stops replying, not after.
     for (const p of s.plans ?? []) {
@@ -545,8 +550,8 @@ export function watchdog(machines, { now = Date.now(), limits = LIMITS } = {}) {
  */
 export async function startNode(o = {}) {
   const me = identity(o);
-  let port = o.port ?? PORT;
-  let proxyPort = o.proxyPort ?? PROXY_PORT;
+  let port = o.port ?? nodePort();
+  let proxyPort = o.proxyPort ?? controlPort();
   const beaconPort = o.beaconPort ?? BEACON_PORT;
   const ollamaUrl = o.ollamaUrl ?? process.env.OX_OLLAMA_URL ?? 'http://127.0.0.1:11434';
   const state = { invite: null, machines: new Map(), alerts: [], log: [] };
@@ -916,7 +921,7 @@ export async function startNode(o = {}) {
 
   // ---- LAN beacon: paired machines find each other's current address
   let beacon = null;
-  if (o.beacon !== false) {
+  if (o.beacon !== false && !process.env.OX_MESH_PORT) {
     beacon = dgram.createSocket({ type: 'udp4', reuseAddr: true });
     beacon.on('message', (buf, rinfo) => {
       try {
@@ -1128,9 +1133,17 @@ export async function startNode(o = {}) {
       }
       const a = state.alerts.find((x) => x.id === alertId);
       if (!a) throw new Error('that alert is gone (the condition passed)');
-      if (option.action === 'snooze' || option.action === 'wait') { state.snoozed ??= {}; state.snoozed[alertId] = Date.now() + 5 * 60_000; state.alerts = state.alerts.filter((x) => x.id !== alertId); return { done: 'checking again in 5 minutes' }; }
-      if (option.action === 'use-model' || option.action === 'keep') { state.snoozed ??= {}; state.snoozed[alertId] = Date.now() + 30 * 60_000; state.alerts = state.alerts.filter((x) => x.id !== alertId); return { model: option.model ?? null, done: option.model ? `next turns use ${option.model}` : 'keeping the current model' }; }
-      return { done: null, note: 'do this one yourself for now: ox does not move, pause or shrink work on its own' };
+      const quiet = (min) => { state.snoozed ??= {}; state.snoozed[alertId] = Date.now() + min * 60_000; state.alerts = state.alerts.filter((x) => x.id !== alertId); };
+      if (option.action === 'snooze' || option.action === 'wait') {
+        const min = Math.min(24 * 60, Math.max(5, Number(option.minutes) || 5));
+        quiet(min);
+        return { done: min >= 60 * 12 ? 'quiet about this until tomorrow' : `checking again in ${min} minutes` };
+      }
+      // Kept on the plan: asked once for its window, not every half hour.
+      if (option.action === 'use-model' || option.action === 'keep') { quiet(option.action === 'keep' ? 5 * 60 : 30); return { model: option.model ?? null, done: option.model ? `next turns use ${option.model}` : 'keeping the current model' }; }
+      // A choice from an older version that ox cannot carry out: put away for an hour, said plainly.
+      quiet(60);
+      return { done: null, note: 'ox cannot do that one; this alert is put away for an hour' };
     },
     invite() { state.invite = { code: normCode(newCode()), expires: Date.now() + INVITE_MS, tries: 0 }; const c = state.invite.code; return { code: `OX-${c.slice(0, 4)}-${c.slice(4, 8)}-${c.slice(8, 12)}`, expires: state.invite.expires }; },
     heartbeat,
@@ -1159,7 +1172,7 @@ export async function planHeadroom() {
 }
 
 /** A node already running on this machine (the app's or `ox mesh up`), through its loopback control. */
-export async function control(what, { proxyPort = PROXY_PORT, method = 'GET', timeoutMs = 3000 } = {}) {
+export async function control(what, { proxyPort = controlPort(), method = 'GET', timeoutMs = 3000 } = {}) {
   const r = await fetch(`http://127.0.0.1:${proxyPort}/mesh-control/${what}`, {
     method, headers: { 'x-ox-mesh': '1', ...(method === 'POST' ? { 'content-type': 'application/json' } : {}) },
     body: method === 'POST' ? '{}' : undefined, signal: AbortSignal.timeout(timeoutMs),
@@ -1193,7 +1206,7 @@ function readKey(name) {
 }
 
 /** Join a machine that has an invite open: pair with its code. */
-export async function join({ code, at = null, name = null, o = {}, wait = 15_000, beaconPort = BEACON_PORT, myPort = PORT }) {
+export async function join({ code, at = null, name = null, o = {}, wait = 15_000, beaconPort = BEACON_PORT, myPort = nodePort() }) {
   const me = identity(o);
   if (name) setName(name, o);
   let target = at;

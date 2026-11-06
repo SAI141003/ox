@@ -225,11 +225,41 @@ struct GlowTilesHome: View {
                 }
                 Text(focus.running ? T("Focusing") : focus.active ? T("Paused") : T("Ready to start"))
                     .font(.system(size: 10)).foregroundStyle(HomeInk.text.opacity(0.7))
+                lidLine
             }
         }
         .contextMenu {
             ForEach([15, 25, 45, 60], id: \.self) { m in Button("\(m) min") { focus.reset(); focus.minutes = m } }
             if focus.active { Button("Reset") { focus.reset() } }
+            Divider()
+            lidMenu
+        }
+    }
+
+    /// Runs keep going with the lid closed, until a time you pick.
+    @ViewBuilder private var lidMenu: some View {
+        if bridge.lid.active {
+            Button("Lid closed: stop now (sleep back on)") { bridge.lid.stop() }
+        } else if bridge.lid.stale {
+            // Sleep still off from a hold cut short (a restart): a one-minute hold puts it back.
+            Button("Sleep is still off: turn it back on") { bridge.lid.start(hours: 1.0 / 60) }
+        } else {
+            Menu("Keep running with the lid closed") {
+                ForEach([1.0, 2, 4, 8], id: \.self) { h in Button("For \(Int(h)) hour\(h == 1 ? "" : "s")") { bridge.lid.start(hours: h) } }
+                if focus.running { Button("Until focus ends") { bridge.lid.start(hours: max(1.0 / 60, focus.left() / 3600)) } }
+            }
+        }
+    }
+
+    @ViewBuilder private var lidLine: some View {
+        if bridge.lid.asking {
+            Text(T("Lid: asking macOS…")).font(.system(size: 9.5)).foregroundStyle(HomeInk.text.opacity(0.7))
+        } else if bridge.lid.active, let u = bridge.lid.until {
+            Text("Lid closed OK · \(u.formatted(date: .omitted, time: .shortened))")
+                .font(.system(size: 9.5, weight: .medium)).foregroundStyle(TilePalette.focus.accent)
+                .help("Runs keep going with the lid closed until then. Sleep comes back on by itself, at 10 % battery, or from this menu.")
+        } else if let n = bridge.lid.note {
+            Text(n).font(.system(size: 9.5)).foregroundStyle(HomeInk.text.opacity(0.7)).lineLimit(1)
         }
     }
 }

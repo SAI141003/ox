@@ -26,6 +26,7 @@
 
 import { allowKey, allowWords, stepOutput } from './chat-steps.js';
 import { offThread } from './off-thread.js';
+import { stalledRecently } from './slow-models.js';
 import { needsFingerprint } from './approval-guard.js';
 import { redactSecrets } from './session.js';
 import { quickReply } from './quick-reply.js';
@@ -37,7 +38,7 @@ import { BOTS, KEY_ENV, automaticFallbackAllowed, resolveBot, defaultBotSpec, wi
 import { readFile } from 'fs/promises';
 import { join, resolve, extname, dirname, basename, sep } from 'path';
 import os, { homedir } from 'os';
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, statSync, statfsSync, readdirSync, rmSync } from 'fs';
+import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, statSync, statfsSync, readdirSync, rmSync, realpathSync } from 'fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { createReadStream } from 'fs';
 import { stat, unlink } from 'fs/promises';
@@ -1170,7 +1171,7 @@ async function handleChatCompletions(req, res) {
     const named = !!model && model !== 'auto'; // picked in the chat, not Auto or the default
     ctx.fallbackTargets = specs
       .filter((sp) => runnable(sp))
-      .map((sp) => { try { const t = resolveBot(sp, { bots: fdoc.bots ?? {} }); return listed.includes(sp) || automaticFallbackAllowed(t, target, named) ? t : null; } catch { return null; } })
+      .map((sp) => { try { const t = resolveBot(sp, { bots: fdoc.bots ?? {} }); return listed.includes(sp) || (automaticFallbackAllowed(t, target, named) && !stalledRecently(t.provider, t.model)) ? t : null; } catch { return null; } })
       .filter((t) => t && t.provider !== 'subscription' && !(t.provider === target?.provider && t.model === target?.model));
   } catch {}
   // Delegation in the app, as in the terminal (src/headless.js): the subagent
@@ -1943,12 +1944,37 @@ export function sayPlan(steps) {
   return s.charAt(0).toUpperCase() + s.slice(1) + '.';
 }
 
-let briefCache = null;
+// A page that takes seconds to gather (GitHub, Mail, git in a dozen projects) opens on what
+// was gathered last, and refreshes behind it: the Today page took 5.6 s, Needs you 3.8 s.
+const kept = new Map();
+export function keptFresh(key, make, { maxAgeMs }) {
+  const k = kept.get(key);
+  const refresh = () => {
+    if (k?.running) return k.running;
+    const entry = kept.get(key) ?? {};
+    entry.running = make().then((value) => { kept.set(key, { at: Date.now(), value }); return value; })
+      .finally(() => { const e = kept.get(key); if (e) delete e.running; });
+    kept.set(key, entry);
+    return entry.running;
+  };
+  if (k && 'value' in k) {
+    if (Date.now() - k.at >= maxAgeMs) refresh().catch(() => {});
+    return Promise.resolve(k.value);
+  }
+  return refresh();
+}
+
+// Today and Needs you gathered once the app is opened, before you open them: a server no one
+// uses does nothing (it stays under 1 % CPU idle), and one in use has them ready.
+let pagesWarmed = false;
+function warmPages() {
+  if (pagesWarmed) return;
+  pagesWarmed = true;
+  setTimeout(() => { if (onBattery()) return; cachedBrief().catch(() => {}); keptFresh('needs', () => offThread('./needs-you.js', 'needsYou'), { maxAgeMs: 60_000 }).catch(() => {}); }, 3_000).unref();
+}
+
 export async function cachedBrief({ maxAgeMs = 5 * 60_000 } = {}) {
-  if (briefCache && Date.now() - briefCache.at < maxAgeMs) return briefCache.value;
-  const value = await offThread('./today.js', 'brief');
-  briefCache = { at: Date.now(), value };
-  return value;
+  return keptFresh('brief', () => offThread('./today.js', 'brief'), { maxAgeMs });
 }
 
 export async function voiceTurn(body) {
@@ -2035,6 +2061,62 @@ export async function voiceTurn(body) {
   }
 }
 
+// Models that read a picture and answer in seconds, quickest first. A plan's CLI is
+// not here: it took 30-47 s a look (its own ~13k-token prompt, a process per question).
+const LOOK_BOTS = ['ox-flash', 'ox-haiku', 'nvidia:minimaxai/minimax-m3.1-flash', 'ox-gpt', 'ox-gemini'];
+export function lookModel(env = process.env) {
+  let chosen = null;
+  try { chosen = readConfigDoc().voice?.lookModel ?? null; } catch {}
+  return [chosen, ...LOOK_BOTS].filter(Boolean).find((id) => runnable(id, env)) ?? null;
+}
+
+// A screenshot the island took: a picture in this user's temp folder, nothing else.
+function islandShot(p) {
+  try {
+    const f = realpathSync(String(p));
+    const tmp = realpathSync(os.tmpdir());
+    return f.startsWith(tmp + sep) && /\.(png|jpe?g)$/i.test(f) && statSync(f).isFile() ? f : null;
+  } catch { return null; }
+}
+
+/**
+ * A question about the screen, answered in one call: the picture to a fast model that can
+ * see, while ox reads the screen's words on this Mac; a [POINT] the model gives is then tied
+ * to the real thing of that name. { handled: false } sends the island to its slower full run.
+ */
+export async function voiceLook(body, env = process.env) {
+  const started = Date.now();
+  const text = String(body?.text ?? '').trim().slice(0, 2000);
+  if (!text) throw new Error('nothing was said');
+  const shots = [].concat(body?.images ?? []).map(islandShot).filter(Boolean).slice(0, 3);
+  if (!shots.length) return { handled: false, why: 'no screenshot', ms: Date.now() - started };
+  const id = lookModel(env);
+  if (!id) return { handled: false, why: 'no quick model that can see is connected', ms: Date.now() - started };
+  const B = await import('./buddy.js');
+  const { seeShots, rewritePoints } = await import('./see.js');
+  const { quickText } = await import('./quick-text.js');
+  const { assistantName } = await import('./identity.js');
+  const small = shots.map((f) => { try { return B.shrinkShot(f); } catch { return f; } });
+  const size = B.pngSize(readFileSync(small[0]));
+  const images = small.map((f) => ({ mediaType: /\.jpe?g$/i.test(f) ? 'image/jpeg' : 'image/png', data: readFileSync(f).toString('base64') }));
+  const guidance = B.buddyGuidance({ size, voice: true, seen: { screens: small.map((_, i) => ({ n: i + 1 })), items: [], text: '' } });
+  // The words on screen are read here while the model looks: neither waits for the other.
+  const seeing = env.OX_BUDDY_SEE === '0' ? Promise.resolve(null) : seeShots(small).catch(() => null);
+  let reply;
+  try {
+    const target = resolveBot(id, { bots: readConfigDoc().bots ?? {} }, env);
+    reply = String((await quickText(target, { system: `You are ${assistantName()}, looking at the user's screen with them.\n${guidance}`, user: text, images, maxTokens: 220, signal: AbortSignal.timeout(25_000) })).text ?? '').trim();
+  } catch (e) {
+    return { handled: false, why: String(e?.message ?? e).slice(0, 200), model: id, ms: Date.now() - started };
+  }
+  if (!reply) return { handled: false, why: `${id} said nothing`, model: id, ms: Date.now() - started };
+  // A reply cut at the token limit can end inside its tag: closed, it still points.
+  reply = reply.replace(/\[POINT:[^\]\n]*$/i, (t) => `${t}]`);
+  const seen = await seeing;
+  const say = seen && !seen.cannotSee ? rewritePoints(reply, seen, B.parsePoint) : reply;
+  return { route: 'look', handled: true, ok: true, say: say.replace(/[*_`#>]+/g, '').trim(), model: id, ms: Date.now() - started };
+}
+
 // While OX Island is running, the local model the voice answers with stays
 // loaded: a cold start took 24 s on this Mac, a warm answer 7 s. Ollama only,
 // on this machine, nothing sent anywhere.
@@ -2090,25 +2172,34 @@ async function tasksRoute(b) {
   const T = await import('./tasks.js');
   const id = String(b.id ?? '');
   const by = { actor: 'you (app)' };
+  // Someone else may have deleted it, or another window: say so, never "Updated".
+  if (['move', 'approve', 'reject', 'release', 'delete', 'run'].includes(b.action) && !T.getTask(id)) throw new Error('no such task: it may have been deleted');
+  const checked = (r) => { if (r.ok === false) throw new Error(r.reason); return r; };
   switch (b.action) {
     case 'add': {
       const title = String(b.title ?? '').trim();
       if (!title) throw new Error('a task needs a title');
-      const budget = b.budgetUsd === '' || b.budgetUsd == null ? null : Number(b.budgetUsd);
-      return { task: T.addTask({ title: title.slice(0, 200), description: String(b.description ?? '').slice(0, 4000), review: b.review === true, budgetUsd: Number.isFinite(budget) ? budget : null, blockedBy: Array.isArray(b.blockedBy) ? b.blockedBy : [], parentId: b.parentId || null }, by) };
+      // A spending cap that cannot be read is an error: dropping it would run the task with no cap.
+      const asked = String(b.budgetUsd ?? '').trim().replace(/^\$\s*/, '');
+      const budget = asked === '' ? null : Number(asked);
+      if (budget != null && !(budget >= 0 && Number.isFinite(budget))) throw new Error(`the budget is a number of dollars, like 5 or 2.50, not "${String(b.budgetUsd).slice(0, 40)}"`);
+      return { task: T.addTask({ title: title.slice(0, 200), description: String(b.description ?? '').slice(0, 4000), review: b.review === true, budgetUsd: budget, blockedBy: Array.isArray(b.blockedBy) ? b.blockedBy : [], parentId: b.parentId || null }, by) };
     }
     case 'move': {
       if (!T.STATUSES.includes(b.status)) throw new Error(`status is one of ${T.STATUSES.join(', ')}`);
       return { task: T.updateTask(id, { status: b.status }, by) };
     }
-    case 'approve': return T.approveTask(id, by);
-    case 'reject': return T.rejectTask(id, { ...by, reason: String(b.reason ?? 'sent back from the app') });
-    case 'release': return T.releaseTask(id, by);
+    case 'approve': return checked(T.approveTask(id, by));
+    case 'reject': return checked(T.rejectTask(id, { ...by, note: String(b.reason ?? 'sent back from the app') }));
+    // The person at the board can take a task back from whoever holds it.
+    case 'release': return checked(T.releaseTask(id, { ...by, force: true }));
     case 'delete': return { ok: T.deleteTask(id, by) };
     case 'run': {
       // An ox run claims it and works on it; the board shows it as it goes.
-      if (!T.getTask(id)) throw new Error('no such task');
-      T.runTask(id, { owner: 'ox (app)' }).catch(() => {});
+      // Refused at once (already taken, or waiting for something) it answers with no promise.
+      const run = T.runTask(id, { owner: 'ox (app)' });
+      if (run.success === false) throw new Error(run.error);
+      run.catch(() => {});
       return { started: true };
     }
     default: throw new Error('action is add, move, approve, reject, release, delete or run');
@@ -2124,25 +2215,45 @@ async function flowHook(req, res, m) {
     sendError(res, 404, 'No such flow, or the secret is wrong.', 'invalid_request_error', 'not_found', null);
     return;
   }
+  // Switched off means off, for its webhook as for its schedule.
+  if (f.enabled === false) { sendError(res, 409, `The automation ${f.id} is switched off.`, 'invalid_request_error', 'flow_off', null); return; }
   let input = null;
   try { input = await parseBody(req); } catch { input = null; }
   try { sendJson(res, 200, { run: await F.runFlow(f, { input, trigger: 'webhook' }) }); }
   catch (e) { sendError(res, 400, String(e?.message ?? e), 'invalid_request_error', 'bad_request', null); }
 }
 
-const MEDIA_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm' };
+const MEDIA_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4' };
+// A file, whole or the part asked for: the app's video player will not play or seek without
+// ranges. A read that fails ends this reply, not the server (a stream's 'error' with no
+// listener is uncaught).
+async function sendFile(req, res, f, cache) {
+  const { size } = await stat(f);
+  const head = { 'Content-Type': MEDIA_TYPES[extname(f).toLowerCase()] ?? 'application/octet-stream', 'Accept-Ranges': 'bytes', 'Cache-Control': cache, 'X-Content-Type-Options': 'nosniff' };
+  const pipe = (opts) => { const s = createReadStream(f, opts); s.on('error', () => res.destroy()); s.pipe(res); };
+  const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ''));
+  if (range && (range[1] || range[2]) && size > 0) {
+    const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (start > end || start >= size) { res.writeHead(416, { 'Content-Range': `bytes */${size}` }); res.end(); return; }
+    res.writeHead(206, { ...head, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
+    pipe({ start, end });
+    return;
+  }
+  res.writeHead(200, { ...head, 'Content-Length': size });
+  pipe();
+}
+
 async function serveMediaFile(req, res, m) {
   if (!authorized(req)) { unauthorized(res); return; }
-  const f = await (await appApi()).mediaFile(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+  let f = null;
+  try { f = await (await appApi()).mediaFile(decodeURIComponent(m[1]), decodeURIComponent(m[2])); } catch { /* a malformed %-escape names no file */ }
   if (!f) { sendError(res, 404, 'Not found', 'invalid_request_error', 'not_found', null); return; }
-  const st = await stat(f);
-  res.writeHead(200, { 'Content-Type': MEDIA_TYPES[extname(f).toLowerCase()] ?? 'application/octet-stream', 'Content-Length': st.size, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
-  createReadStream(f).pipe(res);
+  await sendFile(req, res, f, 'private, max-age=86400');
 }
 
 // A file an answer names (src/app-api.js localMediaFile). Another site's page can point an
-// <img> here to learn whether a file exists, so only ox's own page is answered. Ranges,
-// because the app's video player will not play a file without them.
+// <img> here to learn whether a file exists, so only ox's own page is answered.
 async function serveLocalMedia(req, res) {
   if (!authorized(req)) { unauthorized(res); return; }
   const site = req.headers['sec-fetch-site'];
@@ -2150,19 +2261,7 @@ async function serveLocalMedia(req, res) {
   const wanted = new URL(req.url, 'http://x').searchParams.get('path') ?? '';
   const f = (await appApi()).localMediaFile(wanted);
   if (!f) { sendError(res, 404, 'Not found', 'invalid_request_error', 'not_found', null); return; }
-  const { size } = await stat(f);
-  const head = { 'Content-Type': MEDIA_TYPES[extname(f).toLowerCase()] ?? 'application/octet-stream', 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, no-cache', 'X-Content-Type-Options': 'nosniff' };
-  const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ''));
-  if (range && (range[1] || range[2]) && size > 0) {
-    const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
-    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
-    if (start > end || start >= size) { res.writeHead(416, { 'Content-Range': `bytes */${size}` }); res.end(); return; }
-    res.writeHead(206, { ...head, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
-    createReadStream(f, { start, end }).pipe(res);
-    return;
-  }
-  res.writeHead(200, { ...head, 'Content-Length': size });
-  createReadStream(f).pipe(res);
+  await sendFile(req, res, f, 'private, no-cache');
 }
 
 // The app's "Read aloud" in Kokoro's natural voice: POST { text, voice } and get
@@ -2295,15 +2394,19 @@ export async function officeFloors() {
     const M = await import('./mesh.js');
     if (M.hasIdentity()) {
       const node = await meshUp();
-      for (const p of Object.values(M.readPeers())) {
+      // Every machine at once: one asleep held the page 4 s, and two held it 8. A machine that
+      // did not answer is not asked again for 30 s (one that did, 5 s).
+      const peers = Object.values(M.readPeers());
+      const got = await Promise.all(peers.map(async (p) => {
         const hit = floorCache.get(p.id);
-        if (hit && Date.now() - hit.at < 5000) { floors.push({ ...hit.floor, name: names[p.id] ?? p.name }); continue; }
+        if (hit && Date.now() - hit.at < (hit.floor.error ? 30_000 : 5000)) return hit.floor;
         let floor;
         try { const r = await node.ask(p, 'agents', {}, { timeoutMs: 4000 }); floor = { id: p.id, machine: p.name, sessions: r.sessions ?? [] }; }
         catch (e) { const closed = /does not allow/.test(e.message); floor = { id: p.id, machine: p.name, sessions: [], needsAccess: closed, error: closed ? `${p.name} has not shared its sessions with this computer.` : `${p.name}: ${e.message}` }; }
         floorCache.set(p.id, { at: Date.now(), floor });
-        floors.push({ ...floor, name: names[p.id] ?? p.name });
-      }
+        return floor;
+      }));
+      got.forEach((floor, i) => floors.push({ ...floor, name: names[peers[i].id] ?? peers[i].name }));
     }
   } catch {}
   return { floors };
@@ -2546,7 +2649,8 @@ const ROUTES = [
   // The repo switcher: recent project folders, and checking one you typed.
   { method: 'GET', pattern: /^\/ox\/projects\/?$/, handler: appRoute(async (_, __, req) => {
     const q = new URL(req.url, 'http://x').searchParams.get('check');
-    if (q) { const dir = sessionCwd(q); return { dir, ok: dir !== process.cwd() || resolve(q.replace(/^~(?=$|\/)/, homedir())) === process.cwd(), git: existsSync(join(dir, '.git')) }; }
+    // sessionCwd falls back to the default folder for one that is not there: that is a "no" here.
+    if (q) { const dir = sessionCwd(q); return { dir, ok: dir === resolve(q.trim().replace(/^~(?=$|\/)/, homedir())), git: existsSync(join(dir, '.git')) }; }
     return { current: process.cwd(), projects: recentProjects() };
   }) },
   // Whether "Open a PR" can do anything here: a git project with a remote, and changes not on it yet.
@@ -2683,7 +2787,7 @@ const ROUTES = [
     throw new Error('action: apply, dismiss or now');
   }) },
   // Needs you (src/needs-you.js): what only you can move, across GitHub, ox and Mail, with links.
-  { method: 'GET', pattern: /^\/ox\/needs\/?$/, handler: appRoute(async () => offThread('./needs-you.js', 'needsYou')) },
+  { method: 'GET', pattern: /^\/ox\/needs\/?$/, handler: appRoute(async (_, __, req) => (new URL(req.url, 'http://x').searchParams.get('fresh') ? offThread('./needs-you.js', 'needsYou') : keptFresh('needs', () => offThread('./needs-you.js', 'needsYou'), { maxAgeMs: 60_000 }))) },
   // ox updates itself from the notch (src/self-update.js): asked once, at most one notice a day.
   { method: 'GET', pattern: /^\/ox\/update\/?$/, handler: appRoute(async () => { const U = await import('./self-update.js'); const st = U.readState(); return { notice: U.notice(), allowed: st.allowed ?? null, autoApply: st.autoApply === true, available: st.available ?? null, problem: st.problem ?? null, updatedTo: st.updatedTo ?? null, applying: st.applying ?? null, current: st.current ?? null, upToDate: st.upToDate === true }; }) },
   { method: 'POST', pattern: /^\/ox\/update\/?$/, handler: appRoute(async (body) => {
@@ -2930,6 +3034,7 @@ const ROUTES = [
     const O = await import('./org.js');
     const ask = async ({ system, user }) => { const { quickText } = await import('./quick-text.js'); return (await quickText(resolveBot(pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 600 })).text; };
     if (m[1] === 'say') return { replies: await O.groupSay(String(body?.group ?? ''), String(body?.text ?? ''), { ask }) };
+    if (!(body?.draft && typeof body.draft === 'object') && !String(body?.sentence ?? '').trim()) throw new Error('describe the team in a sentence');
     const draft = body?.draft && typeof body.draft === 'object' ? body.draft : await O.draftTeam(String(body?.sentence ?? ''), { ask });
     return body?.confirm ? O.hireTeam(draft) : { draft };
   }) },
@@ -3182,6 +3287,7 @@ const ROUTES = [
   }) },
   { method: 'POST', pattern: /^\/ox\/flows\/hook\/([a-z0-9-]{1,40})\/?$/, handler: flowHook },
   { method: 'POST', pattern: /^\/ox\/voice\/?$/, handler: appRoute(voiceTurn) },
+  { method: 'POST', pattern: /^\/ox\/voice\/look\/?$/, handler: appRoute((b) => voiceLook(b)) },
   // The island's own recording, when live recognition heard nothing: whisper on this Mac.
   // What a background errand really did (typing, clicking): { pending } until it finishes, then { ok, say }.
   { method: 'GET', pattern: /^\/ox\/voice\/result\/?$/, handler: appRoute(async (_, __, req) => {
@@ -3204,7 +3310,7 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksView) },
   { method: 'POST', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksRoute) },
   { method: 'GET', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async () => (await appApi()).scheduledView()) },
-  { method: 'POST', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async (b) => { const a = await appApi(); return b.action === 'add' ? a.scheduleAdd({ prompt: b.prompt, when: b.when, enabled: true, watch: b.watch, maxCostUsd: b.maxCostUsd }) : b.action === 'suggest' ? a.scheduleSuggest(b.prompt) : a.setScheduleEnabled(String(b.id ?? ''), b.enabled); }) },
+  { method: 'POST', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async (b) => { const a = await appApi(); return b.action === 'add' ? a.scheduleAdd({ prompt: b.prompt, when: b.when, enabled: true, watch: b.watch, maxCostUsd: b.maxCostUsd }) : b.action === 'suggest' ? a.scheduleSuggest(b.prompt) : b.action === 'remove' ? a.scheduleRemove(String(b.id ?? '')) : a.setScheduleEnabled(String(b.id ?? ''), b.enabled); }) },
   { method: 'GET', pattern: /^\/ox\/sessions\/?$/, handler: appRoute(async () => (await appApi()).sessionsView()) },
   { method: 'GET', pattern: /^\/ox\/sessions\/([^/]+)$/, handler: appRoute(async (_, m) => (await appApi()).sessionView(decodeURIComponent(m[1]))) },
   { method: 'GET', pattern: /^\/ox\/memory\/?$/, handler: appRoute(async () => (await appApi()).memoryView()) },
@@ -3271,8 +3377,14 @@ const ROUTES = [
       const ms = await import('./media-studio.js');
       const a = body?.args ?? {};
       const files = [].concat(a.files ?? []).map(String).filter(Boolean);
-      const r = V.compose(files, { audio: a.audio ? String(a.audio) : null, volume: a.volume, keepOriginal: a.keep_original !== false, loopAudio: a.loop_audio !== false, out: a.out ? String(a.out) : null });
       const id = (await import('node:crypto')).randomBytes(6).toString('hex');
+      // Made inside its own run folder: the gallery serves only files from there.
+      const { mkdirSync, rmSync } = await import('node:fs');
+      const dir = join(ms.MEDIA_DIR(), id);
+      mkdirSync(dir, { recursive: true });
+      let r;
+      try { r = V.compose(files, { audio: a.audio ? String(a.audio) : null, volume: a.volume, keepOriginal: a.keep_original !== false, loopAudio: a.loop_audio !== false, out: a.out ? String(a.out) : join(dir, 'long-video.mp4') }); }
+      catch (e) { rmSync(dir, { recursive: true, force: true }); throw e; }
       ms.note({ id, at: Date.now(), provider: 'local', model: 'ox timeline', label: `Long video · ${r.scenes} scene${r.scenes === 1 ? '' : 's'} · ${r.minutes} min`, surface: 'video', prompt: `Timeline: ${files.map((f) => basename(f)).join(', ')}`, settings: { audio: !!a.audio, volume: a.volume ?? 0.28, keepOriginal: a.keep_original !== false }, media: { ...(a.audio ? { audio: [String(a.audio)] } : {}) }, status: 'completed', files: [r.file] });
       return { text: `Long video ready: ${r.file} (${r.scenes} scene${r.scenes === 1 ? '' : 's'}, ${Math.round(r.seconds)} s / ${r.minutes} min${a.audio ? ', audio mixed' : ''})` };
     }
@@ -3382,7 +3494,10 @@ const ROUTES = [
     if (days <= 31 && !(codeCache[key] && Date.now() - codeCache[key].at < 600_000)) codeCache[key] = { at: Date.now(), v: await offThread('./usage-log.js', 'codeChanges', [{ days }]) };
     return { ...U.summarize({ days }), code: days <= 31 ? codeCache[key].v : null };
   }) },
-  { method: 'GET', pattern: /^\/ox\/map\/?$/, handler: appRoute(async () => (await import('./project-map.js')).projectMap(process.cwd())) },
+  { method: 'GET', pattern: /^\/ox\/map\/?$/, handler: appRoute(async (_, __, req) => {
+    const asked = new URL(req.url, 'http://x').searchParams.get('cwd');
+    return (await import('./project-map.js')).projectMap(asked ? sessionCwd(asked) : process.cwd());
+  }) },
   { method: 'GET', pattern: /^\/ox\/hf\/search\/?$/, handler: appRoute(async (_, __, req) => (await import('./hf-models.js')).searchModels(new URL(req.url, 'http://x').searchParams.get('q') ?? '')) },
   { method: 'GET', pattern: /^\/ox\/hf\/files\/?$/, handler: appRoute(async (_, __, req) => (await import('./hf-models.js')).modelFiles(new URL(req.url, 'http://x').searchParams.get('repo') ?? '')) },
   { method: 'POST', pattern: /^\/ox\/hf\/pull\/?$/, handler: appRoute(async (b) => (await import('./hf-models.js')).startPull(String(b.repo ?? ''), b.quant ? String(b.quant) : null)) },
@@ -3568,6 +3683,7 @@ async function handleRequest(req, res) {
   const PLATFORM_ROOT = resolve(process.cwd(), 'platform');
   if (await serveStaticFile(req, res, PLATFORM_ROOT)) return;
   if (req.method === 'GET' && (path === '/' || path === '/chat')) {
+    warmPages();
     await serveChatPage(res);
     return;
   }

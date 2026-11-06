@@ -88,6 +88,21 @@ enum VoiceServer {
         return nil
     }
 
+    /// A question about the screen in one quick call (POST /ox/voice/look): a fast model that
+    /// can see, with the point tied to the real thing on screen. nil or unhandled: take the full run.
+    static func look(_ text: String, images: [String], done: @escaping (Result?) -> Void) {
+        guard let u = url()?.appendingPathComponent("look") else { done(nil); return }
+        var req = URLRequest(url: u, timeoutInterval: 30)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "content-type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text, "images": images])
+        URLSession.shared.dataTask(with: req) { data, resp, _ in
+            let ok = (resp as? HTTPURLResponse)?.statusCode == 200
+            let r = ok ? data.flatMap { try? JSONDecoder().decode(Result.self, from: $0) } : nil
+            DispatchQueue.main.async { done(r) }
+        }.resume()
+    }
+
     /// offlineOnly: only ox's no-AI router answers (an errand done in ~0.1 s);
     /// anything else comes back unhandled, for the live run to take.
     static func ask(_ text: String, offlineOnly: Bool = false, done: @escaping (Result?) -> Void) {
@@ -348,6 +363,66 @@ final class Shelf: ObservableObject {
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
+}
+
+// MARK: - Lid closed
+
+/// Keep runs going with the lid closed, for a while (`ox awake --lid 2h`). macOS asks for your
+/// password in its own window; sleep comes back on at the end, at 10 % battery, or on Stop.
+final class LidHold: ObservableObject {
+    @Published private(set) var until: Date?
+    @Published private(set) var asking = false
+    @Published var note: String?
+    /// Sleep still off with no hold running (a restart in the middle, say).
+    @Published private(set) var stale = false
+
+    init() { refresh() }
+
+    var active: Bool { (until ?? .distantPast) > Date() }
+
+    func refresh() {
+        OxRunner.run(["awake", "--lid", "status", "--json"], cwd: FileManager.default.homeDirectoryForCurrentUser) { [weak self] _, out in
+            let line = out.split(separator: "\n").last.map(String.init) ?? ""
+            let j = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
+            DispatchQueue.main.async {
+                self?.until = (j?["until"] as? String).flatMap { ISO8601DateFormatter.withFraction.date(from: $0) }
+                self?.stale = (j?["stale"] as? Bool) ?? false
+            }
+        }
+    }
+
+    func start(hours: Double) {
+        guard !asking else { return }
+        asking = true
+        let arg = hours < 1 ? "\(Int(hours * 60))m" : "\(Int(hours))h"
+        OxRunner.run(["awake", "--lid", arg, "--json"], cwd: FileManager.default.homeDirectoryForCurrentUser) { [weak self] _, out in
+            let line = out.split(separator: "\n").last.map(String.init) ?? ""
+            let j = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.asking = false
+                if (j?["ok"] as? Bool) == true, let u = (j?["until"] as? String).flatMap({ ISO8601DateFormatter.withFraction.date(from: $0) }) {
+                    self.until = u; self.stale = false
+                    IslandLog.write("lid hold until \(u)")
+                    self.note = nil
+                } else {
+                    let why = j?["error"] as? String ?? "macOS did not allow it"
+                    IslandLog.write("lid hold not started: \(why)")
+                    self.note = why
+                }
+            }
+        }
+    }
+
+    func stop() {
+        OxRunner.run(["awake", "--lid", "off", "--json"], cwd: FileManager.default.homeDirectoryForCurrentUser) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.until = nil; IslandLog.write("lid hold stopped: sleep back on within 15 s") }
+        }
+    }
+}
+
+extension ISO8601DateFormatter {
+    static let withFraction: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f }()
 }
 
 // MARK: - Focus
@@ -854,6 +929,21 @@ final class IslandChat: ObservableObject {
         }
         IslandLog.write("screen question while a run is going: looking now")
         lines.append(Line(mine: true, text: text))
+        // The quick look first, as when nothing is running; the full look only when it cannot answer.
+        VoiceServer.look(text, images: shots) { [weak self] r in
+            guard let self else { return }
+            if let r, r.handled, let answer = r.say, !answer.isEmpty {
+                let shown = Buddy.parseMarks(answer).0.replacingOccurrences(of: #"\[POINT:[^\]]*\]"#, with: "", options: [.regularExpression, .caseInsensitive]).trimmingCharacters(in: .whitespacesAndNewlines)
+                self.lines.append(Line(mine: false, text: shown.isEmpty ? answer : shown))
+                IslandLog.write("replied (while busy, quick look \(r.model ?? "?")): \(answer.prefix(200))")
+                onReply?(answer)
+                return
+            }
+            self.fullLookWhileBusy(text, shots: shots, onReply: onReply)
+        }
+    }
+
+    private func fullLookWhileBusy(_ text: String, shots: [String], onReply: ((String) -> Void)?) {
         OxRunner.run(["--mode", "ask", "--buddy"] + shots.flatMap { ["--image", $0] } + ["-p", text], cwd: URL(fileURLWithPath: folder), env: ["OX_MCP": "0"]) { [weak self] _, out in
             guard let self else { return }
             let answer = Shelf.clean(out).split(separator: "\n").filter { !$0.hasPrefix("! ") }.last.map(String.init) ?? "I couldn't look at that."
@@ -960,7 +1050,20 @@ final class IslandChat: ObservableObject {
             }
             IslandLog.write("screen question: looking at the screen after \(ms) ms")
             lines.append(Line(mine: false, text: "Looking…"))
-            run(text, extra: ["--mode", "ask", "--buddy"] + shots.flatMap { ["--image", $0] }, key: "ox-screen", who: nil)
+            busy = true
+            let asked = Date()
+            // The quick look first (one call, a few seconds); the full run only when it cannot answer.
+            VoiceServer.look(text, images: shots) { [weak self] r in
+                guard let self else { return }
+                if let r, r.handled, let say = r.say, !say.isEmpty {
+                    IslandLog.write("quick look in \(Int(Date().timeIntervalSince(asked) * 1000)) ms (\(r.model ?? "?"))")
+                    self.busy = false
+                    self.reply(say, who: nil)
+                    return
+                }
+                IslandLog.write("quick look could not answer (\(r?.why ?? "no server")): the full run looks")
+                self.run(text, extra: ["--mode", "ask", "--buddy"] + shots.flatMap { ["--image", $0] }, key: "ox-screen", who: nil)
+            }
             return true
         }
         if route == "screen-act" {

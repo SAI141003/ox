@@ -5,8 +5,11 @@
 // What this can and cannot do, plainly:
 //   - idle sleep (and system sleep on power): held by caffeinate, no admin.
 //   - closing the lid on battery: macOS sleeps anyway unless sleep is disabled
-//     system-wide with `sudo pmset -a disablesleep 1`, which needs your
-//     password. ox prints that command and its undo; it never runs sudo.
+//     system-wide with `pmset -a disablesleep 1`, which needs your password.
+//     `ox awake --lid 2h` (and the island's "Lid closed" timer) asks macOS for it
+//     in its own password window, for that one change, with the undo already
+//     scheduled: sleep comes back on at the end of the time, when you stop it,
+//     or when the battery is down to 10 %. ox never sees or keeps the password.
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -133,4 +136,76 @@ export function lidHelp(platform = process.platform) {
       'or, in a terminal: powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0 && powercfg /setdcvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0 && powercfg /setactive SCHEME_CURRENT'];
   }
   return ['Keeping awake is not supported on this system.'];
+}
+
+// ---- running with the lid closed (macOS) ------------------------------------------
+
+const LID = () => path.join(os.homedir(), '.ox', 'lid.json');
+// Its presence tells the watcher to put sleep back early. Only tested, never written or
+// removed by the watcher (it runs as root; your files stay yours).
+export const LID_STOP = () => path.join(os.homedir(), '.ox', 'lid.stop');
+const LID_BATTERY_FLOOR = 10;
+
+const shq = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`;
+
+/** The one script run with your password: sleep off now, and back on when the time is up. Pure. */
+export function lidScript(secs, { stop = LID_STOP(), floor = LID_BATTERY_FLOOR } = {}) {
+  const n = Math.round(Number(secs));
+  if (!(n > 0 && n <= 7 * 86400)) throw new Error('a lid hold is from 1 second to 7 days');
+  const watch = [
+    `end=$(( $(date +%s) + ${n} ))`,
+    `while [ "$(date +%s)" -lt "$end" ] && [ ! -e ${shq(stop)} ]; do`,
+    `  b=$(pmset -g batt)`,
+    `  p=$(printf '%s' "$b" | grep -Eo '[0-9]+%' | head -1 | tr -d '%')`,
+    `  if printf '%s' "$b" | grep -q 'Battery Power' && [ -n "$p" ] && [ "$p" -le ${Number(floor)} ]; then break; fi`,
+    '  sleep 15',
+    'done',
+    'pmset -a disablesleep 0',
+  ].join('\n');
+  return `pmset -a disablesleep 1 && (/bin/sh -c ${shq(watch)} >/dev/null 2>&1 &)`;
+}
+
+/** AppleScript that asks for your password in macOS's own window and runs the script. Pure. */
+export function lidAppleScript(script) {
+  return `do shell script "${String(script).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}" with administrator privileges`;
+}
+
+function readLid() {
+  try { return JSON.parse(fs.readFileSync(LID(), 'utf8')); } catch { return null; }
+}
+
+/** Keep running with the lid closed for `secs`. Asks for your password (macOS's window). */
+export function startLid(secs, { run = spawnSync } = {}) {
+  if (process.platform !== 'darwin') throw new Error(lidHelp().join('\n'));
+  try { fs.rmSync(LID_STOP(), { force: true }); } catch {}
+  const r = run('osascript', ['-e', lidAppleScript(lidScript(secs))], { encoding: 'utf8', timeout: 120_000 });
+  if (r.status !== 0) {
+    const why = String(r.stderr ?? '').trim();
+    throw new Error(/-128|cancel/i.test(why) ? 'cancelled: sleep is unchanged' : `macOS did not allow it: ${why.slice(0, 200) || 'no reason given'}`);
+  }
+  const until = Date.now() + secs * 1000;
+  fs.mkdirSync(path.dirname(LID()), { recursive: true });
+  fs.writeFileSync(LID(), JSON.stringify({ until }));
+  // The lid is about the case; idle sleep with the lid open is held the ordinary way too.
+  try { startTimed(secs); } catch {}
+  return { until: new Date(until) };
+}
+
+/** Put sleep back now: the watcher sees the stop file within 15 s. No password. */
+export function stopLid() {
+  const had = readLid();
+  fs.mkdirSync(path.dirname(LID_STOP()), { recursive: true });
+  fs.writeFileSync(LID_STOP(), String(Date.now()));
+  try { fs.unlinkSync(LID()); } catch {}
+  stopTimed();
+  return !!had;
+}
+
+/** { until, active, sleepDisabled, stale }: stale is sleep still off with no hold of ox's running. */
+export function lidStatus({ pm = null } = {}) {
+  const l = readLid();
+  const out = pm ?? (process.platform === 'darwin' ? (spawnSync('pmset', ['-g'], { encoding: 'utf8' }).stdout ?? '') : '');
+  const sleepDisabled = /SleepDisabled\s+1/.test(out);
+  const active = !!(l?.until && l.until > Date.now() && sleepDisabled);
+  return { until: active ? new Date(l.until) : null, active, sleepDisabled, stale: sleepDisabled && !active };
 }

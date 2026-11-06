@@ -256,7 +256,8 @@ export function history({ limit = 200 } = {}) {
   // A job left queued or running by a run that was stopped never finishes: after
   // an hour it is shown as interrupted instead of waiting forever in the gallery.
   const now = Date.now();
-  return [...byId.values()].filter((r) => !r.deleted)
+  // A favorite or delete for an id that was never made has no recipe (no `at`): not a run.
+  return [...byId.values()].filter((r) => !r.deleted && r.at != null)
     .map((r) => (['queued', 'running', 'in_progress'].includes(r.status) && now - (r.at ?? now) > 3_600_000 ? { ...r, status: 'interrupted', error: r.error ?? 'stopped before it finished' } : r))
     .sort((a, b) => b.at - a.at).slice(0, limit);
 }
@@ -272,6 +273,9 @@ async function download(url, dest, fetchImpl) {
   fs.writeFileSync(dest, Buffer.from(await r.arrayBuffer()));
   return dest;
 }
+
+// A provider that said "completed" and left nothing here is not a result: "Done, saved" would be false.
+const nothingKept = (urls = []) => (urls.length ? `it was made, but the file could not be downloaded. It may still be at ${urls[0]}` : 'the provider finished without a file');
 
 // The whole run: submit, wait, download, record. Returns the finished record.
 export async function create({ model, prompt = '', settings = {}, media = {}, client, fetchImpl = globalThis.fetch, onStatus = () => {}, wait, run = process.env.OX_RUN_ID } = {}) {
@@ -293,7 +297,8 @@ export async function create({ model, prompt = '', settings = {}, media = {}, cl
       try { files.push(await download(u, path.join(dir, `${i + 1}.${ext}`), fetchImpl)); } catch {}
     }
   }
-  const row = { id, status: done.status, urls, files, error: done.error ? String(typeof done.error === 'object' ? JSON.stringify(done.error) : done.error) : null, doneAt: Date.now() };
+  const empty = done.status === 'completed' && !files.length;
+  const row = { id, status: empty ? 'failed' : done.status, urls, files, error: empty ? nothingKept(urls) : done.error ? String(typeof done.error === 'object' ? JSON.stringify(done.error) : done.error) : null, doneAt: Date.now() };
   note(row);
   return { ...recipe, requestId: queued.requestId, ...row };
 }
@@ -310,7 +315,9 @@ export async function create({ model, prompt = '', settings = {}, media = {}, cl
 //            API (Draw Things, Forge, AUTOMATIC1111, SD.Next): POST
 //            /sdapi/v1/txt2img -> images[] (base64). No account, nothing leaves.
 
+// No prototype: "constructor" from a request is not a provider.
 export const PROVIDERS = Object.freeze({
+  __proto__: null,
   higgsfield: { label: 'Higgsfield', key: KEY_ENV, kinds: ['image', 'video'], models: () => MODELS.map((m) => ({ id: m.id, label: m.label, surface: m.surface })) },
   fal: { label: 'fal.ai', key: 'FAL_KEY', kinds: ['image', 'video'], models: () => [{ id: 'fal-ai/flux/schnell', label: 'FLUX.1 schnell', surface: 'image' }], anyModel: true },
   openai: { label: 'OpenAI', key: 'OPENAI_API_KEY', kinds: ['image'], models: () => ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'].map((id) => ({ id, label: id, surface: 'image' })) },
@@ -395,7 +402,7 @@ const writeB64 = (dir, i, b64, ext) => { const f = path.join(dir, `${i + 1}.${ex
 
 // One run on any provider. Higgsfield goes through create(); the others here.
 export async function generate({ provider = 'higgsfield', model, prompt = '', settings = {}, media: mediaIn = {}, fetchImpl = globalThis.fetch, onStatus = () => {}, wait, env = process.env, run = env.OX_RUN_ID } = {}) {
-  let media = { ...mediaIn };
+  const media = { ...mediaIn };
   if (provider === 'higgsfield') return create({ model, prompt, settings, media, fetchImpl, onStatus, wait, run });
   const P = PROVIDERS[provider];
   if (!P) throw new Error(`unknown provider '${provider}' (${Object.keys(PROVIDERS).join(', ')})`);
@@ -448,6 +455,8 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
       // A link becomes a local file first: everything below reads files.
       let src = media.start?.[0] ?? editOf ?? null;
       if (src && /^https?:/.test(String(src))) { const img = await sourceImage(src, fetchImpl); fs.mkdirSync(dir, { recursive: true }); src = path.join(dir, `source${path.extname(img.name) || '.png'}`); fs.writeFileSync(src, img.buf); }
+      // The tools below answer a missing file with their own usage line or ffmpeg's error.
+      else if (src) { src = String(src).replace(/^~(?=\/)/, os.homedir()); if (!fs.existsSync(src)) throw new Error(`no image at ${src}`); }
       const common = { outDir: dir, env, onLine: (l) => { const m = /\|\s*(\d+)\/(\d+)/.exec(l); if (m) onStatus({ status: 'in_progress', step: `${m[1]}/${m[2]}` }); } };
       const r = op === 'video' ? await L.livingPicture({ ...common, prompt, image: src, aspect: settings.aspect ?? '16:9', camera: settings.camera ?? 'push-in', seed: settings.seed ?? null, onStep: (what, detail) => onStatus({ status: 'in_progress', step: `${what} ${detail ?? ''}`.trim() }) })
         : op === 'edit' ? await L.imageToImage({ ...common, image: src, prompt, strength: settings.strength ?? 0.5, seed: settings.seed ?? null, fast: !!settings.fast })
@@ -467,11 +476,6 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
       }).catch((e) => { throw new Error(`no Stable Diffusion server answered at ${LOCAL_SD()} (${e.message})`); });
       fs.mkdirSync(dir, { recursive: true });
       files = (d.images ?? []).map((b64, i) => writeB64(dir, i, String(b64).replace(/^data:image\/\w+;base64,/, ''), 'png'));
-    } else if (provider === 'fal' && editOf && !/^https?:/.test(editOf)) {
-      // fal takes the source as a data URI when it is a local file.
-      media = { ...media, start: [dataUri(await sourceImage(editOf, fetchImpl))] };
-      delete media.edit;
-      return generate({ provider, model: model || 'fal-ai/flux-pro/kontext', prompt, settings, media, fetchImpl, onStatus, wait, env });
     } else if (provider === 'openai') {
       const d = await jsonFetch(fetchImpl, `${(env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '')}/images/generations`, {
         method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
@@ -505,7 +509,7 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
       const d = await jsonFetch(fetchImpl, `${LOCAL_SD()}/sdapi/v1/txt2img`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, negative_prompt: settings.negative ?? '', steps: Number(settings.steps ?? 25), width: Number(settings.width ?? 1024), height: Number(settings.height ?? 1024), batch_size: Number(settings.n ?? 1), ...(settings.seed != null ? { seed: Number(settings.seed) } : {}) }),
-      }).catch((e) => { throw new Error(`no Stable Diffusion server answered at ${LOCAL_SD()} (${e.message}). Start Draw Things, Forge or AUTOMATIC1111 with its API on, or set OX_SD_URL`); });
+      }).catch((e) => { throw new Error(`no Stable Diffusion server answered at ${LOCAL_SD()} (${e.message}). Start Draw Things, Forge or AUTOMATIC1111 with its API on, or set OX_SD_URL. No server? Set up this Mac (ox studio local install, no key) or add a key in Settings › API keys`); });
       fs.mkdirSync(dir, { recursive: true });
       files = (d.images ?? []).map((b64, i) => writeB64(dir, i, String(b64).replace(/^data:image\/\w+;base64,/, ''), 'png'));
     } else if (provider === 'hf') {
@@ -520,12 +524,14 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
       fs.writeFileSync(f, Buffer.from(await r.arrayBuffer()));
       files.push(f);
     } else if (provider === 'fal') {
+      // No model named: an edit needs one that reads the picture (schnell would draw a new one).
+      if (!String(model ?? '').trim()) { model = media.edit?.length ? 'fal-ai/flux-pro/kontext' : 'fal-ai/flux/schnell'; recipe.model = model; recipe.label = model; }
       if (!/^[\w.-]+\/[\w./-]+$/.test(String(model)) || String(model).includes('..')) throw new Error('a fal model id looks like fal-ai/flux/schnell');
       const base = (env.FAL_QUEUE_BASE || 'https://queue.fal.run').replace(/\/$/, '');
       const auth = { Authorization: `Key ${key}` };
       const input = { ...(String(prompt).trim() ? { prompt } : {}), ...settings };
       // A local file goes up as a data URI; links pass as they are.
-      for (const [role, list] of Object.entries(media)) if (list?.length) input[role === 'start' ? 'image_url' : `${role}_url`] = /^(https?|data):/.test(String(list[0])) ? list[0] : dataUri(await sourceImage(list[0], fetchImpl));
+      for (const [role, list] of Object.entries(media)) if (list?.length) input[role === 'start' || role === 'edit' ? 'image_url' : `${role}_url`] = /^(https?|data):/.test(String(list[0])) ? list[0] : dataUri(await sourceImage(list[0], fetchImpl));
       const q = await jsonFetch(fetchImpl, `${base}/${model}`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
       note({ id, requestId: q.request_id });
       const statusUrl = q.status_url ?? `${base}/${model}/requests/${q.request_id}/status`;
@@ -549,6 +555,7 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
   } catch (e) {
     status = 'failed'; error = e.message;
   }
+  if (status === 'completed' && !files.length) { status = 'failed'; error = nothingKept(urls); }
   const row = { id, status, surface, urls, files, error, doneAt: Date.now(), label: recipe.label, settings: recipe.settings };
   note(row);
   if (status === 'failed' && error && !files.length) { const err = new Error(error); err.record = { ...recipe, ...row }; throw err; }

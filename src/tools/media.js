@@ -61,7 +61,7 @@ export function pick({ kind = 'image', provider, model, edit = false } = {}, env
   if (p === 'device') return { provider: 'device', model: model ?? (kind === 'video' ? 'mac-video' : edit ? 'mac-edit' : 'mac-image') };
   if (!PROVIDERS[p]) return { error: `unknown provider ${p}` };
   if (!PROVIDERS[p].kinds.includes(kind)) return { error: `${PROVIDERS[p].label} makes ${PROVIDERS[p].kinds.join(' and ')} only` };
-  const m = model ?? (p === 'higgsfield' ? (kind === 'video' ? 'kling-3-pro' : 'soul-2') : p === 'openai' ? 'gpt-image-2' : p === 'fal' ? 'fal-ai/flux/schnell' : p === 'openrouter' ? 'google/gemini-2.5-flash-image' : 'local');
+  const m = model ?? (p === 'higgsfield' ? (kind === 'video' ? 'kling-3-pro' : 'soul-2') : p === 'openai' ? 'gpt-image-2' : p === 'fal' ? (edit ? 'fal-ai/flux-pro/kontext' : 'fal-ai/flux/schnell') : p === 'openrouter' ? 'google/gemini-2.5-flash-image' : 'local');
   if (p === 'higgsfield' && !MODELS.some((x) => x.id === m)) return { error: `unknown Higgsfield model ${m}` };
   return { provider: p, model: m };
 }

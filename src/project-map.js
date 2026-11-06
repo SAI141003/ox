@@ -98,10 +98,12 @@ export function lintPlan(parsed, text = '') {
 
 // Files that changed: git's view (modified, added, untracked) with their times.
 export function changedFiles(cwd, { limit = 200 } = {}) {
-  const r = spawnSync('git', ['-C', cwd, 'status', '--porcelain', '--untracked-files=all'], { encoding: 'utf8', timeout: 10_000 });
+  const r = spawnSync('git', ['-C', cwd, '-c', 'core.quotepath=off', 'status', '--porcelain', '--untracked-files=all', '--', '.'], { encoding: 'utf8', timeout: 10_000 });
   if (r.status !== 0) return { git: false, files: [] };
+  // Git names files from the top of the repo; the plan and its globs start at this folder.
+  const prefix = spawnSync('git', ['-C', cwd, 'rev-parse', '--show-prefix'], { encoding: 'utf8', timeout: 10_000 }).stdout?.trim() ?? '';
   const files = r.stdout.split('\n').filter(Boolean).slice(0, limit).map((l) => {
-    const file = l.slice(3).replace(/^.* -> /, '').replace(/^"|"$/g, '');
+    const file = l.slice(3).replace(/^.* -> /, '').replace(/^"|"$/g, '').slice(prefix.length);
     let at = null;
     try { at = fs.statSync(path.join(cwd, file)).mtimeMs; } catch {}
     return { file, state: l.slice(0, 2).trim() || 'M', at };

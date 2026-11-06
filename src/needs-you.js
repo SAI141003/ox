@@ -9,9 +9,26 @@
 //
 // Read-only. Every source is optional: one that cannot be read is left out
 // and named in `skipped`, never guessed.
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 
 const HOUR = 3600_000;
+
+// The same three gh questions at once, not one after another (about 1.5 s each), and kept a
+// minute: the Today page reads this too, and both opened together asked GitHub six times.
+const GH_KEEP_MS = 60_000;
+let ghCache = null;
+const ghAsync = (args) => new Promise((resolve) => execFile('gh', args, { encoding: 'utf8', timeout: 20_000 }, (err, stdout) => resolve(err ? { status: 1, stdout: '' } : { status: 0, stdout })));
+async function githubNeedsNow() {
+  if (ghCache && Date.now() - ghCache.at < GH_KEEP_MS) return ghCache.value;
+  const answers = new Map();
+  const calls = [];
+  // The questions githubNeeds asks, answered together; it then reads them in its own order.
+  githubNeeds({ run: (_, args) => { calls.push(args); return { status: 0, stdout: '[]' }; } });
+  await Promise.all(calls.map(async (args) => answers.set(args.join('\0'), await ghAsync(args))));
+  const value = githubNeeds({ run: (_, args) => answers.get(args.join('\0')) ?? { status: 1, stdout: '' } });
+  ghCache = { at: Date.now(), value };
+  return value;
+}
 
 function ghJson(args, run) {
   const r = run('gh', args, { encoding: 'utf8', timeout: 20_000 });
@@ -57,7 +74,7 @@ export async function needsYou({ run = spawnSync, now = Date.now() } = {}) {
   try { tasks = (await import('./tasks.js')).listTasks(); } catch { skipped.push('the task board'); }
   try { agents = (await import('./agents-live.js')).liveAgents(); } catch {}
   try { schedules = (await import('./schedule.js')).listSchedules(); } catch {}
-  const gh = githubNeeds({ run });
+  const gh = run === spawnSync ? await githubNeedsNow() : githubNeeds({ run });
   skipped.push(...gh.skipped);
   const items = [...gh.items, ...oxNeeds({ tasks, agents, schedules, now })];
   try {

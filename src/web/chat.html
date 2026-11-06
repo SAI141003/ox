@@ -1539,7 +1539,8 @@
       ${c.incognito ? `<span style="color:var(--muted)" title="incognito">${icon('incog')}</span>` : `<span class="dot${c.running ? ' run' : ''}"></span>`}<span class="t">${esc(c.title)}</span><span class="age">${ago(c.updated || c.at)}</span>
       <span class="acts"><button data-act="pin" title="${c.pinned ? 'Unpin' : 'Pin'}" aria-label="Pin">${icon('pin')}</button><button data-act="archive" title="Archive" aria-label="Archive">${icon('archive')}</button><button data-act="del" title="Delete" aria-label="Delete">${icon('trash')}</button></span></div>`;
     if (pinned.length) html += `<div class="group cap">Pinned</div>${pinned.map(rowFor).join('')}`;
-    html += `<div class="group cap">Sessions</div>${rest.map(rowFor).join('') || `<div class="empty-note">${q ? 'Nothing matches.' : 'No chats yet. Start one with New session.'}</div>`}`;
+    // Everything may be up under Pinned: that is not "no chats".
+    if (rest.length || !pinned.length) html += `<div class="group cap">Sessions</div>${rest.map(rowFor).join('') || `<div class="empty-note">${q ? 'Nothing matches.' : 'No chats yet. Start one with New session.'}</div>`}`;
     if (term.length) {
       html += `<div class="group cap">Terminal</div>` + term.map((s) => `<div class="row${readonly?.id === s.id ? ' on' : ''}" data-s="${esc(s.id)}" role="button" tabindex="0" title="${esc(s.cwd || '')}"><span data-i="terminal" class="dim"></span><span class="t">${esc(s.title)}</span><span class="age">${ago(s.at)}</span></div>`).join('');
     }
@@ -1564,6 +1565,8 @@
     const i = convos.findIndex((x) => x.id === id);
     if (i < 0) return;
     const [c] = convos.splice(i, 1);
+    // A deleted chat has nowhere left to stop it from: its run ends with it.
+    runningControllers.get(id)?.abort();
     if (current === id) current = null;
     saveConvos(); renderChat(); renderLists();
     toastAction(`Deleted “${c.title}”`, 'Undo', () => { convos.splice(Math.min(i, convos.length), 0, c); saveConvos(); renderLists(); });
@@ -4134,11 +4137,13 @@
   async function loadMap() {
     const el = $('map');
     el.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
-    let M; try { M = await getJson('/ox/map'); } catch (e) { el.innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; return; }
+    const mapCwd = convo()?.cwd;
+    let M; try { M = await getJson(`/ox/map${mapCwd ? `?cwd=${encodeURIComponent(mapCwd)}` : ''}`); } catch (e) { el.innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; return; }
     const changes = (list) => list.map((f) => `<div class="small mono" style="display:flex;gap:8px;color:var(--muted)"><span class="dim" style="width:16px">${esc(f.state)}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.file)}</span><span class="dim">${f.at ? ago(f.at) : ''}</span></div>`).join('');
     const head = `<div class="shead" style="font-size:18px">${esc(M.title)}</div><p class="sdesc">What the plan says (PLAN.md) against what the files show (git). ${M.hasPlan ? `${M.progress.done} of ${M.progress.total} tasks done.` : ''} Refreshes when you open it; <a href="#" id="map-refresh" style="color:var(--gold)">refresh</a>.</p>`;
-    if (!M.hasPlan) {
-      el.innerHTML = head + `<div class="box"><b>No PLAN.md in ${esc(M.cwd)}</b><p class="muted small"><button class="btn primary" id="map-write" style="margin:4px 0 10px">Have ox write it</button><br>Or start from this:</p><pre class="body-md">## Sign-in {#auth}
+    // A PLAN.md with no sections in this format reads as a blank page otherwise.
+    if (!M.components.length) {
+      el.innerHTML = head + `<div class="box"><b>${M.hasPlan ? `The PLAN.md in ${esc(M.cwd)} has no sections in this format` : `No PLAN.md in ${esc(M.cwd)}`}</b><p class="muted small"><button class="btn primary" id="map-write" style="margin:4px 0 10px">Have ox write it</button><br>Or start from this:</p><pre class="body-md">## Sign-in {#auth}
 files: [src/auth/**]
 - [x] Email login {#auth-email}
   tech: src/auth/email.ts
@@ -4149,7 +4154,7 @@ needs: [auth]
 files: [src/billing/**]
 - [ ] Stripe checkout {#billing-checkout}</pre></div>` + (M.changes.length ? `<div class="section-cap cap">Changed files (git)</div><div class="box">${changes(M.changes.slice(0, 30))}</div>` : '');
       $('map-write').onclick = () => {
-        newConvo(); show('chat');
+        newConvo(); convo().cwd = M.cwd; saveConvos(); renderChat();
         $('mode').value = 'code';
         $('input').value = 'Write a PLAN.md for this repo in the agenttrail convention: one section per component with {#id} and files: globs, tasks as - [ ] / [~] / [x] / [!] with {#ids}, needs: for dependencies. Read the code first; mark what already works as [x].';
         $('input').dispatchEvent(new Event('input')); $('input').focus();
@@ -4409,14 +4414,18 @@ files: [src/billing/**]
     const list = h.filter((r) => stTab === 'all' || (stTab === 'favorites' ? r.favorite : r.surface === stTab));
     $('st-gallery').innerHTML = list.length ? list.map((r) => {
       const f = r.files?.[0];
-      const media = f ? (/\.(mp4|mov|webm)$/i.test(f) ? `<video src="${esc(f)}#t=0.5" preload="metadata" controls muted style="width:100%;border-radius:8px;background:#000"></video>` : `<a href="${esc(f)}" target="_blank" rel="noopener"><img src="${esc(f)}" alt="${esc(r.prompt)}" style="width:100%;border-radius:8px;display:block"></a>`)
+      const media = f ? /\.(wav|mp3|m4a)$/i.test(f) ? `<audio src="${esc(f)}" controls preload="metadata" style="width:100%"></audio>` : (/\.(mp4|mov|webm)$/i.test(f) ? `<video src="${esc(f)}#t=0.5" preload="metadata" controls muted style="width:100%;border-radius:8px;background:#000"></video>` : `<a href="${esc(f)}" target="_blank" rel="noopener"><img src="${esc(f)}" alt="${esc(r.prompt)}" style="width:100%;border-radius:8px;display:block"></a>`)
         : `<div class="box small ${r.status === 'failed' || r.status === 'nsfw' ? 'err' : 'muted'}" style="min-height:90px">${esc(r.status === 'queued' ? 'still running, or stopped before it finished' : `${r.status}${r.error ? `: ${r.error}` : ''}`)}</div>`;
-      return `<div class="box" style="padding:8px">${media}<div class="small" style="margin:6px 2px 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.prompt)}">${esc(r.prompt || '(no prompt)')}</div><div class="d small dim" style="display:flex;gap:6px;align-items:center;margin:0 2px"><span>${esc(r.label || r.model)}</span><span class="grow" style="flex:1"></span>${(r.files?.length ?? 0) > 1 ? `<span>+${r.files.length - 1}</span>` : ''}<button class="btn ghost" data-reuse="${esc(r.id)}" title="Reuse prompt, model and settings">Reuse</button><button class="btn ghost" data-fav="${esc(r.id)}" title="Favorite">${r.favorite ? '★' : '☆'}</button><button class="btn ghost danger" data-del="${esc(r.id)}" title="Remove from the gallery">✕</button></div></div>`;
+      return `<div class="box" style="padding:8px">${media}<div class="small" style="margin:6px 2px 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.prompt)}">${esc(r.prompt || '(no prompt)')}</div><div class="d small dim" style="display:flex;gap:6px;align-items:center;margin:0 2px"><span>${esc(r.label || r.model)}</span><span class="grow" style="flex:1"></span>${(r.files?.length ?? 0) > 1 ? `<span>+${r.files.length - 1}</span>` : ''}${/^ox /.test(r.model) ? '' : `<button class="btn ghost" data-reuse="${esc(r.id)}" title="Reuse prompt, model and settings">Reuse</button>`}<button class="btn ghost" data-fav="${esc(r.id)}" title="Favorite">${r.favorite ? '★' : '☆'}</button><button class="btn ghost danger" data-del="${esc(r.id)}" title="Remove from the gallery">✕</button></div></div>`;
     }).join('') : '<div class="box muted small">Nothing yet. Try: “a lighthouse at dusk, cinematic, 35mm”.</div>';
     $('st-gallery').querySelectorAll('[data-reuse]').forEach((b) => (b.onclick = () => {
       const r = h.find((x) => x.id === b.dataset.reuse);
+      // Edit, upscale and cut-out on this Mac live in the modes above, not in this form.
+      const macMode = { 'mac-edit': 'edit', 'mac-upscale': 'upscale', 'mac-cutout': 'cutout' }[r.model];
+      if (macMode) { osMode = macMode; renderOpenStudio(); $('os-prompt').value = r.prompt || ''; $('os-image').value = r.media?.start?.[0] ?? r.media?.edit?.[0] ?? ''; window.scrollTo(0, 0); return; }
       $('st-provider').value = r.provider || 'higgsfield'; renderStudioModels();
-      if ([...$('st-model').options].some((o) => o.value === r.model)) $('st-model').value = r.model; else if (r.provider === 'fal') $('st-model-custom').value = r.model;
+      $('st-model-custom').value = '';
+      if ([...$('st-model').options].some((o) => o.value === r.model)) $('st-model').value = r.model; else if (stProvider()?.anyModel) $('st-model-custom').value = r.model;
       renderStudioSettings();
       for (const [k, v] of Object.entries(r.settings || {})) { const el = document.querySelector(`#st-settings [data-set="${k}"]`); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; }
       for (const [role, l] of Object.entries(r.media || {})) { const el = document.querySelector(`#st-media [data-role="${role}"]`); if (el) el.value = l.join(' '); }
@@ -4432,11 +4441,13 @@ files: [src/billing/**]
     $('mk-list').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
     mkShow = 40;
     try { mkData = await getJson(`/ox/market?q=${encodeURIComponent($('mk-q').value.trim())}`); } catch (e) { $('mk-list').innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; return; }
+    // A search that finds only featured entries opens them, rather than saying nothing matches.
+    if ($('mk-q').value.trim() && mkData.featured?.length && !(mkTab === 'repos' ? mkData.repos : mkTab === 'plugins' ? mkData.plugins : mkData.featured).length) mkTab = 'featured';
     renderMarket();
   }
   function renderMarket() {
     const d = mkData;
-    $('mk-tabs').innerHTML = `<button data-mt2="plugins" class="${mkTab === 'plugins' ? 'on' : ''}">Plugins<sup>${d.plugins.length}</sup></button><button data-mt2="repos" class="${mkTab === 'repos' ? 'on' : ''}">GitHub skills<sup>${d.repos.length}</sup></button>`;
+    $('mk-tabs').innerHTML = `<button data-mt2="plugins" class="${mkTab === 'plugins' ? 'on' : ''}">Plugins<sup>${d.plugins.length}</sup></button><button data-mt2="repos" class="${mkTab === 'repos' ? 'on' : ''}">GitHub skills<sup>${d.repos.length}</sup></button><button data-mt2="featured" class="${mkTab === 'featured' ? 'on' : ''}">Featured<sup>${(d.featured ?? []).length}</sup></button>`;
     $('mk-tabs').querySelectorAll('button').forEach((b) => (b.onclick = () => { mkTab = b.dataset.mt2; mkCat = ''; mkShow = 40; renderMarket(); }));
     const cats = [...new Set(d.plugins.map((p) => p.category).filter(Boolean))].sort();
     // One dropdown instead of forty category chips.
@@ -4459,11 +4470,14 @@ files: [src/billing/**]
       const [, , color] = known;
       return `<span class="market-logo" style="background:${color}" title="${esc(name)} logo"><span aria-hidden="true">${esc(letters)}</span></span>`;
     };
-    const list = mkTab === 'plugins'
+    // A featured tool is yours to install: its command is shown to read and copy, and ox runs nothing.
+    const featuredCard = (f) => `<div class="card market-card" style="flex-wrap:wrap">${marketLogo(f.name, f.source)}<span class="t"><div class="n">${esc(f.name)} <span class="badge">${esc(f.kind)}</span></div><div class="d"><span>${esc(f.description)}</span></div><div class="d"><span>${esc(f.license)}</span></div>${f.kind === 'tool' ? `<div class="cmd" style="margin-top:6px"><code>${esc(f.install)}</code><button data-copy-cmd="${esc(f.install)}" aria-label="Copy">${icon('copy')}</button></div>` : ''}</span>${f.kind === 'tool' ? (f.installed ? btn(true) : '') : btn(f.installed, `data-inst-repo="${esc(f.name)}"`)}</div>`;
+    const list = mkTab === 'featured' ? (d.featured ?? []).map(featuredCard) : mkTab === 'plugins'
       ? d.plugins.filter((p) => !mkCat || p.category === mkCat).map((p) => `<div class="card market-card">${marketLogo(p.name, `${p.catalog} ${p.author || ''}`)}<span class="t"><div class="n">${esc(p.name)} ${p.category ? `<span class="badge">${esc(p.category)}</span>` : ''}</div><div class="d"><span>${esc(p.description)}</span></div>${p.author ? `<div class="d" title="${esc(p.catalog)}"><span>${esc(p.author)}</span></div>` : ''}</span>${btn(p.installed, `data-inst-name="${esc(p.name)}" data-inst-cat="${esc(p.catalog)}"`)}</div>`)
       : d.repos.map((r) => `<div class="card market-card">${marketLogo(r.repo, r.repo)}<span class="t"><div class="n"><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" style="color:inherit">${esc(r.repo)}</a></div><div class="d"><span>${esc(r.description)}</span></div><div class="d"><span>★ ${Number(r.stars).toLocaleString()}</span>${r.license ? `<span>${esc(r.license)}</span>` : ''}<span>updated ${esc(String(r.updated || '').slice(0, 10))}</span></div></span>${btn(r.installed, `data-inst-repo="${esc(r.repo)}"`)}</div>`);
     // Forty at a time: the whole catalogue (over a thousand) made the page heavy to read and to scroll.
     $('mk-list').innerHTML = (list.slice(0, mkShow).join('') || '<div class="box muted small">Nothing matches.</div>') + (list.length > mkShow ? `<button class="btn" id="mk-more" style="margin:8px auto;display:block">Show more (${list.length - mkShow} left)</button>` : '');
+    paintIcons($('mk-list'));
     if ($('mk-more')) $('mk-more').onclick = () => { mkShow += 40; renderMarket(); };
     if (d.errors.length) $('mk-list').insertAdjacentHTML('afterbegin', `<div class="alert">${icon('info')}${esc(d.errors.join(' · '))}</div>`);
     $('mk-catalogs').innerHTML = d.catalogs.map((c) => `<span class="badge mono" style="margin:0 6px 6px 0">${esc(c)}</span>`).join('');
@@ -4471,8 +4485,9 @@ files: [src/billing/**]
       b.disabled = true; b.textContent = 'Installing…';
       try {
         const r = await postJson('/ox/market/install', b.dataset.instRepo ? { repo: b.dataset.instRepo } : { name: b.dataset.instName, catalog: b.dataset.instCat });
-        toast(r.ok ? `Installed. ${r.message}` : r.message);
-        if (r.ok) { b.outerHTML = '<span class="badge ok"><span class="dot ok"></span>installed</span>'; caps = null; } else { b.disabled = false; b.textContent = 'Install'; }
+        toast(r.ok && r.installed !== false ? `Installed. ${r.message}` : r.message);
+        if (r.installed === false) { b.disabled = false; b.textContent = 'Install'; }
+        else if (r.ok) { b.outerHTML = '<span class="badge ok"><span class="dot ok"></span>installed</span>'; caps = null; } else { b.disabled = false; b.textContent = 'Install'; }
       } catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Install'; }
     }));
   }
@@ -4672,7 +4687,7 @@ files: [src/billing/**]
     el.innerHTML = `
       <div class="shead">${icon('clock')}Scheduled runs</div><p class="sdesc">ox runs these prompts on their own, on the schedule you set, with a cost cap per run. They run while the ox daemon is up (<code>ox daemon start</code>).</p>
       <div class="box sch-new"><input class="field" id="sch-prompt" placeholder="What to do, like: summarise yesterday's commits"><input class="field" id="sch-when" placeholder="every 1d · every 30m · daily at 9:00" style="max-width:240px"><button class="btn" id="sch-suggest" title="ox suggests when, a cost cap and what to watch, each with why">Suggest</button><button class="btn primary" id="sch-add">Schedule</button></div><div class="small muted" id="sch-why" hidden></div>
-      <div class="cards">${s.schedules.length ? s.schedules.map((x) => `<div class="card"><span class="dot ${x.enabled ? 'ok' : ''}"></span><span class="t"><div class="n">${esc(x.prompt)}</div><div class="d"><span>${esc(x.cadence)}</span><span>next: ${esc(x.next)}</span><span class="mono">${esc(x.id)}</span></div></span><label class="switch" title="${x.enabled ? 'On' : 'Paused'}"><input type="checkbox" data-sch="${esc(x.id)}" ${x.enabled ? 'checked' : ''} aria-label="Enabled"><span></span></label></div>`).join('')
+      <div class="cards">${s.schedules.length ? s.schedules.map((x) => `<div class="card"><span class="dot ${x.enabled ? 'ok' : ''}"></span><span class="t"><div class="n">${esc(x.prompt)}</div><div class="d"><span>${esc(x.cadence)}</span><span>next: ${esc(x.next)}</span><span class="mono">${esc(x.id)}</span></div></span><button class="btn ghost danger" data-sch-rm="${esc(x.id)}">Delete</button><label class="switch" title="${x.enabled ? 'On' : 'Paused'}"><input type="checkbox" data-sch="${esc(x.id)}" ${x.enabled ? 'checked' : ''} aria-label="Enabled"><span></span></label></div>`).join('')
         : `<div class="box muted small">Nothing scheduled.<div class="cmd"><code>ox schedule add "summarise yesterday's commits" --every 1d</code><button data-copy-cmd='ox schedule add "summarise yesterday&#39;s commits" --every 1d'>${icon('copy')}</button></div></div>`}</div>
       <div class="shead" style="margin-top:34px">${icon('globe')}Page watches</div><p class="sdesc">ox checks pages for you and tells you when something changes: a price drops, a word shows up. ${s.watcherRunning ? '<span class="badge ok"><span class="dot ok"></span>checker running</span>' : '<span class="badge">checker stopped</span>'}</p>
       <div class="cards">${s.watches.length ? s.watches.map((w) => `<div class="card"><span class="dot ok"></span><span class="t"><div class="n">${esc(w.label)}</div><div class="d"><span>${esc(w.what)}</span></div></span><a class="btn ghost" href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${icon('open')}Open</a></div>`).join('')
@@ -4694,6 +4709,7 @@ files: [src/billing/**]
     el.querySelectorAll('[data-sch]').forEach((i) => (i.onchange = async () => {
       try { await postJson('/ox/scheduled', { id: i.dataset.sch, enabled: i.checked }); toast(i.checked ? 'Schedule on' : 'Schedule paused'); } catch (e) { toast(e.message); i.checked = !i.checked; }
     }));
+    el.querySelectorAll('[data-sch-rm]').forEach((b) => (b.onclick = async () => { if (!(await askSure('Delete this scheduled run?'))) return; try { await postJson('/ox/scheduled', { action: 'remove', id: b.dataset.schRm }); toast('Deleted'); loadScheduled(); } catch (e) { toast(e.message); } }));
   }
 
   // The Code Review page uses the same read-only PR status that `ox pr status`
@@ -4712,7 +4728,8 @@ files: [src/billing/**]
       // Not a git project: nothing to review, which is not an error.
       const noGit = /not in a git repository/i.test(e.message);
       el.innerHTML = `<div class="shead">${icon('check')}Code Review</div><p class="sdesc">Pull request status and reviewer feedback for the current project. Review is read-only here; Ox will not edit, push, or merge from this page.</p><div class="box"><b>${noGit ? 'This folder is not a git project' : noPr ? 'No pull request for this branch yet' : 'Could not load pull request status'}</b><p class="small muted">${esc(noGit ? 'Code Review shows the pull request of a git project. Choose one, or run git init in this folder.' : noPr ? 'Open a pull request to see its checks and review comments here.' : e.message)}</p><div style="display:flex;gap:8px;flex-wrap:wrap">${noGit ? '<button class="btn primary" id="review-pick">Choose a project</button>' : noPr ? '<button class="btn primary" id="review-open-pr">Open a PR</button>' : ''}<button class="btn" id="review-retry">Try again</button></div></div>`;
-      if ($('review-pick')) $('review-pick').onclick = () => $('repo-btn').click();
+      // The project menu is in the chat's composer, and this click must not reach the handler that closes it.
+      if ($('review-pick')) $('review-pick').onclick = (ev) => { ev.stopPropagation(); show('chat'); openRepoMenu(); };
       if ($('review-open-pr')) $('review-open-pr').onclick = () => $('open-pr').click();
       $('review-retry').onclick = loadCodeReview;
       return;
@@ -4922,8 +4939,8 @@ files: [src/billing/**]
       const it = await getJson(`/ox/library/${openId}`).catch(() => null);
       if (it) {
         let body = esc(it.text);
-        for (const h of it.highlights || []) { const q = esc(h.quote); if (q && body.includes(q)) body = body.replace(q, `<mark class="lib-hl">${q}</mark>`); }
-        reader = `<div class="box" style="margin-top:18px"><div style="display:flex;gap:8px;align-items:center"><b style="font-size:17px">${esc(it.title)}</b><span class="grow"></span><a class="dim small" href="${esc(/^https?:/.test(it.source) ? it.source : '#')}" target="_blank">${esc(it.kind)} · ${it.words.toLocaleString()} words</a><button class="btn ghost small" id="lib-close">Close</button></div>
+        for (const h of it.highlights || []) { const q = esc(h.quote); if (q && body.includes(q)) body = body.replace(q, () => `<mark class="lib-hl">${q}</mark>`); }
+        reader = `<div class="box" style="margin-top:18px"><div style="display:flex;gap:8px;align-items:center"><b style="font-size:17px">${esc(it.title)}</b><span class="grow"></span><a class="dim small" href="${esc(/^https?:/.test(it.source) ? it.source : '#')}" target="_blank">${esc(it.kind)} · ${it.words.toLocaleString()} words</a><button class="btn ghost small danger" id="lib-rm">Remove</button><button class="btn ghost small" id="lib-close">Close</button></div>
           <div class="tk-new" style="margin:10px 0"><input class="field" id="lib-q" placeholder="Ask about this ${esc(it.kind)}…" style="flex:1"><button class="btn primary small" id="lib-q-go">Ask</button></div>
           <div id="lib-a" class="small" style="white-space:pre-wrap;margin-bottom:12px"></div>
           <div class="lib-reader" id="lib-text">${body}</div></div>`;
@@ -4956,6 +4973,7 @@ files: [src/billing/**]
     $('lib-foresight-go').onclick = async () => { const ref = $('lib-foresight').value.trim(); if (!ref) return; toast('Importing local export…'); try { const { item } = await postJson('/ox/library/foresight', { ref }); toast(`${item.title} is in your private Library`); loadLibrary(item.id); } catch (e) { toast(e.message); } };
     if (!libOpen || !$('lib-text')) return;
     $('lib-close').onclick = () => loadLibrary(null);
+    $('lib-rm').onclick = async () => { if (!(await askSure('Remove this from your Library? Its highlights go with it.', 'Remove'))) return; try { await postJson('/ox/library/remove', { id: libOpen }); loadLibrary(null); } catch (e) { toast(e.message); } };
     const askIt = async (question, quote = null) => {
       $('lib-a').textContent = 'Reading…';
       try { const r = await postJson('/ox/library/ask', { id: libOpen, question, quote }); $('lib-a').textContent = r.answer; } catch (e) { $('lib-a').textContent = e.message; }
@@ -5005,7 +5023,7 @@ files: [src/billing/**]
       <div class="box">${roots.length ? `<ul class="mm-tree">${roots.map(node).join('')}</ul>` : `<div class="small" style="margin-bottom:10px">Nothing here yet. Add a goal above, then its parts. This is what it will look like:</div>${sample}`}</div>
       <div class="dim small" style="margin-top:10px">${legend}</div>`;
     $('mm-add').onclick = async () => {
-      const title = $('mm-title').value.trim(); if (!title) return;
+      const title = $('mm-title').value.trim(); if (!title) { toast('Name it first'); $('mm-title').focus(); return; }
       try { await postJson('/ox/tasks', { action: 'add', title, parentId: $('mm-parent').value || null }); toast($('mm-parent').value ? 'Part added' : 'Goal added'); loadMission(); } catch (e) { toast(e.message); }
     };
     $('mm-title').onkeydown = (e) => { if (e.key === 'Enter') $('mm-add').click(); };
@@ -5023,11 +5041,13 @@ files: [src/billing/**]
       const actions = [
         t.status === 'pending' && t.ready ? `<button class="btn primary small" data-tk="run" data-id="${esc(t.id)}">Run with ox</button>` : '',
         t.status === 'in_review' ? `<button class="btn primary small" data-tk="approve" data-id="${esc(t.id)}">Approve</button><button class="btn ghost small" data-tk="reject" data-id="${esc(t.id)}">Send back</button>` : '',
-        t.owner ? `<button class="btn ghost small" data-tk="release" data-id="${esc(t.id)}">Release</button>` : '',
+        // Working with no owner: its run died (the app restarted). Release is the way back.
+        t.owner || t.status === 'running' ? `<button class="btn ghost small" data-tk="release" data-id="${esc(t.id)}">Release</button>` : '',
         ['blocked', 'failed', 'cancelled', 'done'].includes(t.status) ? `<button class="btn ghost small" data-tk="move" data-st="pending" data-id="${esc(t.id)}">Reopen</button>` : '',
         `<button class="btn ghost small" data-tk="delete" data-id="${esc(t.id)}" title="Delete">${icon('trash')}</button>`,
       ].join('');
-      return `<div class="tk-card"><b>${esc(t.title)}</b>${t.description ? `<div class="dim small tk-desc">${esc(t.description)}</div>` : ''}
+      const why = t.status === 'failed' ? t.comments?.at(-1)?.text : t.status === 'blocked' ? t.blockedReason : '';
+      return `<div class="tk-card"><b>${esc(t.title)}</b>${t.description ? `<div class="dim small tk-desc">${esc(t.description)}</div>` : ''}${why ? `<div class="small err tk-desc">${esc(why)}</div>` : ''}
         <div class="tk-meta">${who}${money}${t.review ? '<span class="tk-tag">review</span>' : ''}${blockers.length ? `<span class="tk-tag warn">waits for ${blockers.map((b) => esc(byId[b]?.title || b)).join(', ')}</span>` : ''}</div>
         <div class="tk-actions">${actions}</div></div>`;
     };
