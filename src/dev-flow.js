@@ -267,6 +267,8 @@ export async function openPr(cwd = process.cwd(), { title = null, body = '', bas
 /** CI checks, reviews and comments of the current branch's PR (or a number). */
 export function prStatus(cwd = process.cwd(), ref = null) {
   const root = repoRoot(cwd);
+  // No remote: there can be no pull request, whatever gh would say about signing in.
+  if (!git(root, 'remote').out) fail('this project has no remote yet, so it has no pull requests. Add one (git remote add origin <url>), then open a PR');
   const forge = forgeOf(git(root, 'remote', 'get-url', 'origin').out);
   if (forge.forge === 'gitlab') return gitlabStatus(root, ref);
   if (forge.forge === 'bitbucket') fail(`ox pr status reads GitHub and GitLab for now; for Bitbucket open https://bitbucket.org/${forge.path}/pull-requests`);

@@ -1539,7 +1539,8 @@
       ${c.incognito ? `<span style="color:var(--muted)" title="incognito">${icon('incog')}</span>` : `<span class="dot${c.running ? ' run' : ''}"></span>`}<span class="t">${esc(c.title)}</span><span class="age">${ago(c.updated || c.at)}</span>
       <span class="acts"><button data-act="pin" title="${c.pinned ? 'Unpin' : 'Pin'}" aria-label="Pin">${icon('pin')}</button><button data-act="archive" title="Archive" aria-label="Archive">${icon('archive')}</button><button data-act="del" title="Delete" aria-label="Delete">${icon('trash')}</button></span></div>`;
     if (pinned.length) html += `<div class="group cap">Pinned</div>${pinned.map(rowFor).join('')}`;
-    html += `<div class="group cap">Sessions</div>${rest.map(rowFor).join('') || `<div class="empty-note">${q ? 'Nothing matches.' : 'No chats yet. Start one with New session.'}</div>`}`;
+    // Everything may be up under Pinned: that is not "no chats".
+    if (rest.length || !pinned.length) html += `<div class="group cap">Sessions</div>${rest.map(rowFor).join('') || `<div class="empty-note">${q ? 'Nothing matches.' : 'No chats yet. Start one with New session.'}</div>`}`;
     if (term.length) {
       html += `<div class="group cap">Terminal</div>` + term.map((s) => `<div class="row${readonly?.id === s.id ? ' on' : ''}" data-s="${esc(s.id)}" role="button" tabindex="0" title="${esc(s.cwd || '')}"><span data-i="terminal" class="dim"></span><span class="t">${esc(s.title)}</span><span class="age">${ago(s.at)}</span></div>`).join('');
     }
@@ -1564,6 +1565,8 @@
     const i = convos.findIndex((x) => x.id === id);
     if (i < 0) return;
     const [c] = convos.splice(i, 1);
+    // A deleted chat has nowhere left to stop it from: its run ends with it.
+    runningControllers.get(id)?.abort();
     if (current === id) current = null;
     saveConvos(); renderChat(); renderLists();
     toastAction(`Deleted “${c.title}”`, 'Undo', () => { convos.splice(Math.min(i, convos.length), 0, c); saveConvos(); renderLists(); });
@@ -4134,11 +4137,13 @@
   async function loadMap() {
     const el = $('map');
     el.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
-    let M; try { M = await getJson('/ox/map'); } catch (e) { el.innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; return; }
+    const mapCwd = convo()?.cwd;
+    let M; try { M = await getJson(`/ox/map${mapCwd ? `?cwd=${encodeURIComponent(mapCwd)}` : ''}`); } catch (e) { el.innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; return; }
     const changes = (list) => list.map((f) => `<div class="small mono" style="display:flex;gap:8px;color:var(--muted)"><span class="dim" style="width:16px">${esc(f.state)}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.file)}</span><span class="dim">${f.at ? ago(f.at) : ''}</span></div>`).join('');
     const head = `<div class="shead" style="font-size:18px">${esc(M.title)}</div><p class="sdesc">What the plan says (PLAN.md) against what the files show (git). ${M.hasPlan ? `${M.progress.done} of ${M.progress.total} tasks done.` : ''} Refreshes when you open it; <a href="#" id="map-refresh" style="color:var(--gold)">refresh</a>.</p>`;
-    if (!M.hasPlan) {
-      el.innerHTML = head + `<div class="box"><b>No PLAN.md in ${esc(M.cwd)}</b><p class="muted small"><button class="btn primary" id="map-write" style="margin:4px 0 10px">Have ox write it</button><br>Or start from this:</p><pre class="body-md">## Sign-in {#auth}
+    // A PLAN.md with no sections in this format reads as a blank page otherwise.
+    if (!M.components.length) {
+      el.innerHTML = head + `<div class="box"><b>${M.hasPlan ? `The PLAN.md in ${esc(M.cwd)} has no sections in this format` : `No PLAN.md in ${esc(M.cwd)}`}</b><p class="muted small"><button class="btn primary" id="map-write" style="margin:4px 0 10px">Have ox write it</button><br>Or start from this:</p><pre class="body-md">## Sign-in {#auth}
 files: [src/auth/**]
 - [x] Email login {#auth-email}
   tech: src/auth/email.ts
@@ -4149,7 +4154,7 @@ needs: [auth]
 files: [src/billing/**]
 - [ ] Stripe checkout {#billing-checkout}</pre></div>` + (M.changes.length ? `<div class="section-cap cap">Changed files (git)</div><div class="box">${changes(M.changes.slice(0, 30))}</div>` : '');
       $('map-write').onclick = () => {
-        newConvo(); show('chat');
+        newConvo(); convo().cwd = M.cwd; saveConvos(); renderChat();
         $('mode').value = 'code';
         $('input').value = 'Write a PLAN.md for this repo in the agenttrail convention: one section per component with {#id} and files: globs, tasks as - [ ] / [~] / [x] / [!] with {#ids}, needs: for dependencies. Read the code first; mark what already works as [x].';
         $('input').dispatchEvent(new Event('input')); $('input').focus();
@@ -4716,7 +4721,8 @@ files: [src/billing/**]
       // Not a git project: nothing to review, which is not an error.
       const noGit = /not in a git repository/i.test(e.message);
       el.innerHTML = `<div class="shead">${icon('check')}Code Review</div><p class="sdesc">Pull request status and reviewer feedback for the current project. Review is read-only here; Ox will not edit, push, or merge from this page.</p><div class="box"><b>${noGit ? 'This folder is not a git project' : noPr ? 'No pull request for this branch yet' : 'Could not load pull request status'}</b><p class="small muted">${esc(noGit ? 'Code Review shows the pull request of a git project. Choose one, or run git init in this folder.' : noPr ? 'Open a pull request to see its checks and review comments here.' : e.message)}</p><div style="display:flex;gap:8px;flex-wrap:wrap">${noGit ? '<button class="btn primary" id="review-pick">Choose a project</button>' : noPr ? '<button class="btn primary" id="review-open-pr">Open a PR</button>' : ''}<button class="btn" id="review-retry">Try again</button></div></div>`;
-      if ($('review-pick')) $('review-pick').onclick = () => $('repo-btn').click();
+      // The project menu is in the chat's composer, and this click must not reach the handler that closes it.
+      if ($('review-pick')) $('review-pick').onclick = (ev) => { ev.stopPropagation(); show('chat'); openRepoMenu(); };
       if ($('review-open-pr')) $('review-open-pr').onclick = () => $('open-pr').click();
       $('review-retry').onclick = loadCodeReview;
       return;
@@ -5010,7 +5016,7 @@ files: [src/billing/**]
       <div class="box">${roots.length ? `<ul class="mm-tree">${roots.map(node).join('')}</ul>` : `<div class="small" style="margin-bottom:10px">Nothing here yet. Add a goal above, then its parts. This is what it will look like:</div>${sample}`}</div>
       <div class="dim small" style="margin-top:10px">${legend}</div>`;
     $('mm-add').onclick = async () => {
-      const title = $('mm-title').value.trim(); if (!title) return;
+      const title = $('mm-title').value.trim(); if (!title) { toast('Name it first'); $('mm-title').focus(); return; }
       try { await postJson('/ox/tasks', { action: 'add', title, parentId: $('mm-parent').value || null }); toast($('mm-parent').value ? 'Part added' : 'Goal added'); loadMission(); } catch (e) { toast(e.message); }
     };
     $('mm-title').onkeydown = (e) => { if (e.key === 'Enter') $('mm-add').click(); };
@@ -5028,11 +5034,13 @@ files: [src/billing/**]
       const actions = [
         t.status === 'pending' && t.ready ? `<button class="btn primary small" data-tk="run" data-id="${esc(t.id)}">Run with ox</button>` : '',
         t.status === 'in_review' ? `<button class="btn primary small" data-tk="approve" data-id="${esc(t.id)}">Approve</button><button class="btn ghost small" data-tk="reject" data-id="${esc(t.id)}">Send back</button>` : '',
-        t.owner ? `<button class="btn ghost small" data-tk="release" data-id="${esc(t.id)}">Release</button>` : '',
+        // Working with no owner: its run died (the app restarted). Release is the way back.
+        t.owner || t.status === 'running' ? `<button class="btn ghost small" data-tk="release" data-id="${esc(t.id)}">Release</button>` : '',
         ['blocked', 'failed', 'cancelled', 'done'].includes(t.status) ? `<button class="btn ghost small" data-tk="move" data-st="pending" data-id="${esc(t.id)}">Reopen</button>` : '',
         `<button class="btn ghost small" data-tk="delete" data-id="${esc(t.id)}" title="Delete">${icon('trash')}</button>`,
       ].join('');
-      return `<div class="tk-card"><b>${esc(t.title)}</b>${t.description ? `<div class="dim small tk-desc">${esc(t.description)}</div>` : ''}
+      const why = t.status === 'failed' ? t.comments?.at(-1)?.text : t.status === 'blocked' ? t.blockedReason : '';
+      return `<div class="tk-card"><b>${esc(t.title)}</b>${t.description ? `<div class="dim small tk-desc">${esc(t.description)}</div>` : ''}${why ? `<div class="small err tk-desc">${esc(why)}</div>` : ''}
         <div class="tk-meta">${who}${money}${t.review ? '<span class="tk-tag">review</span>' : ''}${blockers.length ? `<span class="tk-tag warn">waits for ${blockers.map((b) => esc(byId[b]?.title || b)).join(', ')}</span>` : ''}</div>
         <div class="tk-actions">${actions}</div></div>`;
     };

@@ -179,9 +179,12 @@ function deleteTask(id, opts = {}) {
     return false;
   }
   if (!fs.existsSync(p)) return false;
+  const title = getTask(id, opts)?.title;
   fs.unlinkSync(p);
   try { fs.unlinkSync(path.join(lockDir(dir), `${id}.lock`)); } catch {}
-  logActivity(dir, { task: id, by: actor(opts), action: 'deleted' });
+  // A task gone cannot ever be done: whoever waited for it would wait forever.
+  for (const t of listTasks(opts)) if (t.blockedBy.includes(id)) writeTask({ ...t, blockedBy: t.blockedBy.filter((b) => b !== id) }, dir);
+  logActivity(dir, { task: id, by: actor(opts), action: 'deleted', title });
   return true;
 }
 
@@ -521,7 +524,9 @@ function taskActivity(opts = {}) {
 function runTask(id, opts = {}) {
   const task = getTask(id, opts);
   if (!task) return { success: false, error: 'Task not found' };
-  const claim = claimTask(id, { ...opts, owner: opts.owner ?? 'ox-run' });
+  // One name for the whole run: only the owner of a claim can finish it.
+  const owner = opts.owner ?? 'ox-run';
+  const claim = claimTask(id, { ...opts, owner });
   if (!claim.ok) return { success: false, error: claim.reason };
   const brief = taskBrief(id, opts);
 
@@ -529,12 +534,13 @@ function runTask(id, opts = {}) {
     const args = ['-p', [brief, opts.prompt].filter(Boolean).join('\n\n')];
     execFile(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ox.js'), ...args],
       // OX_TASK_ID offers the run its task_board tool (src/tools/task-board.js).
-      { timeout: 300000, cwd: opts.cwd ?? process.cwd(), env: { ...process.env, OX_TASK_ID: id, OX_AGENT_NAME: 'ox-run' } }, (error, stdout, stderr) => {
+      { timeout: 300000, cwd: opts.cwd ?? process.cwd(), env: { ...process.env, OX_TASK_ID: id, OX_AGENT_NAME: owner } }, (error, stdout, stderr) => {
         if (error) {
-          completeTask(id, { ...opts, owner: 'ox-run', failed: true, note: error.message.slice(0, 300) });
+          // The error's message opens with the whole command line: the reason is the end of what the run said.
+          completeTask(id, { ...opts, owner, failed: true, note: (String(stderr ?? '').trim() || error.message).slice(-300) });
           resolve({ success: false, error: error.message, stdout, stderr });
         } else {
-          completeTask(id, { ...opts, owner: 'ox-run', result: stdout.slice(-2000) });
+          completeTask(id, { ...opts, owner, result: stdout.slice(-2000) });
           resolve({ success: true, stdout, stderr });
         }
       });
