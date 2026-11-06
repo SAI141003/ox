@@ -204,10 +204,11 @@ test('the app shows featured entries, and can delete a schedule', () => {
 test('a webhook does not run an automation that is switched off', async (t) => {
   process.env.NODE_TEST_CONTEXT ??= 'child';
   const { startServer } = await import('../src/serve.js');
-  const server = startServer(0, '127.0.0.1');
+  // startServer answers once it is listening, with a handle, not the server: take a free port first.
+  const port = await new Promise((r) => { const s = http.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
+  const server = await startServer(port, '127.0.0.1');
   t.after(() => server.close());
-  await new Promise((r) => (server.listening ? r() : server.once('listening', r)));
-  const url = `http://127.0.0.1:${server.address().port}`;
+  const url = `http://127.0.0.1:${port}`;
   const flow = F.saveFlow({ name: 'Hooked', trigger: { type: 'webhook' }, steps: [{ name: 'a', type: 'write', path: 'hooked.txt', text: 'ran' }] });
   const hit = () => fetch(`${url}/ox/flows/hook/${flow.id}?secret=${flow.trigger.secret}`, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
   assert.equal((await hit()).status, 200);
