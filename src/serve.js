@@ -26,6 +26,7 @@
 
 import { allowKey, allowWords, stepOutput } from './chat-steps.js';
 import { offThread } from './off-thread.js';
+import { stalledRecently } from './slow-models.js';
 import { needsFingerprint } from './approval-guard.js';
 import { redactSecrets } from './session.js';
 import { quickReply } from './quick-reply.js';
@@ -1170,7 +1171,7 @@ async function handleChatCompletions(req, res) {
     const named = !!model && model !== 'auto'; // picked in the chat, not Auto or the default
     ctx.fallbackTargets = specs
       .filter((sp) => runnable(sp))
-      .map((sp) => { try { const t = resolveBot(sp, { bots: fdoc.bots ?? {} }); return listed.includes(sp) || automaticFallbackAllowed(t, target, named) ? t : null; } catch { return null; } })
+      .map((sp) => { try { const t = resolveBot(sp, { bots: fdoc.bots ?? {} }); return listed.includes(sp) || (automaticFallbackAllowed(t, target, named) && !stalledRecently(t.provider, t.model)) ? t : null; } catch { return null; } })
       .filter((t) => t && t.provider !== 'subscription' && !(t.provider === target?.provider && t.model === target?.model));
   } catch {}
   // Delegation in the app, as in the terminal (src/headless.js): the subagent

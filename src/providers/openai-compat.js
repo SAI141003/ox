@@ -264,7 +264,11 @@ export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
     const onOuter = () => watch.abort();
     if (signal) { if (signal.aborted) watch.abort(); else signal.addEventListener('abort', onOuter, { once: true }); }
     arm(firstMs, `no reply in ${Math.round(firstMs / 1000)} s`);
-    const stallError = (e) => (stalled && !signal?.aborted ? new Error(`ox[${name}]: stream stalled (${stalled}) from ${model}`) : e);
+    const stallError = (e) => {
+      if (!stalled || signal?.aborted) return e;
+      import('../slow-models.js').then((S) => S.noteStall(name, model)).catch(() => {});
+      return new Error(`ox[${name}]: stream stalled (${stalled}) from ${model}`);
+    };
     let res;
     try {
       res = await fetch(`${trimBase(baseUrl)}/chat/completions`, {

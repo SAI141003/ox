@@ -22,6 +22,7 @@ import { makeAgentTeamsHandler } from './agent-teams.js';import { listToolSchema
 import { McpHub } from './mcp.js';
 import { setMcpSearchHub } from './tools/web.js';
 import { automaticFallbackAllowed, defaultBotSpec, resolveBot, withFastFallbacks } from './bots.js';
+import { stalledRecently } from './slow-models.js';
 import {
   c, renderError, renderToolEnd, renderToolStart, streamText, truncate,
   SubagentTicker,
@@ -130,6 +131,7 @@ export async function assembleCtx({ config, target, opts = {}, auxTarget = null 
       if (auto && (t.subscription || (t.keyEnv && !process.env[t.keyEnv]))) continue;
       if (auto && t.provider === target?.provider && t.model === target?.model) continue;
       if (auto && !automaticFallbackAllowed(t, target, !!(opts.bot || opts.model))) continue;
+      if (auto && stalledRecently(t.provider, t.model)) continue;
       fallbackTargets.push(t);
     } catch (err) {
       if (!auto && !fbWarned.has(spec)) {
