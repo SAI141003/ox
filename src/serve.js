@@ -2130,19 +2130,37 @@ async function flowHook(req, res, m) {
   catch (e) { sendError(res, 400, String(e?.message ?? e), 'invalid_request_error', 'bad_request', null); }
 }
 
-const MEDIA_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm' };
+const MEDIA_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4' };
+// A file, whole or the part asked for: the app's video player will not play or seek without
+// ranges. A read that fails ends this reply, not the server (a stream's 'error' with no
+// listener is uncaught).
+async function sendFile(req, res, f, cache) {
+  const { size } = await stat(f);
+  const head = { 'Content-Type': MEDIA_TYPES[extname(f).toLowerCase()] ?? 'application/octet-stream', 'Accept-Ranges': 'bytes', 'Cache-Control': cache, 'X-Content-Type-Options': 'nosniff' };
+  const pipe = (opts) => { const s = createReadStream(f, opts); s.on('error', () => res.destroy()); s.pipe(res); };
+  const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ''));
+  if (range && (range[1] || range[2]) && size > 0) {
+    const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (start > end || start >= size) { res.writeHead(416, { 'Content-Range': `bytes */${size}` }); res.end(); return; }
+    res.writeHead(206, { ...head, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
+    pipe({ start, end });
+    return;
+  }
+  res.writeHead(200, { ...head, 'Content-Length': size });
+  pipe();
+}
+
 async function serveMediaFile(req, res, m) {
   if (!authorized(req)) { unauthorized(res); return; }
-  const f = await (await appApi()).mediaFile(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+  let f = null;
+  try { f = await (await appApi()).mediaFile(decodeURIComponent(m[1]), decodeURIComponent(m[2])); } catch { /* a malformed %-escape names no file */ }
   if (!f) { sendError(res, 404, 'Not found', 'invalid_request_error', 'not_found', null); return; }
-  const st = await stat(f);
-  res.writeHead(200, { 'Content-Type': MEDIA_TYPES[extname(f).toLowerCase()] ?? 'application/octet-stream', 'Content-Length': st.size, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
-  createReadStream(f).pipe(res);
+  await sendFile(req, res, f, 'private, max-age=86400');
 }
 
 // A file an answer names (src/app-api.js localMediaFile). Another site's page can point an
-// <img> here to learn whether a file exists, so only ox's own page is answered. Ranges,
-// because the app's video player will not play a file without them.
+// <img> here to learn whether a file exists, so only ox's own page is answered.
 async function serveLocalMedia(req, res) {
   if (!authorized(req)) { unauthorized(res); return; }
   const site = req.headers['sec-fetch-site'];
@@ -2150,19 +2168,7 @@ async function serveLocalMedia(req, res) {
   const wanted = new URL(req.url, 'http://x').searchParams.get('path') ?? '';
   const f = (await appApi()).localMediaFile(wanted);
   if (!f) { sendError(res, 404, 'Not found', 'invalid_request_error', 'not_found', null); return; }
-  const { size } = await stat(f);
-  const head = { 'Content-Type': MEDIA_TYPES[extname(f).toLowerCase()] ?? 'application/octet-stream', 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, no-cache', 'X-Content-Type-Options': 'nosniff' };
-  const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ''));
-  if (range && (range[1] || range[2]) && size > 0) {
-    const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
-    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
-    if (start > end || start >= size) { res.writeHead(416, { 'Content-Range': `bytes */${size}` }); res.end(); return; }
-    res.writeHead(206, { ...head, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
-    createReadStream(f, { start, end }).pipe(res);
-    return;
-  }
-  res.writeHead(200, { ...head, 'Content-Length': size });
-  createReadStream(f).pipe(res);
+  await sendFile(req, res, f, 'private, no-cache');
 }
 
 // The app's "Read aloud" in Kokoro's natural voice: POST { text, voice } and get
@@ -3271,8 +3277,14 @@ const ROUTES = [
       const ms = await import('./media-studio.js');
       const a = body?.args ?? {};
       const files = [].concat(a.files ?? []).map(String).filter(Boolean);
-      const r = V.compose(files, { audio: a.audio ? String(a.audio) : null, volume: a.volume, keepOriginal: a.keep_original !== false, loopAudio: a.loop_audio !== false, out: a.out ? String(a.out) : null });
       const id = (await import('node:crypto')).randomBytes(6).toString('hex');
+      // Made inside its own run folder: the gallery serves only files from there.
+      const { mkdirSync, rmSync } = await import('node:fs');
+      const dir = join(ms.MEDIA_DIR(), id);
+      mkdirSync(dir, { recursive: true });
+      let r;
+      try { r = V.compose(files, { audio: a.audio ? String(a.audio) : null, volume: a.volume, keepOriginal: a.keep_original !== false, loopAudio: a.loop_audio !== false, out: a.out ? String(a.out) : join(dir, 'long-video.mp4') }); }
+      catch (e) { rmSync(dir, { recursive: true, force: true }); throw e; }
       ms.note({ id, at: Date.now(), provider: 'local', model: 'ox timeline', label: `Long video · ${r.scenes} scene${r.scenes === 1 ? '' : 's'} · ${r.minutes} min`, surface: 'video', prompt: `Timeline: ${files.map((f) => basename(f)).join(', ')}`, settings: { audio: !!a.audio, volume: a.volume ?? 0.28, keepOriginal: a.keep_original !== false }, media: { ...(a.audio ? { audio: [String(a.audio)] } : {}) }, status: 'completed', files: [r.file] });
       return { text: `Long video ready: ${r.file} (${r.scenes} scene${r.scenes === 1 ? '' : 's'}, ${Math.round(r.seconds)} s / ${r.minutes} min${a.audio ? ', audio mixed' : ''})` };
     }

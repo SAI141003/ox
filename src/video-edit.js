@@ -246,6 +246,8 @@ export function compose(files, { audio = null, volume = 0.28, keepOriginal = tru
     ff(['-i', base.file, '-c', 'copy', '-movflags', '+faststart', out]);
     result = { ...base, file: out };
   } else result = base;
+  // The joined scenes were a step on the way to `out`: not left beside your clips.
+  if (list.length > 1 && result.file !== base.file) fs.rmSync(base.file, { force: true });
   const p = probe(result.file);
   return { ...result, scenes: list.length, seconds: p.duration, minutes: Math.round((p.duration / 60) * 10) / 10 };
 }

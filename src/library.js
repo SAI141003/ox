@@ -40,32 +40,72 @@ function make({ title, kind, source, text, by = 'you', origin = null }) {
   return save({ id, title: String(title || 'Untitled').replace(/\s+/g, ' ').trim().slice(0, 200), kind, source, origin: origin ?? existing?.origin ?? null, words: words(t), addedAt: existing?.addedAt ?? new Date().toISOString(), by, highlights: existing?.highlights ?? [], text: t });
 }
 
+const MAX_PDF = 256 * 1024 * 1024;
+
+// A PDF at a link, under the same checks as a page: every hop validated (no cloud metadata
+// host, no user:pass@), a time limit and a size limit.
+async function downloadPdf(url, W) {
+  let target = url;
+  for (let hop = 0; hop <= 5; hop++) {
+    const checked = W.validateUrl(target);
+    if (!checked.ok) throw new Error(checked.why);
+    const r = await fetch(checked.url, { redirect: 'manual', signal: AbortSignal.timeout(60_000) });
+    if (r.status >= 300 && r.status < 400 && r.headers.get('location')) { await r.body?.cancel(); target = new URL(r.headers.get('location'), checked.url).toString(); continue; }
+    if (!r.ok) throw new Error(`could not download it (${r.status})`);
+    const parts = [];
+    let size = 0;
+    for await (const part of r.body ?? []) {
+      size += part.length;
+      if (size > MAX_PDF) throw new Error('that PDF is too large (over 256 MB)');
+      parts.push(part);
+    }
+    return Buffer.concat(parts);
+  }
+  throw new Error('too many redirects');
+}
+
+async function addPdfUrl(url, by, W) {
+  const buf = await downloadPdf(url, W);
+  const tmp = path.join(os.tmpdir(), `ox-lib-${crypto.randomBytes(5).toString('hex')}.pdf`);
+  fs.writeFileSync(tmp, buf);
+  const source = url.split('#')[0];
+  const name = source.split('?')[0].split('/').pop().replace(/\.pdf$/i, '');
+  let title = name;
+  try { title = decodeURIComponent(name); } catch { /* a stray % in the name: keep it as written */ }
+  try { return make({ title, kind: 'pdf', source, text: pdfText(tmp), by }); } finally { fs.rmSync(tmp, { force: true }); }
+}
+
 /** Save a web page (its readable text) or a PDF at a URL. */
 export async function addUrl(url, { by = 'you' } = {}) {
   const W = await import('./tools/web.js');
-  if (/\.pdf(\?|$)/i.test(url)) {
-    const r = await fetch(url, { signal: AbortSignal.timeout(60_000) });
-    if (!r.ok) throw new Error(`could not download it (${r.status})`);
-    const tmp = path.join(os.tmpdir(), `ox-lib-${Date.now()}.pdf`);
-    fs.writeFileSync(tmp, Buffer.from(await r.arrayBuffer()));
-    try { return make({ title: decodeURIComponent(url.split('/').pop().replace(/\.pdf.*$/i, '')), kind: 'pdf', source: url, text: pdfText(tmp), by }); } finally { fs.rmSync(tmp, { force: true }); }
-  }
+  if (/\.pdf(?:[?#]|$)/i.test(url)) return addPdfUrl(url, by, W);
   const d = await W.fetchDocument(url, { maxBytes: 4 * 1024 * 1024 });
+  // Many PDF links do not end in .pdf (arxiv.org/pdf/2301.00001): the answer's type says so.
+  if (d.kind === 'binary' && /application\/(?:x-)?pdf/i.test(d.message)) return addPdfUrl(url, by, W);
+  if (d.kind === 'binary') throw new Error('that link is not a page or a PDF');
   if (!d.ok) throw new Error(d.message ?? 'could not fetch it');
   const html = String(d.body ?? '');
   const title = /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i.exec(html)?.[1] ?? /<title[^>]*>([^<]+)/i.exec(html)?.[1] ?? url;
-  // The article itself when the page marks it; the whole page otherwise.
-  const main = /<article[\s\S]*?<\/article>/i.exec(html)?.[0] ?? /<main[\s\S]*?<\/main>/i.exec(html)?.[0] ?? html;
-  return make({ title: W.decodeEntities(title), kind: 'article', source: url, text: plain(W.htmlToText(main)), by });
+  // The article itself when the page marks it; the whole page otherwise. The longest one: the
+  // first is often a teaser card, and on a page of cards no one article is the page.
+  const longest = (re) => (html.match(re) ?? []).sort((a, b) => b.length - a.length)[0];
+  const all = plain(W.htmlToText(html));
+  const marked = plain(W.htmlToText(longest(/<article[\s>][\s\S]*?<\/article>/gi) ?? longest(/<main[\s>][\s\S]*?<\/main>/gi) ?? html));
+  return make({ title: W.decodeEntities(title), kind: 'article', source: url, text: words(marked) * 4 < words(all) ? all : marked, by });
 }
 
 /** Save a file: PDF, Markdown, text or HTML. */
 export async function addFile(p, { by = 'you' } = {}) {
+  if (!String(p ?? '').trim()) throw new Error('paste a link or a file path');
   const f = path.resolve(String(p).replace(/^~(?=\/)/, os.homedir()));
-  if (!fs.existsSync(f)) throw new Error(`${p} does not exist`);
+  if (!fs.existsSync(f)) throw new Error(`${p} does not exist (a link starts with https://)`);
+  if (!fs.statSync(f).isFile()) throw new Error(`${p} is a folder: choose a file in it`);
   const name = path.basename(f).replace(/\.[^.]+$/, '');
   if (/\.pdf$/i.test(f)) return make({ title: name, kind: 'pdf', source: f, text: pdfText(f), by });
-  const raw = fs.readFileSync(f, 'utf8');
+  const buf = fs.readFileSync(f);
+  // A picture or a Word file read as text is a shelf item of garbage.
+  if (buf.includes(0)) throw new Error('that file is not text: save a PDF, Markdown, text or HTML file');
+  const raw = buf.toString('utf8');
   if (/\.html?$/i.test(f)) { const W = await import('./tools/web.js'); return make({ title: /<title[^>]*>([^<]+)/i.exec(raw)?.[1] ?? name, kind: 'article', source: f, text: plain(W.htmlToText(raw)), by }); }
   return make({ title: /^#\s+(.+)$/m.exec(raw)?.[1] ?? name, kind: 'note', source: f, text: raw, by });
 }

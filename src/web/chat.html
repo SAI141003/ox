@@ -4409,14 +4409,18 @@ files: [src/billing/**]
     const list = h.filter((r) => stTab === 'all' || (stTab === 'favorites' ? r.favorite : r.surface === stTab));
     $('st-gallery').innerHTML = list.length ? list.map((r) => {
       const f = r.files?.[0];
-      const media = f ? (/\.(mp4|mov|webm)$/i.test(f) ? `<video src="${esc(f)}#t=0.5" preload="metadata" controls muted style="width:100%;border-radius:8px;background:#000"></video>` : `<a href="${esc(f)}" target="_blank" rel="noopener"><img src="${esc(f)}" alt="${esc(r.prompt)}" style="width:100%;border-radius:8px;display:block"></a>`)
+      const media = f ? /\.(wav|mp3|m4a)$/i.test(f) ? `<audio src="${esc(f)}" controls preload="metadata" style="width:100%"></audio>` : (/\.(mp4|mov|webm)$/i.test(f) ? `<video src="${esc(f)}#t=0.5" preload="metadata" controls muted style="width:100%;border-radius:8px;background:#000"></video>` : `<a href="${esc(f)}" target="_blank" rel="noopener"><img src="${esc(f)}" alt="${esc(r.prompt)}" style="width:100%;border-radius:8px;display:block"></a>`)
         : `<div class="box small ${r.status === 'failed' || r.status === 'nsfw' ? 'err' : 'muted'}" style="min-height:90px">${esc(r.status === 'queued' ? 'still running, or stopped before it finished' : `${r.status}${r.error ? `: ${r.error}` : ''}`)}</div>`;
-      return `<div class="box" style="padding:8px">${media}<div class="small" style="margin:6px 2px 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.prompt)}">${esc(r.prompt || '(no prompt)')}</div><div class="d small dim" style="display:flex;gap:6px;align-items:center;margin:0 2px"><span>${esc(r.label || r.model)}</span><span class="grow" style="flex:1"></span>${(r.files?.length ?? 0) > 1 ? `<span>+${r.files.length - 1}</span>` : ''}<button class="btn ghost" data-reuse="${esc(r.id)}" title="Reuse prompt, model and settings">Reuse</button><button class="btn ghost" data-fav="${esc(r.id)}" title="Favorite">${r.favorite ? '★' : '☆'}</button><button class="btn ghost danger" data-del="${esc(r.id)}" title="Remove from the gallery">✕</button></div></div>`;
+      return `<div class="box" style="padding:8px">${media}<div class="small" style="margin:6px 2px 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.prompt)}">${esc(r.prompt || '(no prompt)')}</div><div class="d small dim" style="display:flex;gap:6px;align-items:center;margin:0 2px"><span>${esc(r.label || r.model)}</span><span class="grow" style="flex:1"></span>${(r.files?.length ?? 0) > 1 ? `<span>+${r.files.length - 1}</span>` : ''}${/^ox /.test(r.model) ? '' : `<button class="btn ghost" data-reuse="${esc(r.id)}" title="Reuse prompt, model and settings">Reuse</button>`}<button class="btn ghost" data-fav="${esc(r.id)}" title="Favorite">${r.favorite ? '★' : '☆'}</button><button class="btn ghost danger" data-del="${esc(r.id)}" title="Remove from the gallery">✕</button></div></div>`;
     }).join('') : '<div class="box muted small">Nothing yet. Try: “a lighthouse at dusk, cinematic, 35mm”.</div>';
     $('st-gallery').querySelectorAll('[data-reuse]').forEach((b) => (b.onclick = () => {
       const r = h.find((x) => x.id === b.dataset.reuse);
+      // Edit, upscale and cut-out on this Mac live in the modes above, not in this form.
+      const macMode = { 'mac-edit': 'edit', 'mac-upscale': 'upscale', 'mac-cutout': 'cutout' }[r.model];
+      if (macMode) { osMode = macMode; renderOpenStudio(); $('os-prompt').value = r.prompt || ''; $('os-image').value = r.media?.start?.[0] ?? r.media?.edit?.[0] ?? ''; window.scrollTo(0, 0); return; }
       $('st-provider').value = r.provider || 'higgsfield'; renderStudioModels();
-      if ([...$('st-model').options].some((o) => o.value === r.model)) $('st-model').value = r.model; else if (r.provider === 'fal') $('st-model-custom').value = r.model;
+      $('st-model-custom').value = '';
+      if ([...$('st-model').options].some((o) => o.value === r.model)) $('st-model').value = r.model; else if (stProvider()?.anyModel) $('st-model-custom').value = r.model;
       renderStudioSettings();
       for (const [k, v] of Object.entries(r.settings || {})) { const el = document.querySelector(`#st-settings [data-set="${k}"]`); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; }
       for (const [role, l] of Object.entries(r.media || {})) { const el = document.querySelector(`#st-media [data-role="${role}"]`); if (el) el.value = l.join(' '); }
@@ -4922,8 +4926,8 @@ files: [src/billing/**]
       const it = await getJson(`/ox/library/${openId}`).catch(() => null);
       if (it) {
         let body = esc(it.text);
-        for (const h of it.highlights || []) { const q = esc(h.quote); if (q && body.includes(q)) body = body.replace(q, `<mark class="lib-hl">${q}</mark>`); }
-        reader = `<div class="box" style="margin-top:18px"><div style="display:flex;gap:8px;align-items:center"><b style="font-size:17px">${esc(it.title)}</b><span class="grow"></span><a class="dim small" href="${esc(/^https?:/.test(it.source) ? it.source : '#')}" target="_blank">${esc(it.kind)} · ${it.words.toLocaleString()} words</a><button class="btn ghost small" id="lib-close">Close</button></div>
+        for (const h of it.highlights || []) { const q = esc(h.quote); if (q && body.includes(q)) body = body.replace(q, () => `<mark class="lib-hl">${q}</mark>`); }
+        reader = `<div class="box" style="margin-top:18px"><div style="display:flex;gap:8px;align-items:center"><b style="font-size:17px">${esc(it.title)}</b><span class="grow"></span><a class="dim small" href="${esc(/^https?:/.test(it.source) ? it.source : '#')}" target="_blank">${esc(it.kind)} · ${it.words.toLocaleString()} words</a><button class="btn ghost small danger" id="lib-rm">Remove</button><button class="btn ghost small" id="lib-close">Close</button></div>
           <div class="tk-new" style="margin:10px 0"><input class="field" id="lib-q" placeholder="Ask about this ${esc(it.kind)}…" style="flex:1"><button class="btn primary small" id="lib-q-go">Ask</button></div>
           <div id="lib-a" class="small" style="white-space:pre-wrap;margin-bottom:12px"></div>
           <div class="lib-reader" id="lib-text">${body}</div></div>`;
@@ -4956,6 +4960,7 @@ files: [src/billing/**]
     $('lib-foresight-go').onclick = async () => { const ref = $('lib-foresight').value.trim(); if (!ref) return; toast('Importing local export…'); try { const { item } = await postJson('/ox/library/foresight', { ref }); toast(`${item.title} is in your private Library`); loadLibrary(item.id); } catch (e) { toast(e.message); } };
     if (!libOpen || !$('lib-text')) return;
     $('lib-close').onclick = () => loadLibrary(null);
+    $('lib-rm').onclick = async () => { if (!(await askSure('Remove this from your Library? Its highlights go with it.', 'Remove'))) return; try { await postJson('/ox/library/remove', { id: libOpen }); loadLibrary(null); } catch (e) { toast(e.message); } };
     const askIt = async (question, quote = null) => {
       $('lib-a').textContent = 'Reading…';
       try { const r = await postJson('/ox/library/ask', { id: libOpen, question, quote }); $('lib-a').textContent = r.answer; } catch (e) { $('lib-a').textContent = e.message; }

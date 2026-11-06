@@ -636,8 +636,9 @@ export async function mediaFile(id, name) {
   const ms = await import('./media-studio.js');
   if (!/^[0-9a-f]{6,20}$/.test(id) || !/^[\w.-]{1,40}$/.test(name) || name.startsWith('.')) return null;
   const f = path.join(ms.MEDIA_DIR(), id, name);
-  if (!f.startsWith(path.join(ms.MEDIA_DIR(), id) + path.sep) || !fs.existsSync(f)) return null;
-  return f;
+  if (!f.startsWith(path.join(ms.MEDIA_DIR(), id) + path.sep)) return null;
+  // A run's folder has folders in it (scenes/); reading one as a file took the server down.
+  try { return fs.statSync(f).isFile() ? f : null; } catch { return null; }
 }
 
 // Bots: your own (a name, a model, a mode, the tools it may use and standing
