@@ -2134,6 +2134,8 @@ async function flowHook(req, res, m) {
     sendError(res, 404, 'No such flow, or the secret is wrong.', 'invalid_request_error', 'not_found', null);
     return;
   }
+  // Switched off means off, for its webhook as for its schedule.
+  if (f.enabled === false) { sendError(res, 409, `The automation ${f.id} is switched off.`, 'invalid_request_error', 'flow_off', null); return; }
   let input = null;
   try { input = await parseBody(req); } catch { input = null; }
   try { sendJson(res, 200, { run: await F.runFlow(f, { input, trigger: 'webhook' }) }); }
@@ -2947,6 +2949,7 @@ const ROUTES = [
     const O = await import('./org.js');
     const ask = async ({ system, user }) => { const { quickText } = await import('./quick-text.js'); return (await quickText(resolveBot(pickWorkingDefault(), { bots: readConfigDoc().bots ?? {} }), { system, user, maxTokens: 600 })).text; };
     if (m[1] === 'say') return { replies: await O.groupSay(String(body?.group ?? ''), String(body?.text ?? ''), { ask }) };
+    if (!(body?.draft && typeof body.draft === 'object') && !String(body?.sentence ?? '').trim()) throw new Error('describe the team in a sentence');
     const draft = body?.draft && typeof body.draft === 'object' ? body.draft : await O.draftTeam(String(body?.sentence ?? ''), { ask });
     return body?.confirm ? O.hireTeam(draft) : { draft };
   }) },
@@ -3221,7 +3224,7 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksView) },
   { method: 'POST', pattern: /^\/ox\/tasks\/?$/, handler: appRoute(tasksRoute) },
   { method: 'GET', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async () => (await appApi()).scheduledView()) },
-  { method: 'POST', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async (b) => { const a = await appApi(); return b.action === 'add' ? a.scheduleAdd({ prompt: b.prompt, when: b.when, enabled: true, watch: b.watch, maxCostUsd: b.maxCostUsd }) : b.action === 'suggest' ? a.scheduleSuggest(b.prompt) : a.setScheduleEnabled(String(b.id ?? ''), b.enabled); }) },
+  { method: 'POST', pattern: /^\/ox\/scheduled\/?$/, handler: appRoute(async (b) => { const a = await appApi(); return b.action === 'add' ? a.scheduleAdd({ prompt: b.prompt, when: b.when, enabled: true, watch: b.watch, maxCostUsd: b.maxCostUsd }) : b.action === 'suggest' ? a.scheduleSuggest(b.prompt) : b.action === 'remove' ? a.scheduleRemove(String(b.id ?? '')) : a.setScheduleEnabled(String(b.id ?? ''), b.enabled); }) },
   { method: 'GET', pattern: /^\/ox\/sessions\/?$/, handler: appRoute(async () => (await appApi()).sessionsView()) },
   { method: 'GET', pattern: /^\/ox\/sessions\/([^/]+)$/, handler: appRoute(async (_, m) => (await appApi()).sessionView(decodeURIComponent(m[1]))) },
   { method: 'GET', pattern: /^\/ox\/memory\/?$/, handler: appRoute(async () => (await appApi()).memoryView()) },

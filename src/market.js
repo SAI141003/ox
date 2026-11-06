@@ -158,12 +158,12 @@ export async function search(query = '', { sources = ['catalogs', 'github'] } = 
   const have = installedNames();
   const out = { plugins: [], repos: [], errors: [], catalogs: await catalogList() };
   if (sources.includes('catalogs')) {
-    for (const repo of out.catalogs) {
-      try {
-        const list = await fetchCatalog(repo);
-        out.plugins.push(...list.filter((p) => !q || `${p.name} ${p.description} ${p.category ?? ''} ${(p.skills ?? []).join(' ')}`.toLowerCase().includes(q)).map((p) => ({ ...p, installed: have.has(p.name) })));
-      } catch (e) { out.errors.push(`${repo}: ${e.message}`); }
-    }
+    // Together: one after another, a slow network held the page for 20 s a catalogue (12 of them).
+    const lists = await Promise.allSettled(out.catalogs.map((repo) => fetchCatalog(repo)));
+    lists.forEach((r, i) => {
+      if (r.status === 'fulfilled') out.plugins.push(...r.value.filter((p) => !q || `${p.name} ${p.description} ${p.category ?? ''} ${(p.skills ?? []).join(' ')}`.toLowerCase().includes(q)).map((p) => ({ ...p, installed: have.has(p.name) })));
+      else out.errors.push(`${out.catalogs[i]}: ${r.reason?.message ?? r.reason}`);
+    });
   }
   out.featured = FEATURED.filter((f) => !q || `${f.name} ${f.description}`.toLowerCase().includes(q)).map((f) => ({ ...f, installed: have.has(f.name) }));
   if (sources.includes('github')) {
@@ -183,8 +183,9 @@ export async function install({ name, catalog, repo, force = false } = {}) {
     const r = await installSkill(feat.source, { force });
     return { ok: !!r.ok, message: r.ok ? `installed ${r.name} (${feat.license}) to ${r.dest}` : r.message, findings: (r.findings ?? []).length };
   }
-  if (feat?.kind === 'mcp') return { ok: true, message: `${feat.name} runs as an MCP server: ox mcp add ${feat.source}  (then ox mcp test ${feat.source})${feat.name === 'pinchtab' ? '. First: brew install pinchtab/tap/pinchtab' : ''}` };
-  if (feat?.kind === 'tool') return { ok: true, message: `${feat.name} is a command-line tool: install it with  ${feat.install}  then run  ${feat.run}  (${feat.description.split(': ').slice(1).join(': ')})` };
+  // These two only say how: nothing was installed, and `installed: false` keeps the app from saying it was.
+  if (feat?.kind === 'mcp') return { ok: true, installed: false, message: `${feat.name} runs as an MCP server: ox mcp add ${feat.source}  (then ox mcp test ${feat.source})${feat.name === 'pinchtab' ? '. First: brew install pinchtab/tap/pinchtab' : ''}` };
+  if (feat?.kind === 'tool') return { ok: true, installed: false, message: `${feat.name} is yours to install: ${feat.install}\nThen: ${feat.run}\n(${feat.description.split(': ').slice(1).join(': ')})` };
   if (catalog) {
     if (!REPO_RE.test(catalog) || !/^[\w.-]+$/.test(String(name))) throw new Error('bad plugin name or catalogue');
     const r = await addPlugin(`${name}@${catalog}`, { force });

@@ -148,10 +148,10 @@ export async function discoverLocalModel(baseUrl, signal) {
     const res = await fetch(`${key}/models`, { signal });
     if (res.ok) ids = ((await res.json())?.data ?? []).map((m) => m?.id).filter(Boolean);
   } catch (err) {
-    throw new Error(`ox: no model named and the local server at ${key} did not answer /models (${err?.message ?? err}) — is it running?`);
+    throw new Error(`ox: no model is connected, and the local server at ${key} did not answer /models (${err?.message ?? err}). Add a key or sign in under Settings › Providers, or start a local model.`);
   }
   if (!ids.length) {
-    throw new Error(`ox: no model named and the local server at ${key} reports no loaded models — load one or pass --model <provider>:<model>`);
+    throw new Error(`ox: no model is connected, and the local server at ${key} reports no loaded models. Add a key or sign in under Settings › Providers, or load a local model (in the terminal: --model <provider>:<model>).`);
   }
   // An agent needs tool calling. Ollama publishes per-model capabilities on
   // /api/tags; prefer a tools-capable model when the server says which are.
