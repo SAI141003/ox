@@ -524,6 +524,8 @@ export async function generate({ provider = 'higgsfield', model, prompt = '', se
       fs.writeFileSync(f, Buffer.from(await r.arrayBuffer()));
       files.push(f);
     } else if (provider === 'fal') {
+      // No model named: an edit needs one that reads the picture (schnell would draw a new one).
+      if (!String(model ?? '').trim()) { model = media.edit?.length ? 'fal-ai/flux-pro/kontext' : 'fal-ai/flux/schnell'; recipe.model = model; recipe.label = model; }
       if (!/^[\w.-]+\/[\w./-]+$/.test(String(model)) || String(model).includes('..')) throw new Error('a fal model id looks like fal-ai/flux/schnell');
       const base = (env.FAL_QUEUE_BASE || 'https://queue.fal.run').replace(/\/$/, '');
       const auth = { Authorization: `Key ${key}` };

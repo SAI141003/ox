@@ -2114,7 +2114,6 @@ async function tasksRoute(b) {
     case 'delete': return { ok: T.deleteTask(id, by) };
     case 'run': {
       // An ox run claims it and works on it; the board shows it as it goes.
-      if (!T.getTask(id)) throw new Error('no such task');
       // Refused at once (already taken, or waiting for something) it answers with no promise.
       const run = T.runTask(id, { owner: 'ox (app)' });
       if (run.success === false) throw new Error(run.error);

@@ -57,7 +57,7 @@ before(async () => {
   });
   await new Promise((r) => web.listen(0, '127.0.0.1', r));
   webBase = `http://127.0.0.1:${web.address().port}`;
-  const env = { ...process.env, HOME: home, OX_HOME: oxHome, OX_NO_KEYSTORE: '1', OX_ISLAND: '0', OX_MESH: '0', OX_PHONE: '0', OX_USAGE_LOG: '0', OX_LEARN: '0', OX_NO_PLUGINS: '1' };
+  const env = { ...process.env, HOME: home, OX_HOME: oxHome, OX_NO_KEYSTORE: '1', OX_ISLAND: '0', OX_MESH: '0', OX_PHONE: '0', OX_USAGE_LOG: '0', OX_LEARN: '0', OX_NO_PLUGINS: '1', OX_LIBRARY_LOCAL_LINKS: '1' };
   srv = spawn(process.execPath, [OX, 'serve', '--port', '0'], { cwd: home, env, stdio: ['ignore', 'pipe', 'ignore'] });
   base = await new Promise((resolve, reject) => {
     let out = '';
@@ -202,4 +202,17 @@ test('the page: Library can remove, sound is a player, Reuse restores what it ca
   assert.match(CHAT, /\/\^ox \/\.test\(r\.model\) \? ''/, 'a timeline or animation has no recipe the form can rerun');
   assert.match(CHAT, /stProvider\(\)\?\.anyModel\) \$\('st-model-custom'\)\.value = r\.model/);
   assert.match(CHAT, /\$\('st-model-custom'\)\.value = '';/);
+});
+
+test('a Library PDF link refuses addresses on this machine or its network', async () => {
+  const { privateAddress } = await import('../src/library.js');
+  for (const ip of ['127.0.0.1', '10.1.2.3', '192.168.1.1', '172.20.0.1', '169.254.169.254', '::1', 'fd00::1', 'fe80::1', '::ffff:127.0.0.1', '0.0.0.0', '100.64.0.1']) assert.equal(privateAddress(ip), true, ip);
+  for (const ip of ['8.8.8.8', '151.101.1.69', '172.32.0.1', '2606:4700::1111']) assert.equal(privateAddress(ip), false, ip);
+});
+
+test('a fal edit with no model named uses the model that reads the picture', async () => {
+  const ms = await import('../src/media-studio.js');
+  seen.length = 0;
+  await ms.generate({ provider: 'fal', prompt: 'night', media: { edit: ['https://example.invalid/a.png'] }, env: { OX_HOME: oxHome, FAL_KEY: 'k', FAL_QUEUE_BASE: `${webBase}/fal` }, wait: { interval: 1 } }).catch((e) => e);
+  assert.ok(seen.some((x) => x.url === '/fal/fal-ai/flux-pro/kontext'), seen.map((x) => x.url).join(' '));
 });

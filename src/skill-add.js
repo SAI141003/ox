@@ -97,14 +97,16 @@ export function scanSkillSource(sourceDir) {
   const scanned = [];
   const links = [];
   for (const f of walkFiles(sourceDir, '', links)) {
-    let text;
+    let buf;
     try {
-      text = fs.readFileSync(f.absPath, 'utf8');
+      buf = fs.readFileSync(f.absPath);
     } catch {
       continue;
     }
     scanned.push(f.relPath);
-    findings = findings.concat(scanText(f.relPath, text));
+    // A picture or a compiled file is not text: its bytes matched patterns by chance.
+    if (buf.subarray(0, 8192).includes(0)) continue;
+    findings = findings.concat(scanText(f.relPath, buf.toString('utf8')));
   }
   // A link is copied as a link: "data.txt" could be ~/.ssh/id_rsa, read the first time the skill opens it.
   for (const rel of links) findings.push({ file: rel, line: 0, pattern: 'symlink', why: 'a link can point at any file on this machine', excerpt: (() => { try { return fs.readlinkSync(path.join(sourceDir, rel)).slice(0, 80); } catch { return ''; } })() });
@@ -343,6 +345,15 @@ export async function installSkill(source, opts = {}) {
   const name = parsed.skill.name;
 
   const dest = path.join(path.resolve(home), '.agents', 'skills', name);
+  // A folder that holds the skills folder: removing the old copy would delete part of the source,
+  // and the copy would go into itself.
+  if (mode === 'local') {
+    let real = sourceDir;
+    try { real = fs.realpathSync(sourceDir); } catch {}
+    if (dest.startsWith(real + path.sep) || dest.startsWith(sourceDir + path.sep)) {
+      return invalid(`skill add: '${src}' holds the skills folder itself — choose the skill's own folder.`);
+    }
+  }
   if (fs.existsSync(dest)) {
     if (!force) {
       return {

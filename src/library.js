@@ -7,6 +7,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import dns from 'node:dns/promises';
+import net from 'node:net';
 
 const dir = () => path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'library');
 const file = (id) => path.join(dir(), `${String(id).replace(/[^a-z0-9-]/gi, '')}.json`);
@@ -42,13 +44,34 @@ function make({ title, kind, source, text, by = 'you', origin = null }) {
 
 const MAX_PDF = 256 * 1024 * 1024;
 
-// A PDF at a link, under the same checks as a page: every hop validated (no cloud metadata
-// host, no user:pass@), a time limit and a size limit.
+// An address on this machine or its network: a saved link must not reach the router's page,
+// a local service or the cloud metadata host (169.254.169.254) by way of a redirect.
+export function privateAddress(ip) {
+  const v = String(ip).toLowerCase().replace(/^::ffff:(?=\d+\.)/, '');
+  if (net.isIPv4(v)) {
+    const [a, b] = v.split('.').map(Number);
+    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
+  }
+  if (net.isIPv6(v)) return v === '::' || v === '::1' || /^f[cd]/.test(v) || /^fe[89ab]/.test(v) || /^ff/.test(v);
+  return false;
+}
+
+async function publicHost(url) {
+  if (process.env.OX_LIBRARY_LOCAL_LINKS === '1') return; // a test's own local server
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  const addrs = net.isIP(host) ? [{ address: host }] : await dns.lookup(host, { all: true }).catch(() => []);
+  if (!addrs.length) throw new Error(`could not find ${host}`);
+  if (addrs.some((a) => privateAddress(a.address))) throw new Error(`${host} is on this machine or its network: the Library saves public links only`);
+}
+
+// A PDF at a link: every hop validated (no user:pass@, no address on this machine or its
+// network), a time limit and a size limit.
 async function downloadPdf(url, W) {
   let target = url;
   for (let hop = 0; hop <= 5; hop++) {
     const checked = W.validateUrl(target);
     if (!checked.ok) throw new Error(checked.why);
+    await publicHost(checked.url);
     const r = await fetch(checked.url, { redirect: 'manual', signal: AbortSignal.timeout(60_000) });
     if (r.status >= 300 && r.status < 400 && r.headers.get('location')) { await r.body?.cancel(); target = new URL(r.headers.get('location'), checked.url).toString(); continue; }
     if (!r.ok) throw new Error(`could not download it (${r.status})`);
@@ -56,7 +79,7 @@ async function downloadPdf(url, W) {
     let size = 0;
     for await (const part of r.body ?? []) {
       size += part.length;
-      if (size > MAX_PDF) throw new Error('that PDF is too large (over 256 MB)');
+      if (size > MAX_PDF) { await r.body.cancel?.().catch(() => {}); throw new Error('that PDF is too large (over 256 MB)'); }
       parts.push(part);
     }
     return Buffer.concat(parts);

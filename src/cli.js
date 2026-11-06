@@ -6833,7 +6833,8 @@ async function runSubcommand(cmd, args) {
           for (const st of r.flow.steps) console.log(`  ${c.green('✓')} ${st.type.padEnd(7)} ${st.name}`);
           for (const k of r.skipped) console.log(`  ${c.yellow('–')} ${k.type.padEnd(14)} ${k.node}`);
           if (r.problems.length) { console.log(c.red(`not saved: ${r.problems.join('; ')}`)); process.exitCode = 1; return; }
-          const saved = F.saveFlow(r.flow);
+          let saved;
+          try { saved = F.saveFlow(r.flow); } catch (e) { if (/already an automation/.test(e.message)) { console.log(c.red(`${e.message} Import it under another name: ox flow import ${id} --name "<new name>"`)); process.exitCode = 1; return; } throw e; }
           console.log(`saved ${saved.id} (off: check it with ox flow show ${saved.id}, run it with ox flow run ${saved.id}, then ox flow on ${saved.id})`);
           return;
         }
