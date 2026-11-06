@@ -4432,11 +4432,13 @@ files: [src/billing/**]
     $('mk-list').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
     mkShow = 40;
     try { mkData = await getJson(`/ox/market?q=${encodeURIComponent($('mk-q').value.trim())}`); } catch (e) { $('mk-list').innerHTML = `<div class="alert">${icon('info')}${esc(e.message)}</div>`; return; }
+    // A search that finds only featured entries opens them, rather than saying nothing matches.
+    if ($('mk-q').value.trim() && mkData.featured?.length && !(mkTab === 'repos' ? mkData.repos : mkTab === 'plugins' ? mkData.plugins : mkData.featured).length) mkTab = 'featured';
     renderMarket();
   }
   function renderMarket() {
     const d = mkData;
-    $('mk-tabs').innerHTML = `<button data-mt2="plugins" class="${mkTab === 'plugins' ? 'on' : ''}">Plugins<sup>${d.plugins.length}</sup></button><button data-mt2="repos" class="${mkTab === 'repos' ? 'on' : ''}">GitHub skills<sup>${d.repos.length}</sup></button>`;
+    $('mk-tabs').innerHTML = `<button data-mt2="plugins" class="${mkTab === 'plugins' ? 'on' : ''}">Plugins<sup>${d.plugins.length}</sup></button><button data-mt2="repos" class="${mkTab === 'repos' ? 'on' : ''}">GitHub skills<sup>${d.repos.length}</sup></button><button data-mt2="featured" class="${mkTab === 'featured' ? 'on' : ''}">Featured<sup>${(d.featured ?? []).length}</sup></button>`;
     $('mk-tabs').querySelectorAll('button').forEach((b) => (b.onclick = () => { mkTab = b.dataset.mt2; mkCat = ''; mkShow = 40; renderMarket(); }));
     const cats = [...new Set(d.plugins.map((p) => p.category).filter(Boolean))].sort();
     // One dropdown instead of forty category chips.
@@ -4459,11 +4461,14 @@ files: [src/billing/**]
       const [, , color] = known;
       return `<span class="market-logo" style="background:${color}" title="${esc(name)} logo"><span aria-hidden="true">${esc(letters)}</span></span>`;
     };
-    const list = mkTab === 'plugins'
+    // A featured tool is yours to install: its command is shown to read and copy, and ox runs nothing.
+    const featuredCard = (f) => `<div class="card market-card" style="flex-wrap:wrap">${marketLogo(f.name, f.source)}<span class="t"><div class="n">${esc(f.name)} <span class="badge">${esc(f.kind)}</span></div><div class="d"><span>${esc(f.description)}</span></div><div class="d"><span>${esc(f.license)}</span></div>${f.kind === 'tool' ? `<div class="cmd" style="margin-top:6px"><code>${esc(f.install)}</code><button data-copy-cmd="${esc(f.install)}" aria-label="Copy">${icon('copy')}</button></div>` : ''}</span>${f.kind === 'tool' ? (f.installed ? btn(true) : '') : btn(f.installed, `data-inst-repo="${esc(f.name)}"`)}</div>`;
+    const list = mkTab === 'featured' ? (d.featured ?? []).map(featuredCard) : mkTab === 'plugins'
       ? d.plugins.filter((p) => !mkCat || p.category === mkCat).map((p) => `<div class="card market-card">${marketLogo(p.name, `${p.catalog} ${p.author || ''}`)}<span class="t"><div class="n">${esc(p.name)} ${p.category ? `<span class="badge">${esc(p.category)}</span>` : ''}</div><div class="d"><span>${esc(p.description)}</span></div>${p.author ? `<div class="d" title="${esc(p.catalog)}"><span>${esc(p.author)}</span></div>` : ''}</span>${btn(p.installed, `data-inst-name="${esc(p.name)}" data-inst-cat="${esc(p.catalog)}"`)}</div>`)
       : d.repos.map((r) => `<div class="card market-card">${marketLogo(r.repo, r.repo)}<span class="t"><div class="n"><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" style="color:inherit">${esc(r.repo)}</a></div><div class="d"><span>${esc(r.description)}</span></div><div class="d"><span>★ ${Number(r.stars).toLocaleString()}</span>${r.license ? `<span>${esc(r.license)}</span>` : ''}<span>updated ${esc(String(r.updated || '').slice(0, 10))}</span></div></span>${btn(r.installed, `data-inst-repo="${esc(r.repo)}"`)}</div>`);
     // Forty at a time: the whole catalogue (over a thousand) made the page heavy to read and to scroll.
     $('mk-list').innerHTML = (list.slice(0, mkShow).join('') || '<div class="box muted small">Nothing matches.</div>') + (list.length > mkShow ? `<button class="btn" id="mk-more" style="margin:8px auto;display:block">Show more (${list.length - mkShow} left)</button>` : '');
+    paintIcons($('mk-list'));
     if ($('mk-more')) $('mk-more').onclick = () => { mkShow += 40; renderMarket(); };
     if (d.errors.length) $('mk-list').insertAdjacentHTML('afterbegin', `<div class="alert">${icon('info')}${esc(d.errors.join(' · '))}</div>`);
     $('mk-catalogs').innerHTML = d.catalogs.map((c) => `<span class="badge mono" style="margin:0 6px 6px 0">${esc(c)}</span>`).join('');
@@ -4471,8 +4476,9 @@ files: [src/billing/**]
       b.disabled = true; b.textContent = 'Installing…';
       try {
         const r = await postJson('/ox/market/install', b.dataset.instRepo ? { repo: b.dataset.instRepo } : { name: b.dataset.instName, catalog: b.dataset.instCat });
-        toast(r.ok ? `Installed. ${r.message}` : r.message);
-        if (r.ok) { b.outerHTML = '<span class="badge ok"><span class="dot ok"></span>installed</span>'; caps = null; } else { b.disabled = false; b.textContent = 'Install'; }
+        toast(r.ok && r.installed !== false ? `Installed. ${r.message}` : r.message);
+        if (r.installed === false) { b.disabled = false; b.textContent = 'Install'; }
+        else if (r.ok) { b.outerHTML = '<span class="badge ok"><span class="dot ok"></span>installed</span>'; caps = null; } else { b.disabled = false; b.textContent = 'Install'; }
       } catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Install'; }
     }));
   }
@@ -4672,7 +4678,7 @@ files: [src/billing/**]
     el.innerHTML = `
       <div class="shead">${icon('clock')}Scheduled runs</div><p class="sdesc">ox runs these prompts on their own, on the schedule you set, with a cost cap per run. They run while the ox daemon is up (<code>ox daemon start</code>).</p>
       <div class="box sch-new"><input class="field" id="sch-prompt" placeholder="What to do, like: summarise yesterday's commits"><input class="field" id="sch-when" placeholder="every 1d · every 30m · daily at 9:00" style="max-width:240px"><button class="btn" id="sch-suggest" title="ox suggests when, a cost cap and what to watch, each with why">Suggest</button><button class="btn primary" id="sch-add">Schedule</button></div><div class="small muted" id="sch-why" hidden></div>
-      <div class="cards">${s.schedules.length ? s.schedules.map((x) => `<div class="card"><span class="dot ${x.enabled ? 'ok' : ''}"></span><span class="t"><div class="n">${esc(x.prompt)}</div><div class="d"><span>${esc(x.cadence)}</span><span>next: ${esc(x.next)}</span><span class="mono">${esc(x.id)}</span></div></span><label class="switch" title="${x.enabled ? 'On' : 'Paused'}"><input type="checkbox" data-sch="${esc(x.id)}" ${x.enabled ? 'checked' : ''} aria-label="Enabled"><span></span></label></div>`).join('')
+      <div class="cards">${s.schedules.length ? s.schedules.map((x) => `<div class="card"><span class="dot ${x.enabled ? 'ok' : ''}"></span><span class="t"><div class="n">${esc(x.prompt)}</div><div class="d"><span>${esc(x.cadence)}</span><span>next: ${esc(x.next)}</span><span class="mono">${esc(x.id)}</span></div></span><button class="btn ghost danger" data-sch-rm="${esc(x.id)}">Delete</button><label class="switch" title="${x.enabled ? 'On' : 'Paused'}"><input type="checkbox" data-sch="${esc(x.id)}" ${x.enabled ? 'checked' : ''} aria-label="Enabled"><span></span></label></div>`).join('')
         : `<div class="box muted small">Nothing scheduled.<div class="cmd"><code>ox schedule add "summarise yesterday's commits" --every 1d</code><button data-copy-cmd='ox schedule add "summarise yesterday&#39;s commits" --every 1d'>${icon('copy')}</button></div></div>`}</div>
       <div class="shead" style="margin-top:34px">${icon('globe')}Page watches</div><p class="sdesc">ox checks pages for you and tells you when something changes: a price drops, a word shows up. ${s.watcherRunning ? '<span class="badge ok"><span class="dot ok"></span>checker running</span>' : '<span class="badge">checker stopped</span>'}</p>
       <div class="cards">${s.watches.length ? s.watches.map((w) => `<div class="card"><span class="dot ok"></span><span class="t"><div class="n">${esc(w.label)}</div><div class="d"><span>${esc(w.what)}</span></div></span><a class="btn ghost" href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${icon('open')}Open</a></div>`).join('')
@@ -4694,6 +4700,7 @@ files: [src/billing/**]
     el.querySelectorAll('[data-sch]').forEach((i) => (i.onchange = async () => {
       try { await postJson('/ox/scheduled', { id: i.dataset.sch, enabled: i.checked }); toast(i.checked ? 'Schedule on' : 'Schedule paused'); } catch (e) { toast(e.message); i.checked = !i.checked; }
     }));
+    el.querySelectorAll('[data-sch-rm]').forEach((b) => (b.onclick = async () => { if (!(await askSure('Delete this scheduled run?'))) return; try { await postJson('/ox/scheduled', { action: 'remove', id: b.dataset.schRm }); toast('Deleted'); loadScheduled(); } catch (e) { toast(e.message); } }));
   }
 
   // The Code Review page uses the same read-only PR status that `ox pr status`

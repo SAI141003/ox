@@ -4970,7 +4970,7 @@ const SUB_USAGE = {
   hf: 'usage: ox hf search "<words>" | ox hf files <owner/repo> | ox hf pull <owner/repo>[:QUANT]',
   name: 'usage: ox name [<new name> | --reset]  — what ox is called everywhere; it answers to that name when you say it',
   usage: 'usage: ox usage [--days <n>] [--json]  — tokens and cost by model, agent, surface, project and day',
-  market: 'usage: ox market ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
+  market: 'usage: ox market [search] ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
   hook: 'usage: ox hook <claude|codex|gemini|cursor|copilot> [event]  — run by the agent itself with the event on stdin (set up with: ox hooks install <agent>)',
   'hook-relay': 'usage: ox hook-relay <agent> <session id>  — started by ox hook; one per agent session, not run by hand',
   hooks: 'usage: ox hooks install <claude|codex|gemini|cursor|copilot> [--yes] | uninstall <agent> [--yes] | status | safe on|off',
@@ -7063,7 +7063,8 @@ async function runSubcommand(cmd, args) {
         } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; }
         return;
       }
-      const r = await mk.search(args.join(' '));
+      // `ox market search x` is what people type: "search" is not part of what they look for.
+      const r = await mk.search((args[0] === 'search' ? args.slice(1) : args).join(' '));
       if (r.featured?.length) {
         console.log(c.dim('  featured (licences checked)'));
         for (const f of r.featured) console.log(`${f.installed ? c.green('✓') : ' '} ${c.bold(f.name)} ${c.dim(`[${f.kind}, ${f.license}]`)}  ${c.dim(f.description.slice(0, 90))}  ${c.dim(`ox market install ${f.name}`)}`);
@@ -7073,7 +7074,7 @@ async function runSubcommand(cmd, args) {
       if (r.repos.length) console.log(c.dim('\n  from GitHub (topic: agent-skills)'));
       for (const x of r.repos.slice(0, 15)) console.log(`${x.installed ? c.green('✓') : ' '} ${c.bold(x.repo)} ${c.dim(`★${x.stars}`)}  ${c.dim(x.description.slice(0, 80))}`);
       for (const e of r.errors) console.log(c.yellow(e));
-      if (!r.plugins.length && !r.repos.length) console.log(c.dim('nothing found'));
+      if (!r.plugins.length && !r.repos.length && !r.featured?.length) console.log(c.dim('nothing found'));
       return;
     }
     case 'hook': {

@@ -459,6 +459,7 @@ export async function scheduledView() {
 // as `ox schedule add`; the cadence in words ("every 30m", "daily at 9:00").
 export async function scheduleAdd({ prompt, when, enabled = true, cwd = process.cwd(), watch = [], maxCostUsd } = {}) {
   const sch = await import('./schedule.js');
+  if (!String(when ?? '').trim()) throw new Error('Say when it should run: every 30m, every 1d or daily at 9:00.');
   const cad = sch.parseNaturalCadence(String(when ?? ''));
   if (cad.refusal) throw new Error(cad.refusal);
   const r = sch.addSchedule({ prompt: String(prompt ?? ''), cadence: cad.cadence, enabled: enabled === true, cwd, watch: Array.isArray(watch) ? watch.map(String) : [], ...(maxCostUsd != null ? { maxCostUsd: Number(maxCostUsd) } : {}) });
@@ -478,7 +479,15 @@ export async function scheduleSuggest(text) {
 export async function setScheduleEnabled(id, enabled) {
   const sch = await import('./schedule.js');
   if (!sch.getSchedule(id)) throw new Error(`no schedule ${id}`);
-  sch.updateSchedule(id, { enabled: !!enabled });
+  // A request that says neither must not pause it by accident.
+  if (typeof enabled !== 'boolean') throw new Error('say whether the schedule is on: enabled true or false');
+  sch.updateSchedule(id, { enabled });
+  return scheduledView();
+}
+
+export async function scheduleRemove(id) {
+  const r = (await import('./schedule.js')).removeSchedule(id);
+  if (!r.removed) throw new Error(r.reason);
   return scheduledView();
 }
 
@@ -682,12 +691,14 @@ export async function botSave(body = {}, env = process.env) {
   const name = String(body.name ?? '').trim();
   if (!AGENT_NAME.test(name)) throw new Error('a bot name is 1 to 48 letters, digits, dashes or underscores');
   const from = body.from ? String(body.from) : null;
-  if (from && from !== name) renameAgent(from, name, { saveConfig: saveConfigDoc });
-  else if (!from && loadAgent(name)) throw new Error(`there is already a bot called ${name}`);
+  if (!from && loadAgent(name)) throw new Error(`there is already a bot called ${name}`);
   const mode = body.mode && body.mode !== 'auto' ? String(body.mode) : null;
   if (mode && !MODE_NAMES.includes(mode)) throw new Error(`unknown mode ${mode}`);
   const bot = body.bot ? String(body.bot) : null;
   if (bot) resolveBot(bot, { bots: readConfigDoc().bots ?? {} }, env);
+  if (Object.hasOwn(body, 'backend')) normalizeAgentBackend(body.backend);
+  // Last, once the rest has passed: a refused save used to rename the bot anyway, and the next try found no bot of the old name.
+  if (from && from !== name) renameAgent(from, name, { saveConfig: saveConfigDoc });
   const tools = Array.isArray(body.tools) && body.tools.length ? body.tools.map(String) : null;
   const prior = loadAgent(name) ?? {};
   const backend = Object.hasOwn(body, 'backend') ? normalizeAgentBackend(body.backend) : prior.backend ?? null;

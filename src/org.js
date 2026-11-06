@@ -329,6 +329,9 @@ export async function draftTeam(sentence, { ask }) {
 
 /** Hire the drafted team and give it one group thread. */
 export function hireTeam(draft, opts = {}) {
+  // Every name is checked before anyone is hired: a bad one halfway left the first ones hired, with no team.
+  if (!Array.isArray(draft?.agents) || !draft.agents.length) throw new Error('a team needs at least one agent');
+  for (const a of draft.agents) if (!slug(a?.name ?? '')) throw new Error('every agent in a team needs a name with letters or digits');
   const org = readOrg(opts);
   const ids = [];
   for (const a of draft.agents) {
@@ -337,7 +340,10 @@ export function hireTeam(draft, opts = {}) {
     ids.push(hire({ ...a, name, role: a.title }, opts).id);
   }
   const fresh = readOrg(opts);
-  const gid = slug(draft.team) || 'team';
+  // A second team of the same name gets its own thread: this replaced the first one's chat.
+  const base = slug(draft.team) || 'team';
+  let gid = base;
+  for (let k = 2; fresh.groups[gid]; k++) gid = `${base}-${k}`;
   fresh.groups[gid] = { name: draft.team, members: ids, messages: [{ at: new Date().toISOString(), from: 'chief', text: `Team's up: ${ids.map((id) => `${fresh.agents[id].name} (${fresh.agents[id].title})`).join(', ')}.` }] };
   note(fresh, opts.by ?? 'you', 'made a team', gid, { why: ids.join(', ') });
   writeOrg(fresh, opts);
@@ -359,6 +365,7 @@ export async function groupSay(gid, text, { ask, by = 'you', ...opts } = {}) {
   const org = readOrg(opts);
   const g = org.groups[slug(gid)];
   if (!g) throw new Error(`no team ${gid}`);
+  if (!String(text ?? '').trim()) throw new Error('say something');
   g.messages.push({ at: new Date().toISOString(), from: by, text: String(text).slice(0, 4000) });
   writeOrg(org, opts);
   const replies = [];
@@ -372,7 +379,7 @@ export async function groupSay(gid, text, { ask, by = 'you', ...opts } = {}) {
         system: `You are ${a.name}, ${a.title}, in a team group chat with the owner and your teammates. Your job:\n${a.instructions}\nReply in 1-3 short sentences, in character, building on what others said; say what you will do. If it is not for you, reply exactly: (pass)`,
         user: history,
       })).trim();
-    } catch (e) { said = `(could not answer: ${e.message})`; }
+    } catch (e) { replies.push({ from: a.name, text: `(could not answer: ${e.message})` }); continue; } // told to you, kept out of the thread the next model reads
     if (!said || /^\(pass\)$/i.test(said)) continue;
     const o = readOrg(opts);
     o.groups[slug(gid)].messages.push({ at: new Date().toISOString(), from: id, text: said.slice(0, 2000) });
