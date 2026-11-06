@@ -137,9 +137,9 @@ const canAllowForChat = (tool, detail) => {
 export function appApprover(res, model, { timeoutMs = Number(process.env.OX_APP_APPROVAL_MS) || 10 * 60_000, sessionId = null } = {}) {
   const mine = new Set();
   res.on?.('close', () => { for (const id of mine) answerAppApproval(id, 'deny'); });
-  return (tool, args = {}, detail = '') => new Promise((resolve) => {
+  return (tool, args = {}, detail = '', opts = {}) => new Promise((resolve) => {
     if (res.writableEnded || res.destroyed) { resolve(false); return; }
-    const forChat = sessionId ? canAllowForChat(tool, detail) : null;
+    const forChat = sessionId && !opts?.force ? canAllowForChat(tool, detail) : null;
     if (forChat && appChatAllowed.get(sessionId)?.has(forChat)) { resolve(true); return; }
     const id = `ap-${Date.now().toString(36)}-${++appApprovalSeq}`;
     const timer = setTimeout(() => answerAppApproval(id, 'deny'), timeoutMs);
@@ -1207,7 +1207,7 @@ async function handleChatCompletions(req, res) {
     // sudo) still asks.
     if (fromApp && turnMode.mode === 'orchestrate' && !turnMode.routed) {
       const ask = ctx.requestApproval;
-      ctx.requestApproval = (tool, args = {}, detail = '') => (ORCHESTRATE_STILL_ASKS.test(`${tool} ${JSON.stringify(args ?? {})} ${detail}`) && ask ? ask(tool, args, detail) : Promise.resolve(true));
+      ctx.requestApproval = (tool, args = {}, detail = '', opts = {}) => (opts?.force ? (ask ? ask(tool, args, detail, opts) : Promise.resolve(false)) : ORCHESTRATE_STILL_ASKS.test(`${tool} ${JSON.stringify(args ?? {})} ${detail}`) && ask ? ask(tool, args, detail, opts) : Promise.resolve(true));
     }
     if (target?.provider === 'subscription') ctx.planApprovals = true;
     const appSessionId = typeof body.ox_session_id === 'string' ? body.ox_session_id.slice(0, 128) : '';

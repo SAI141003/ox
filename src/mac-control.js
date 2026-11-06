@@ -29,8 +29,36 @@ const KEY_CODES = { tab: 48, escape: 53, esc: 53, space: 49, delete: 51, backspa
 const SHORTCUT_LETTERS = new Set(['a', 'c', 'f', 'k', 'l', 'n', 't', 'v', 'x', 'z']);
 const MODS = { cmd: 'command down', command: 'command down', shift: 'shift down', option: 'option down', alt: 'option down', ctrl: 'control down', control: 'control down' };
 
+// Keys ox will not press even when asked: they lock you out, log you out, kill apps or
+// delete files with no way back (the same line Hermes and Claude draw).
+const NEVER_KEYS = /^(cmd\+ctrl\+q|ctrl\+cmd\+q|cmd\+shift\+q|shift\+cmd\+q|cmd\+option\+esc(ape)?|cmd\+alt\+esc(ape)?|option\+cmd\+esc(ape)?|alt\+cmd\+esc(ape)?|cmd\+(delete|backspace)|cmd\+shift\+(delete|backspace)|shift\+cmd\+(delete|backspace)|cmd\+option\+(delete|backspace)|cmd\+ctrl\+(power|eject)|ctrl\+cmd\+(power|eject))$/;
+
 // "tab", "shift+tab", "cmd+f", "down" → what to press, or why not.
-export function parseKey(spec) {
+// loose (an agent run, where each press is asked for or allowed by app): Return and any
+// shortcut are possible; `ask` marks the ones that always need a person. The voice errands
+// and the Mac MCP keep the strict rule: they act with nobody asked.
+export function parseKey(spec, { loose = false } = {}) {
+  if (loose) {
+    const combo = String(spec ?? '').toLowerCase().replace(/\s+/g, '');
+    if (NEVER_KEYS.test(combo)) return { error: `ox does not press ${spec}: it locks you out, kills apps or deletes with no way back. Do that one yourself.` };
+    const words = combo.split('+').filter(Boolean);
+    const last = words.at(-1);
+    const looseMods = [];
+    for (const m of words.slice(0, -1)) {
+      if (!MODS[m]) return { error: `unknown modifier "${m}"` };
+      if (!looseMods.includes(MODS[m])) looseMods.push(MODS[m]);
+    }
+    if (!last) return { error: 'no key given' };
+    if (/^(return|enter)$/.test(last)) return { code: 36, mods: looseMods, ask: looseMods.length > 0, sends: true };
+    if (last === 'kpenter') return { code: 76, mods: looseMods, ask: looseMods.length > 0, sends: true };
+    if (KEY_CODES[last] !== undefined) return { code: KEY_CODES[last], mods: looseMods };
+    if (ANY_KEY_CODES[last] !== undefined && looseMods.length) {
+      const plain = looseMods.length === 1 && looseMods[0] === 'command down' && SHORTCUT_LETTERS.has(last);
+      return { code: ANY_KEY_CODES[last], mods: looseMods, ask: !plain };
+    }
+    if (ANY_KEY_CODES[last] !== undefined) return { error: 'to type letters use type_text' };
+    return { error: `unknown key "${spec}"` };
+  }
   const parts = String(spec ?? '').toLowerCase().replace(/\s+/g, '').split('+').filter(Boolean);
   if (!parts.length) return { error: 'no key given' };
   const key = parts.pop();
@@ -73,6 +101,7 @@ export function findElement(elements, query, role) {
 
 // "tab" → 48, "cmd+f" → 3 with cmd: what ox-hands presses.
 const LETTER_CODES = { a: 0, c: 8, f: 3, k: 40, l: 37, n: 45, t: 17, v: 9, x: 7, z: 6 };
+const ANY_KEY_CODES = { a: 0, s: 1, d: 2, f: 3, h: 4, g: 5, z: 6, x: 7, c: 8, v: 9, b: 11, q: 12, w: 13, e: 14, r: 15, y: 16, t: 17, 1: 18, 2: 19, 3: 20, 4: 21, 6: 22, 5: 23, 9: 25, 7: 26, 8: 28, 0: 29, o: 31, u: 32, i: 34, p: 35, l: 37, j: 38, k: 40, n: 45, m: 46, ',': 43, '.': 47, '/': 44, ';': 41, "'": 39, '[': 33, ']': 30, '-': 27, '=': 24, '`': 50 };
 const MOD_NAMES = { 'command down': 'cmd', 'shift down': 'shift', 'option down': 'option', 'control down': 'ctrl' };
 export function keyArgs(k) {
   return [String(k.code ?? LETTER_CODES[k.char]), ...(k.mods.length ? ['--mods', k.mods.map((m) => MOD_NAMES[m]).join(',')] : [])];
@@ -166,7 +195,7 @@ const named = (e) => `${e.role.replace(/^AX/, '')} "${e.name || e.description ||
 // Click a control: by name or number (pressed through Accessibility, the
 // pointer moved to it so you see it) or at a point (what is under it is read
 // first). A Send / Pay / Delete-like control is refused either way.
-export async function click({ app, element, role, x, y, double = false } = {}, { dryRun = false } = {}) {
+export async function click({ app, element, role, x, y, double = false } = {}, { dryRun = false, confirmRisky = null } = {}) {
   const t0 = Date.now();
   if (element != null && String(element).trim()) {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -181,12 +210,12 @@ export async function click({ app, element, role, x, y, double = false } = {}, {
       const seen = q.length >= 2 && !/^\d+$/.test(q) ? await hands(['find', q, '--app', list.app], { timeout: 15_000 }) : null;
       const m = seen?.matches?.[0];
       if (m && !isRisky({ name: m.text })) {
-        const r = await click({ app: list.app, x: Math.round(m.x + m.w / 2), y: Math.round(m.y + m.h / 2), double }, { dryRun });
+        const r = await click({ app: list.app, x: Math.round(m.x + m.w / 2), y: Math.round(m.y + m.h / 2), double }, { dryRun, confirmRisky });
         return r.isError ? r : { text: `${r.text} (found the words "${m.text}" on screen)` };
       }
       return { isError: true, text: `no control called "${element}" in ${list.app}${seen?.error ? ` (${seen.error})` : ''}. ${describeElements({ ...list, elements: list.elements.slice(0, 40) })}` };
     }
-    if (isRisky(target)) return { isError: true, text: `ox does not press "${target.name || target.description}": that sends, pays or deletes. It is left for you to press.` };
+    if (isRisky(target) && !(confirmRisky && await confirmRisky(target, list.app))) return { isError: true, text: `ox did not press "${target.name || target.description}": that sends, pays or deletes, and it was not approved. It is left for you to press.` };
     if (dryRun) return { text: `would click ${named(target)} in ${list.app}` };
     const expect = target.name || target.description || target.identifier || '';
     const r = await hands(['press', '--app', list.app, '--path', target.path, '--expect', expect, ...(double ? ['--double'] : [])]);
@@ -202,7 +231,7 @@ export async function click({ app, element, role, x, y, double = false } = {}, {
   if (at.error) return { isError: true, text: at.error };
   if (app && at.app && !sameApp(at.app, app)) return { isError: true, text: `${app}'s window is not under ${Math.round(x)},${Math.round(y)} (${at.app} is there). Nothing was clicked.` };
   const risky = (at.chain ?? []).find(isRisky);
-  if (risky) return { isError: true, text: `ox does not press "${risky.name || risky.description}": that sends, pays or deletes. It is left for you to press.` };
+  if (risky && !(confirmRisky && await confirmRisky(risky, at.app ?? app))) return { isError: true, text: `ox did not press "${risky.name || risky.description}": that sends, pays or deletes, and it was not approved. It is left for you to press.` };
   const under = at.chain?.[0];
   const what = under && (under.name || under.description) ? named(under) : `the point ${Math.round(x)},${Math.round(y)}`;
   if (dryRun) return { text: `would click ${what}` };
@@ -306,8 +335,8 @@ export async function draw({ app, shape, x, y, w, h, points, label } = {}, { dry
   return r.error ? { isError: true, text: r.error } : { text: `drew ${what} (${dense.length} points, ${r.ms} ms)` };
 }
 
-export async function pressKey({ app, key, times = 1 } = {}, { dryRun = false } = {}) {
-  const k = parseKey(key);
+export async function pressKey({ app, key, times = 1 } = {}, { dryRun = false, loose = false } = {}) {
+  const k = parseKey(key, { loose });
   if (k.error) return { isError: true, text: k.error };
   const n = Math.max(1, Math.min(20, Number(times) || 1));
   if (dryRun) return { text: `would press ${key}${n > 1 ? ` ×${n}` : ''}` };

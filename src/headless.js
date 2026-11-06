@@ -595,7 +595,7 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
               console.log(dimYellow(`  ~ ${ev.text} (attempt ${ev.count})`));
               break;
             case 'continuation-retry':
-              console.log(c.yellow(`· stream dropped (${ev.reason}) — retry ${ev.attempt}/3`));
+              console.log(c.yellow(`· stream dropped (${ev.reason}) — retry ${ev.attempt}`));
               break;
             case 'thinking':
               // Once per stretch of reasoning, on stderr: -p output stays the answer.

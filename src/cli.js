@@ -214,7 +214,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['ask', 'teach', 'desktop', 'version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'knowledge', 'ecc', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
+const SUBCOMMANDS = new Set(['ask', 'teach', 'desktop', 'version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'knowledge', 'ecc', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages', 'computer']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4970,6 +4970,7 @@ const SUB_USAGE = {
   hf: 'usage: ox hf search "<words>" | ox hf files <owner/repo> | ox hf pull <owner/repo>[:QUANT]',
   name: 'usage: ox name [<new name> | --reset]  — what ox is called everywhere; it answers to that name when you say it',
   usage: 'usage: ox usage [--days <n>] [--json]  — tokens and cost by model, agent, surface, project and day',
+  computer: 'usage: ox computer [status] | stop | allow <app> | deny <app>  — which apps ox may use on your screen, and stop it from anywhere',
   market: 'usage: ox market [search] ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
   hook: 'usage: ox hook <claude|codex|gemini|cursor|copilot> [event]  — run by the agent itself with the event on stdin (set up with: ox hooks install <agent>)',
   'hook-relay': 'usage: ox hook-relay <agent> <session id>  — started by ox hook; one per agent session, not run by hand',
@@ -7265,6 +7266,24 @@ async function runSubcommand(cmd, args) {
       else console.log(r.handled ? (r.ok === false ? c.red(r.message) : r.message) : c.dim(r.message));
       if (!r.handled) process.exitCode = 2;
       else if (r.ok === false) process.exitCode = 1;
+      return;
+    }
+    case 'computer': {
+      // Who may use your screen: apps allowed one by one, a stop from anywhere (src/computer-control.js).
+      const C = await import('./computer-control.js');
+      const verb = String(args[0] ?? 'status').toLowerCase();
+      const name = args.slice(1).join(' ').trim();
+      if (verb === 'stop') { C.requestStop(); console.log(c.green('stopped: the run using your computer touches nothing more')); return; }
+      if (verb === 'allow') { try { C.allowApp(name); console.log(c.green(`${name} is always allowed. Send and delete still ask. Undo: ox computer deny ${name}`)); } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; } return; }
+      if (verb === 'deny') { console.log(C.denyApp(name) ? c.green(`${name} asks again`) : c.dim(`${name} was not always-allowed`)); return; }
+      if (verb === 'status' || verb === 'list') {
+        const st = C.computerStatus();
+        console.log(st.inUse ? `in use by ${st.holder} (process ${st.pid}). Stop it: ox computer stop` : c.dim('nothing is using your computer'));
+        console.log(st.always.length ? `always allowed: ${st.always.join(', ')}` : c.dim('no app is always allowed: ox asks for each one'));
+        return;
+      }
+      console.log('usage: ox computer [status] | stop | allow <app> | deny <app>');
+      process.exitCode = verb === 'help' || verb === '--help' ? 0 : 3;
       return;
     }
     case 'awake': {
