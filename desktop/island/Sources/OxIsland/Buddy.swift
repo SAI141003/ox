@@ -404,6 +404,16 @@ final class Buddy: NSObject, ObservableObject {
         speakToken = token
         clearPlayQueue()
         sayNext(Self.sentences(spoken)[...], token: token)
+        // The answer is never held for the voice: a sentence normally takes about a second to
+        // make, but a busy Mac took 12-15 s. Not heard in 2 s: the Mac's own voice says it now.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self, self.speakToken == token, self.player == nil, self.phase == .speaking else { return }
+            self.speakToken = UUID()
+            self.making = false
+            self.fallbackText = spoken
+            IslandLog.write("voice: the natural voice was not ready in 2 s; the Mac's voice says it")
+            self.speakFallback()
+        }
     }
 
     /// One sentence at a time: the first is heard as soon as it is made, and the rest follow it.

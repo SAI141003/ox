@@ -7276,10 +7276,35 @@ async function runSubcommand(cmd, args) {
         console.log(c.dim('  ox awake 2h | 30m | 1d   hold it awake for a while, even with no ox running'));
         console.log(c.dim('  ox awake status          show the active timed hold'));
         console.log(c.dim('  ox awake off             let it sleep again'));
-        console.log(c.dim('  ox awake --lid           how to keep running with the lid closed'));
+        console.log(c.dim('  ox awake --lid 2h        keep running with the lid closed for a while (asks for your password)'));
+        console.log(c.dim('  ox awake --lid off       put sleep back now'));
         return;
       }
-      if (a === '--lid' || a === 'lid') { for (const l of aw.lidHelp()) console.log(l); return; }
+      if (a === '--lid' || a === 'lid') {
+        const b = String(args[1] ?? '').toLowerCase();
+        const json = args.includes('--json');
+        // `ox awake --lid 2h`: keeps running with the lid closed; macOS asks for your password once.
+        if (b === 'off' || b === 'stop') {
+          const had = aw.stopLid();
+          if (json) console.log(JSON.stringify({ ok: true, stopped: had }));
+          else console.log(had ? c.green('ok — sleep comes back on within 15 seconds') : c.dim('no lid hold was running'));
+          return;
+        }
+        if (b === 'status' || (!b && json)) { const st = aw.lidStatus(); console.log(json ? JSON.stringify(st) : st.active ? `running with the lid closed until ${st.until.toLocaleString()}` : st.stale ? c.yellow('sleep is still off from an earlier hold: ox awake --lid 1m puts it back after a minute') : c.dim('no lid hold')); return; }
+        if (b) {
+          const secs = aw.parseDuration(b);
+          if (!secs) { console.log(c.red(`not a duration: '${args[1]}' (try 45m, 2h, 1d; at most 7d)`)); process.exitCode = 3; return; }
+          try {
+            const t = aw.startLid(secs);
+            if (json) console.log(JSON.stringify({ ok: true, until: t.until.toISOString() }));
+            else console.log(c.green(`runs with the lid closed until ${t.until.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`) + c.dim(' — sleep comes back on then, at 10 % battery, or with: ox awake --lid off'));
+          } catch (e) { if (json) console.log(JSON.stringify({ ok: false, error: e.message })); else console.log(c.red(e.message)); process.exitCode = 1; }
+          return;
+        }
+        for (const l of aw.lidHelp()) console.log(l);
+        if (process.platform === 'darwin') console.log(c.dim('Or let ox do both for a while: ox awake --lid 2h (macOS asks for your password; sleep comes back on by itself).'));
+        return;
+      }
       if (a === 'off' || a === 'stop') {
         console.log(aw.stopTimed() ? c.green('ok — the computer can sleep again') : c.dim('nothing was being held'));
         return;

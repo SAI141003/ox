@@ -152,6 +152,7 @@ final class OxBridge: ObservableObject {
     let chat = IslandChat()
     let shelf = Shelf()
     let focus = FocusTimer()
+    let lid = LidHold()
     let clips = ClipHistory()
     let player = NowPlaying()
     /// Unread mail from the Mail app (Coucou's mail in the notch).
@@ -189,6 +190,7 @@ final class OxBridge: ObservableObject {
         buddySink = MainActor.assumeIsolated { buddy.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() } }
         // The focus countdown shows in the wing, so its changes redraw the island too.
         focus.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &traySinks)
+        lid.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &traySinks)
         $tray.sink { [weak self] t in self?.trayChanged?(t) }.store(in: &traySinks)
         // A session card has a message box: the island takes the keyboard while it is open.
         $card.map { $0?.id }.removeDuplicates().sink { [weak self] id in self?.cardChanged?(id != nil) }.store(in: &traySinks)

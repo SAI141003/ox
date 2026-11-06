@@ -63,3 +63,27 @@ test('a running ox holds the Mac awake, and the hold ends with it', { skip: proc
   await new Promise((r) => setTimeout(r, 300));
   assert.equal(holds(), '', 'and it is gone once ox exits');
 });
+
+test('lid closed: one password window, sleep off, and the undo scheduled in the same script', async () => {
+  const aw = await import('../src/awake.js');
+  const script = aw.lidScript(7200, { stop: "/Users/a b/.ox/lid'stop" });
+  assert.match(script, /^pmset -a disablesleep 1 && \(\/bin\/sh -c '/);
+  assert.match(script, /pmset -a disablesleep 0/);
+  assert.match(script, /\+ 7200 \)\)/);
+  assert.match(script, /Battery Power/);
+  // The watcher only tests the stop file; root never writes or removes a file of yours.
+  assert.doesNotMatch(script, /\brm\b|>\s*'\/Users/);
+  assert.ok(script.includes(`'\\''`), 'quotes in a path are escaped for the shell');
+  const as = aw.lidAppleScript('echo "x" \\ y');
+  assert.equal(as, 'do shell script "echo \\"x\\" \\\\ y" with administrator privileges');
+  assert.throws(() => aw.lidScript(0), /1 second to 7 days/);
+  assert.throws(() => aw.lidScript(8 * 86400), /1 second to 7 days/);
+});
+
+test('lid closed: a cancelled password window changes nothing, and the status reads pmset', async () => {
+  const aw = await import('../src/awake.js');
+  if (process.platform !== 'darwin') return;
+  assert.throws(() => aw.startLid(60, { run: () => ({ status: 1, stderr: 'execution error: User canceled. (-128)' }) }), /cancelled: sleep is unchanged/);
+  assert.deepEqual(aw.lidStatus({ pm: ' SleepDisabled\t\t1\n' }).stale, true);
+  assert.equal(aw.lidStatus({ pm: ' sleep 1\n' }).sleepDisabled, false);
+});

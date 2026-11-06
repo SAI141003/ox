@@ -365,6 +365,66 @@ final class Shelf: ObservableObject {
     }
 }
 
+// MARK: - Lid closed
+
+/// Keep runs going with the lid closed, for a while (`ox awake --lid 2h`). macOS asks for your
+/// password in its own window; sleep comes back on at the end, at 10 % battery, or on Stop.
+final class LidHold: ObservableObject {
+    @Published private(set) var until: Date?
+    @Published private(set) var asking = false
+    @Published var note: String?
+    /// Sleep still off with no hold running (a restart in the middle, say).
+    @Published private(set) var stale = false
+
+    init() { refresh() }
+
+    var active: Bool { (until ?? .distantPast) > Date() }
+
+    func refresh() {
+        OxRunner.run(["awake", "--lid", "status", "--json"], cwd: FileManager.default.homeDirectoryForCurrentUser) { [weak self] _, out in
+            let line = out.split(separator: "\n").last.map(String.init) ?? ""
+            let j = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
+            DispatchQueue.main.async {
+                self?.until = (j?["until"] as? String).flatMap { ISO8601DateFormatter.withFraction.date(from: $0) }
+                self?.stale = (j?["stale"] as? Bool) ?? false
+            }
+        }
+    }
+
+    func start(hours: Double) {
+        guard !asking else { return }
+        asking = true
+        let arg = hours < 1 ? "\(Int(hours * 60))m" : "\(Int(hours))h"
+        OxRunner.run(["awake", "--lid", arg, "--json"], cwd: FileManager.default.homeDirectoryForCurrentUser) { [weak self] _, out in
+            let line = out.split(separator: "\n").last.map(String.init) ?? ""
+            let j = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.asking = false
+                if (j?["ok"] as? Bool) == true, let u = (j?["until"] as? String).flatMap({ ISO8601DateFormatter.withFraction.date(from: $0) }) {
+                    self.until = u; self.stale = false
+                    IslandLog.write("lid hold until \(u)")
+                    self.note = nil
+                } else {
+                    let why = j?["error"] as? String ?? "macOS did not allow it"
+                    IslandLog.write("lid hold not started: \(why)")
+                    self.note = why
+                }
+            }
+        }
+    }
+
+    func stop() {
+        OxRunner.run(["awake", "--lid", "off", "--json"], cwd: FileManager.default.homeDirectoryForCurrentUser) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.until = nil; IslandLog.write("lid hold stopped: sleep back on within 15 s") }
+        }
+    }
+}
+
+extension ISO8601DateFormatter {
+    static let withFraction: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f }()
+}
+
 // MARK: - Focus
 
 final class FocusTimer: ObservableObject {
