@@ -2090,25 +2090,35 @@ async function tasksRoute(b) {
   const T = await import('./tasks.js');
   const id = String(b.id ?? '');
   const by = { actor: 'you (app)' };
+  // Someone else may have deleted it, or another window: say so, never "Updated".
+  if (['move', 'approve', 'reject', 'release', 'delete', 'run'].includes(b.action) && !T.getTask(id)) throw new Error('no such task: it may have been deleted');
+  const checked = (r) => { if (r.ok === false) throw new Error(r.reason); return r; };
   switch (b.action) {
     case 'add': {
       const title = String(b.title ?? '').trim();
       if (!title) throw new Error('a task needs a title');
-      const budget = b.budgetUsd === '' || b.budgetUsd == null ? null : Number(b.budgetUsd);
-      return { task: T.addTask({ title: title.slice(0, 200), description: String(b.description ?? '').slice(0, 4000), review: b.review === true, budgetUsd: Number.isFinite(budget) ? budget : null, blockedBy: Array.isArray(b.blockedBy) ? b.blockedBy : [], parentId: b.parentId || null }, by) };
+      // A spending cap that cannot be read is an error: dropping it would run the task with no cap.
+      const asked = String(b.budgetUsd ?? '').trim().replace(/^\$\s*/, '');
+      const budget = asked === '' ? null : Number(asked);
+      if (budget != null && !(budget >= 0 && Number.isFinite(budget))) throw new Error(`the budget is a number of dollars, like 5 or 2.50, not "${String(b.budgetUsd).slice(0, 40)}"`);
+      return { task: T.addTask({ title: title.slice(0, 200), description: String(b.description ?? '').slice(0, 4000), review: b.review === true, budgetUsd: budget, blockedBy: Array.isArray(b.blockedBy) ? b.blockedBy : [], parentId: b.parentId || null }, by) };
     }
     case 'move': {
       if (!T.STATUSES.includes(b.status)) throw new Error(`status is one of ${T.STATUSES.join(', ')}`);
       return { task: T.updateTask(id, { status: b.status }, by) };
     }
-    case 'approve': return T.approveTask(id, by);
-    case 'reject': return T.rejectTask(id, { ...by, reason: String(b.reason ?? 'sent back from the app') });
-    case 'release': return T.releaseTask(id, by);
+    case 'approve': return checked(T.approveTask(id, by));
+    case 'reject': return checked(T.rejectTask(id, { ...by, note: String(b.reason ?? 'sent back from the app') }));
+    // The person at the board can take a task back from whoever holds it.
+    case 'release': return checked(T.releaseTask(id, { ...by, force: true }));
     case 'delete': return { ok: T.deleteTask(id, by) };
     case 'run': {
       // An ox run claims it and works on it; the board shows it as it goes.
       if (!T.getTask(id)) throw new Error('no such task');
-      T.runTask(id, { owner: 'ox (app)' }).catch(() => {});
+      // Refused at once (already taken, or waiting for something) it answers with no promise.
+      const run = T.runTask(id, { owner: 'ox (app)' });
+      if (run.success === false) throw new Error(run.error);
+      run.catch(() => {});
       return { started: true };
     }
     default: throw new Error('action is add, move, approve, reject, release, delete or run');
@@ -2546,7 +2556,8 @@ const ROUTES = [
   // The repo switcher: recent project folders, and checking one you typed.
   { method: 'GET', pattern: /^\/ox\/projects\/?$/, handler: appRoute(async (_, __, req) => {
     const q = new URL(req.url, 'http://x').searchParams.get('check');
-    if (q) { const dir = sessionCwd(q); return { dir, ok: dir !== process.cwd() || resolve(q.replace(/^~(?=$|\/)/, homedir())) === process.cwd(), git: existsSync(join(dir, '.git')) }; }
+    // sessionCwd falls back to the default folder for one that is not there: that is a "no" here.
+    if (q) { const dir = sessionCwd(q); return { dir, ok: dir === resolve(q.trim().replace(/^~(?=$|\/)/, homedir())), git: existsSync(join(dir, '.git')) }; }
     return { current: process.cwd(), projects: recentProjects() };
   }) },
   // Whether "Open a PR" can do anything here: a git project with a remote, and changes not on it yet.
@@ -3382,7 +3393,10 @@ const ROUTES = [
     if (days <= 31 && !(codeCache[key] && Date.now() - codeCache[key].at < 600_000)) codeCache[key] = { at: Date.now(), v: await offThread('./usage-log.js', 'codeChanges', [{ days }]) };
     return { ...U.summarize({ days }), code: days <= 31 ? codeCache[key].v : null };
   }) },
-  { method: 'GET', pattern: /^\/ox\/map\/?$/, handler: appRoute(async () => (await import('./project-map.js')).projectMap(process.cwd())) },
+  { method: 'GET', pattern: /^\/ox\/map\/?$/, handler: appRoute(async (_, __, req) => {
+    const asked = new URL(req.url, 'http://x').searchParams.get('cwd');
+    return (await import('./project-map.js')).projectMap(asked ? sessionCwd(asked) : process.cwd());
+  }) },
   { method: 'GET', pattern: /^\/ox\/hf\/search\/?$/, handler: appRoute(async (_, __, req) => (await import('./hf-models.js')).searchModels(new URL(req.url, 'http://x').searchParams.get('q') ?? '')) },
   { method: 'GET', pattern: /^\/ox\/hf\/files\/?$/, handler: appRoute(async (_, __, req) => (await import('./hf-models.js')).modelFiles(new URL(req.url, 'http://x').searchParams.get('repo') ?? '')) },
   { method: 'POST', pattern: /^\/ox\/hf\/pull\/?$/, handler: appRoute(async (b) => (await import('./hf-models.js')).startPull(String(b.repo ?? ''), b.quant ? String(b.quant) : null)) },
