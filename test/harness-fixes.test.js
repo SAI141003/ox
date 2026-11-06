@@ -32,6 +32,15 @@ test('old tool output goes, the newest stays, and every call keeps its result', 
   assert.equal(maskOldToolOutputs([{ role: 'tool', content: 'short' }]).savedChars, 0);
 });
 
+test('with nothing cached, old output goes from 32k tokens; where the cache works it waits for half the window', async () => {
+  const { oldOutputMaskAt } = await import('../src/agent.js');
+  const window = 200_000;
+  assert.equal(oldOutputMaskAt({ window, iters: 5, usage: { inputTokens: 90_000 } }), 32_000);
+  assert.equal(oldOutputMaskAt({ window, iters: 5, usage: { inputTokens: 90_000, cacheReadTokens: 60_000 } }), 100_000);
+  assert.equal(oldOutputMaskAt({ window, iters: 1, usage: { inputTokens: 3_000 } }), 100_000, 'too early to tell');
+  assert.equal(oldOutputMaskAt({ window: 32_000, iters: 5, usage: { inputTokens: 90_000 } }), 16_000, 'a small window keeps its half');
+});
+
 test('a repository cannot run hooks on this machine until you trust them, and a change asks again', () => {
   const flag = process.env.OX_TRUST_PROJECT_FILES;
   delete process.env.OX_TRUST_PROJECT_FILES;

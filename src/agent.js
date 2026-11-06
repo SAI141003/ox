@@ -45,6 +45,15 @@ export const markToolData = (name, content, isError = false) =>
 
 const OLD_OUTPUT_MASK_AT = 0.5;
 const OLD_OUTPUT_MIN_SAVED = 8000;
+// A provider that caches nothing (NVIDIA's endpoints report no cached tokens) is paid for every
+// token resent on every step: there, old output goes from 32k tokens, not half the window.
+// Where caching works, rewriting old messages would cost more than it saves, so it waits.
+const UNCACHED_MASK_TOKENS = 32_000;
+/** When old tool output starts being dropped, in tokens. Pure. */
+export function oldOutputMaskAt({ window, iters, usage }) {
+  const nothingCached = iters > 2 && usage.inputTokens > 0 && !usage.cacheReadTokens;
+  return nothingCached ? Math.min(window * OLD_OUTPUT_MASK_AT, UNCACHED_MASK_TOKENS) : window * OLD_OUTPUT_MASK_AT;
+}
 export const SESSION_OFFER = new Map();
 function rememberOffer(sid, names) {
   SESSION_OFFER.delete(sid);
@@ -1650,7 +1659,7 @@ async function* runAgentLoop(opts = {}) {
     let est = payloadTokens(history, tools);
     // Past half full: drop old tool output first, when it frees real room. Compaction,
     // which costs a model call, then has less to do or is not needed.
-    if (est > window * OLD_OUTPUT_MASK_AT && process.env.OX_MASK_OLD_OUTPUT !== '0') {
+    if (est > oldOutputMaskAt({ window, iters, usage }) && process.env.OX_MASK_OLD_OUTPUT !== '0') {
       const masked = maskOldToolOutputs(history);
       if (masked.savedChars >= OLD_OUTPUT_MIN_SAVED) {
         setHistory(masked.messages);

@@ -50,3 +50,17 @@ test('Silent words app: its own bundle with the Motion, microphone and speech re
   for (const k of ['NSMotionUsageDescription', 'NSMicrophoneUsageDescription', 'NSSpeechRecognitionUsageDescription', '<string>OxSubvox</string>', 'dev.ox.silentwords']) assert.ok(plist.includes(k), k);
   fs.rmSync(home, { recursive: true, force: true });
 });
+
+test('a slow page opens on what was gathered last and refreshes behind it', async () => {
+  const { keptFresh } = await import('../src/serve.js');
+  let n = 0;
+  const make = async () => { n += 1; await new Promise((r) => setTimeout(r, 30)); return n; };
+  const key = `t-${process.pid}`;
+  assert.equal(await keptFresh(key, make, { maxAgeMs: 0 }), 1, 'the first open waits once');
+  const t = Date.now();
+  assert.equal(await keptFresh(key, make, { maxAgeMs: 0 }), 1, 'then the last answer, at once');
+  assert.ok(Date.now() - t < 25);
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(await keptFresh(key, make, { maxAgeMs: 60_000 }), 2, 'the refresh behind it landed');
+  assert.equal(n, 2, 'one refresh, not one per open');
+});

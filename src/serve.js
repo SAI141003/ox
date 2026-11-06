@@ -1943,12 +1943,28 @@ export function sayPlan(steps) {
   return s.charAt(0).toUpperCase() + s.slice(1) + '.';
 }
 
-let briefCache = null;
+// A page that takes seconds to gather (GitHub, Mail, git in a dozen projects) opens on what
+// was gathered last, and refreshes behind it: the Today page took 5.6 s, Needs you 3.8 s.
+const kept = new Map();
+export function keptFresh(key, make, { maxAgeMs }) {
+  const k = kept.get(key);
+  const refresh = () => {
+    if (k?.running) return k.running;
+    const entry = kept.get(key) ?? {};
+    entry.running = make().then((value) => { kept.set(key, { at: Date.now(), value }); return value; })
+      .finally(() => { const e = kept.get(key); if (e) delete e.running; });
+    kept.set(key, entry);
+    return entry.running;
+  };
+  if (k && 'value' in k) {
+    if (Date.now() - k.at >= maxAgeMs) refresh().catch(() => {});
+    return Promise.resolve(k.value);
+  }
+  return refresh();
+}
+
 export async function cachedBrief({ maxAgeMs = 5 * 60_000 } = {}) {
-  if (briefCache && Date.now() - briefCache.at < maxAgeMs) return briefCache.value;
-  const value = await offThread('./today.js', 'brief');
-  briefCache = { at: Date.now(), value };
-  return value;
+  return keptFresh('brief', () => offThread('./today.js', 'brief'), { maxAgeMs });
 }
 
 export async function voiceTurn(body) {
@@ -2368,15 +2384,19 @@ export async function officeFloors() {
     const M = await import('./mesh.js');
     if (M.hasIdentity()) {
       const node = await meshUp();
-      for (const p of Object.values(M.readPeers())) {
+      // Every machine at once: one asleep held the page 4 s, and two held it 8. A machine that
+      // did not answer is not asked again for 30 s (one that did, 5 s).
+      const peers = Object.values(M.readPeers());
+      const got = await Promise.all(peers.map(async (p) => {
         const hit = floorCache.get(p.id);
-        if (hit && Date.now() - hit.at < 5000) { floors.push({ ...hit.floor, name: names[p.id] ?? p.name }); continue; }
+        if (hit && Date.now() - hit.at < (hit.floor.error ? 30_000 : 5000)) return hit.floor;
         let floor;
         try { const r = await node.ask(p, 'agents', {}, { timeoutMs: 4000 }); floor = { id: p.id, machine: p.name, sessions: r.sessions ?? [] }; }
         catch (e) { const closed = /does not allow/.test(e.message); floor = { id: p.id, machine: p.name, sessions: [], needsAccess: closed, error: closed ? `${p.name} has not shared its sessions with this computer.` : `${p.name}: ${e.message}` }; }
         floorCache.set(p.id, { at: Date.now(), floor });
-        floors.push({ ...floor, name: names[p.id] ?? p.name });
-      }
+        return floor;
+      }));
+      got.forEach((floor, i) => floors.push({ ...floor, name: names[peers[i].id] ?? peers[i].name }));
     }
   } catch {}
   return { floors };
@@ -2757,7 +2777,7 @@ const ROUTES = [
     throw new Error('action: apply, dismiss or now');
   }) },
   // Needs you (src/needs-you.js): what only you can move, across GitHub, ox and Mail, with links.
-  { method: 'GET', pattern: /^\/ox\/needs\/?$/, handler: appRoute(async () => offThread('./needs-you.js', 'needsYou')) },
+  { method: 'GET', pattern: /^\/ox\/needs\/?$/, handler: appRoute(async (_, __, req) => (new URL(req.url, 'http://x').searchParams.get('fresh') ? offThread('./needs-you.js', 'needsYou') : keptFresh('needs', () => offThread('./needs-you.js', 'needsYou'), { maxAgeMs: 60_000 }))) },
   // ox updates itself from the notch (src/self-update.js): asked once, at most one notice a day.
   { method: 'GET', pattern: /^\/ox\/update\/?$/, handler: appRoute(async () => { const U = await import('./self-update.js'); const st = U.readState(); return { notice: U.notice(), allowed: st.allowed ?? null, autoApply: st.autoApply === true, available: st.available ?? null, problem: st.problem ?? null, updatedTo: st.updatedTo ?? null, applying: st.applying ?? null, current: st.current ?? null, upToDate: st.upToDate === true }; }) },
   { method: 'POST', pattern: /^\/ox\/update\/?$/, handler: appRoute(async (body) => {
@@ -3826,6 +3846,8 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
       const todos = () => import('./offline.js').then((O) => O.refreshTodos()).catch(() => {});
       setTimeout(todos, 5_000).unref();
     }
+    // Today and Needs you gathered before they are opened, so the first open is instant too.
+    setTimeout(() => { if (!onBattery()) { cachedBrief().catch(() => {}); keptFresh('needs', () => offThread('./needs-you.js', 'needsYou'), { maxAgeMs: 60_000 }).catch(() => {}); } }, 20_000).unref();
     // The island's local voice model stays loaded (renewed before its 30 min run out).
     warmVoiceModel();
     setInterval(() => { if (!onBattery()) warmVoiceModel(); }, 20 * 60_000).unref();
