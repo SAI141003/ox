@@ -37,6 +37,15 @@ function upstreamError(obj, choice) {
   return `upstream stream error (${parts.join(', ')})`;
 }
 
+/** Retry-After as milliseconds: seconds or an HTTP date. null when absent or unreadable. */
+export function parseRetryAfter(value, now = Date.now()) {
+  const v = String(value ?? '').trim();
+  if (!v) return null;
+  if (/^\d+(\.\d+)?$/.test(v)) return Math.round(Number(v) * 1000);
+  const at = Date.parse(v);
+  return Number.isFinite(at) ? Math.max(0, at - now) : null;
+}
+
 export function createOpenAICompatParser({ name = 'openai-compat' } = {}) {
   let buf = '';
   let slots = [];
@@ -281,7 +290,9 @@ export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
     arm(idleMs, `nothing for ${Math.round(idleMs / 1000)} s`);
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`ox[${name}]: HTTP ${res.status} ${res.statusText}: ${text.slice(0, 300)}`);
+      const httpErr = new Error(`ox[${name}]: HTTP ${res.status} ${res.statusText}: ${text.slice(0, 300)}`);
+      httpErr.retryAfterMs = parseRetryAfter(res.headers?.get?.('retry-after'));
+      throw httpErr;
     }
     const parser = createOpenAICompatParser({ name });
     const dec = new TextDecoder();

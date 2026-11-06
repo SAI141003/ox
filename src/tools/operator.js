@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import * as macControl from '../mac-control.js';
+import { gate, isPayment, isMessagingApp } from '../computer-control.js';
 
 function err(msg) { return { content: msg, isError: true }; }
 
@@ -138,20 +139,14 @@ export async function open_window(args = {}, ctx = {}) {
 export async function type_text(args = {}, ctx = {}) {
   const text = args?.text;
   if (!text) return err('operator type_text: text is required');
-  if (!ctx?.yolo) {
-    if (ctx?.requestApproval) {
-      const v = await ctx.requestApproval('type_text', { text: text.slice(0, 100) }, `Type text into front app?`);
-      if (!v) return { content: 'User declined type_text' };
-    } else {
-      return err('type_text requires approval');
-    }
-  }
+  const g = await gate(ctx, { tool: 'type_text', app: args.app ?? null, what: `Type text into ${args.app || 'the app in front'}${args.into ? ` (${args.into})` : ''}`, args: { text: String(text).slice(0, 100) } });
+  if (!g.ok) return { content: g.content, isError: true };
   const A = args.into ? await agentDesktop() : null;
   if (A && !isDry()) {
     return adAct(A, { app: args.app, element: args.into }, async (t, list) => {
       const r = await A.typeInto(t, String(text));
-      return r.error ? (r.stale ? r : err(r.error)) : { content: `typed ${[...String(text)].length} characters into ${ctlName(t)} in ${list.app}; nothing sent: press Return or Send yourself when it reads right` };
-    });
+      return r.error ? (r.stale ? r : err(r.error)) : { content: `typed ${[...String(text)].length} characters into ${ctlName(t)} in ${list.app}; nothing sent yet` };
+    }, ctx);
   }
   // On a Mac the text is pasted (any language; a newline in it never presses
   // Return, so a chat box is filled, not sent): src/mac-control.js.
@@ -166,20 +161,27 @@ const isDry = () => process.env.OX_OPERATOR_DRY !== '0' && !!(process.env.NODE_T
 
 // agent-desktop (src/agent-desktop.js), when installed: the same controls on
 // Windows and Linux, and on a Mac without moving your pointer or taking focus.
-// ox's rules stay on top: never Send / Pay / Delete, never Return, ask first.
+// ox's rules stay on top (src/computer-control.js): ask by app; Send and Delete ask every time; never pay.
 async function agentDesktop() { const A = await import('../agent-desktop.js'); return A.available() ? A : null; }
 const ctlName = (e) => `${e.role} "${e.name || e.description || e.value || ''}"`;
 const pick = (list, element, role) => {
   const q = String(element).trim();
   return /^\d+$/.test(q) && Number(q) <= list.elements.length && !macControl.findElement(list.elements, q, role) ? list.elements[Number(q) - 1] : macControl.findElement(list.elements, q, role);
 };
-async function adAct(A, { app, element, role }, act) {
+// Send and delete ask each time, whoever said yes before; paying is never done.
+export async function confirmRiskyControl(el, app, ctx) {
+  if (isPayment(el)) return false;
+  const g = await gate(ctx, { tool: 'click', app, force: true, what: `Press "${el.name || el.description}"${app ? ` in ${app}` : ''}? It can send or delete, and may not be undone`, args: { element: el.name ?? el.description } });
+  return g.ok;
+}
+async function adAct(A, { app, element, role }, act, ctx = {}) {
   for (let attempt = 0; attempt < 2; attempt++) {
     const list = await A.listElements(app);
     if (list.error) return err(list.error);
     const target = pick(list, element, role);
     if (!target) return err(`no control called "${element}" in ${list.app}. ${macControl.describeElements({ ...list, elements: list.elements.slice(0, 40) })}`);
-    if (macControl.isRisky(target)) return err(`ox does not press "${target.name || target.description}": that sends, pays or deletes. It is left for you to press.`);
+    if (isPayment(target)) return err(`ox does not press "${target.name || target.description}": it spends money. It is left for you to press.`);
+    if (macControl.isRisky(target) && !(await confirmRiskyControl(target, list.app, ctx))) return err(`ox did not press "${target.name || target.description}": that sends or deletes, and it was not approved. It is left for you to press.`);
     const r = await act(target, list);
     if (r.stale) continue;   // the window changed: read it again
     return r;
@@ -208,41 +210,37 @@ export async function ui_elements(args = {}) {
 
 export async function click(args = {}, ctx = {}) {
   if (args.element == null && (args.x == null || args.y == null)) return err('operator click: element, or x and y, is required');
-  if (!ctx?.yolo) {
-    if (!ctx?.requestApproval) return err('click requires approval');
-    const v = await ctx.requestApproval('click', { app: args.app, element: args.element, x: args.x, y: args.y }, `Click ${args.element ? `"${args.element}"` : `${args.x},${args.y}`}${args.app ? ` in ${args.app}` : ''}?`);
-    if (!v) return { content: 'User declined click' };
+  // A control named Send asks once, below, with what it can do; not twice.
+  if (!macControl.isRisky({ name: args.element })) {
+    const g = await gate(ctx, { tool: 'click', app: args.app ?? null, what: `Click ${args.element ? `"${args.element}"` : `${args.x},${args.y}`}${args.app ? ` in ${args.app}` : ''}`, args: { element: args.element, x: args.x, y: args.y } });
+    if (!g.ok) return { content: g.content, isError: true };
   }
   const A = args.element != null && String(args.element).trim() ? await agentDesktop() : null;
   if (A && !isDry()) {
     return adAct(A, args, async (t, list) => {
       const r = await A.press(t, { double: !!args.double });
       return r.error ? (r.stale ? r : err(r.error)) : { content: `clicked ${ctlName(t)} in ${list.app} (through accessibility: your pointer did not move)` };
-    });
+    }, ctx);
   }
-  return macRun(() => macControl.click(args, { dryRun: isDry() }));
+  return macRun(() => macControl.click(args, { dryRun: isDry(), confirmRisky: (el, app) => confirmRiskyControl(el, app, ctx) }));
 }
 
 // Draw with the cursor (Vovy carving a pumpkin): a shape in a box, or points.
 export async function draw(args = {}, ctx = {}) {
   if (!args.shape && !Array.isArray(args.points)) return err('operator draw: shape (with x, y, w, h) or points is required');
-  if (!ctx?.yolo) {
-    if (!ctx?.requestApproval) return err('draw requires approval');
-    const v = await ctx.requestApproval('draw', { app: args.app, shape: args.shape, x: args.x, y: args.y, w: args.w, h: args.h }, `Take the cursor and draw ${args.label || args.shape || 'a path'}${args.app ? ` in ${args.app}` : ''}? (Move the mouse to stop it.)`);
-    if (!v) return { content: 'User declined draw' };
-  }
+  const g = await gate(ctx, { tool: 'draw', app: args.app ?? null, what: `Take the cursor and draw ${args.label || args.shape || 'a path'}${args.app ? ` in ${args.app}` : ''}`, args: { shape: args.shape } });
+  if (!g.ok) return { content: g.content, isError: true };
   return macRun(() => macControl.draw(args, { dryRun: isDry() }));
 }
 
 export async function press_key(args = {}, ctx = {}) {
   if (!args.key) return err('operator press_key: key is required');
-  const k = macControl.parseKey(args.key);
+  const k = macControl.parseKey(args.key, { loose: true });
   if (k.error) return err(k.error);
-  if (!ctx?.yolo) {
-    if (!ctx?.requestApproval) return err('press_key requires approval');
-    const v = await ctx.requestApproval('press_key', { app: args.app, key: args.key }, `Press ${args.key}${args.app ? ` in ${args.app}` : ''}?`);
-    if (!v) return { content: 'User declined press_key' };
-  }
+  // Return in a chat or mail app, or in an app nobody named, can send: asked each time.
+  const force = !!k.ask || (!!k.sends && (!args.app || isMessagingApp(args.app)));
+  const g = await gate(ctx, { tool: 'press_key', app: args.app ?? null, force, what: `Press ${args.key}${args.app ? ` in ${args.app}` : ' in the app in front'}${k.sends ? ' (Return can run or send what is typed)' : ''}`, args: { key: args.key } });
+  if (!g.ok) return { content: g.content, isError: true };
   const A = await agentDesktop();
   if (A && !isDry()) {
     const combo = String(args.key).toLowerCase().replace(/\s+/g, '');
@@ -253,7 +251,7 @@ export async function press_key(args = {}, ctx = {}) {
     if (!isMac()) return err(last);
     args = { ...args, times: times - done };   // the rest through ox-hands
   }
-  return macRun(() => macControl.pressKey(args, { dryRun: isDry() }));
+  return macRun(() => macControl.pressKey(args, { dryRun: isDry(), loose: true }));
 }
 
 export async function screenshot(args = {}, ctx = {}) {
@@ -311,12 +309,12 @@ export const OPERATOR_TOOLS = [
   { name: 'open_url', description: 'Open a URL in the default browser. Args: url (REQUIRED, http:// or https://). Requires approval.' },
   { name: 'open_path', description: 'Open a file or folder in the OS file manager. Args: path (REQUIRED). Requires approval.' },
   { name: 'open_window', description: 'Focus a window by name. Args: name (REQUIRED). Requires approval.' },
-  { name: 'type_text', description: 'Type text into the front app (never presses Return). Args: text (REQUIRED), app, into (a box from ui_elements). Requires approval.' },
+  { name: 'type_text', description: 'Type text into the front app (a line break in it never presses Return; use press_key return for that). Args: text (REQUIRED), app, into (a box from ui_elements). Requires approval.' },
   { name: 'screenshot', description: 'Capture the screen or active window. Args: output (optional, default temp path). Requires approval.' },
   { name: 'notify', description: 'Send an OS notification. Args: message (optional, default "ox notification"). No approval prompt: notify() never calls requestApproval or checks ctx.yolo, unlike the six tools above it.' },
   { name: 'ui_elements', description: "List the controls of an app's front window (buttons, text boxes, rows, labels) with a number and screen position (macOS). Args: app (optional, default the app in front). Read-only." },
-  { name: 'click', description: 'Click a control (macOS): element (its name or number from ui_elements), role (optional: button, text field, row), or x and y in screen points; app (optional); double (optional). Never presses Send, Pay, Buy, Delete or the like. Requires approval.' },
-  { name: 'press_key', description: 'Press a key (macOS): tab, shift+tab, escape, space, delete, arrows, home, end, pageup, pagedown, or cmd with a c f k l n t v x z. Never Return or Enter. Args: key (REQUIRED), app, times. Requires approval.' },
+  { name: 'click', description: 'Click a control (macOS): element (its name or number from ui_elements), role (optional: button, text field, row), or x and y in screen points; app (optional); double (optional). A control that sends or deletes asks the user every time; one that pays is refused. Requires approval.' },
+  { name: 'press_key', description: 'Press a key: return, tab, shift+tab, escape, space, delete, arrows, home, end, pageup, pagedown, or a shortcut such as cmd+f or cmd+shift+s. Return in a chat or mail app, in an app you did not name, and unusual shortcuts ask the user every time. Lock, log out, force quit and delete-file shortcuts are refused. Always name the app. Args: key (REQUIRED), app, times. Requires approval.' },
   { name: 'draw', description: 'Draw with the cursor (macOS): shape (circle smile frown line v triangle rectangle star zigzag) in a box x, y, w, h (screen points; find it with screenshot), or points [[x,y],…]; label says what it is. Requires approval.' },
 ];
 

@@ -106,6 +106,11 @@ screen (hold Ctrl+Alt+Space to talk).
 - **Agent** with modes (ask, plan, code, orchestrate), approvals for every
   write and command, subagents that delegate and report back, a task board,
   memory that persists across sessions, and goals that refuse "done" until proven.
+- **Your computer, on your terms**: ox works in desktop apps through accessibility, on any
+  model, without taking your pointer. Each app is allowed once or always; terminals, Finder and
+  System Settings say what they hand over; send and delete ask every time; paying is never done.
+  Esc in the island or `ox computer stop` halts it. `ox awake --lid 2h` keeps it running with the
+  lid closed. Type errors come back with each edit when a language server is on your machine.
 - **`ox fix "<bug>"`**: a test that fails because of the bug, then the fix, then
   the same test passing, all run by ox itself, not taken on the model's word.
   **`/undo`** takes back the last turn's file changes and the exchange in one go,

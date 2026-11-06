@@ -91,7 +91,9 @@ export function makeApprover({ mode = 'default', yolo = false, sandbox = null, m
   let acceptAll = false;
   let noticedNonTTY = false;
 
-  return async function requestApproval(name, args = {}, detail) {
+  // opts.force: ask a person, whatever -y or an earlier "always" says; with nobody to ask, no.
+  // opts.onAlways: "always" means this one thing (an app), not every tool for the rest of the run.
+  const requestApproval = async function requestApproval(name, args = {}, detail, opts = {}) {
     // The SANDBOX deny is checked before the yolo short-circuit, and only that
     // one rule. src/guards.js already documents a sandbox deny as monotonic
     // ("beats yolo everywhere"), but the `yolo` early return below used to run
@@ -106,17 +108,19 @@ export function makeApprover({ mode = 'default', yolo = false, sandbox = null, m
       }
       if (blocked) return false;
     }
-    if (acceptAll || yolo) return true;
-    if (alwaysAllowed(name)) return true;
+    if (!opts.force) {
+      if (acceptAll || yolo) return true;
+      if (alwaysAllowed(name)) return true;
 
-    // Monotonic guard pipeline (DeepSeek dsh pattern): deny-wins, can only tighten.
-    const ctx = { approval: mode, yolo, sandbox, mcpPolicy, strictApprovals };
-    const { decision, rule } = evaluateToolPolicy({ name, args, ctx });
-    if (decision === 'allow') return true;
-    if (decision === 'deny') return false;
+      // Monotonic guard pipeline (DeepSeek dsh pattern): deny-wins, can only tighten.
+      const ctx = { approval: mode, yolo, sandbox, mcpPolicy, strictApprovals };
+      const { decision, rule } = evaluateToolPolicy({ name, args, ctx });
+      if (decision === 'allow') return true;
+      if (decision === 'deny') return false;
 
-    // Fall through to interactive prompt only on 'ask'.
-    if (mode === 'accept-edits' && isWriteTool(name)) return true;
+      // Fall through to interactive prompt only on 'ask'.
+      if (mode === 'accept-edits' && isWriteTool(name)) return true;
+    }
 
     // 2. A TTY: the human at the terminal is the primary approver. When a GUI
     // client (OX Island) is also connected, both are asked at once and the
@@ -124,7 +128,7 @@ export function makeApprover({ mode = 'default', yolo = false, sandbox = null, m
     // its 'ask'/timeout/disconnect leaves the terminal prompt waiting.
     if (process.stdin.isTTY) {
       const live = external && typeof external.hasClient === 'function' && typeof external.ask === 'function' && external.hasClient() === true;
-      return promptTerminal(name, args, detail, live ? external : null);
+      return promptTerminal(name, args, detail, live ? external : null, opts);
     }
 
     // 3. No TTY: give a connected external approver exactly one chance, and
@@ -140,6 +144,8 @@ export function makeApprover({ mode = 'default', yolo = false, sandbox = null, m
       }
       const decision = String(answer?.decision ?? '').trim().toLowerCase();
       if (decision === 'always') {
+        if (opts.onAlways) { try { opts.onAlways(); } catch {} return true; }
+        if (opts.force) return true;
         acceptAll = true;
         rememberAlways(name);
         return true;
@@ -162,8 +168,10 @@ export function makeApprover({ mode = 'default', yolo = false, sandbox = null, m
     }
     return false;
   };
+  requestApproval.honorsForce = true;
+  return requestApproval;
 
-  async function promptTerminal(name, args, detail, gui = null) {
+  async function promptTerminal(name, args, detail, gui = null, opts = {}) {
     const preview = renderDetail(name, args, detail);
     if (preview) process.stdout.write(`${preview}\n`);
 
@@ -178,9 +186,16 @@ export function makeApprover({ mode = 'default', yolo = false, sandbox = null, m
       };
       rl.on('close', () => finish(false));
       rl.on('error', () => finish(false));
-      rl.question(`Allow ${name}? [y]es / [n]o / [a]lways this session: `, (answer) => {
+      const alwaysWords = opts.onAlways ? ' / [a]lways for this app' : opts.force ? '' : ' / [a]lways this session';
+      if (opts.force || opts.onAlways) process.stdout.write(`${c.dim(String(detail ?? '').slice(0, 300))}\n`);
+      rl.question(`Allow ${name}? [y]es / [n]o${alwaysWords}: `, (answer) => {
         const choice = String(answer ?? '').trim().toLowerCase();
-        if (choice === 'a' || choice === 'always') {
+        if ((choice === 'a' || choice === 'always') && opts.force) {
+          finish(true);
+        } else if ((choice === 'a' || choice === 'always') && opts.onAlways) {
+          try { opts.onAlways(); } catch {}
+          finish(true);
+        } else if (choice === 'a' || choice === 'always') {
           acceptAll = true;
           finish(true);
         } else {
@@ -192,7 +207,10 @@ export function makeApprover({ mode = 'default', yolo = false, sandbox = null, m
           .then(() => gui.ask({ tool: name, args, detail, cwd: process.cwd() }))
           .then((answer) => {
             const d = String(answer?.decision ?? '').trim().toLowerCase();
-            if (d === 'always') {
+            if (d === 'always' && (opts.force || opts.onAlways)) {
+              if (opts.onAlways) { try { opts.onAlways(); } catch {} }
+              finish(true, '(allowed from OX Island)');
+            } else if (d === 'always') {
               acceptAll = true;
               finish(true, '(allowed for the rest of this session from OX Island)');
             } else if (d === 'allow') finish(true, '(allowed from OX Island)');

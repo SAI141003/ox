@@ -245,7 +245,10 @@ export function makeAnthropic() {
     });
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`ox[anthropic]: HTTP ${res.status} ${res.statusText}: ${text.slice(0, 300)}`);
+      const httpErr = new Error(`ox[anthropic]: HTTP ${res.status} ${res.statusText}: ${text.slice(0, 300)}`);
+      const ra = Number(res.headers?.get?.('retry-after'));
+      if (Number.isFinite(ra) && ra >= 0) httpErr.retryAfterMs = Math.round(ra * 1000);
+      throw httpErr;
     }
     const parser = createAnthropicParser();
     const dec = new TextDecoder();

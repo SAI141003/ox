@@ -142,14 +142,14 @@ test('persistent 429 on primary bounces once to the secondary; next turn restore
   assert.match(fb1[0].reason, /429|rate/i);
   assert.deepEqual(
     events1.filter((e) => e.type === 'continuation-retry').map((e) => e.attempt),
-    [1, 2, 3],
-    'primary consumed its retry budget before the bounce'
+    [1, 2, 3, 4, 5],
+    'a rate limit is waited out before the bounce'
   );
   const final1 = events1.find((e) => e.type === 'final');
   assert.ok(final1, 'turn completed via fallback');
   assert.equal(final1.message.content, 'SECONDARY_OK answer');
   assert.equal(events1.some((e) => e.type === 'error'), false, 'no terminal error after successful bounce');
-  assert.equal(primary.bodies.length, 4, 'initial + 3 retries against primary only');
+  assert.equal(primary.bodies.length, 6, 'initial + 5 retries against primary only');
   assert.equal(secondaryHits, 1);
 
   // ---- turn 2 (next user message): primary is restored and bounces again ----
@@ -242,7 +242,7 @@ test('no fallbacks configured → clean error as today (no fallback events)', as
   assert.equal(events.some((e) => e.type === 'fallback'), false);
   const errs = events.filter((e) => e.type === 'error');
   assert.equal(errs.length, 1);
-  assert.match(errs[0].error, /stream died after 3 retries/);
+  assert.match(errs[0].error, /stream died after 5 retries/);
   assert.match(errs[0].error, /\(rate-limit\)/);
   assert.equal(events.some((e) => e.type === 'final'), false);
   assert.ok(events.some((e) => e.type === 'usage-total'), 'usage totals still emitted');

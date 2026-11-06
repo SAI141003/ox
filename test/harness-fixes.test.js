@@ -395,3 +395,24 @@ test('teach picks frames evenly, first and last in', async () => {
   assert.deepEqual(pickEvenly([1, 2, 3], 5), [1, 2, 3]);
   assert.deepEqual(pickEvenly([0, 1, 2, 3, 4, 5, 6, 7, 8], 3), [0, 4, 8]);
 });
+
+test('a rate limit is waited out: Retry-After first, then growing waits, and a backup model is only for the bad minute', async () => {
+  const { retryDelayMs, shouldReturnToPrimary, classifyProviderError } = await import('../src/agent.js');
+  const { parseRetryAfter } = await import('../src/providers/openai-compat.js');
+  assert.equal(classifyProviderError('ox[nvidia]: HTTP 429 Too Many Requests: {}'), 'rate-limit');
+  assert.equal(retryDelayMs({ cls: 'rate-limit', attempt: 1, retryAfterMs: 7000 }), 7250, 'what the provider said');
+  assert.equal(retryDelayMs({ cls: 'rate-limit', attempt: 1, retryAfterMs: 500_000 }), 60_000, 'never a run-stopping wait');
+  assert.equal(retryDelayMs({ cls: 'rate-limit', attempt: 1, jitter: 0.5 }), 2000);
+  assert.equal(retryDelayMs({ cls: 'rate-limit', attempt: 3, jitter: 0.5 }), 10_000);
+  assert.equal(retryDelayMs({ cls: 'rate-limit', attempt: 9, jitter: 0.5 }), 30_000);
+  assert.equal(retryDelayMs({ cls: null, attempt: 2 }), 300, 'a dropped connection still retries quickly');
+  assert.equal(parseRetryAfter('12'), 12_000);
+  assert.equal(parseRetryAfter('Wed, 21 Oct 2026 07:28:30 GMT', Date.parse('Wed, 21 Oct 2026 07:28:00 GMT')), 30_000);
+  assert.equal(parseRetryAfter(''), null);
+  assert.equal(parseRetryAfter('soon'), null);
+  const now = 1_000_000;
+  assert.equal(shouldReturnToPrimary({ bouncedAt: now - 89_000, kind: 'rate-limit', now }), false);
+  assert.equal(shouldReturnToPrimary({ bouncedAt: now - 91_000, kind: 'rate-limit', now }), true);
+  assert.equal(shouldReturnToPrimary({ bouncedAt: now - 91_000, kind: 'auth', now }), false, 'a bad key will not heal');
+  assert.equal(shouldReturnToPrimary({ bouncedAt: null, now }), false);
+});
