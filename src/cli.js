@@ -54,6 +54,7 @@ import {
   pruneSessions,
   rewindPoints,
   rewindTo,
+  forkSessionAt,
   searchSessions,
 } from './session.js';
 import {createCostBudget, formatCost, lookupModel, resolveModelWindow} from './cost.js';
@@ -260,8 +261,8 @@ const SLASH_HELP = [
   '      unattended work needs TWO opt-ins: the daemon-wide `ox schedule opt-in`, and',
   '      `--enable` on the row itself. A schedule may only carry --max-cost/--bot/--model —',
   '      it can never set its own sandbox profile, trust level, approval policy or API keys.',
-  '  /fork                 fork the current session',
-  '  /rewind [n]           list rewind points, or rewind the conversation to turn n (files untouched)',
+  '  /fork [n]             continue in a new session, from now or from just before turn n; this one stays',
+  '  /rewind [n] [text]    list rewind points, rewind the conversation to turn n (files untouched), or send new text from there',
   '  /sandbox [name]       show OS sandbox state; switching mid-session is refused (session-pinned)',
   '  /verify               toggle the independent goal verifier (audits each final answer)',
   '  /verify-status        show verifier state and its default source',
@@ -341,7 +342,7 @@ export function slashHelp(arg = '') {
     c.bold('Goals and agents'),
     row('/goal <text>', 'a goal ox keeps working toward and proves'),
     row('/agents', 'live subagents: cancel or steer them'),
-    row('/rewind [n]', 'go back to an earlier turn'),
+    row('/rewind [n] [text]', 'go back to an earlier turn, or resend it differently'),
     c.bold('This session'),
     row('/session', 'id and file; /resume <id>, /fork'),
     row('/ui', 'redraw the last canvas; type 1, 2… to press its buttons'),
@@ -8890,9 +8891,25 @@ async function replWithBudget(config, opts, flags, budget) {
         return;
       }
       case '/fork': {
+        const turn = rest.trim();
+        if (turn && !/^\d+$/.test(turn)) { console.log(c.red(`✗ /fork takes a turn number or nothing, got '${rest}'`)); return; }
         try {
-          session = forkSession(session.file);
-          console.log(c.dim(`forked → new session ${session.id}`));
+          if (!turn) {
+            session = forkSession(session.file);
+            console.log(c.dim(`forked → new session ${session.id}`));
+            return;
+          }
+          // From just before an earlier turn: the conversation goes back there, the original stays.
+          const from = session.id;
+          const { session: forked, label } = forkSessionAt(session.file, Number(turn), config.cwd);
+          const loaded = loadSessionWithStatus(forked.file);
+          messages = replayMessages(loaded.messages);
+          state.goal = loaded.goal ?? null;
+          state.goalTerminal = loaded.goalTerminal ?? null;
+          state.goalSig = progressSignature(state.goal);
+          session = forked;
+          console.log(c.green(`✓ now in a new session ${forked.id}, from just before '${label}'`));
+          console.log(c.dim(`session ${from} is unchanged: ox --resume ${from}. Files on disk were not touched.`));
         } catch (err) {
           console.log(renderError(err));
         }
@@ -8909,7 +8926,9 @@ async function replWithBudget(config, opts, flags, budget) {
           for (const p of pts) console.log(`  ${padCell(String(p.id), 4)} ${p.label}`);
           return;
         }
-        const n = Number(rest.trim());
+        const asked = /^(\d+)(?:\s+([\s\S]+))?$/.exec(rest.trim());
+        const n = asked ? Number(asked[1]) : NaN;
+        const resend = asked?.[2]?.trim() || null;
         if (!Number.isInteger(n) || n < 1) {
           console.log(c.red(`✗ /rewind needs a rewind-point number, got '${rest}'`));
           return;
@@ -8928,6 +8947,7 @@ async function replWithBudget(config, opts, flags, budget) {
           reportResumedGoal(state.goal, state.goalTerminal);
           console.log(c.green(`✓ rewound to turn ${pt.id} ('${pt.label}')`));
           console.log(c.dim('conversation-only restore — files on disk were NOT reverted'));
+          if (resend) await runTurn(resend);
         } catch (err) {
           console.log(renderError(err));
         }

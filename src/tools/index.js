@@ -28,6 +28,8 @@ import { youtubeTranscriptTool, YOUTUBE_TOOL_SCHEMAS, YOUTUBE_TOOLS, YOUTUBE_SIG
 import { currentPageTool, CURRENT_PAGE_SCHEMAS, CURRENT_PAGE_TOOLS, CURRENT_PAGE_SIGNAL } from './current-page.js';
 import { webTaskTool, WEB_TASK_TOOL_SCHEMAS, WEB_TASK_TOOLS } from './web-task.js';
 import { critiqueTool, CRITIQUE_TOOL_SCHEMAS, CRITIQUE_TOOLS } from './critique.js';
+import { seePageTool, SEE_PAGE_TOOL_SCHEMAS, SEE_PAGE_TOOLS, SEE_PAGE_KEYWORDS } from './see-page.js';
+import { runScriptTool, RUN_SCRIPT_TOOL_SCHEMAS, RUN_SCRIPT_TOOLS, RUN_SCRIPT_KEYWORDS } from './run-script.js';
 import { showUiTool, CANVAS_TOOL_SCHEMAS, CANVAS_TOOLS, CANVAS_KEYWORDS } from './canvas.js';
 import { loadToolsTool } from './load-tools.js';
 import { agentMessagingToolSchemas, AGENT_MESSAGE_TOOLS } from '../agent-teams.js';
@@ -88,6 +90,8 @@ export const TOOL_IMPLS = {
   current_page: (args) => currentPageTool(args),
   critique: critiqueTool,
   web_task: webTaskTool,
+  see_page: seePageTool,
+  run_script: runScriptTool,
   show_ui: showUiTool,
   task_board: taskBoardTool,
   create_media: createMediaTool,
@@ -128,6 +132,8 @@ export const BUILTIN_SCHEMAS = [
   ...WEB_TOOL_SCHEMAS,
   ...READING_TOOL_SCHEMAS,
   ...WEB_TASK_TOOL_SCHEMAS,
+  ...SEE_PAGE_TOOL_SCHEMAS,
+  ...RUN_SCRIPT_TOOL_SCHEMAS,
   ...CRITIQUE_TOOL_SCHEMAS,
   ...MEDIA_TOOL_SCHEMAS,
   ...VIDEO_TOOL_SCHEMAS,
@@ -720,6 +726,8 @@ function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, web
     if (operatorOn && OPERATOR_TOOLS.includes(n)) return true;
     if (webOn && WEB_TOOLS.includes(n)) return true;
     if (webTaskOn && WEB_TASK_TOOLS.includes(n)) return true;
+    if (seePageOn && SEE_PAGE_TOOLS.includes(n)) return true;
+    if (runScriptOn && RUN_SCRIPT_TOOLS.includes(n)) return true;
     if (critiqueOn && CRITIQUE_TOOLS.includes(n)) return true;
     if (agentOn && AGENT_MESSAGE_TOOLS.includes(n)) return true;
     if (canvasOn && CANVAS_TOOLS.includes(n)) return true;
@@ -755,6 +763,8 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
   const explicitWebSignal = keywordSignal(message, WEB_KEYWORDS.filter((word) => word !== 'current')) !== null;
   const webOn = keywordSignal(message, WEB_KEYWORDS) !== null && (!locallyScopedCurrent || explicitWebSignal);
   const webTaskOn = keywordSignal(message, WEB_TASK_KEYWORDS) !== null;
+  const seePageOn = keywordSignal(message, SEE_PAGE_KEYWORDS) !== null;
+  const runScriptOn = keywordSignal(message, RUN_SCRIPT_KEYWORDS) !== null;
   const critiqueOn = keywordSignal(message, CRITIQUE_KEYWORDS) !== null;
   const askOn = keywordSignal(message, ASK_AGENT_KEYWORDS) !== null;
   // `agentOn` keeps the mailbox for a LEAD whose own turn is about agents. A
@@ -787,6 +797,8 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
     // "this video / this page": the tab first, then its transcript or text.
     if (CURRENT_PAGE_SIGNAL.test(String(message)) && (CURRENT_PAGE_TOOLS.includes(n) || YOUTUBE_TOOLS.includes(n) || n === 'web_fetch')) keep.add(n);
     if (webTaskOn && WEB_TASK_TOOLS.includes(n)) keep.add(n);
+    if (seePageOn && SEE_PAGE_TOOLS.includes(n)) keep.add(n);
+    if (runScriptOn && RUN_SCRIPT_TOOLS.includes(n)) keep.add(n);
     if (critiqueOn && CRITIQUE_TOOLS.includes(n)) keep.add(n);
     if (n === 'ask_agent' && askOn) keep.add(n);
     if (n === 'start_session') keep.add(n);
