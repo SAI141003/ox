@@ -215,7 +215,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['ask', 'teach', 'desktop', 'version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'knowledge', 'ecc', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages', 'computer']);
+const SUBCOMMANDS = new Set(['ask', 'teach', 'desktop', 'version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'knowledge', 'ecc', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages', 'computer', 'cloud']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -4971,6 +4971,7 @@ const SUB_USAGE = {
   hf: 'usage: ox hf search "<words>" | ox hf files <owner/repo> | ox hf pull <owner/repo>[:QUANT]',
   name: 'usage: ox name [<new name> | --reset]  — what ox is called everywhere; it answers to that name when you say it',
   usage: 'usage: ox usage [--days <n>] [--json]  — tokens and cost by model, agent, surface, project and day',
+  cloud: 'usage: ox cloud setup [--model <model>] [--key <NAME>] [--store-key] | run "<task>" [--model <model>] [--max-cost <usd>] | status  — ox on GitHub Actions: reviews every PR, works with your laptop off',
   computer: 'usage: ox computer [status] | stop | allow <app> | deny <app>  — which apps ox may use on your screen, and stop it from anywhere',
   market: 'usage: ox market [search] ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
   hook: 'usage: ox hook <claude|codex|gemini|cursor|copilot> [event]  — run by the agent itself with the event on stdin (set up with: ox hooks install <agent>)',
@@ -7267,6 +7268,45 @@ async function runSubcommand(cmd, args) {
       else console.log(r.handled ? (r.ok === false ? c.red(r.message) : r.message) : c.dim(r.message));
       if (!r.handled) process.exitCode = 2;
       else if (r.ok === false) process.exitCode = 1;
+      return;
+    }
+    case 'cloud': {
+      const C = await import('./cloud.js');
+      const verb = String(args[0] ?? '').toLowerCase();
+      const opt = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : null; };
+      try {
+        if (verb === 'ci') {
+          // Inside the GitHub runner: action.yml starts this.
+          if (process.env.OX_CI_MODE === 'task') { const r = await C.ciTask(); console.log(r.pr ? `opened ${r.pr}` : r.why); return; }
+          const r = await C.ciReview(); console.log(r.posted ? 'review posted' : r.why); return;
+        }
+        if (verb === 'setup') {
+          const { loadKeysIntoEnv } = await import('./keystore.js');
+          if (process.env.OX_NO_KEYSTORE !== '1') loadKeysIntoEnv();
+          const cfg = loadConfig();
+          const model = opt('--model') ?? defaultBotSpec(cfg);
+          const key = opt('--key') ?? C.keyForModel(model, (m) => { try { return resolveBot(m, cfg).keyEnv ?? null; } catch { return null; } });
+          const written = C.setupCloud({ cwd: process.cwd(), model, key });
+          console.log(written.length ? c.green(`added ${written.join(', ')}`) : c.dim('the workflows are already here'));
+          if (args.includes('--store-key')) { await C.storeKey(key, process.env[key], {}); console.log(c.green(`${key} stored in this repository's GitHub secrets`)); } else console.log(c.dim(`Store the key: ox cloud setup --store-key  (sends ${key} to GitHub's encrypted secrets), or set it in the repository's settings.`));
+          console.log(c.dim('Then commit and push .github/workflows. Every pull request gets a review; ox cloud run "<task>" works with your laptop off.'));
+          return;
+        }
+        if (verb === 'run') {
+          const words = []; for (let i = 1; i < args.length; i++) { if (['--model', '--max-cost'].includes(args[i])) { i++; continue; } words.push(args[i]); }
+          await C.startCloudTask(words.join(' '), { model: opt('--model'), maxCost: opt('--max-cost') });
+          console.log(c.green('started on GitHub: it opens a pull request when done. Follow it: ox cloud status'));
+          return;
+        }
+        if (verb === 'status') {
+          const runs = await C.cloudStatus({});
+          if (!runs.length) console.log(c.dim('no cloud runs yet'));
+          for (const r of runs) console.log(`${r.conclusion || r.status}  ${r.displayTitle}  ${c.dim(r.url)}`);
+          return;
+        }
+        console.log(SUB_USAGE.cloud);
+        process.exitCode = verb === 'help' || verb === '--help' ? 0 : 3;
+      } catch (e) { console.log(c.red(String(e?.message ?? e))); process.exitCode = 1; }
       return;
     }
     case 'computer': {
