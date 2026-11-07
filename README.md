@@ -111,6 +111,13 @@ screen (hold Ctrl+Alt+Space to talk).
   System Settings say what they hand over; send and delete ask every time; paying is never done.
   Esc in the island or `ox computer stop` halts it. `ox awake --lid 2h` keeps it running with the
   lid closed. Type errors come back with each edit when a language server is on your machine.
+- **Sees what it built**: the `see_page` tool opens your app in a real browser and reports blank
+  screens, script errors, failed requests and sideways scrolling. `run_script` makes many read-only
+  tool calls in one model call, so long surveys cost far fewer tokens.
+- **Laptop off, or away from it**: `ox cloud run "<task>"` works on GitHub Actions in your own
+  repository and opens a pull request; `ox cloud setup` also reviews every pull request. `ox phone web`
+  puts the whole app on your phone. Control it from iMessage, Signal, WhatsApp, Telegram, Discord or
+  Slack (`ox gateway`). There's a VS Code extension in `editors/vscode`.
 - **`ox fix "<bug>"`**: a test that fails because of the bug, then the fix, then
   the same test passing, all run by ox itself, not taken on the model's word.
   **`/undo`** takes back the last turn's file changes and the exchange in one go,

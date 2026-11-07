@@ -3607,7 +3607,7 @@ async function serveChatPage(res) {
     'Content-Length': chatPage.length,
     'Cache-Control': 'no-cache',
     // The page talks only to this server and loads nothing else (it frames only its own /office).
-    'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self' http://localhost:* http://127.0.0.1:* https:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self' http://localhost:* http://127.0.0.1:* https:; base-uri 'none'; form-action 'none'; frame-ancestors vscode-webview:",
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
   });

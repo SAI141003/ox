@@ -47,6 +47,13 @@ export const HELP = [
   '/where   which project ox works in',
 ].join('\n');
 
+// Phones capitalise and drop slashes: "Pair 123456", "status". A message that is exactly one of
+// ox's commands works without the slash; "stop using tabs" is still an ordinary request.
+export function slashlessReply(text) {
+  const t = String(text ?? '').trim();
+  return /^(pair\s+\d{6}|help|start|where|new|status|stop|mode(\s+[a-z]+)?)$/i.test(t) ? `/${t.toLowerCase()}` : t;
+}
+
 export function createRemoteCore({ adapter, state, persist, cwd, agent = null, env = process.env, log = console.log, socketDir, channel = 'chat' }) {
   if (!state.mode) state.mode = 'auto';
   if (state.fresh === undefined) state.fresh = true;

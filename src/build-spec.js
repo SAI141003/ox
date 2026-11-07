@@ -129,7 +129,7 @@ Steps, in order:
 1. Read the files involved before changing anything.
 2. Write the tests first, with ${tests.framework}: at least one test per criterion, and put the criterion's id in the test's name (for example "${spec.acceptance[0].id}: ${spec.acceptance[0].then.slice(0, 40)}").
 3. Run ${tests.cmd} and check that the new tests fail for the right reason.
-4. Implement, in the project's existing style, until ${tests.cmd} passes. Do not weaken or delete a test to make it pass.
+4. Implement, in the project's existing style, until ${tests.cmd} passes. Do not weaken or delete a test to make it pass. If it has a web page, start it and check it with see_page before you finish.
 5. Run ${tests.cmd} once more and say which criteria pass.`;
   return { brief, contract: { outcome: spec.summary || spec.title, verification: `gate: ${tests.cmd}` } };
 }
@@ -149,7 +149,7 @@ export function buildBriefs(spec, tests) {
   const code = `Step 2 of 2: implement. ${head}
 The tests for these criteria are written and LOCKED: ox hashed them. Editing or deleting a locked test, adding skip / only / xfail, removing an assertion or changing the test command makes the build fail its proof. If a test is truly wrong, stop and say which and why instead of changing it.
 1. Read the tests and the files involved.
-2. Implement in the project's existing style until ${tests.cmd} passes. You may add new tests.
+2. Implement in the project's existing style until ${tests.cmd} passes. You may add new tests. If it has a web page, start it and check it with see_page.
 3. Run ${tests.cmd} once more and say which criteria pass. ox will then run held-out tests you have not seen and try small breaks in your code to check the tests catch them.`;
   return { testsFirst, code, contract: { outcome: spec.summary || spec.title, verification: `gate: ${tests.cmd}` } };
 }
