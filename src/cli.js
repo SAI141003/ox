@@ -7522,8 +7522,27 @@ async function runSubcommand(cmd, args) {
         }
         return;
       }
+      if (['imessage', 'signal', 'whatsapp'].includes(action)) {
+        const G = await import('./text-gateway.js');
+        const mode = flag('--mode') ? normalizeMode(flag('--mode')) : null;
+        if (flag('--mode') && !mode) { console.log(c.red(`--mode must be one of: auto, ${MODE_NAMES.join(', ')}`)); process.exitCode = 3; return; }
+        const ac = new AbortController();
+        process.on('SIGINT', () => { ac.abort(); process.exit(0); });
+        const cwd = path.resolve(flag('--cwd') ?? process.cwd());
+        const state = { ...G.loadTextState(action), cwd };
+        try {
+          const source = action === 'imessage' ? G.imessageSource({ state }) : action === 'signal' ? G.signalSource({ number: flag('--number') ?? state.number ?? process.env.SIGNAL_NUMBER }) : G.whatsappSource({ state });
+          if (action === 'signal' && flag('--number')) state.number = flag('--number');
+          await G.runTextGateway(source, { cwd, agent: flag('--agent') ?? null, mode, signal: ac.signal, state });
+        } catch (e) {
+          console.log(c.red(String(e?.message ?? e)));
+          process.exitCode = 1;
+        }
+        return;
+      }
       if (action === 'unpair') {
         const which = String(args[1] ?? 'all').toLowerCase();
+        if (['imessage', 'signal', 'whatsapp'].includes(which)) { const G = await import('./text-gateway.js'); const st = G.loadTextState(which); delete st.owner; G.saveTextState(which, st); console.log(c.green(`unpaired ${which}`)); return; }
         if (which === 'all' || which === 'telegram') { const st = tg.loadState(); delete st.owner; tg.saveState(st); }
         if (which === 'all' || which === 'discord') { const dc = await import('./discord-gateway.js'); const st = dc.loadState(); delete st.owner; dc.saveState(st); }
         if (which === 'all' || which === 'slack') { const sl = await import('./slack-gateway.js'); const st = sl.loadState(); delete st.owner; sl.saveState(st); }
@@ -7537,7 +7556,10 @@ async function runSubcommand(cmd, args) {
       console.log(c.dim('  ox gateway telegram --token <token from @BotFather> [--cwd <project>] [--mode <mode>] [--agent <name>]'));
       console.log(c.dim('  ox gateway discord  --token <bot token from discord.com/developers> [--cwd <project>] [--mode <mode>] [--agent <name>]'));
       console.log(c.dim('  ox gateway slack    --app-token xapp-… --bot-token xoxb-… (api.slack.com/apps, Socket Mode) [--cwd <project>] [--mode <mode>] [--agent <name>]'));
-      console.log(c.dim('  ox gateway unpair [telegram|discord|slack]'));
+      console.log(c.dim('  ox gateway imessage  (Mac; give your terminal Full Disk Access) [--cwd <project>]'));
+      console.log(c.dim('  ox gateway signal --number +1… (needs signal-cli) [--cwd <project>]'));
+      console.log(c.dim('  ox gateway whatsapp  (Cloud API keys, webhook on ox serve) [--cwd <project>]'));
+      console.log(c.dim('  ox gateway unpair [telegram|discord|slack|imessage|signal|whatsapp]'));
       console.log(line('telegram', st));
       console.log(line('discord', dst));
       const sst = (await import('./slack-gateway.js')).loadState();
