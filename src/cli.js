@@ -6598,6 +6598,31 @@ async function runSubcommand(cmd, args) {
         } catch {}
         return;
       }
+      if (sub === 'web') {
+        const W = await import('./phone-web.js');
+        const target = W.appTarget();
+        if (!target) { console.log(c.red('ox is not running here: open the OX app, or run ox serve, then try again')); process.exitCode = 1; return; }
+        const key = W.phoneKey({ fresh: args.includes('--new-key') });
+        const pi = args.indexOf('--port');
+        const web = await W.startPhoneWeb({ key, target, ...(pi >= 0 ? { port: Number(args[pi + 1]) } : {}) });
+        const addrs = W.phoneAddresses();
+        if (!addrs.length) console.log(c.yellow('no network address found: connect to Wi-Fi or Tailscale'));
+        const links = addrs.map((a) => `http://${a}:${web.port}/pair?key=${key}`);
+        console.log(c.green('Open this on your phone, on the same Wi-Fi or Tailscale, then bookmark the page:'));
+        for (const l of links) console.log(`  ${l}`);
+        console.log(c.dim('Whoever has this link can run anything ox can. Show it to nobody. Old links stop working with: ox phone web --new-key'));
+        console.log(c.dim('Plain HTTP: fine on your own network, encrypted over Tailscale. Do not expose this port to the internet. Ctrl-C stops it.'));
+        try {
+          const { spawnSync } = await import('node:child_process');
+          const { handsPath } = await import('./mac-control.js');
+          const hb = handsPath();
+          const png = path.join(os.tmpdir(), `ox-phone-web-${process.pid}.png`);
+          if (hb && links[0] && spawnSync(hb, ['qr', links[0], png]).status === 0) { spawnSync('open', [png]); setTimeout(() => { try { fs.rmSync(png, { force: true }); } catch {} }, 120_000).unref?.(); }
+        } catch {}
+        await new Promise((res) => process.once('SIGINT', res));
+        await web.close();
+        return;
+      }
       if (sub === 'forget' || sub === 'rm') { console.log(P.forgetDevice(args[1] ?? '') ? `${c.green('✓')} forgotten: that phone can no longer reach this Mac` : c.yellow('no such phone')); return; }
       if (sub === 'serve') {
         const b = await P.startPhoneBridge();
