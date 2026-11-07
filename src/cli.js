@@ -4973,7 +4973,7 @@ const SUB_USAGE = {
   usage: 'usage: ox usage [--days <n>] [--json]  — tokens and cost by model, agent, surface, project and day',
   cloud: 'usage: ox cloud setup [--model <model>] [--key <NAME>] [--store-key] | run "<task>" [--model <model>] [--max-cost <usd>] | status  — ox on GitHub Actions: reviews every PR, works with your laptop off',
   computer: 'usage: ox computer [status] | stop | allow <app> | deny <app>  — which apps ox may use on your screen, and stop it from anywhere',
-  market: 'usage: ox market [search] ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
+  market: 'usage: ox market [search] ["<search>"] | update [name] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
   hook: 'usage: ox hook <claude|codex|gemini|cursor|copilot> [event]  — run by the agent itself with the event on stdin (set up with: ox hooks install <agent>)',
   'hook-relay': 'usage: ox hook-relay <agent> <session id>  — started by ox hook; one per agent session, not run by hand',
   hooks: 'usage: ox hooks install <claude|codex|gemini|cursor|copilot> [--yes] | uninstall <agent> [--yes] | status | safe on|off',
@@ -7082,6 +7082,18 @@ async function runSubcommand(cmd, args) {
         try { const list = await mk.addCatalog(args[1] ?? ''); console.log(c.green(`catalogues: ${list.join(', ')}`)); } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; }
         return;
       }
+      if (args[0] === 'update') {
+        const { updatePlugins } = await import('./plugins.js');
+        const rows = await updatePlugins({ names: args.slice(1) });
+        if (!rows.length) console.log(c.dim('no plugins installed'));
+        for (const r of rows) {
+          if (r.status === 'updated') console.log(c.green(`updated ${r.name}${r.to ? ` to ${r.to}` : ''}`));
+          else if (r.status === 'same') console.log(c.dim(`${r.name} is up to date`));
+          else if (r.status === 'skipped') console.log(c.dim(`${r.name}: ${r.why}`));
+          else { console.log(c.yellow(`${r.name} kept as it was: ${r.why}`)); process.exitCode = 1; }
+        }
+        return;
+      }
       if (args[0] === 'install') {
         const target = String(args[1] ?? '');
         const at = target.match(/^([\w.-]+)@([\w.-]+\/[\w.-]+)$/);
@@ -8264,6 +8276,9 @@ async function replWithBudget(config, opts, flags, budget) {
           case 'tool-end': {
             const snip = `${ev.ms}ms · ${ev.bytes}b`;
             process.stdout.write(`${renderToolEnd(ev.name, { content: snip }, ev.isError)}\n`);
+            if (!ev.isError && ['see_page', 'screenshot', 'desktop', 'create_media'].includes(ev.name)) {
+              try { const { showToolImage } = await import('./terminal-image.js'); showToolImage(ev.output ?? ev.content); } catch {}
+            }
             if (ev.name === 'show_ui' && ev.meta?.canvas?.text) {
               process.stdout.write(`\n${ev.meta.canvas.text}\n`);
               if (ev.meta.canvas.actions?.length) process.stdout.write(`${c.dim('  type a number to press a button · /ui to redraw')}\n`);

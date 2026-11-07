@@ -30,6 +30,7 @@ import { webTaskTool, WEB_TASK_TOOL_SCHEMAS, WEB_TASK_TOOLS } from './web-task.j
 import { critiqueTool, CRITIQUE_TOOL_SCHEMAS, CRITIQUE_TOOLS } from './critique.js';
 import { seePageTool, SEE_PAGE_TOOL_SCHEMAS, SEE_PAGE_TOOLS, SEE_PAGE_KEYWORDS } from './see-page.js';
 import { runScriptTool, RUN_SCRIPT_TOOL_SCHEMAS, RUN_SCRIPT_TOOLS, RUN_SCRIPT_KEYWORDS } from './run-script.js';
+import { declaredPrice } from '../paid-tools.js';
 import { showUiTool, CANVAS_TOOL_SCHEMAS, CANVAS_TOOLS, CANVAS_KEYWORDS } from './canvas.js';
 import { loadToolsTool } from './load-tools.js';
 import { agentMessagingToolSchemas, AGENT_MESSAGE_TOOLS } from '../agent-teams.js';
@@ -344,11 +345,12 @@ export function listToolSchemas(ctx = {}, strictSchemas = false) {
     for (const t of ctx.mcpTools) {
       if (!t || typeof t.name !== 'string') continue;
       const qualified = `mcp__${t.server ?? 'server'}__${t.name}`;
+      const cost = declaredPrice(t);
       schemas.push({
         name: qualified,
         description:
           typeof t.description === 'string' && t.description.trim()
-            ? `[MCP:${t.server}] ${t.description}`
+            ? `[MCP:${t.server}]${cost ? ` [costs $${cost} per call]` : ''} ${t.description}`
             : `[MCP:${t.server}] tool '${t.name}' (no description provided by server).`,
         input_schema: t.input_schema ?? t.inputSchema ?? { type: 'object', properties: {} },
       });
@@ -716,7 +718,7 @@ export function relevantSkillToolNames({ skillIndex = '', message = '', availabl
 // True when the candidate cut would drop a tool from a group this message is
 // about. Such a cut is refused — a dropped tool the request needs is silently
 // unsatisfiable, which is worse than carrying the bytes.
-function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, critiqueOn, agentOn, canvasOn, mediaOn, skillOn, graphOn, skillNames }) {
+function dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, seePageOn, runScriptOn, critiqueOn, agentOn, canvasOn, mediaOn, skillOn, graphOn, skillNames }) {
   const kept = new Set(filtered.map((s) => s?.name));
   const skillSet = new Set(skillNames);
   for (const s of schemas) {
@@ -813,7 +815,7 @@ export function narrowToolSchemas(schemas, { message = '', relevantSkillTools, s
   const filtered = schemas.filter((s) => typeof s?.name === 'string' && keep.has(s.name));
   if (filtered.length < NARROW_FLOOR) return schemas;
   if (filtered.length === schemas.length) return schemas;
-  if (dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, critiqueOn, agentOn, canvasOn, mediaOn, skillOn, graphOn, skillNames })) return schemas;
+  if (dropsRelevantTool(schemas, filtered, { memoryOn, operatorOn, webOn, webTaskOn, seePageOn, runScriptOn, critiqueOn, agentOn, canvasOn, mediaOn, skillOn, graphOn, skillNames })) return schemas;
   // A short task with one target ("fix the failing test in src/math.js") needs
   // no planning list or delegation: those definitions (~450 tokens on every
   // request) wait behind load_tools. Anything that sounds multi-step keeps them.
@@ -881,8 +883,11 @@ export async function dispatchTool(name, args, ctx = {}) {
       if (typeof ctx?.mcpCall !== 'function') {
         return { content: `${name}: MCP unavailable — no MCP client is connected.`, isError: true };
       }
+      const { checkPaidCall, notePaidCall } = await import('../paid-tools.js');
+      const paid = await checkPaidCall(name, args ?? {}, ctx);
+      if (!paid.ok) return { content: paid.content, isError: true };
       const raw = await ctx.mcpCall(name, args ?? {}, ctx);
-      return offloadLarge(name, normalizeMcpResult(raw), ctx);
+      return notePaidCall(offloadLarge(name, normalizeMcpResult(raw), ctx), paid.price, ctx);
     }
     // Wave 6b: subagent delegation — spawn a nested agent loop.
     if (name === 'subagent') {
