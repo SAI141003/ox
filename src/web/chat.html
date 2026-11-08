@@ -306,6 +306,8 @@
   .bots-empty-art { display:grid; place-items:center; min-height:120px; border-radius:12px; background:color-mix(in srgb,var(--bg) 55%,transparent); }
   .bots-empty-art svg { width:94px; height:94px; filter:drop-shadow(0 8px 16px rgba(83,128,255,.2)); }
   .bots-empty .btn { margin-top:16px; }
+  /* On a phone the mascot would sit on the message box and its Send button. */
+  @media (max-width:600px) { .pet-dock { display:none !important; } }
   @media (max-width:600px) { .bots-empty { grid-template-columns:1fr; } .bots-empty-art { display:none; } }
   .bot-edit { display: flex; flex-direction: column; gap: 12px; }
   .bot-edit label { display: flex; flex-direction: column; gap: 6px; }

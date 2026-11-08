@@ -306,6 +306,27 @@ export function rewindTo(sessionFile, n) {
   return hit;
 }
 
+/**
+ * A new session holding this one's history, up to just before turn n (all of it with no n).
+ * The original is left as it was, so you can try another way from there.
+ */
+export function forkSessionAt(sessionFile, n = null, cwd = process.cwd()) {
+  const lines = fs.readFileSync(sessionFile, 'utf8').split('\n').filter((l) => l.trim());
+  const parse = (l) => { try { return JSON.parse(l); } catch { return null; } };
+  let keep = lines;
+  let label = null;
+  if (n != null) {
+    const at = lines.findIndex((l) => { const ev = parse(l); return ev?.t === 'rewind-point' && String(ev.id) === String(n); });
+    if (at < 0) throw new Error(`ox: no rewind point ${n} (available: ${rewindPoints(sessionFile).map((p) => p.id).join(', ') || 'none'})`);
+    label = String(parse(lines[at])?.label ?? '');
+    keep = lines.slice(0, at);
+  }
+  const { t: _t, created: _c, cwd: _d, ...meta } = parse(keep[0])?.t === 'meta' ? parse(keep[0]) : {};
+  const session = createSession(cwd, { ...meta, forkedFrom: path.basename(sessionFile) });
+  for (const l of keep) { const ev = parse(l); if (ev && ev.t !== 'meta') appendRawEvent(session.file, ev); }
+  return { session, label };
+}
+
 function peekEvents(file, maxLines = 20) {
   let text;
   try {

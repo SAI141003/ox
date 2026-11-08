@@ -859,6 +859,8 @@ export class McpHub {
           name: t.name,
           qualified: `mcp__${state.name}__${t.name}`,
           schema: {
+            ...(t.annotations ? { annotations: t.annotations } : {}),
+            ...(t._meta ? { _meta: t._meta } : {}),
             description: typeof t.description === 'string' ? t.description : '',
             input_schema:
               t.inputSchema && typeof t.inputSchema === 'object'
@@ -999,7 +1001,7 @@ export class McpHub {
           name = `mcp__${t.server}__${collisionHash(t.name)}`;
         }
         seen.set(name, true);
-        out.push({ name, description: t.schema.description, input_schema: t.schema.input_schema });
+        out.push({ name, description: t.schema.description, input_schema: t.schema.input_schema, ...(t.schema.annotations ? { annotations: t.schema.annotations } : {}), ...(t.schema._meta ? { _meta: t.schema._meta } : {}) });
       }
     }
     return out;

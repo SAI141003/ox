@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 // Claude Code plugin compatibility.
 //
 // The plugin ecosystem (the Claude plugin directory, GitHub marketplaces,
@@ -214,6 +215,59 @@ export async function addPlugin(source, { home = os.homedir(), force = false, st
   } finally {
     fs.rmSync(stage, { recursive: true, force: true });
   }
+}
+
+/**
+ * Bring installed plugins up to date. Each new copy is scanned first: one that fails is held back
+ * and the installed copy stays. Your enabled and MCP switches are kept. Linked plugins are not touched.
+ * → [{ name, status: 'updated' | 'same' | 'held' | 'failed' | 'skipped', from, to, why }]
+ */
+export async function updatePlugins({ home = os.homedir(), names = null, stager = stageSource } = {}) {
+  const out = [];
+  const doc = readRegistry(home);
+  for (const [name, row] of Object.entries(doc.plugins)) {
+    if (names?.length && !names.includes(name)) continue;
+    if (row.kind !== 'copy' || !row.source) { out.push({ name, status: 'skipped', why: 'linked, or no source to update from' }); continue; }
+    let staged = null;
+    try {
+      staged = stager(row.source);
+      const plugin = readPlugin(staged.root);
+      if (!plugin || plugin.name !== name) { out.push({ name, status: 'held', why: plugin ? `the source now holds a plugin called ${plugin.name}` : 'the source no longer holds a plugin' }); continue; }
+      const findings = await scanPlugin(plugin);
+      if (findings.length) { out.push({ name, status: 'held', why: `${findings.length} safety finding${findings.length === 1 ? '' : 's'} in the new version`, findings }); continue; }
+      if (treeHash(staged.root) === treeHash(row.path)) { out.push({ name, status: 'same', from: row.version }); continue; }
+      const swap = `${row.path}.new-${process.pid}`;
+      fs.rmSync(swap, { recursive: true, force: true });
+      copyDir(staged.root, swap);
+      fs.rmSync(row.path, { recursive: true, force: true });
+      fs.renameSync(swap, row.path);
+      const fresh = readRegistry(home);
+      fresh.plugins[name] = { ...fresh.plugins[name], version: plugin.version, updatedAt: new Date().toISOString() };
+      writeRegistry(home, fresh);
+      out.push({ name, status: 'updated', from: row.version, to: plugin.version });
+    } catch (e) {
+      out.push({ name, status: 'failed', why: String(e?.message ?? e).slice(0, 200) });
+    } finally {
+      if (staged?.stage) fs.rmSync(staged.stage, { recursive: true, force: true });
+    }
+  }
+  return out;
+}
+
+function treeHash(dir) {
+  const h = crypto.createHash('sha256');
+  const walk = (d, rel = '') => {
+    let list = [];
+    try { list = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of list.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (e.name === '.git') continue;
+      const r = `${rel}/${e.name}`;
+      if (e.isDirectory()) walk(path.join(d, e.name), r);
+      else if (e.isFile()) { h.update(r); h.update(fs.readFileSync(path.join(d, e.name))); }
+    }
+  };
+  walk(dir);
+  return h.digest('hex');
 }
 
 /** Link the Claude Code plugins already installed on this machine (read in place). */

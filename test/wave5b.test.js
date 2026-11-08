@@ -225,7 +225,7 @@ test('runAgent emits exactly one tool-narrowing event and sends the narrowed off
   // 46 -> 48: request_secret (an agent asks you for a missing key; src/tools/secret.js)
   // and desktop (the rest of agent-desktop; src/tools/desktop.js); 49: set_project (a new project
   // gets its own folder and the run moves there; src/tools/project.js).
-  assert.equal(narrows[0].total, 50);
+  assert.equal(narrows[0].total, 52);
   // core nine + two declared db tools + load_tools (the withheld ones stay one call away)
   assert.equal(narrows[0].offered, 12, 'core nine + two declared db tools + load_tools');
   const wireNames = (bodies[0]?.tools ?? []).map((x) => x.function?.name);
@@ -249,7 +249,7 @@ test('runAgent emits exactly one tool-narrowing event and sends the narrowed off
   });
   assert.equal(events2.some((e) => e.type === 'tool-narrowing'), false);
   const disabledBody = bodies[bodies.length - 1];
-  assert.equal((disabledBody?.tools ?? []).length, 50, 'full offer (incl. show_ui and subagent) sent when disabled');
+  assert.equal((disabledBody?.tools ?? []).length, 52, 'full offer (incl. show_ui and subagent) sent when disabled');
 });
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,27 @@
+name: ox
+description: Review pull requests with ox, or give ox a task that ends in a pull request. Your laptop can be off.
+branding: { icon: check-circle, color: blue }
+inputs:
+  mode: { description: "review (comment on this pull request) or task (do the task, open a pull request)", default: review }
+  task: { description: "What to do, for mode task", default: "" }
+  model: { description: "The ox model, such as nvidia:minimaxai/minimax-m3.1-flash or ox-claude", required: true }
+  max-cost: { description: "Stop at this many dollars", default: "2" }
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with: { node-version: 22 }
+    - shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npm ci --omit=dev --no-audit --no-fund
+    - shell: bash
+      env:
+        OX_CI_MODE: ${{ inputs.mode }}
+        OX_CI_TASK: ${{ inputs.task }}
+        OX_CI_MODEL: ${{ inputs.model }}
+        OX_CI_MAX_COST: ${{ inputs.max-cost }}
+        OX_UNATTENDED: "1"
+        OX_ISLAND: "0"
+        OX_LEARN: "0"
+        OX_NO_KEYSTORE: "1"
+      run: node "${{ github.action_path }}/bin/ox.js" cloud ci

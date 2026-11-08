@@ -1,6 +1,6 @@
 # ox against every major coding agent (2026-11-06)
 
-Built from each project's own docs, changelogs, release notes and GitHub data, read on 2026-11-06, and from ox's code and real runs. Y yes, P partly, N no, ? could not be verified from a first-party source (not the same as no), — does not apply. ox's cells marked "in PR" are in [the open pull request](https://github.com/SAI141003/ox/pulls) and not released yet.
+Built from each project's own docs, changelogs, release notes and GitHub data, read on 2026-11-06, and from ox's code and real runs. Y yes, P partly, N no, ? could not be verified from a first-party source (not the same as no), — does not apply. Checked against ox v0.1.31.
 
 "cocou" in the request was read as Claude Code, Claude Cowork and Codex.
 
@@ -10,14 +10,14 @@ Built from each project's own docs, changelogs, release notes and GitHub data, r
 |---|---|---|---|---|---|---|
 | Controls desktop apps | Y (accessibility tree, any model) | Y (Mac + Windows, Pro/Max/Ultra only) | Y (Mac + Windows) | Y (Mac, Windows, Linux, any model) | P (cloud agents use their own computer) | P (phone nodes; desktop not documented) |
 | Works in the background (your pointer stays yours) | Y (tested: TextEdit, 61 s) | N (hides your other apps while working) | Y (Mac only; Windows takes the pointer) | Y (all three platforms) | Y (in the cloud) | ? |
-| Per-app permission with "always allow" | Y (in PR: once or always, by app) | P (per-app, per-session) | Y (saved under Always-allowed apps) | Y (Bounded mode, a reviewed manifest) | — | ? |
-| Warns on apps that equal shell access (Terminal, Finder, System Settings) | Y (in PR: warns, never always-allowed) | Y | Y (refuses terminals outright) | P (blocks dangerous keys and shell text) | — | ? |
-| Presses Return and any keyboard shortcut | Y (in PR: asks; lock, logout, force quit refused. Tested in TextEdit) | Y | Y (sensitive actions ask) | P (force delete and lock screen blocked) | — | ? |
-| Stop from anywhere (Esc) | P (in PR: Esc needs the island's Accessibility; ox computer stop always works) | Y (Esc, key press swallowed) | ? | ? | — | ? |
-| One session controls the screen at a time | Y (in PR: lock file) | Y (lock file) | P (several agents, background) | ? | — | ? |
-| "Using your computer" notice | Y (in PR: macOS notification) | Y (notification each turn) | Y (picture-in-picture preview) | ? | — | ? |
+| Per-app permission with "always allow" | Y (once or always, by app) | P (per-app, per-session) | Y (saved under Always-allowed apps) | Y (Bounded mode, a reviewed manifest) | — | ? |
+| Warns on apps that equal shell access (Terminal, Finder, System Settings) | Y (warns, never always-allowed) | Y | Y (refuses terminals outright) | P (blocks dangerous keys and shell text) | — | ? |
+| Presses Return and any keyboard shortcut | Y (asks; lock, logout, force quit refused. Tested in TextEdit) | Y | Y (sensitive actions ask) | P (force delete and lock screen blocked) | — | ? |
+| Stop from anywhere (Esc) | P (Esc needs the island's Accessibility; ox computer stop always works) | Y (Esc, key press swallowed) | ? | ? | — | ? |
+| One session controls the screen at a time | Y (lock file) | Y (lock file) | P (several agents, background) | ? | — | ? |
+| "Using your computer" notice | Y (macOS notification) | Y (notification each turn) | Y (picture-in-picture preview) | ? | — | ? |
 | Keeps running with the lid closed or locked | Y (new: timer, turns sleep back on itself) | N (Mac must be awake; or use cloud) | Y (Locked use, Mac only) | ? | Y (cloud) | P (server install) |
-| Refuses unattended screen actions | Y (in PR: schedules and daemon runs refused) | — (needs an interactive session) | ? | Y (cron refused) | — | ? |
+| Refuses unattended screen actions | Y (schedules and daemon runs refused) | — (needs an interactive session) | ? | Y (cron refused) | — | ? |
 | Voice on your own screen, with a pointer | Y (island, Fn to talk) | N | P (realtime voice, no pointer) | P (voice, wake word) | P (voice calls with agents (new Nov 6)) | P (voice on phone nodes) |
 | Errands with no AI at all (music, apps, timers) | Y (0.1 s, offline) | N | N | N | N | N |
 
@@ -28,10 +28,10 @@ Built from each project's own docs, changelogs, release notes and GitHub data, r
 | Plan, write, run, fix loop | Y | Y | Y | Y | Y | Y |
 | Failing test first, then proves the fix | Y (ox fix, ox build: ox runs it itself) | N (on request) | N (on request) | N (on request) | N (on request) | ? |
 | Long goal that refuses "done" until proven | Y (/goal, ox auto) | P (workflows) | P | Y (goals, loops) | P (automations) | P |
-| Type errors shown after each edit (LSP) | Y (in PR: tested with clangd; uses servers you have) | P (plugins) | ? | Y (edits in ms with LSP on) | Y (IDE) | ? |
-| Sees its own app to check it (screenshots, clicks through) | P (possible by hand; not part of build) | Y (native apps, Chrome, iOS Simulator) | Y (computer use, browser) | Y | Y (records demos) | P |
-| Survives provider rate limits without stalling | Y (in PR: waits, honours Retry-After, returns to main model) | Y (one vendor) | Y (one vendor) | Y (credential pools, fallback) | Y (one vendor) | Y (failover) |
-| Scripts many tool calls in one step (fewer tokens) | N | Y (dynamic workflows) | ? | Y (execute_code) | ? | ? |
+| Type errors shown after each edit (LSP) | Y (tested with clangd; uses servers you have) | P (plugins) | ? | Y (edits in ms with LSP on) | Y (IDE) | ? |
+| Sees its own app to check it (screenshots, clicks through) | Y (see_page in a real browser; desktop apps by accessibility) | Y (native apps, Chrome, iOS Simulator) | Y (computer use, browser) | Y | Y (records demos) | P |
+| Survives provider rate limits without stalling | Y (waits, honours Retry-After, returns to main model) | Y (one vendor) | Y (one vendor) | Y (credential pools, fallback) | Y (one vendor) | Y (failover) |
+| Scripts many tool calls in one step (fewer tokens) | Y (run_script: read-only tools) | Y (dynamic workflows) | ? | Y (execute_code) | ? | ? |
 | Publishes what it builds to a live URL | P (ox deploy) | P (via connectors) | ? | ? | Y (Live Apps with database and sign-in) | ? |
 | Language migration with proof | Y (ox port) | N (by prompting) | N (by prompting) | N (by prompting) | N (by prompting) | ? |
 
@@ -52,10 +52,10 @@ Built from each project's own docs, changelogs, release notes and GitHub data, r
 |---|---|---|---|---|---|---|
 | Terminal | Y | Y | Y | Y | Y | Y |
 | Desktop app | Y (Mac best; 4 platform builds) | Y | Y | Y | Y | Y (Mac) |
-| VS Code / JetBrains plugin | P (ACP only) | Y (both) | Y | P (ACP) | Y (is an IDE) | N |
-| Runs in the cloud with your laptop off | N | Y (web, routines) | Y | P (Daytona, Modal, Vercel backends) | Y (up to 300 repos) | P (self-host) |
-| Phone app that steers a session | P (iPhone companion: approvals) | Y (Remote Control, Dispatch) | Y (iOS) | P (phone web view) | Y (iOS with Siri) | Y (iOS, Android nodes) |
-| Chat app control | P (Telegram, Discord, Slack) | P (Channels: Telegram, Discord, iMessage; Slack) | N | Y (20+ platforms) | P (Slack triggers) | Y (12+ including WhatsApp, Signal) |
+| VS Code / JetBrains plugin | P (VS Code extension, not on the Marketplace; JetBrains by ACP) | Y (both) | Y | P (ACP) | Y (is an IDE) | N |
+| Runs in the cloud with your laptop off | Y (ox cloud on your GitHub Actions; not run live yet) | Y (web, routines) | Y | P (Daytona, Modal, Vercel backends) | Y (up to 300 repos) | P (self-host) |
+| Phone app that steers a session | Y (ox phone web: the whole app in the browser; iPhone app approves) | Y (Remote Control, Dispatch) | Y (iOS) | P (phone web view) | Y (iOS with Siri) | Y (iOS, Android nodes) |
+| Chat app control | Y (Telegram, Discord, Slack, iMessage, Signal, WhatsApp) | P (Channels: Telegram, Discord, iMessage; Slack) | N | Y (20+ platforms) | P (Slack triggers) | Y (12+ including WhatsApp, Signal) |
 | Several machines in one view | Y (mesh, Office floors) | ? | P (connected backends) | Y (all gateways in one window) | ? | P (nodes) |
 | Runs code in Docker / SSH / remote sandbox | P (Docker backend) | Y (cloud) | Y (cloud) | Y (6 backends) | Y | P |
 | Windows and Linux computer use | P (needs agent-desktop installed) | P (Desktop on Windows; no Linux) | P (Windows foreground; no Linux) | Y | — | ? |
@@ -69,7 +69,7 @@ Built from each project's own docs, changelogs, release notes and GitHub data, r
 | Small first request | Y (about 2,300 tokens, measured) | ? | ? | P (was 10,924 in our Oct test) | ? | ? |
 | Drops old output on uncached providers | Y (new: from 32k tokens) | P (compaction) | P (compaction) | Y (compression) | P | ? |
 | Hard spending stop | Y (--max-cost) | ? | ? | P (paid tool limits) | P (plan limits) | ? |
-| Price shown on each paid tool call | N | ? | ? | Y | ? | ? |
+| Price shown on each paid tool call | Y (with a chat limit) | ? | ? | Y | ? | ? |
 | No account, no telemetry | Y | N | N | P (optional portal) | N | P (version check only) |
 
 ## Memory, skills and plugins
@@ -83,7 +83,7 @@ Built from each project's own docs, changelogs, release notes and GitHub data, r
 | MCP | Y | Y | Y | Y | Y | Y |
 | Plugin marketplace | Y (1,129 from 11 catalogues) | Y | Y | Y (1,050+) | Y (20+ apps) | Y (ClawHub) |
 | Plugins scanned before install | Y (every file, then a second scanner) | ? | ? | P (verified tier) | ? | P (trust guidance) |
-| Plugins update themselves safely | N | Y | ? | Y | ? | ? |
+| Plugins update themselves safely | P (ox market update, by hand; held back if flagged) | Y | ? | Y | ? | ? |
 
 ## Safety and undo
 
@@ -93,19 +93,19 @@ Built from each project's own docs, changelogs, release notes and GitHub data, r
 | OS-enforced sandbox | P (opt-in, off by default) | Y | Y | P (plugin) | Y (cloud) | P |
 | Security scan on every edit | Y (62 patterns) | P (review) | P | N | Y (Security Review) | N |
 | Undo the last turn's files | Y (/undo) | Y (checkpoints) | ? | Y | Y | ? |
-| Rewind, edit an old message, or fork | P (rewinds, cannot edit or fork) | Y | P (fork) | Y (/rewind (new)) | Y | ? |
+| Rewind, edit an old message, or fork | Y (/rewind n text, /fork n) | Y | P (fork) | Y (/rewind (new)) | Y | ? |
 
 ## Review, code and creative work
 
 | Feature | ox | Claude Code + Cowork | Codex / ChatGPT | Hermes Agent | Cursor | OpenClaw |
 |---|---|---|---|---|---|---|
 | Reviews your changes | Y (ox review) | Y | Y | P | Y (Bugbot) | N |
-| Automatic review on every pull request | N | Y | Y | N | Y | N |
-| Runs in CI (GitHub Action) | N | Y (GitHub, GitLab) | Y | ? | Y | N |
+| Automatic review on every pull request | Y (ox cloud setup; not run live yet) | Y | Y | N | Y | N |
+| Runs in CI (GitHub Action) | Y (action.yml; not run live yet) | Y (GitHub, GitLab) | Y | ? | Y | N |
 | Code graph you can query | Y (ox graph) | ? | ? | ? | P (index) | ? |
 | Security audit command | Y (ox secure) | Y | ? | ? | Y | ? |
 | Images and video made on your machine | Y (no key) | ? | ? | N (hosted) | ? | ? |
-| Pictures shown in the terminal | N | ? | P (previews) | Y (new) | N | N |
+| Pictures shown in the terminal | P (iTerm, WezTerm, VS Code, kitty, Ghostty) | ? | P (previews) | Y (new) | N | N |
 | Charts and forms in chat | Y (any model) | Y (artifacts) | Y (canvas) | ? | Y (canvases) | P |
 
 ## Other agents checked
@@ -141,24 +141,24 @@ Built from each project's own docs, changelogs, release notes and GitHub data, r
 
 | # | Area | Gap | Why it matters | Status | Fix |
 |---|---|---|---|---|---|
-| 1 | Laptop | Return refused always, and only ten ⌘ shortcuts allowed | Why ox cannot finish many GUI jobs: it can type a search but never run it. | Fixed in this PR | Return and other shortcuts can be pressed; chat apps and unusual shortcuts ask. Lock, log out, force quit and file-delete keys stay refused, and so does paying. |
-| 2 | Laptop | No per-app "always allow" | Every click asks, so long GUI jobs need constant babysitting. | Fixed in this PR | Allow an app once or always; listed in ~/.ox/computer-apps.json and removable with ox computer. |
-| 3 | Laptop | No warning for apps that equal shell access | Approving Terminal or Finder quietly grants far more than it looks. | Fixed in this PR | Terminals, Finder and System Settings carry a warning and cannot be always-allowed. |
-| 4 | Laptop | No stop from anywhere, no notice, no one-at-a-time lock | You cannot grab control back fast. | Fixed in this PR | Esc in the island (needs its Accessibility permission) or ox computer stop; a lock; a macOS notice. |
-| 5 | Laptop | Unattended runs could use the screen, and Send or Delete were all-or-nothing | A scheduled job could click anything, while you could not approve Send even by hand. | Fixed in this PR | Schedules and daemon runs are refused. Send and Delete ask every time, even with -y. |
-| 6 | Building | Rate limits burn retries, then drop to a slow backup for the whole run | The biggest cause of "slow" on free NVIDIA: the build test lost minutes to it. | Fixed in this PR | Honours Retry-After, waits with backoff, and tries your main model again after a backup. |
-| 7 | Building | No type errors after an edit (LSP) | Hermes, Crush and IDEs catch mistakes at once. ox finds out at test time, or not at all. | Fixed in this PR | Uses a language server already on your machine; errors come back with the edit result. |
-| 8 | Building | Does not look at the UI it just built | Claude Code, Codex and Cursor click through their own apps. | Next | Add a "see it working" step to ox build for web and native apps. |
-| 9 | Building | No scripted multi-tool calls | Hermes execute_code collapses long pipelines into one model call, saving tokens. | Next | A sandboxed script tool that calls ox's read-only tools. |
-| 10 | Everywhere | Cannot run with your laptop off | Claude, Codex and Cursor have cloud agents; Hermes uses Daytona, Modal, Vercel. | Later | Run ox on a rented machine or in a sandbox service, driven through mesh. |
-| 11 | Everywhere | Phone can approve but not steer | Claude Remote Control and Dispatch, ChatGPT iOS and Cursor iOS can. | Next | Grow the iPhone companion into a chat with live sessions. |
-| 12 | Everywhere | No VS Code or JetBrains plugin | Most developers start there. | Later | A thin extension over ACP. |
-| 13 | Everywhere | No WhatsApp, Signal or iMessage gateway | Hermes has 20+ platforms, OpenClaw 12+. | Next | Add these three first. |
-| 14 | Review | No automatic pull request review, no GitHub Action | Bugbot, Claude and Codex review every PR. | Next | ox review as a GitHub Action. |
-| 15 | Sessions | Rewind cannot edit an old message or fork | Hermes and Claude Code do this. | Next | Add edit-and-resend and fork to /rewind. |
-| 16 | Voice | Voice is one-way turns, no realtime call | Codex, Hermes and Cursor have live calls. | Later | Realtime provider option in the island. |
-| 17 | Cost | No price on paid tool calls | Hermes shows each call's price and a running total. | Later | Add it to the approval prompt. |
-| 18 | Plugins | Plugins do not update themselves | Hermes holds back updates that would break your setup. | Later | ox market update with a rescan. |
+| 1 | Laptop | Return refused always, and only ten ⌘ shortcuts allowed | Why ox cannot finish many GUI jobs: it can type a search but never run it. | Done | Return and other shortcuts can be pressed; chat apps and unusual shortcuts ask. Lock, log out, force quit and file-delete keys stay refused, and so does paying. |
+| 2 | Laptop | No per-app "always allow" | Every click asks, so long GUI jobs need constant babysitting. | Done | Allow an app once or always; listed in ~/.ox/computer-apps.json and removable with ox computer. |
+| 3 | Laptop | No warning for apps that equal shell access | Approving Terminal or Finder quietly grants far more than it looks. | Done | Terminals, Finder and System Settings carry a warning and cannot be always-allowed. |
+| 4 | Laptop | No stop from anywhere, no notice, no one-at-a-time lock | You cannot grab control back fast. | Done | Esc in the island (needs its Accessibility permission) or ox computer stop; a lock; a macOS notice. |
+| 5 | Laptop | Unattended runs could use the screen, and Send or Delete were all-or-nothing | A scheduled job could click anything, while you could not approve Send even by hand. | Done | Schedules and daemon runs are refused. Send and Delete ask every time, even with -y. |
+| 6 | Building | Rate limits burn retries, then drop to a slow backup for the whole run | The biggest cause of "slow" on free NVIDIA: the build test lost minutes to it. | Done | Honours Retry-After, waits with backoff, and tries your main model again after a backup. |
+| 7 | Building | No type errors after an edit (LSP) | Hermes, Crush and IDEs catch mistakes at once. ox finds out at test time, or not at all. | Done | Uses a language server already on your machine; errors come back with the edit result. |
+| 8 | Building | Does not look at the UI it just built | Claude Code, Codex and Cursor click through their own apps. | Done | see_page checks it in a real browser. |
+| 9 | Building | No scripted multi-tool calls | Hermes execute_code collapses long pipelines into one model call, saving tokens. | Done | A sandboxed script tool that calls ox'run_script, with no writes or processes. |
+| 10 | Everywhere | Cannot run with your laptop off | Claude, Codex and Cursor have cloud agents; Hermes uses Daytona, Modal, Vercel. | Done | ox cloud runs on your own GitHub Actions. Not run live on GitHub yet. |
+| 11 | Everywhere | Phone can approve but not steer | Claude Remote Control and Dispatch, ChatGPT iOS and Cursor iOS can. | Done | ox phone web puts the whole app on your phone through a key-checked door. |
+| 12 | Everywhere | No VS Code or JetBrains plugin | Most developers start there. | Partly | VS Code extension in editors/vscode, tested with a stand-in editor; not on the Marketplace. JetBrains still by ACP. |
+| 13 | Everywhere | No WhatsApp, Signal or iMessage gateway | Hermes has 20+ platforms, OpenClaw 12+. | Done | ox gateway imessage, signal, whatsapp, tested with fake apps, not real accounts. |
+| 14 | Review | No automatic pull request review, no GitHub Action | Bugbot, Claude and Codex review every PR. | Done | ox cloud setup. Not run live on GitHub yet. |
+| 15 | Sessions | Rewind cannot edit an old message or fork | Hermes and Claude Code do this. | Done | /rewind n text and /fork n. |
+| 16 | Voice | Voice is one-way turns, no realtime call | Codex, Hermes and Cursor have live calls. | Open | Not built: it needs a realtime provider key to test, and none is connected here. |
+| 17 | Cost | No price on paid tool calls | Hermes shows each call's price and a running total. | Done | Declared prices, a running total, and a limit. |
+| 18 | Plugins | Plugins do not update themselves | Hermes holds back updates that would break your setup. | Partly | ox market update, held back if a scan flags it. Not automatic yet. |
 
 ## Sources
 

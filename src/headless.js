@@ -56,6 +56,8 @@ function splitQualifiedSchemas(entries) {
       name: rest.slice(i + 2),
       description: e.description,
       input_schema: e.input_schema,
+      ...(e.annotations ? { annotations: e.annotations } : {}),
+      ...(e._meta ? { _meta: e._meta } : {}),
     });
   }
   return out;
