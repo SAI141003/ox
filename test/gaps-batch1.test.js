@@ -96,3 +96,21 @@ test('run_script: many reads, only the printed result comes back; it cannot writ
   const slow = await runScriptTool({ code: 'await new Promise(() => setTimeout(() => {}, 99999));', timeoutSeconds: 1 }, ctx);
   assert.match(slow.content, /stopped after 1 s/);
 });
+
+test('run_script cannot reach the network through the built-in modules', async () => {
+  const { runScriptTool } = await import('../src/tools/run-script.js');
+  const ctx = { yolo: true, cwd: home };
+  for (const m of ['net', 'node:http', 'https', 'dgram', 'child_process', 'worker_threads']) {
+    const r = await runScriptTool({ code: `try { process.getBuiltinModule(${JSON.stringify(m)}); console.log('GOT'); } catch (e) { console.log('blocked'); }` }, ctx);
+    assert.match(r.content, /blocked/, m);
+  }
+  const f = await runScriptTool({ code: `console.log(typeof fetch, typeof WebSocket); try { process.binding('tcp_wrap'); console.log('GOT'); } catch { console.log('blocked'); }` }, ctx);
+  assert.match(f.content, /undefined undefined\nblocked/);
+});
+
+test('a caption with </script> cannot end the video page\'s script', async () => {
+  const { scriptJson } = await import('../src/animate.js');
+  const out = scriptJson({ text: '</script><script>alert(1)</script>' });
+  assert.doesNotMatch(out, /<\/script>/i);
+  assert.equal(JSON.parse(out).text, '</script><script>alert(1)</script>');
+});

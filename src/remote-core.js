@@ -123,7 +123,23 @@ export function createRemoteCore({ adapter, state, persist, cwd, agent = null, e
     if (!chat || !text) return;
     if (!state.owner) {
       const code = /^\/pair\s+(\d{6})$/.exec(text)?.[1];
+      // A six-digit code falls to guessing without a limit: five wrong tries and that chat is
+      // ignored; thirty in all and the code is replaced (the new one is printed here only).
+      state.pairMisses ??= {};
+      if ((state.pairMisses[chat] ?? 0) >= 5) return;
+      if (code && code !== state.pairCode) {
+        state.pairMisses[chat] = (state.pairMisses[chat] ?? 0) + 1;
+        state.pairMissTotal = (state.pairMissTotal ?? 0) + 1;
+        if (state.pairMissTotal >= 30) {
+          state.pairCode = String(crypto.randomInt(100000, 1000000));
+          state.pairMissTotal = 0;
+          log(`too many wrong pairing codes: the code is now ${state.pairCode}`);
+        }
+        persist();
+      }
       if (code && code === state.pairCode) {
+        delete state.pairMisses;
+        delete state.pairMissTotal;
         state.owner = chat;
         delete state.pairCode;
         persist();

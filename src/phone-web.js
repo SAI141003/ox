@@ -52,7 +52,7 @@ const cookieOf = (req) => { for (const part of String(req.headers.cookie ?? '').
 export async function startPhoneWeb({ key, target, port = PORT, host = '0.0.0.0', now = () => Date.now(), maxStrikes = 10 } = {}) {
   const strikes = new Map();
   const blocked = (addr) => (strikes.get(addr)?.until ?? 0) > now();
-  const strike = (addr) => { const s = strikes.get(addr) ?? { n: 0, until: 0 }; s.n += 1; if (s.n >= maxStrikes) { s.until = now() + 10 * 60_000; s.n = 0; } strikes.set(addr, s); };
+  const strike = (addr) => { if (strikes.size > 10_000 && !strikes.has(addr)) strikes.clear(); const s = strikes.get(addr) ?? { n: 0, until: 0 }; s.n += 1; if (s.n >= maxStrikes) { s.until = now() + 10 * 60_000; s.n = 0; } strikes.set(addr, s); };
   const deny = (res, code, text) => { res.writeHead(code, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }); res.end(text); };
   const server = http.createServer((req, res) => {
     const addr = req.socket.remoteAddress ?? '?';

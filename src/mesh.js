@@ -325,11 +325,11 @@ class Sealed {
 }
 
 /** Frames off a socket: text lines, and (once both sides offered them) raw byte frames. */
-function lines(sock, onLine, onBytes = null) {
+function lines(sock, onLine, onBytes = null, maxPending = () => MAX_FRAME) {
   let buf = Buffer.alloc(0);
   sock.on('data', (d) => {
     buf = buf.length ? Buffer.concat([buf, d]) : d;
-    if (buf.length > MAX_FRAME) { sock.destroy(); return; }
+    if (buf.length > maxPending()) { sock.destroy(); return; }
     while (buf.length) {
       if (buf[0] === BINARY_FRAME) {
         if (!onBytes?.() || buf.length < 5) { if (!onBytes?.()) sock.destroy(); return; }
@@ -350,7 +350,15 @@ function lines(sock, onLine, onBytes = null) {
   });
 }
 
-function sessionKeys(sharedSecret, me, other, iAmClient) {
+// Before a machine has proved who it is it may send this much, for this long; and only so many
+// strangers at once. A stranger's slow or huge handshake used to hold 32 MB, for ever.
+export const PRE_AUTH_BYTES = 16 * 1024;
+export const HANDSHAKE_MS = 10_000;
+export const MAX_INCOMING = 64;
+
+export function sessionKeys(sharedSecret, me, other, iAmClient) {
+  // A low-order X25519 key gives an all-zero secret any attacker knows: refuse it.
+  if (!Buffer.from(sharedSecret).some((b) => b !== 0)) throw new Error('weak key exchange refused');
   const salt = Buffer.from([me.id, other.id].sort().join(':'));
   const c2s = hkdf(sharedSecret, salt, 'ox-mesh v1 c2s');
   const s2c = hkdf(sharedSecret, salt, 'ox-mesh v1 s2c');
@@ -739,9 +747,13 @@ export async function startNode(o = {}) {
   const incoming = new Set();
   const server = net.createServer((sock) => {
     sock.setNoDelay(true);
+    let stage = 'hello', theirs = null, ch = null, mine = null, mode = 'auth';
+    if ([...incoming].filter((x) => !sockets.has(x)).length >= MAX_INCOMING) { sock.destroy(); return; }
     incoming.add(sock);
     sock.on('close', () => incoming.delete(sock));
-    let stage = 'hello', theirs = null, ch = null, mine = null, mode = 'auth';
+    const handshake = setTimeout(() => { if (stage !== 'open') sock.destroy(); }, o.handshakeMs ?? HANDSHAKE_MS);
+    handshake.unref?.();
+    sock.on('close', () => clearTimeout(handshake));
     const eph = crypto.generateKeyPairSync('x25519');
     const ephRaw = eph.publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
     // After the hello the client reads sealed frames only, so a refusal is sealed too.
@@ -811,7 +823,7 @@ export async function startNode(o = {}) {
           ch.handlers.add((msg) => { if (msg.t === 'req') serve(ch, peer, msg).catch((e) => ch.send({ t: 'res', rid: msg.rid, ok: false, error: e.message })); });
         }
       } catch (e) { drop(e.message); }
-    }, onBytes);
+    }, onBytes, () => (stage === 'open' ? MAX_FRAME : PRE_AUTH_BYTES));
   });
   await new Promise((res, rej) => { server.once('error', rej); server.listen(port, o.host ?? '0.0.0.0', res); });
   port = server.address().port; // port 0 picks a free one (tests)
