@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -20,7 +21,8 @@ const model = arg('model');
 if (!model) { console.error('--model is required: a benchmark that picks a model for you cannot be read'); process.exit(2); }
 const out = path.resolve(arg('out', path.join(os.homedir(), 'ox-bench', 'run')));
 const limit = Number(arg('limit', 0));
-const jobs = Number(arg('jobs', 1));
+// One at a time: the meter counts per task.
+const jobs = 1;
 const minutes = Number(arg('minutes', 20));
 const tasksFile = arg('tasks', path.join(HERE, 'tasks-50.jsonl'));
 const reposDir = path.join(os.homedir(), 'ox-bench', 'repos');
@@ -29,6 +31,40 @@ fs.mkdirSync(out, { recursive: true }); fs.mkdirSync(reposDir, { recursive: true
 // The key goes from the keystore into this process's env only; it is never written or printed.
 const env = { ...process.env };
 (await import(path.join(HERE, '..', '..', 'src', 'keystore.js'))).loadKeysIntoEnv(env);
+
+// Every model call goes through this counting proxy, so a run that is stopped still has its
+// tokens counted (ox writes its own tally only when a run ends).
+const UPSTREAM = process.env.SWE_UPSTREAM ?? 'https://integrate.api.nvidia.com';
+const meter = { tokensIn: 0, tokensOut: 0, cached: 0, calls: 0, rateLimited: 0 };
+const proxy = http.createServer((req, res) => {
+  const parts = [];
+  req.on('data', (d) => parts.push(d));
+  req.on('end', async () => {
+    let body = Buffer.concat(parts);
+    try { const j = JSON.parse(body); if (j.stream) { j.stream_options = { ...(j.stream_options ?? {}), include_usage: true }; body = Buffer.from(JSON.stringify(j)); } } catch {}
+    const headers = { ...req.headers }; delete headers.host; delete headers['content-length'];
+    let up;
+    try { up = await fetch(new URL(req.url, UPSTREAM), { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : body }); }
+    catch (e) { res.writeHead(502); res.end(String(e.message)); return; }
+    meter.calls += 1;
+    if (up.status === 429) meter.rateLimited += 1;
+    res.writeHead(up.status, Object.fromEntries([...up.headers].filter(([k]) => !['content-encoding', 'content-length', 'transfer-encoding'].includes(k))));
+    let tail = '';
+    const take = (u) => { if (!u) return; meter.tokensIn += u.prompt_tokens ?? 0; meter.tokensOut += u.completion_tokens ?? 0; meter.cached += u.prompt_tokens_details?.cached_tokens ?? 0; };
+    try {
+      for await (const chunk of up.body ?? []) {
+        res.write(chunk);
+        tail += Buffer.from(chunk).toString('utf8');
+        const lines = tail.split('\n'); tail = lines.pop();
+        for (const l of lines) if (l.startsWith('data:') && l.includes('"usage"')) { try { take(JSON.parse(l.slice(5)).usage); } catch {} }
+      }
+      if (tail.trim().startsWith('{')) { try { take(JSON.parse(tail).usage); } catch {} }
+    } catch {}
+    res.end();
+  });
+});
+await new Promise((r) => proxy.listen(0, '127.0.0.1', r));
+const PROXY = `http://127.0.0.1:${proxy.address().port}/v1`;
 
 const git = (cwd, ...a) => spawnSync('git', a, { cwd, encoding: 'utf8', maxBuffer: 1 << 28, timeout: 900_000 });
 const tasks = fs.readFileSync(tasksFile, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
@@ -50,6 +86,7 @@ function mirror(repo) {
   return cloning.get(repo);
 }
 
+const TOOLS = ['read_file', 'write_file', 'edit_file', 'list_dir', 'glob', 'grep', 'bash', 'todo_write', 'code_graph'];
 const prompt = (t) => `Fix this issue in the repository in the current folder. Change the source code only; do not add or edit tests. The project's dependencies are not installed and its extensions are not built: read the code and reason about it, and do not spend time setting up an environment (a quick check with plain python on a small piece is fine). When you are done, stop: your changes are collected from the working tree.\n\n<issue>\n${t.problem_statement}\n</issue>`;
 const EXCLUDE = ['.agent', '.ox', '.ox-build', '.ox-backups', '.venv', 'venv', '__pycache__', 'node_modules', 'build', '.eggs'];
 
@@ -60,13 +97,27 @@ async function runOne(t) {
   let row = { instance_id: t.instance_id, repo: t.repo, model };
   try {
     const bare = await mirror(t.repo);
-    const add = git(bare, 'worktree', 'add', '--quiet', '--detach', work, t.base_commit);
-    if (add.status !== 0) throw new Error(`checkout failed: ${add.stderr.slice(0, 300)}`);
+    // The files at the task's commit and nothing else: no later history, no remote, no tags. The
+    // first pilot checked out from a full clone, and agents diffed against the fix (results void).
+    fs.mkdirSync(work, { recursive: true });
+    const tar = spawnSync('sh', ['-c', `git -C "${bare}" archive --format=tar ${t.base_commit} | tar -x -C "${work}"`], { encoding: 'utf8', maxBuffer: 1 << 26, timeout: 900_000 });
+    if (tar.status !== 0) throw new Error(`checkout failed: ${String(tar.stderr).slice(0, 300)}`);
+    for (const a of [['init', '-q'], ['add', '-A'], ['-c', 'user.name=swe', '-c', 'user.email=swe@local', 'commit', '-q', '--no-verify', '-m', 'base']]) {
+      const r = git(work, ...a);
+      if (r.status !== 0) throw new Error(`git ${a[0]} failed: ${r.stderr.slice(0, 200)}`);
+    }
+    // No web tools, and shell commands without network (macOS sandbox): the answer cannot be looked up.
+    fs.mkdirSync(path.join(home, '.ox', 'agents'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.ox', 'agents', 'swe.json'), JSON.stringify({ name: 'swe', mode: 'code', tools: TOOLS }));
+    fs.writeFileSync(path.join(home, '.ox', 'sandbox.json'), JSON.stringify({ extends: 'workspace', restrict_network: true }));
+    row.history = Number(git(work, 'rev-list', '--count', '--all').stdout.trim());
+    row.remotes = git(work, 'remote').stdout.trim().split('\n').filter(Boolean).length;
+    const before = { ...meter };
     const log = fs.createWriteStream(path.join(out, 'logs', `${t.instance_id}.log`));
     const code = await new Promise((resolve) => {
-      const p = spawn(process.execPath, [OX, '--model', model, '--mode', 'code', '-y', '-p', prompt(t)], {
+      const p = spawn(process.execPath, [OX, '--model', model, '--agent', 'swe', '--mode', 'code', '--sandbox', 'swe', '-y', '-p', prompt(t)], {
         cwd: work,
-        env: { ...env, HOME: home, OX_HOME: path.join(home, '.ox'), OX_ISLAND: '0', OX_LEARN: '0', OX_NO_KEYSTORE: '1', OX_MESH: '0', OX_NO_FAST_FALLBACK: '1', OX_NO_PLUGINS: '1', OX_NO_BUILTIN_SKILLS: '1', OX_MCP: '0' },
+        env: { ...env, OX_BASE_URL: PROXY, HOME: home, OX_HOME: path.join(home, '.ox'), OX_ISLAND: '0', OX_LEARN: '0', OX_NO_KEYSTORE: '1', OX_MESH: '0', OX_NO_FAST_FALLBACK: '1', OX_NO_PLUGINS: '1', OX_NO_BUILTIN_SKILLS: '1', OX_MCP: '0' },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       p.stdout.pipe(log, { end: false }); p.stderr.pipe(log, { end: false });
@@ -78,16 +129,13 @@ async function runOne(t) {
     log.end();
     git(work, 'add', '-A', '--', '.', ...EXCLUDE.map((x) => `:(exclude,glob)**/${x}/**`));
     const patch = git(work, 'diff', '--cached', '--no-color', 'HEAD').stdout ?? '';
-    // Tokens as ox itself logged them for this run.
-    let tokensIn = 0, tokensOut = 0, cached = 0, calls = 0;
-    try { for (const l of fs.readFileSync(path.join(home, '.ox', 'usage.jsonl'), 'utf8').trim().split('\n')) { const u = JSON.parse(l); tokensIn += u.in ?? 0; tokensOut += u.out ?? 0; cached += u.cached ?? 0; calls += 1; } } catch {}
-    row = { ...row, exit: code, seconds: Math.round((Date.now() - started) / 1000), tokensIn, tokensOut, cached, runs: calls, patchBytes: Buffer.byteLength(patch) };
+    const d = (k) => meter[k] - before[k];
+    row = { ...row, exit: code, seconds: Math.round((Date.now() - started) / 1000), tokensIn: d('tokensIn'), tokensOut: d('tokensOut'), cached: d('cached'), calls: d('calls'), rateLimited: d('rateLimited'), patchBytes: Buffer.byteLength(patch) };
     fs.appendFileSync(predsFile, `${JSON.stringify({ instance_id: t.instance_id, model_name_or_path: `ox@${model}`, model_patch: patch })}\n`);
   } catch (e) {
     row = { ...row, error: String(e.message).slice(0, 300), seconds: Math.round((Date.now() - started) / 1000) };
     fs.appendFileSync(predsFile, `${JSON.stringify({ instance_id: t.instance_id, model_name_or_path: `ox@${model}`, model_patch: '' })}\n`);
   } finally {
-    try { const bare = path.join(reposDir, `${t.repo.replace('/', '__')}.git`); git(bare, 'worktree', 'remove', '--force', work); git(bare, 'worktree', 'prune'); } catch {}
     fs.rmSync(work, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
   }
@@ -98,3 +146,4 @@ async function runOne(t) {
 let next = 0;
 await Promise.all(Array.from({ length: jobs }, async () => { while (next < todo.length) await runOne(todo[next++]); }));
 console.log(`done: ${todo.length} run now, ${done.size} from before; predictions in ${predsFile}`);
+proxy.close();

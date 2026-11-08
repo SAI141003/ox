@@ -609,6 +609,9 @@ export function compileSbpl(profile) {
     lines.push('(deny file-write*)');
     lines.push(`(allow file-write* ${tmpAllow})`);
   }
+  // The devices every shell uses: `cmd > /dev/null` and `2>&1` were denied under every profile, so
+  // ordinary commands failed (an agent gave up on a build step over it).
+  lines.push('(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/dtracehelper") (regex "^/dev/tty") (regex "^/dev/fd/"))');
   // One deny for the whole profile — the old code emitted a second one from a
   // separate `restrict_network` branch, which is why the strict profile used
   // to compile two identical (deny network*) lines.

@@ -72,3 +72,17 @@ test('ox keeps its backups out of your commits', async () => {
   spawnSync('git', ['add', '-A'], { cwd: dir });
   assert.equal(spawnSync('git', ['diff', '--cached', '--name-only'], { cwd: dir, encoding: 'utf8' }).stdout.trim(), 'a.txt');
 });
+
+test('in every sandbox a command can still write to /dev/null, and still cannot write outside its folders', { skip: process.platform !== 'darwin' || !fs.existsSync('/usr/bin/sandbox-exec') }, async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { resolveSandbox, compileSbpl } = await import('../src/sandbox.js');
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-sb-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-sb-home-'));
+  const outside = path.join(home, 'outside.txt');
+  for (const flag of ['workspace', 'read-only', 'strict']) {
+    const sbpl = compileSbpl(resolveSandbox({ flag, config: {}, cwd, home }));
+    const run = (cmd) => spawnSync('/usr/bin/sandbox-exec', ['-p', sbpl, '/bin/sh', '-c', cmd], { cwd, encoding: 'utf8' });
+    assert.equal(run('echo hi > /dev/null && echo ok 2>&1').stdout.trim(), 'ok', `${flag}: /dev/null`);
+    assert.notEqual(run(`echo x > "${outside}"`).status, 0, `${flag}: outside stays shut`);
+  }
+});
