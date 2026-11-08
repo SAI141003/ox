@@ -1166,7 +1166,7 @@ enum RightCommandDoubleTap {
 
 // MARK: - Esc stops ox using your computer
 
-/// While a run holds the screen (~/.ox/computer.lock), Esc from anywhere stops it: every desktop
+/// While a run holds the screen (~/.ox/computer.lock, used in the last two minutes), Esc from anywhere stops it: every desktop
 /// action checks ~/.ox/computer.stop first (src/computer-control.js). Any other time Esc is left alone.
 /// A global key monitor needs the island's Accessibility permission; `ox computer stop` always works.
 enum ComputerStop {
@@ -1179,7 +1179,7 @@ enum ComputerStop {
             let lock = dir.appendingPathComponent("computer.lock")
             guard let d = try? Data(contentsOf: lock),
                   let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-                  let at = j["at"] as? Double, Date().timeIntervalSince1970 * 1000 - at < 600_000 else { return }
+                  let at = j["at"] as? Double, Date().timeIntervalSince1970 * 1000 - at < 120_000 else { return }
             let ms = String(Int(Date().timeIntervalSince1970 * 1000))
             try? ms.write(to: dir.appendingPathComponent("computer.stop"), atomically: true, encoding: .utf8)
             IslandLog.write("Esc: stopped ox using the computer")

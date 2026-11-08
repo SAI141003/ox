@@ -2336,6 +2336,8 @@ async function* runAgentLoop(opts = {}) {
           break outer;
         }
       }
+      // The run is answered: the screen is free for the next one, not held for two idle minutes.
+      try { (await import('./computer-control.js')).releaseScreen(); } catch {}
       yield { type: 'final', message };
       yield { type: 'turn-end', stopReason, iters };
       break;

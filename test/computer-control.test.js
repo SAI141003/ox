@@ -126,3 +126,10 @@ test('keys: Return and shortcuts are possible for an agent; lock, logout, force 
   for (const k of ['cmd+ctrl+q', 'cmd+shift+q', 'cmd+option+esc', 'cmd+delete', 'cmd+shift+delete']) assert.match(parseKey(k, { loose: true }).error, /does not press/, k);
   assert.match(parseKey('a', { loose: true }).error, /type_text/);
 });
+
+test('a finished run lets go of the screen at once', () => {
+  assert.equal(C.holdScreen(), null);
+  assert.equal(JSON.parse(fs.readFileSync(C.LOCK(), 'utf8')).pid, process.pid);
+  C.releaseScreen();
+  assert.equal(fs.existsSync(C.LOCK()), false);
+});

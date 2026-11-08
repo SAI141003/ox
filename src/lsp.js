@@ -50,7 +50,9 @@ function rootOf(file, markers, stop) {
 /** Which server would read this file, or null. */
 export function serverFor(file, { cwd = process.cwd(), env = process.env } = {}) {
   const abs = path.resolve(cwd, file);
-  const custom = env.OX_LSP_SERVER ? [env.OX_LSP_SERVER.split(' ')] : null;
+  // A whole path that exists is one command, spaces and all; otherwise "command --flag".
+  const raw = String(env.OX_LSP_SERVER ?? '').trim();
+  const custom = raw ? [fs.existsSync(raw) ? [raw] : raw.split(/\s+/)] : null;
   for (const s of SERVERS) {
     if (!s.exts.test(abs)) continue;
     const root = rootOf(abs, s.roots, path.resolve(cwd)) ?? path.resolve(cwd);
@@ -146,7 +148,7 @@ class Client {
   }
 
   /** Open or update the file and wait for what the server says about it. */
-  async check(abs, text, languageId, { settleMs = 400, timeoutMs = 4000 } = {}) {
+  async check(abs, text, languageId, { settleMs = 250, timeoutMs = 3000 } = {}) {
     this.touch();
     const uri = pathToFileURL(abs).href;
     const version = (this.versions.get(uri) ?? 0) + 1;
@@ -156,13 +158,22 @@ class Client {
       let settle = null;
       // These two stay ref'd: they are short, and they keep the process alive while it waits.
       const end = setTimeout(() => { this.waiting.delete(uri); resolve(this.diags.get(uri) ?? null); }, timeoutMs);
-      // Servers often publish twice (nothing yet, then the real errors): wait for the last.
+      // Servers often publish twice (nothing yet, then the real errors). Errors are the answer
+      // at once; an empty list waits a moment for a second publish, so a clean edit costs little.
       this.waiting.set(uri, () => {
         clearTimeout(settle);
-        settle = setTimeout(() => { clearTimeout(end); this.waiting.delete(uri); resolve(this.diags.get(uri) ?? []); }, settleMs);
+        const now = this.diags.get(uri) ?? [];
+        settle = setTimeout(() => { clearTimeout(end); this.waiting.delete(uri); resolve(this.diags.get(uri) ?? []); }, now.length ? 60 : settleMs);
       });
     });
-    if (version === 1) this.notify('textDocument/didOpen', { textDocument: { uri, languageId, version, text } });
+    if (version === 1) {
+      // At most 40 files open in the server: the oldest is closed first.
+      if (this.versions.size > 40) {
+        const oldest = this.versions.keys().next().value;
+        if (oldest !== uri) { this.notify('textDocument/didClose', { textDocument: { uri: oldest } }); this.versions.delete(oldest); this.diags.delete(oldest); }
+      }
+      this.notify('textDocument/didOpen', { textDocument: { uri, languageId, version, text } });
+    }
     else this.notify('textDocument/didChange', { textDocument: { uri, version }, contentChanges: [{ text }] });
     return got;
   }
@@ -185,7 +196,7 @@ export function closeAllLsp() {
 process.once('exit', closeAllLsp);
 
 /** The errors in a file just written, as short lines for the model. '' when there is nothing to say. */
-export async function diagnosticsFor(file, { cwd = process.cwd(), env = process.env, config = {}, startMs = 5000, timeoutMs = 4000, max = 10 } = {}) {
+export async function diagnosticsFor(file, { cwd = process.cwd(), env = process.env, config = {}, startMs = 5000, timeoutMs = 3000, max = 10 } = {}) {
   if (!lspEnabled(env, config)) return '';
   const s = serverFor(file, { cwd, env });
   if (!s) return '';
