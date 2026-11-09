@@ -1480,6 +1480,7 @@ async function* runAgentLoop(opts = {}) {
   let iters = 0;
   let verifyRounds = 0;
   let continuedRounds = 0;
+  let emptyReplyRetries = 0;
   let brokenCallRetries = 0;
   let preCompactionMarked = false;
   let compactionsThisRun = 0;
@@ -1595,14 +1596,18 @@ async function* runAgentLoop(opts = {}) {
   yield* flushHookEvents();
   let forceCompact = false, overflowRetried = false;
   // The stuck signals used only to reach a notification. The model is told too, once each.
-  const stall = stuckWatcher();
+  // Code-changing runs also get a nudge to start editing (see stuckWatcher's firstEdit).
+  const canEdit = ['code', 'debug', 'auto', 'orchestrate', undefined, null].includes(ctx.mode) && [...tools, ...withheldTools].some((t) => /^(edit_file|write_file|apply_patch)$/.test(t?.name ?? ''));
+  // By turns, or by time on a slow provider (a pilot saw ~4 minutes per reply, so 8 turns was most of the run).
+  const nudge = canEdit && !process.env.OX_NO_FIRST_EDIT_NUDGE;
+  const stall = stuckWatcher({ firstEdit: nudge ? 8 : null, firstEditMs: nudge ? 10 * 60_000 : null });
   let stallNote = null;
   outer: while (true) {
     if (stallNote) {
-      history.push({ role: 'user', content: `[ox] ${stallNote}. Try a different approach, or if this cannot be done as specified, say so plainly and stop.` });
+      history.push({ role: 'user', content: stallNote.startsWith('[edit]') ? `[ox] ${stallNote.slice(6)}.` : `[ox] ${stallNote}. Try a different approach, or if this cannot be done as specified, say so plainly and stop.` });
       stallNote = null;
     }
-    { const sig = stall({ type: 'usage' }); if (sig) stallNote = sig.text; }
+    { const sig = stall({ type: 'usage' }); if (sig) stallNote = sig.kind === 'first-edit' ? `[edit]${sig.text}` : sig.text; }
     assertCostBudget();
 
     // ---- the turn boundary --------------------------------------------------
@@ -2183,6 +2188,17 @@ async function* runAgentLoop(opts = {}) {
       yield { type: 'continued', round: continuedRounds };
       history.push({ role: 'user', content: CONTINUE_PROMPT });
       iters--;
+      yield { type: 'turn-end', stopReason, iters };
+      continue outer;
+    }
+
+    // An EMPTY reply (reasoning only: no text, no tool call) is not an answer. A
+    // SWE-bench run ended "done" on 8,000 characters of thinking and nothing else.
+    // Ask it to go on, twice at most, instead of ending the run on nothing.
+    if (!calls.length && !String(text ?? '').trim() && emptyReplyRetries < 2) {
+      emptyReplyRetries++;
+      history.push({ role: 'user', content: '[ox] Your last reply had no answer and no tool call, so nothing happened. Go on from where your reasoning got to: call the next tool, or give the final answer.' });
+      yield { type: 'warning', text: 'the model replied with reasoning only; asked it to go on' };
       yield { type: 'turn-end', stopReason, iters };
       continue outer;
     }
