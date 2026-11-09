@@ -1568,14 +1568,16 @@ async function* runAgentLoop(opts = {}) {
   yield* flushHookEvents();
   let forceCompact = false, overflowRetried = false;
   // The stuck signals used only to reach a notification. The model is told too, once each.
-  const stall = stuckWatcher();
+  // Code-changing runs also get a nudge to start editing (see stuckWatcher's firstEdit).
+  const canEdit = ['code', 'debug', 'auto', 'orchestrate', undefined, null].includes(ctx.mode) && [...tools, ...withheldTools].some((t) => /^(edit_file|write_file|apply_patch)$/.test(t?.name ?? ''));
+  const stall = stuckWatcher({ firstEdit: canEdit && !process.env.OX_NO_FIRST_EDIT_NUDGE ? 8 : null });
   let stallNote = null;
   outer: while (true) {
     if (stallNote) {
-      history.push({ role: 'user', content: `[ox] ${stallNote}. Try a different approach, or if this cannot be done as specified, say so plainly and stop.` });
+      history.push({ role: 'user', content: stallNote.startsWith('[edit]') ? `[ox] ${stallNote.slice(6)}.` : `[ox] ${stallNote}. Try a different approach, or if this cannot be done as specified, say so plainly and stop.` });
       stallNote = null;
     }
-    { const sig = stall({ type: 'usage' }); if (sig) stallNote = sig.text; }
+    { const sig = stall({ type: 'usage' }); if (sig) stallNote = sig.kind === 'first-edit' ? `[edit]${sig.text}` : sig.text; }
     assertCostBudget();
 
     // ---- the turn boundary --------------------------------------------------

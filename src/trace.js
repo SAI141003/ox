@@ -18,9 +18,9 @@ export function traceEnabled(env = process.env) {
 }
 
 /** The watcher: feed it events, it returns a signal when one is due (each kind once per run). */
-export function stuckWatcher({ repeat = 3, errors = 4, quietTurns = 12 } = {}) {
+export function stuckWatcher({ repeat = 3, errors = 4, quietTurns = 12, firstEdit = null } = {}) {
   const calls = [];
-  let errRun = 0, turns = 0, sinceChange = 0;
+  let errRun = 0, turns = 0, sinceChange = 0, edited = false;
   const said = new Set();
   const once = (kind, text) => { if (said.has(kind)) return null; said.add(kind); return { kind, text }; };
   const changes = /^(edit_file|write_file|apply_patch|create_file|multi_edit|str_replace)/;
@@ -32,12 +32,15 @@ export function stuckWatcher({ repeat = 3, errors = 4, quietTurns = 12 } = {}) {
       if (last.length === repeat && last.every((k) => k === key)) return once('loop', `stuck in a loop: called ${ev.name} with the same arguments ${repeat} times in a row`);
       const last6 = calls.slice(-6);
       if (last6.length === 6 && last6[0] === last6[2] && last6[2] === last6[4] && last6[1] === last6[3] && last6[3] === last6[5] && last6[0] !== last6[1]) return once('loop', 'stuck in a loop: going back and forth between the same two calls');
-      if (changes.test(ev.name)) sinceChange = 0;
+      if (changes.test(ev.name)) { sinceChange = 0; edited = true; }
     } else if (ev.type === 'tool-end') {
       errRun = ev.ok === false || ev.isError ? errRun + 1 : 0;
       if (errRun >= errors) return once('errors', `${errRun} tool calls failed in a row (last: ${ev.name})`);
     } else if (ev.type === 'usage') {
       turns++; sinceChange++;
+      // Reading forever is the commonest way a fix runs out of time (a SWE-bench pilot: 24 of 37
+      // timed-out runs never edited a file). Only asked for by runs that are meant to change code.
+      if (firstEdit && !edited && turns >= firstEdit) return once('first-edit', `${turns} model turns of reading and no change yet. If the task asks for a change, you know enough to start: make the smallest edit that could do it now, then run the closest test and adjust (if it only asks a question, answer it)`);
       if (sinceChange >= quietTurns) return once('quiet', `${sinceChange} model turns without changing a file: it may be going in circles`);
     }
     return null;

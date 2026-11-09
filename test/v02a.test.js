@@ -447,13 +447,14 @@ test('backups: edit_file and write_file back up originals; suppressed by OX_NO_B
   assert.equal(fs.readFileSync(abs, 'utf8'), 'EDITED body\n');
 
   const root = path.join(dir, '.ox-backups');
-  let stamps = fs.readdirSync(root);
+  const stampDirs = () => fs.readdirSync(root).filter((n) => n !== '.gitignore');
+  let stamps = stampDirs();
   assert.equal(stamps.length, 1);
   assert.match(stamps[0], /^\d{8}-\d{6}/, 'timestamped backup dir');
   assert.equal(fs.readFileSync(path.join(root, stamps[0], 'code.txt'), 'utf8'), 'original body\n');
 
   await writeFileTool({ path: abs, content: 'replaced entirely\n' }, { cwd: dir, yolo: true });
-  stamps = fs.readdirSync(root);
+  stamps = stampDirs();
   assert.equal(stamps.length, 2, 'write_file overwrite also backed up');
   const lastBackup = fs.readFileSync(path.join(root, stamps.sort()[0], 'code.txt'), 'utf8');
   assert.equal(lastBackup, 'original body\n');

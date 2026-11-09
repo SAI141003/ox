@@ -56,3 +56,20 @@ test('withTrace records turns, tools and signals, and passes every event through
     assert.equal(T.listTraces({ signals: true }).length, 1);
   } finally { if (old === undefined) delete process.env.OX_HOME; else process.env.OX_HOME = old; }
 });
+
+test('first-edit: a code run that only reads is told to start editing, once; an edit or no opt-in stays quiet', async () => {
+  const { stuckWatcher } = await import('../src/trace.js');
+  const w = stuckWatcher({ firstEdit: 3, quietTurns: 99 });
+  w({ type: 'tool-start', name: 'read_file', argsPreview: 'a' });
+  assert.equal(w({ type: 'usage' }), null);
+  assert.equal(w({ type: 'usage' }), null);
+  const sig = w({ type: 'usage' });
+  assert.equal(sig?.kind, 'first-edit');
+  assert.match(sig.text, /smallest edit/);
+  assert.equal(w({ type: 'usage' }), null, 'said once');
+  const e = stuckWatcher({ firstEdit: 2, quietTurns: 99 });
+  e({ type: 'tool-start', name: 'edit_file', argsPreview: 'x' });
+  for (let i = 0; i < 5; i++) assert.equal(e({ type: 'usage' }), null, 'already editing');
+  const off = stuckWatcher({ quietTurns: 99 });
+  for (let i = 0; i < 20; i++) assert.equal(off({ type: 'usage' }), null, 'not asked for');
+});

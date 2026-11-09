@@ -263,6 +263,7 @@ test('a profile with NO read_only compiles byte-identically to the pre-fix outpu
     '(allow default)',
     '(deny file-write*)',
     '(allow file-write* (subpath "/w") (subpath "/home/u/.ox") (regex "^/tmp/.*"))',
+    '(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/dtracehelper") (regex "^/dev/tty") (regex "^/dev/fd/"))',
     '',
   ].join('\n');
   assert.equal(compileSbpl(bare), expected);
@@ -271,11 +272,11 @@ test('a profile with NO read_only compiles byte-identically to the pre-fix outpu
   // read_write-only and deny-only profiles are also untouched by the fix.
   assert.equal(
     compileSbpl({ ...bare, read_write: ['/tmp/scratch'] }),
-    expected.replace('(regex "^/tmp/.*"))', '(regex "^/tmp/.*"))\n(allow file-write* (subpath "/tmp/scratch"))')
+    expected.replace('(regex "^/dev/fd/"))', '(regex "^/dev/fd/"))\n(allow file-write* (subpath "/tmp/scratch"))')
   );
   assert.equal(
     compileSbpl({ ...bare, deny: ['/etc/master.key'] }),
-    expected.replace('(regex "^/tmp/.*"))', '(regex "^/tmp/.*"))\n(deny file-read* (subpath "/etc/master.key"))\n(deny file-write* (subpath "/etc/master.key"))')
+    expected.replace('(regex "^/dev/fd/"))', '(regex "^/dev/fd/"))\n(deny file-read* (subpath "/etc/master.key"))\n(deny file-write* (subpath "/etc/master.key"))')
   );
 
   // The same holds through the real resolver, including the read-only preset.
