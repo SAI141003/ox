@@ -80,6 +80,15 @@ ${keyLines(key)}
 `;
 }
 
+/** The model as provider:model, which works anywhere, rather than a bot named only in your config. */
+export function portableModel(spec, resolve) {
+  let t;
+  try { t = resolve(spec); } catch { return spec; }
+  if (t?.subscription) throw new Error(`${spec} is a plan you sign in to on this computer; GitHub's machine cannot use it. Pass --model with a provider and key, such as nvidia:minimaxai/minimax-m3.1-flash`);
+  if (/^(ollama|lmstudio|llamacpp|vllm)$/.test(t?.provider ?? '')) throw new Error(`${spec} runs on this computer only. Pass --model with a hosted provider.`);
+  return t?.provider && t?.model && t.provider !== 'custom' ? `${t.provider}:${t.model}` : spec;
+}
+
 /** Which secret holds the key for this model. */
 export function keyForModel(model, keyEnvOf) {
   const k = keyEnvOf(model);

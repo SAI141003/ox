@@ -34,7 +34,11 @@ process.stdin.on('data', (d) => {
   }
 });
 const tools = new Proxy({}, { get: (_, name) => (args = {}) => new Promise((resolve, reject) => { const id = ++seq; waiting.set(id, { resolve, reject }); send({ id, tool: String(name), args }); }) });
-delete globalThis.fetch; delete globalThis.WebSocket;
+delete globalThis.fetch; delete globalThis.WebSocket; delete globalThis.EventSource;
+// The permission system stops writes and processes; this stops the network modules too.
+{ const get = process.getBuiltinModule; const NO = /^(node:)?(net|http|https|http2|tls|dgram|dns|child_process|cluster|worker_threads|inspector|vm)(\/|$)/;
+  process.getBuiltinModule = (id) => { if (NO.test(String(id))) throw new Error(String(id) + ' is not available in a script'); return get(id); };
+  process.binding = () => { throw new Error('not available in a script'); }; process._linkedBinding = process.binding; }
 const AsyncFunction = (async () => {}).constructor;
 async function start(code) {
   try { const r = await new AsyncFunction('tools', code)(tools); if (r !== undefined) log(r); send({ done: true }); }

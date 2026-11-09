@@ -47,7 +47,8 @@ test('paid tools: the price is declared, totalled, and over the limit a person i
   assert.equal(a.ok, true);
   assert.match(notePaidCall({ content: 'ok' }, a.price, ctx).content, /cost \$2\.00; \$2\.00 on paid tools/);
   assert.equal(notePaidCall({ content: 'x', isError: true }, 2, ctx).isError, true);
-  assert.equal(ctx.sessionState.paidToolUsd, 2, 'a failed call is not billed');
+  const { paidSpent } = await import('../src/paid-tools.js');
+  assert.equal(paidSpent(ctx), 2, 'a failed call is not billed');
   const over = await checkPaidCall('mcp__s__gen', {}, ctx);
   assert.equal(over.ok, false, 'nobody to ask');
   assert.match(over.content, /over its \$3\.00 limit/);
@@ -96,4 +97,25 @@ test('VS Code extension: its commands are declared and registered; text cannot b
   assert.match(ext.chatHtml(47857, 'n'), /frame-src http:\/\/127\.0\.0\.1:47857/);
   const page = fs.readFileSync(new URL('../src/serve.js', import.meta.url), 'utf8');
   assert.match(page, /frame-ancestors vscode-webview:/, 'the app can only be framed by an editor panel');
+});
+
+test('the paid-tool total belongs to the chat, across runs', async () => {
+  const { checkPaidCall, notePaidCall, paidSpent } = await import('../src/paid-tools.js');
+  const tool = { server: 's', name: 'gen', annotations: { costUsd: 2 } };
+  const run = () => ({ sessionId: 'chat-1', mcpTools: [tool], config: { paidToolLimitUsd: 3 } });
+  const first = run();
+  notePaidCall({ content: 'ok' }, (await checkPaidCall('mcp__s__gen', {}, first)).price, first);
+  const second = run();
+  assert.equal(paidSpent(second), 2, 'a new run of the same chat remembers');
+  assert.equal((await checkPaidCall('mcp__s__gen', {}, second)).ok, false, 'so the limit holds');
+  assert.equal(paidSpent({ sessionId: 'chat-2' }), 0);
+});
+
+test('ox cloud names the model the portable way, and refuses ones GitHub cannot run', async () => {
+  const C = await import('../src/cloud.js');
+  const resolve = (m) => ({ 'my-nvidia': { provider: 'nvidia', model: 'nvidia/nemotron' }, 'chatgpt-plan': { subscription: 'chatgpt' }, 'ox-ollama': { provider: 'ollama', model: 'qwen' } })[m] ?? (() => { throw new Error('unknown'); })();
+  assert.equal(C.portableModel('my-nvidia', resolve), 'nvidia:nvidia/nemotron');
+  assert.throws(() => C.portableModel('chatgpt-plan', resolve), /sign in to on this computer/);
+  assert.throws(() => C.portableModel('ox-ollama', resolve), /this computer only/);
+  assert.equal(C.portableModel('nvidia:x/y', () => { throw new Error('x'); }), 'nvidia:x/y');
 });

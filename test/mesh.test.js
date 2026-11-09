@@ -333,3 +333,22 @@ test('a model borrowed from a mesh alert lasts a while and never becomes the def
   assert.doesNotMatch(serve, /doc\.defaultBot = out\.model/);
 });
 
+
+test('a stranger cannot hold the listener: huge or slow handshakes are cut, and a weak key is refused', async () => {
+  const net = await import('node:net');
+  const A = await node(home(), { handshakeMs: 300 });
+  try {
+    const closed = (sock) => new Promise((r) => { sock.on('close', () => r(true)); sock.on('error', () => {}); });
+    const big = net.connect(A.port, '127.0.0.1');
+    await new Promise((r) => big.on('connect', r));
+    const bigGone = closed(big);
+    big.write(Buffer.alloc(M.PRE_AUTH_BYTES + 100, 0x61));
+    assert.equal(await bigGone, true, 'over 16 KB before the handshake: cut');
+    const slow = net.connect(A.port, '127.0.0.1');
+    const t = Date.now();
+    assert.equal(await closed(slow), true, 'saying nothing: cut');
+    assert.ok(Date.now() - t < 3000);
+  } finally { await A.close(); }
+  assert.throws(() => M.sessionKeys(Buffer.alloc(32), { id: 'a' }, { id: 'b' }, true), /weak key exchange/);
+  assert.equal(M.sessionKeys(Buffer.alloc(32, 7), { id: 'a' }, { id: 'b' }, true).length, 2);
+});

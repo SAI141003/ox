@@ -94,3 +94,23 @@ test('WhatsApp: only messages after the start, once each; missing keys say which
   assert.equal(posted[0][1].text.body, 'hey');
   await assert.rejects(G.whatsappSource({ env: {}, state: {}, home: h }).check(), /WHATSAPP_ACCESS_TOKEN/);
 });
+
+test('pairing cannot be guessed: five misses mute a chat, thirty replace the code', async () => {
+  const sent = [];
+  const logs = [];
+  const state = {};
+  const ch = G.createTextChannel({ name: 'signal', send: async (c, t) => { sent.push([c, t]); } }, { state, persist() {}, cwd: home, log: (l) => logs.push(l) });
+  const real = state.pairCode;
+  const wrong = String((Number(real) % 900000) + 100001).slice(0, 6) === real ? '100000' : String((Number(real) % 900000) + 100001).slice(0, 6);
+  for (let i = 0; i < 5; i++) await ch.handle({ chat: '+1', text: `/pair ${wrong}` });
+  const n = sent.length;
+  await ch.handle({ chat: '+1', text: `/pair ${real}` });
+  assert.equal(state.owner, undefined, 'the right code from a muted chat does nothing');
+  assert.equal(sent.length, n, 'and gets no answer');
+  for (let c = 2; c <= 7; c++) for (let i = 0; i < 5; i++) await ch.handle({ chat: `+${c}`, text: `/pair ${wrong}` });
+  assert.notEqual(state.pairCode, real, 'thirty misses: a new code');
+  assert.match(logs.join('\n'), /the code is now \d{6}/);
+  await ch.handle({ chat: '+99', text: `/pair ${state.pairCode}` });
+  assert.equal(state.owner, '+99');
+  ch.core.stop();
+});

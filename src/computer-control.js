@@ -18,8 +18,9 @@ const APPS = () => path.join(home(), 'computer-apps.json');
 export const LOCK = () => path.join(home(), 'computer.lock');
 export const STOP = () => path.join(home(), 'computer.stop');
 const STARTED = Date.now();
-// A server stays up for days: a hold nobody has used for this long is not a hold.
-const LOCK_IDLE_MS = 10 * 60_000;
+// A server stays up for days: a hold nobody has used for this long is not a hold. Two minutes:
+// longer and one click from the app shut the island and the terminal out of the screen for ten.
+const LOCK_IDLE_MS = 2 * 60_000;
 
 const PAYS = /\b(pay|pay now|payment|buy|buy now|purchase|place order|order now|checkout|check out|transfer|subscribe|wire)\b/i;
 /** A control that spends money: ox never presses these, whoever says so. */
@@ -102,6 +103,11 @@ export function holdScreen({ now = Date.now(), who = process.env.OX_RUN_ID || 'a
     process.once('exit', () => { try { if (readLock()?.pid === process.pid) fs.unlinkSync(LOCK()); } catch {} });
   }
   return null;
+}
+
+/** Let go of the screen now (a run that finished). */
+export function releaseScreen() {
+  try { if (readLock()?.pid === process.pid) fs.unlinkSync(LOCK()); } catch {}
 }
 
 export function computerStatus({ now = Date.now() } = {}) {

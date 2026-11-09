@@ -7321,7 +7321,8 @@ async function runSubcommand(cmd, args) {
           const { loadKeysIntoEnv } = await import('./keystore.js');
           if (process.env.OX_NO_KEYSTORE !== '1') loadKeysIntoEnv();
           const cfg = loadConfig();
-          const model = opt('--model') ?? defaultBotSpec(cfg);
+          // A bot named in your own config does not exist on GitHub's machine: its provider:model does.
+          const model = C.portableModel(opt('--model') ?? defaultBotSpec(cfg), (m) => resolveBot(m, cfg));
           const key = opt('--key') ?? C.keyForModel(model, (m) => { try { return resolveBot(m, cfg).keyEnv ?? null; } catch { return null; } });
           const written = C.setupCloud({ cwd: process.cwd(), model, key });
           console.log(written.length ? c.green(`added ${written.join(', ')}`) : c.dim('the workflows are already here'));

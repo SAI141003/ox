@@ -20,6 +20,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 
+// JSON inside a <script>: a "</script>" in a caption must not end the script early.
+export const scriptJson = (v) => JSON.stringify(v).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+
 export const ASPECTS = { '9:16': [1080, 1920], '16:9': [1920, 1080], '1:1': [1080, 1080], '4:5': [1080, 1350] };
 export const TEMPLATES = ['headline', 'stat', 'list', 'compare', 'quote', 'flow', 'captions'];
 const FPS = 30;
@@ -166,7 +169,7 @@ html,body{margin:0;width:${width}px;height:${height}px;overflow:hidden;backgroun
 #stage{position:absolute;inset:0}
 #logo{position:absolute;right:${Math.round(width * 0.05)}px;top:${Math.round(height * 0.04)}px;height:${Math.round(Math.min(width, height) * 0.07)}px;opacity:.9}
 </style></head><body><div id="stage"></div>${logo ? `<img id="logo" src="${logo}">` : ''}<script>
-const W=${width},H=${height},U=Math.min(W,H)/100,BRAND=${JSON.stringify(brand)},SPEC=${JSON.stringify(spec)};
+const W=${width},H=${height},U=Math.min(W,H)/100,BRAND=${scriptJson(brand)},SPEC=${scriptJson(spec)};
 const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
 const ease=(x)=>{x=clamp(x);return 1-Math.pow(1-x,3)};
 const inOut=(x)=>{x=clamp(x);return x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2};
