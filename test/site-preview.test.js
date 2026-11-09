@@ -80,7 +80,8 @@ test('in every sandbox a command can still write to /dev/null, and still cannot 
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-sb-home-'));
   const outside = path.join(home, 'outside.txt');
   for (const flag of ['workspace', 'read-only', 'strict']) {
-    const sbpl = compileSbpl(resolveSandbox({ flag, config: {}, cwd, home }));
+    // The test folders live in the temp dir, which every preset keeps writable; move the profile's temp away.
+    const sbpl = compileSbpl({ ...resolveSandbox({ flag, config: {}, cwd, home }), tmpDir: '/nonexistent-ox-tmp' });
     const run = (cmd) => spawnSync('/usr/bin/sandbox-exec', ['-p', sbpl, '/bin/sh', '-c', cmd], { cwd, encoding: 'utf8' });
     assert.equal(run('echo hi > /dev/null && echo ok 2>&1').stdout.trim(), 'ok', `${flag}: /dev/null`);
     assert.notEqual(run(`echo x > "${outside}"`).status, 0, `${flag}: outside stays shut`);

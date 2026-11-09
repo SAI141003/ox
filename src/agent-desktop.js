@@ -182,7 +182,7 @@ export async function typeInto(el, text, { env = process.env } = {}) {
   return r.ok ? { ok: true } : { error: why(r), stale: r.error?.code === 'STALE_REF' };
 }
 
-/** A key combo, already checked by ox's parseKey (never Return). */
+/** A key combo, already checked by ox's parseKey and the screen rules (src/computer-control.js). */
 export async function pressKey(combo, { env = process.env, app = null } = {}) {
   const r = await run(['press', combo, ...(app ? ['--app', app] : [])], { env });
   return r.ok ? { ok: true } : { error: why(r) };

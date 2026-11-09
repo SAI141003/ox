@@ -306,6 +306,8 @@
   .bots-empty-art { display:grid; place-items:center; min-height:120px; border-radius:12px; background:color-mix(in srgb,var(--bg) 55%,transparent); }
   .bots-empty-art svg { width:94px; height:94px; filter:drop-shadow(0 8px 16px rgba(83,128,255,.2)); }
   .bots-empty .btn { margin-top:16px; }
+  /* On a phone the mascot would sit on the message box and its Send button. */
+  @media (max-width:600px) { .pet-dock { display:none !important; } }
   @media (max-width:600px) { .bots-empty { grid-template-columns:1fr; } .bots-empty-art { display:none; } }
   .bot-edit { display: flex; flex-direction: column; gap: 12px; }
   .bot-edit label { display: flex; flex-direction: column; gap: 6px; }
@@ -851,6 +853,12 @@
   dialog { border: 1px solid var(--line2); border-radius: 14px; background: var(--panel); color: var(--text); padding: 20px; width: min(420px, 92vw); }
   dialog::backdrop { background: rgba(0,0,0,.55); }
   dialog .row2 { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  .call-bar { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 45; display: flex; align-items: center; gap: 10px; background: var(--raise); border: 1px solid var(--line2); border-radius: 999px; padding: 6px 8px 6px 14px; font-size: 13px; box-shadow: 0 10px 30px rgba(0,0,0,.35); max-width: calc(100vw - 32px); }
+  .call-bar .dot { width: 8px; height: 8px; border-radius: 50%; background: #16C47F; animation: callpulse 1.4s ease-in-out infinite; flex: none; }
+  .call-bar .said { color: var(--dim, #999); max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .call-bar button { border: 0; border-radius: 999px; padding: 6px 12px; background: #e5484d; color: #fff; font: inherit; cursor: pointer; }
+  @keyframes callpulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .call-bar .dot { animation: none; } }
   .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--raise); border: 1px solid var(--line2); padding: 9px 14px; border-radius: 10px; font-size: 13px; z-index: 40; display: none; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
   .toast.on { display: block; }
 
@@ -2487,6 +2495,68 @@
     b.title = typed ? 'Ox reads this at its next step (the work is not stopped)' : 'Stop (Esc)';
   }
 
+  // A live voice call (src/realtime-voice.js). The offer goes through ox's server, which holds
+  // the key; audio then flows between this page and OpenAI. When the voice model calls
+  // hand_to_ox, the task runs here as an ordinary turn (same tools, same approvals) and
+  // ox's answer goes back to be spoken.
+  const liveCall = (() => {
+    let pc = null, dc = null, mic = null, bar = null, audio = null;
+    const said = (t) => { const e = bar?.querySelector('.said'); if (e) e.textContent = t; };
+    function stop() {
+      try { dc?.close(); } catch {}
+      try { pc?.close(); } catch {}
+      mic?.getTracks().forEach((t) => t.stop());
+      audio?.remove(); bar?.remove();
+      pc = dc = mic = bar = audio = null;
+    }
+    async function handOver(callId, args) {
+      let task = '';
+      try { task = String(JSON.parse(args || '{}').task ?? '').trim(); } catch {}
+      if (!task) return;
+      said(`ox: ${task}`);
+      await send({ text: task, files: '', pics: [] });
+      const last = [...(convo()?.messages ?? [])].reverse().find((x) => x.role === 'assistant');
+      const out = String(last?.content ?? 'ox did not answer.').replace(/```[\s\S]*?```/g, '(code shown in the chat)').slice(0, 4000);
+      if (!dc || dc.readyState !== 'open') return;
+      dc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: out } }));
+      dc.send(JSON.stringify({ type: 'response.create' }));
+    }
+    function onEvent(e) {
+      let ev; try { ev = JSON.parse(e.data); } catch { return; }
+      if (ev.type === 'response.function_call_arguments.done' && ev.name === 'hand_to_ox') handOver(ev.call_id, ev.arguments).catch((err) => toast(`Live call: ${err.message}`));
+      else if (ev.type === 'conversation.item.input_audio_transcription.completed' && ev.transcript) said(`you: ${ev.transcript}`);
+      else if (ev.type === 'response.output_audio_transcript.done' && ev.transcript) said(ev.transcript);
+      else if (ev.type === 'error') toast(`Live call: ${ev.error?.message ?? 'error'}`);
+    }
+    async function start() {
+      if (pc) return;
+      if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) { toast('This browser cannot make a live call'); return; }
+      bar = document.createElement('div');
+      bar.className = 'call-bar'; bar.setAttribute('role', 'status');
+      bar.innerHTML = '<span class="dot" aria-hidden="true"></span><span>Live call</span><span class="said">connecting…</span><button type="button">End</button>';
+      bar.querySelector('button').onclick = stop;
+      document.body.append(bar);
+      try {
+        mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+        pc = new RTCPeerConnection();
+        audio = document.createElement('audio'); audio.autoplay = true; audio.hidden = true; document.body.append(audio);
+        pc.ontrack = (e) => { audio.srcObject = e.streams[0]; };
+        pc.onconnectionstatechange = () => { if (['failed', 'closed'].includes(pc?.connectionState)) { toast('The live call ended'); stop(); } };
+        mic.getTracks().forEach((t) => pc.addTrack(t, mic));
+        dc = pc.createDataChannel('oai-events');
+        dc.onmessage = onEvent;
+        await pc.setLocalDescription(await pc.createOffer());
+        const j = await postJson('/ox/realtime/call', { sdp: pc.localDescription.sdp });
+        await pc.setRemoteDescription({ type: 'answer', sdp: j.sdp });
+        said('listening');
+      } catch (err) {
+        toast(`Live call: ${err.message}`);
+        stop();
+      }
+    }
+    return { start, stop };
+  })();
+
   async function send(queued = null, sessionId = current) {
     // DOM event handlers pass the click Event as their first argument.  Treat
     // it as an ordinary composer send, never as a queued message object.  The
@@ -2787,6 +2857,11 @@
     m.innerHTML = `<input id="sp-q" placeholder="Open any file, link, …" aria-label="Open">` + SP_MENU.map(([k, n, key]) => `<button data-open="${k}">${icon(PANEL_KINDS[k][0])}${n}<span class="k">${key}</span></button>`).join('');
     m.hidden = false; $('sp-q').focus();
     // PersonaPlex, when you have a server for it: its live voice page, with ox's persona copied to paste.
+    getJson('/ox/realtime').then((j) => {
+      if (!j.available || m.hidden || m.querySelector('[data-call]')) return;
+      m.insertAdjacentHTML('beforeend', `<button data-call>${icon('wave')}Live voice call<span class="k">talk, interrupt</span></button>`);
+      m.querySelector('[data-call]').onclick = () => { m.hidden = true; liveCall.start(); };
+    }).catch(() => {});
     getJson('/ox/personaplex').then((j) => {
       if (!j.page || m.hidden || m.querySelector('[data-pp]')) return;
       m.insertAdjacentHTML('beforeend', `<button data-pp>${icon('wave')}PersonaPlex voice<span class="k">full duplex</span></button>`);

@@ -633,9 +633,20 @@ async function creationOutsideWorkspaceGate(p, ctx, content) {
   return null;
 }
 
+// What the language server says about the file now (src/lsp.js): the model sees a type error
+// on the edit that made it, not at test time. No server, no words, no delay.
+async function withDiagnostics(r, p, ctx) {
+  try {
+    const { diagnosticsFor } = await import('../lsp.js');
+    const note = await diagnosticsFor(p, { cwd: ctx.cwd ?? process.cwd(), config: ctx.config, env: ctx.env ?? process.env });
+    if (note && typeof r.content === 'string') return { ...r, content: r.content + note };
+  } catch {}
+  return r;
+}
+
 export async function writeFileTool(args = {}, ctx = {}) {
   const r = await writeFileInner(args, ctx);
-  if (!r?.isError) { const { path: p } = resolvePathArg(args.path, 'write_file', ctx); if (p) noteRead(p, ctx); }
+  if (!r?.isError) { const { path: p } = resolvePathArg(args.path, 'write_file', ctx); if (p) { noteRead(p, ctx); return withDiagnostics(r, p, ctx); } }
   return r;
 }
 
@@ -707,7 +718,7 @@ function staleSinceRead(p, ctx) {
 // Its own edit is not "changed under us": what it wrote is what it now knows.
 export async function editFileTool(args = {}, ctx = {}) {
   const r = await editFileInner(args, ctx);
-  if (!r?.isError) { const { path: p } = resolvePathArg(args.path, 'edit_file', ctx); if (p) noteRead(p, ctx); }
+  if (!r?.isError) { const { path: p } = resolvePathArg(args.path, 'edit_file', ctx); if (p) { noteRead(p, ctx); return withDiagnostics(r, p, ctx); } }
   return r;
 }
 

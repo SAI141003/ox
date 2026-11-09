@@ -110,6 +110,24 @@ export function isSmallModel(modelOrTarget, contextWindow) {
 }
 // G3 Hermes-style continuation knobs.
 const TRANSPORT_MAX_RETRIES = 3;
+// A rate limit is a wait, not a failure: retried at 150 ms it burned every try inside a second
+// and dropped the run to a slower backup for good. Free NVIDIA did this all day.
+const RATE_LIMIT_RETRIES = 5;
+const RATE_LIMIT_WAITS = [2000, 5000, 10_000, 20_000, 30_000];
+const MAX_RATE_LIMIT_WAIT_MS = 60_000;
+// A backup model is for the bad minute. After this long the main model gets another go.
+const BACK_TO_PRIMARY_MS = 90_000;
+/** How long to wait before retrying this failure. Pure. */
+export function retryDelayMs({ cls, attempt, retryAfterMs = null, jitter = Math.random() }) {
+  if (cls !== 'rate-limit') return 150 * attempt;
+  if (retryAfterMs != null && retryAfterMs >= 0) return Math.min(retryAfterMs + 250, MAX_RATE_LIMIT_WAIT_MS);
+  const base = RATE_LIMIT_WAITS[Math.min(attempt - 1, RATE_LIMIT_WAITS.length - 1)];
+  return Math.round(base * (0.85 + 0.3 * jitter));
+}
+/** Time to try the main model again after falling back? Pure. */
+export function shouldReturnToPrimary({ bouncedAt, kind, now = Date.now() }) {
+  return bouncedAt != null && now - bouncedAt >= BACK_TO_PRIMARY_MS && (kind === 'rate-limit' || kind === 'network' || kind === 'server' || kind == null);
+}
 const CONTINUATION_BUDGET = 3;
 const CONTINUE_PROMPT = 'Continue exactly where you left off. Do not repeat completed text.';
 
@@ -403,6 +421,13 @@ export async function draftTitle(target, { text, signal } = {}) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// A long wait must end the moment you press stop.
+const abortableSleep = (ms, signal) => new Promise((resolve) => {
+  if (signal?.aborted) { resolve(); return; }
+  const done = () => { clearTimeout(t); signal?.removeEventListener?.('abort', done); resolve(); };
+  const t = setTimeout(done, ms);
+  signal?.addEventListener?.('abort', done, { once: true });
+});
 
 // One-line, bounded reason string for transport-failure events.
 function shortNetReason(s) {
@@ -1226,6 +1251,8 @@ async function* runAgentLoop(opts = {}) {
     return modelSwitchEvent({ from: targetLabel(from), to: targetLabel(to), reason, kind: 'escalate', cost: classifyTargetCost(to) });
   };
   let bouncedThisTurn = false;
+  let bounced = null;   // { from, at, kind }: where a fallback came from, to go back
+  let lastRetryAfterMs = null;
   // The `critique` tool resolves a critic model and REFUSES one that matches the
   // model driving this session. It reads the live target off the tool ctx, so it
   // sees the post-fallback model too: a turn that bounced from grok to gemini
@@ -1661,6 +1688,18 @@ async function* runAgentLoop(opts = {}) {
       if (history[0]?.role === 'system') history[0] = { role: 'system', content: await systemText() };
     }
 
+    // The bad minute has passed: the model you chose gets another go, and may fall back again.
+    if (bounced && shouldReturnToPrimary({ bouncedAt: bounced.at, kind: bounced.kind })) {
+      const back = bounced.from;
+      const from = targetLabel(activeTarget);
+      bounced = null;
+      bouncedThisTurn = false;
+      transportRetries = 0;
+      activeTarget = back;
+      toolCtx.activeTarget = activeTarget;
+      yield modelSwitchEvent({ from, to: targetLabel(back), reason: 'trying the main model again', kind: 'fallback', cost: classifyTargetCost(back) });
+    }
+
     let est = payloadTokens(history, tools);
     // Past half full: drop old tool output first, when it frees real room. Compaction,
     // which costs a model call, then has less to do or is not needed.
@@ -1969,6 +2008,7 @@ async function* runAgentLoop(opts = {}) {
         }
       } catch (err) {
         streamError = err?.name === 'AbortError' ? 'aborted' : err?.message ?? String(err);
+        lastRetryAfterMs = Number.isFinite(err?.retryAfterMs) ? err.retryAfterMs : null;
         // DeepSeek dsh: provider-neutral canonical failure classification.
         lastFailure = normalizeFailure(err);
       }
@@ -2032,6 +2072,7 @@ async function* runAgentLoop(opts = {}) {
         const doBounce = () => {
           const from = activeTarget;
           bouncedThisTurn = true;
+          bounced = { from, at: Date.now(), kind: cls ?? null };
           activeTarget = fbList[0];
           // Keep the tool view of "the model driving this session" in step with
           // the bounce, so `critique` cannot select the pre-fallback model as
@@ -2090,10 +2131,13 @@ async function* runAgentLoop(opts = {}) {
           yield { type: 'error', error: `provider ${cls} failure: ${reason}` };
           break outer;
         }
-        if (transportRetries < TRANSPORT_MAX_RETRIES) {
+        if (transportRetries < (cls === 'rate-limit' ? RATE_LIMIT_RETRIES : TRANSPORT_MAX_RETRIES)) {
           transportRetries++;
-          yield { type: 'continuation-retry', attempt: transportRetries, reason };
-          await sleep(150 * transportRetries);
+          const waitMs = retryDelayMs({ cls, attempt: transportRetries, retryAfterMs: lastRetryAfterMs });
+          yield { type: 'continuation-retry', attempt: transportRetries, reason: waitMs >= 1000 ? `${reason}; waiting ${Math.round(waitMs / 1000)} s` : reason };
+          // A test's fake provider does not need the real wait.
+          await abortableSleep(process.env.NODE_TEST_CONTEXT ? Math.min(waitMs, 5) : waitMs, signal);
+          lastRetryAfterMs = null;
           continue;
         }
         if (fbList.length) {
@@ -2308,6 +2352,8 @@ async function* runAgentLoop(opts = {}) {
           break outer;
         }
       }
+      // The run is answered: the screen is free for the next one, not held for two idle minutes.
+      try { (await import('./computer-control.js')).releaseScreen(); } catch {}
       yield { type: 'final', message };
       yield { type: 'turn-end', stopReason, iters };
       break;

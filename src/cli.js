@@ -54,6 +54,7 @@ import {
   pruneSessions,
   rewindPoints,
   rewindTo,
+  forkSessionAt,
   searchSessions,
 } from './session.js';
 import {createCostBudget, formatCost, lookupModel, resolveModelWindow} from './cost.js';
@@ -118,7 +119,7 @@ import {
 } from './system-prompt.js';
 import { McpHub } from './mcp.js';
 import { MCP_TEMPLATES, getTemplate, riskOf } from './mcp-templates.js';
-import { assertSandboxPinCompatible, resolveSandbox, sandboxBackendFor, prepareSandbox } from './sandbox.js';
+import { assertSandboxPinCompatible, pinnedSandboxFromEvents, resolveSandbox, sandboxBackendFor, prepareSandbox } from './sandbox.js';
 import { streamVia } from './providers/index.js';
 import {
   c, renderError, renderMeter, renderToolEnd, renderToolStart, streamText, truncate,
@@ -214,7 +215,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['ask', 'teach', 'desktop', 'version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'knowledge', 'ecc', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages']);
+const SUBCOMMANDS = new Set(['ask', 'teach', 'desktop', 'version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'knowledge', 'ecc', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages', 'computer', 'cloud', 'jetbrains']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -260,8 +261,8 @@ const SLASH_HELP = [
   '      unattended work needs TWO opt-ins: the daemon-wide `ox schedule opt-in`, and',
   '      `--enable` on the row itself. A schedule may only carry --max-cost/--bot/--model —',
   '      it can never set its own sandbox profile, trust level, approval policy or API keys.',
-  '  /fork                 fork the current session',
-  '  /rewind [n]           list rewind points, or rewind the conversation to turn n (files untouched)',
+  '  /fork [n]             continue in a new session, from now or from just before turn n; this one stays',
+  '  /rewind [n] [text]    list rewind points, rewind the conversation to turn n (files untouched), or send new text from there',
   '  /sandbox [name]       show OS sandbox state; switching mid-session is refused (session-pinned)',
   '  /verify               toggle the independent goal verifier (audits each final answer)',
   '  /verify-status        show verifier state and its default source',
@@ -341,7 +342,7 @@ export function slashHelp(arg = '') {
     c.bold('Goals and agents'),
     row('/goal <text>', 'a goal ox keeps working toward and proves'),
     row('/agents', 'live subagents: cancel or steer them'),
-    row('/rewind [n]', 'go back to an earlier turn'),
+    row('/rewind [n] [text]', 'go back to an earlier turn, or resend it differently'),
     c.bold('This session'),
     row('/session', 'id and file; /resume <id>, /fork'),
     row('/ui', 'redraw the last canvas; type 1, 2… to press its buttons'),
@@ -4970,7 +4971,9 @@ const SUB_USAGE = {
   hf: 'usage: ox hf search "<words>" | ox hf files <owner/repo> | ox hf pull <owner/repo>[:QUANT]',
   name: 'usage: ox name [<new name> | --reset]  — what ox is called everywhere; it answers to that name when you say it',
   usage: 'usage: ox usage [--days <n>] [--json]  — tokens and cost by model, agent, surface, project and day',
-  market: 'usage: ox market [search] ["<search>"] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
+  cloud: 'usage: ox cloud setup [--model <model>] [--key <NAME>] [--store-key] | run "<task>" [--model <model>] [--max-cost <usd>] | status  — ox on GitHub Actions: reviews every PR, works with your laptop off',
+  computer: 'usage: ox computer [status] | stop | allow <app> | deny <app>  — which apps ox may use on your screen, and stop it from anywhere',
+  market: 'usage: ox market [search] ["<search>"] | update [name] | install <name>@<owner/repo> | install <owner/repo> | add <owner/repo>',
   hook: 'usage: ox hook <claude|codex|gemini|cursor|copilot> [event]  — run by the agent itself with the event on stdin (set up with: ox hooks install <agent>)',
   'hook-relay': 'usage: ox hook-relay <agent> <session id>  — started by ox hook; one per agent session, not run by hand',
   hooks: 'usage: ox hooks install <claude|codex|gemini|cursor|copilot> [--yes] | uninstall <agent> [--yes] | status | safe on|off',
@@ -6549,6 +6552,27 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'transfer':
+    case 'jetbrains': {
+      // ox as an agent in the AI chat of IntelliJ IDEA, PyCharm, WebStorm and the rest (over ACP).
+      const J = await import('./jetbrains.js');
+      const sub = String(args[0] ?? 'status').toLowerCase();
+      try {
+        if (sub === 'setup' || sub === 'install') {
+          const r = J.setupJetBrains();
+          console.log(r.changed ? c.green(`ox added to ${r.file}${r.backup ? ` (the old file is at ${r.backup})` : ''}`) : c.dim(`ox is already in ${r.file}`));
+          console.log('Restart the IDE, open the AI chat, and pick ox from the agent list.');
+        } else if (sub === 'remove' || sub === 'uninstall') {
+          const r = J.removeJetBrains();
+          console.log(r.changed ? c.green(`ox removed from ${r.file}`) : c.dim(`ox was not in ${r.file}`));
+        } else {
+          const s = J.jetbrainsStatus();
+          if (s.error) { console.log(c.red(s.error)); process.exitCode = 1; }
+          else if (!s.installed) console.log(`ox is not set up in JetBrains IDEs. Run ${c.bold('ox jetbrains setup')} (writes ${s.file}).`);
+          else console.log(s.ok ? c.green(`ox is set up in ${s.file}`) : c.yellow(`ox is in ${s.file}, but ${s.entry.command} is missing: run ox jetbrains setup again`));
+        }
+      } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; }
+      return;
+    }
     case 'vs': {
       // lumiomac's "Claude Code vs Codex": the same prompt to two or more tools,
       // each in its own folder and Terminal tab; the race is shown in the notch.
@@ -6593,6 +6617,31 @@ async function runSubcommand(cmd, args) {
           if (hb && spawnSync(hb, ['qr', p.link, png]).status === 0) { spawnSync('open', [png]); console.log(c.dim(`  the QR code is open (${png}); the link is on the clipboard`)); }
           setTimeout(() => { try { fs.rmSync(png, { force: true }); } catch {} }, 120_000).unref?.();
         } catch {}
+        return;
+      }
+      if (sub === 'web') {
+        const W = await import('./phone-web.js');
+        const target = W.appTarget();
+        if (!target) { console.log(c.red('ox is not running here: open the OX app, or run ox serve, then try again')); process.exitCode = 1; return; }
+        const key = W.phoneKey({ fresh: args.includes('--new-key') });
+        const pi = args.indexOf('--port');
+        const web = await W.startPhoneWeb({ key, target, ...(pi >= 0 ? { port: Number(args[pi + 1]) } : {}) });
+        const addrs = W.phoneAddresses();
+        if (!addrs.length) console.log(c.yellow('no network address found: connect to Wi-Fi or Tailscale'));
+        const links = addrs.map((a) => `http://${a}:${web.port}/pair?key=${key}`);
+        console.log(c.green('Open this on your phone, on the same Wi-Fi or Tailscale, then bookmark the page:'));
+        for (const l of links) console.log(`  ${l}`);
+        console.log(c.dim('Whoever has this link can run anything ox can. Show it to nobody. Old links stop working with: ox phone web --new-key'));
+        console.log(c.dim('Plain HTTP: fine on your own network, encrypted over Tailscale. Do not expose this port to the internet. Ctrl-C stops it.'));
+        try {
+          const { spawnSync } = await import('node:child_process');
+          const { handsPath } = await import('./mac-control.js');
+          const hb = handsPath();
+          const png = path.join(os.tmpdir(), `ox-phone-web-${process.pid}.png`);
+          if (hb && links[0] && spawnSync(hb, ['qr', links[0], png]).status === 0) { spawnSync('open', [png]); setTimeout(() => { try { fs.rmSync(png, { force: true }); } catch {} }, 120_000).unref?.(); }
+        } catch {}
+        await new Promise((res) => process.once('SIGINT', res));
+        await web.close();
         return;
       }
       if (sub === 'forget' || sub === 'rm') { console.log(P.forgetDevice(args[1] ?? '') ? `${c.green('✓')} forgotten: that phone can no longer reach this Mac` : c.yellow('no such phone')); return; }
@@ -7054,6 +7103,27 @@ async function runSubcommand(cmd, args) {
         try { const list = await mk.addCatalog(args[1] ?? ''); console.log(c.green(`catalogues: ${list.join(', ')}`)); } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; }
         return;
       }
+      if (args[0] === 'update' && args[1] === '--auto') {
+        const P = await import('./plugins.js');
+        if (args[2] === 'on' || args[2] === 'off') P.setAutoUpdate(args[2] === 'on');
+        const on = P.autoUpdateEnabled({ config });
+        const st = (() => { try { return JSON.parse(fs.readFileSync(P.autoUpdateStatePath(), 'utf8')); } catch { return {}; } })();
+        console.log(`automatic plugin updates: ${on ? c.green('on') : c.yellow('off')} (daily, while the app runs; each new copy is safety-scanned)`);
+        if (st.checkedAt) console.log(c.dim(`last checked ${st.checkedAt}`));
+        return;
+      }
+      if (args[0] === 'update') {
+        const { updatePlugins } = await import('./plugins.js');
+        const rows = await updatePlugins({ names: args.slice(1) });
+        if (!rows.length) console.log(c.dim('no plugins installed'));
+        for (const r of rows) {
+          if (r.status === 'updated') console.log(c.green(`updated ${r.name}${r.to ? ` to ${r.to}` : ''}`));
+          else if (r.status === 'same') console.log(c.dim(`${r.name} is up to date`));
+          else if (r.status === 'skipped') console.log(c.dim(`${r.name}: ${r.why}`));
+          else { console.log(c.yellow(`${r.name} kept as it was: ${r.why}`)); process.exitCode = 1; }
+        }
+        return;
+      }
       if (args[0] === 'install') {
         const target = String(args[1] ?? '');
         const at = target.match(/^([\w.-]+)@([\w.-]+\/[\w.-]+)$/);
@@ -7265,6 +7335,64 @@ async function runSubcommand(cmd, args) {
       else console.log(r.handled ? (r.ok === false ? c.red(r.message) : r.message) : c.dim(r.message));
       if (!r.handled) process.exitCode = 2;
       else if (r.ok === false) process.exitCode = 1;
+      return;
+    }
+    case 'cloud': {
+      const C = await import('./cloud.js');
+      const verb = String(args[0] ?? '').toLowerCase();
+      const opt = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : null; };
+      try {
+        if (verb === 'ci') {
+          // Inside the GitHub runner: action.yml starts this.
+          if (process.env.OX_CI_MODE === 'task') { const r = await C.ciTask(); console.log(r.pr ? `opened ${r.pr}` : r.why); return; }
+          const r = await C.ciReview(); console.log(r.posted ? 'review posted' : r.why); return;
+        }
+        if (verb === 'setup') {
+          const { loadKeysIntoEnv } = await import('./keystore.js');
+          if (process.env.OX_NO_KEYSTORE !== '1') loadKeysIntoEnv();
+          const cfg = loadConfig();
+          // A bot named in your own config does not exist on GitHub's machine: its provider:model does.
+          const model = C.portableModel(opt('--model') ?? defaultBotSpec(cfg), (m) => resolveBot(m, cfg));
+          const key = opt('--key') ?? C.keyForModel(model, (m) => { try { return resolveBot(m, cfg).keyEnv ?? null; } catch { return null; } });
+          const written = C.setupCloud({ cwd: process.cwd(), model, key });
+          console.log(written.length ? c.green(`added ${written.join(', ')}`) : c.dim('the workflows are already here'));
+          if (args.includes('--store-key')) { await C.storeKey(key, process.env[key], {}); console.log(c.green(`${key} stored in this repository's GitHub secrets`)); } else console.log(c.dim(`Store the key: ox cloud setup --store-key  (sends ${key} to GitHub's encrypted secrets), or set it in the repository's settings.`));
+          console.log(c.dim('Then commit and push .github/workflows. Every pull request gets a review; ox cloud run "<task>" works with your laptop off.'));
+          return;
+        }
+        if (verb === 'run') {
+          const words = []; for (let i = 1; i < args.length; i++) { if (['--model', '--max-cost'].includes(args[i])) { i++; continue; } words.push(args[i]); }
+          await C.startCloudTask(words.join(' '), { model: opt('--model'), maxCost: opt('--max-cost') });
+          console.log(c.green('started on GitHub: it opens a pull request when done. Follow it: ox cloud status'));
+          return;
+        }
+        if (verb === 'status') {
+          const runs = await C.cloudStatus({});
+          if (!runs.length) console.log(c.dim('no cloud runs yet'));
+          for (const r of runs) console.log(`${r.conclusion || r.status}  ${r.displayTitle}  ${c.dim(r.url)}`);
+          return;
+        }
+        console.log(SUB_USAGE.cloud);
+        process.exitCode = verb === 'help' || verb === '--help' ? 0 : 3;
+      } catch (e) { console.log(c.red(String(e?.message ?? e))); process.exitCode = 1; }
+      return;
+    }
+    case 'computer': {
+      // Who may use your screen: apps allowed one by one, a stop from anywhere (src/computer-control.js).
+      const C = await import('./computer-control.js');
+      const verb = String(args[0] ?? 'status').toLowerCase();
+      const name = args.slice(1).join(' ').trim();
+      if (verb === 'stop') { C.requestStop(); console.log(c.green('stopped: the run using your computer touches nothing more')); return; }
+      if (verb === 'allow') { try { C.allowApp(name); console.log(c.green(`${name} is always allowed. Send and delete still ask. Undo: ox computer deny ${name}`)); } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; } return; }
+      if (verb === 'deny') { console.log(C.denyApp(name) ? c.green(`${name} asks again`) : c.dim(`${name} was not always-allowed`)); return; }
+      if (verb === 'status' || verb === 'list') {
+        const st = C.computerStatus();
+        console.log(st.inUse ? `in use by ${st.holder} (process ${st.pid}). Stop it: ox computer stop` : c.dim('nothing is using your computer'));
+        console.log(st.always.length ? `always allowed: ${st.always.join(', ')}` : c.dim('no app is always allowed: ox asks for each one'));
+        return;
+      }
+      console.log('usage: ox computer [status] | stop | allow <app> | deny <app>');
+      process.exitCode = verb === 'help' || verb === '--help' ? 0 : 3;
       return;
     }
     case 'awake': {
@@ -7502,8 +7630,27 @@ async function runSubcommand(cmd, args) {
         }
         return;
       }
+      if (['imessage', 'signal', 'whatsapp'].includes(action)) {
+        const G = await import('./text-gateway.js');
+        const mode = flag('--mode') ? normalizeMode(flag('--mode')) : null;
+        if (flag('--mode') && !mode) { console.log(c.red(`--mode must be one of: auto, ${MODE_NAMES.join(', ')}`)); process.exitCode = 3; return; }
+        const ac = new AbortController();
+        process.on('SIGINT', () => { ac.abort(); process.exit(0); });
+        const cwd = path.resolve(flag('--cwd') ?? process.cwd());
+        const state = { ...G.loadTextState(action), cwd };
+        try {
+          const source = action === 'imessage' ? G.imessageSource({ state }) : action === 'signal' ? G.signalSource({ number: flag('--number') ?? state.number ?? process.env.SIGNAL_NUMBER }) : G.whatsappSource({ state });
+          if (action === 'signal' && flag('--number')) state.number = flag('--number');
+          await G.runTextGateway(source, { cwd, agent: flag('--agent') ?? null, mode, signal: ac.signal, state });
+        } catch (e) {
+          console.log(c.red(String(e?.message ?? e)));
+          process.exitCode = 1;
+        }
+        return;
+      }
       if (action === 'unpair') {
         const which = String(args[1] ?? 'all').toLowerCase();
+        if (['imessage', 'signal', 'whatsapp'].includes(which)) { const G = await import('./text-gateway.js'); const st = G.loadTextState(which); delete st.owner; G.saveTextState(which, st); console.log(c.green(`unpaired ${which}`)); return; }
         if (which === 'all' || which === 'telegram') { const st = tg.loadState(); delete st.owner; tg.saveState(st); }
         if (which === 'all' || which === 'discord') { const dc = await import('./discord-gateway.js'); const st = dc.loadState(); delete st.owner; dc.saveState(st); }
         if (which === 'all' || which === 'slack') { const sl = await import('./slack-gateway.js'); const st = sl.loadState(); delete st.owner; sl.saveState(st); }
@@ -7517,7 +7664,10 @@ async function runSubcommand(cmd, args) {
       console.log(c.dim('  ox gateway telegram --token <token from @BotFather> [--cwd <project>] [--mode <mode>] [--agent <name>]'));
       console.log(c.dim('  ox gateway discord  --token <bot token from discord.com/developers> [--cwd <project>] [--mode <mode>] [--agent <name>]'));
       console.log(c.dim('  ox gateway slack    --app-token xapp-… --bot-token xoxb-… (api.slack.com/apps, Socket Mode) [--cwd <project>] [--mode <mode>] [--agent <name>]'));
-      console.log(c.dim('  ox gateway unpair [telegram|discord|slack]'));
+      console.log(c.dim('  ox gateway imessage  (Mac; give your terminal Full Disk Access) [--cwd <project>]'));
+      console.log(c.dim('  ox gateway signal --number +1… (needs signal-cli) [--cwd <project>]'));
+      console.log(c.dim('  ox gateway whatsapp  (Cloud API keys, webhook on ox serve) [--cwd <project>]'));
+      console.log(c.dim('  ox gateway unpair [telegram|discord|slack|imessage|signal|whatsapp]'));
       console.log(line('telegram', st));
       console.log(line('discord', dst));
       const sst = (await import('./slack-gateway.js')).loadState();
@@ -7884,7 +8034,7 @@ async function replWithBudget(config, opts, flags, budget) {
       await cleanupCtx(assembled);
       return;
     }
-    if (!applyResumeGuards(f, { sandboxProfile: opts.sandbox, rewind: flags.rewind })) {
+    if (!applyResumeGuards(f, { sandboxProfile: opts.sandbox, rewind: flags.rewind, config })) {
       process.exitCode = 4;
       await cleanupCtx(assembled);
       return;
@@ -7899,7 +8049,7 @@ async function replWithBudget(config, opts, flags, budget) {
   } else if (flags.cont) {
     const f = latestSessionFile(config.cwd);
     if (f) {
-      if (!applyResumeGuards(f, { sandboxProfile: opts.sandbox, rewind: flags.rewind })) {
+      if (!applyResumeGuards(f, { sandboxProfile: opts.sandbox, rewind: flags.rewind, config })) {
         process.exitCode = 4;
         await cleanupCtx(assembled);
         return;
@@ -8157,6 +8307,9 @@ async function replWithBudget(config, opts, flags, budget) {
           case 'tool-end': {
             const snip = `${ev.ms}ms · ${ev.bytes}b`;
             process.stdout.write(`${renderToolEnd(ev.name, { content: snip }, ev.isError)}\n`);
+            if (!ev.isError && ['see_page', 'screenshot', 'desktop', 'create_media'].includes(ev.name)) {
+              try { const { showToolImage } = await import('./terminal-image.js'); showToolImage(ev.output ?? ev.content); } catch {}
+            }
             if (ev.name === 'show_ui' && ev.meta?.canvas?.text) {
               process.stdout.write(`\n${ev.meta.canvas.text}\n`);
               if (ev.meta.canvas.actions?.length) process.stdout.write(`${c.dim('  type a number to press a button · /ui to redraw')}\n`);
@@ -8871,9 +9024,25 @@ async function replWithBudget(config, opts, flags, budget) {
         return;
       }
       case '/fork': {
+        const turn = rest.trim();
+        if (turn && !/^\d+$/.test(turn)) { console.log(c.red(`✗ /fork takes a turn number or nothing, got '${rest}'`)); return; }
         try {
-          session = forkSession(session.file);
-          console.log(c.dim(`forked → new session ${session.id}`));
+          if (!turn) {
+            session = forkSession(session.file);
+            console.log(c.dim(`forked → new session ${session.id}`));
+            return;
+          }
+          // From just before an earlier turn: the conversation goes back there, the original stays.
+          const from = session.id;
+          const { session: forked, label } = forkSessionAt(session.file, Number(turn), config.cwd);
+          const loaded = loadSessionWithStatus(forked.file);
+          messages = replayMessages(loaded.messages);
+          state.goal = loaded.goal ?? null;
+          state.goalTerminal = loaded.goalTerminal ?? null;
+          state.goalSig = progressSignature(state.goal);
+          session = forked;
+          console.log(c.green(`✓ now in a new session ${forked.id}, from just before '${label}'`));
+          console.log(c.dim(`session ${from} is unchanged: ox --resume ${from}. Files on disk were not touched.`));
         } catch (err) {
           console.log(renderError(err));
         }
@@ -8890,7 +9059,9 @@ async function replWithBudget(config, opts, flags, budget) {
           for (const p of pts) console.log(`  ${padCell(String(p.id), 4)} ${p.label}`);
           return;
         }
-        const n = Number(rest.trim());
+        const asked = /^(\d+)(?:\s+([\s\S]+))?$/.exec(rest.trim());
+        const n = asked ? Number(asked[1]) : NaN;
+        const resend = asked?.[2]?.trim() || null;
         if (!Number.isInteger(n) || n < 1) {
           console.log(c.red(`✗ /rewind needs a rewind-point number, got '${rest}'`));
           return;
@@ -8909,6 +9080,7 @@ async function replWithBudget(config, opts, flags, budget) {
           reportResumedGoal(state.goal, state.goalTerminal);
           console.log(c.green(`✓ rewound to turn ${pt.id} ('${pt.label}')`));
           console.log(c.dim('conversation-only restore — files on disk were NOT reverted'));
+          if (resend) await runTurn(resend);
         } catch (err) {
           console.log(renderError(err));
         }
@@ -10005,7 +10177,7 @@ async function replWithBudget(config, opts, flags, budget) {
 // Wave5a A/D: shared resume guards — sandbox pin compatibility check first
 // (fail-closed, exit 4), then an optional --rewind <n> applied BEFORE replay.
 // Returns true when the caller may proceed.
-function applyResumeGuards(sessionFile, { sandboxProfile, rewind } = {}) {
+function applyResumeGuards(sessionFile, { sandboxProfile, rewind, config } = {}) {
   if (sandboxProfile) {
     try {
       // Status-aware read: an unreadable transcript must not hard-refuse the
@@ -10013,7 +10185,14 @@ function applyResumeGuards(sessionFile, { sandboxProfile, rewind } = {}) {
       // A readable pin still mismatches and refuses as before, and
       // OX_STRICT_READ=1 still throws. A pin we cannot read simply cannot
       // mismatch; the run proceeds and says the history was NOT read.
-      const pinned = assertSandboxPinCompatible(loadSessionWithStatus(sessionFile).messages, sandboxProfile.name);
+      const events = loadSessionWithStatus(sessionFile).messages;
+      // Nobody asked for the default profile, so a session keeps the one it
+      // was pinned to (an older 'off' session stays off; a strict one stays strict).
+      const was = sandboxProfile.source === 'default' ? pinnedSandboxFromEvents(events) : null;
+      if (was && String(was.profile ?? 'off') !== sandboxProfile.name) {
+        Object.assign(sandboxProfile, resolveSandbox({ flag: String(was.profile ?? 'off'), config }));
+      }
+      const pinned = assertSandboxPinCompatible(events, sandboxProfile.name);
       if (pinned && !!pinned.degraded !== !!sandboxProfile.degraded) {
         process.stderr.write(
           `${c.yellow(`⚠ session was pinned with degraded=${!!pinned.degraded}; this run is degraded=${!!sandboxProfile.degraded}`)}\n`
@@ -10609,7 +10788,7 @@ export async function main(argv = []) {
         process.exitCode = 3;
         return;
       }
-      if (applyResumeGuards(f, { sandboxProfile, rewind: flags.rewind })) {
+      if (applyResumeGuards(f, { sandboxProfile, rewind: flags.rewind, config })) {
         initialMessages = replayMessages(loadSessionWithStatus(f).messages);
       } else {
         return;
@@ -10617,7 +10796,7 @@ export async function main(argv = []) {
     } else if (flags.cont) {
       const f = latestSessionFile(config.cwd);
       if (f) {
-        if (applyResumeGuards(f, { sandboxProfile, rewind: flags.rewind })) {
+        if (applyResumeGuards(f, { sandboxProfile, rewind: flags.rewind, config })) {
           initialMessages = replayMessages(loadSessionWithStatus(f).messages);
         } else {
           return;

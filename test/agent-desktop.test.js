@@ -1,6 +1,5 @@
 // agent-desktop as ox's desktop hand: ox's tools read and act through it when
-// it is installed, and ox's own rules (never Send/Pay/Delete, never Return) stay
-// on top. A fake agent-desktop answers here; no real app is touched.
+// it is installed, and ox's own rules (src/computer-control.js) stay on top. A fake agent-desktop answers here; no real app is touched.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -42,23 +41,33 @@ test('ui_elements lists the window through agent-desktop, numbered, Send marked 
   assert.deepEqual(calls().at(-1), ['snapshot', '--app', 'Mail', '-i', '--compact', '--include-bounds']);
 });
 
-test('click presses the ref without moving the pointer; Send is refused before anything is pressed', async () => {
+test('click presses the ref without moving the pointer; Send needs a yes each time, even with -y', async () => {
   const r = await T.click({ app: 'Mail', element: 'Save draft' }, yes);
   assert.match(r.content, /clicked button "Save draft" in Mail .*pointer did not move/);
   assert.deepEqual(calls().at(-1), ['click', '@s1:e2']);
   const n = calls().length;
-  const send = await T.click({ app: 'Mail', element: 'Send' }, yes);
+  let asks = 0;
+  const no = { yolo: false, requestApproval: async (tool, args, detail, opts) => { asks++; assert.equal(opts?.force, true); assert.match(detail, /can send or delete/); return false; } };
+  const send = await T.click({ app: 'Mail', element: 'Send' }, no);
   assert.equal(send.isError, true);
-  assert.match(send.content, /does not press "Send"/);
+  assert.match(send.content, /did not press "Send"/);
+  assert.equal(asks, 1, 'asked once');
+  const unasked = await T.click({ app: 'Mail', element: 'Send' }, { yolo: true });
+  assert.equal(unasked.isError, true, '-y with nobody to ask is a no');
   assert.ok(!calls().slice(n).some((c) => c[0] === 'click'), 'nothing was pressed');
+  const asked = await T.click({ app: 'Mail', element: 'Send' }, yes);
+  assert.match(asked.content, /clicked button "Send"/, 'a yes from you lets it');
 });
 
-test('type_text into a field types into its ref and sends nothing; press_key never presses Return', async () => {
+test('type_text into a field types into its ref and sends nothing; press_key asks before Return', async () => {
   const r = await T.type_text({ app: 'Mail', into: 'Subject', text: 'Hello' }, yes);
   assert.match(r.content, /typed 5 characters into textfield "Subject"/);
   assert.deepEqual(calls().at(-1), ['type', '@s1:e1', 'Hello']);
-  const ret = await T.press_key({ key: 'return' }, yes);
-  assert.equal(ret.isError, true);
+  const ret = await T.press_key({ key: 'return' }, { yolo: true });
+  assert.equal(ret.isError, true, 'Return in an app nobody named: -y alone does not press it');
+  assert.equal((await T.press_key({ key: 'return', app: 'Mail' }, { yolo: true })).isError, true, 'nor in a mail app');
+  assert.match((await T.press_key({ key: 'return', app: 'Notes' }, { yolo: true })).content, /pressed return in Notes/);
+  assert.equal((await T.press_key({ key: 'cmd+shift+q', app: 'Notes' }, yes)).isError, true, 'logging out is never pressed');
   const k = await T.press_key({ key: 'cmd+f', app: 'Mail' }, yes);
   assert.match(k.content, /pressed cmd\+f in Mail/);
   assert.deepEqual(calls().at(-1), ['press', 'cmd+f', '--app', 'Mail']);
@@ -85,14 +94,18 @@ test('map and drill read as short lines with refs, and teach ox what each ref is
   assert.match(text, /@s1:e3 button "Send"/);
 });
 
-test('a ref gets no way around the rules: Send stays refused, unknown refs too, and no Return in text', async () => {
+test('a ref gets no way around the rules: Send asks, Pay is refused, unknown refs too, and no Return in text', async () => {
   const { desktop, describeTree } = await import('../src/tools/desktop.js');
-  describeTree({ role: 'window', children: [{ role: 'button', name: 'Send', ref_id: '@s1:e3' }, { role: 'textfield', name: 'Subject', ref_id: '@s1:e1' }] });
+  describeTree({ role: 'window', children: [{ role: 'button', name: 'Send', ref_id: '@s1:e3' }, { role: 'button', name: 'Pay now', ref_id: '@s1:e4' }, { role: 'textfield', name: 'Subject', ref_id: '@s1:e1' }] });
   const yes = { requestApproval: async () => true };
-  assert.match((await desktop({ action: 'click', element: '@s1:e3' }, yes)).content, /does not touch "Send"/);
+  const no = { requestApproval: async () => false };
+  assert.match((await desktop({ action: 'click', element: '@s1:e3' }, no)).content, /declined/);
+  assert.equal((await desktop({ action: 'click', element: '@s1:e3' }, { yolo: true })).isError, true, '-y alone does not press Send');
+  assert.match((await desktop({ action: 'click', element: '@s1:e4' }, yes)).content, /spends money/);
   assert.match((await desktop({ action: 'click', element: '@s9:e9' }, yes)).content, /not from a map or drill/);
-  assert.match((await desktop({ action: 'type', element: '@s1:e1', text: 'hi\nthere' }, yes)).content, /never presses Return/);
-  assert.match((await desktop({ action: 'notification_action', index: 1, value: 'Delete' }, yes)).content, /does not press "Delete"/);
+  assert.match((await desktop({ action: 'type', element: '@s1:e1', text: 'hi\nthere' }, yes)).content, /press_key return/);
+  assert.match((await desktop({ action: 'notification_action', index: 1, value: 'Buy now' }, yes)).content, /spends money/);
+  assert.match((await desktop({ action: 'notification_action', index: 1, value: 'Delete' }, no)).content, /declined/);
   const typed = await desktop({ action: 'type', element: '@s1:e1', text: 'hi' }, yes);
   assert.equal(typed.isError, undefined, typed.content);
 });

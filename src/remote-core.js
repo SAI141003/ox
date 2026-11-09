@@ -47,6 +47,13 @@ export const HELP = [
   '/where   which project ox works in',
 ].join('\n');
 
+// Phones capitalise and drop slashes: "Pair 123456", "status". A message that is exactly one of
+// ox's commands works without the slash; "stop using tabs" is still an ordinary request.
+export function slashlessReply(text) {
+  const t = String(text ?? '').trim();
+  return /^(pair\s+\d{6}|help|start|where|new|status|stop|mode(\s+[a-z]+)?)$/i.test(t) ? `/${t.toLowerCase()}` : t;
+}
+
 export function createRemoteCore({ adapter, state, persist, cwd, agent = null, env = process.env, log = console.log, socketDir, channel = 'chat' }) {
   if (!state.mode) state.mode = 'auto';
   if (state.fresh === undefined) state.fresh = true;
@@ -116,7 +123,23 @@ export function createRemoteCore({ adapter, state, persist, cwd, agent = null, e
     if (!chat || !text) return;
     if (!state.owner) {
       const code = /^\/pair\s+(\d{6})$/.exec(text)?.[1];
+      // A six-digit code falls to guessing without a limit: five wrong tries and that chat is
+      // ignored; thirty in all and the code is replaced (the new one is printed here only).
+      state.pairMisses ??= {};
+      if ((state.pairMisses[chat] ?? 0) >= 5) return;
+      if (code && code !== state.pairCode) {
+        state.pairMisses[chat] = (state.pairMisses[chat] ?? 0) + 1;
+        state.pairMissTotal = (state.pairMissTotal ?? 0) + 1;
+        if (state.pairMissTotal >= 30) {
+          state.pairCode = String(crypto.randomInt(100000, 1000000));
+          state.pairMissTotal = 0;
+          log(`too many wrong pairing codes: the code is now ${state.pairCode}`);
+        }
+        persist();
+      }
       if (code && code === state.pairCode) {
+        delete state.pairMisses;
+        delete state.pairMissTotal;
         state.owner = chat;
         delete state.pairCode;
         persist();

@@ -252,7 +252,35 @@ impersonation and fraud: clone only voices you have the right to use.
 ox holds the machine awake while it works (`caffeinate` on macOS,
 `systemd-inhibit` on Linux, `SetThreadExecutionState` on Windows), and lets go
 when it stops. `ox awake 2h` holds it for a while, `ox awake off` releases it,
-`ox awake --lid` explains what each OS needs to keep running with the lid closed.
+`ox awake --lid` explains what each OS needs to keep running with the lid closed, and
+`ox awake --lid 2h` does it on a Mac (macOS asks for your password; sleep comes back on at the end
+of the time, at 10 % battery, or on `ox awake --lid off`).
+
+`ox computer` shows who is using your screen and which apps are always allowed.
+`ox computer allow <app>` and `deny <app>` change that list, `ox computer stop` halts a run from
+anywhere (so does Esc, when the island has Accessibility). Terminals, IDEs, Finder and System
+Settings warn and cannot be always-allowed. A control that sends or deletes asks every time, even
+with `-y`; with nobody to ask it is refused. A control that pays is never pressed. Schedules and
+daemon runs do not use the screen.
+
+`/rewind <n> <text>` goes back to turn n and sends new text from there; `/fork <n>` continues in a
+new session from just before turn n, leaving the original as it was.
+
+`ox cloud setup [--model m] [--key NAME] [--store-key]` adds two GitHub workflows to a project: a
+review comment on every pull request, and `ox cloud run "<task>"`, which works with your laptop off
+and opens a pull request. `ox cloud status` lists runs. Pull requests from forks get no keys.
+
+`ox phone web [--new-key]` opens the whole app to your phone through a key-checked door, over your
+Wi-Fi or Tailscale. `ox gateway imessage`, `ox gateway signal --number +1…` and `ox gateway whatsapp`
+add those channels, with the same pairing and approvals as Telegram.
+
+`ox market update [name]` updates plugins; a new version that fails the safety scan is held back. An MCP
+tool can declare a price (`annotations.costUsd`): results show it and the chat's total, and past
+`paidToolLimitUsd` (default $5) ox asks first, even with `-y`.
+
+After a write or edit, ox asks a language server already on your machine (typescript-language-server,
+pyright, gopls, rust-analyzer, clangd) about the file and gives the model any errors. `OX_LSP=0` or
+`"lsp": false` turns that off.
 `OX_NO_AWAKE=1` turns it off.
 
 ## ox on your phone

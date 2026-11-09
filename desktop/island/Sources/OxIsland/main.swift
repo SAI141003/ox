@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         FnKey.install(press: { MainActor.assumeIsolated { wake.stop() }; buddy.startListening() },
                       release: { buddy.stopListening(); DispatchQueue.main.asyncAfter(deadline: .now() + 6) { MainActor.assumeIsolated { wake.start() } } })
         RightCommandDoubleTap.install()
+        ComputerStop.install()
         MainActor.assumeIsolated { bridge.dictation.install(); Capture.install(bridge); pill.attach(bridge.dictation) }
         let panel = IslandPanel(bridge: bridge)
         panel.orderFrontRegardless()

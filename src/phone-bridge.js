@@ -84,6 +84,7 @@ export async function startPhoneBridge({ port = PORT, host = '0.0.0.0', home, wa
     const strike = strikes.get(addr);
     if (strike && strike.until > now()) { res.writeHead(429).end(); return; }
     const fail = (code = 403) => {
+      if (strikes.size > 10_000 && !strikes.has(addr)) strikes.clear();
       const s = strikes.get(addr) ?? { n: 0, until: 0 };
       s.n += 1; if (s.n >= 20) { s.until = now() + 10 * 60_000; s.n = 0; }
       strikes.set(addr, s);
