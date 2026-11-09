@@ -73,3 +73,12 @@ test('first-edit: a code run that only reads is told to start editing, once; an 
   const off = stuckWatcher({ quietTurns: 99 });
   for (let i = 0; i < 20; i++) assert.equal(off({ type: 'usage' }), null, 'not asked for');
 });
+
+test('first-edit: on a slow provider the nudge comes by time, not only by turns', async () => {
+  const { stuckWatcher } = await import('../src/trace.js');
+  let t = 0;
+  const w = stuckWatcher({ firstEdit: 8, firstEditMs: 600_000, quietTurns: 99, now: () => t });
+  assert.equal(w({ type: 'usage' }), null);
+  t = 700_000;
+  assert.equal(w({ type: 'usage' })?.kind, 'first-edit');
+});

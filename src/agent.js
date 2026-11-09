@@ -1570,7 +1570,9 @@ async function* runAgentLoop(opts = {}) {
   // The stuck signals used only to reach a notification. The model is told too, once each.
   // Code-changing runs also get a nudge to start editing (see stuckWatcher's firstEdit).
   const canEdit = ['code', 'debug', 'auto', 'orchestrate', undefined, null].includes(ctx.mode) && [...tools, ...withheldTools].some((t) => /^(edit_file|write_file|apply_patch)$/.test(t?.name ?? ''));
-  const stall = stuckWatcher({ firstEdit: canEdit && !process.env.OX_NO_FIRST_EDIT_NUDGE ? 8 : null });
+  // By turns, or by time on a slow provider (a pilot saw ~4 minutes per reply, so 8 turns was most of the run).
+  const nudge = canEdit && !process.env.OX_NO_FIRST_EDIT_NUDGE;
+  const stall = stuckWatcher({ firstEdit: nudge ? 8 : null, firstEditMs: nudge ? 10 * 60_000 : null });
   let stallNote = null;
   outer: while (true) {
     if (stallNote) {

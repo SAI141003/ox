@@ -18,7 +18,8 @@ export function traceEnabled(env = process.env) {
 }
 
 /** The watcher: feed it events, it returns a signal when one is due (each kind once per run). */
-export function stuckWatcher({ repeat = 3, errors = 4, quietTurns = 12, firstEdit = null } = {}) {
+export function stuckWatcher({ repeat = 3, errors = 4, quietTurns = 12, firstEdit = null, firstEditMs = null, now = Date.now } = {}) {
+  const t0 = now();
   const calls = [];
   let errRun = 0, turns = 0, sinceChange = 0, edited = false;
   const said = new Set();
@@ -40,7 +41,7 @@ export function stuckWatcher({ repeat = 3, errors = 4, quietTurns = 12, firstEdi
       turns++; sinceChange++;
       // Reading forever is the commonest way a fix runs out of time (a SWE-bench pilot: 24 of 37
       // timed-out runs never edited a file). Only asked for by runs that are meant to change code.
-      if (firstEdit && !edited && turns >= firstEdit) return once('first-edit', `${turns} model turns of reading and no change yet. If the task asks for a change, you know enough to start: make the smallest edit that could do it now, then run the closest test and adjust (if it only asks a question, answer it)`);
+      if (firstEdit && !edited && (turns >= firstEdit || (firstEditMs && turns >= 2 && now() - t0 >= firstEditMs))) return once('first-edit', `${turns} model turns (${Math.round((now() - t0) / 60000)} min) of reading and no change yet. If the task asks for a change, you know enough to start: make the smallest edit that could do it now, then run the closest test and adjust (if it only asks a question, answer it)`);
       if (sinceChange >= quietTurns) return once('quiet', `${sinceChange} model turns without changing a file: it may be going in circles`);
     }
     return null;
