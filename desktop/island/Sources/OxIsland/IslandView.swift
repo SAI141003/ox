@@ -78,6 +78,8 @@ struct IslandRoot: View {
     var body: some View {
         let phase = IslandLayout.phase(bridge)
         let s = IslandLayout.shape(phase, metrics, office: bridge.hasExtraPanel, idle: bridge.idleIsland)
+        let full = IslandLayout.layoutShape(phase, metrics, office: bridge.hasExtraPanel, idle: bridge.idleIsland)
+        let k = IslandLayout.contentScale(phase)
         // Top-centred, like the notch. Every child is laid out in the island's
         // own width; the shape both paints the black and clips the content.
         ZStack(alignment: .top) {
@@ -106,7 +108,7 @@ struct IslandRoot: View {
             Group {
                 switch phase {
                 case .launch:
-                    LaunchView(size: CGSize(width: s.w, height: s.h)) { bridge.launching = false }
+                    LaunchView(size: CGSize(width: full.w, height: full.h)) { bridge.launching = false }
                         .transition(.opacity)
                 case .hidden:
                     Color.clear
@@ -121,6 +123,9 @@ struct IslandRoot: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
                 }
             }
+            // Laid out at full size, then drawn smaller as one piece (IslandLayout.scale).
+            .frame(width: full.w, height: full.h, alignment: .top)
+            .scaleEffect(k, anchor: .top)
             .frame(width: s.w, height: s.h, alignment: .top)
         }
         .frame(width: IslandLayout.panel.width, height: IslandLayout.panel.height, alignment: .top)

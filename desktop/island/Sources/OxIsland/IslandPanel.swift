@@ -81,7 +81,25 @@ enum IslandLayout {
     /// The glowing tiles under the cards (`defaults write dev.ox.island island.home classic` hides them).
     static var tilesRow: Bool { UserDefaults.standard.string(forKey: "island.home") != "classic" }
     static let tilesHeight: CGFloat = 92
+    /// How large the open island is drawn. Its content is laid out at full size and
+    /// scaled as one piece, so nothing inside is cut off or re-wrapped; the closed
+    /// notch is never scaled (it has to match the camera housing).
+    /// `defaults write dev.ox.island island.scale -float 0.8` picks another size (0.6 to 1).
+    static var scale: CGFloat {
+        if let v = UserDefaults.standard.object(forKey: "island.scale") as? Double, v >= 0.6, v <= 1 { return CGFloat(v) }
+        return compact ? 0.78 : 0.86
+    }
+    static func contentScale(_ phase: Phase) -> CGFloat { phase == .expanded || phase == .launch ? scale : 1 }
+
+    /// The island as drawn (and hit-tested): the full-size shape, scaled when open.
     static func shape(_ phase: Phase, _ m: NotchMetrics, office: Bool = false, idle: Bool = false) -> (w: CGFloat, h: CGFloat, corner: CGFloat, top: CGFloat) {
+        let r = layoutShape(phase, m, office: office, idle: idle)
+        let k = contentScale(phase)
+        return k == 1 ? r : (r.w * k, r.h * k, r.corner * k, r.top * k)
+    }
+
+    /// The size the content is laid out in, before scaling.
+    static func layoutShape(_ phase: Phase, _ m: NotchMetrics, office: Bool = false, idle: Bool = false) -> (w: CGFloat, h: CGFloat, corner: CGFloat, top: CGFloat) {
         switch phase {
         case .launch: return (launchSize.width, launchSize.height, 30, -ear)
         case .hidden: return (m.width, m.height, 10, 0)
