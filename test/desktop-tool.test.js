@@ -31,3 +31,33 @@ test('the cost of seeing an app: images priced as the providers do, text as ox c
   assert.ok(r.times > 5, `ox list ${r.times}x`);
   assert.ok(r.findTimes > r.times);
 });
+
+test('no desktop hand yet: ox asks once, installs the pinned build, then carries on; a no installs nothing', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { desktop } = await import('../src/tools/desktop.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-dt-'));
+  const bin = path.join(dir, process.platform === 'win32' ? 'agent-desktop.cmd' : 'agent-desktop');
+  const env = { ...process.env, OX_TEST_DESKTOP_INSTALL: '1', OX_AGENT_DESKTOP: bin };
+  let installs = 0;
+  const installAgentDesktop = async () => {
+    installs++;
+    fs.writeFileSync(bin, process.platform === 'win32' ? '@echo {"ok":true,"data":[]}\r\n' : '#!/bin/sh\necho \'{"ok":true,"data":[]}\'\n', { mode: 0o755 });
+  };
+  const asked = [];
+  const no = Object.assign(async (tool, a, what, opts) => { asked.push({ tool, what, opts }); return false; }, { honorsForce: true });
+  const r1 = await desktop({ action: 'apps' }, { env, requestApproval: no, installAgentDesktop });
+  assert.match(String(r1.content ?? r1.error ?? JSON.stringify(r1)), /declined/);
+  assert.equal(installs, 0, 'a no installs nothing');
+  assert.equal(asked[0].tool, 'desktop_install');
+  assert.equal(asked[0].opts.force, true, 'asked even under -y');
+  assert.match(asked[0].what, /SHA-256/);
+  const unread = await desktop({ action: 'apps' }, { env, yolo: true, requestApproval: async () => true, installAgentDesktop });
+  assert.equal(installs, 0, '-y with an approver that cannot ask does not download');
+  assert.match(String(unread.content ?? JSON.stringify(unread)), /ox desktop install/);
+  const yes = Object.assign(async () => true, { honorsForce: true });
+  await desktop({ action: 'apps' }, { env, requestApproval: yes, installAgentDesktop });
+  assert.equal(installs, 1, 'a yes installs it');
+  assert.ok(fs.existsSync(bin));
+});

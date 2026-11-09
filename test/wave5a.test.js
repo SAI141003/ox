@@ -216,9 +216,12 @@ test('SBPL strict denies network; explicit user denies compile last as subpath/r
 test('bwrap argv shape: ro-bind /, bind cwd, tmpfs /tmp, unshare-net on demand', () => {
   const prof = resolveSandbox({ flag: 'workspace', home, cwd: '/w' });
   const argv = buildBwrapArgv(prof, 'echo hi', '/bin/sh');
-  assert.deepEqual(argv.slice(0, 5), ['bwrap', '--ro-bind', '/', '/', '--bind']);
-  assert.deepEqual(argv.slice(5, 7), ['/w', '/w']);
+  assert.deepEqual(argv.slice(0, 4), ['bwrap', '--ro-bind', '/', '/']);
   assert.ok(argv.includes('--tmpfs') && argv[argv.indexOf('--tmpfs') + 1] === '/tmp');
+  // The fresh /tmp is mounted BEFORE the project bind; the other order hid any
+  // project under /tmp inside the sandbox (later mounts cover earlier ones).
+  const bindCwd = argv.findIndex((a, i) => a === '--bind' && argv[i + 1] === '/w');
+  assert.ok(bindCwd > argv.indexOf('--tmpfs'), 'cwd is bound after the /tmp tmpfs');
   assert.ok(argv.includes('--bind') && argv.includes(prof.oxDir));
   assert.deepEqual(argv.slice(-3), ['/bin/sh', '-lc', 'echo hi']);
   const netArgv = buildBwrapArgv({ ...prof, restrict_network: true }, 'echo hi');

@@ -121,7 +121,7 @@ test('BUG 2: profiles differing only in read_only or only in network_allow do no
   assert.notEqual(compileSbpl(roA), compileSbpl(roB), 'read_only changes the compiled SBPL');
   const pRoA = prepareSandbox(roA);
   const pRoB = prepareSandbox(roB);
-  if (pRoA.backend !== 'none' && pRoB.backend !== 'none') {
+  if (pRoA.backend === 'sandbox-exec' && pRoB.backend === 'sandbox-exec') {
     assert.notEqual(
       pRoA.argvPrefix[pRoA.argvPrefix.length - 1],
       pRoB.argvPrefix[pRoB.argvPrefix.length - 1],
@@ -135,7 +135,7 @@ test('BUG 2: profiles differing only in read_only or only in network_allow do no
   assert.notEqual(compileSbpl(naA), compileSbpl(naB));
   const pNaA = prepareSandbox(naA);
   const pNaB = prepareSandbox(naB);
-  if (pNaA.backend !== 'none' && pNaB.backend !== 'none') {
+  if (pNaA.backend === 'sandbox-exec' && pNaB.backend === 'sandbox-exec') {
     assert.notEqual(
       pNaA.argvPrefix[pNaA.argvPrefix.length - 1],
       pNaB.argvPrefix[pNaB.argvPrefix.length - 1],

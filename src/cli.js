@@ -119,7 +119,7 @@ import {
 } from './system-prompt.js';
 import { McpHub } from './mcp.js';
 import { MCP_TEMPLATES, getTemplate, riskOf } from './mcp-templates.js';
-import { assertSandboxPinCompatible, resolveSandbox, sandboxBackendFor, prepareSandbox } from './sandbox.js';
+import { assertSandboxPinCompatible, pinnedSandboxFromEvents, resolveSandbox, sandboxBackendFor, prepareSandbox } from './sandbox.js';
 import { streamVia } from './providers/index.js';
 import {
   c, renderError, renderMeter, renderToolEnd, renderToolStart, streamText, truncate,
@@ -215,7 +215,7 @@ function printVersion() {
     console.log(`ox ${VERSION}`);
   }
 }
-const SUBCOMMANDS = new Set(['ask', 'teach', 'desktop', 'version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'knowledge', 'ecc', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages', 'computer', 'cloud']);
+const SUBCOMMANDS = new Set(['ask', 'teach', 'desktop', 'version', 'help', 'bots', 'prompt', 'sessions', 'session', 'history', 'doctor', 'mcp', 'skill', 'clone', 'episode', 'mem', 'memory-loss', 'auto', 'schedule', 'heartbeat', 'agent', 'agents', 'daemon', 'attach', 'shutdown', 'plan-cache', 'hmem', 'reason', 'toc', 'voice', 'video', 'benchmark', 'model', 'models', 'bench', 'local', 'platform', 'aas', 'brain', 'kanban', 'arena', 'connect', 'mail', 'awake', 'do', 'watch', 'gateway', 'cron', 'backend', 'inspect', 'acp', 'bundles', 'index', 'voice-mode', 'self-improve', 'verify', 'spec', 'arch', 'regression', 'review', 'workflow', 'import', 'task', 'serve', 'clicky', 'listen', 'ipc', 'refine', 'island', 'plugin', 'plugins', 'app', 'speak', 'memory', 'hook', 'hook-relay', 'hooks', 'market', 'create', 'usage', 'hf', 'name', 'evolve', 'update', 'system1', 'flow', 'flows', 'dictionary', 'mcp-mac', 'secure', 'build', 'port', 'graph', 'transfer', 'handoff', 'statusline', 'org', 'mesh', 'pr', 'env', 'trace', 'traces', 'dictation', 'research', 'search', 'swarm', 'reply', 'proactive', 'shortcuts', 'personaplex', 'knowledge', 'ecc', 'library', 'race', 'git', 'wiki', 'studio', 'browse', 'theme', 'commands', 'make', 'office', 'phone', 'vs', 'today', 'brief', 'undo', 'fix', 'needs', 'pages', 'computer', 'cloud', 'jetbrains']);
 const SLASH_HELP = [
   `${c.bold('commands')}`,
   '  /help                 show this list',
@@ -6552,6 +6552,27 @@ async function runSubcommand(cmd, args) {
       return;
     }
     case 'transfer':
+    case 'jetbrains': {
+      // ox as an agent in the AI chat of IntelliJ IDEA, PyCharm, WebStorm and the rest (over ACP).
+      const J = await import('./jetbrains.js');
+      const sub = String(args[0] ?? 'status').toLowerCase();
+      try {
+        if (sub === 'setup' || sub === 'install') {
+          const r = J.setupJetBrains();
+          console.log(r.changed ? c.green(`ox added to ${r.file}${r.backup ? ` (the old file is at ${r.backup})` : ''}`) : c.dim(`ox is already in ${r.file}`));
+          console.log('Restart the IDE, open the AI chat, and pick ox from the agent list.');
+        } else if (sub === 'remove' || sub === 'uninstall') {
+          const r = J.removeJetBrains();
+          console.log(r.changed ? c.green(`ox removed from ${r.file}`) : c.dim(`ox was not in ${r.file}`));
+        } else {
+          const s = J.jetbrainsStatus();
+          if (s.error) { console.log(c.red(s.error)); process.exitCode = 1; }
+          else if (!s.installed) console.log(`ox is not set up in JetBrains IDEs. Run ${c.bold('ox jetbrains setup')} (writes ${s.file}).`);
+          else console.log(s.ok ? c.green(`ox is set up in ${s.file}`) : c.yellow(`ox is in ${s.file}, but ${s.entry.command} is missing: run ox jetbrains setup again`));
+        }
+      } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; }
+      return;
+    }
     case 'vs': {
       // lumiomac's "Claude Code vs Codex": the same prompt to two or more tools,
       // each in its own folder and Terminal tab; the race is shown in the notch.
@@ -7080,6 +7101,15 @@ async function runSubcommand(cmd, args) {
       const mk = await import('./market.js');
       if (args[0] === 'add') {
         try { const list = await mk.addCatalog(args[1] ?? ''); console.log(c.green(`catalogues: ${list.join(', ')}`)); } catch (e) { console.log(c.red(e.message)); process.exitCode = 1; }
+        return;
+      }
+      if (args[0] === 'update' && args[1] === '--auto') {
+        const P = await import('./plugins.js');
+        if (args[2] === 'on' || args[2] === 'off') P.setAutoUpdate(args[2] === 'on');
+        const on = P.autoUpdateEnabled({ config });
+        const st = (() => { try { return JSON.parse(fs.readFileSync(P.autoUpdateStatePath(), 'utf8')); } catch { return {}; } })();
+        console.log(`automatic plugin updates: ${on ? c.green('on') : c.yellow('off')} (daily, while the app runs; each new copy is safety-scanned)`);
+        if (st.checkedAt) console.log(c.dim(`last checked ${st.checkedAt}`));
         return;
       }
       if (args[0] === 'update') {
@@ -8004,7 +8034,7 @@ async function replWithBudget(config, opts, flags, budget) {
       await cleanupCtx(assembled);
       return;
     }
-    if (!applyResumeGuards(f, { sandboxProfile: opts.sandbox, rewind: flags.rewind })) {
+    if (!applyResumeGuards(f, { sandboxProfile: opts.sandbox, rewind: flags.rewind, config })) {
       process.exitCode = 4;
       await cleanupCtx(assembled);
       return;
@@ -8019,7 +8049,7 @@ async function replWithBudget(config, opts, flags, budget) {
   } else if (flags.cont) {
     const f = latestSessionFile(config.cwd);
     if (f) {
-      if (!applyResumeGuards(f, { sandboxProfile: opts.sandbox, rewind: flags.rewind })) {
+      if (!applyResumeGuards(f, { sandboxProfile: opts.sandbox, rewind: flags.rewind, config })) {
         process.exitCode = 4;
         await cleanupCtx(assembled);
         return;
@@ -10147,7 +10177,7 @@ async function replWithBudget(config, opts, flags, budget) {
 // Wave5a A/D: shared resume guards — sandbox pin compatibility check first
 // (fail-closed, exit 4), then an optional --rewind <n> applied BEFORE replay.
 // Returns true when the caller may proceed.
-function applyResumeGuards(sessionFile, { sandboxProfile, rewind } = {}) {
+function applyResumeGuards(sessionFile, { sandboxProfile, rewind, config } = {}) {
   if (sandboxProfile) {
     try {
       // Status-aware read: an unreadable transcript must not hard-refuse the
@@ -10155,7 +10185,14 @@ function applyResumeGuards(sessionFile, { sandboxProfile, rewind } = {}) {
       // A readable pin still mismatches and refuses as before, and
       // OX_STRICT_READ=1 still throws. A pin we cannot read simply cannot
       // mismatch; the run proceeds and says the history was NOT read.
-      const pinned = assertSandboxPinCompatible(loadSessionWithStatus(sessionFile).messages, sandboxProfile.name);
+      const events = loadSessionWithStatus(sessionFile).messages;
+      // Nobody asked for the default profile, so a session keeps the one it
+      // was pinned to (an older 'off' session stays off; a strict one stays strict).
+      const was = sandboxProfile.source === 'default' ? pinnedSandboxFromEvents(events) : null;
+      if (was && String(was.profile ?? 'off') !== sandboxProfile.name) {
+        Object.assign(sandboxProfile, resolveSandbox({ flag: String(was.profile ?? 'off'), config }));
+      }
+      const pinned = assertSandboxPinCompatible(events, sandboxProfile.name);
       if (pinned && !!pinned.degraded !== !!sandboxProfile.degraded) {
         process.stderr.write(
           `${c.yellow(`⚠ session was pinned with degraded=${!!pinned.degraded}; this run is degraded=${!!sandboxProfile.degraded}`)}\n`
@@ -10751,7 +10788,7 @@ export async function main(argv = []) {
         process.exitCode = 3;
         return;
       }
-      if (applyResumeGuards(f, { sandboxProfile, rewind: flags.rewind })) {
+      if (applyResumeGuards(f, { sandboxProfile, rewind: flags.rewind, config })) {
         initialMessages = replayMessages(loadSessionWithStatus(f).messages);
       } else {
         return;
@@ -10759,7 +10796,7 @@ export async function main(argv = []) {
     } else if (flags.cont) {
       const f = latestSessionFile(config.cwd);
       if (f) {
-        if (applyResumeGuards(f, { sandboxProfile, rewind: flags.rewind })) {
+        if (applyResumeGuards(f, { sandboxProfile, rewind: flags.rewind, config })) {
           initialMessages = replayMessages(loadSessionWithStatus(f).messages);
         } else {
           return;
