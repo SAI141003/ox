@@ -1453,6 +1453,7 @@ async function* runAgentLoop(opts = {}) {
   let iters = 0;
   let verifyRounds = 0;
   let continuedRounds = 0;
+  let emptyReplyRetries = 0;
   let brokenCallRetries = 0;
   let preCompactionMarked = false;
   let compactionsThisRun = 0;
@@ -2143,6 +2144,17 @@ async function* runAgentLoop(opts = {}) {
       yield { type: 'continued', round: continuedRounds };
       history.push({ role: 'user', content: CONTINUE_PROMPT });
       iters--;
+      yield { type: 'turn-end', stopReason, iters };
+      continue outer;
+    }
+
+    // An EMPTY reply (reasoning only: no text, no tool call) is not an answer. A
+    // SWE-bench run ended "done" on 8,000 characters of thinking and nothing else.
+    // Ask it to go on, twice at most, instead of ending the run on nothing.
+    if (!calls.length && !String(text ?? '').trim() && emptyReplyRetries < 2) {
+      emptyReplyRetries++;
+      history.push({ role: 'user', content: '[ox] Your last reply had no answer and no tool call, so nothing happened. Go on from where your reasoning got to: call the next tool, or give the final answer.' });
+      yield { type: 'warning', text: 'the model replied with reasoning only; asked it to go on' };
       yield { type: 'turn-end', stopReason, iters };
       continue outer;
     }
