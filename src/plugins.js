@@ -254,6 +254,46 @@ export async function updatePlugins({ home = os.homedir(), names = null, stager 
   return out;
 }
 
+const AUTO_EVERY_MS = 24 * 3600_000;
+export const autoUpdateStatePath = (home = os.homedir()) => path.join(home, '.ox', 'plugins-auto.json');
+
+/** Whether plugins update on their own: on unless `ox market update --auto off`, config or OX_PLUGIN_AUTOUPDATE=0 say no. */
+export function autoUpdateEnabled({ home = os.homedir(), config = null, env = process.env } = {}) {
+  if (env.OX_PLUGIN_AUTOUPDATE === '0' || env.OX_OFFLINE === '1') return false;
+  if (config?.plugins?.autoUpdate === false || config?.raw?.plugins?.autoUpdate === false) return false;
+  return readJson(autoUpdateStatePath(home))?.enabled !== false;
+}
+
+export function setAutoUpdate(on, { home = os.homedir() } = {}) {
+  const file = autoUpdateStatePath(home);
+  const doc = { ...(readJson(file) ?? {}), enabled: !!on };
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(doc, null, 2));
+  return doc;
+}
+
+/**
+ * The daily background update. Same rules as `ox market update`: each new copy is scanned
+ * and held back on any finding, so an update can never install what a fresh install would refuse.
+ * Returns null when it is off or ran in the last day; otherwise the rows, which are also saved.
+ */
+export async function autoUpdatePlugins({ home = os.homedir(), config = null, now = Date.now(), everyMs = AUTO_EVERY_MS, stager = stageSource, env = process.env } = {}) {
+  if (!autoUpdateEnabled({ home, config, env })) return null;
+  if (!Object.values(readRegistry(home).plugins).some((r) => r.kind === 'copy' && r.source)) return null;
+  const file = autoUpdateStatePath(home);
+  const state = readJson(file) ?? {};
+  if (state.checkedAt && now - Date.parse(state.checkedAt) < everyMs) return null;
+  // Stamp first, so a crash or a slow network does not retry on every start.
+  const stamp = (extra = {}) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ ...(readJson(file) ?? {}), checkedAt: new Date(now).toISOString(), ...extra }, null, 2));
+  };
+  stamp();
+  const rows = await updatePlugins({ home, stager });
+  stamp({ last: rows.map(({ findings, ...r }) => r) });
+  return rows;
+}
+
 function treeHash(dir) {
   const h = crypto.createHash('sha256');
   const walk = (d, rel = '') => {

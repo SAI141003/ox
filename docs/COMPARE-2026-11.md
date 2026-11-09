@@ -18,7 +18,7 @@ Built from each project's own docs, changelogs, release notes and GitHub data, r
 | "Using your computer" notice | Y (macOS notification) | Y (notification each turn) | Y (picture-in-picture preview) | ? | — | ? |
 | Keeps running with the lid closed or locked | Y (new: timer, turns sleep back on itself) | N (Mac must be awake; or use cloud) | Y (Locked use, Mac only) | ? | Y (cloud) | P (server install) |
 | Refuses unattended screen actions | Y (schedules and daemon runs refused) | — (needs an interactive session) | ? | Y (cron refused) | — | ? |
-| Voice on your own screen, with a pointer | Y (island, Fn to talk) | N | P (realtime voice, no pointer) | P (voice, wake word) | P (voice calls with agents (new Nov 6)) | P (voice on phone nodes) |
+| Voice on your own screen, with a pointer | Y (island, Fn to talk; live call in the app) | N | P (realtime voice, no pointer) | P (voice, wake word) | P (voice calls with agents (new Nov 6)) | P (voice on phone nodes) |
 | Errands with no AI at all (music, apps, timers) | Y (0.1 s, offline) | N | N | N | N | N |
 
 ## Building things on its own
@@ -52,13 +52,13 @@ Built from each project's own docs, changelogs, release notes and GitHub data, r
 |---|---|---|---|---|---|---|
 | Terminal | Y | Y | Y | Y | Y | Y |
 | Desktop app | Y (Mac best; 4 platform builds) | Y | Y | Y | Y | Y (Mac) |
-| VS Code / JetBrains plugin | P (VS Code extension, not on the Marketplace; JetBrains by ACP) | Y (both) | Y | P (ACP) | Y (is an IDE) | N |
+| VS Code / JetBrains plugin | P (VS Code extension, not on the Marketplace; JetBrains via `ox jetbrains setup`, over ACP) | Y (both) | Y | P (ACP) | Y (is an IDE) | N |
 | Runs in the cloud with your laptop off | Y (ox cloud on your GitHub Actions; not run live yet) | Y (web, routines) | Y | P (Daytona, Modal, Vercel backends) | Y (up to 300 repos) | P (self-host) |
 | Phone app that steers a session | Y (ox phone web: the whole app in the browser; iPhone app approves) | Y (Remote Control, Dispatch) | Y (iOS) | P (phone web view) | Y (iOS with Siri) | Y (iOS, Android nodes) |
 | Chat app control | Y (Telegram, Discord, Slack, iMessage, Signal, WhatsApp) | P (Channels: Telegram, Discord, iMessage; Slack) | N | Y (20+ platforms) | P (Slack triggers) | Y (12+ including WhatsApp, Signal) |
 | Several machines in one view | Y (mesh, Office floors) | ? | P (connected backends) | Y (all gateways in one window) | ? | P (nodes) |
 | Runs code in Docker / SSH / remote sandbox | P (Docker backend) | Y (cloud) | Y (cloud) | Y (6 backends) | Y | P |
-| Windows and Linux computer use | P (needs agent-desktop installed) | P (Desktop on Windows; no Linux) | P (Windows foreground; no Linux) | Y | — | ? |
+| Windows and Linux computer use | Y (first use asks once, then fetches the pinned, checksum-checked agent-desktop) | P (Desktop on Windows; no Linux) | P (Windows foreground; no Linux) | Y | — | ? |
 
 ## Models and cost
 
@@ -83,14 +83,14 @@ Built from each project's own docs, changelogs, release notes and GitHub data, r
 | MCP | Y | Y | Y | Y | Y | Y |
 | Plugin marketplace | Y (1,129 from 11 catalogues) | Y | Y | Y (1,050+) | Y (20+ apps) | Y (ClawHub) |
 | Plugins scanned before install | Y (every file, then a second scanner) | ? | ? | P (verified tier) | ? | P (trust guidance) |
-| Plugins update themselves safely | P (ox market update, by hand; held back if flagged) | Y | ? | Y | ? | ? |
+| Plugins update themselves safely | Y (daily while the app runs; each new copy scanned, held back if flagged) | Y | ? | Y | ? | ? |
 
 ## Safety and undo
 
 | Feature | ox | Claude Code + Cowork | Codex / ChatGPT | Hermes Agent | Cursor | OpenClaw |
 |---|---|---|---|---|---|---|
 | Approves each write and command | Y | Y | Y | Y | Y | Y |
-| OS-enforced sandbox | P (opt-in, off by default) | Y | Y | P (plugin) | Y (cloud) | P |
+| OS-enforced sandbox | Y (on by default where macOS/Linux can enforce it; caches and git stay writable) | Y | Y | P (plugin) | Y (cloud) | P |
 | Security scan on every edit | Y (62 patterns) | P (review) | P | N | Y (Security Review) | N |
 | Undo the last turn's files | Y (/undo) | Y (checkpoints) | ? | Y | Y | ? |
 | Rewind, edit an old message, or fork | Y (/rewind n text, /fork n) | Y | P (fork) | Y (/rewind (new)) | Y | ? |
@@ -152,13 +152,13 @@ Built from each project's own docs, changelogs, release notes and GitHub data, r
 | 9 | Building | No scripted multi-tool calls | Hermes execute_code collapses long pipelines into one model call, saving tokens. | Done | A sandboxed script tool that calls ox'run_script, with no writes or processes. |
 | 10 | Everywhere | Cannot run with your laptop off | Claude, Codex and Cursor have cloud agents; Hermes uses Daytona, Modal, Vercel. | Done | ox cloud runs on your own GitHub Actions. Not run live on GitHub yet. |
 | 11 | Everywhere | Phone can approve but not steer | Claude Remote Control and Dispatch, ChatGPT iOS and Cursor iOS can. | Done | ox phone web puts the whole app on your phone through a key-checked door. |
-| 12 | Everywhere | No VS Code or JetBrains plugin | Most developers start there. | Partly | VS Code extension in editors/vscode, tested with a stand-in editor; not on the Marketplace. JetBrains still by ACP. |
+| 12 | Everywhere | No VS Code or JetBrains plugin | Most developers start there. | Done | VS Code extension in editors/vscode; `ox jetbrains setup` registers ox in ~/.jetbrains/acp.json for every JetBrains IDE (checked: the registered command answers ACP initialize). Not on either marketplace. |
 | 13 | Everywhere | No WhatsApp, Signal or iMessage gateway | Hermes has 20+ platforms, OpenClaw 12+. | Done | ox gateway imessage, signal, whatsapp, tested with fake apps, not real accounts. |
 | 14 | Review | No automatic pull request review, no GitHub Action | Bugbot, Claude and Codex review every PR. | Done | ox cloud setup. Not run live on GitHub yet. |
 | 15 | Sessions | Rewind cannot edit an old message or fork | Hermes and Claude Code do this. | Done | /rewind n text and /fork n. |
-| 16 | Voice | Voice is one-way turns, no realtime call | Codex, Hermes and Cursor have live calls. | Open | Not built: it needs a realtime provider key to test, and none is connected here. |
+| 16 | Voice | Voice is one-way turns, no realtime call | Codex, Hermes and Cursor have live calls. | Done (untested with a real key) | Live voice call in the app (OpenAI Realtime over WebRTC); the key stays on the server, and tasks are handed to ox with the usual approvals. Reached OpenAI with a fake key and got the expected 401. |
 | 17 | Cost | No price on paid tool calls | Hermes shows each call's price and a running total. | Done | Declared prices, a running total, and a limit. |
-| 18 | Plugins | Plugins do not update themselves | Hermes holds back updates that would break your setup. | Partly | ox market update, held back if a scan flags it. Not automatic yet. |
+| 18 | Plugins | Plugins do not update themselves | Hermes holds back updates that would break your setup. | Done | Daily automatic update while the app runs, same scan as a manual one; off with `ox market update --auto off`. |
 
 ## Sources
 

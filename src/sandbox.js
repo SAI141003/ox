@@ -1,7 +1,11 @@
 // Wave5a A: OS sandbox profiles (grok-build pattern, clean-room).
 //
 // resolveSandbox({flag, config}) picks the effective profile:
-//   --sandbox off|workspace|read-only|strict  >  config sandbox.profile  >  'off'
+//   --sandbox off|workspace|read-only|strict  >  OX_SANDBOX  >  config sandbox.profile
+//   >  default: 'workspace' where the OS has a backend (sandbox-exec / bwrap), else 'off'.
+// The default workspace also keeps package-manager caches and the repo's git
+// directory writable, so installs and commits still work; turn it off with
+// --sandbox off, OX_SANDBOX=off or config {"sandbox":{"profile":"off"}}.
 // A non-preset name loads a CUSTOM profile from <cwd>/.ox-sandbox.json or
 // ~/.ox/sandbox.json ({extends, read_only, read_write, deny, restrict_network,
 // network_allow}). Globs are a gitignore subset (* ? [...] ** [!a]); unsupported
@@ -304,8 +308,11 @@ export function resolveSandbox({ flag, config, cwd, home } = {}) {
   } else if (cfgProfile) {
     name = cfgProfile.toLowerCase();
     source = 'config';
+  } else if (process.env.OX_SANDBOX) {
+    name = String(process.env.OX_SANDBOX).toLowerCase();
+    source = 'env';
   } else {
-    name = 'off';
+    name = defaultSandboxName();
     source = 'default';
   }
 
@@ -327,6 +334,11 @@ export function resolveSandbox({ flag, config, cwd, home } = {}) {
   };
 
   if (name === 'off') return finish(presetProfile('off', { cwd, home }));
+  if (source === 'default') {
+    const profile = presetProfile(name, { cwd, home });
+    profile.read_write = defaultWritable({ cwd, home });
+    return finish(profile);
+  }
   if (SANDBOX_PRESETS.includes(name)) return finish(presetProfile(name, { cwd, home }));
 
   const candidates = [
@@ -342,6 +354,41 @@ export function resolveSandbox({ flag, config, cwd, home } = {}) {
   throw new SandboxConfigError(
     `ox: sandbox profile '${name}' not found — presets: ${SANDBOX_PRESETS.join(', ')}; custom profiles load from <cwd>/.ox-sandbox.json or ~/.ox/sandbox.json`
   );
+}
+
+// On by default only where the kernel can enforce it: a userspace-only
+// "sandbox" that nobody asked for would just be noise. Tests keep the old
+// 'off' default unless they set OX_SANDBOX.
+export function defaultSandboxName({ platform = process.platform } = {}) {
+  if (process.env.NODE_TEST_CONTEXT) return 'off';
+  if (platform === 'darwin') return fs.existsSync('/usr/bin/sandbox-exec') ? 'workspace' : 'off';
+  if (platform === 'linux') return findBin('bwrap') ? 'workspace' : 'off';
+  return 'off';
+}
+
+// Where everyday tools write outside the project: package caches, toolchains,
+// and the git directory (a worktree's commits land in the main repo's .git).
+// Only paths that exist are returned: bwrap refuses to bind a missing one.
+const CACHE_DIRS = [
+  '.npm', '.cache', '.pnpm-store', '.yarn', '.bun', '.deno', '.cargo', '.rustup',
+  '.gradle', '.m2', '.nuget', '.pub-cache', '.gem', '.local/share/pnpm', 'go/pkg',
+  'Library/Caches', 'Library/pnpm', '.node-gyp', '.ox',
+];
+export function defaultWritable({ cwd, home }) {
+  const out = new Set();
+  // A project under a symlink (/tmp → /private/tmp) is matched by its real path.
+  try { const real = fs.realpathSync(cwd); if (real !== cwd) out.add(real); } catch {}
+  for (const d of CACHE_DIRS) out.add(path.join(home, d));
+  try {
+    const r = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      cwd, encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const dir = r.status === 0 ? r.stdout.trim() : '';
+    if (dir && path.isAbsolute(dir)) out.add(dir);
+  } catch {}
+  return [...out].filter((p) => {
+    try { return fs.existsSync(p); } catch { return false; }
+  });
 }
 
 // ---- network policy (the single decision point) ------------------------------
@@ -515,8 +562,15 @@ export function networkPolicyFor(profile, name, args = {}) {
 // ---- SBPL compilation (macOS) ----------------------------------------------
 
 function sbplTmpRegex(profile) {
-  const esc = String(profile.tmpDir).replace(/[\\^$."]/g, (c) => `\\${c}`);
-  return `(regex "^${esc}/.*")`;
+  // Seatbelt matches the RESOLVED path: os.tmpdir() is /var/folders/… but the
+  // kernel sees /private/var/folders/…, so both spellings are listed. The
+  // device files every shell redirects to (/dev/null, a tty, /dev/fd/N) are
+  // never project data; denying them broke `cmd >/dev/null` under every preset.
+  const roots = new Set([String(profile.tmpDir)]);
+  try { roots.add(fs.realpathSync(String(profile.tmpDir))); } catch {}
+  const esc = (r) => r.replace(/[\\^$.|?*+()[\]{}"]/g, (c) => `\\${c}`);
+  const tmp = [...roots].map((r) => `(regex "^${esc(r)}/.*")`).join(' ');
+  return `${tmp} (literal "/dev/null") (literal "/dev/zero") (literal "/dev/dtracehelper") (regex "^/dev/(tty|ttys[0-9]+|fd/[0-9]+)$")`;
 }
 
 // A path interpolated into an SBPL `(subpath "...")`. Only a double quote and
@@ -700,15 +754,18 @@ function bwrapPrefix(profile) {
     '--ro-bind',
     '/',
     '/',
-    '--bind',
-    profile.cwd,
-    profile.cwd,
+    // Mounts apply in order and a later one covers an earlier one: the fresh
+    // /tmp has to come BEFORE the project bind, or a project under /tmp
+    // (every test, any scratch checkout) disappears inside the sandbox.
     '--tmpfs',
     '/tmp',
     '--dev',
     '/dev',
     '--proc',
     '/proc',
+    '--bind',
+    profile.cwd,
+    profile.cwd,
   ];
   // Same base-name rule as compileSbpl, so the two backends never disagree
   // about a custom profile: strict keeps the writable set to cwd and tmp.

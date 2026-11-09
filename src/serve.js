@@ -2607,6 +2607,18 @@ const ROUTES = [
     }
     throw new Error('no code editor found (Zed, Cursor or VS Code)');
   }) },
+  // Live voice call (src/realtime-voice.js): the page's WebRTC offer goes to OpenAI from here, with
+  // the key; only the SDP answer comes back. The audio then runs between the page and OpenAI.
+  { method: 'GET', pattern: /^\/ox\/realtime\/?$/, handler: appRoute(async () => {
+    const R = await import('./realtime-voice.js');
+    return { available: R.realtimeAvailable(), voices: R.REALTIME_VOICES, model: R.REALTIME_MODEL };
+  }) },
+  { method: 'POST', pattern: /^\/ox\/realtime\/call\/?$/, handler: appRoute(async (body) => {
+    const R = await import('./realtime-voice.js');
+    const P = await import('./personaplex.js');
+    const instructions = await P.personaPrompt({ custom: P.readConfig().persona }).catch(() => '');
+    return { sdp: await R.startCall({ sdp: body?.sdp, voice: body?.voice, instructions }) };
+  }) },
   // PersonaPlex (src/personaplex.js): the live voice page on your GPU machine, with ox's persona.
   { method: 'GET', pattern: /^\/ox\/personaplex\/?$/, handler: appRoute(async () => {
     const P = await import('./personaplex.js');
@@ -3872,6 +3884,13 @@ export function startServer(port = 8080, host = '127.0.0.1', config = {}) {
     // New versions of ox, looked for every few hours once you allowed it (a git fetch).
     const lookForUpdates = () => import('./self-update.js').then((U) => { const st = U.readState(); if (st.allowed === true && (!st.checkedAt || Date.now() - st.checkedAt > 3 * 3600_000)) U.inBackground('check'); }).catch(() => {});
     setTimeout(lookForUpdates, 90_000).unref();
+    // Installed plugins, brought up to date once a day (each new copy is safety-scanned
+    // and held back on any finding). Off with `ox market update --auto off`.
+    const updatePluginsDaily = () => offThread('./plugins.js', 'autoUpdatePlugins', [{ config: { plugins: config?.plugins ?? config?.raw?.plugins } }], { timeoutMs: 10 * 60_000 })
+      .then((rows) => { for (const r of rows ?? []) if (r.status === 'updated' || r.status === 'held') console.log(`[plugins] ${r.name}: ${r.status}${r.to ? ` to ${r.to}` : ''}${r.why ? ` (${r.why})` : ''}`); })
+      .catch(() => {});
+    setTimeout(updatePluginsDaily, 120_000).unref();
+    setInterval(updatePluginsDaily, 6 * 3600_000).unref();
     // Older ox put ECC where other tools read it too, costing them tokens every request.
     import('./ecc.js').then((E) => { const r = E.moveEccSkills(); if (r.moved) console.log(`[skills] moved ${r.moved} ECC skills to ~/.ox/skills`); }).catch(() => {});
     setInterval(lookForUpdates, 3 * 3600_000).unref();

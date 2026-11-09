@@ -132,9 +132,37 @@ export function describeFound(data) {
   return items.slice(0, 30).map((m, i) => `${i + 1}. ${m.role ?? 'control'} "${m.name ?? m.title ?? ''}"${m.value != null && m.value !== '' ? ` = ${String(m.value).slice(0, 80)}` : ''}${m.enabled === false ? ' (disabled)' : ''}`).join('\n') + (items.length > 30 ? `\n…and ${items.length - 30} more` : '');
 }
 
+/**
+ * The desktop hand is a pinned agent-desktop release. Rather than send the person off
+ * to install it, ox asks once and fetches it itself: the exact version, refused unless
+ * its SHA-256 matches the published one, unpacked into ~/.ox/vendor, nothing run.
+ */
+async function installOnFirstUse(A, ctx) {
+  const env = ctx.env ?? process.env;
+  const manual = 'desktop needs agent-desktop: ox desktop install (then give it Accessibility / screen access when the OS asks)';
+  const key = `${process.platform}-${process.arch}`;
+  if (!A.AGENT_DESKTOP_FILES[key]) return { ok: false, why: `desktop control has no build for ${process.platform} ${process.arch}` };
+  if (env.NODE_TEST_CONTEXT && !env.OX_TEST_DESKTOP_INSTALL) return { ok: false, why: manual };
+  if (typeof ctx.requestApproval !== 'function') return { ok: false, why: manual };
+  // -y with an approver that cannot be made to ask would say yes to a download unread.
+  if (ctx.yolo && !ctx.requestApproval.honorsForce) return { ok: false, why: manual };
+  const what = `Download agent-desktop ${A.AGENT_DESKTOP_VERSION} (the desktop hand ox uses on ${process.platform}) from github.com/vercel-labs/agent-desktop into ~/.ox/vendor. The file is checked against its pinned SHA-256 and nothing runs until you use the desktop.`;
+  const yes = await ctx.requestApproval('desktop_install', { version: A.AGENT_DESKTOP_VERSION }, what, { force: true });
+  if (!yes) return { ok: false, why: `declined: ${manual}` };
+  try {
+    await (ctx.installAgentDesktop ?? A.installAgentDesktop)({ env });
+  } catch (e) {
+    return { ok: false, why: `could not install agent-desktop: ${e?.message ?? e}` };
+  }
+  return A.available(env) ? { ok: true } : { ok: false, why: 'agent-desktop was installed but is not where ox looks; run ox desktop install' };
+}
+
 export async function desktop(args = {}, ctx = {}) {
   const A = await import('../agent-desktop.js');
-  if (!A.available(ctx.env ?? process.env)) return err('desktop needs agent-desktop: ox desktop install, or npm install -g agent-desktop (then give it Accessibility in System Settings)');
+  if (!A.available(ctx.env ?? process.env)) {
+    const got = await installOnFirstUse(A, ctx);
+    if (!got.ok) return err(got.why);
+  }
   const a = { ...args, action: String(args.action ?? '') };
   if (![...DESKTOP_READS, ...DESKTOP_ACTS].includes(a.action)) return err(`desktop: action is one of ${[...DESKTOP_READS, ...DESKTOP_ACTS].join(', ')}`);
   if (a.action === 'launch' && !a.app) return err('launch: which app?');

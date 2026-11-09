@@ -82,6 +82,17 @@ function runUnderProfile(profile, shellCommand) {
 
 // ---------- the bug, end to end ---------------------------------------------
 
+// What every preset keeps writable besides its roots: the temp dir under both
+// spellings (seatbelt matches the resolved path) and the shell's device files.
+const DEV_ALLOW = ' (literal "/dev/null") (literal "/dev/zero") (literal "/dev/dtracehelper") (regex "^/dev/(tty|ttys[0-9]+|fd/[0-9]+)$")';
+const reEsc = (r) => r.replace(/[\\^$.|?*+()[\]{}"]/g, (c) => `\\${c}`);
+function tmpAllowFor(dir) {
+  const roots = new Set([dir]);
+  try { roots.add(fs.realpathSync(dir)); } catch {}
+  return [...roots].map((r) => `(regex "^${reEsc(r)}/.*")`).join(' ');
+}
+const TMP_REAL = tmpAllowFor('/tmp').slice('(regex "^/tmp/.*")'.length);
+
 test('BUG: a LITERAL read_only path INSIDE cwd is denied by the kernel, and a sibling path in the same cwd is still writable', { skip: !SANDBOX_EXEC }, (t) => {
   const root = tempRoot('bug');
   const inside = path.join(root, 'ws', 'inside');
@@ -225,7 +236,11 @@ test('a read_only path OUTSIDE every writable root is still denied (both spellin
   fs.mkdirSync(outsideLit, { recursive: true });
   fs.mkdirSync(outsideGlob, { recursive: true });
 
-  const { profile, cwd, home } = workspace(root, [outsideLit, path.join(root, 'outside', 'glob*')]);
+  const made = workspace(root, [outsideLit, path.join(root, 'outside', 'glob*')]);
+  // The test root lives in the temp dir, which every preset keeps writable;
+  // point the profile's temp elsewhere so these dirs are outside EVERY root.
+  const profile = { ...made.profile, tmpDir: '/nonexistent-ox-tmp' };
+  const { cwd, home } = made;
   for (const outside of [outsideLit, outsideGlob]) {
     assert.ok(!outside.startsWith(cwd + path.sep), 'the control: these really are outside the write roots');
     assert.ok(!outside.startsWith(home + path.sep));
@@ -262,7 +277,7 @@ test('a profile with NO read_only compiles byte-identically to the pre-fix outpu
     '(version 1)',
     '(allow default)',
     '(deny file-write*)',
-    '(allow file-write* (subpath "/w") (subpath "/home/u/.ox") (regex "^/tmp/.*"))',
+    `(allow file-write* (subpath "/w") (subpath "/home/u/.ox") (regex "^/tmp/.*")${TMP_REAL}${DEV_ALLOW})`,
     '',
   ].join('\n');
   assert.equal(compileSbpl(bare), expected);
@@ -271,11 +286,11 @@ test('a profile with NO read_only compiles byte-identically to the pre-fix outpu
   // read_write-only and deny-only profiles are also untouched by the fix.
   assert.equal(
     compileSbpl({ ...bare, read_write: ['/tmp/scratch'] }),
-    expected.replace('(regex "^/tmp/.*"))', '(regex "^/tmp/.*"))\n(allow file-write* (subpath "/tmp/scratch"))')
+    expected.replace(`${DEV_ALLOW})`, `${DEV_ALLOW})\n(allow file-write* (subpath "/tmp/scratch"))`)
   );
   assert.equal(
     compileSbpl({ ...bare, deny: ['/etc/master.key'] }),
-    expected.replace('(regex "^/tmp/.*"))', '(regex "^/tmp/.*"))\n(deny file-read* (subpath "/etc/master.key"))\n(deny file-write* (subpath "/etc/master.key"))')
+    expected.replace(`${DEV_ALLOW})`, `${DEV_ALLOW})\n(deny file-read* (subpath "/etc/master.key"))\n(deny file-write* (subpath "/etc/master.key"))`)
   );
 
   // The same holds through the real resolver, including the read-only preset.
@@ -283,7 +298,10 @@ test('a profile with NO read_only compiles byte-identically to the pre-fix outpu
   const { cwd, home } = workspace(root, []);
   assert.equal(
     compileSbpl(resolveSandbox({ flag: 'workspace', config: {}, cwd, home })),
-    expected.replace(/\/w/g, cwd).replace(/\/home\/u\/\.ox/g, path.join(home, '.ox')).replace(/\^\/tmp\/\.\*/, `^${os.tmpdir().replace(/[\\^$.]/g, (c) => `\\${c}`)}/.*`)
+    expected
+      .replace(/\/w/g, cwd)
+      .replace(/\/home\/u\/\.ox/g, path.join(home, '.ox'))
+      .replace(`(regex "^/tmp/.*")${TMP_REAL}`, tmpAllowFor(os.tmpdir()))
   );
 });
 
@@ -335,7 +353,7 @@ test('cacheKey covers read_only, so a read_only-only change is not served from a
   const none = prepareSandbox({ ...base, read_only: [] });
   assert.notEqual(compileSbpl(withLiteral), compileSbpl({ ...base, read_only: [] }), 'a literal read_only changes the policy');
 
-  if (a.backend !== 'none' && b.backend !== 'none') {
+  if (a.backend === 'sandbox-exec' && b.backend === 'sandbox-exec') {
     assert.notEqual(a.argvPrefix[a.argvPrefix.length - 1], b.argvPrefix[b.argvPrefix.length - 1], 'literal vs glob must not share a compiled file');
     assert.notEqual(none.argvPrefix[none.argvPrefix.length - 1], a.argvPrefix[a.argvPrefix.length - 1], 'empty vs literal must not share a compiled file');
   }
