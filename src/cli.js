@@ -552,7 +552,7 @@ function usageAll() {
     'theme: ox theme ["<look>" | list | use <name> | reset]   restyle the app from a sentence (neumorphic, glass, paper, terminal, contrast…)',
     'browse: ox browse "<goal>" [--url <page>] [--show] [--model <id>]   the fast browser: one goal, a checked finish, asks before buy/pay/send',
     'studio: ox studio [models [kind] | recipes [name] | connect | mcp]   open image and video models for any agent (Claude, Codex, Cursor)',
-    'video: ox video transcribe|captions|cut|speed|vertical|highlights|gif|polish|understand <file> …   on this machine',
+    'video: ox video watch|transcribe|captions|cut|speed|vertical|highlights|gif|polish <file> …   on this machine (watch: frames + transcript for the model)',
     '       ox video explain "<title>" "Step: what happens" …   an explainer video, a slide per step with a lit diagram',
     '       ox video animate <video|transcript|"script"> [--aspect 9:16]   scene-by-scene motion animations with sound effects',
     'traces: ox trace [--signals] | ox trace <id> [--steps]   each run: turns, tokens, cost, tool calls, and "stuck" signals',
@@ -5889,7 +5889,7 @@ async function runSubcommand(cmd, args) {
         } catch (e) { console.error(c.red(e.message)); process.exitCode = 1; }
         return;
       }
-      const ops = ['transcribe', 'captions', 'cut', 'speed', 'vertical', 'highlights', 'gif', 'polish', 'understand'];
+      const ops = ['transcribe', 'captions', 'cut', 'speed', 'vertical', 'highlights', 'gif', 'polish', 'understand', 'watch'];
       if (ops.includes(args[0])) {
         const { editVideoTool } = await import('./tools/video.js');
         const [op, file, ...rest] = args;

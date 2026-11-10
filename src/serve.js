@@ -1907,7 +1907,11 @@ async function flowsRoute(b) {
 // act (open, send, play, write…) comes back as a task for an agent run.
 const VOICE_SYSTEM = (name) => `You are ${name}, a voice assistant in the user's desktop Island: quick, warm, and precise. You can act through Ox's approved local tools (open apps and URLs, inspect configured mail/connectors, draft messages, and perform supported desktop actions). When a request requires an action, do it through the available tools or explain the exact missing connector/permission; never claim an action happened when it did not. Sending email or messages always requires a visible draft or explicit approval. Everything you write is read aloud: one or two short sentences, no markdown, no lists, no emojis, no links. Never invent the user's data. Today is ${new Date().toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.`;
 // Questions about what is on screen need a look at it: the island attaches a screenshot.
-const SCREEN = /\b(my screen|on (?:the|my) screen|what am i looking at|what(?:'s| is) (?:this|that) (?:on|in)|this (?:page|window|screen|tab|error|message)|read (?:this|it|my screen)|look at (?:this|my|the screen)|see (?:this|my screen)|what do you see)\b/i;
+const SCREEN = /\b(my screen|on (?:the|my) screen|what am i looking at|what(?:'s| is) (?:this|that) (?:on|in)|this (?:page|window|screen|tab|error|message)|(?:on|in) (?:my|the|this) (?:current |open )?(?:page|window|tab|display|monitor)|(?:my|the) current (?:page|window|tab|screen)|in front of me|(?:can|could|do) you see\b|read (?:this|it|my screen)|look at (?:this|my|the screen)|see (?:this|my screen)|what do you see|point (?:at|to|out)\b|show me where|where (?:do|should|can) i (?:click|tap|press|go|look))\b/i;
+// A quick answer that says it cannot see was a question about the screen the words above missed
+// ("is there any blue on here?" was answered "I don't have access to your screen"): it looks instead.
+export const SAYS_CANNOT_SEE = /\b(?:(?:can(?:'|’)?t|cannot|can not|unable to|don(?:'|’)?t|do not) (?:actually )?(?:see|view|look at|have (?:access|visibility)|access)\b.{0,40}\b(?:screen|display|page|window|desktop|what you(?:'|’)?re (?:looking|seeing))|share (?:a |the )?(?:screenshot|screen))/i;
+export const isScreenQuestion = (text) => SCREEN.test(String(text ?? ''));
 // "Do it for me", "click that": it has to see the screen and act on what it sees.
 const SCREEN_ACT = /\b(do (?:it|this|that) for me|(?:click|press|tap) (?:on )?(?:this|that|it\b|here)|fill (?:this|that|it) (?:in|out)|type (?:this|that|it) (?:here|in)|(?:click|press|fill|type|scroll|select|drag)\b.*\b(?:on|in) (?:my|the|this) (?:screen|window|page))/i;
 const ACTS = /\b(open|launch|close|quit|send|message|text|whatsapp|email|mail|play|pause|create|make|write|draft|delete|remove|move|rename|book|order|buy|schedule|remind|call|download|install|draw|annotate|search|look up|find|fix|build|run|deploy|commit|push|edit|change|update|turn (?:on|off)|set)\b/i;
@@ -2055,6 +2059,7 @@ export async function voiceTurn(body) {
     const r = await quickText(target, { system: VOICE_SYSTEM(assistantName()), user: text, maxTokens: 160 });
     const say = String(r.text ?? '').replace(/[*_`#>]+/g, '').trim();
     if (!say) return { route: 'agent', handled: false, why: `${pick.id} said nothing`, ms: Date.now() - started };
+    if (SAYS_CANNOT_SEE.test(say) && !body?.image) return { route: 'screen', handled: false, why: 'the quick answer could not see your screen', ms: Date.now() - started };
     return { route: 'answer', handled: true, ok: true, say, model: pick.id, ms: Date.now() - started };
   } catch (e) {
     return { route: 'agent', handled: false, why: String(e?.message ?? e).slice(0, 200), ms: Date.now() - started };
@@ -2064,10 +2069,82 @@ export async function voiceTurn(body) {
 // Models that read a picture and answer in seconds, quickest first. A plan's CLI is
 // not here: it took 30-47 s a look (its own ~13k-token prompt, a process per question).
 const LOOK_BOTS = ['ox-flash', 'ox-haiku', 'nvidia:minimaxai/minimax-m3.1-flash', 'ox-gpt', 'ox-gemini'];
-export function lookModel(env = process.env) {
+// Quick to describe a screen, poor at saying where things are: on the free NVIDIA key this one
+// answered a screenshot in 1.8-2.9 s where minimax-m3.1-flash took 6.6-7.2 s, but hit 6 of 24
+// points against 21 of 24 (ox bench point, 2026-11-10). So it answers only questions that need
+// no place on screen, and is told not to point.
+const TALK_BOTS = ['nvidia:nvidia/nemotron-3.5-super-vl-120b-a12b'];
+export function talkModels(env = process.env) {
+  let off = false;
+  try { off = readConfigDoc().voice?.talkModel === false; } catch {}
+  return off || env.OX_LOOK_TALK === '0' ? [] : TALK_BOTS.filter((id) => runnable(id, env));
+}
+// A question whose answer is a place on screen, or marks drawn on it: the accurate model takes it.
+const WANTS_PLACE = /\b(point|where|which (?:one|button|tab|icon|menu|link|field|key)|show me|find|locate|click|tap|press|select|highlight|circle|draw|mark|arrow|box|how do i|how can i|how to)\b/i;
+export const wantsPlace = (text) => WANTS_PLACE.test(String(text ?? ''));
+/** Every connected model that can take a quick look, the chosen one first, then quickest first. */
+export function lookModels(env = process.env) {
   let chosen = null;
   try { chosen = readConfigDoc().voice?.lookModel ?? null; } catch {}
-  return [chosen, ...LOOK_BOTS].filter(Boolean).find((id) => runnable(id, env)) ?? null;
+  return [...new Set([chosen, ...LOOK_BOTS].filter(Boolean))].filter((id) => runnable(id, env));
+}
+export function lookModel(env = process.env) {
+  return lookModels(env)[0] ?? null;
+}
+
+/**
+ * One question to the first model, and to the next when the first has said nothing after
+ * `hedgeMs` or has failed (a free key is rate-limited now and then, and one slow answer used
+ * to cost 30-60 s on the full run). The first model to start answering is the one heard: the
+ * others are stopped. `ask(id, { signal, onText })` resolves to the reply's text.
+ * → { id, text, errors } (id null and text '' when none answered).
+ */
+export function hedgedLook(ids, ask, { hedgeMs = 2500, onText = null } = {}) {
+  return new Promise((resolve) => {
+    if (!ids.length) { resolve({ id: null, text: '', errors: ['no model'] }); return; }
+    const ctl = ids.map(() => new AbortController());
+    const errors = [];
+    let winner = -1, started = 0, settled = 0, done = false, timer = null;
+    const finish = (i, text) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      ctl.forEach((c, k) => { if (k !== i) c.abort(); });
+      resolve({ id: i >= 0 ? ids[i] : null, text, errors });
+    };
+    const after = () => {
+      if (done || winner >= 0) return;
+      if (started < ids.length) startNext();
+      else if (settled >= started) finish(-1, '');
+    };
+    const startNext = () => {
+      if (done || winner >= 0 || started >= ids.length) return;
+      const i = started++;
+      clearTimeout(timer);
+      if (started < ids.length) { timer = setTimeout(startNext, hedgeMs); timer.unref?.(); }
+      let p;
+      try {
+        p = Promise.resolve(ask(ids[i], { signal: ctl[i].signal, onText: (soFar) => {
+          if (done) return;
+          if (winner < 0) { winner = i; clearTimeout(timer); ctl.forEach((c, k) => { if (k !== i) c.abort(); }); }
+          if (winner === i) onText?.(soFar, ids[i]);
+        } }));
+      } catch (e) { p = Promise.reject(e); }
+      p.then((text) => {
+        settled++;
+        const t = String(text ?? '').trim();
+        if (winner === i || (winner < 0 && t)) { finish(i, t); return; }
+        if (!t) errors.push(`${ids[i]} said nothing`);
+        after();
+      }, (e) => {
+        settled++;
+        errors.push(`${ids[i]}: ${String(e?.message ?? e).slice(0, 120)}`);
+        if (winner === i) { finish(i, ''); return; }
+        after();
+      });
+    };
+    startNext();
+  });
 }
 
 // A screenshot the island took: a picture in this user's temp folder, nothing else.
@@ -2084,37 +2161,95 @@ function islandShot(p) {
  * see, while ox reads the screen's words on this Mac; a [POINT] the model gives is then tied
  * to the real thing of that name. { handled: false } sends the island to its slower full run.
  */
-export async function voiceLook(body, env = process.env) {
+/**
+ * The first whole sentence of a reply still being written, to be spoken while the rest arrives;
+ * null until there is one. Tags ([POINT:…]) are never part of it, and a reply that is one short
+ * sentence has no early part.
+ */
+export function firstSentence(soFar) {
+  const text = String(soFar ?? '').replace(/[*_`#>]+/g, '');
+  const tag = text.indexOf('[');
+  const plain = tag >= 0 ? text.slice(0, tag) : text;
+  // "e.g." and "3.5" are not ends: the stop has to follow a word of two letters or more.
+  for (const m of plain.matchAll(/[.!?](?=\s+\S)/g)) {
+    const head = plain.slice(0, m.index + 1).trim();
+    if (head.length < 20 || !/[A-Za-z]{2}[.!?]$/.test(head) || /\b(?:e\.g|i\.e|vs|etc|Mr|Mrs|Dr)\.$/i.test(head)) continue;
+    return head;
+  }
+  return null;
+}
+
+export async function voiceLook(body, env = process.env, { onFirst = null } = {}) {
   const started = Date.now();
   const text = String(body?.text ?? '').trim().slice(0, 2000);
   if (!text) throw new Error('nothing was said');
   const shots = [].concat(body?.images ?? []).map(islandShot).filter(Boolean).slice(0, 3);
   if (!shots.length) return { handled: false, why: 'no screenshot', ms: Date.now() - started };
-  const id = lookModel(env);
-  if (!id) return { handled: false, why: 'no quick model that can see is connected', ms: Date.now() - started };
+  // Words only: the quick describer first, the accurate models behind it. A place on screen: the accurate ones alone.
+  const talkers = wantsPlace(text) ? [] : talkModels(env);
+  const ids = [...new Set([...talkers, ...lookModels(env)])].slice(0, 3);
+  if (!ids.length) return { handled: false, why: 'no quick model that can see is connected', ms: Date.now() - started };
   const B = await import('./buddy.js');
   const { seeShots, rewritePoints } = await import('./see.js');
   const { quickText } = await import('./quick-text.js');
   const { assistantName } = await import('./identity.js');
   const small = shots.map((f) => { try { return B.shrinkShot(f); } catch { return f; } });
   const size = B.pngSize(readFileSync(small[0]));
-  const images = small.map((f) => ({ mediaType: /\.jpe?g$/i.test(f) ? 'image/jpeg' : 'image/png', data: readFileSync(f).toString('base64') }));
+  // The model gets a JPEG of the same size in pixels (a quarter of the bytes: its first word came
+  // 1.5-2 s sooner, measured); the words on screen are still read from the PNG.
+  const sent = env.OX_BUDDY_JPEG === '0' ? small : small.map((f) => { try { return B.jpegShot(f); } catch { return f; } });
+  const images = sent.map((f) => ({ mediaType: /\.jpe?g$/i.test(f) ? 'image/jpeg' : 'image/png', data: readFileSync(f).toString('base64') }));
   const guidance = B.buddyGuidance({ size, voice: true, seen: { screens: small.map((_, i) => ({ n: i + 1 })), items: [], text: '' } });
   // The words on screen are read here while the model looks: neither waits for the other.
   const seeing = env.OX_BUDDY_SEE === '0' ? Promise.resolve(null) : seeShots(small).catch(() => null);
-  let reply;
-  try {
-    const target = resolveBot(id, { bots: readConfigDoc().bots ?? {} }, env);
-    reply = String((await quickText(target, { system: `You are ${assistantName()}, looking at the user's screen with them.\n${guidance}`, user: text, images, maxTokens: 220, signal: AbortSignal.timeout(25_000) })).text ?? '').trim();
-  } catch (e) {
-    return { handled: false, why: String(e?.message ?? e).slice(0, 200), model: id, ms: Date.now() - started };
-  }
-  if (!reply) return { handled: false, why: `${id} said nothing`, model: id, ms: Date.now() - started };
+  const system = `You are ${assistantName()}, looking at the user's screen with them.\n${guidance}`;
+  const bots = readConfigDoc().bots ?? {};
+  // The first sentence is handed over as soon as it is whole, so it is being spoken while the rest is written.
+  let early = false;
+  const hedgeMs = Number(env.OX_LOOK_HEDGE_MS) > 0 ? Number(env.OX_LOOK_HEDGE_MS) : 2500;
+  const won = await hedgedLook(ids, async (id, { signal, onText }) => {
+    const target = resolveBot(id, { bots }, env);
+    const words = talkers.includes(id) ? `${system}\nAnswer in words only: do not write [POINT], [CIRCLE], [ARROW] or [BOX] tags, and no coordinates.` : system;
+    return (await quickText(target, { system: words, user: text, images, maxTokens: 220, signal: AbortSignal.any([signal, AbortSignal.timeout(25_000)]), onText })).text;
+  }, {
+    hedgeMs,
+    onText: onFirst ? (soFar, id) => {
+      if (early) return;
+      const first = firstSentence(soFar);
+      if (first) { early = true; try { onFirst({ first, model: id, ms: Date.now() - started }); } catch {} }
+    } : null,
+  });
+  const id = won.id ?? ids[0];
+  const modelMs = Date.now() - started;
+  let reply = won.text;
+  // The describer's places are not to be trusted: a tag it wrote anyway is dropped, never drawn.
+  if (talkers.includes(id)) reply = reply.replace(/\[(?:POINT|CIRCLE|ARROW|BOX):[^\]\n]*\]?/gi, '').replace(/[ \t]{2,}/g, ' ').trim();
+  if (!reply) return { handled: false, why: (won.errors.join('; ') || `${id} said nothing`).slice(0, 300), model: id, ms: Date.now() - started };
   // A reply cut at the token limit can end inside its tag: closed, it still points.
   reply = reply.replace(/\[POINT:[^\]\n]*$/i, (t) => `${t}]`);
-  const seen = await seeing;
+  // Only a reply that points waits for the screen's words: one in words alone is ready now
+  // (reading the words took 6 s on a busy Mac, for an answer that pointed at nothing).
+  const seen = /\[POINT:/i.test(reply) ? await seeing : null;
   const say = seen && !seen.cannotSee ? rewritePoints(reply, seen, B.parsePoint) : reply;
-  return { route: 'look', handled: true, ok: true, say: say.replace(/[*_`#>]+/g, '').trim(), model: id, ms: Date.now() - started };
+  // modelMs: when the model had finished; ms − modelMs is what tying its point to the screen's words added.
+  return { route: 'look', handled: true, ok: true, say: say.replace(/[*_`#>]+/g, '').trim(), model: id, ms: Date.now() - started, modelMs, ...(won.errors.length ? { passedOver: won.errors } : {}) };
+}
+
+// stream: true answers in lines of JSON: {"first": "…"} as soon as the first sentence is whole,
+// then the full result. Without it, one JSON body as before (an older island).
+async function voiceLookRoute(req, res) {
+  if (!authorized(req)) { unauthorized(res); return; }
+  let body;
+  try { body = await parseBody(req); } catch { sendInvalidJson(res); return; }
+  try {
+    if (body?.stream !== true) { sendJson(res, 200, await voiceLook(body ?? {})); return; }
+    res.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' });
+    const out = await voiceLook(body, process.env, { onFirst: (e) => res.write(`${JSON.stringify(e)}\n`) });
+    res.end(`${JSON.stringify(out)}\n`);
+  } catch (e) {
+    if (res.headersSent) res.end(`${JSON.stringify({ handled: false, why: String(e?.message ?? e).slice(0, 200) })}\n`);
+    else sendError(res, 400, String(e?.message ?? e), 'invalid_request_error', 'bad_request', null);
+  }
 }
 
 // While OX Island is running, the local model the voice answers with stays
@@ -3299,7 +3434,7 @@ const ROUTES = [
   }) },
   { method: 'POST', pattern: /^\/ox\/flows\/hook\/([a-z0-9-]{1,40})\/?$/, handler: flowHook },
   { method: 'POST', pattern: /^\/ox\/voice\/?$/, handler: appRoute(voiceTurn) },
-  { method: 'POST', pattern: /^\/ox\/voice\/look\/?$/, handler: appRoute((b) => voiceLook(b)) },
+  { method: 'POST', pattern: /^\/ox\/voice\/look\/?$/, handler: voiceLookRoute },
   // The island's own recording, when live recognition heard nothing: whisper on this Mac.
   // What a background errand really did (typing, clicking): { pending } until it finishes, then { ok, say }.
   { method: 'GET', pattern: /^\/ox\/voice\/result\/?$/, handler: appRoute(async (_, __, req) => {

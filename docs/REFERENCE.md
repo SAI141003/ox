@@ -354,6 +354,24 @@ The live ox run answers, and your avatar (the Ox or one of the pixel cast;
 right-click to choose) speaks the reply with lip-sync, expressions and hand
 gestures. When the answer names a place on screen, a pointer flies there.
 
+How quickly it answers:
+
+- A question about the screen goes to the quickest connected model that can
+  see (`voice.lookModel` in `~/.ox/config.json` picks one). The picture is
+  sent as a JPEG.
+- The first sentence is spoken as soon as the model has written it; the rest
+  follows in the same voice.
+- If that model has said nothing after 2.5 s, or fails (a free key is
+  rate-limited now and then), the next one is asked too and the first to
+  start answering is the one you hear (`OX_LOOK_HEDGE_MS` changes the wait).
+- A question that is about the screen without saying so ("is there any blue
+  on here?") is still sent to the screen: a quick answer that says it cannot
+  see is replaced by a look.
+
+`ox video watch <file>` is how ox sees a video you give it: one or two sheets
+with a frame every second or so in order, larger frames at the scene changes,
+and the transcript. The agent's `edit_video` tool has the same `watch`.
+
 What you say arrives the way you meant it:
 
 - **Accurate:** the island records your question while you hold the key and,
