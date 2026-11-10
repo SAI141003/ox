@@ -52,6 +52,21 @@ Useful flags: `--task <id>` one task · `--filter <regex>` a subset · `--all` �
 `--repeats <n>` variance (fresh sandbox per repeat) · `--json <path>` ·
 `--keep` leave sandboxes on disk · `--timeout <ms>` override every task timeout.
 
+## Release to release
+
+Every result records which ox made it (`oxVersion`, `commit`), how much of the
+input came from the provider's prompt cache (`tokensCached`), and a cost that
+prices cached tokens at their own rate. Keep one result per release, per model:
+
+```sh
+npm run measure -- --model <provider:model> --all --json bench/results/real/<model>-v0.1.36.json
+npm run measure:trend            # each model's runs in order, and what changed since the one before
+npm run measure:trend -- --gate  # exit 1 when the newest run passes fewer of the same tasks, or costs over 25% more
+```
+
+Only tasks both runs measured are compared, so adding a task is never a
+regression. `trend.mjs` reads files; it never calls a model.
+
 ## Compare retained runs
 
 After real runs have written JSON artifacts, aggregate them without making another

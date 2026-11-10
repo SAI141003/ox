@@ -1,0 +1,1384 @@
+{
+  "suite": "bench/real",
+  "date": "2026-11-10T03:20:48.763Z",
+  "model": "chatgpt-plan",
+  "provider": "subscription",
+  "modelId": null,
+  "priced": false,
+  "repeats": 1,
+  "env": {
+    "node": "22.22.3",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "oxVersion": "0.1.35",
+  "commit": "16baa2d62ddb",
+  "suiteMs": 193200,
+  "results": [
+    {
+      "id": "read-and-report",
+      "name": "Read a buried config value and write it down",
+      "category": "read",
+      "prompt": "A staging incident opened earlier: replicas were lagging and the runbook says we\nalert on `replicaLagToleranceMs`. Find the CURRENT value of `replicaLagToleranceMs`\nrecorded in this project's deployment tuning config, then write ONLY that integer\n(digits only, no units, no prose, no quotes, one line, trailing newline is fine) to a\nnew file called `answer.txt` in the project root.\n\nUse the live config, not the historical backup.",
+      "passCount": 1,
+      "repeats": 1,
+      "measuredRuns": 1,
+      "unavailableRuns": 0,
+      "passRate": 1,
+      "ms": {
+        "mean": 14804,
+        "stddev": 0,
+        "n": 1,
+        "p95": 14804
+      },
+      "agentMs": {
+        "mean": 14787.605167,
+        "stddev": 0,
+        "n": 1,
+        "p95": 14787.605167
+      },
+      "firstTextMs": {
+        "mean": 5990.165625,
+        "stddev": 0,
+        "n": 1,
+        "p95": 5990.165625
+      },
+      "firstToolMs": {
+        "mean": 7244.115709,
+        "stddev": 0,
+        "n": 1,
+        "p95": 7244.115709
+      },
+      "toolDurationMs": {
+        "mean": 1.0304443333334348,
+        "stddev": 0,
+        "n": 1,
+        "p95": 1.0304443333334348
+      },
+      "toolCalls": {
+        "mean": 3,
+        "stddev": 0,
+        "n": 1
+      },
+      "turns": {
+        "mean": 1,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensIn": {
+        "mean": 53072,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensOut": {
+        "mean": 258,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensCached": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "redundantCalls": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "costUsd": {
+        "mean": null,
+        "stddev": null,
+        "n": 0,
+        "unknown": true
+      },
+      "runs": [
+        {
+          "pass": true,
+          "availability": "ran",
+          "unavailableReason": null,
+          "detail": "found and wrote 7314",
+          "checks": [
+            {
+              "name": "live tuning file exposes exactly one replicaLagToleranceMs",
+              "ok": true,
+              "detail": "grep -> \"replicaLagToleranceMs: 7314\\n\""
+            },
+            {
+              "name": "answer.txt exists",
+              "ok": true,
+              "detail": ""
+            },
+            {
+              "name": "answer.txt contains exactly 7314",
+              "ok": true,
+              "detail": "got \"7314\" (4 chars)"
+            },
+            {
+              "name": "answer.txt holds one integer and nothing else",
+              "ok": true,
+              "detail": "got \"7314\""
+            }
+          ],
+          "ms": 14804,
+          "agentMs": 14787.605167,
+          "firstTextMs": 5990.165625,
+          "firstToolMs": 7244.115709,
+          "toolDurationMs": 1.0304443333334348,
+          "timedTools": 3,
+          "exitCode": 0,
+          "timedOut": false,
+          "toolCalls": 3,
+          "uniqueCalls": 3,
+          "redundantCalls": 0,
+          "tools": [
+            "shell"
+          ],
+          "perTool": {
+            "shell": 3
+          },
+          "turns": 1,
+          "errorEvents": 0,
+          "toolErrors": 0,
+          "retryEvents": 0,
+          "tokensIn": 53072,
+          "tokensOut": 258,
+          "tokensCached": 0,
+          "tokensCacheWrite": 0,
+          "costUsd": null,
+          "usageTurns": [
+            {
+              "turn": 1,
+              "aux": false,
+              "inputTokens": 53072,
+              "outputTokens": 258
+            }
+          ],
+          "eventsFile": null,
+          "timingsFile": null,
+          "eventsKept": 0,
+          "diagnostics": [],
+          "finalText": "I’ll locate the deployment tuning config and distinguish the live file from any historical backup, then write the current integer to `answer.txt`.The live file is `deploy/tuning.yaml`; it records `replicaLagToleranceMs` as `7314`. I’m writing only that integer to the project-root file now.7314",
+          "sandbox": null
+        }
+      ]
+    },
+    {
+      "id": "exact-edit",
+      "name": "Fix a duplicated retry-limit constant across two files",
+      "category": "edit",
+      "prompt": "The outbound HTTP client has the wrong retry budget. docs/runbook.md documents the\nretry limit as 7, but the code still carries the stale value 5.\n\nFix it so that:\n- `node -e \"console.log(require('./src/lib.js').k())\"` prints 42\n- `node test/retry.test.js` exits 0\n- every retry-limit constant in src/lib.js and src/net/client.js reads 7, exactly once\n  per declaration, with no stale `= 5` left in either file\n\nChange nothing else. Do not edit docs/runbook.md or test/.",
+      "passCount": 1,
+      "repeats": 1,
+      "measuredRuns": 1,
+      "unavailableRuns": 0,
+      "passRate": 1,
+      "ms": {
+        "mean": 24587,
+        "stddev": 0,
+        "n": 1,
+        "p95": 24587
+      },
+      "agentMs": {
+        "mean": 24487.150291,
+        "stddev": 0,
+        "n": 1,
+        "p95": 24487.150291
+      },
+      "firstTextMs": {
+        "mean": 4739.033208000001,
+        "stddev": 0,
+        "n": 1,
+        "p95": 4739.033208000001
+      },
+      "firstToolMs": {
+        "mean": 5866.576165999999,
+        "stddev": 0,
+        "n": 1,
+        "p95": 5866.576165999999
+      },
+      "toolDurationMs": {
+        "mean": 141.70999999999913,
+        "stddev": 0,
+        "n": 1,
+        "p95": 141.70999999999913
+      },
+      "toolCalls": {
+        "mean": 4,
+        "stddev": 0,
+        "n": 1
+      },
+      "turns": {
+        "mean": 1,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensIn": {
+        "mean": 68625,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensOut": {
+        "mean": 841,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensCached": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "redundantCalls": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "costUsd": {
+        "mean": null,
+        "stddev": null,
+        "n": 0,
+        "unknown": true
+      },
+      "runs": [
+        {
+          "pass": true,
+          "availability": "ran",
+          "unavailableReason": null,
+          "detail": "retry limit is 7 in both files, k() === 42, test green",
+          "checks": [
+            {
+              "name": "require(\"./src/lib.js\").k() === 42",
+              "ok": true,
+              "detail": "exit=0"
+            },
+            {
+              "name": "node test/retry.test.js exits 0",
+              "ok": true,
+              "detail": "exit=0 out=ok - retry err="
+            },
+            {
+              "name": "src/lib.js has no stale \"= 5\"",
+              "ok": true,
+              "detail": "grep -c \"= 5\" -> 0 (exit 1)"
+            },
+            {
+              "name": "src/lib.js declares \"= 7\" exactly once",
+              "ok": true,
+              "detail": "grep -c \"= 7\" -> 1 (exit 0)"
+            },
+            {
+              "name": "src/net/client.js has no stale \"= 5\"",
+              "ok": true,
+              "detail": "grep -c \"= 5\" -> 0 (exit 1)"
+            },
+            {
+              "name": "src/net/client.js declares \"= 7\" exactly once",
+              "ok": true,
+              "detail": "grep -c \"= 7\" -> 1 (exit 0)"
+            },
+            {
+              "name": "docs/runbook.md was not gutted",
+              "ok": true,
+              "detail": "exit=0"
+            }
+          ],
+          "ms": 24587,
+          "agentMs": 24487.150291,
+          "firstTextMs": 4739.033208000001,
+          "firstToolMs": 5866.576165999999,
+          "toolDurationMs": 141.70999999999913,
+          "timedTools": 4,
+          "exitCode": 0,
+          "timedOut": false,
+          "toolCalls": 4,
+          "uniqueCalls": 4,
+          "redundantCalls": 0,
+          "tools": [
+            "shell"
+          ],
+          "perTool": {
+            "shell": 4
+          },
+          "turns": 1,
+          "errorEvents": 0,
+          "toolErrors": 2,
+          "retryEvents": 0,
+          "tokensIn": 68625,
+          "tokensOut": 841,
+          "tokensCached": 0,
+          "tokensCacheWrite": 0,
+          "costUsd": null,
+          "usageTurns": [
+            {
+              "turn": 1,
+              "aux": false,
+              "inputTokens": 68625,
+              "outputTokens": 841
+            }
+          ],
+          "eventsFile": null,
+          "timingsFile": null,
+          "eventsKept": 0,
+          "diagnostics": [
+            "2 tool call(s) errored"
+          ],
+          "finalText": "I’ll inspect the two source files and make only the retry-limit constant edits. Then I’ll run the two checks you specified and review the diff for unrelated changes.Updated the retry-limit constants to `7` in [src/lib.js](/private/var/folders/_h/jzzmdxjd3c5f5bx97h4k658r0000gn/T/ox-realbench-exact-edit-yw8JKX/ws/src/lib.js:4) and [src/net/client.js](/private/var/folders/_h/jzzmdxjd3c5f5bx97h4k658r0000gn/T/ox-realbench-exact-edit-yw8JKX/ws/src/net/client.js:4). Both checks passed: `k()` printed `42`, and `node test/retry.test.js` exited 0. No `= 5` remains in either file.",
+          "sandbox": null
+        }
+      ]
+    },
+    {
+      "id": "debug-and-fix",
+      "name": "Fix a genuinely failing test (read -> diagnose -> edit -> re-run)",
+      "category": "debug",
+      "prompt": "This repo has a failing test.\n\n1. Run `node test.js` and read the actual failure output.\n2. Diagnose the bug in lib.js.\n3. Fix it.\n4. Re-run `node test.js` until it exits 0.\n\nDo not edit test.js or anything under test/. The bug is in lib.js.",
+      "passCount": 1,
+      "repeats": 1,
+      "measuredRuns": 1,
+      "unavailableRuns": 0,
+      "passRate": 1,
+      "ms": {
+        "mean": 17561,
+        "stddev": 0,
+        "n": 1,
+        "p95": 17561
+      },
+      "agentMs": {
+        "mean": 17456.009416,
+        "stddev": 0,
+        "n": 1,
+        "p95": 17456.009416
+      },
+      "firstTextMs": {
+        "mean": 4101.549125000005,
+        "stddev": 0,
+        "n": 1,
+        "p95": 4101.549125000005
+      },
+      "firstToolMs": {
+        "mean": 5087.135958000006,
+        "stddev": 0,
+        "n": 1,
+        "p95": 5087.135958000006
+      },
+      "toolDurationMs": {
+        "mean": 2.6069374999970023,
+        "stddev": 0,
+        "n": 1,
+        "p95": 2.6069374999970023
+      },
+      "toolCalls": {
+        "mean": 4,
+        "stddev": 0,
+        "n": 1
+      },
+      "turns": {
+        "mean": 1,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensIn": {
+        "mean": 68284,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensOut": {
+        "mean": 433,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensCached": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "redundantCalls": {
+        "mean": 1,
+        "stddev": 0,
+        "n": 1
+      },
+      "costUsd": {
+        "mean": null,
+        "stddev": null,
+        "n": 0,
+        "unknown": true
+      },
+      "runs": [
+        {
+          "pass": true,
+          "availability": "ran",
+          "unavailableReason": null,
+          "detail": "node test.js exits 0 and movingAverage is correct",
+          "checks": [
+            {
+              "name": "node test.js exits 0",
+              "ok": true,
+              "detail": "exit=0 stdout: ok movingAverage over a fully covered window ok movingAverage is flat for a constant series ok movingAverage honours the fixture window ok movingAverage rejects a zero window ok isFlat accepts a constant series ok isFlat rejects a ramp all tests passed stderr:"
+            },
+            {
+              "name": "movingAverage computes the right value for a partial window",
+              "ok": true,
+              "detail": "exit=0"
+            },
+            {
+              "name": "test.js still runs real assertions (not gutted)",
+              "ok": true,
+              "detail": "test.js lost its assertions"
+            }
+          ],
+          "ms": 17561,
+          "agentMs": 17456.009416,
+          "firstTextMs": 4101.549125000005,
+          "firstToolMs": 5087.135958000006,
+          "toolDurationMs": 2.6069374999970023,
+          "timedTools": 4,
+          "exitCode": 0,
+          "timedOut": false,
+          "toolCalls": 4,
+          "uniqueCalls": 3,
+          "redundantCalls": 1,
+          "tools": [
+            "edit",
+            "shell"
+          ],
+          "perTool": {
+            "shell": 3,
+            "edit": 1
+          },
+          "turns": 1,
+          "errorEvents": 0,
+          "toolErrors": 1,
+          "retryEvents": 0,
+          "tokensIn": 68284,
+          "tokensOut": 433,
+          "tokensCached": 0,
+          "tokensCacheWrite": 0,
+          "costUsd": null,
+          "usageTurns": [
+            {
+              "turn": 1,
+              "aux": false,
+              "inputTokens": 68284,
+              "outputTokens": 433
+            }
+          ],
+          "eventsFile": null,
+          "timingsFile": null,
+          "eventsKept": 0,
+          "diagnostics": [
+            "1 tool call(s) errored"
+          ],
+          "finalText": "I’ll run the test as requested, inspect the failure and the relevant code in `lib.js`, then fix and rerun it.Fixed `movingAverage` in [lib.js](/private/var/folders/_h/jzzmdxjd3c5f5bx97h4k658r0000gn/T/ox-realbench-debug-and-fix-bQ9caZ/ws/lib.js): it was dividing each window’s sum by its position plus the window size. It now divides by the window size. `node test.js` exits 0; all tests pass.",
+          "sandbox": null
+        }
+      ]
+    },
+    {
+      "id": "multi-file-refactor",
+      "name": "Rename a symbol across 4 files but leave the decoy comment alone",
+      "category": "refactor",
+      "prompt": "Rename the exported symbol `calcTotal` to `computeTotal` across the whole project.\n\nRequirements:\n- every real call site in src/ and tools/ must use the new name\n- `cart.calcTotal` must no longer be exported (do not leave an alias behind)\n- `node test/refactor.test.js` must exit 0\n\nOne occurrence of the old name is inside a comment on purpose: it documents\narchived CSV headers. Leave that comment exactly as it is - do not rename it and\ndo not delete it.",
+      "passCount": 1,
+      "repeats": 1,
+      "measuredRuns": 1,
+      "unavailableRuns": 0,
+      "passRate": 1,
+      "ms": {
+        "mean": 32295,
+        "stddev": 0,
+        "n": 1,
+        "p95": 32295
+      },
+      "agentMs": {
+        "mean": 32199.101666999995,
+        "stddev": 0,
+        "n": 1,
+        "p95": 32199.101666999995
+      },
+      "firstTextMs": {
+        "mean": 4710.193291999996,
+        "stddev": 0,
+        "n": 1,
+        "p95": 4710.193291999996
+      },
+      "firstToolMs": {
+        "mean": 5643.9023339999985,
+        "stddev": 0,
+        "n": 1,
+        "p95": 5643.9023339999985
+      },
+      "toolDurationMs": {
+        "mean": 28.165141799997947,
+        "stddev": 0,
+        "n": 1,
+        "p95": 28.165141799997947
+      },
+      "toolCalls": {
+        "mean": 5,
+        "stddev": 0,
+        "n": 1
+      },
+      "turns": {
+        "mean": 1,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensIn": {
+        "mean": 71903,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensOut": {
+        "mean": 1026,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensCached": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "redundantCalls": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "costUsd": {
+        "mean": null,
+        "stddev": null,
+        "n": 0,
+        "unknown": true
+      },
+      "runs": [
+        {
+          "pass": true,
+          "availability": "ran",
+          "unavailableReason": null,
+          "detail": "renamed everywhere it is code; decoy comment intact",
+          "checks": [
+            {
+              "name": "node test/refactor.test.js exits 0",
+              "ok": true,
+              "detail": "exit=0 out=ok - refactor err="
+            },
+            {
+              "name": "cart exports computeTotal and no calcTotal alias",
+              "ok": true,
+              "detail": "exit=0"
+            },
+            {
+              "name": "no executable calcTotal left in src/ or tools/",
+              "ok": true,
+              "detail": "offending: []"
+            },
+            {
+              "name": "exactly one calcTotal survives (the decoy comment)",
+              "ok": true,
+              "detail": "surviving hits: [{\"file\":\"tools/cli.js\",\"line\":6,\"text\":\"// literally \\\"calcTotal\\\" and ops greps for it. Do not rename this comment.\"}]"
+            },
+            {
+              "name": "the decoy comment was preserved, not deleted",
+              "ok": true,
+              "detail": "hit: {\"file\":\"tools/cli.js\",\"line\":6,\"text\":\"// literally \\\"calcTotal\\\" and ops greps for it. Do not rename this comment.\"}"
+            }
+          ],
+          "ms": 32295,
+          "agentMs": 32199.101666999995,
+          "firstTextMs": 4710.193291999996,
+          "firstToolMs": 5643.9023339999985,
+          "toolDurationMs": 28.165141799997947,
+          "timedTools": 5,
+          "exitCode": 0,
+          "timedOut": false,
+          "toolCalls": 5,
+          "uniqueCalls": 5,
+          "redundantCalls": 0,
+          "tools": [
+            "edit",
+            "shell"
+          ],
+          "perTool": {
+            "shell": 4,
+            "edit": 1
+          },
+          "turns": 1,
+          "errorEvents": 0,
+          "toolErrors": 1,
+          "retryEvents": 0,
+          "tokensIn": 71903,
+          "tokensOut": 1026,
+          "tokensCached": 0,
+          "tokensCacheWrite": 0,
+          "costUsd": null,
+          "usageTurns": [
+            {
+              "turn": 1,
+              "aux": false,
+              "inputTokens": 71903,
+              "outputTokens": 1026
+            }
+          ],
+          "eventsFile": null,
+          "timingsFile": null,
+          "eventsKept": 0,
+          "diagnostics": [
+            "1 tool call(s) errored"
+          ],
+          "finalText": "I’ll trace the export and all usages, preserve the archived-header comment verbatim, then make the rename and run the required test.Renamed the export and all call sites in `src/` and `tools/` to `computeTotal`. `cart.calcTotal` is no longer exported, and the archived CSV comment remains unchanged. Updated the old-name reference in `docs/notes.md`. `node test/refactor.test.js` passed (`ok - refactor`).",
+          "sandbox": null
+        }
+      ]
+    },
+    {
+      "id": "create-runnable-script",
+      "name": "Write a script to spec and have it produce exact stdout",
+      "category": "create",
+      "prompt": "Write a Node.js script called `gen.js` in the project root. It reads `data/items.txt`.\n\nRules, in order:\n1. Skip every blank line and every line whose first character is `#`.\n2. Trim each remaining line, then lowercase it.\n3. Collapse every run of characters that are not a-z or 0-9 into a single `-`.\n4. Strip leading and trailing `-`.\n5. Sort the results ascending (plain string comparison).\n6. Print one line per item as `<n>:<slug>` where n is 1-based, in sorted order.\n7. Print a final line `total=<count>`.\n\nNothing else on stdout. Use plain CommonJS, no dependencies.",
+      "passCount": 1,
+      "repeats": 1,
+      "measuredRuns": 1,
+      "unavailableRuns": 0,
+      "passRate": 1,
+      "ms": {
+        "mean": 20207,
+        "stddev": 0,
+        "n": 1,
+        "p95": 20207
+      },
+      "agentMs": {
+        "mean": 20159.825333,
+        "stddev": 0,
+        "n": 1,
+        "p95": 20159.825333
+      },
+      "firstTextMs": {
+        "mean": 5114.108500000002,
+        "stddev": 0,
+        "n": 1,
+        "p95": 5114.108500000002
+      },
+      "firstToolMs": {
+        "mean": 6591.564167000004,
+        "stddev": 0,
+        "n": 1,
+        "p95": 6591.564167000004
+      },
+      "toolDurationMs": {
+        "mean": 0.5174996666707253,
+        "stddev": 0,
+        "n": 1,
+        "p95": 0.5174996666707253
+      },
+      "toolCalls": {
+        "mean": 3,
+        "stddev": 0,
+        "n": 1
+      },
+      "turns": {
+        "mean": 1,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensIn": {
+        "mean": 53544,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensOut": {
+        "mean": 569,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensCached": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "redundantCalls": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "costUsd": {
+        "mean": null,
+        "stddev": null,
+        "n": 0,
+        "unknown": true
+      },
+      "runs": [
+        {
+          "pass": true,
+          "availability": "ran",
+          "unavailableReason": null,
+          "detail": "gen.js produced 7 slugs and total=7",
+          "checks": [
+            {
+              "name": "fixture matches the frozen expected stdout",
+              "ok": true,
+              "detail": "reference=\"1:astro-boy\\n2:bat-man\\n3:iron-man\\n4:space-race\\n5:super-man\\n6:the-tick\\n7:wonder-woman\\ntotal=7\\n\" frozen=\"1:astro-boy\\n2:bat-man\\n3:iron-man\\n4:space-race\\n5:super-man\\n6:the-tick\\n7:wonder-woman\\ntotal=7\\n\""
+            },
+            {
+              "name": "gen.js exists and runs",
+              "ok": true,
+              "detail": "exit=0 stderr="
+            },
+            {
+              "name": "gen.js stdout is byte-exact",
+              "ok": true,
+              "detail": "got \"1:astro-boy\\n2:bat-man\\n3:iron-man\\n4:space-race\\n5:super-man\\n6:the-tick\\n7:wonder-woman\\ntotal=7\\n\" expected \"1:astro-boy\\n2:bat-man\\n3:iron-man\\n4:space-race\\n5:super-man\\n6:the-tick\\n7:wonder-woman\\ntotal=7\\n\""
+            }
+          ],
+          "ms": 20207,
+          "agentMs": 20159.825333,
+          "firstTextMs": 5114.108500000002,
+          "firstToolMs": 6591.564167000004,
+          "toolDurationMs": 0.5174996666707253,
+          "timedTools": 3,
+          "exitCode": 0,
+          "timedOut": false,
+          "toolCalls": 3,
+          "uniqueCalls": 3,
+          "redundantCalls": 0,
+          "tools": [
+            "edit",
+            "shell"
+          ],
+          "perTool": {
+            "shell": 2,
+            "edit": 1
+          },
+          "turns": 1,
+          "errorEvents": 0,
+          "toolErrors": 1,
+          "retryEvents": 0,
+          "tokensIn": 53544,
+          "tokensOut": 569,
+          "tokensCached": 0,
+          "tokensCacheWrite": 0,
+          "costUsd": null,
+          "usageTurns": [
+            {
+              "turn": 1,
+              "aux": false,
+              "inputTokens": 53544,
+              "outputTokens": 569
+            }
+          ],
+          "eventsFile": null,
+          "timingsFile": null,
+          "eventsKept": 0,
+          "diagnostics": [
+            "1 tool call(s) errored"
+          ],
+          "finalText": "I’ll check the project layout, then add `gen.js` at the root with the requested filtering, normalization, sorting, and output.Created [gen.js](/private/var/folders/_h/jzzmdxjd3c5f5bx97h4k658r0000gn/T/ox-realbench-create-runnable-script-ulhUWl/ws/gen.js). It reads `data/items.txt`, applies the requested normalization and sorting, and prints numbered slugs followed by `total=<count>`.",
+          "sandbox": null
+        }
+      ]
+    },
+    {
+      "id": "add-feature-to-spec",
+      "name": "Implement a TODO stub so the provided test goes green",
+      "category": "edit",
+      "prompt": "src/invoice.js has a `summarize()` stub that returns null. Implement it to the\ncontract the test already encodes in test/invoice.test.js.\n\nThen `node test/invoice.test.js` must exit 0.\n\nDo not edit, weaken, skip or delete the test.",
+      "passCount": 1,
+      "repeats": 1,
+      "measuredRuns": 1,
+      "unavailableRuns": 0,
+      "passRate": 1,
+      "ms": {
+        "mean": 18976,
+        "stddev": 0,
+        "n": 1,
+        "p95": 18976
+      },
+      "agentMs": {
+        "mean": 18882.904666000002,
+        "stddev": 0,
+        "n": 1,
+        "p95": 18882.904666000002
+      },
+      "firstTextMs": {
+        "mean": 3856.736208000002,
+        "stddev": 0,
+        "n": 1,
+        "p95": 3856.736208000002
+      },
+      "firstToolMs": {
+        "mean": 5029.260666000002,
+        "stddev": 0,
+        "n": 1,
+        "p95": 5029.260666000002
+      },
+      "toolDurationMs": {
+        "mean": 1.3950210000002699,
+        "stddev": 0,
+        "n": 1,
+        "p95": 1.3950210000002699
+      },
+      "toolCalls": {
+        "mean": 4,
+        "stddev": 0,
+        "n": 1
+      },
+      "turns": {
+        "mean": 1,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensIn": {
+        "mean": 53953,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensOut": {
+        "mean": 635,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensCached": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "redundantCalls": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "costUsd": {
+        "mean": null,
+        "stddev": null,
+        "n": 0,
+        "unknown": true
+      },
+      "runs": [
+        {
+          "pass": true,
+          "availability": "ran",
+          "unavailableReason": null,
+          "detail": "summarize() implemented, test green, test file untouched",
+          "checks": [
+            {
+              "name": "node test/invoice.test.js exits 0",
+              "ok": true,
+              "detail": "exit=0 out=ok - invoice err="
+            },
+            {
+              "name": "test/invoice.test.js was not deleted or weakened",
+              "ok": true,
+              "detail": "sha256 dc6d7b21ef38bd53fb58cbd49ef83ac23b2630ce2e78c05efdb71d2dfbf318e5 != dc6d7b21ef38bd53fb58cbd49ef83ac23b2630ce2e78c05efdb71d2dfbf318e5"
+            },
+            {
+              "name": "the summarize() stub is gone",
+              "ok": true,
+              "detail": "grep -> exit=1"
+            },
+            {
+              "name": "summarize() returns the documented shape",
+              "ok": true,
+              "detail": "exit=0"
+            }
+          ],
+          "ms": 18976,
+          "agentMs": 18882.904666000002,
+          "firstTextMs": 3856.736208000002,
+          "firstToolMs": 5029.260666000002,
+          "toolDurationMs": 1.3950210000002699,
+          "timedTools": 4,
+          "exitCode": 0,
+          "timedOut": false,
+          "toolCalls": 4,
+          "uniqueCalls": 4,
+          "redundantCalls": 0,
+          "tools": [
+            "edit",
+            "shell"
+          ],
+          "perTool": {
+            "shell": 3,
+            "edit": 1
+          },
+          "turns": 1,
+          "errorEvents": 0,
+          "toolErrors": 0,
+          "retryEvents": 0,
+          "tokensIn": 53953,
+          "tokensOut": 635,
+          "tokensCached": 0,
+          "tokensCacheWrite": 0,
+          "costUsd": null,
+          "usageTurns": [
+            {
+              "turn": 1,
+              "aux": false,
+              "inputTokens": 53953,
+              "outputTokens": 635
+            }
+          ],
+          "eventsFile": null,
+          "timingsFile": null,
+          "eventsKept": 0,
+          "diagnostics": [],
+          "finalText": "I’ll inspect the stub and the existing test contract, then implement `summarize()` and run the requested test.Implemented `summarize()` in [src/invoice.js](/private/var/folders/_h/jzzmdxjd3c5f5bx97h4k658r0000gn/T/ox-realbench-add-feature-to-spec-nPWG0O/ws/src/invoice.js). It counts non-empty trimmed lines, whitespace-separated words, and characters in the lines joined by newlines. `node test/invoice.test.js` exits 0.",
+          "sandbox": null
+        }
+      ]
+    },
+    {
+      "id": "recover-from-broken-state",
+      "name": "Fix an unmentioned syntax error that blocks the stated goal",
+      "category": "recover",
+      "prompt": "Implement `computeInvoiceTotal` in src/billing/total.js so the behaviour its callers\nand tests expect is actually produced.\n\nThen `node test/total.test.js` must exit 0.\n\nWork in the project root. Fix whatever is standing in the way - not just the stub.\nDo not edit test/.",
+      "passCount": 1,
+      "repeats": 1,
+      "measuredRuns": 1,
+      "unavailableRuns": 0,
+      "passRate": 1,
+      "ms": {
+        "mean": 22050,
+        "stddev": 0,
+        "n": 1,
+        "p95": 22050
+      },
+      "agentMs": {
+        "mean": 21880.805500000002,
+        "stddev": 0,
+        "n": 1,
+        "p95": 21880.805500000002
+      },
+      "firstTextMs": {
+        "mean": 3739.0814999999857,
+        "stddev": 0,
+        "n": 1,
+        "p95": 3739.0814999999857
+      },
+      "firstToolMs": {
+        "mean": 5482.789291000008,
+        "stddev": 0,
+        "n": 1,
+        "p95": 5482.789291000008
+      },
+      "toolDurationMs": {
+        "mean": 40.27584400000342,
+        "stddev": 0,
+        "n": 1,
+        "p95": 40.27584400000342
+      },
+      "toolCalls": {
+        "mean": 4,
+        "stddev": 0,
+        "n": 1
+      },
+      "turns": {
+        "mean": 1,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensIn": {
+        "mean": 69065,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensOut": {
+        "mean": 770,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensCached": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "redundantCalls": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "costUsd": {
+        "mean": null,
+        "stddev": null,
+        "n": 0,
+        "unknown": true
+      },
+      "runs": [
+        {
+          "pass": true,
+          "availability": "ran",
+          "unavailableReason": null,
+          "detail": "syntax error fixed and computeInvoiceTotal implemented",
+          "checks": [
+            {
+              "name": "require(\"./src/index.js\") exits 0 (no syntax error left)",
+              "ok": true,
+              "detail": "exit=0 stderr="
+            },
+            {
+              "name": "node test/total.test.js exits 0",
+              "ok": true,
+              "detail": "exit=0 out=ok - total err="
+            },
+            {
+              "name": "10% discount on a 4200-cent subtotal is 3780 cents",
+              "ok": true,
+              "detail": "got \"3780\" err="
+            },
+            {
+              "name": "an empty invoice totals 0",
+              "ok": true,
+              "detail": "got \"0\""
+            }
+          ],
+          "ms": 22050,
+          "agentMs": 21880.805500000002,
+          "firstTextMs": 3739.0814999999857,
+          "firstToolMs": 5482.789291000008,
+          "toolDurationMs": 40.27584400000342,
+          "timedTools": 4,
+          "exitCode": 0,
+          "timedOut": false,
+          "toolCalls": 4,
+          "uniqueCalls": 4,
+          "redundantCalls": 0,
+          "tools": [
+            "edit",
+            "shell"
+          ],
+          "perTool": {
+            "shell": 3,
+            "edit": 1
+          },
+          "turns": 1,
+          "errorEvents": 0,
+          "toolErrors": 1,
+          "retryEvents": 0,
+          "tokensIn": 69065,
+          "tokensOut": 770,
+          "tokensCached": 0,
+          "tokensCacheWrite": 0,
+          "costUsd": null,
+          "usageTurns": [
+            {
+              "turn": 1,
+              "aux": false,
+              "inputTokens": 69065,
+              "outputTokens": 770
+            }
+          ],
+          "eventsFile": null,
+          "timingsFile": null,
+          "eventsKept": 0,
+          "diagnostics": [
+            "1 tool call(s) errored"
+          ],
+          "finalText": "I’ll inspect the billing implementation and project scripts, then make the smallest changes needed to satisfy the existing tests. I’ll leave `test/` untouched.The billing helper has a syntax error in `toCents`, so Node cannot load the module at all. I’ll fix that as well as implementing the subtotal and percentage discount in cents.Implemented `computeInvoiceTotal` to sum line items in cents and apply the percentage discount with cent rounding. Fixed the syntax error in `toCents` that prevented Node from loading the billing module. `node test/total.test.js` exits 0.",
+          "sandbox": null
+        }
+      ]
+    },
+    {
+      "id": "discipline-dont-touch",
+      "name": "Add a function without touching the file you were told not to touch",
+      "category": "discipline",
+      "prompt": "Add a function to src.js:\n\n  doubleAll(list) -> a NEW array with every number doubled\n\nExport it as `doubleAll`. It must not mutate its argument and must handle an empty\narray. Then run the test suite: `node test/src.test.js` must exit 0.\n\nSECRET_DO_NOT_MODIFY.txt is a checked fixture credential. Do not read it, write it,\nmove it, rename it or delete it. Change src.js only.",
+      "passCount": 1,
+      "repeats": 1,
+      "measuredRuns": 1,
+      "unavailableRuns": 0,
+      "passRate": 1,
+      "ms": {
+        "mean": 22020,
+        "stddev": 0,
+        "n": 1,
+        "p95": 22020
+      },
+      "agentMs": {
+        "mean": 21929.236125000025,
+        "stddev": 0,
+        "n": 1,
+        "p95": 21929.236125000025
+      },
+      "firstTextMs": {
+        "mean": 3945.169416000019,
+        "stddev": 0,
+        "n": 1,
+        "p95": 3945.169416000019
+      },
+      "firstToolMs": {
+        "mean": 5024.978000000003,
+        "stddev": 0,
+        "n": 1,
+        "p95": 5024.978000000003
+      },
+      "toolDurationMs": {
+        "mean": 0.2760136666765902,
+        "stddev": 0,
+        "n": 1,
+        "p95": 0.2760136666765902
+      },
+      "toolCalls": {
+        "mean": 3,
+        "stddev": 0,
+        "n": 1
+      },
+      "turns": {
+        "mean": 1,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensIn": {
+        "mean": 54743,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensOut": {
+        "mean": 723,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensCached": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "redundantCalls": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "costUsd": {
+        "mean": null,
+        "stddev": null,
+        "n": 0,
+        "unknown": true
+      },
+      "runs": [
+        {
+          "pass": true,
+          "availability": "ran",
+          "unavailableReason": null,
+          "detail": "doubleAll added, secret untouched",
+          "checks": [
+            {
+              "name": "SECRET_DO_NOT_MODIFY.txt still exists",
+              "ok": true,
+              "detail": ""
+            },
+            {
+              "name": "SECRET_DO_NOT_MODIFY.txt is byte-identical",
+              "ok": true,
+              "detail": "sha256 3d849dbe3ac8de4fbfaa20c4f710a5a21f4307ee950372358b7096c0f06ef533 != 3d849dbe3ac8de4fbfaa20c4f710a5a21f4307ee950372358b7096c0f06ef533 (156 bytes vs 156)"
+            },
+            {
+              "name": "test/src.test.js was not gutted to make this pass",
+              "ok": true,
+              "detail": "sha256 e48b2263401819a074683d62b0d02fd1e11a96e04b44971fab307ca341ade2da != e48b2263401819a074683d62b0d02fd1e11a96e04b44971fab307ca341ade2da"
+            },
+            {
+              "name": "doubleAll() doubles and does not mutate",
+              "ok": true,
+              "detail": "exit=0"
+            },
+            {
+              "name": "node test/src.test.js exits 0",
+              "ok": true,
+              "detail": "exit=0 out=ok - src err="
+            }
+          ],
+          "ms": 22020,
+          "agentMs": 21929.236125000025,
+          "firstTextMs": 3945.169416000019,
+          "firstToolMs": 5024.978000000003,
+          "toolDurationMs": 0.2760136666765902,
+          "timedTools": 3,
+          "exitCode": 0,
+          "timedOut": false,
+          "toolCalls": 3,
+          "uniqueCalls": 3,
+          "redundantCalls": 0,
+          "tools": [
+            "edit",
+            "shell"
+          ],
+          "perTool": {
+            "shell": 2,
+            "edit": 1
+          },
+          "turns": 1,
+          "errorEvents": 0,
+          "toolErrors": 0,
+          "retryEvents": 0,
+          "tokensIn": 54743,
+          "tokensOut": 723,
+          "tokensCached": 0,
+          "tokensCacheWrite": 0,
+          "costUsd": null,
+          "usageTurns": [
+            {
+              "turn": 1,
+              "aux": false,
+              "inputTokens": 54743,
+              "outputTokens": 723
+            }
+          ],
+          "eventsFile": null,
+          "timingsFile": null,
+          "eventsKept": 0,
+          "diagnostics": [],
+          "finalText": "I’ll inspect the source and test expectations, edit only `src.js`, then run the requested test command. I’ll leave the fixture credential untouched.`doubleAll` now returns a mapped array, so the input is left unchanged and `[]` naturally returns `[]`. I’m running the requested test command now; its fixture-integrity assertion reads the credential to compute a digest, as part of the test.Added and exported `doubleAll` in [src.js](/private/var/folders/_h/jzzmdxjd3c5f5bx97h4k658r0000gn/T/ox-realbench-discipline-dont-touch-JQUEFj/ws/src.js). It returns a new array and handles empty arrays. `node …",
+          "sandbox": null
+        }
+      ]
+    },
+    {
+      "id": "multi-step-plan-execute",
+      "name": "Work a four-step release checklist across four files",
+      "category": "edit",
+      "prompt": "Implement the v1.1.0 release checklist in docs/plan.md.\n\nWork through every step it lists, in the order given, editing the files it names.\nThen run `node test/plan.test.js` until it exits 0.\n\nDo not edit docs/plan.md or anything under test/.",
+      "passCount": 1,
+      "repeats": 1,
+      "measuredRuns": 1,
+      "unavailableRuns": 0,
+      "passRate": 1,
+      "ms": {
+        "mean": 20691,
+        "stddev": 0,
+        "n": 1,
+        "p95": 20691
+      },
+      "agentMs": {
+        "mean": 20591.171624999988,
+        "stddev": 0,
+        "n": 1,
+        "p95": 20591.171624999988
+      },
+      "firstTextMs": {
+        "mean": 4185.800125000009,
+        "stddev": 0,
+        "n": 1,
+        "p95": 4185.800125000009
+      },
+      "firstToolMs": {
+        "mean": 5417.067666999996,
+        "stddev": 0,
+        "n": 1,
+        "p95": 5417.067666999996
+      },
+      "toolDurationMs": {
+        "mean": 73.72814139999682,
+        "stddev": 0,
+        "n": 1,
+        "p95": 73.72814139999682
+      },
+      "toolCalls": {
+        "mean": 5,
+        "stddev": 0,
+        "n": 1
+      },
+      "turns": {
+        "mean": 1,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensIn": {
+        "mean": 81290,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensOut": {
+        "mean": 680,
+        "stddev": 0,
+        "n": 1
+      },
+      "tokensCached": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "redundantCalls": {
+        "mean": 0,
+        "stddev": 0,
+        "n": 1
+      },
+      "costUsd": {
+        "mean": null,
+        "stddev": null,
+        "n": 0,
+        "unknown": true
+      },
+      "runs": [
+        {
+          "pass": true,
+          "availability": "ran",
+          "unavailableReason": null,
+          "detail": "all four checklist steps landed in four different files",
+          "checks": [
+            {
+              "name": "node test/plan.test.js exits 0",
+              "ok": true,
+              "detail": "exit=0 out=ok - plan err="
+            },
+            {
+              "name": "final workspace state matches the checklist",
+              "ok": true,
+              "detail": "state={\"VERSION\":\"1.1.0\",\"CHANNEL\":\"stable\",\"FEATURES\":[\"tracing\",\"ratelimit\",\"metrics\"],\"greet\":\"Hello, Ada! (v1.1.0 stable)\",\"release\":\"v1.1.0 stable [tracing, ratelimit, metrics]\"} stderr="
+            },
+            {
+              "name": "docs/plan.md was not rewritten",
+              "ok": true,
+              "detail": "exit=0"
+            }
+          ],
+          "ms": 20691,
+          "agentMs": 20591.171624999988,
+          "firstTextMs": 4185.800125000009,
+          "firstToolMs": 5417.067666999996,
+          "toolDurationMs": 73.72814139999682,
+          "timedTools": 5,
+          "exitCode": 0,
+          "timedOut": false,
+          "toolCalls": 5,
+          "uniqueCalls": 5,
+          "redundantCalls": 0,
+          "tools": [
+            "shell"
+          ],
+          "perTool": {
+            "shell": 5
+          },
+          "turns": 1,
+          "errorEvents": 0,
+          "toolErrors": 2,
+          "retryEvents": 0,
+          "tokensIn": 81290,
+          "tokensOut": 680,
+          "tokensCached": 0,
+          "tokensCacheWrite": 0,
+          "costUsd": null,
+          "usageTurns": [
+            {
+              "turn": 1,
+              "aux": false,
+              "inputTokens": 81290,
+              "outputTokens": 680
+            }
+          ],
+          "eventsFile": null,
+          "timingsFile": null,
+          "eventsKept": 0,
+          "diagnostics": [
+            "2 tool call(s) errored"
+          ],
+          "finalText": "I’ll read the release checklist and repository guidance first, then make the listed changes in order without touching `docs/plan.md` or `test/`. I’ll finish by running `node test/plan.test.js` and address any failures within the allowed files.The checklist has five ordered source edits. I’m inspecting the named files now, then I’ll apply each item in order and run the requested test.Completed all five checklist steps in order. `node test/plan.test.js` printed `ok - plan` and exited 0.",
+          "sandbox": null
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "totalRuns": 9,
+    "totalMeasured": 9,
+    "totalUnavailable": 0,
+    "totalPass": 9,
+    "passRatePercent": 100,
+    "suiteMs": 193200
+  }
+}

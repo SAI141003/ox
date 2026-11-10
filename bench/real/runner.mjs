@@ -13,6 +13,7 @@
 // and pass/fail comes from executing code against the workspace the agent left
 // behind. Zero deps beyond node built-ins.
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -127,8 +128,22 @@ function selectTasks(opts) {
   return REAL_TASKS;
 }
 
+// The ox that ran: its version, and the commit when this is a git checkout.
+export function oxBuild(root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')) {
+  let oxVersion = null, commit = null;
+  try { oxVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version ?? null; } catch {}
+  try {
+    const r = spawnSync('git', ['rev-parse', '--short=12', 'HEAD'], { cwd: root, encoding: 'utf8' });
+    commit = r.status === 0 && /^[0-9a-f]{7,40}$/.test(r.stdout.trim()) ? r.stdout.trim() : null;
+  } catch {}
+  return { oxVersion, commit };
+}
+
 export function costFor(model, summary) {
-  const catalogCost = costOf(model, { inputTokens: summary?.inputTokens ?? 0, outputTokens: summary?.outputTokens ?? 0 });
+  const catalogCost = costOf(model, {
+    inputTokens: summary?.inputTokens ?? 0, outputTokens: summary?.outputTokens ?? 0,
+    cacheReadTokens: summary?.cacheReadTokens ?? 0, cacheWriteTokens: summary?.cacheWriteTokens ?? 0,
+  });
   // Local adapters commonly emit a placeholder costUsd=0 even though no
   // provider price exists. Preserve a real positive provider-reported charge,
   // but never turn an unpriced run into a misleading free/$0 comparison.
@@ -318,6 +333,8 @@ export async function runOnce(task, spec, opts, deps = {}) {
     tokensOut: summary?.outputTokens ?? 0,
     auxTokensIn: summary?.auxInputTokens ?? 0,
     auxTokensOut: summary?.auxOutputTokens ?? 0,
+    tokensCached: summary?.cacheReported ? summary.cacheReadTokens ?? 0 : null,
+    tokensCacheWrite: summary?.cacheWriteTokens ?? 0,
     usageTurns: summary?.usageEvents ?? [],
     eventsFile,
     timingsFile,
@@ -427,6 +444,7 @@ function summariseRepeats(runs) {
     turns: meanStd(measured.map((r) => r.turns)),
     tokensIn: meanStd(measured.map((r) => r.tokensIn)),
     tokensOut: meanStd(measured.map((r) => r.tokensOut)),
+    tokensCached: meanStd(measured.map((r) => r.tokensCached ?? 0)),
     redundantCalls: meanStd(measured.map((r) => r.redundantCalls)),
     costUsd: costStats(measured.map((r) => r.costUsd)),
     runs,
@@ -613,6 +631,9 @@ export async function main(argv = process.argv.slice(2)) {
     priced,
     repeats: opts.repeats,
     env: { node: process.versions.node, platform: process.platform, arch: process.arch },
+    // Which ox produced these numbers: without it two artifacts cannot be told
+    // apart as "before" and "after" a change (bench/real/trend.mjs reads these).
+    ...oxBuild(),
     suiteMs,
     results: rows.map(({ task, stats, runs }) => ({
       id: task.id,
@@ -633,6 +654,7 @@ export async function main(argv = process.argv.slice(2)) {
       turns: stats.turns,
       tokensIn: stats.tokensIn,
       tokensOut: stats.tokensOut,
+      tokensCached: stats.tokensCached,
       redundantCalls: stats.redundantCalls,
       costUsd: stats.costUsd,
       runs: runs.map((r) => ({
@@ -643,7 +665,7 @@ export async function main(argv = process.argv.slice(2)) {
         toolCalls: r.toolCalls, uniqueCalls: r.uniqueCalls, redundantCalls: r.redundantCalls,
         tools: r.tools, perTool: r.perTool, turns: r.turns,
         errorEvents: r.errorEvents, toolErrors: r.toolErrors, retryEvents: r.retryEvents,
-        tokensIn: r.tokensIn, tokensOut: r.tokensOut, costUsd: r.costUsd,
+        tokensIn: r.tokensIn, tokensOut: r.tokensOut, tokensCached: r.tokensCached, tokensCacheWrite: r.tokensCacheWrite, costUsd: r.costUsd,
         usageTurns: r.usageTurns, eventsFile: r.eventsFile, timingsFile: r.timingsFile, eventsKept: r.eventsKept,
         diagnostics: r.diagnostics, finalText: r.finalText, sandbox: r.sandbox,
       })),
