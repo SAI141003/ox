@@ -21,11 +21,16 @@ const label = (call) => {
 /**
  * history → history with old, large tool outputs replaced (the same array when nothing changes).
  * keepRounds: the newest assistant tool-call rounds whose outputs stay in full.
+ * hidden: what was hidden so far in this session (a Map: id → its placeholder, added to here). A
+ * client sends the conversation again in full on the next message; what was
+ * hidden is hidden again, so the request repeats the cached one exactly.
  */
-export function maskOldOutputs(history, { triggerChars = 120_000, batchChars = 40_000, keepRounds = 3, minChars = 800 } = {}) {
+export function maskOldOutputs(history, { triggerChars = 120_000, batchChars = 40_000, keepRounds = 3, minChars = 800, hidden = null } = {}) {
   if (!Array.isArray(history) || process.env.OX_MASK_OUTPUTS === '0') return history;
+  const open = (m) => m?.role === 'tool' && typeof m.content === 'string' && !m.content.startsWith(MARK);
+  const again = !!hidden?.size && history.some((m) => open(m) && hidden.has(m.tool_call_id));
   const size = history.reduce((n, m) => n + (typeof m?.content === 'string' ? m.content.length : JSON.stringify(m?.content ?? '').length), 0);
-  if (size < triggerChars) return history;
+  if (size < triggerChars && !again) return history;
   // The boundary: outputs before the keepRounds-th newest tool-call round may be hidden.
   let rounds = 0, boundary = 0;
   for (let i = history.length - 1; i >= 0; i--) {
@@ -45,12 +50,18 @@ export function maskOldOutputs(history, { triggerChars = 120_000, batchChars = 4
     if (m?.role !== 'tool' || typeof m.content !== 'string' || m.content.startsWith(MARK) || m.content.length < minChars) return;
     if (i < boundary || later.get(m.content) > i) { pick.push(i); gain += m.content.length; }
   });
-  if (gain < batchChars) return history;
+  const batch = size >= triggerChars && gain >= batchChars;
+  if (!batch && !again) return history;
+  const chosen = new Set(batch ? pick : []);
+  history.forEach((m, i) => { if (open(m) && hidden?.has(m.tool_call_id)) chosen.add(i); });
   const out = history.slice();
-  for (const i of pick) {
+  for (const i of [...chosen].sort((a, b) => a - b)) {
     const m = out[i];
     const dup = later.get(m.content) > i;
-    out[i] = { ...m, content: `${MARK} the output of ${label(calls.get(m.tool_call_id))}, ${m.content.length.toLocaleString('en-US')} characters${dup ? ', the same as a later output' : ''}. Run the call again if you need it.]` };
+    // The same placeholder as last time, word for word.
+    const text = hidden?.get(m.tool_call_id) ?? `${MARK} the output of ${label(calls.get(m.tool_call_id))}, ${m.content.length.toLocaleString('en-US')} characters${dup ? ', the same as a later output' : ''}. Run the call again if you need it.]`;
+    hidden?.set(m.tool_call_id, text);
+    out[i] = { ...m, content: text };
   }
   return out;
 }
