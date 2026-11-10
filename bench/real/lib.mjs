@@ -314,6 +314,13 @@ export function summarizeEvents(events = [], eventTimings = []) {
   let outputTokens = 0;
   let auxInputTokens = 0;
   let auxOutputTokens = 0;
+  // Of the input, what the provider served from its prompt cache, and what it
+  // wrote to it. A run that reads little from the cache pays full price for a
+  // conversation it already sent, which a token total alone cannot show.
+  let cacheReadTokens = 0;
+  let cacheWriteTokens = 0;
+  // Whether the provider said anything about its cache: silence is unknown, not zero.
+  let cacheReported = false;
   let costUsd = null;
   let finalText = '';
   const firstError = [];
@@ -390,8 +397,12 @@ export function summarizeEvents(events = [], eventTimings = []) {
         } else {
           inputTokens += inTok;
           outputTokens += outTok;
+          if (ev.cacheReadTokens != null || ev.cacheWriteTokens != null) cacheReported = true;
+          cacheReadTokens += Number(ev.cacheReadTokens ?? 0) || 0;
+          cacheWriteTokens += Number(ev.cacheWriteTokens ?? 0) || 0;
         }
-        usageEvents.push({ turn: usageEvents.length + 1, aux: ev.aux === true, inputTokens: inTok, outputTokens: outTok });
+        usageEvents.push({ turn: usageEvents.length + 1, aux: ev.aux === true, inputTokens: inTok, outputTokens: outTok,
+          ...(Number(ev.cacheReadTokens) > 0 ? { cacheReadTokens: Number(ev.cacheReadTokens) } : {}) });
         break;
       }
       case 'subagent-end': {
@@ -420,6 +431,8 @@ export function summarizeEvents(events = [], eventTimings = []) {
       case 'usage-total':
         inputTokens = Number(ev.inputTokens ?? inputTokens) || 0;
         outputTokens = Number(ev.outputTokens ?? outputTokens) || 0;
+        if (ev.cacheReadTokens != null) { cacheReported = true; cacheReadTokens = Number(ev.cacheReadTokens) || 0; }
+        if (ev.cacheWriteTokens != null) cacheWriteTokens = Number(ev.cacheWriteTokens) || 0;
         if (ev.costUsd != null) costUsd = Number(ev.costUsd);
         break;
       default:
@@ -456,6 +469,9 @@ export function summarizeEvents(events = [], eventTimings = []) {
     outputTokens,
     auxInputTokens,
     auxOutputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    cacheReported,
     costUsd,
     firstTextMs,
     firstToolMs,

@@ -40,7 +40,9 @@
     "verify": "node scripts/verify.mjs",
     "verify:quick": "node scripts/verify.mjs --quick",
     "verify:loop": "node scripts/verify.mjs --loop",
-    "bench:compare": "node bench/real/compare.mjs"
+    "bench:compare": "node bench/real/compare.mjs",
+    "measure": "node bench/real/runner.mjs",
+    "measure:trend": "node bench/real/trend.mjs"
   },
   "dependencies": {
     "mochi-avatar": "1.1.0"
