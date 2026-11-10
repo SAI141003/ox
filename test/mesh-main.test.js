@@ -10,7 +10,8 @@ import path from 'node:path';
 import * as M from '../src/mesh.js';
 
 const home = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ox-mesh-main-'));
-const until = async (fn, ms = 5000) => { const t = Date.now(); for (;;) { const v = fn(); if (v) return v; if (Date.now() - t > ms) throw new Error('timed out'); await new Promise((r) => setTimeout(r, 15)); } };
+// Returns as soon as it holds. 5 s was not enough on a loaded CI runner (it timed out twice on Ubuntu, never here).
+const until = async (fn, ms = 20_000) => { const t = Date.now(); for (;;) { const v = fn(); if (v) return v; if (Date.now() - t > ms) throw new Error('timed out'); await new Promise((r) => setTimeout(r, 15)); } };
 const asks = (n) => n.status().alerts.filter((a) => a.kind === 'approval');
 const on = (id, h) => Object.entries(Object.values(M.readPeers({ home: h })).find((p) => p.id === id).grants).filter(([, v]) => v).map(([k]) => k).sort();
 
