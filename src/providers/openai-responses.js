@@ -1,4 +1,5 @@
 import { imagesAt, lastImageIndex, withNote } from './images.js';
+import { cacheFields } from './openai-compat.js';
 
 const trimBase = (value) => String(value).replace(/\/+$/, '');
 
@@ -137,7 +138,7 @@ export function createOpenAIResponsesParser({ name = 'openai' } = {}) {
 }
 
 export function makeOpenAIResponses({ fetchImpl = fetch } = {}) {
-  return async function* streamChat({ model, messages = [], tools = [], apiKey, baseUrl, signal, maxTokens, reasoningEffort } = {}) {
+  return async function* streamChat({ model, messages = [], tools = [], apiKey, baseUrl, signal, maxTokens, reasoningEffort, cacheKey } = {}) {
     if (!baseUrl) throw new Error('ox[openai]: no baseUrl configured for Responses API');
     const effortOptions = /^gpt-6-luna$/i.test(String(model))
       ? ['none', 'low', 'medium', 'high', 'xhigh', 'max']
@@ -154,6 +155,7 @@ export function makeOpenAIResponses({ fetchImpl = fetch } = {}) {
       ...(tools.length ? { tools: tools.map((tool) => ({ type: 'function', name: tool.name, description: tool.description, parameters: tool.input_schema })) } : {}),
       ...(maxTokens != null ? { max_output_tokens: maxTokens } : {}),
       ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
+      ...cacheFields({ name: 'openai', model, cacheKey }),
     };
     const headers = { 'content-type': 'application/json' };
     if (apiKey) headers.authorization = `Bearer ${apiKey}`;

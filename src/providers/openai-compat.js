@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { imagesAt, lastImageIndex, withNote } from './images.js';
 // Some OpenAI-compatible providers (vLLM, llama.cpp, DeepInfra) report a
 // mid-stream provider fault as finish_reason 'error' with an empty message
@@ -238,10 +239,25 @@ export function withCacheMarks(wire, { name, model, env = process.env } = {}) {
   return out;
 }
 
+// OpenAI sends requests that share a key to the machine that already holds
+// their prefix, so a session's turns hit the cache instead of landing wherever
+// (OpenRouter routes on it too). The key is a hash: no session name leaves.
+export function cacheFields({ name, model, cacheKey, env = process.env } = {}) {
+  if (env.OX_PROMPT_CACHE === '0') return {};
+  const out = {};
+  if (cacheKey && (name === 'openai' || name === 'openrouter')) out.prompt_cache_key = `ox-${createHash('sha256').update(String(cacheKey)).digest('hex').slice(0, 32)}`;
+  // Kept up to a day instead of minutes, at the same price, where the model has it.
+  if (name === 'openai' && env.OX_PROMPT_CACHE_RETENTION === '24h') out.prompt_cache_retention = '24h';
+  // Claude behind OpenRouter: the newest block is cached on every request, tool
+  // results included (a mark on the last USER message missed every step of a tool loop).
+  if (name === 'openrouter' && /anthropic\/|claude/i.test(String(model ?? ''))) out.cache_control = { type: 'ephemeral' };
+  return out;
+}
+
 export function makeOpenAICompat({ name = 'openai-compat' } = {}) {
-  return async function* streamChat({ model, messages, tools = [], apiKey, baseUrl, signal, maxTokens, reasoningEffort } = {}) {
+  return async function* streamChat({ model, messages, tools = [], apiKey, baseUrl, signal, maxTokens, reasoningEffort, cacheKey } = {}) {
     if (!baseUrl) throw new Error(`ox[${name}]: no baseUrl configured for OpenAI-compatible provider`);
-    const body = { model, messages: withCacheMarks(toWireMessages(messages), { name, model }), stream: true };
+    const body = { model, messages: withCacheMarks(toWireMessages(messages), { name, model }), stream: true, ...cacheFields({ name, model, cacheKey }) };
     if (tools.length) {
       body.tools = tools.map((t) => ({
         type: 'function',

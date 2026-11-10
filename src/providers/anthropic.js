@@ -19,7 +19,18 @@ function parseArgsOrEmpty(raw) {
 // Prompt caching, on unless OX_PROMPT_CACHE=0.
 export const promptCacheOn = (env = process.env) => env.OX_PROMPT_CACHE !== '0';
 
-export function buildAnthropicBody({ model, messages, tools, maxTokens }) {
+// A session comes back after a pause; a cache that lasts 5 minutes is gone by
+// then and the tools and system prompt are written again at 1.25x. Kept for an
+// hour (2x once, every read renews it) they are written once. Only for a run
+// that belongs to a session, on models that take it. OX_PROMPT_CACHE_TTL=5m|1h decides for all.
+export function longCacheFor({ model, session = false, env = process.env } = {}) {
+  const t = String(env.OX_PROMPT_CACHE_TTL ?? '').toLowerCase();
+  if (t === '1h') return true;
+  if (t === '5m') return false;
+  return session === true && !/claude-3|claude-2|claude-instant/i.test(String(model ?? ''));
+}
+
+export function buildAnthropicBody({ model, messages, tools, maxTokens, longCache = false }) {
   let i = 0;
   const sysTexts = [];
   while (i < messages.length && messages[i].role === 'system') {
@@ -71,16 +82,27 @@ export function buildAnthropicBody({ model, messages, tools, maxTokens }) {
   if (sysTexts.length) {
     // Cache breakpoint 1: tools + system (they come first in Anthropic's prefix
     // order), identical on every turn of a run.
-    body.system = cache ? [{ type: 'text', text: sysTexts.join('\n'), cache_control: { type: 'ephemeral' } }] : sysTexts.join('\n');
+    body.system = cache ? [{ type: 'text', text: sysTexts.join('\n'), cache_control: { type: 'ephemeral', ...(longCache ? { ttl: '1h' } : {}) } }] : sysTexts.join('\n');
   }
   // Cache breakpoint 2: the newest message, so the next turn reads the whole
   // conversation so far from the cache (~10% of the input price) instead of
   // paying for it again. Prefixes under the model's minimum (1-2k tokens)
   // are simply not cached; nothing breaks.
+  const mark = (m) => {
+    if (!m || !Array.isArray(m.content) || !m.content.length) return;
+    m.content[m.content.length - 1] = { ...m.content.at(-1), cache_control: { type: 'ephemeral' } };
+  };
   const last = conv.at(-1);
-  if (cache && last && Array.isArray(last.content) && last.content.length) {
-    const blk = last.content.at(-1);
-    last.content[last.content.length - 1] = { ...blk, cache_control: { type: 'ephemeral' } };
+  if (cache) {
+    // Cache breakpoint 3: where the previous request's breakpoint was (the
+    // user-role message before the newest). A hit is looked for only 20
+    // positions back from a breakpoint, so a step that added more than that
+    // (a long run of text and tool calls) found nothing and paid for the whole
+    // conversation again. This one always lands on what was written last time.
+    for (let i = conv.length - 2; i >= 0; i--) {
+      if (conv[i].role === 'user') { mark(conv[i]); break; }
+    }
+    mark(last);
   }
   if (tools?.length) {
     body.tools = tools.map((t) => ({
@@ -230,9 +252,10 @@ export function makeAnthropic() {
     baseUrl,
     signal,
     maxTokens,
+    cacheKey,
   } = {}) {
     if (!baseUrl) throw new Error('ox[anthropic]: no baseUrl configured');
-    const body = buildAnthropicBody({ model, messages, tools, maxTokens });
+    const body = buildAnthropicBody({ model, messages, tools, maxTokens, longCache: longCacheFor({ model, session: !!cacheKey }) });
     const res = await fetch(endpoint(baseUrl), {
       method: 'POST',
       headers: {

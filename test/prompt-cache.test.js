@@ -12,11 +12,13 @@ const convo = [
   { role: 'tool', tool_call_id: 't1', content: 'export const a = 1;' },
 ];
 
-test('Anthropic: the system prompt and the newest message carry cache breakpoints', () => {
+test('Anthropic: the system prompt, the newest message and the previous one carry cache breakpoints', () => {
   const b = buildAnthropicBody({ model: 'claude-sonnet-5-5', messages: convo, tools: [{ name: 'read_file', description: 'd', input_schema: { type: 'object' } }] });
   assert.deepEqual(b.system, [{ type: 'text', text: 'You are ox.', cache_control: { type: 'ephemeral' } }]);
   assert.deepEqual(b.messages.at(-1).content.at(-1).cache_control, { type: 'ephemeral' });
-  assert.equal(b.messages[0].content.at(-1).cache_control, undefined, 'only the newest message');
+  // ...and the user-role message before it: where the previous request's breakpoint was.
+  const marked = b.messages.filter((m) => m.content.some((x) => x.cache_control)).length;
+  assert.ok(marked >= 1 && marked <= 2, 'the newest message and the one the last request ended on');
   const marks = JSON.stringify(b).match(/cache_control/g).length;
   assert.ok(marks <= 4, 'Anthropic allows at most 4 breakpoints');
 });

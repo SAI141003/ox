@@ -83,11 +83,20 @@ function append(file, records) {
 
 // Rewrite without the superseded lines once the log is mostly history.
 export function compact(file) {
-  const all = load(file);
+  const size = () => { try { return fs.statSync(file).size; } catch { return -1; } };
   const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, all.map((r) => JSON.stringify(r)).join('\n') + (all.length ? '\n' : ''), { mode: 0o600 });
-  fs.renameSync(tmp, file);
-  return all.length;
+  // Another run may append while this rewrites: if the file grew in between,
+  // read it again, so a memory written at that moment is never dropped.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const before = size();
+    const all = load(file);
+    fs.writeFileSync(tmp, all.map((r) => JSON.stringify(r)).join('\n') + (all.length ? '\n' : ''), { mode: 0o600 });
+    if (size() !== before) continue;
+    fs.renameSync(tmp, file);
+    return all.length;
+  }
+  try { fs.rmSync(tmp, { force: true }); } catch {}
+  return load(file).length;
 }
 
 // ---- text: tokens, entities, slots ----------------------------------------
@@ -122,6 +131,7 @@ const CONCEPTS = [
   ['packages', /\b(package manager|npm|pnpm|yarn|bun|pip|uv|poetry|cargo)\b/],
   ['database', /\b(database|databases|db|postgres(ql)?|mysql|sqlite|mongo(db)?|redis)\b/],
   ['style', /\b(answers?|repl(y|ies)|respon(se|ses|d)|format(ting)?|bullets?|bullet points?|concise|short|brief|verbose|detailed|tone|summar(y|ies|ise|ize))\b/],
+  ['upcoming', /\b(coming up|upcoming|schedule[sd]?|calendar|appointments?|exams?|deadlines?|due|tomorrow|tonight|next week|this week|agenda)\b/],
   ['health', /\b(allerg(y|ic|ies)|doctor|medicine|medication|health|sick|asthma|diabet(es|ic))\b/],
 ];
 // Words that say nothing about WHAT a memory is about ("called", "name"): a match
@@ -173,9 +183,10 @@ export function slotOf(text, ents = entities(text)) {
   const lower = s.toLowerCase();
   let rel = null;
   let at = Infinity;
+  let len = 0;
   for (const [name, re] of RELATIONS) {
     const m = re.exec(s);
-    if (m && m.index < at) { rel = name; at = m.index; }
+    if (m && m.index < at) { rel = name; at = m.index; len = m[0].length; }
   }
   if (!rel) return null;
   // "avoids" and "prefers" fill the same slot: a new opinion replaces the old one.
@@ -187,9 +198,36 @@ export function slotOf(text, ents = entities(text)) {
   // about package managers, indentation… we approximate with the first object
   // noun phrase's head entity, falling back to the first content token.
   const after = s.slice(at);
-  const object = (entities(after)[0] ?? tokens(after).filter((t) => !/^(prefers?|likes?|uses?|using|is|are|am|has|have|always|never|instead|use)$/.test(t))[0] ?? '');
-  const topic = relKey === 'prefers' || relKey === 'uses' ? TOPIC_OF[object] ?? object : '';
+  const object = (entities(after)[0] ?? tokens(after).filter((t) => !/^(prefers?|likes?|loves?|wants?|hates?|dislikes?|avoids?|favou?rite|rather|uses?|using|is|are|am|has|have|always|never|instead|use|don't|dont)$/.test(t))[0] ?? '');
+  const topic = relKey === 'prefers' || relKey === 'uses' ? TOPIC_OF[object] ?? TOPIC_OF[`${object}s`] ?? object
+    : relKey === 'is' ? isTopic(s.slice(at + len)) : '';
   return { subject, relation: relKey, topic, object, polarity: rel === 'avoids' ? -1 : 1, ents };
+}
+
+// What an "is" statement says about its subject. "I am a vegetarian", "I am 28
+// years old" and "I am allergic to peanuts" are three facts, not three versions
+// of one: only statements about the same attribute replace each other. An empty
+// topic is an open description, which replaces nothing on its own.
+function isTopic(rest) {
+  const r = String(rest ?? '').trim();
+  const l = r.toLowerCase();
+  if (/^(?:\d{1,3}|[a-z-]+)\s*(?:years?|yrs?)\s*old\b|^aged\b/.test(l)) return 'age';
+  if (/^(?:called|named)\b/.test(l)) return 'named';
+  const m = /^(?:not\s+)?(?:(?:very|really|so|currently|still|now)\s+)?([a-z]+(?:ed|en|ic|ous|ive|able|ing))\s+(?:on|in|at|by|with|to|as|for|of|from)\b/.exec(l);
+  if (m) return m[1];
+  if (/^[A-Z][\p{L}\p{N}]+/u.test(r)) return 'named';
+  return '';
+}
+
+// "I no longer use vim", "I don't work at Google anymore", "I stopped using npm":
+// the statement it takes back, in its positive form, else null.
+export function retractionOf(text) {
+  const s = String(text ?? '');
+  let m;
+  if ((m = /^(.*?)\b(?:no longer|not\s+\S+\s+anymore)\s+(.*)$/i.exec(s)) && /no longer/i.test(s)) return `${m[1]}${m[2]}`.replace(/\s+/g, ' ').trim();
+  if ((m = /^(.*?)\b(?:don'?t|do not|doesn'?t|does not)\s+(.*?)\s*(?:anymore|any more|any longer)\b(.*)$/i.exec(s))) return `${m[1]}${m[2]}${m[3]}`.replace(/\s+/g, ' ').trim();
+  if ((m = /^(.*?)\b(?:stopped|quit)\s+(\w+?)ing\b(.*)$/i.exec(s))) return `${m[1]}${/^(?:us|writ|mak|tak|driv|liv|smok|cod|typ|hav|giv|rid)$/i.test(m[2]) ? `${m[2]}e` : m[2].replace(/(.)\1$/, '$1')}${m[3]}`.replace(/\s+/g, ' ').trim();
+  return null;
 }
 
 // Things that compete for the same choice: a new one replaces the old one.
@@ -250,6 +288,27 @@ function similarity(a, b) {
   return inter / Math.min(A.size, B.size);
 }
 
+// Words that carry the relation, not the content: "I prefer concise answers"
+// and "Please keep answers concise" say one thing.
+const REL_WORDS = new Set(['prefer', 'like', 'love', 'want', 'keep', 'please', 'always', 'never', 'hate', 'dislike', 'use', 'using', 'avoid', 'stopp', 'quit', 'longer', 'anymore']);
+const NEGATIVE = /\b(?:no longer|not|never|stopped|quit|hates?|dislikes?|avoids?|anymore)\b|n'?t\b/i;
+const content = (text) => new Set(tokens(text).filter((t) => !REL_WORDS.has(t)));
+// The same thing said again: the same content words and the same direction.
+// (Overlap over the SMALLER set made "I no longer use vim" a repeat of "I use
+// vim", and strengthened the fact it took back.)
+function saidAgain(a, b) {
+  if (NEGATIVE.test(a) !== NEGATIVE.test(b)) return false;
+  const A = content(a), B = content(b);
+  if (!A.size || !B.size) return similarity(a, b) >= 0.9 && Math.abs(a.length - b.length) < 40;
+  let inter = 0;
+  for (const t of A) if (B.has(t)) inter++;
+  // A different number, path or identifier is a different fact ("port 3000" / "port 3001").
+  const exact = (t) => /[\d._/@]/.test(t);
+  if ([...A].some((t) => exact(t) && !B.has(t)) || [...B].some((t) => exact(t) && !A.has(t))) return false;
+  return inter / Math.max(A.size, B.size) >= 0.9 && Math.abs(a.length - b.length) < 60;
+}
+const CHANGE_CUE = /\b(?:now|instead|actually|changed|these days|switched|became|turned)\b/i;
+
 const isLive = (m, now = Date.now()) => m.state === 'active' && m.latest !== false && !(m.expiresAt && m.expiresAt < now);
 
 function guessKind(text) {
@@ -271,7 +330,9 @@ export function remember(text, {
   const refusal = screenPersistText(statement, 'memory', 'ox memory');
   if (refusal) return { op: 'refused', reason: refusal };
   const ents = entities(statement);
-  const slot = slotOf(statement, ents);
+  // A statement that takes one back is filed under what it takes back.
+  const positive = slotOverride ? null : retractionOf(statement);
+  const slot = positive ? slotOf(positive) : slotOf(statement, ents);
   const when = resolveWhen(statement, ref);
   // A change to who you are or how you work ("I work at X now, started this
   // week", "moved last month") is a lasting fact, whatever date it mentions:
@@ -283,7 +344,7 @@ export function remember(text, {
   const live = all.filter((m) => isLive(m, ref));
 
   // NOOP: said again. Repetition makes a preference stronger, not a duplicate.
-  const same = live.find((m) => similarity(m.text, statement) >= 0.9 && Math.abs(m.text.length - statement.length) < 40);
+  const same = live.find((m) => m.kind !== 'note' || k === 'note' ? saidAgain(m.text, statement) : false);
   if (same) {
     const bumped = { ...same, strength: (same.strength ?? 1) + 1, lastSeen: ref };
     append(file, [bumped]);
@@ -294,7 +355,7 @@ export function remember(text, {
   const memory = {
     id: crypto.randomBytes(5).toString('hex'),
     text: statement, kind: k, scope,
-    entities: ents, slot: slotOverride ?? (slot ? `${slot.subject}|${slot.relation}${slot.topic ? `|${slot.topic}` : ''}` : null),
+    entities: ents, slot: slotOverride ?? (slot ? `${slot.subject}|${slot.relation}${slot.topic ? `|${slot.topic}` : ''}${positive ? '|not' : ''}` : null),
     importance: Number.isFinite(importance) ? Math.max(1, Math.min(10, importance)) : (k === 'preference' ? 6 : k === 'lesson' ? 7 : k === 'event' ? 4 : 5),
     strength: 1, createdAt: ref, lastSeen: ref, validFrom: when?.at ?? ref, validTo: null,
     // Only something still to come runs out (an exam tomorrow); a past event fades with time instead.
@@ -307,7 +368,21 @@ export function remember(text, {
   let previous = null;
   // A note is the user's words as said: it neither replaces a fact nor is replaced by one.
   if (k !== 'note' && memory.slot && (slotOverride || /\|(works-at|lives-in|prefers|uses|name|is)/.test(memory.slot))) {
-    previous = live.find((m) => m.slot === memory.slot && m.id !== memory.id && m.kind !== 'note');
+    const cands = (key) => live.filter((m) => m.slot === key && m.id !== memory.id && m.kind !== 'note');
+    if (positive) {
+      // Closes the memory it takes back: same slot, and about the same thing.
+      const about = content(positive);
+      previous = cands(memory.slot.replace(/\|not$/, '')).find((m) => [...content(m.text)].some((t) => about.has(t))) ?? null;
+    } else if (!slotOverride && /\|is$/.test(memory.slot)) {
+      // An open description replaces another only when it is about the same
+      // thing (vegetarian → vegan), or says it is a change and there is one to change.
+      const mine = concepts(statement);
+      const open = cands(memory.slot);
+      previous = open.find((m) => concepts(m.text).some((c) => mine.includes(c)))
+        ?? (CHANGE_CUE.test(statement) && open.length === 1 ? open[0] : null);
+    } else {
+      previous = cands(memory.slot)[0] ?? null;
+    }
     if (previous) {
       memory.updates = previous.id;
       changed.push({ ...previous, latest: false, validTo: memory.validFrom, supersededBy: memory.id });
@@ -348,9 +423,12 @@ export function history(id, { file }) {
 
 function bm25(docs, query) {
   // Only meaningful words and concepts count; a generic one alone never makes a match.
-  const q = [...new Set([...tokens(query).filter((t) => !GENERIC.has(t)), ...concepts(query)])];
+  // ...unless generic words are all the question has ("What is my name?").
+  const words = tokens(query);
+  const meaning = words.filter((t) => !GENERIC.has(t));
+  const q = [...new Set([...(meaning.length ? meaning : words), ...concepts(query)])];
   if (!q.length) return docs.map(() => 0);
-  const toks = docs.map((d) => { const t = `${d.text} ${(d.entities ?? []).join(' ')} ${String(d.slot ?? '').replace(/[|-]/g, ' ')}`; return [...tokens(t), ...concepts(t)]; });
+  const toks = docs.map((d) => { const t = `${d.text} ${(d.entities ?? []).join(' ')} ${String(d.slot ?? '').replace(/[|-]/g, ' ')}`; return [...tokens(t), ...concepts(t), ...(d.kind === 'event' ? ['~upcoming'] : [])]; });
   const avg = toks.reduce((a, t) => a + t.length, 0) / Math.max(1, toks.length) || 1;
   const df = new Map(q.map((t) => [t, toks.filter((d) => d.includes(t)).length]));
   const N = docs.length;
@@ -430,7 +508,17 @@ export function memoryPromptBlock({ cwd = process.cwd(), home = os.homedir(), ta
   const p = profile({ file: userFile, now });
   const seen = new Set([...p.stable, ...p.lately].map((m) => m.id));
   const relevant = (relevantOverride ?? (task ? [...recall(task, { file: projFile, now, k: 6 }), ...recall(task, { file: userFile, now, k: 6 })] : [])).filter((m) => !seen.has(m.id)).slice(0, 8);
-  const line = (m) => `- ${m.text}${m.kind === 'event' ? ` (${fmtDay(m.validFrom)})` : ''}`;
+  // One memory is one short line, and the whole block has a budget: it rides on
+  // a message of every conversation, so its size is paid for again and again.
+  const clip = (t) => (t.length > 280 ? `${t.slice(0, 277).trimEnd()}…` : t);
+  const line = (m) => `- ${clip(m.text)}${m.kind === 'event' ? ` (${fmtDay(m.validFrom)})` : ''}`;
+  let room = (Number(process.env.OX_MEMORY_BUDGET) || 900) * 4;
+  const fit = (list) => { const out = []; for (const m of list) { const n = line(m).length + 1; if (n > room) break; room -= n; out.push(m); } return out; };
+  // In order of worth: who they are, what bears on this task, then what is recent.
+  p.stable = fit(p.stable);
+  const relevantFit = fit(relevant);
+  relevant.length = 0; relevant.push(...relevantFit);
+  p.lately = fit(p.lately);
   const parts = [];
   if (p.stable.length) parts.push(`About the user (always true until they say otherwise):\n${p.stable.map(line).join('\n')}`);
   if (p.lately.length) parts.push(`Lately:\n${p.lately.map(line).join('\n')}`);

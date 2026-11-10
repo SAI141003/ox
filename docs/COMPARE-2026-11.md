@@ -67,6 +67,9 @@ Built from each project's own docs, changelogs, release notes and GitHub data, r
 | Any model or provider | Y (35 providers) | P (Claude; 3 clouds) | P (OpenAI; custom providers) | Y | P (many, usage pools) | Y |
 | Models on your own machine | Y (4 backends) | N | Y (custom local) | Y | N | Y |
 | Small first request | Y (about 2,300 tokens, measured) | ? | ? | P (was 10,924 in our Oct test) | ? | ? |
+| Reuses cached tokens across a whole session | Y (earlier messages repeat exactly, memory notes and hidden output included; third breakpoint on Claude; cache key on OpenAI and OpenRouter) | Y | Y (cache key) | P | Y | ? |
+| Cache kept through a pause | Y (tools and system kept 1 hour on Claude sessions; 24 h on OpenAI with OX_PROMPT_CACHE_RETENTION=24h) | Y (1 hour) | Y (24 h) | ? | ? | ? |
+| Trims old output when the cache has gone cold | Y (after a 5-minute pause, when a rewrite costs nothing extra) | Y | ? | ? | ? | ? |
 | Drops old output on uncached providers | Y (new: from 32k tokens) | P (compaction) | P (compaction) | Y (compression) | P | ? |
 | Hard spending stop | Y (--max-cost) | ? | ? | P (paid tool limits) | P (plan limits) | ? |
 | Price shown on each paid tool call | Y (with a chat limit) | ? | ? | Y | ? | ? |
@@ -77,6 +80,8 @@ Built from each project's own docs, changelogs, release notes and GitHub data, r
 | Feature | ox | Claude Code + Cowork | Codex / ChatGPT | Hermes Agent | Cursor | OpenClaw |
 |---|---|---|---|---|---|---|
 | Memory across sessions | Y (temporal graph) | Y (auto memory) | Y (memories) | Y (plus Honcho and others) | Y | Y |
+| Memory keeps unrelated facts apart, and closes a fact you take back | Y (tested: "I am vegetarian" / "I am 28" both kept; "I no longer use vim" closes "I use vim") | ? | ? | ? | ? | ? |
+| Memory sent once per conversation, within a budget | Y (about 900 tokens at most; later messages carry only what is new) | P (index file each session) | ? | ? | ? | ? |
 | Learns new skills from its work | P (reviewed drafts) | P | N | Y (skills + curator) | Y (memories) | ? |
 | Search past conversations | Y | Y | Y | Y (FTS5) | Y | Y |
 | Hooks | Y | Y | Y | Y | Y | Y |

@@ -69,6 +69,7 @@ import { riskOf } from './mcp-templates.js';
 import { compactionKnobs, compactionModelChoice, compactionPassKnobs, resolveAuxTarget } from './config.js';
 import { applyContextOptimize } from './context-opt.js';
 import { maskOldOutputs } from './context-mask.js';
+import { cacheIsCold, sessionCache, withMemoryNotes } from './session-cache.js';
 import { LlmFailure, normalizeFailure } from './llm-failure.js';
 import { readOnlyAutoVerdict } from './approval.js';
 import { generateCritique, reflect as reflectSession } from './self-improve.js';
@@ -1342,17 +1343,11 @@ async function* runAgentLoop(opts = {}) {
   ];
   // What memory recalls differs by message, so it rides on that message. In the system
   // prompt it changed the prefix and missed the cache for the whole conversation after it.
-  {
-    const recalled = String(memoryBlock ?? '').trim();
-    const lastUser = history.findLastIndex((m) => m?.role === 'user');
-    if (recalled && lastUser >= 0 && !history.some((m) => typeof m?.content === 'string' && m.content.includes(recalled))) {
-      const note = `<recalled-memory>\n${recalled}\n</recalled-memory>\n\n`;
-      const u = history[lastUser];
-      history[lastUser] = Array.isArray(u.content)
-        ? { ...u, content: [{ type: 'text', text: note }, ...u.content] }
-        : { ...u, content: note + String(u.content ?? '') };
-    }
-  }
+  // ...and it stays on that message for the rest of the session: each earlier
+  // message gets back the note it had, and the newest gets only what the
+  // conversation has not been shown yet (src/session-cache.js).
+  const cacheState = sessionCache(toolCtx?.sessionId ?? null);
+  history = withMemoryNotes(history, memoryBlock, cacheState);
   loopHistory = history;
   let builtGoalSig = goalSignature();
   const usage = {
@@ -1939,7 +1934,11 @@ async function* runAgentLoop(opts = {}) {
         }
         // Old, large tool outputs hidden in batches (src/context-mask.js).
         if (config.maskOutputs !== false) {
-          const masked = maskOldOutputs(history);
+          // After a pause the provider has dropped this conversation anyway, so
+          // rewriting old messages costs nothing extra: hide more, from much earlier.
+          const cold = cacheIsCold(cacheState);
+          const masked = maskOldOutputs(history, { hidden: cacheState.hidden, ...(cold ? { triggerChars: 24_000, batchChars: 6_000 } : {}) });
+          cacheState.lastAt = Date.now();
           if (masked !== history) { setHistory(masked); yield { type: 'outputs-hidden', count: masked.filter((m, i) => m !== history[i]).length }; }
         }
         // PreLLM: fires immediately before every streamVia() request. Payload
@@ -1959,7 +1958,7 @@ async function* runAgentLoop(opts = {}) {
         // Your own small model (chatOnly): just the conversation. ox's system prompt
         // (folder, project, rules) pulled its answers away from what it was taught.
         const sent = activeTarget?.chatOnly ? history.filter((m) => m.role !== 'system') : history;
-        for await (const raw of streamVia(activeTarget, { model: am, messages: sent, tools: activeTarget?.chatOnly ? [] : offered, signal })) {
+        for await (const raw of streamVia(activeTarget, { model: am, messages: sent, tools: activeTarget?.chatOnly ? [] : offered, signal, ...(toolCtx?.sessionId ? { cacheKey: String(toolCtx.sessionId) } : {}) })) {
           const ev = normalizeStreamEvent(raw);
           if (!ev) continue;
           if (ev.kind === 'thinking') {
