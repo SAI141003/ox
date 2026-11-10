@@ -72,7 +72,8 @@ test('edit_video cut, vertical, GIF, polish, understand and silent transcription
   const polished = outputOf(await invoke('polish'));
   assert.ok(probe(polished).duration < 1, `static screen recording should be compressed: ${probe(polished).duration}s`);
   const understood = await invoke('understand');
-  assert.match(understood, /Frames/);
+  assert.match(understood, /frames at the scene changes/);
+  assert.match(understood, /whole video at a glance: \S+sheet1\.jpg/);
   const frames = [...understood.matchAll(/(\/[^,\s]+\.jpg)/g)].map((m) => m[1]);
   assert.ok(frames.length > 0, understood);
   assert.ok(frames.every((frame) => fs.statSync(frame).size > 0), 'extracted frames are readable files');

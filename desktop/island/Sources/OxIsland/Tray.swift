@@ -90,17 +90,66 @@ enum VoiceServer {
 
     /// A question about the screen in one quick call (POST /ox/voice/look): a fast model that
     /// can see, with the point tied to the real thing on screen. nil or unhandled: take the full run.
-    static func look(_ text: String, images: [String], done: @escaping (Result?) -> Void) {
+    /// `early` gets the first sentence as soon as the model has written it (the server answers in
+    /// lines of JSON); `done` gets the whole answer. An older server answers once, in `done`.
+    static func look(_ text: String, images: [String], early: ((String) -> Void)? = nil, done: @escaping (Result?) -> Void) {
         guard let u = url()?.appendingPathComponent("look") else { done(nil); return }
         var req = URLRequest(url: u, timeoutInterval: 30)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "content-type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text, "images": images])
-        URLSession.shared.dataTask(with: req) { data, resp, _ in
-            let ok = (resp as? HTTPURLResponse)?.statusCode == 200
-            let r = ok ? data.flatMap { try? JSONDecoder().decode(Result.self, from: $0) } : nil
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text, "images": images, "stream": early != nil])
+        let reader = LookLines(early: early, done: done)
+        let session = URLSession(configuration: .ephemeral, delegate: reader, delegateQueue: nil)
+        session.dataTask(with: req).resume()
+        session.finishTasksAndInvalidate()
+    }
+
+    /// Reads the look's answer a line at a time: {"first": …} lines go to `early`, the last line is the result.
+    final class LookLines: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+        private var buffer = Data()
+        private var ok = false
+        private var saidEarly = false
+        private let early: ((String) -> Void)?
+        private let done: (Result?) -> Void
+        init(early: ((String) -> Void)?, done: @escaping (Result?) -> Void) { self.early = early; self.done = done }
+
+        /// Whole lines taken off the front of `buffer`; what is left is an unfinished line.
+        static func takeLines(_ buffer: inout Data) -> [Data] {
+            var out: [Data] = []
+            while let nl = buffer.firstIndex(of: 0x0A) {
+                out.append(buffer.subdata(in: buffer.startIndex..<nl))
+                buffer.removeSubrange(buffer.startIndex...nl)
+            }
+            return out
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+            ok = (response as? HTTPURLResponse)?.statusCode == 200
+            completionHandler(.allow)
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+            buffer.append(data)
+            guard ok, !saidEarly, let early else { return }
+            // Only a line that is a first sentence is taken here: the last line stays for the end.
+            var peek = buffer
+            for line in Self.takeLines(&peek) {
+                guard let j = try? JSONSerialization.jsonObject(with: line) as? [String: Any], let first = j["first"] as? String, !first.isEmpty else { continue }
+                saidEarly = true
+                DispatchQueue.main.async { early(first) }
+                break
+            }
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            var rest = buffer
+            var lines = Self.takeLines(&rest)
+            if !rest.isEmpty { lines.append(rest) }
+            let last = lines.last { (try? JSONSerialization.jsonObject(with: $0) as? [String: Any])?["handled"] != nil }
+            let r = ok && error == nil ? last.flatMap { try? JSONDecoder().decode(Result.self, from: $0) } : nil
+            let done = self.done
             DispatchQueue.main.async { done(r) }
-        }.resume()
+        }
     }
 
     /// offlineOnly: only ox's no-AI router answers (an errand done in ~0.1 s);
@@ -1053,7 +1102,12 @@ final class IslandChat: ObservableObject {
             busy = true
             let asked = Date()
             // The quick look first (one call, a few seconds); the full run only when it cannot answer.
-            VoiceServer.look(text, images: shots) { [weak self] r in
+            // Spoken: the first sentence is said as soon as it is written, the rest follows it.
+            let spoken = onReply != nil
+            VoiceServer.look(text, images: shots, early: spoken ? { first in
+                IslandLog.write("quick look: first sentence in \(Int(Date().timeIntervalSince(asked) * 1000)) ms")
+                MainActor.assumeIsolated { bridge.buddy.speakEarly(first) }
+            } : nil) { [weak self] r in
                 guard let self else { return }
                 if let r, r.handled, let say = r.say, !say.isEmpty {
                     IslandLog.write("quick look in \(Int(Date().timeIntervalSince(asked) * 1000)) ms (\(r.model ?? "?"))")

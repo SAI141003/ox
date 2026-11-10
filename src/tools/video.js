@@ -6,11 +6,11 @@ import * as V from '../video-edit.js';
 
 export const VIDEO_TOOL_SCHEMAS = [{
   name: 'edit_video',
-  description: 'Edit or understand a local video file. ops: transcribe (speech to timed text), captions (burn the transcript in), cut (start/end), speed (factor), vertical (aspect 9:16 or 1:1), highlights (query: the words spoken in the parts to keep), gif, polish (speed up still parts of a screen recording, padded background), understand (frames at scene changes + transcript). The source is never changed; tell the user the new file path.',
+  description: 'Edit or understand a local video file. ops: transcribe (speech to timed text), captions (burn the transcript in), cut (start/end), speed (factor), vertical (aspect 9:16 or 1:1), highlights (query: the words spoken in the parts to keep), gif, polish (speed up still parts of a screen recording, padded background), watch (see a whole video: contact sheets with a frame every second or so, larger frames at scene changes, and the transcript; understand is the same). The source is never changed; tell the user the new file path.',
   input_schema: {
     type: 'object',
     properties: {
-      op: { type: 'string', enum: ['transcribe', 'captions', 'cut', 'speed', 'vertical', 'highlights', 'gif', 'polish', 'understand'] },
+      op: { type: 'string', enum: ['transcribe', 'captions', 'cut', 'speed', 'vertical', 'highlights', 'gif', 'polish', 'understand', 'watch'] },
       file: { type: 'string', description: 'Path to the video.' },
       start: { type: 'string', description: 'cut/gif: start time (83, 1:23 or 00:01:23).' },
       end: { type: 'string', description: 'cut/gif: end time.' },
@@ -37,7 +37,12 @@ export async function editVideoTool(args = {}, ctx = {}) {
       case 'gif': r = V.gif(abs, { start: args.start ?? null, end: args.end ?? null }); break;
       case 'highlights': r = V.highlights(abs, args.query ?? ''); if (!r.file) return { content: `edit_video: ${r.note}`, isError: false }; return { content: `edit_video: ${r.found} part(s) joined: ${r.file}\n${r.parts.map((p) => `- ${p.start}s–${p.end}s: ${p.text}`).join('\n')}`, isError: false };
       case 'polish': r = V.polish(abs); return { content: `edit_video: polished ${r.before}s → ${r.after}s (${r.stillParts} still part(s) sped up): ${r.file}`, isError: false };
-      case 'understand': { const u = V.understand(abs); return { content: `edit_video: ${Math.round(u.duration)}s, ${u.size}. Frames (view them with read_file): ${u.frames.map((f) => `${f.at}s ${f.file}`).join(', ')}\n\nTranscript:\n${u.text || '(no speech)'}`, isError: false }; }
+      case 'watch':
+      case 'understand': {
+        const u = V.understand(abs);
+        const sheets = (u.sheets ?? []).map((sh) => `${sh.file} (from ${sh.from}s, one frame every ${sh.step}s, ${sh.cols} across, read left to right then down)`);
+        return { content: `edit_video: ${Math.round(u.duration)}s, ${u.size}. View these with read_file.${sheets.length ? `\nThe whole video at a glance: ${sheets.join('; ')}` : ''}\nLarger frames at the scene changes: ${u.frames.map((f) => `${f.at}s ${f.file}`).join(', ')}\n\nTranscript:\n${u.text || '(no speech)'}`, isError: false };
+      }
       default: return { content: `edit_video: unknown op ${args.op}`, isError: true };
     }
     return { content: `edit_video: ${args.op} done: ${r.file}`, isError: false };
