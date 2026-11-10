@@ -738,6 +738,24 @@ export async function summarizeMessages(target, toSummarize, signal, opts = {}) 
   return { ...r, text: withoutInvented(r.text, invented) };
 }
 
+const NOT_DONE_PROMPT = 'You described the work but said you have not done it. Do it now: make the changes, check them, and only then answer. If something stops you, say exactly what.';
+
+/**
+ * Does a final answer say, in its own words, that the asked work is still to do?
+ * Narrow on purpose: "I haven't changed test/" is a report of care, not of unfinished work.
+ */
+export function saysNotDone(text) {
+  const t = String(text ?? '').trim();
+  if (t.length < 20) return false;
+  const tail = t.slice(-600);
+  if (/\bI (?:haven['’]t|have not|didn['’]t|did not)(?: yet)? (?:made|applied|implemented|written) (?:any|the|these|those) (?:changes?|edits?|fix(?:es)?|code)\b(?! (?:to|in|under) )/i.test(tail)) return true;
+  if (/\bI (?:haven['’]t|have not)(?: yet)? (?:changed|edited|modified) (?:any(?:thing| files?| code)?|the code)\b(?! (?:in|under|outside) )/i.test(tail)) return true;
+  if (/\bno (?:changes|edits) (?:have been|were) made (?:yet|so far)\b/i.test(tail)) return true;
+  // Ends on an intention, with nothing after it.
+  const last = tail.split(/(?<=[.!?])\s+/).filter(Boolean).pop() ?? '';
+  return /^(?:next,? |now,? |then,? )?I(?:['’]ll| will| am going to|['’]m going to) (?:now )?(?:make|fix|apply|implement|edit|change|update|write)\b/i.test(last);
+}
+
 /** How a note the loop adds to the conversation starts (a retry after a failure). */
 export const TURN_NOTE = '[note from ox, not from the user]';
 
@@ -1337,6 +1355,7 @@ async function* runAgentLoop(opts = {}) {
   const skillIndex = ctx.skillIndex ?? '';
   const personaBlock = [ctx.personaBlock, modeBlock(ctx.mode)].filter(Boolean).join('\n\n');
   let guidance = String(extraGuidance ?? '');
+  let notDoneNudged = false;
   // Commands on another machine: the model has to know which tools act where.
   if (ctx?.backend?.kind === 'ssh') guidance = [guidance, sshNote(ctx.backend)].filter(Boolean).join('\n\n');
   // What the caller asked for stays in the system prompt for the whole run. What
@@ -2288,6 +2307,16 @@ async function* runAgentLoop(opts = {}) {
     if (!calls.length) {
       const message = { role: 'assistant', content: text };
       history.push(message);
+
+      // The answer itself says the work was not done ("I haven't made any changes yet",
+      // or it ends on "I'll now fix…"): asked once to do it, not taken as finished.
+      if (!notDoneNudged && ctx?.noTools !== true && saysNotDone(text)) {
+        notDoneNudged = true;
+        history.push({ role: 'user', content: NOT_DONE_PROMPT });
+        yield { type: 'not-done-nudge', text: 'the answer said the work was not done yet: asked to finish it' };
+        yield { type: 'turn-end', stopReason, iters };
+        continue outer;
+      }
 
       // Security check of what this run changed (src/security-scan.js): the
       // model is told what it just introduced, once, and fixes it or says why

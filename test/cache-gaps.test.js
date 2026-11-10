@@ -116,3 +116,28 @@ test('a model that cannot read images is not asked again with the same picture',
   assert.equal(classifyProviderError('model does not support tools'), 'no-tools');
   assert.equal(classifyProviderError('HTTP 503 upstream'), 'server');
 });
+
+test('an answer that says the work is not done is asked once to do it', async (t) => {
+  const { saysNotDone } = await import('../src/agent.js');
+  assert.equal(saysNotDone('The bug is in money.js: toCents floors. The cart also rounds on the total. I haven’t made any changes yet.'), true);
+  assert.equal(saysNotDone('Found it in cart.js. I have not changed any files.'), true);
+  assert.equal(saysNotDone('The cause is the floor in toCents. I\'ll now fix the conversion and the discount.'), true);
+  assert.equal(saysNotDone('Fixed money.js and cart.js; the test passes. I haven\'t changed anything under test/ or docs/.'), false);
+  assert.equal(saysNotDone('Done. I did not make any changes to the tests.'), false);
+  assert.equal(saysNotDone('I\'ll fix that next time you ask. For now the answer is 42, and the test passes.'), false);
+  assert.equal(saysNotDone('ok'), false);
+
+  const cwd = tmp(t);
+  const srv = await serve(t, (_b, i) => (i === 0 ? turn({ text: 'The bug is in lib.js on line 3. I haven\'t made any changes yet.' }) : turn({ text: 'Fixed lib.js and ran the test.' })));
+  const events = await run({ target: caching(srv.port), messages: [{ role: 'user', content: 'fix the bug' }], ctx: { cwd, yolo: true }, config: { tools: { narrow: false } }, auxTarget: null, verify: false });
+  assert.equal(srv.bodies.length, 2, 'asked once more');
+  assert.match(srv.bodies[1].messages.at(-1).content, /Do it now/);
+  assert.equal(events.filter((e) => e.type === 'not-done-nudge').length, 1);
+});
+
+test('the nudge is given once only', async (t) => {
+  const cwd = tmp(t);
+  const srv = await serve(t, () => turn({ text: 'I looked. I haven\'t made any changes yet.' }));
+  await run({ target: caching(srv.port), messages: [{ role: 'user', content: 'fix the bug' }], ctx: { cwd, yolo: true }, config: { tools: { narrow: false } }, auxTarget: null, verify: false });
+  assert.equal(srv.bodies.length, 2);
+});
