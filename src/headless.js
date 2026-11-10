@@ -810,13 +810,16 @@ async function runHeadlessWithBudget({ prompt = '', config, opts = {}, initialMe
         if (cmds.length && !opts.json) process.stderr.write(dimYellow(`· remembered for this project: ${cmds.map((r) => r.memory.text).join('; ')}\n`));
       } catch {}
     }
-    if (code === 0 && process.env.OX_LEARN !== '0' && process.env.OX_INCOGNITO !== '1') {
+    if (code === 0 && !opts.noSkillDraft && process.env.OX_LEARN !== '0' && process.env.OX_INCOGNITO !== '1') {
       try {
-        const { draftFromSession, draftFromRecord } = await import('./skill-drafts.js');
-        const drafted = session?.file
-          ? draftFromSession(session.file, config.cwd)
-          : draftFromRecord({ id: `run-${process.pid}-${Date.now()}`, task: String(prompt ?? ''), calls: learnCalls }, config.cwd);
-        if (drafted && !opts.json) process.stderr.write(dimYellow(`· learned: drafted the skill '${drafted}' from this run — review it with: ox self-improve drafts\n`));
+        const { learnFromRun, readSession } = await import('./skill-drafts.js');
+        const learnt = learnFromRun(session?.file
+          ? readSession(session.file)
+          : { id: `run-${process.pid}-${Date.now()}`, task: String(prompt ?? ''), calls: learnCalls }, config.cwd);
+        if (!opts.json) {
+          if (learnt.kept) process.stderr.write(dimYellow(`· learned: kept the skill '${learnt.kept}' (done the same way twice, checked, nothing risky) — see: ox self-improve learned · remove: ox self-improve forget ${learnt.kept}\n`));
+          else if (learnt.drafted) process.stderr.write(dimYellow(`· learned: drafted the skill '${learnt.drafted}' from this run — review it with: ox self-improve drafts\n`));
+        }
       } catch {}
     }
     return { code };

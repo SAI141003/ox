@@ -402,7 +402,7 @@ function usage() {
     '',
     c.bold('Mac'),
     row('ox island', 'live runs, approvals and OX Buddy in the notch (on, off)'),
-    row('ox backend', 'where commands run: local or a Docker container'),
+    row('ox backend', 'where commands run: local, a Docker container, or another machine over ssh'),
     '',
     c.bold('Check'),
     row('ox verify', 'syntax, smoke, unit, bench and live checks'),
@@ -674,7 +674,7 @@ function usageAll() {
   '      --aux-bot <name>           auxiliary bot for cheap calls: compaction, verifier, max-mode',
     '      --max-cost <usd>           stop subsequent work at this spend (0 disables paid work)',
     '      --image <file>             attach an image (png/jpg/gif/webp) to the prompt; repeatable',
-    '      --backend <where>          run the agent\'s commands: local (default) | docker | docker:<image>[:offline]',
+    '      --backend <where>          run the agent\'s commands: local (default) | docker | docker:<image>[:offline] | ssh:user@host[:/dir]',
     '      --verify                   independent goal verifier audits final answers',
       '      --repo-map                include repo structure map in system prompt',
       '      --context                print the per-segment context breakdown and exit (no model call)',
@@ -7692,9 +7692,29 @@ async function runSubcommand(cmd, args) {
         console.log(problem
           ? `  ${c.dim('✗')} docker  ${c.dim(problem)}`
           : `  ${c.green('✓')} docker  in a container with this project at /workspace (default image ${DEFAULT_DOCKER_IMAGE}; docker:<image>, docker:<image>:offline)`);
+        console.log(`  ${c.green('✓')} ssh     on another machine you already reach with a key: --backend ssh:user@host[:/dir] ${c.dim('(test one: ox backend check ssh:user@host)')}`);
         return;
       }
-      console.log(c.dim('usage: ox backend list'));
+      if (action === 'check') {
+        // Does this backend work right now? For ssh: connects, and says what to fix when it cannot.
+        let spec;
+        try { spec = parseBackendSpec(args[1]); } catch (e) { console.log(c.red(`✗ ${e.message}`)); process.exitCode = 3; return; }
+        if (!spec) { console.log(`${c.green('✓')} local: commands run on this machine`); return; }
+        if (spec.kind === 'ssh') {
+          const { sshProblem, closeSshSession } = await import('./ssh-backend.js');
+          const problem = sshProblem(spec);
+          console.log(problem ? `${c.red('✗')} ${problem}` : `${c.green('✓')} ${spec.dest}: commands will run in ${spec.session.dir}`);
+          closeSshSession(spec);
+          if (problem) process.exitCode = 1;
+          return;
+        }
+        const { dockerProblem } = await import('./docker-backend.js');
+        const problem = dockerProblem();
+        console.log(problem ? `${c.red('✗')} ${problem}` : `${c.green('✓')} docker: the engine is running (image ${spec.image})`);
+        if (problem) process.exitCode = 1;
+        return;
+      }
+      console.log(c.dim('usage: ox backend list | ox backend check <local|docker[:image]|ssh:user@host[:/dir]>'));
       return;
     }
     case 'inspect': {
@@ -7783,14 +7803,31 @@ async function runSubcommand(cmd, args) {
       const cwd = process.cwd();
       if (action === 'run') {
         const r = await sd.learnFromProject(cwd, { sessionsDir: path.join(os.homedir(), '.ox', 'sessions') });
-        console.log(`read ${r.read} session(s) from this project · ${r.lessons} new lesson(s) for procedural memory · ${r.drafted.length} skill draft(s)${r.drafted.length ? `: ${r.drafted.join(', ')}` : ''}`);
+        console.log(`read ${r.read} session(s) from this project · ${r.lessons} new lesson(s) for procedural memory · ${r.drafted.length} skill draft(s)${r.drafted.length ? `: ${r.drafted.join(', ')}` : ''}${r.kept.length ? ` · kept ${r.kept.length}: ${r.kept.join(', ')}` : ''}`);
         if (r.drafted.length) console.log(c.dim('review: ox self-improve drafts · keep one: ox self-improve accept <name>'));
         return;
       }
       if (action === 'drafts' || action === 'status') {
         const drafts = sd.listDrafts(cwd);
         if (!drafts.length) console.log(c.dim('no skill drafts here — ox drafts one when a run finishes a task in several good steps (or: ox self-improve run)'));
-        for (const d of drafts) console.log(`  ${d.name}  ${c.dim(`${d.steps} steps · from session ${d.from} · .agent/skill-drafts/${d.name}/SKILL.md`)}`);
+        for (const d of drafts) {
+          console.log(`  ${d.name}  ${c.dim(`${d.steps} steps · from session ${d.from} · .agent/skill-drafts/${d.name}/SKILL.md`)}`);
+          if (d.held.length) console.log(c.dim(`    waits for you: ${d.held.join('; ')}`));
+        }
+        return;
+      }
+      if (action === 'learned') {
+        const learned = sd.listLearned(cwd);
+        if (!learned.length) console.log(c.dim('nothing kept on its own here — ox keeps a draft only when a second run did the task the same way, a check passed, and no step is risky'));
+        for (const l of learned) console.log(`  ${l.name}  ${c.dim(`${l.steps} steps · ${l.runs} runs · kept ${l.kept} · .agents/skills/${l.name}/SKILL.md`)}`);
+        return;
+      }
+      if (action === 'forget') {
+        const name = args[1];
+        if (!name) { console.log(c.red('usage: ox self-improve forget <name>')); process.exitCode = 3; return; }
+        const ok = sd.forgetLearned(cwd, name);
+        console.log(ok ? c.green(`removed ${name}`) : c.red(`'${name}' is not a skill ox kept on its own`));
+        if (!ok) process.exitCode = 3;
         return;
       }
       if (action === 'accept' || action === 'reject') {
@@ -7801,7 +7838,7 @@ async function runSubcommand(cmd, args) {
         if (!ok) process.exitCode = 3;
         return;
       }
-      console.log(c.dim('usage: ox self-improve run | drafts | accept <name> | reject <name>'));
+      console.log(c.dim('usage: ox self-improve run | drafts | accept <name> | reject <name> | learned | forget <name>'));
       return;
     }
     case 'verify': { const v = createVerifier(process.cwd()); const report = await v.verify('project verification', null, {}); console.log(formatVerificationReport(report)); return; }
@@ -10772,9 +10809,14 @@ export async function main(argv = []) {
     if (!flags.buddyAct && !flags.bot && !flags.model) {
       const { runnable, refreshPlans } = await import('./serve.js');
       await refreshPlans().catch(() => {});
-      if (runnable('chatgpt-plan')) flags.bot = 'chatgpt-plan';
+      // `opts` was built above from the flags as typed: the choice has to be put there too.
+      // Left only on `flags`, it was ignored, and the picture went to the default model
+      // (a text-only one could not read it, retried, and fell back to a slow one).
+      if (runnable('chatgpt-plan')) { flags.bot = 'chatgpt-plan'; opts.bot = 'chatgpt-plan'; }
     }
     opts.sayFailure = plainFailure;
+    // A question about the screen is not a way of working to learn a skill from.
+    opts.noSkillDraft = true;
     opts.rewriteReply = (text) => rewritePoints(text, seen, parsePoint, {
       log: ({ tag, resolved }) => { if (!resolved || process.env.OX_BUDDY_LOG) process.stderr.write(`· ${resolved ? `${tag} → ${resolved.x},${resolved.y} (${resolved.how})` : `dropped ${tag}: it could not be tied to the screen`}\n`); },
     });

@@ -530,8 +530,8 @@ test('doom-loop: 3rd identical call never executes, event emitted, guidance inje
 
   const hist = events.find((e) => e.type === 'history')?.messages ?? [];
   assert.ok(
-    hist.some((m) => m.role === 'system' && m.content.includes('Change approach fundamentally')),
-    'guidance injected into system prompt'
+    hist.some((m) => m.role === 'user' && String(m.content).startsWith('[note from ox') && m.content.includes('Change approach fundamentally')),
+    'guidance said in the conversation (the system prompt does not change, so the cache holds)'
   );
   const toolMsgs = hist.filter((m) => m.role === 'tool');
   assert.ok(toolMsgs.slice(2).every((m) => m.content.includes('exact same call three times')));

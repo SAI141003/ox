@@ -57,7 +57,7 @@ Built from each project's own docs, changelogs, release notes and GitHub data, r
 | Phone app that steers a session | Y (ox phone web: the whole app in the browser; iPhone app approves) | Y (Remote Control, Dispatch) | Y (iOS) | P (phone web view) | Y (iOS with Siri) | Y (iOS, Android nodes) |
 | Chat app control | Y (Telegram, Discord, Slack, iMessage, Signal, WhatsApp) | P (Channels: Telegram, Discord, iMessage; Slack) | N | Y (20+ platforms) | P (Slack triggers) | Y (12+ including WhatsApp, Signal) |
 | Several machines in one view | Y (mesh, Office floors) | ? | P (connected backends) | Y (all gateways in one window) | ? | P (nodes) |
-| Runs code in Docker / SSH / remote sandbox | P (Docker backend) | Y (cloud) | Y (cloud) | Y (6 backends) | Y | P |
+| Runs code in Docker / SSH / remote sandbox | P (Docker and SSH backends; over SSH the file tools still act on this machine; SSH not run against a real host yet) | Y (cloud) | Y (cloud) | Y (6 backends) | Y | P |
 | Windows and Linux computer use | Y (first use asks once, then fetches the pinned, checksum-checked agent-desktop) | P (Desktop on Windows; no Linux) | P (Windows foreground; no Linux) | Y | — | ? |
 
 ## Models and cost
@@ -70,6 +70,8 @@ Built from each project's own docs, changelogs, release notes and GitHub data, r
 | Reuses cached tokens across a whole session | Y (earlier messages repeat exactly, memory notes and hidden output included; third breakpoint on Claude; cache key on OpenAI and OpenRouter) | Y | Y (cache key) | P | Y | ? |
 | Cache kept through a pause | Y (tools and system kept 1 hour on Claude sessions; 24 h on OpenAI with OX_PROMPT_CACHE_RETENTION=24h) | Y (1 hour) | Y (24 h) | ? | ? | ? |
 | Trims old output when the cache has gone cold | Y (after a 5-minute pause, when a rewrite costs nothing extra) | Y | ? | ? | ? | ? |
+| Summary of a long conversation reads the cache | Y (asked at the end of the conversation as last sent, same tools and messages; falls back to a separate transcript when a cheaper summariser is set) | Y | ? | ? | ? | ? |
+| Retry and steering notes keep the cache | Y (said in the conversation; the system prompt no longer changes after a failed tool or a steer) | ? | ? | ? | ? | ? |
 | Drops old output on uncached providers | Y (new: from 32k tokens) | P (compaction) | P (compaction) | Y (compression) | P | ? |
 | Hard spending stop | Y (--max-cost) | ? | ? | P (paid tool limits) | P (plan limits) | ? |
 | Price shown on each paid tool call | Y (with a chat limit) | ? | ? | Y | ? | ? |

@@ -52,6 +52,24 @@ Useful flags: `--task <id>` one task · `--filter <regex>` a subset · `--all` �
 `--repeats <n>` variance (fresh sandbox per repeat) · `--json <path>` ·
 `--keep` leave sandboxes on disk · `--timeout <ms>` override every task timeout.
 
+## The six harder tasks
+
+The first nine tasks are passed by every capable model, so they cannot show ox
+getting better. `tasks-hard.mjs` adds six that ask for more (`--hard` runs only these):
+
+| id | what it asks |
+|---|---|
+| `contract-wider-than-test` | build a cache to a written contract its test only partly covers |
+| `cause-not-symptom` | fix a wrong total at its cause, plus a second fault only the written rules reveal |
+| `lost-updates` | fix a race without making every key wait in one line |
+| `change-across-callers` | change a signature and update eight callers that call it in different ways |
+| `make-it-fast` | make a slow function fast with exactly the same results |
+| `tool-from-a-spec` | write a command-line tool that is then run on folders it has not seen |
+
+Each is graded by checks the agent never sees. `test/bench-real-hard.test.js` runs
+no model: it proves the untouched workspace fails, the obvious shortcut (the one
+that only makes the visible test pass) fails, and a reference solution passes.
+
 ## Release to release
 
 Every result records which ox made it (`oxVersion`, `commit`), how much of the
@@ -199,7 +217,7 @@ refrain from touching what it was told not to touch. Because grading executes co
 pass means the workspace is genuinely correct, not that the transcript looked right.
 
 **Cannot prove.** Anything about ox's plumbing — that is `bench/`'s job, and this suite
-deliberately shares no code with it. It cannot measure quality above pass/fail on nine
+deliberately shares no code with it. It cannot measure quality above pass/fail on fifteen
 fixtures: one wrong constant changes the score. It cannot distinguish a model that
 reasoned correctly from one that guessed. It does not test multi-agent behaviour, long
 sessions, or recovery from a bad plan. Two runs of the same model are not identical

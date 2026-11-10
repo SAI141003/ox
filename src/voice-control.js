@@ -12,17 +12,53 @@ import { spawnSync } from 'node:child_process';
 import { handsPath, findElement, isRisky, parseKey, keyArgs } from './mac-control.js';
 
 const SEND_WORDS = /^(?:(?:press|hit|click|tap|choose|select|push)\s+(?:on\s+)?(?:the\s+)?(?:send|enter|return|submit)(?:\s+(?:button|key))?|send(?:\s+(?:it|that|this|the message))?)$/i;
-const KEY_WORDS = /^(?:press|hit)\s+(?:the\s+)?(tab|escape|esc|space|delete|backspace|up|down|left|right|(?:cmd|command|shift|option|ctrl)\s*\+?\s*[a-z]+)(?:\s+key)?$/i;
+const KEY_WORDS = /^(?:press|hit|push)\s+(?:the\s+)?(.+)$/i;
+// What follows the typed words when more is asked in the same breath ("type hello and press send").
+const AFTER_TYPED = /\s*,?\s+(?:and\s+(?:then\s+)?|then\s+)(?:press|hit|click|tap|choose|select|push|send)\b/i;
+const MOD_WORD = { command: 'cmd', cmd: 'cmd', '⌘': 'cmd', control: 'ctrl', ctrl: 'ctrl', option: 'option', alt: 'option', shift: 'shift' };
+const KEY_NAME = { tab: 'tab', escape: 'escape', esc: 'escape', space: 'space', spacebar: 'space', delete: 'delete', backspace: 'backspace', up: 'up', down: 'down', left: 'left', right: 'right', home: 'home', end: 'end', pageup: 'pageup', pagedown: 'pagedown', return: 'return', enter: 'return' };
+
+/**
+ * A key as it is said ("command shift t", "shift tab", "cmd+n", "the escape key",
+ * "page down") → "cmd+shift+t", or null when the words are not a key (a button's name).
+ */
+export function spokenKey(words) {
+  const tokens = String(words ?? '').toLowerCase().replace(/\b(?:arrow|keys?|bar)\b/g, ' ').replace(/\bpage\s+(up|down)\b/g, 'page$1').split(/[\s+]+|-(?=[a-z])/).filter(Boolean);
+  const mods = [];
+  while (tokens.length > 1 && MOD_WORD[tokens[0]]) { const m = MOD_WORD[tokens.shift()]; if (!mods.includes(m)) mods.push(m); }
+  if (tokens.length !== 1) return null;
+  const k = tokens[0];
+  if (KEY_NAME[k]) return k === 'return' || k === 'enter' ? (mods.length ? [...mods, 'return'].join('+') : null) : [...mods, KEY_NAME[k]].join('+');
+  // A letter or digit is a key only with a modifier ("command s"); alone it is typing.
+  if (mods.length && /^[a-z0-9]$/.test(k)) return [...mods, k].join('+');
+  return null;
+}
+
+// Editing as it is said, each one a shortcut ox may press with nobody asked.
+const EDIT_WORDS = [
+  [/^select (?:all|everything)$/i, 'cmd+a'],
+  [/^copy(?: (?:that|this|it|the selection))?$/i, 'cmd+c'],
+  [/^paste(?: (?:that|this|it|here))?$/i, 'cmd+v'],
+  [/^cut(?: (?:that|this|it|the selection))?$/i, 'cmd+x'],
+  [/^undo(?: (?:that|this|it))?$/i, 'cmd+z'],
+  [/^(?:scroll|page) down$/i, 'pagedown'],
+  [/^(?:scroll|page) up$/i, 'pageup'],
+  [/^(?:scroll|go) to (?:the )?top$/i, 'home'],
+  [/^(?:scroll|go) to (?:the )?(?:bottom|end)$/i, 'end'],
+  [/^(?:open |make )?(?:a )?new (?:window|document|file)$/i, 'cmd+n'],
+];
 const CLICK_WORDS = /^(?:click|tap|press|choose|select)\s+(?:on\s+)?(?:the\s+)?(.+?)(?:\s+button)?$/i;
-const TYPE_WORDS = /^(?:type|type in|enter text)\s+["“']?(.+?)["”']?$/i;
+const TYPE_WORDS = /^(?:type|type in|enter text)[,:]?\s+["“']?(.+?)["”']?$/i;
 
 /** One control step from words, or null. */
 export function parseControl(text) {
   const t = String(text ?? '').trim().replace(/[.!?]+$/, '');
   let m;
   if (SEND_WORDS.test(t)) return { intent: 'send' };
-  if ((m = KEY_WORDS.exec(t))) return { intent: 'key', key: m[1].toLowerCase().replace(/\s+/g, '').replace(/^command/, 'cmd') };
-  if ((m = TYPE_WORDS.exec(t))) return { intent: 'type', text: m[1].trim() };
+  if ((m = KEY_WORDS.exec(t))) { const key = spokenKey(m[1]); if (key) return { intent: 'key', key }; }
+  for (const [re, key] of EDIT_WORDS) if (re.test(t)) return { intent: 'key', key };
+  // "type hello and press send" is two steps: left to the chain, which keeps the words apart.
+  if ((m = TYPE_WORDS.exec(t))) return AFTER_TYPED.test(m[1]) ? null : { intent: 'type', text: m[1].trim() };
   if ((m = CLICK_WORDS.exec(t)) && m[1].length <= 40) return { intent: 'click', name: m[1].trim() };
   return null;
 }
@@ -30,7 +66,7 @@ export function parseControl(text) {
 // In "open notes and type buy milk and eggs and press send" the words after
 // "type" are the text, up to the next control step: they are set aside before
 // the request is split on "and" / "then", and put back after.
-const TYPED_SPAN = /\b(type(?: in)?|enter text)\s+(.+?)(?=\s*,?\s+(?:and\s+(?:then\s+)?|then\s+)(?:press|hit|click|tap|choose|select|push|send)\b|$)/i;
+const TYPED_SPAN = /\b(type(?: in)?|enter text)[,:]?\s+(.+?)(?=\s*,?\s+(?:and\s+(?:then\s+)?|then\s+)(?:press|hit|click|tap|choose|select|push|send)\b|$)/i;
 const SEARCH_SPAN = /\b(search(?: the web| google| online)?(?: for)?|google|look up)\s+(.+)$/i;
 export function protectTyped(text, { search = false } = {}) {
   const m = TYPED_SPAN.exec(text) ?? (search ? SEARCH_SPAN.exec(text) : null);
@@ -126,8 +162,15 @@ export function browserInFront() {
   return /chrome|safari|arc|firefox|brave|edge|opera/i.test(hands(['focused']).app ?? '');
 }
 
+/** Why ox will not press this key, or null. Said before anything is done, a dry run included. */
+export function keyRefusal(it) {
+  return it?.intent === 'key' ? parseKey(it.key).error ?? null : null;
+}
+
 export function performControl(it, { app = null, dryRun = false } = {}) {
   const where = app ? ` in ${app}` : '';
+  const no = keyRefusal(it);
+  if (no) return { ok: false, message: no };
   if (dryRun || process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1') {
     const what = it.intent === 'type' ? `type "${it.text}"` : it.intent === 'send' ? 'press send' : it.intent === 'key' ? `press ${it.key}` : it.intent === 'browser' ? (it.query ? `search "${it.query}" in the browser${it.newTab ? ' (new tab)' : ''}` : 'open a new tab') : `click "${it.name}"`;
     return { ok: true, message: `dry run: would ${what}${where}` };

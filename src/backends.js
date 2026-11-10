@@ -35,11 +35,14 @@ const DOCKER = {
 const SSH = {
   name: 'ssh',
   detect: () => { try { execSync('which ssh', { stdio: 'ignore' }); return true; } catch { return false; } },
-  connect: (cfg = {}) => { if (!cfg.host) return { ok: false, error: 'host required' }; return { ok: true, backend: 'ssh', host: cfg.host, user: cfg.user || 'root', port: cfg.port || 22 }; },
+  connect: (cfg = {}) => { if (!cfg.host) return { ok: false, error: 'host required' }; return { ok: true, backend: 'ssh', host: cfg.host, user: cfg.user || null, port: cfg.port || 22 }; },
+  // The real backend is src/ssh-backend.js: it never accepts a host key for you
+  // and never builds a command line out of strings.
   async execute(command, opts = {}) {
-    const host = opts.host || 'localhost';
-    const args = ['-o', 'StrictHostKeyChecking=no', `${opts.user || 'root'}@${host}`, command];
-    return LOCAL.execute(`ssh ${args.join(' ')}`, { cwd: opts.cwd });
+    const { parseSshSpec, sshRun } = await import('./ssh-backend.js');
+    let spec;
+    try { spec = parseSshSpec(`ssh:${opts.user ? `${opts.user}@` : ''}${opts.host ?? ''}${opts.port ? `:${opts.port}` : ''}`); } catch (e) { return { ok: false, stdout: '', stderr: e.message, exitCode: null }; }
+    try { return await sshRun(spec, command); } catch (e) { return { ok: false, stdout: '', stderr: e.message, exitCode: null }; }
   },
   disconnect: () => ({ ok: true }),
 };
@@ -101,7 +104,7 @@ export function createBackendManager(cwd) {
     const target = opts.backend || (connected.size === 1 ? [...connected.keys()][0] : 'local');
     const entry = connected.get(target);
     if (!entry) return LOCAL.execute(command, opts);
-    return entry.backend.execute(command, { ...opts, host: opts.host });
+    return entry.backend.execute(command, { ...entry.config, ...opts, host: opts.host ?? entry.config?.host });
   }
 
   function disconnect(name) {

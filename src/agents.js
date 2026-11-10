@@ -1,3 +1,4 @@
+import { parseSshSpec } from './ssh-backend.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -38,7 +39,8 @@ export function loadAgent(name) {
 export function normalizeAgentBackend(value) {
   const backend = String(value ?? '').trim();
   if (!backend || backend === 'local') return null;
-  if (!/^docker(?::[\w./:@-]+)?$/i.test(backend)) throw new Error('agent backend must be local, docker, or docker:<image>');
+  if (/^ssh:/i.test(backend)) { parseSshSpec(backend); return backend; }
+  if (!/^docker(?::[\w./:@-]+)?$/i.test(backend)) throw new Error('agent backend must be local, docker, docker:<image>, or ssh:user@host[:/dir]');
   return backend;
 }
 

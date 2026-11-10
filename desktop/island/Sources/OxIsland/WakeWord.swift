@@ -79,8 +79,20 @@ final class WakeWord: ObservableObject {
         let ns = text as NSString
         guard let m = Self.phrase.matches(in: text, range: NSRange(location: 0, length: ns.length)).last else { return }
         command = ns.substring(from: m.range.location + m.range.length).trimmingCharacters(in: .whitespacesAndNewlines)
-        // The request is done when the words stop for a moment.
         idle?.cancel()
+        if command.isEmpty {
+            // Only the name so far. The request has to follow within a few seconds:
+            // otherwise the name is let go. Left in the transcript, whatever was said
+            // next in the room (up to a minute later) was taken as a request to ox.
+            let forget = DispatchWorkItem { [weak self] in
+                guard let self, self.command.isEmpty else { return }
+                self.restart()
+            }
+            idle = forget
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: forget)
+            return
+        }
+        // The request is done when the words stop for a moment.
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             let c = self.command.trimmingCharacters(in: CharacterSet(charactersIn: " ,.!?"))
