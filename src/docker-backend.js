@@ -19,6 +19,7 @@
 import { execFile, execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { parseSshSpec } from './ssh-backend.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -27,12 +28,13 @@ const WORKSPACE = '/workspace';
 
 const dockerBin = (env = process.env) => env.OX_DOCKER_BIN || 'docker';
 
-/** Parse `docker`, `docker:<image>`, or `docker:<image>:offline` into a backend spec. */
+/** Parse `docker`, `docker:<image>`, `docker:<image>:offline` or `ssh:user@host[:/dir]` into a backend spec. */
 export function parseBackendSpec(spec, env = process.env) {
   const raw = String(spec ?? '').trim();
   if (!raw || raw === 'local') return null;
+  if (/^ssh:/i.test(raw)) return parseSshSpec(raw);
   const m = /^docker(?::(.+))?$/i.exec(raw);
-  if (!m) throw new Error(`unknown backend '${raw}' (use local, docker, or docker:<image>)`);
+  if (!m) throw new Error(`unknown backend '${raw}' (use local, docker, docker:<image>, or ssh:user@host[:/dir])`);
   let image = m[1] || env.OX_DOCKER_IMAGE || DEFAULT_DOCKER_IMAGE;
   let network = 'bridge';
   if (/:offline$/.test(image)) {

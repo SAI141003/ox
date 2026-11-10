@@ -1,4 +1,4 @@
-// bench/real/tasks.mjs - the nine real-world agent tasks.
+// bench/real/tasks.mjs - the nine first real-world agent tasks (six harder ones are in tasks-hard.mjs).
 //
 // Task contract (see README.md):
 //   setup(ws)  -> write REAL files into the workspace at path `ws`. May return a
@@ -15,6 +15,7 @@
 // package.json "type" field, and every fixture has real nested directories so
 // glob/grep/list_dir are genuinely required to find the answer.
 import { check, existsWs, readWs, runIn, sha256, writeWs } from './lib.mjs';
+import { HARD_TASKS } from './tasks-hard.mjs';
 
 // ---------------------------------------------------------------------------
 // 1. read-and-report
@@ -1221,5 +1222,8 @@ export const REAL_TASKS = [
     timeoutMs: 300_000,
   },
 ];
+
+// Six harder ones (tasks-hard.mjs): the nine above are passed by every capable model.
+REAL_TASKS.push(...HARD_TASKS);
 
 export const TASK_IDS = REAL_TASKS.map((t) => t.id);

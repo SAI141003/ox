@@ -49,3 +49,48 @@ test('the owner\'s Chrome requests, as spoken', () => {
   assert.deepEqual(parseIntent('open a new tab'), { intent: 'tab' });
   assert.equal(parseIntent('can you search for ramen near me').query, 'ramen near me');
 });
+
+test('keys as they are said', async () => {
+  const { spokenKey } = await import('../src/voice-control.js');
+  assert.equal(spokenKey('command a'), 'cmd+a');
+  assert.equal(spokenKey('command shift t'), 'cmd+shift+t');
+  assert.equal(spokenKey('cmd+shift+t'), 'cmd+shift+t');
+  assert.equal(spokenKey('shift tab'), 'shift+tab');
+  assert.equal(spokenKey('the escape key'.replace(/^the /, '')), 'escape');
+  assert.equal(spokenKey('down arrow'), 'down');
+  assert.equal(spokenKey('page down'), 'pagedown');
+  assert.equal(spokenKey('New Note'), null, 'a button name is not a key');
+  assert.equal(spokenKey('a'), null, 'a letter alone is typing');
+  assert.equal(spokenKey('enter'), null, 'plain Enter is "send", handled before');
+  assert.deepEqual(parseControl('press command a'), { intent: 'key', key: 'cmd+a' });
+  assert.deepEqual(parseControl('press shift tab'), { intent: 'key', key: 'shift+tab' });
+  assert.deepEqual(parseControl('hit the escape key'), { intent: 'key', key: 'escape' });
+  assert.deepEqual(parseControl('press New Note'), { intent: 'click', name: 'New Note' });
+});
+
+test('editing words are shortcuts, not clicks', () => {
+  for (const [said, key] of [['select all', 'cmd+a'], ['copy that', 'cmd+c'], ['paste', 'cmd+v'], ['undo', 'cmd+z'], ['scroll down', 'pagedown'], ['new window', 'cmd+n']]) assert.deepEqual(parseIntent(said), { intent: 'key', key }, said);
+  assert.deepEqual(parseIntent('new tab'), { intent: 'tab' });
+});
+
+test('typing followed by another step is two steps', () => {
+  assert.equal(parseControl('type hello and press send'), null);
+  assert.deepEqual(parseChain('type hello and then press return'), [{ intent: 'type', text: 'hello' }, { intent: 'send' }]);
+  assert.deepEqual(parseIntent('Type, hello world'), { intent: 'type', text: 'hello world' }, 'dictation puts a comma after the verb');
+  assert.equal(parseIntent('type buy milk please').text, 'buy milk please', 'words after "type" are the text, politeness included');
+});
+
+test('filler and politeness around a request', () => {
+  if (process.platform !== 'darwin') return;
+  for (const s of ['can you open notes please', 'um open notes', 'open notes for me', 'Open Notes, thanks.', 'switch to notes']) assert.deepEqual(parseIntent(s), { intent: 'app', name: 'Notes' }, s);
+});
+
+test('a key ox will not press is refused before anything happens, dry run included', () => {
+  for (const s of ['press command q', 'press command w', 'press command enter']) {
+    const r = doOffline(s, { dryRun: true });
+    assert.equal(r.handled, true, s);
+    assert.equal(r.ok, false, s);
+  }
+  const chain = doOffline('type hello and press command q', { dryRun: true });
+  assert.equal(chain.ok, false, 'nothing of the chain is done when one step is refused');
+});

@@ -217,8 +217,24 @@ ox self-improve accept <name>     # moves it to .agents/skills/, loaded from now
 ox self-improve run               # re-read this project's chat sessions for lessons and drafts
 ```
 
+ox keeps a draft without you only when it passes a gate, all of:
+
+- a second finished run did the same task the same way;
+- a test, build or lint command passed in one of those runs;
+- no step is one ox would ask you about (deleting files, `sudo`, `git push`,
+  publishing or deploying, piping a download into a shell, reaching another machine);
+- it holds nothing that looks like a secret, and no text written to steer an agent.
+
+Anything else waits for you, and `ox self-improve drafts` says what holds each one back.
+
+```bash
+ox self-improve learned           # what ox kept on its own
+ox self-improve forget <name>     # remove one (never touches a skill you wrote or accepted)
+```
+
 Counts are real: nothing is proposed that was not seen, and nothing is called
-applied that was not. `OX_LEARN=0` turns drafting off.
+applied that was not. `OX_LEARN=0` turns drafting off; `OX_AUTO_SKILLS=0` keeps
+drafting but never keeps a skill without you.
 
 ## Watch a page
 
@@ -418,6 +434,24 @@ not `~/.ssh`, not your environment variables. Subagents share the session's
 container. Timeouts and Ctrl-C also stop the processes inside it. Set it for
 every run with `"backend": "docker"` in `~/.ox/config.json` or `OX_BACKEND`;
 `OX_DOCKER_BIN=podman` uses Podman.
+
+## Run the agent's commands on another machine
+
+```bash
+ox --backend ssh:dev@gpu-box                 # in the home folder there
+ox --backend ssh:dev@gpu-box:~/work/project  # in a folder
+ox --backend ssh:dev@10.0.0.5:2222:/srv/app  # another port
+ox backend check ssh:dev@gpu-box             # does it work, and what to fix when it does not
+```
+
+Every command the agent runs goes to that machine over the ssh you already have
+set up. One connection is opened on the first command and reused. Timeouts and
+Ctrl-C also stop the command on the host.
+
+- ox never accepts a host key for you. Connect once yourself (`ssh dev@gpu-box`); a host ox has not seen is refused, with that command.
+- ox never asks for a password. It uses your keys or ssh agent, or it stops.
+- Nothing from this machine's environment is sent to the host.
+- Only commands run there. ox's file tools (read, write, edit) still act on the files on this machine; the agent is told so and uses commands for files on the host.
 
 ## Reading JavaScript-only pages
 

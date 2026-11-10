@@ -424,9 +424,12 @@ test('agent treats lintFail as an external failure signal: tracker escalates but
     false,
     'advisories never exhaust the self-heal budget'
   );
-  // escalated guidance reached the next system prompt
-  const sys = srv.bodies[1]?.messages?.find((m) => m.role === 'system')?.content ?? '';
-  assert.match(sys, /invalid syntax/);
+  // escalated guidance reached the next request, as a note in the conversation: the
+  // system prompt stays as it was, so the provider's cache still holds.
+  const sys = (m) => m?.find((x) => x.role === 'system')?.content ?? '';
+  assert.equal(sys(srv.bodies[1]?.messages), sys(srv.bodies[0]?.messages));
+  const note = srv.bodies[1]?.messages?.find((m) => m.role === 'user' && String(m.content).startsWith('[note from ox')) ?? {};
+  assert.match(String(note.content), /invalid syntax/);
 });
 
 // ===========================================================================

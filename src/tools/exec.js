@@ -4,6 +4,7 @@ import path from 'node:path';
 import { prepareSandbox, appendSandboxEvent } from '../sandbox.js';
 import { sanitizeEnv } from '../env-sanitize.js';
 import { ensureSession, execArgv, interruptSession } from '../docker-backend.js';
+import { ensureSshSession, sshExecArgv, interruptSsh } from '../ssh-backend.js';
 import { gitToplevel } from '../git-fast.js';
 import { redactSecrets } from '../memory.js';
 import { shellArgv } from '../shell.js';
@@ -452,6 +453,17 @@ export async function bashTool(args = {}, ctx = {}) {
     }
     argv = execArgv(docker, cwd, command);
   }
+  // --backend ssh:user@host: the command runs on that machine (src/ssh-backend.js).
+  const ssh = ctx.backend?.kind === 'ssh' ? ctx.backend : null;
+  let sshId = null;
+  if (ssh) {
+    try {
+      await ensureSshSession(ssh);
+    } catch (e) {
+      return err(`bash (ssh backend): ${e?.message ?? e}`);
+    }
+    ({ id: sshId, argv } = sshExecArgv(ssh, command));
+  }
 
   let child;
   try {
@@ -482,6 +494,7 @@ export async function bashTool(args = {}, ctx = {}) {
     killedWith = 'SIGTERM';
     killGroup(child, 'SIGTERM');
     if (docker) interruptSession(docker);
+    if (ssh) interruptSsh(ssh, sshId);
     setTimeout(() => {
       if (!settled) {
         killedWith = 'SIGKILL';
@@ -515,6 +528,7 @@ export async function bashTool(args = {}, ctx = {}) {
         killedWith = 'SIGTERM';
         killGroup(child, 'SIGTERM');
         if (docker) interruptSession(docker);
+        if (ssh) interruptSsh(ssh, sshId);
         if (!settled) {
           settled = true;
           resolve({ code: null, signal: 'SIGTERM' });

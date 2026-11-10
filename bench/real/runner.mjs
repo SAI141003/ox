@@ -38,6 +38,7 @@ const USAGE = [
   '  --task <id>         run exactly one task (see --list)',
   '  --filter <regex>    run every task whose id/name/category matches',
   '  --all               run every task (default when neither --task nor --filter)',
+  '  --hard              run only the six harder tasks',
   '  --repeats <n>       independent repeats per task, fresh sandbox each time (default 1)',
   '  --json <path>       write machine-readable results',
   '  --keep              leave sandboxes on disk and print their paths',
@@ -52,6 +53,7 @@ function parseArgs(argv) {
     task: null,
     filter: null,
     all: false,
+    hard: false,
     repeats: 1,
     jsonOut: null,
     keep: false,
@@ -73,6 +75,7 @@ function parseArgs(argv) {
       case '--task': opts.task = next(); break;
       case '--filter': opts.filter = new RegExp(next(), 'i'); break;
       case '--all': opts.all = true; break;
+      case '--hard': opts.hard = true; break;
       case '--repeats': {
         const n = Number(next());
         if (!Number.isInteger(n) || n < 1) {
@@ -100,7 +103,7 @@ function parseArgs(argv) {
 }
 
 // Loopback-only reachability probe for the keyless ollama provider, so a machine
-// without Ollama gets one clear message instead of nine confusing failures.
+// without Ollama gets one clear message instead of a failure per task.
 function probeTcp(hostPort, timeoutMs = 500) {
   return new Promise((resolve) => {
     const [host, port] = String(hostPort).split(':');
@@ -125,7 +128,7 @@ function selectTasks(opts) {
   if (opts.filter) {
     return REAL_TASKS.filter((t) => opts.filter.test(t.id) || opts.filter.test(t.name) || opts.filter.test(t.category));
   }
-  return REAL_TASKS;
+  return opts.hard ? REAL_TASKS.filter((t) => t.hard) : REAL_TASKS;
 }
 
 // The ox that ran: its version, and the commit when this is a git checkout.

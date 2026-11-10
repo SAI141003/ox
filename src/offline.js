@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { osCmd } from './tools/operator.js';
 import { codeChanges as codeChangesSync } from './usage-log.js';
-import { parseControl, performControl, protectTyped, browserInFront, activateApp, openWhatsAppChat } from './voice-control.js';
+import { parseControl, performControl, protectTyped, browserInFront, activateApp, openWhatsAppChat, keyRefusal } from './voice-control.js';
 import { fileURLToPath } from 'node:url';
 
 // ---- arithmetic without eval: + - * / ^ % ( ) and "x% of y" ----
@@ -130,7 +130,7 @@ function namePrefix() {
   if (nameCache?.name !== name) {
     const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const names = [...new Set(['ox', name.toLowerCase()])].map(esc).join('|');
-    nameCache = { name, re: new RegExp(`^(?:(?:(?:hey|ok|okay|hi)\\s+)?(?:${names})[,\\s]+|(?:hey|ok|okay|so|now|and|then|also|please|can you|could you|would you|will you|i want you to|i'd like you to|i would like you to|i need you to|go ahead and|just)[,\\s]+)+`, 'i') };
+    nameCache = { name, re: new RegExp(`^(?:(?:(?:hey|ok|okay|hi)\\s+)?(?:${names})[,\\s]+|(?:hey|ok|okay|so|now|and|then|also|um+|uh+|er+|well|alright|right|please|can you|could you|would you|will you|i want you to|i'd like you to|i would like you to|i need you to|go ahead and|just)[,\\s]+)+`, 'i') };
   }
   return nameCache.re;
 }
@@ -140,9 +140,13 @@ function cleanQuery(q) {
   return String(q).replace(/\b(?:you know|like|um+|uh+|kind of|sort of)\b,?\s*/gi, '').replace(/^(?:any|some)\s+/i, '').replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 
+// "…please", "…for me", "…thanks": politeness at the end of a request, off. Not after
+// "type" or "note": there the words are the text.
+const POLITE_END = /(?<!^(?:type|type in|enter text|note|remind me)\b.*)[,\s]+(?:please|for me|thanks|thank you)$/i;
+
 export function parseIntent(text) {
   // `t` keeps the person's casing (app names, note text); `low` is for matching.
-  const t = String(text ?? '').trim().replace(/[.!?]+$/, '').replace(namePrefix(), '').trim();
+  const t = String(text ?? '').trim().replace(/[.!?]+$/, '').replace(namePrefix(), '').replace(POLITE_END, '').trim();
   const low = t.toLowerCase();
   let m;
   // Typing, pressing and clicking by voice (src/voice-control.js).
@@ -251,7 +255,7 @@ export function parseIntent(text) {
   if (/^(?:volume down|quieter|turn it down)$/i.test(low)) return { intent: 'volume', delta: -10 };
   if (/^(?:mute|unmute)$/i.test(low)) return { intent: 'mute', on: low === 'mute' };
   // In the browser, the way a person would: a new tab, the address bar, the words, Return.
-  if (/^(?:open|make|start)\s+(?:a\s+)?new\s+tab$/i.test(t)) return { intent: 'tab' };
+  if (/^(?:(?:open|make|start)\s+)?(?:a\s+)?new\s+tab$/i.test(t)) return { intent: 'tab' };
   if ((m = /^(?:open|make|start)\s+(?:a\s+)?new\s+tab\s+(?:and\s+)?(?:search(?: for)?|google|look up)\s+(.+)$/i.exec(t))) return { intent: 'search', query: cleanQuery(m[1]), newTab: true };
   if ((m = /^(?:search(?: the web| google| online)?(?: for)?|google|look up)\s+(.+)$/i.exec(t))) return { intent: 'search', query: cleanQuery(m[1]) };
   if ((m = /^(?:open|go to|visit)\s+(\S+)$/i.exec(t)) && SITE.test(m[1])) {
@@ -268,7 +272,7 @@ export function parseIntent(text) {
   }
   // Opening an app: only an app that is on this Mac, named on its own. Anything
   // more ("…and message my friends") is a task for a model.
-  if ((m = /^(?:open|launch|start)\s+(?:the\s+)?(?:app\s+)?(.+?)(?:\s+app)?$/i.exec(t))) {
+  if ((m = /^(?:open|launch|start|switch to|bring up|go to)\s+(?:the\s+)?(?:app\s+)?(.+?)(?:\s+app)?$/i.exec(t))) {
     const app = resolveApp(m[1]);
     if (app) return { intent: 'app', name: app };
     // "open Word document", "open a new Excel sheet": the app, and for "new" a new
@@ -761,6 +765,8 @@ export function doOffline(text, { dryRun = false } = {}) {
   if (!it) {
     const chain = parseChain(text);
     if (chain) {
+      const no = chain.map(keyRefusal).find(Boolean);
+      if (no) return { handled: true, intent: { intent: 'chain', steps: chain }, ok: false, message: no };
       if (dryRun) return { handled: true, intent: { intent: 'chain', steps: chain }, message: `would ${chain.map((x) => x.intent).join(', then ')}` };
       // In order, stopping at the first that fails: never "press send" after typing went wrong.
       const done = [];
@@ -770,6 +776,7 @@ export function doOffline(text, { dryRun = false } = {}) {
     }
     return { handled: false, message: 'Not a small task I can do offline. Ask ox with a model for this one.' };
   }
+  if (keyRefusal(it)) return { handled: true, intent: it, ok: false, message: keyRefusal(it) };
   if (dryRun) return { handled: true, intent: it, message: `would ${it.intent}` };
   return { handled: true, intent: it, ...perform(it) };
 }

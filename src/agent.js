@@ -9,6 +9,7 @@ import { harvestEvidence, mergeGoalTodos, progressSignature, proveGoalItems, ren
 import { listToolSchemas, dispatchTool, pruneToolSchemas, narrowToolSchemas } from './tools/index.js';
 import { LOAD_TOOLS_SCHEMA } from './tools/load-tools.js';
 import { resolveBot } from './bots.js';
+import { sshNote } from './ssh-backend.js';
 
 // The tool offer each session settled on (names, in order), so every message
 // of a session sends the same tool list and keeps the prompt cache warm.
@@ -171,6 +172,8 @@ export function classifyProviderError(message) {
   // an empty completion. Treat that as an inability to work with this offer,
   // not as a successful blank answer or a transport failure worth repeating.
   if (/empty response with tools/.test(low)) return 'no-tools';
+  // A text-only model was sent a picture: sending it again cannot make it see.
+  if (/multimodal (data|input|processing)|(does not|doesn't|cannot|can't) (support|accept|process) (image|vision|multimodal)|images? (are|is) not supported|image input.{0,40}not (supported|enabled)|vision.{0,30}not (supported|enabled)|not a (vision|multimodal) model/.test(low)) return 'no-images';
   if (/not found|no such model/.test(low) || hasStatus(404)) return 'not-found';
   if (/\bhttp\s*5\d\d\b/.test(low)) return 'server';
   // Any other 400 is a malformed request: resending it byte-identical cannot help.
@@ -735,6 +738,59 @@ export async function summarizeMessages(target, toSummarize, signal, opts = {}) 
   return { ...r, text: withoutInvented(r.text, invented) };
 }
 
+/** How a note the loop adds to the conversation starts (a retry after a failure). */
+export const TURN_NOTE = '[note from ox, not from the user]';
+
+// Providers that bill a repeated prompt prefix at a fraction of the input price.
+const CACHING_PROVIDERS = new Set(['anthropic', 'openai', 'openrouter']);
+
+/** True when a summary by `summarizer` can read the run's own conversation from the provider's cache. */
+export function canSummarizeInPlace(summarizer, main, env = process.env) {
+  if (env.OX_COMPACT_CACHED === '0' || !summarizer || !main || main.chatOnly) return false;
+  if (summarizer !== main && !(summarizer.model === main.model && summarizer.provider === main.provider)) return false;
+  return CACHING_PROVIDERS.has(String(main.provider ?? '').toLowerCase());
+}
+
+export function buildInPlaceSummaryPrompt({ wordBudget = 300, keptMessages = 0 } = {}) {
+  const n = Number(wordBudget);
+  const budget = Number.isFinite(n) && n > 0 ? Math.round(n) : 300;
+  return [
+    'Stop working for a moment. Do not call any tool. Reply with a summary only, so the work can continue from it.',
+    `In ${budget} words or fewer preserve: decisions made, files touched (paths exactly as written),`,
+    'values the user asked about, unresolved bugs/errors with their exact messages, and pending next steps.',
+    'Copy names, numbers, codes and paths exactly as they appear above. Never guess or complete one: leave out what you cannot see.',
+    keptMessages > 0 ? `The last ${keptMessages} messages before this one stay in the conversation as they are: cover what came before them.` : '',
+  ].filter(Boolean).join('\n');
+}
+
+/**
+ * The summary asked for at the end of the conversation as it was last sent: the
+ * same tools, the same messages, one new message. The provider reads everything
+ * before that message from its cache (a tenth of the input price on Anthropic),
+ * where a separate transcript is billed in full. Empty text when the model
+ * called a tool instead of answering: the caller falls back to the transcript.
+ */
+export async function summarizeInPlace(target, history, tools, signal, opts = {}) {
+  const messages = [...history, { role: 'user', content: buildInPlaceSummaryPrompt(opts) }];
+  let out = '';
+  let calledTool = false;
+  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  for await (const raw of streamVia(target, { model: target?.model, messages, tools, signal, ...(opts.cacheKey ? { cacheKey: opts.cacheKey } : {}) })) {
+    const ev = normalizeStreamEvent(raw);
+    if (!ev) continue;
+    if (ev.kind === 'text') out += ev.text;
+    else if (ev.kind === 'usage') {
+      usage.inputTokens += ev.usage.inputTokens;
+      usage.outputTokens += ev.usage.outputTokens;
+      usage.cacheReadTokens += Number(ev.usage.cacheReadTokens ?? 0) || 0;
+      usage.cacheWriteTokens += Number(ev.usage.cacheWriteTokens ?? 0) || 0;
+    } else if (ev.kind === 'call' || ev.kind === 'calls') calledTool = true;
+  }
+  let text = calledTool ? '' : out.trim();
+  if (text) text = withoutInvented(text, inventedInSummary(text, JSON.stringify(history)));
+  return { text, usage, inPlace: true };
+}
+
 async function summarizeOnce(target, toSummarize, signal, opts = {}) {
   const transcript = toSummarize
     .map((m) => {
@@ -1281,7 +1337,14 @@ async function* runAgentLoop(opts = {}) {
   const skillIndex = ctx.skillIndex ?? '';
   const personaBlock = [ctx.personaBlock, modeBlock(ctx.mode)].filter(Boolean).join('\n\n');
   let guidance = String(extraGuidance ?? '');
-  let builtGuidance = null;
+  // Commands on another machine: the model has to know which tools act where.
+  if (ctx?.backend?.kind === 'ssh') guidance = [guidance, sshNote(ctx.backend)].filter(Boolean).join('\n\n');
+  // What the caller asked for stays in the system prompt for the whole run. What
+  // the loop adds later (retry after a failure, a steer) is said in the
+  // conversation: a system prompt that changes voids the provider's cache for
+  // every message after it, twice per note (when it appears, when it goes).
+  const baseGuidance = guidance;
+  let builtGuidance = guidance;
   // The persistent goal renders ABOVE the contract, inside the same prompt layer,
   // and it is rebuilt into the prompt after every compaction -- so the objective
   // is never something a summary can paraphrase away.
@@ -1334,9 +1397,8 @@ async function* runAgentLoop(opts = {}) {
   // even when the value would have been the right one, so nothing about the
   // value was ever the problem -- only its position.
   let steeringBlock = '';
-  let builtSteering = '';
   const systemText = async () =>
-    buildSystemPrompt({ cwd, contextParts, memoryBlock: '', skillIndex, extraGuidance: steeringBlock ? `${guidance}\n\n${steeringBlock}` : guidance, personaBlock, contractBlock: contractBlockFor(loopHistory), withheldTools, answerOnly: ctx?.noTools === true, agentMessaging: typeof ctx?.agentTeamsHandler === 'function', includeRepoMap: config.repoMap === true || process.env.OX_REPO_MAP === '1' });
+    buildSystemPrompt({ cwd, contextParts, memoryBlock: '', skillIndex, extraGuidance: baseGuidance, personaBlock, contractBlock: contractBlockFor(loopHistory), withheldTools, answerOnly: ctx?.noTools === true, agentMessaging: typeof ctx?.agentTeamsHandler === 'function', includeRepoMap: config.repoMap === true || process.env.OX_REPO_MAP === '1' });
   history = [
     { role: 'system', content: await systemText() },
     ...sanitizeHistory(messages).filter((m) => m?.role !== 'system'),
@@ -1643,10 +1705,10 @@ async function* runAgentLoop(opts = {}) {
       // delivery contract in src/agent-teams.js would be quietly violated by the
       // loop re-showing it.
       const next = typeof steer === 'string' && steer.trim() ? steer : '';
-      if (next !== steeringBlock) {
-        steeringBlock = next;
-        if (history[0]?.role === 'system') history[0] = { role: 'system', content: await systemText() };
-      }
+      // Said once, as a message at this point of the conversation. The mailbox
+      // gives each note out once, so it cannot be said twice.
+      steeringBlock = next;
+      if (next) history.push({ role: 'user', content: next });
     }
 
     // 2b. YOUR STEERS from the app (Steer now): a note you typed while ox worked.
@@ -1671,9 +1733,11 @@ async function* runAgentLoop(opts = {}) {
     iters++;
 
     const goalSig = goalSignature();
-    if (builtGuidance !== guidance || builtGoalSig !== goalSig || builtSteering !== steeringBlock) {
+    if (builtGuidance !== guidance) {
       builtGuidance = guidance;
-      builtSteering = steeringBlock;
+      if (guidance && guidance !== baseGuidance) history.push({ role: 'user', content: `${TURN_NOTE} ${guidance}` });
+    }
+    if (builtGoalSig !== goalSig) {
       builtGoalSig = goalSig;
       if (history[0]?.role === 'system') history[0] = { role: 'system', content: await systemText() };
     }
@@ -1684,7 +1748,9 @@ async function* runAgentLoop(opts = {}) {
       const from = targetLabel(activeTarget);
       bounced = null;
       bouncedThisTurn = false;
-      transportRetries = 0;
+      // (The retry count starts at 0 for every request, below. Setting it here, above
+      // its `let`, threw "Cannot access 'transportRetries' before initialization" and
+      // ended the run the moment the main model was tried again.)
       activeTarget = back;
       toolCtx.activeTarget = activeTarget;
       yield modelSwitchEvent({ from, to: targetLabel(back), reason: 'trying the main model again', kind: 'fallback', cost: classifyTargetCost(back) });
@@ -1751,16 +1817,33 @@ async function* runAgentLoop(opts = {}) {
             summaryPrefix: SUMMARY_PREFIX,
           });
           let summary = '';
+          let summaryInPlace = false;
           let sumUsage = { inputTokens: 0, outputTokens: 0 };
           try {
-            const summarized = await summarizeMessages(summarizer, toSummarize, signal, {
-              wordBudget: passKnobs.wordBudget,
-              twoPass: passKnobs.twoPass,
-              goalContract,
-              fallbackTarget: activeTarget,
-            });
-            summary = summarized?.text ?? '';
-            sumUsage = summarized?.usage ?? sumUsage;
+            // First, over the conversation the provider already holds in its cache.
+            if (canSummarizeInPlace(summarizer, activeTarget)) {
+              try {
+                const cached = await summarizeInPlace(activeTarget, history, toolessTargets.has(targetLabel(activeTarget)) ? [] : tools, signal, {
+                  wordBudget: passKnobs.wordBudget,
+                  keptMessages: tail.length,
+                  cacheKey: toolCtx?.sessionId ? String(toolCtx.sessionId) : null,
+                });
+                sumUsage = cached.usage;
+                summary = cached.text;
+                summaryInPlace = !!summary;
+              } catch {}
+            }
+            if (!summary) {
+              const summarized = await summarizeMessages(summarizer, toSummarize, signal, {
+                wordBudget: passKnobs.wordBudget,
+                twoPass: passKnobs.twoPass,
+                goalContract,
+                fallbackTarget: activeTarget,
+              });
+              summary = summarized?.text ?? '';
+              const u = summarized?.usage ?? { inputTokens: 0, outputTokens: 0 };
+              sumUsage = { ...sumUsage, inputTokens: sumUsage.inputTokens + u.inputTokens, outputTokens: sumUsage.outputTokens + u.outputTokens };
+            }
           } catch {}
           if (summary) {
             // Re-read project instructions from disk across compaction, the
@@ -1825,6 +1908,9 @@ async function* runAgentLoop(opts = {}) {
                 model: choice.model ?? activeModel(),
                 compactionModel: choice.model ?? activeModel(),
                 compactionModelSource: choice.source,
+                // The summary read the conversation from the provider's cache.
+                summaryFromCache: summaryInPlace,
+                summaryCacheReadTokens: Number(sumUsage.cacheReadTokens ?? 0) || 0,
                 separateCompactionModel: choice.separateFromMain === true,
                 bot: choice.bot ?? null,
                 // The composition either side of the rewrite, so "why is this
@@ -1866,6 +1952,7 @@ async function* runAgentLoop(opts = {}) {
               type: 'usage',
               inputTokens: sumUsage.inputTokens,
               outputTokens: sumUsage.outputTokens,
+              ...(sumUsage.cacheReadTokens || sumUsage.cacheWriteTokens ? { cacheReadTokens: sumUsage.cacheReadTokens, cacheWriteTokens: sumUsage.cacheWriteTokens } : {}),
               costUsd: costOf(compactionModelNow, sumUsage, costOverrides),
               model: compactionModelNow,
               ...(aux || choice.separateFromMain ? { aux: true } : {}),
@@ -2112,11 +2199,15 @@ async function* runAgentLoop(opts = {}) {
           };
           continue;
         }
+        if (cls === 'no-images' && !fbList.length) {
+          yield { type: 'error', error: `${targetLabel(activeTarget)} cannot read images. Pick a model that can (a ChatGPT, Claude or Gemini model), then ask again.` };
+          break outer;
+        }
         if (cls === 'bad-request' && !fbList.length) {
           yield { type: 'error', error: `provider rejected the request (not retried): ${reason}` };
           break outer;
         }
-        if ((cls === 'auth' || cls === 'not-found' || cls === 'no-tools' || cls === 'bad-request') && fbList.length) {
+        if ((cls === 'auth' || cls === 'not-found' || cls === 'no-tools' || cls === 'no-images' || cls === 'bad-request') && fbList.length) {
           yield* bounceEvents(doBounce());
           continue;
         }
