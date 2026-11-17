@@ -22,6 +22,7 @@ import { EventEmitter } from 'node:events';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { hintsFrom } from './site-preview.js';
 
 export const BUILDS_DIR = (env = process.env) => path.join(env.OX_HOME || path.join(os.homedir(), '.ox'), 'builds');
 const OX_BIN = fileURLToPath(new URL('../bin/ox.js', import.meta.url));
@@ -83,6 +84,7 @@ export function attribute(prev, text, agent) {
 export const PLAN_SYSTEM = `You lead a small team of coding agents. Split the task into parts that different agents build AT THE SAME TIME, each in its own copy of the project, so no two parts may create or edit the same file.
 Part 1 also sets up the project: package/dependency file, entry point, test setup, README. Every part writes the tests for its own files; never make a part that only writes tests. Prefer few dependencies and a stack that runs with no accounts or keys.
 For each part give: a short title, the files it owns (paths), and a brief: what to build and the exact interfaces other parts rely on (function names and signatures, routes, file paths, data shapes).
+A website with no framework: part 1 owns every .html file, with the whole page's structure and real copy, and an id on each section; every other part owns its own CSS file (and JS file if it needs one) for one section or concern, styling the ids part 1 is told to use, which the brief names exactly. Every page links each of those files from the start, so the page works as each one arrives.
 Pick the command that runs all the tests.
 Answer with JSON only: {"summary": "...", "stack": "...", "test": "...", "parts": [{"title": "...", "files": ["..."], "brief": "..."}]}`;
 
@@ -353,7 +355,7 @@ export class BuildRoom extends EventEmitter {
     if (/\0/.test(text.slice(0, 2000))) return;
     const shown = attribute(this.files.get(rel), text, agent);
     this.files.set(rel, { lines: shown.lines, owners: shown.owners });
-    this.emitEv({ type: 'file', agent, file: rel, ...shown });
+    this.emitEv({ type: 'file', agent, file: rel, ...shown, hints: hintsFrom(rel, shown.lines, shown.changed) });
   }
 
   /** One ox run for a builder, its events turned into the room's. → { code, said } */
@@ -632,11 +634,14 @@ export class BuildRoom extends EventEmitter {
       const planUser = `TASK: ${this.task}\n\nAs many parts as the task really splits into (each worth an agent of its own), at most ${this.maxAgents}.\n\nFILES ALREADY IN THE PROJECT:\n${tree || '(none: an empty project)'}`;
       // A plan decides how the work divides, so a model that is down must not turn it into one
       // big part: every model of the team gets to try.
-      for (const planner of [this.ask, ...this.bots.map((b) => (q) => this.askWith?.(b, q))]) {
-        try { answer = String(await planner({ system: PLAN_SYSTEM, user: planUser }) ?? ''); } catch { answer = ''; }
+      // One slow reply must not either: each gets a second try, and a failure says why.
+      let why = '';
+      for (const planner of [this.ask, this.ask, ...this.bots.map((b) => (q) => this.askWith?.(b, q))]) {
+        try { answer = String(await planner({ system: PLAN_SYSTEM, user: planUser }) ?? ''); why = answer ? 'its answer had no parts' : 'it answered with nothing'; } catch (e) { answer = ''; why = String(e?.message ?? e).slice(0, 160); }
         if (/"parts"\s*:/.test(answer) || this.stopped) break;
+        if (!this.stopped) this.status('Planner', 'planning', `trying again: ${why}`);
       }
-      if (!/"parts"\s*:/.test(answer)) this.emitEv({ type: 'note', agent: 'Planner', text: 'no model could write a plan, so this is one part' });
+      if (!/"parts"\s*:/.test(answer)) this.emitEv({ type: 'note', agent: 'Planner', text: `no model could write a plan (${why}), so this is one part` });
       const plan = parsePlan(answer, this.task, this.maxAgents);
       this.plan = plan;
       if (this.stopped) return;
@@ -720,6 +725,15 @@ export function startBuild(opts) {
 }
 
 export const liveBuild = (id) => live.get(id) ?? null;
+
+/** Where a build's files are, newest work first: each agent's copy, then the project. → [paths] or null */
+export function buildRoots(id, { env = process.env } = {}) {
+  if (!/^[\w.-]+$/.test(String(id))) return null;
+  const room = live.get(id);
+  if (room) return [...(room.team ?? []).map((m) => m.wt).filter(Boolean), room.dir];
+  const start = readBuild(id, { env })?.events?.find((e) => e.type === 'build');
+  return start?.dir ? [start.dir] : null;
+}
 
 export function readBuild(id, { env = process.env } = {}) {
   if (!/^[\w.-]+$/.test(String(id))) return null;

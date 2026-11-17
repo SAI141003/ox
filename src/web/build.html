@@ -82,6 +82,18 @@
   .past .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .center { display: grid; grid-template-rows: auto 1fr; min-height: 0; min-width: 0; }
   .tabbar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line); min-width: 0; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; flex: none; }
+  .seg button { background: none; border: 0; color: var(--muted); font: inherit; font-size: 12px; padding: 3px 10px; cursor: pointer; }
+  .seg button.on { background: var(--line); color: inherit; }
+  .live-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; flex: none; }
+  .live-pill[hidden] { display: none; }
+  .live-pill i { width: 7px; height: 7px; border-radius: 50%; background: #3fb950; }
+  .sitepane { display: flex; flex-direction: column; flex: 1; min-height: 0; height: 100%; }
+  .sitepane[hidden] { display: none; }
+  .sitebar { display: flex; gap: 14px; align-items: center; padding: 6px 14px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .sitebar label { display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+  .siteframes { position: relative; flex: 1; min-height: 0; background: #fff; }
+  .siteframes iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
   .tabbar .path { font: 12.5px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .legend { display: flex; gap: 10px; margin-left: auto; font-size: 11.5px; color: var(--muted); flex-wrap: wrap; justify-content: flex-end; }
   .legend b { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
@@ -215,10 +227,16 @@
     </aside>
     <section class="center">
       <div class="tabbar">
+        <span class="seg" id="views"><button id="v-code" class="on">Code</button><button id="v-site" title="The page itself, with each agent where its last edit landed">Site</button></span>
+        <span class="live-pill" id="live-pill" hidden><i></i><span id="live-n"></span></span>
         <span class="path" id="path">—</span>
         <button class="btn" id="edit" hidden title="Edit this file yourself: it is committed as yours, between the team's merges">Edit</button>
         <label class="dim" style="font-size:12px;white-space:nowrap"><input type="checkbox" id="follow" checked> follow</label>
         <div class="legend" id="legend"></div>
+      </div>
+      <div class="sitepane" id="sitepane" hidden>
+        <div class="sitebar"><label><input type="checkbox" id="s-agents" checked> agents</label><label><input type="checkbox" id="s-wires" checked> outlines</label><label><input type="checkbox" id="s-follow" checked> follow the latest edit</label><span class="dim" id="s-note"></span></div>
+        <div class="siteframes" id="siteframes"></div>
       </div>
       <div class="code" id="code">
         <div class="empty"><div>
@@ -305,6 +323,7 @@ function apply(e, live) {
       B.lastFile = e.file;
       if ($('follow').checked || !B.current) B.current = e.file;
       if (live) B.flash = e.file;
+      siteEdit(e, live);
       break;
     }
     case 'review': {
@@ -325,6 +344,70 @@ function apply(e, live) {
   }
 }
 
+// ---------- the live site: the real page, each agent where its last edit landed
+const site = { view: null, frame: null, ready: false, y: 0, reload: null, last: new Map(), follow: null, chosen: false };
+const PAGE_FILE = /\.(html?|css|js|mjs|svg|png|jpe?g|webp|gif)$/i;
+const NOT_PAGE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[a-z]+$/i;
+function siteEdit(e, live) {
+  if (e.agent === 'You' || !PAGE_FILE.test(e.file) || NOT_PAGE.test(e.file)) return;
+  // An edit that names nothing on the page (a test, a config) leaves the cursor where the last one did.
+  const named = e.hints && (e.hints.ids.length || e.hints.classes.length || e.hints.tags.length || e.hints.texts.length);
+  if (named) site.last.set(e.agent, { file: e.file, hints: e.hints });
+  if (!live) return;
+  site.follow = e.agent;
+  if (!site.chosen && /\.html?$/i.test(e.file)) showView('site');
+  if (site.view !== 'site') return;
+  // Styles go in without a reload; anything else reloads behind the page, which is swapped in once drawn.
+  if (/\.css$/i.test(e.file) && site.frame && site.ready) site.frame.contentWindow.postMessage({ type: 'ox-css', file: e.file }, '*');
+  else { clearTimeout(site.reload); site.reload = setTimeout(loadSite, 1500); }
+  tellSite();
+}
+function loadSite() {
+  if (!B?.id) return;
+  const next = document.createElement('iframe');
+  next.setAttribute('sandbox', 'allow-scripts');
+  next.title = 'The page being built';
+  next.style.visibility = 'hidden';
+  next.src = `/ox/builds/${encodeURIComponent(B.id)}/site/?t=${Date.now()}`;
+  next.onload = () => {
+    next.style.visibility = '';
+    const old = site.frame;
+    site.frame = next; site.ready = true; site.loading = false;
+    next.contentWindow.postMessage({ type: 'ox-scroll', y: site.y }, '*');
+    old?.remove();
+    tellSite();
+  };
+  $('siteframes').append(next);
+}
+// The page is another document: it gets the colour itself, not this page's variable.
+const siteColour = (name) => { const m = /var\((--[\w-]+)\)/.exec(col(name)); return m ? getComputedStyle(document.documentElement).getPropertyValue(m[1]).trim() || '#999' : col(name); };
+function tellSite(follow = true) {
+  if (site.view === 'site' && !site.frame && B?.id && !site.loading) { site.loading = true; loadSite(); return; }
+  if (!site.frame || !site.ready || !B) return;
+  const team = [...B.agents.values()].filter((a) => a.name !== 'Planner');
+  const agents = team.map((a) => {
+    const l = site.last.get(a.name);
+    const active = !['done', 'waiting', 'merged', 'needs you', undefined].includes(a.status) && !B.done;
+    return { name: a.name, label: a.part?.title ? `${a.part.title}`.slice(0, 24) : a.name, color: siteColour(a.name), hints: l?.hints ?? null, file: l?.file ?? a.status ?? '', active };
+  }).filter((a) => !B.done && (a.hints || a.active));
+  site.frame.contentWindow.postMessage({ type: 'ox-agents', agents, shown: $('s-agents').checked, wires: $('s-wires').checked && !B.done, follow: follow && $('s-follow').checked ? site.follow : null }, '*');
+}
+function showView(v, byYou) {
+  if (byYou) site.chosen = true;
+  site.view = v;
+  $('v-site').classList.toggle('on', v === 'site'); $('v-code').classList.toggle('on', v !== 'site');
+  $('sitepane').hidden = v !== 'site'; $('code').style.display = v === 'site' ? 'none' : '';
+  if (v === 'site' && !site.frame) loadSite(); else tellSite();
+}
+addEventListener('message', (e) => {
+  if (!site.frame || e.source !== site.frame.contentWindow) return;
+  if (e.data?.type === 'ox-at') site.y = Number(e.data.y) || 0;
+  if (e.data?.type === 'ox-ready') { site.ready = true; tellSite(false); }
+});
+for (const id of ['s-agents', 's-wires', 's-follow']) document.getElementById(id).onchange = () => tellSite(false);
+document.getElementById('v-code').onclick = () => showView('code', true);
+document.getElementById('v-site').onclick = () => showView('site', true);
+
 // ---------- drawing
 let drawQueued = false, codeKey = '';
 function draw() { if (!drawQueued) { drawQueued = true; requestAnimationFrame(() => { drawQueued = false; render(); }); } }
@@ -338,6 +421,10 @@ function render() {
       <span class="name">${esc(a.name)} <span class="st">${esc(a.status ?? '')}</span></span>
       <span class="doing">${esc(a.doing || a.part?.title || '')}</span></div>`;
   }).join('') || '<div class="agent"><span></span><span class="dim">Planning…</span></div>';
+  const liveN = team.filter((a) => a.name !== 'Planner' && !['done', 'waiting', 'merged', 'needs you', undefined].includes(a.status)).length;
+  $('live-pill').hidden = !liveN || !!B.done;
+  $('live-n').textContent = `${liveN} agent${liveN === 1 ? '' : 's'} live`;
+  tellSite(false);
   $('legend').innerHTML = team.filter((a) => a.name !== 'Planner').map((a) => `<span><b style="background:${col(a.name)}"></b>${esc(a.name)}</span>`).join('');
   // Files
   const files = [...B.files.entries()].sort((x, y) => x[0].localeCompare(y[0]));
@@ -534,6 +621,7 @@ async function openBuild(id) {
   follow?.abort();
   follow = new AbortController();
   B = fresh(); codeKey = '';
+  site.frame?.remove(); Object.assign(site, { view: null, frame: null, ready: false, y: 0, follow: null, chosen: false, loading: false }); site.last.clear(); showView(new URLSearchParams(location.search).get('view') === 'site' ? 'site' : 'code', new URLSearchParams(location.search).get('view') === 'site');
   document.querySelectorAll('.btab[data-p]:not([data-p="term"])').forEach((t) => t.remove());
   document.querySelectorAll('.pane:not([data-p="term"])').forEach((p) => p.remove());
   $('code').innerHTML = '<div class="empty"><div><h1>Planning…</h1></div></div>';
