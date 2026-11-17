@@ -217,20 +217,35 @@ final class OxBridge: ObservableObject {
             // Nothing is spoken back (its own voice would be heard as the next command): the
             // outcome shows beside the ear.
             wake.onControl = { [weak self] text in
-                IslandLog.write("voice control: \(text.prefix(120))")
+                let t0 = Date()
+                let ms = { Int(Date().timeIntervalSince(t0) * 1000) }
+                // The commands said most are done here, in this process, in milliseconds (FastVoice).
+                if let steps = FastVoice.parse(text, browserInFront: FastVoice.browserIsInFront) {
+                    FastVoice.run(steps) { ok, what in
+                        MainActor.assumeIsolated {
+                            IslandLog.write("voice control fast (\(ms()) ms) \(ok ? "did" : "FAILED"): \(text.prefix(80)) → \(what)")
+                            self?.wake.note(ok ? "✓ \(text.prefix(40))" : what)
+                        }
+                    }
+                    return
+                }
+                // Everything else ox can do with no AI (timers, music, search, a session, a named button).
                 Errands.run(text) { done in
                     MainActor.assumeIsolated {
                         guard let self else { return }
-                        IslandLog.write("voice control \(done.handled ? "did" : "skipped"): \(done.say.prefix(120))")
-                        if done.handled { self.wake.note(done.say); return }
-                        // Not a command: with "type what I say" on, the words go where the cursor is.
-                        // Only into a text box that already has the cursor, and Return is never pressed.
-                        // A sentence that starts like a command ("open Codex" with no Codex here) is
+                        if done.handled { IslandLog.write("voice control (\(ms()) ms) did: \(text.prefix(80))"); self.wake.note(done.say); return }
+                        // A sentence that starts like a command ("open Photoshop" with none here) is
                         // never typed into the box as if it were dictation: it is said to have failed.
                         if VoiceControlWords.isCommand(text) { self.wake.note("Could not do “\(text.prefix(36))”"); return }
+                        // Not a command: with "type what I say" on, the words go where the cursor is.
+                        // Return is never pressed.
                         guard UserDefaults.standard.object(forKey: "voice.control.dictate") as? Bool ?? true else { self.wake.note("Not a command: “\(text.prefix(36))”"); return }
-                        Errands.run("dictate \(text)") { typed in
-                            MainActor.assumeIsolated { self.wake.note(typed.handled ? "typed “\(text.prefix(36))”" : "Not a command: “\(text.prefix(36))”") }
+                        let words = text.prefix(1).uppercased() + text.dropFirst()
+                        FastVoice.run([.type(words, focusedOnly: true)]) { ok, what in
+                            MainActor.assumeIsolated {
+                                IslandLog.write("voice control dictated (\(ms()) ms) \(ok ? "ok" : what): \(text.prefix(80))")
+                                self.wake.note(ok ? "typed “\(text.prefix(36))”" : what)
+                            }
                         }
                     }
                 }

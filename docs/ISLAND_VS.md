@@ -80,7 +80,7 @@ from the owner's recording of a hands-free voice tool ("Open Codex", "New chat",
 
 | What | Where it came from | OX Island |
 |---|---|---|
-| Voice control: every sentence is a command, no name and no key | the recording | ✓ built: island menu › Voice control, or say "voice control on"; "stop listening" ends it. The commands were run for real (TextEdit and Claude, read back). The microphone path itself was not spoken into in this session |
+| Voice control: every sentence is a command, no name and no key | the recording | ✓ built: island menu › Voice control, or say "voice control on"; "stop listening" ends it. The commands were run for real (TextEdit and Claude, read back). Spoken through the speakers into the microphone (macOS `say`): commands are done 20 to 70 ms after the sentence ends, in the island's own process (before: 0.45 to 1 s through the server and `ox do`) |
 | "New chat", close / next / previous tab, back, forward, reload, zoom, new line, minimize, full screen, hide, switch app, save, clear | the recording | ✓ `ox do "new chat"`: the app's own New chat button, else ⌘N. Nothing in the list quits an app or deletes a file |
 | Say a sentence and it is typed where the cursor is | the recording | ✓ in voice control, what is not a command is typed at the cursor; Return is never pressed |
 | Start a Claude Code or Codex session in a project from a sentence | Coucou 0.6 (its ⌃⌥N) | ✓ "start Claude in ox and tell it to fix the tests": Terminal only. Coucou also opens iTerm2, Ghostty, kitty, WezTerm and Alacritty, and has a project picker |
