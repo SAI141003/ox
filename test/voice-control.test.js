@@ -130,12 +130,12 @@ test('nothing here quits an app, and typed words are never taken for a command',
   assert.deepEqual(parseControl('type close tab and go back'), { intent: 'type', text: 'close tab and go back' });
 });
 
-test('a chain keeps the app: open it, a new chat, type, send', (t) => {
-  if (process.platform === 'darwin' && !resolveApp('claude')) { t.skip('the Claude app is not installed here'); return; }
+test('a chain keeps its steps: a new chat, type, send; two keys said with "and"', () => {
   const c = parseChain('open claude and start a new chat and type hello there and press send');
-  assert.deepEqual(c?.map((x) => x.intent), ['app', 'window', 'type', 'send']);
-  assert.equal(c[1].app, c[0].name, 'the new chat is asked of the app just opened');
+  // The first step is the Claude app where it is installed, and claude.ai where it is not (Linux, CI).
+  assert.deepEqual(c?.slice(1).map((x) => x.intent), ['window', 'type', 'send']);
   assert.equal(c[2].text, 'hello there');
+  if (c[0].intent === 'app') assert.equal(c[1].app, c[0].name, 'the new chat is asked of the app just opened');
   const d = parseChain('select all and delete');
   assert.deepEqual(d, [{ intent: 'key', key: 'cmd+a' }, { intent: 'key', key: 'delete' }]);
   assert.match(doOffline('new chat', { dryRun: true }).message, /would window/);
