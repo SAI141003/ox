@@ -507,6 +507,16 @@ struct VoiceStatusChip: View {
                 Text(m).font(.system(size: 10.5)).foregroundStyle(Ink.muted).lineLimit(1).help(m)
             } else if let m = notes.message {
                 Text(m).font(.system(size: 10.5)).foregroundStyle(Ink.muted).lineLimit(1).help(m).onTapGesture { notes.message = nil }
+            } else if WakeWord.control, wake.listening || !wake.status.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "waveform").font(.system(size: 10)).foregroundStyle(Color(hex: "#7DD3FC"))
+                    Text(wake.status.isEmpty ? "voice control" : wake.status).font(.system(size: 10.5)).foregroundStyle(Ink.text).lineLimit(1)
+                }
+                .contentShape(Rectangle())
+                .help("Voice control is on: say “new chat”, “type …”, “send”, “open Claude”. Say “stop listening” or tap to turn it off.")
+                .onTapGesture { MainActor.assumeIsolated { wake.setControl(false) } }
+            } else if !wake.status.isEmpty {
+                Text(wake.status).font(.system(size: 10.5)).foregroundStyle(Ink.muted).lineLimit(1)
             } else if wake.listening {
                 Image(systemName: "ear").font(.system(size: 10)).foregroundStyle(Ink.dim).help("Listening for “OK ox” (on this Mac)")
             }

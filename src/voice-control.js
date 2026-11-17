@@ -11,7 +11,7 @@
 import { spawnSync } from 'node:child_process';
 import { handsPath, findElement, isRisky, parseKey, keyArgs } from './mac-control.js';
 
-const SEND_WORDS = /^(?:(?:press|hit|click|tap|choose|select|push)\s+(?:on\s+)?(?:the\s+)?(?:send|enter|return|submit)(?:\s+(?:button|key))?|send(?:\s+(?:it|that|this|the message))?)$/i;
+const SEND_WORDS = /^(?:(?:press|hit|click|tap|choose|select|push)\s+(?:on\s+)?(?:the\s+)?(?:send|enter|return|submit)(?:\s+(?:button|key))?|send(?:\s+(?:it|that|this|the message))?|enter|return|submit(?:\s+(?:it|that|this))?)$/i;
 const KEY_WORDS = /^(?:press|hit|push)\s+(?:the\s+)?(.+)$/i;
 // What follows the typed words when more is asked in the same breath ("type hello and press send").
 const AFTER_TYPED = /\s*,?\s+(?:and\s+(?:then\s+)?|then\s+)(?:press|hit|click|tap|choose|select|push|send)\b/i;
@@ -46,8 +46,50 @@ const EDIT_WORDS = [
   [/^(?:scroll|go) to (?:the )?top$/i, 'home'],
   [/^(?:scroll|go) to (?:the )?(?:bottom|end)$/i, 'end'],
   [/^(?:open |make )?(?:a )?new (?:window|document|file)$/i, 'cmd+n'],
+  [/^(?:delete|erase)(?: (?:that|this|it|the selection))?$/i, 'delete'],
+  [/^scratch that$/i, 'cmd+z'],
 ];
-const CLICK_WORDS = /^(?:click|tap|press|choose|select)\s+(?:on\s+)?(?:the\s+)?(.+?)(?:\s+button)?$/i;
+
+// Moving around an app, as it is said: "new chat", "close tab", "go back",
+// "refresh". Each is one shortcut, pressed because the person said it, the same
+// way "press send" is theirs. They are named here, one by one, and kept apart
+// from the keys a model may press (src/mac-control.js: ⌘ with A C F K L N T V X Z
+// only). Nothing in this list quits an app, logs out or deletes a file.
+const WINDOW_WORDS = [
+  [/^(?:(?:start|open|make|create|begin)\s+)?(?:a\s+)?new\s+(?:chat|conversation|session|thread|prompt)$/i, 'new-chat'],
+  [/^close (?:this |the |that )?tab$/i, 'close-tab'],
+  [/^close (?:this |the |that )?window$/i, 'close-window'],
+  [/^next tab$/i, 'next-tab'],
+  [/^(?:previous|prev|last) tab$/i, 'prev-tab'],
+  [/^(?:go )?back$/i, 'back'],
+  [/^(?:go )?forward$/i, 'forward'],
+  [/^(?:refresh|reload)(?: (?:the |this )?page)?$/i, 'reload'],
+  [/^zoom in$/i, 'zoom-in'],
+  [/^zoom out$/i, 'zoom-out'],
+  [/^(?:new|next) line$/i, 'new-line'],
+  [/^minimi[sz]e(?: (?:this|the|that))?(?: window)?$/i, 'minimize'],
+  [/^(?:(?:enter|go|toggle|exit|leave) )?full ?screen$/i, 'fullscreen'],
+  [/^hide(?: (?:this|the|that))?(?: (?:app|window))?$/i, 'hide'],
+  [/^(?:switch|change) (?:apps?|windows?)$|^(?:last|previous) app$/i, 'switch-app'],
+  [/^save(?: (?:it|this|that|the file|the document))?$/i, 'save'],
+  [/^clear(?: (?:it|that|this|the text|the box|the field|everything|all))?$|^(?:delete|erase) (?:everything|all|it all|the text)$/i, 'clear'],
+];
+// action → the keys: [virtual key code, modifiers]. Two entries are pressed one after the other.
+const WINDOW_KEYS = {
+  'new-chat': [[45, 'cmd']], 'close-tab': [[13, 'cmd']], 'close-window': [[13, 'cmd']],
+  'next-tab': [[48, 'ctrl']], 'prev-tab': [[48, 'ctrl,shift']],
+  back: [[33, 'cmd']], forward: [[30, 'cmd']], reload: [[15, 'cmd']],
+  'zoom-in': [[24, 'cmd']], 'zoom-out': [[27, 'cmd']], 'new-line': [[36, 'shift']],
+  minimize: [[46, 'cmd']], fullscreen: [[3, 'cmd,ctrl']], hide: [[4, 'cmd']], 'switch-app': [[48, 'cmd']],
+  save: [[1, 'cmd']], clear: [[0, 'cmd'], [51, '']],
+};
+const WINDOW_SAID = {
+  'new-chat': 'started a new chat', 'close-tab': 'closed the tab', 'close-window': 'closed the window', 'next-tab': 'next tab', 'prev-tab': 'previous tab',
+  back: 'went back', forward: 'went forward', reload: 'reloaded', 'zoom-in': 'zoomed in', 'zoom-out': 'zoomed out', 'new-line': 'new line',
+  minimize: 'minimized', fullscreen: 'full screen', hide: 'hidden', 'switch-app': 'switched app', save: 'saved', clear: 'cleared',
+};
+// A name with "and" or "then" in it is two steps ("select all and delete"), not one button.
+const CLICK_WORDS = /^(?:click|tap|press|choose|select)\s+(?:on\s+)?(?:the\s+)?((?:(?!\s(?:and|then)\s).)+?)(?:\s+button)?$/i;
 const TYPE_WORDS = /^(?:type|type in|enter text)[,:]?\s+["“']?(.+?)["”']?$/i;
 
 /** One control step from words, or null. */
@@ -57,7 +99,11 @@ export function parseControl(text) {
   if (SEND_WORDS.test(t)) return { intent: 'send' };
   if ((m = KEY_WORDS.exec(t))) { const key = spokenKey(m[1]); if (key) return { intent: 'key', key }; }
   for (const [re, key] of EDIT_WORDS) if (re.test(t)) return { intent: 'key', key };
+  for (const [re, action] of WINDOW_WORDS) if (re.test(t)) return { intent: 'window', action };
   // "type hello and press send" is two steps: left to the chain, which keeps the words apart.
+  // Voice control hands over a sentence that is no command as "dictate …": typed where
+  // the cursor already is, and nowhere else (ox does not go looking for a box to put it in).
+  if ((m = /^dictate[,:]?\s+(.+)$/i.exec(t))) return { intent: 'type', text: m[1].trim(), focusedOnly: true };
   if ((m = TYPE_WORDS.exec(t))) return AFTER_TYPED.test(m[1]) ? null : { intent: 'type', text: m[1].trim() };
   if ((m = CLICK_WORDS.exec(t)) && m[1].length <= 40) return { intent: 'click', name: m[1].trim() };
   return null;
@@ -144,6 +190,32 @@ function browserStep(it, app) {
   return go.error ? { ok: false, message: go.error } : { ok: true, message: `searched "${it.query}" in ${target}` };
 }
 
+/** "new chat", "close tab", "go back"…: one named shortcut in the app in front (or the one named). */
+function windowStep(it, app) {
+  const keys = WINDOW_KEYS[it.action];
+  if (!keys) return { ok: false, message: `ox does not know "${it.action}"` };
+  const target = app ?? hands(['focused']).app ?? null;
+  const inApp = target ? ['--app', target] : [];
+  const where = target ? ` in ${target}` : '';
+  const browser = /chrome|safari|arc|firefox|brave|edge|opera/i.test(target ?? '');
+  if (it.action === 'new-chat') {
+    // The app's own "New chat" button when it shows one (a chat site in a browser has
+    // no shortcut every browser agrees on); else ⌘N, which is New chat in Claude, ChatGPT and Codex.
+    const list = readControls(target);
+    const btn = (list.elements ?? []).find((e) => (role(e, 'button') || role(e, 'link') || role(e, 'menuitem')) && /^(?:new|start(?: a)?(?: new)?) (?:chat|conversation|session|thread|task)$/i.test(label(e).trim()));
+    if (btn) { const r = hands(['press', '--app', list.app ?? target, '--path', btn.path]); return r.error ? { ok: false, message: r.error } : { ok: true, message: `started a new chat${where}` }; }
+    if (browser) return { ok: false, message: `no "New chat" button on this page${where}` };
+  }
+  // A browser keeps its tabs in one window: closing the window there is ⌘⇧W.
+  const press = it.action === 'close-window' && browser ? [[13, 'cmd,shift']] : keys;
+  for (const [code, mods] of press) {
+    const r = hands(['key', String(code), ...(mods ? ['--mods', mods] : []), ...inApp]);
+    if (r.error) return { ok: false, message: r.error };
+    if (press.length > 1) wait(80);
+  }
+  return { ok: true, message: `${WINDOW_SAID[it.action] ?? it.action}${where}` };
+}
+
 /** Run one control step. `app` is the app named earlier in the same request, if any. */
 /** Open or bring forward an app through Accessibility. `open -a` on a running
  *  app with several windows re-raises them after it returns, and keys typed
@@ -172,7 +244,7 @@ export function performControl(it, { app = null, dryRun = false } = {}) {
   const no = keyRefusal(it);
   if (no) return { ok: false, message: no };
   if (dryRun || process.env.NODE_TEST_CONTEXT || process.env.OX_OPERATOR_DRY === '1') {
-    const what = it.intent === 'type' ? `type "${it.text}"` : it.intent === 'send' ? 'press send' : it.intent === 'key' ? `press ${it.key}` : it.intent === 'browser' ? (it.query ? `search "${it.query}" in the browser${it.newTab ? ' (new tab)' : ''}` : 'open a new tab') : `click "${it.name}"`;
+    const what = it.intent === 'type' ? `type "${it.text}"` : it.intent === 'send' ? 'press send' : it.intent === 'window' ? it.action.replace('-', ' ') : it.intent === 'key' ? `press ${it.key}` : it.intent === 'browser' ? (it.query ? `search "${it.query}" in the browser${it.newTab ? ' (new tab)' : ''}` : 'open a new tab') : `click "${it.name}"`;
     return { ok: true, message: `dry run: would ${what}${where}` };
   }
   if (it.intent === 'browser') return browserStep(it, app);
@@ -193,7 +265,11 @@ export function performControl(it, { app = null, dryRun = false } = {}) {
     }
     // Put the cursor in the text box, unless it is already in one.
     const now = hands(['focused', ...(app ? ['--app', app] : [])]);
-    if (!/textarea|textfield|combobox|searchfield/i.test(now.role ?? '')) {
+    // Claude, ChatGPT and other Electron apps do not say where their cursor is (an empty
+    // role): the words are typed there. A named control that is not a text box (a button,
+    // a web page with no field chosen) is refused, since keys typed at it can be shortcuts.
+    if (it.focusedOnly && now.role && !/textarea|textfield|combobox|searchfield/i.test(now.role)) return { ok: false, message: 'the cursor is not in a text box: click where the words should go' };
+    if (!it.focusedOnly && !/textarea|textfield|combobox|searchfield/i.test(now.role ?? '')) {
       const list = readControls(app);
       const boxes = (list.elements ?? []).filter((e) => role(e, 'textarea') || role(e, 'textfield') || role(e, 'combobox'));
       const box = boxes.find((e) => /prompt|message|reply|chat|ask|type|search|note/i.test(`${e.name} ${e.description}`)) ?? boxes.sort((a, b) => (b.frame?.[2] ?? 0) * (b.frame?.[3] ?? 0) - (a.frame?.[2] ?? 0) * (a.frame?.[3] ?? 0))[0];
@@ -221,6 +297,7 @@ export function performControl(it, { app = null, dryRun = false } = {}) {
     }
     return { ok: true, message: `typed "${it.text}"${where}` };
   }
+  if (it.intent === 'window') return windowStep(it, app);
   if (it.intent === 'key') {
     const k = parseKey(it.key);
     if (k.error) return { ok: false, message: k.error };

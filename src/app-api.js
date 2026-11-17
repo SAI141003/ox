@@ -9,6 +9,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { KEY_ENV, BOTS } from './bots.js';
 import { keyStatus, setKey } from './keystore.js';
 import { fileURLToPath } from 'node:url';
+import { getTemplate, MCP_TEMPLATES } from './mcp-templates.js';
 
 // Every key the app can hold, grouped as the page shows them: what it is, where
 // to get one (the provider's own key page), and what it unlocks. `free` is set
@@ -178,6 +179,8 @@ export async function connectorsView() {
   const doc = readConfigDoc();
   const servers = doc.mcpServers ?? {};
   const policy = doc.mcpPolicy && typeof doc.mcpPolicy === 'object' ? doc.mcpPolicy : {};
+  let health = {};
+  try { health = (await import('./mcp.js')).readMcpHealth(); } catch {}
   return Object.entries(servers).map(([name, s]) => ({
     name,
     kind: s?.url ? 'http' : 'stdio',
@@ -186,7 +189,64 @@ export async function connectorsView() {
     // No entry means the runtime asks.  Expose that explicitly instead of
     // making a missing configuration look like an undocumented permission.
     policy: ['ask', 'allow', 'deny'].includes(policy[name]) ? policy[name] : 'ask',
+    title: getTemplate(name)?.title ?? null,
+    health: health[name] && typeof health[name] === 'object' ? { status: health[name].status, at: health[name].at ?? null, why: whyNotStarted(health[name], name) } : null,
   }));
+}
+
+/**
+ * Why a connector did not start, as one plain sentence that ends in the next
+ * step. The raw reason is the tail of the server's own error output, which
+ * reads like a stack trace; the page showed only "(crashed)".
+ */
+export function whyNotStarted(h, name = '') {
+  const raw = String(h?.why ?? '');
+  if (h?.status === 'slow') return 'It was still starting when ox stopped waiting. A sign-in page may be open in your browser: finish it, then check again.';
+  if (/needs you to sign in|401|unauthori[sz]ed/i.test(raw) || h?.status === 'http-error') return 'It needs you to sign in once.';
+  if (/docker/i.test(raw)) return 'Docker is not running. Open Docker Desktop, then check again.';
+  if (/EPERM|operation not permitted|EACCES|permission denied/i.test(raw)) return 'It was not allowed to write its own files (this happens when ox runs inside a sandbox). Check again from the app.';
+  if (/ENOENT|command not found|not found in PATH|No such file/i.test(raw)) return `Its command is not installed on this machine${name ? ` (${name})` : ''}.`;
+  if (/npm error|npm ERR/i.test(raw)) return 'npm could not download it. Check your connection, then check again.';
+  if (h?.status === 'timeout') return 'It took too long to start. The first start downloads it, so a second try is often enough.';
+  const line = raw.split(/\s{2,}|\n/).map((x) => x.trim()).filter(Boolean).pop() ?? '';
+  return line ? `It stopped while starting: ${line.slice(0, 140)}` : 'It stopped while starting.';
+}
+
+/** Start one connector now and say what it offers: the Check button. */
+export async function testConnector(name, { timeoutMs = 30_000 } = {}) {
+  const { readConfigDoc } = await import('./config.js');
+  const { McpHub, readMcpHealth } = await import('./mcp.js');
+  const cfg = (readConfigDoc().mcpServers ?? {})[String(name)];
+  if (!cfg) throw new Error(`connector '${name}' does not exist`);
+  const hub = new McpHub({ [name]: cfg }, { callTimeoutMs: 20_000 });
+  const t0 = Date.now();
+  try { await hub.start({ limitMs: timeoutMs }); } catch {}
+  const row = hub.status().find((r) => r.server === name) ?? null;
+  const ok = row?.status === 'ok';
+  const tools = ok ? hub.schemas().map((s) => ({ name: String(s.name).split('__').pop(), desc: String(s.description ?? '').split(/(?<=\.)\s/)[0].slice(0, 140) })) : [];
+  const healthFile = path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'mcp-health.json');
+  const h = readMcpHealth();
+  const failed = ok ? null : { at: Date.now(), status: row?.status === 'starting' ? 'slow' : (row?.status ?? 'crashed'), why: String(row?.stderrTail ?? '').replace(/\s+/g, ' ').slice(-200) };
+  // What this check saw replaces what an earlier run recorded, either way.
+  if (ok) delete h[name]; else h[name] = failed;
+  try { fs.writeFileSync(healthFile, JSON.stringify(h)); } catch {}
+  try { await hub.stop(); } catch {}
+  return { ok, name, ms: Date.now() - t0, status: row?.status ?? 'failed', tools, why: ok ? null : whyNotStarted(failed, name) };
+}
+
+/** Ready-made MCP servers (src/mcp-templates.js), each with whether it is added and what it still needs. */
+export async function mcpTemplatesView(env = process.env) {
+  const { readConfigDoc } = await import('./config.js');
+  const servers = readConfigDoc().mcpServers ?? {};
+  return Object.values(MCP_TEMPLATES).map((t) => {
+    const e = t.entry();
+    return {
+      name: t.name, title: t.title, desc: t.desc, risk: t.risk, setup: t.setup ?? '',
+      target: e.url ?? [e.command, ...(e.args ?? [])].filter(Boolean).join(' '),
+      needs: (t.requires ?? []).filter((k) => !env[k]),
+      added: Object.prototype.hasOwnProperty.call(servers, t.name),
+    };
+  });
 }
 export async function saveConnector(body = {}) {
   const { saveConfigDoc, readConfigDoc } = await import('./config.js');
@@ -206,9 +266,15 @@ export async function saveConnector(body = {}) {
     });
     return connectorsView();
   }
+  if (body.action === 'test') return testConnector(name);
   let def;
   const url = String(body.url ?? '').trim();
-  if (url) {
+  if (body.template !== undefined) {
+    // A ready-made server: its own entry, never one sent by the page.
+    const tpl = getTemplate(String(body.template));
+    if (!tpl || tpl.name !== name) throw new Error(`no ready-made server named '${body.template}'`);
+    def = tpl.entry();
+  } else if (url) {
     if (!/^https?:\/\//i.test(url)) throw new Error('the URL must start with http:// or https://');
     def = { url };
   } else {
@@ -228,7 +294,7 @@ export async function connectorGalleryView(env = process.env) {
   const apps = (await import('./desktop-apps.js')).detectDesktopApps();
   const channels = Object.fromEntries((await messagingView(env)).map((c) => [c.id, c]));
   let health = {};
-  try { health = (await import('./mcp.js')).readMcpHealth(); } catch {}
+  try { health = Object.fromEntries(Object.entries((await import('./mcp.js')).readMcpHealth()).map(([n, h]) => [n, h && typeof h === 'object' ? { ...h, reason: whyNotStarted(h, n) } : h])); } catch {}
   const { readAuth } = await import('./mcp-oauth.js');
   return galleryView({ servers: readConfigDoc().mcpServers ?? {}, apps, channels, env, health, signedIn: (n) => !!readAuth(n) });
 }
@@ -251,6 +317,9 @@ export async function addGalleryConnector(body = {}) {
     await login(name, url, { open: (u) => spawn(opener, [u], { stdio: 'ignore', detached: true }).unref() });
     saveConfigDoc((doc) => { doc.mcpServers = { ...(doc.mcpServers ?? {}), [name]: { url } }; });
     try { const { readMcpHealth } = await import('./mcp.js'); const h = readMcpHealth(); if (h[name]) { delete h[name]; fs.writeFileSync(path.join(process.env.OX_HOME || path.join(os.homedir(), '.ox'), 'mcp-health.json'), JSON.stringify(h)); } } catch {}
+  } else if (body.action === 'test') {
+    // Check again: start it now, so the card says what is true today, not what a run saw last week.
+    await testConnector(name);
   } else if (body.action === 'remove') {
     saveConfigDoc((doc) => { if (doc.mcpServers) delete doc.mcpServers[name]; dropPolicy(doc); });
   } else if (!Object.prototype.hasOwnProperty.call(readConfigDoc().mcpServers ?? {}, name)) {
@@ -341,8 +410,9 @@ export async function capabilitiesView(cwd = process.cwd()) {
   });
   let plugins = [];
   try {
-    const pj = JSON.parse(fs.readFileSync(path.join(home, '.ox', 'plugins.json'), 'utf8')).plugins ?? {};
-    const { readPlugin } = await import('./plugins.js');
+    const { readPlugin, readRegistry } = await import('./plugins.js');
+    // Through the registry reader, so a link Claude Code moved is followed here too.
+    const pj = readRegistry(home).plugins ?? {};
     plugins = Object.entries(pj).map(([name, x]) => {
       const plugin = x.path ? readPlugin(x.path) : null;
       return { name, source: x.source ?? '', enabled: x.enabled !== false, version: x.version ?? plugin?.version ?? null,

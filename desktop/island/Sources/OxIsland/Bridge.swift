@@ -213,6 +213,43 @@ final class OxBridge: ObservableObject {
                 guard let self else { return }
                 if self.buddy.send?(text, [], nil) != true { self.buddy.speak("I can't find ox on this Mac. Open the OX app once, then ask me again.") }
             }
+            // Voice control: a sentence is tried as one of ox's own commands and nothing else.
+            // Nothing is spoken back (its own voice would be heard as the next command): the
+            // outcome shows beside the ear.
+            wake.onControl = { [weak self] text in
+                let t0 = Date()
+                let ms = { Int(Date().timeIntervalSince(t0) * 1000) }
+                // The commands said most are done here, in this process, in milliseconds (FastVoice).
+                if let steps = FastVoice.parse(text, browserInFront: FastVoice.browserIsInFront) {
+                    FastVoice.run(steps) { ok, what in
+                        MainActor.assumeIsolated {
+                            IslandLog.write("voice control fast (\(ms()) ms) \(ok ? "did" : "FAILED"): \(text.prefix(80)) → \(what)")
+                            self?.wake.note(ok ? "✓ \(text.prefix(40))" : what)
+                        }
+                    }
+                    return
+                }
+                // Everything else ox can do with no AI (timers, music, search, a session, a named button).
+                Errands.run(text) { done in
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        if done.handled { IslandLog.write("voice control (\(ms()) ms) did: \(text.prefix(80))"); self.wake.note(done.say); return }
+                        // A sentence that starts like a command ("open Photoshop" with none here) is
+                        // never typed into the box as if it were dictation: it is said to have failed.
+                        if VoiceControlWords.isCommand(text) { self.wake.note("Could not do “\(text.prefix(36))”"); return }
+                        // Not a command: with "type what I say" on, the words go where the cursor is.
+                        // Return is never pressed.
+                        guard UserDefaults.standard.object(forKey: "voice.control.dictate") as? Bool ?? true else { self.wake.note("Not a command: “\(text.prefix(36))”"); return }
+                        let words = text.prefix(1).uppercased() + text.dropFirst()
+                        FastVoice.run([.type(words, focusedOnly: true)]) { ok, what in
+                            MainActor.assumeIsolated {
+                                IslandLog.write("voice control dictated (\(ms()) ms) \(ok ? "ok" : what): \(text.prefix(80))")
+                                self.wake.note(ok ? "typed “\(text.prefix(36))”" : what)
+                            }
+                        }
+                    }
+                }
+            }
             wake.start()
         }
         MainActor.assumeIsolated {
@@ -220,6 +257,14 @@ final class OxBridge: ObservableObject {
                 guard let self else { return false }
                 // "Pixie, play Billie Jean": the name is how you called it, not the request.
                 var text = Self.withoutName(raw)
+                // "voice control on" said to the buddy (Fn or ⌃⌥Space): from here every sentence is a command.
+                if VoiceControlWords.turnsOn(text) || VoiceControlWords.turnsOff(text) {
+                    let on = VoiceControlWords.turnsOn(text)
+                    UserDefaults.standard.set(on, forKey: "voice.control")
+                    // Once the buddy has let go of the microphone.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { MainActor.assumeIsolated { self.wake.setControl(on) } }
+                    return true
+                }
                 // The same words twice within 3 s are one request (a mic, a hotkey and a tap
                 // can all end the same utterance): done once, not two or three times.
                 let key = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))

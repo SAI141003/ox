@@ -59,6 +59,11 @@ final class Dictation: ObservableObject {
         let held = Date().timeIntervalSince(pressedAt)
         if handsFree { return }
         if held < 0.3 {
+            // "One press starts hands-free" (island menu, after Coucou 0.6): a short press
+            // keeps listening until the next press; holding the key is still push-to-talk.
+            if UserDefaults.standard.bool(forKey: "dictation.tapHandsFree"), phase == .listening {
+                handsFree = true; say("Hands-free: press ⌃⌥D to finish, Esc to cancel."); phase = .listening; return
+            }
             // A quick tap: wait a moment for a second tap (hands-free) before finishing.
             lastTapEnd = Date()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
