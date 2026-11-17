@@ -5,7 +5,7 @@ import os from 'node:os';
 import { streamVia } from './providers/index.js';
 import { normalizeStreamEvent } from './agent.js';
 
-export async function quickText(target, { system, user, images = [], maxTokens = 200, signal } = {}) {
+export async function quickText(target, { system, user, images = [], maxTokens = 200, signal, onText = null } = {}) {
   let text = '';
   const usage = { inputTokens: 0, outputTokens: 0 };
   if (target?.provider === 'subscription') {
@@ -27,7 +27,7 @@ export async function quickText(target, { system, user, images = [], maxTokens =
   for await (const raw of streamVia(target, { model: target?.model, messages, maxTokens, signal, ...quick })) {
     const ev = normalizeStreamEvent(raw);
     if (!ev) continue;
-    if (ev.kind === 'text') text += ev.text;
+    if (ev.kind === 'text') { text += ev.text; if (onText) onText(text); }
     else if (ev.kind === 'usage') { usage.inputTokens += ev.usage.inputTokens; usage.outputTokens += ev.usage.outputTokens; }
   }
   return { text, usage };

@@ -34,7 +34,7 @@ test('a screen question looks at the screen even when an agent is chosen, or the
   assert.match(tray, /if let name = Self\.namedAgent\(in: text, agents: agents\.map\(\\\.name\)\) \?\? \(spoken \? nil : agent\) \{[\s\S]{0,500}screenRoute\(r\.route/);
   assert.match(tray, /removeObject\(forKey: "chat\.agent"\)/, 'no pick is kept across restarts');
   // The quick look (one call) first, then the full run with --buddy when it cannot answer.
-  assert.match(tray, /func screenRoute[\s\S]{0,1500}VoiceServer\.look\(text, images: shots\)[\s\S]{0,1200}"--buddy"/);
+  assert.match(tray, /func screenRoute[\s\S]{0,1500}VoiceServer\.look\(text, images: shots, early:[\s\S]{0,1600}"--buddy"/);
 });
 
 test('a spoken screen question does not wait behind a long run', () => {

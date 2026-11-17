@@ -362,20 +362,43 @@ export function polish(file, { idleSpeed = 6, minIdle = 1.0, pad = 0.06, backgro
   return { file: out, before: Math.round(p.duration * 10) / 10, after: Math.round((p.duration - saved) * 10) / 10, stillParts: still.length };
 }
 
-/** What the model needs to understand a video: frames at scene changes and the transcript. */
+/** How a contact sheet is laid out for a video of this shape: 30 small frames a sheet, at most 1,560 px wide. Pure. */
+export function sheetPlan({ duration = 0, width = 16, height = 9 } = {}, { maxSheets = 2 } = {}) {
+  const portrait = height > width;
+  const cols = portrait ? 10 : 6;
+  const rows = portrait ? 3 : 5;
+  const per = cols * rows;
+  // One frame a second when it fits; a longer video is sampled less often, never cut short.
+  const step = Math.max(1, Math.ceil(duration / (per * maxSheets)));
+  const count = Math.max(1, Math.floor(duration / step));
+  return { cols, rows, per, step, count, sheets: Math.min(maxSheets, Math.ceil(count / per)), tileWidth: portrait ? 156 : 260 };
+}
+
+/**
+ * What the model needs to understand a video: one or two contact sheets (a frame every second
+ * or so, in order, so motion and every scene are seen in one picture), larger frames at the
+ * scene changes, and the transcript.
+ */
 export function understand(file, { maxFrames = 8, width = 768 } = {}) {
   const p = probe(file);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ox-frames-'));
-  // Scene changes first; evenly spaced frames fill up to maxFrames.
-  const sc = run('ffmpeg', ['-hide_banner', '-i', file, '-vf', 'scdet=threshold=12', '-an', '-f', 'null', '-']);
+  // Scene changes first; evenly spaced frames fill up to maxFrames. Found on a small, slow copy:
+  // on the full picture at 60 frames a second this one step took minutes for a one-minute phone recording.
+  const sc = run('ffmpeg', ['-hide_banner', '-i', file, '-vf', 'fps=4,scale=240:-2,scdet=threshold=12', '-an', '-f', 'null', '-']);
   let times = [...sc.err.matchAll(/lavfi\.scd\.time: ([\d.]+)/g)].map((m) => Number(m[1]));
   if (times.length > maxFrames) times = times.filter((_, i) => i % Math.ceil(times.length / maxFrames) === 0);
   for (let i = 0; times.length < maxFrames && i < maxFrames; i++) times.push((p.duration * (i + 0.5)) / maxFrames);
   times = [...new Set(times.map((t) => Math.round(t * 10) / 10))].sort((a, b) => a - b).slice(0, maxFrames);
   const frames = times.map((t, i) => { const f = path.join(dir, `f${i}.jpg`); ff(['-ss', String(t), '-i', file, '-frames:v', '1', '-vf', `scale=${width}:-2`, '-q:v', '4', f]); return { at: t, file: f }; });
+  const plan = sheetPlan(p);
+  let sheets = [];
+  try {
+    ff(['-i', file, '-an', '-vf', `fps=1/${plan.step},scale=${plan.tileWidth}:-2,tile=${plan.cols}x${plan.rows}`, '-frames:v', String(plan.sheets), '-q:v', '4', path.join(dir, 'sheet%d.jpg')]);
+    sheets = fs.readdirSync(dir).filter((n) => /^sheet\d+\.jpg$/.test(n)).sort().map((n, i) => ({ file: path.join(dir, n), from: i * plan.per * plan.step, step: plan.step, cols: plan.cols, rows: plan.rows }));
+  } catch {}
   let transcript = [];
   try { transcript = transcribe(file).segments; } catch {}
-  return { duration: p.duration, size: `${p.width}x${p.height}`, frames, transcript, text: transcript.map((s) => `[${Math.floor(s.start / 60)}:${String(Math.floor(s.start % 60)).padStart(2, '0')}] ${s.text}`).join('\n') };
+  return { duration: p.duration, size: `${p.width}x${p.height}`, frames, sheets, transcript, text: transcript.map((s) => `[${Math.floor(s.start / 60)}:${String(Math.floor(s.start % 60)).padStart(2, '0')}] ${s.text}`).join('\n') };
 }
 
 // ---------------------------------------------------------------- explainer videos (ManimGX's idea, ox's way)

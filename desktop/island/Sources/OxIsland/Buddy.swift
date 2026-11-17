@@ -386,7 +386,27 @@ final class Buddy: NSObject, ObservableObject {
     /// Speak an agent reply; a [POINT:x,y:label] in it flies the pointer.
     /// The voice is ox's natural one (Kokoro, through `ox speak`); the system
     /// voice is only the fallback when ox cannot make the recording.
+    /// The first sentence of a reply that is still being written: said now, and `speak` with the
+    /// whole reply carries on from the end of it instead of starting again.
+    func speakEarly(_ first: String) {
+        speak(first)
+        earlySaid = Self.speakable(first)
+        IslandLog.write("voice: first sentence said while the rest is written")
+    }
+
+    /// What is left of a reply whose first sentence is already being said, or nil to say it all.
+    nonisolated static func restAfter(early: String?, spoken: String) -> String? {
+        guard let early, !early.isEmpty, spoken.hasPrefix(early) else { return nil }
+        return String(spoken.dropFirst(early.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func speak(_ reply: String) {
+        let early = earlySaid
+        earlySaid = nil
+        if let early, let rest = Self.restAfter(early: early, spoken: Self.speakable({ let (m, _) = Self.parseMarks(reply); let (say, _) = Self.parsePoint(m); return say }())) {
+            carryOn(reply, rest: rest)
+            return
+        }
         let (marked, marks) = Self.parseMarks(reply)
         let (say, point) = Self.parsePoint(marked)
         let text = say.isEmpty ? (point != nil ? "Here." : "Done.") : say
@@ -416,8 +436,43 @@ final class Buddy: NSObject, ObservableObject {
         }
     }
 
+    /// The whole reply has arrived and its first sentence is being said: the marks and the pointer
+    /// are shown now, and the rest is said after that sentence, in the same voice.
+    private func carryOn(_ reply: String, rest: String) {
+        let (marked, marks) = Self.parseMarks(reply)
+        let (say, point) = Self.parsePoint(marked)
+        if !marks.isEmpty { IslandLog.write("marks drawn: \(marks.map { "\($0.kind.lowercased()) \($0.label)" }.joined(separator: ", "))"); showMarks(marks) }
+        if !say.isEmpty { saying = say }
+        pendingPoint = point
+        if let point { gesture = .point; showPointer(point) }
+        guard !rest.isEmpty else { return }
+        phase = .speaking
+        if making, speakToken != nil {
+            // The first sentence is still being made: these follow it in the same chain.
+            pendingRest = Self.sentences(rest)
+        } else if player != nil, let token = speakToken {
+            sayNext(Self.sentences(rest)[...], token: token)
+        } else if synth.isSpeaking || fallbackText != nil {
+            // The Mac's own voice took the first sentence: it queues the rest behind it.
+            systemSpeak(rest)
+        } else if Self.naturalVoice, OxRunner.available {
+            // The first sentence has ended: the rest starts now.
+            let token = UUID()
+            speakToken = token
+            sayNext(Self.sentences(rest)[...], token: token)
+        } else {
+            systemSpeak(rest)
+        }
+    }
+
     /// One sentence at a time: the first is heard as soon as it is made, and the rest follow it.
     private func sayNext(_ left: ArraySlice<String>, token: UUID) {
+        if left.isEmpty, !pendingRest.isEmpty {
+            let more = pendingRest
+            pendingRest = []
+            sayNext(more[...], token: token)
+            return
+        }
         guard let sentence = left.first else { making = false; if player == nil, phase == .speaking { finishSpeaking() }; return }
         making = true
         let out = (NSTemporaryDirectory() as NSString).appendingPathComponent("ox-buddy-say-\(UUID().uuidString.prefix(8)).wav")
@@ -456,6 +511,7 @@ final class Buddy: NSObject, ObservableObject {
         playQueue = []
         making = false
         fallbackText = nil
+        pendingRest = []
     }
 
     /// Split so each part can be voiced alone. Short pieces stay with the next, so nothing sounds clipped.
@@ -486,6 +542,8 @@ final class Buddy: NSObject, ObservableObject {
     }
 
     private var speakToken: UUID?
+    private var earlySaid: String?
+    private var pendingRest: [String] = []
     private var playQueue: [(AVAudioPlayer, String)] = []
     private var making = false
     private var fallbackText: String?

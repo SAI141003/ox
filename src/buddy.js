@@ -48,6 +48,21 @@ export function shrinkShot(file, { width = 1568, run = execFileSync, dir = null 
   return out;
 }
 
+/**
+ * A JPEG of the same picture, same size in pixels, beside it: about a quarter of a PNG's bytes,
+ * so it is sent and read sooner. Returns the JPEG's path, or the file itself when it is one
+ * already or cannot be made.
+ */
+export function jpegShot(file, { quality = 80, run = execFileSync } = {}) {
+  if (!/\.png$/i.test(file)) return file;
+  const out = file.replace(/\.png$/i, '.sent.jpg');
+  try {
+    if (fs.existsSync(out) && fs.statSync(out).mtimeMs >= fs.statSync(file).mtimeMs) return out;
+    run('sips', ['-s', 'format', 'jpeg', '-s', 'formatOptions', String(quality), file, '--out', out], { stdio: 'ignore', timeout: 15_000 });
+    return fs.statSync(out).size > 0 ? out : file;
+  } catch { return file; }
+}
+
 /** What to say when the model failed: a sentence to hear, not an error to read. */
 export function plainFailure(error) {
   const e = String(error ?? '');
