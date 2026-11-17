@@ -4,6 +4,7 @@
 // no model configured. It never guesses: anything it does not recognise is
 // handed back as "not a small task" for a model to take, if there is one.
 import * as MAIL from './tools/mail.js';
+import { parseSession, startSession } from './voice-session.js';
 import { assistantName } from './identity.js';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -87,6 +88,8 @@ export function installedApps(dirs = ['/Applications', '/Applications/Utilities'
 }
 const APP_ALIASES = { 'claude code': 'Claude', 'claude app': 'Claude', 'chat gpt': 'ChatGPT', outlook: 'Microsoft Outlook', word: 'Microsoft Word', excel: 'Microsoft Excel', powerpoint: 'Microsoft PowerPoint', teams: 'Microsoft Teams', onenote: 'Microsoft OneNote', 'vs code': 'Visual Studio Code', vscode: 'Visual Studio Code', code: 'Visual Studio Code', chrome: 'Google Chrome', 'google chrome': 'Google Chrome', mail: 'Mail', email: 'Mail', settings: 'System Settings', 'system preferences': 'System Settings', whatsapp: 'WhatsApp', terminal: 'Terminal', 'text editor': 'TextEdit', 'text edit': 'TextEdit', notepad: 'TextEdit', 'note pad': 'TextEdit', 'notes app': 'Notes', calculator: 'Calculator', 'calendar app': 'Calendar', browser: 'Safari', 'web browser': 'Safari', 'app store': 'App Store', finder: 'Finder', 'file explorer': 'Finder', files: 'Finder', music: 'Music', spotify: 'Spotify', photos: 'Photos', messages: 'Messages', imessage: 'Messages', facetime: 'FaceTime', zoom: 'zoom.us', slack: 'Slack', discord: 'Discord', perplexity: 'Perplexity', 'chat g p t': 'ChatGPT', 'chatgpt app': 'ChatGPT' };
 
+const SPOKEN_APPS = { codex: ['Codex', 'ChatGPT'], codecs: ['Codex', 'ChatGPT'], 'code x': ['Codex', 'ChatGPT'], 'open code': ['OpenCode'], opencode: ['OpenCode'], 'chat g p t': ['ChatGPT'], cloud: ['Claude'], claud: ['Claude'], 'clawed': ['Claude'], curser: ['Cursor'], crome: ['Google Chrome'], chrome: ['Google Chrome'], terminal: ['Terminal', 'iTerm', 'Ghostty', 'Warp'], code: ['Visual Studio Code', 'Cursor'], ox: ['OX'] };
+
 // Off macOS there is no app list to check against, so a name is trusted only
 // when it reads as one app's name: a few words, no "and" / "then" / comma, and
 // none of the everyday words a request has and an app name does not ("all my
@@ -101,6 +104,9 @@ export function resolveApp(name, apps = installedApps(), platform = process.plat
   if (apps.has(n)) return apps.get(n);
   const alias = APP_ALIASES[n];
   if (alias && apps.has(alias.toLowerCase())) return apps.get(alias.toLowerCase());
+  // Said by voice, heard a little off ("codecs"), or an app that lives inside another:
+  // Codex is its own app when installed, else it is in the ChatGPT app.
+  for (const other of SPOKEN_APPS[n] ?? []) if (apps.has(other.toLowerCase())) return apps.get(other.toLowerCase());
   return null;
 }
 
@@ -152,6 +158,9 @@ export function parseIntent(text) {
   // Typing, pressing and clicking by voice (src/voice-control.js).
   const control = parseControl(t);
   if (control) return control;
+  // "start Claude in ox and tell it to fix the tests": an agent session in a project (src/voice-session.js).
+  const session = parseSession(t);
+  if (session) return session;
   if ((m = /^(?:set (?:a )?)?(?:timer|countdown)(?: for)? (\d+(?:\.\d+)?)\s*(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)\b(?:\s+(?:for|to|called)\s+(.+))?$/i.exec(low))) {
     return { intent: 'timer', secs: seconds(m[1], m[2]), label: m[3] ?? 'timer' };
   }
@@ -712,7 +721,8 @@ export function perform(it) {
       const r = process.platform === 'darwin' ? run(['osascript', '-e', `set volume ${it.on ? 'with' : 'without'} output muted`]) : process.platform === 'linux' ? run(['pactl', 'set-sink-mute', '@DEFAULT_SINK@', it.on ? '1' : '0']) : { ok: false, err: 'not supported here' };
       return r.ok ? { ok: true, message: it.on ? 'muted' : 'unmuted' } : { ok: false, message: r.err };
     }
-    case 'type': case 'send': case 'key': case 'click': return performControl(it, { app: it.app ?? null });
+    case 'session': return startSession(it);
+    case 'type': case 'send': case 'key': case 'click': case 'window': return performControl(it, { app: it.app ?? null });
     default: return { ok: false, message: 'not a small task' };
   }
 }
@@ -754,7 +764,7 @@ export function parseChain(text) {
     // Typing, pressing and clicking happen in the app opened earlier in the request.
     // A search or a new tab after a browser was opened (or a tab was) happens in that browser.
     if (['search', 'tab'].includes(it.intent)) { const b = [...out].reverse().find((x) => x.intent === 'app' && BROWSER_APPS.test(x.name)) ?? (out.some((x) => x.intent === 'tab') ? out.find((x) => x.app) : null); if (b) it = { ...it, app: b.app ?? b.name, ...(it.intent === 'search' && out.at(-1)?.intent === 'tab' ? { newTab: false } : {}) }; else if (out.at(-1)?.intent === 'tab') it = { ...it, inBrowser: true, newTab: false }; }
-    if (['type', 'send', 'key', 'click'].includes(it.intent)) { const opened = [...out].reverse().find((x) => x.intent === 'app'); if (opened) it = { ...it, app: opened.name, ...(it.intent === 'type' && out.at(-1) === opened ? { fresh: true } : {}) }; }
+    if (['type', 'send', 'key', 'click', 'window'].includes(it.intent)) { const opened = [...out].reverse().find((x) => x.intent === 'app'); if (opened) it = { ...it, app: opened.name, ...(it.intent === 'type' && out.at(-1) === opened ? { fresh: true } : {}) }; }
     out.push(it);
   }
   return out.length >= 2 || out[0]?.browser ? out : null;

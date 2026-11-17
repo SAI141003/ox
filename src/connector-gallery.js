@@ -69,7 +69,8 @@ export function galleryView({ servers = {}, apps = {}, channels = {}, env = proc
       const h = health[g.template];
       if (h && typeof h === 'object') {
         const why = h.status === 'slow' ? 'never finished starting: finish its sign-in in the browser' : h.status === 'http-error' ? 'its login was refused: sign in again' : /docker/i.test(`${h.why ?? ''} ${g.template}`) || g.template === 'github' ? 'did not start: Docker is not running' : `did not start (${h.status})`;
-        return { ...base, state: 'broken', why };
+        // `reason` is the plain sentence the app works out from the server's own error; `at` lets the page say how old it is.
+        return { ...base, state: 'broken', why: h.reason ?? why, at: h.at ?? null };
       }
       return { ...base, state: 'added', why: g.template === 'gsuite' ? 'Google sign-in opens on first use' : 'Signs in on first use' };
     }

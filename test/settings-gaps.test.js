@@ -42,7 +42,7 @@ test("a project's own instructions still come after yours (they win a conflict)"
 
 test('connectors: add a local or remote MCP server, show and save its permission, remove it; bad input is refused', async () => {
   let list = await api.saveConnector({ name: 'github', command: 'npx', args: '-y @modelcontextprotocol/server-github' });
-  assert.deepEqual(list, [{ name: 'github', kind: 'stdio', target: 'npx -y @modelcontextprotocol/server-github', env: [], policy: 'ask' }]);
+  assert.deepEqual(list, [{ name: 'github', kind: 'stdio', target: 'npx -y @modelcontextprotocol/server-github', env: [], policy: 'ask', title: 'GitHub (official MCP server)', health: null }]);
   list = await api.saveConnector({ name: 'remote', url: 'https://example.com/mcp' });
   assert.equal(list.find((c) => c.name === 'remote').kind, 'http');
   assert.equal(list.find((c) => c.name === 'remote').policy, 'ask');
@@ -228,4 +228,21 @@ test('a model you named is not answered by another company unless you listed tha
   assert.equal(automaticFallbackAllowed(nvidia, { provider: 'nvidia', model: 'b' }, true), true);
   assert.equal(automaticFallbackAllowed(nvidia, { provider: 'xai', model: 'g' }, false), true, 'Auto or the default may move');
   for (const f of ['../src/headless.js', '../src/serve.js']) assert.match(fs.readFileSync(new URL(f, import.meta.url), 'utf8'), /automaticFallbackAllowed\(t, target,/);
+});
+
+test('a connector that did not start says why in plain words, and ready-made servers are listed', async () => {
+  const { whyNotStarted, mcpTemplatesView } = await import('../src/app-api.js');
+  assert.match(whyNotStarted({ status: 'crashed', why: 'docker: Cannot connect to the Docker daemon' }), /Docker is not running/);
+  assert.match(whyNotStarted({ status: 'crashed', why: 'Caused by: Operation not permitted (os error 1)' }), /not allowed to write its own files/);
+  assert.match(whyNotStarted({ status: 'http-error', why: 'needs you to sign in once' }), /sign in once/);
+  assert.match(whyNotStarted({ status: 'timeout', why: '' }), /took too long/);
+  const list = await mcpTemplatesView({});
+  const gh = list.find((t) => t.name === 'github');
+  assert.ok(gh && gh.title && gh.target && ['read-only', 'write', 'money'].includes(gh.risk));
+  assert.ok(list.every((t) => Array.isArray(t.needs) && typeof t.added === 'boolean'));
+  const html = fs.readFileSync(new URL('../src/web/chat.html', import.meta.url), 'utf8');
+  assert.match(html, /data-con-test=/, 'each MCP server has a Check button');
+  assert.match(html, /data-conn-test=/, 'a failing connector offers Check again, not a button that removes it');
+  assert.match(html, /data-mt2="\$\{k\}"|data-mt2="featured"/);
+  assert.match(html, /data-mk-open=/, 'marketplace cards open a detail sheet');
 });

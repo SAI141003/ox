@@ -498,7 +498,8 @@ final class Buddy: NSObject, ObservableObject {
     private func systemSpeak(_ text: String) {
         let u = AVSpeechUtterance(string: text)
         u.voice = Self.bestVoice
-        u.rate = 0.5
+        // Speed (island menu): 0.5 is the Mac's normal pace.
+        u.rate = Float(min(0.65, max(0.38, UserDefaults.standard.object(forKey: "voice.rate") as? Double ?? 0.5)))
         u.pitchMultiplier = character == .ox ? 0.85 : 1.0
         synth.speak(u)
     }

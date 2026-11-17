@@ -213,6 +213,28 @@ final class OxBridge: ObservableObject {
                 guard let self else { return }
                 if self.buddy.send?(text, [], nil) != true { self.buddy.speak("I can't find ox on this Mac. Open the OX app once, then ask me again.") }
             }
+            // Voice control: a sentence is tried as one of ox's own commands and nothing else.
+            // Nothing is spoken back (its own voice would be heard as the next command): the
+            // outcome shows beside the ear.
+            wake.onControl = { [weak self] text in
+                IslandLog.write("voice control: \(text.prefix(120))")
+                Errands.run(text) { done in
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        IslandLog.write("voice control \(done.handled ? "did" : "skipped"): \(done.say.prefix(120))")
+                        if done.handled { self.wake.note(done.say); return }
+                        // Not a command: with "type what I say" on, the words go where the cursor is.
+                        // Only into a text box that already has the cursor, and Return is never pressed.
+                        // A sentence that starts like a command ("open Codex" with no Codex here) is
+                        // never typed into the box as if it were dictation: it is said to have failed.
+                        if VoiceControlWords.isCommand(text) { self.wake.note("Could not do “\(text.prefix(36))”"); return }
+                        guard UserDefaults.standard.object(forKey: "voice.control.dictate") as? Bool ?? true else { self.wake.note("Not a command: “\(text.prefix(36))”"); return }
+                        Errands.run("dictate \(text)") { typed in
+                            MainActor.assumeIsolated { self.wake.note(typed.handled ? "typed “\(text.prefix(36))”" : "Not a command: “\(text.prefix(36))”") }
+                        }
+                    }
+                }
+            }
             wake.start()
         }
         MainActor.assumeIsolated {
@@ -220,6 +242,14 @@ final class OxBridge: ObservableObject {
                 guard let self else { return false }
                 // "Pixie, play Billie Jean": the name is how you called it, not the request.
                 var text = Self.withoutName(raw)
+                // "voice control on" said to the buddy (Fn or ⌃⌥Space): from here every sentence is a command.
+                if VoiceControlWords.turnsOn(text) || VoiceControlWords.turnsOff(text) {
+                    let on = VoiceControlWords.turnsOn(text)
+                    UserDefaults.standard.set(on, forKey: "voice.control")
+                    // Once the buddy has let go of the microphone.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { MainActor.assumeIsolated { self.wake.setControl(on) } }
+                    return true
+                }
                 // The same words twice within 3 s are one request (a mic, a hotkey and a tap
                 // can all end the same utterance): done once, not two or three times.
                 let key = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))

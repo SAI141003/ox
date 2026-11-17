@@ -108,3 +108,35 @@ test('disable hides a plugin; remove deletes only what ox copied', async (t) => 
   assert.equal(fs.existsSync(copied), false);
   assert.equal(fs.existsSync(src), true, 'the source folder is never touched');
 });
+
+test('a linked Claude Code plugin follows Claude to its new version folder', async (t) => {
+  const { importClaudePlugins, enabledPlugins } = await import('../src/plugins.js');
+  const home = tmp(t, 'ox-plug-heal-');
+  const cache = path.join(home, '.claude', 'plugins', 'cache', 'official', 'demo');
+  const v1 = path.join(cache, '1.0.0');
+  makePlugin(v1);
+  const installed = path.join(home, '.claude', 'plugins', 'installed_plugins.json');
+  fs.writeFileSync(installed, JSON.stringify({ plugins: { 'demo@official': [{ installPath: v1 }] } }));
+  await importClaudePlugins({ home });
+  assert.equal(enabledPlugins(home).length, 1);
+
+  // Claude Code updates the plugin: a new folder, the old one deleted.
+  const v2 = path.join(cache, '2.0.0');
+  makePlugin(v2);
+  fs.writeFileSync(path.join(v2, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'demo', version: '2.0.0', description: 'demo plugin' }));
+  fs.rmSync(v1, { recursive: true, force: true });
+  fs.writeFileSync(installed, JSON.stringify({ plugins: { 'demo@official': [{ installPath: v2 }] } }));
+
+  const now = enabledPlugins(home);
+  assert.equal(now.length, 1, 'the link is followed, not dropped');
+  assert.equal(now[0].path, v2);
+  assert.equal(readRegistry(home).plugins.demo.version, '2.0.0');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(home, '.ox', 'plugins.json'), 'utf8')).plugins.demo.path, v2, 'and the new folder is saved');
+
+  // A plugin Claude Code no longer has stays missing; a paused one stays paused.
+  setPluginEnabled('demo', false, { home });
+  fs.writeFileSync(installed, JSON.stringify({ plugins: {} }));
+  fs.rmSync(v2, { recursive: true, force: true });
+  assert.equal(readRegistry(home).plugins.demo.enabled, false);
+  assert.equal(enabledPlugins(home).length, 0);
+});

@@ -104,6 +104,10 @@ struct IslandMenu: View {
     @AppStorage("island.size") private var islandSize = "standard"
     @AppStorage("dictation.enabled") private var dictationOn = true
     @AppStorage("wake.enabled") private var wakeOn = false
+    @AppStorage("voice.control") private var voiceControl = false
+    @AppStorage("dictation.tapHandsFree") private var tapHandsFree = false
+    @AppStorage("voice.rate") private var voiceRate = 0.5
+    @AppStorage("voice.control.dictate") private var voiceDictate = true
     @AppStorage("fn.talk") private var fnTalk = true
     @AppStorage("island.hideFullscreen") private var hideFullscreen = true
     @AppStorage("island.screen") private var islandScreen = "notch"
@@ -130,9 +134,15 @@ struct IslandMenu: View {
         Toggle("Natural voice (Kokoro)", isOn: $naturalVoice)
         Divider()
         Toggle("Dictation anywhere (hold ⌃⌥D)", isOn: $dictationOn)
+        if dictationOn { Toggle("One short press of ⌃⌥D starts hands-free dictation", isOn: $tapHandsFree) }
+        Picker("Speaking speed (Mac voice)", selection: $voiceRate) {
+            Text("Slower").tag(0.42); Text("Normal").tag(0.5); Text("Faster").tag(0.56); Text("Fastest").tag(0.62)
+        }
         Toggle("Hold Fn to talk", isOn: $fnTalk)
         if fnTalk, FnKey.globeOpensSomething { Text("The Fn key also opens \(FnKey.globeAction): set Keyboard › “Press 🌐 key to” to Do Nothing").font(.caption) }
         Toggle(OxName.current.count >= 4 ? "Listen for “\(OxName.current)”" : "Listen for “OK \(OxName.current)”", isOn: Binding(get: { wakeOn }, set: { on in wakeOn = on; bridge?.wake.setEnabled(on) }))
+        Toggle("Voice control: say “new chat”, “type …”, “send” (no key held)", isOn: Binding(get: { voiceControl }, set: { on in voiceControl = on; bridge?.wake.setControl(on) }))
+        if voiceControl { Toggle("In voice control, type what is not a command (where the cursor is)", isOn: $voiceDictate) }
         Button(bridge?.notes.recording == true ? "Stop call notes" : "Record call notes (your microphone)") { bridge?.notes.toggle() }
         Button("Edit my dictionary…") { NSWorkspace.shared.open(PersonalDictionary.ensureFile()) }
         Divider()

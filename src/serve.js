@@ -1938,8 +1938,9 @@ export async function callRoute(text, body = {}, { O = null, ask = null } = {}) 
 
 // What a voice command is about to do, said back at once ("Opening Google Chrome, then searching new movies").
 const voiceResults = [];
+const WINDOW_SAYING = { 'new-chat': 'starting a new chat', 'close-tab': 'closing the tab', 'close-window': 'closing the window', 'next-tab': 'next tab', 'prev-tab': 'previous tab', back: 'going back', forward: 'going forward', reload: 'reloading', 'zoom-in': 'zooming in', 'zoom-out': 'zooming out', 'new-line': 'a new line', minimize: 'minimizing', fullscreen: 'full screen', hide: 'hiding it', 'switch-app': 'switching app', save: 'saving', clear: 'clearing the text' };
 export function sayPlan(steps) {
-  const one = (x) => x.intent === 'app' ? `opening ${x.name}` : x.intent === 'search' ? `searching ${x.query}` : x.intent === 'tab' ? 'opening a new tab' : x.intent === 'type' ? `typing ${x.text}` : x.intent === 'send' ? 'sending it' : x.intent === 'key' ? `pressing ${x.key}` : x.intent === 'click' ? `clicking ${x.name}` : x.intent === 'whatsapp' ? (x.text ? `opening ${x.to}'s WhatsApp chat with "${x.text}" typed in; you press Enter` : `opening ${x.to}'s WhatsApp chat`) : x.intent === 'email' ? `starting an email to ${x.to}` : x.intent;
+  const one = (x) => x.intent === 'app' ? `opening ${x.name}` : x.intent === 'search' ? `searching ${x.query}` : x.intent === 'tab' ? 'opening a new tab' : x.intent === 'type' ? `typing ${x.text}` : x.intent === 'send' ? 'sending it' : x.intent === 'key' ? `pressing ${x.key}` : x.intent === 'session' ? `opening ${x.tool === 'codex' ? 'Codex' : 'Claude Code'} in ${x.project}` : x.intent === 'window' ? WINDOW_SAYING[x.action] ?? x.action : x.intent === 'click' ? `clicking ${x.name}` : x.intent === 'whatsapp' ? (x.text ? `opening ${x.to}'s WhatsApp chat with "${x.text}" typed in; you press Enter` : `opening ${x.to}'s WhatsApp chat`) : x.intent === 'email' ? `starting an email to ${x.to}` : x.intent;
   const s = steps.map(one).join(', then ');
   return s.charAt(0).toUpperCase() + s.slice(1) + '.';
 }
@@ -2014,7 +2015,7 @@ export async function voiceTurn(body) {
   // Anything that waits on an app (typing, clicking, a Contacts lookup for WhatsApp or
   // mail) is done in the background: answered over the island's 1.2 s limit, the island
   // ran the same request again itself (slow, and twice).
-  if (plan.handled && body?.dryRun !== true && steps.some((x) => ['type', 'send', 'key', 'click', 'tab', 'whatsapp', 'email', 'imessage', 'message'].includes(x.intent) || (x.intent === 'search' && (x.app || x.newTab || x.inBrowser)))) {
+  if (plan.handled && body?.dryRun !== true && steps.some((x) => ['type', 'send', 'key', 'click', 'window', 'tab', 'whatsapp', 'email', 'imessage', 'message'].includes(x.intent) || (x.intent === 'search' && (x.app || x.newTab || x.inBrowser)))) {
     // Answered at once with what is being done, then done: the island asks
     // this with a 1.2 s limit while a run is open, and a slower answer made it
     // hand the same request to that run too (done twice: in the app, and as
@@ -3255,6 +3256,7 @@ const ROUTES = [
   { method: 'GET', pattern: /^\/ox\/connectors\/gallery\/?$/, handler: appRoute(async () => (await appApi()).connectorGalleryView()) },
   { method: 'POST', pattern: /^\/ox\/connectors\/gallery\/?$/, handler: appRoute(async (b) => (await appApi()).addGalleryConnector(b)) },
   { method: 'GET', pattern: /^\/ox\/connectors\/?$/, handler: appRoute(async () => (await appApi()).connectorsView()) },
+  { method: 'GET', pattern: /^\/ox\/connectors\/templates\/?$/, handler: appRoute(async () => (await appApi()).mcpTemplatesView()) },
   { method: 'POST', pattern: /^\/ox\/connectors\/?$/, handler: appRoute(async (b) => (await appApi()).saveConnector(b)) },
   { method: 'GET', pattern: /^\/ox\/whatsapp\/inbox\/?$/, handler: appRoute(async () => {
     const W = await import('./tools/whatsapp.js');

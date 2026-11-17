@@ -71,3 +71,31 @@ States: ✓ the island has it, checked · ~ partly · ✗ missing · → being b
 2. Lock-screen and phone approvals (needs a phone app)
 3. Stripe "did anybody pay me today?" (needs your read-only key)
 4. Windows and Linux builds of the island
+
+## November 16, 2026: Coucou 0.5.2 to 0.6.0, and the hands-free recording
+
+Read from Coucou's changelog (Louis-CFM/coucou, MIT; 0.6.0 is dated November 12) and
+from the owner's recording of a hands-free voice tool ("Open Codex", "New chat",
+"Type …", one after another, no key held). ✓ here means it was run on this Mac.
+
+| What | Where it came from | OX Island |
+|---|---|---|
+| Voice control: every sentence is a command, no name and no key | the recording | ✓ built: island menu › Voice control, or say "voice control on"; "stop listening" ends it. The commands were run for real (TextEdit and Claude, read back). The microphone path itself was not spoken into in this session |
+| "New chat", close / next / previous tab, back, forward, reload, zoom, new line, minimize, full screen, hide, switch app, save, clear | the recording | ✓ `ox do "new chat"`: the app's own New chat button, else ⌘N. Nothing in the list quits an app or deletes a file |
+| Say a sentence and it is typed where the cursor is | the recording | ✓ in voice control, what is not a command is typed at the cursor; Return is never pressed |
+| Start a Claude Code or Codex session in a project from a sentence | Coucou 0.6 (its ⌃⌥N) | ✓ "start Claude in ox and tell it to fix the tests": Terminal only. Coucou also opens iTerm2, Ghostty, kitty, WezTerm and Alacritty, and has a project picker |
+| One short press starts hands-free dictation | Coucou 0.6 | ✓ island menu, off by default |
+| A speed setting for the voice | Coucou 0.6 | ✓ the Mac voice; Kokoro's speed is not set yet |
+| Drop a file on a session to put it in its prompt | Coucou 0.6 | ✗ |
+| ⌘⇧2: the whole screen, copied, with a thumbnail to drag | Coucou 0.6 | ✗ (ox captures the screen for the buddy; no copied thumbnail) |
+| Approve Antigravity commands from the notch | Coucou 0.6 | ✗ |
+| Plan approval card: Auto, Manual, Change plan | Coucou 0.5.2 | ✗ |
+| Android phone link, iPhone lock-screen approvals | Coucou 0.6 | ✗ (ox has `ox phone web`; no phone app in a store) |
+| Mail search and rules in the notch (from:, subject:, VIP, undo journal) | Coucou 0.5.7 | ~ the mail card reads and drafts; no search or rules |
+| Island in a corner of the screen | Coucou 0.5.7 | ✗ |
+| Each session apart behind one pill; questions wait side by side | Coucou 0.5.5 | ~ sessions are listed per tool; waiting questions are not queued side by side |
+| Agent sessions on a remote machine over SSH | Coucou 0.5.5 | ~ through the mesh, not a relay |
+| New version announced in the notch, signed and notarized | Coucou 0.5.2 | ~ update check exists; ox is not notarized |
+| Quiet when the terminal is in front | Coucou 0.5.2 | ✗ |
+| 16 languages | Coucou 0.6 | ✗ English first |
+| Windows, Linux and Android apps at the same version | Coucou | ~ Windows bar exists; Linux and Android do not |

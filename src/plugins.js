@@ -32,10 +32,37 @@ export const registryPath = (home = os.homedir()) => path.join(home, '.ox', 'plu
 export function readRegistry(home = os.homedir()) {
   try {
     const doc = JSON.parse(fs.readFileSync(registryPath(home), 'utf8'));
-    return doc && typeof doc.plugins === 'object' ? doc : { plugins: {} };
+    if (!doc || typeof doc.plugins !== 'object') return { plugins: {} };
+    followClaudeLinks(home, doc);
+    return doc;
   } catch {
     return { plugins: {} };
   }
+}
+
+/**
+ * Claude Code keeps each plugin in a folder named after its version, and
+ * deletes the old folder when it updates. A link made before the update then
+ * points at nothing and the plugin's skills quietly disappear. When a linked
+ * folder is gone, ask Claude Code's own list where the plugin lives now.
+ */
+function followClaudeLinks(home, doc) {
+  const stale = Object.entries(doc.plugins).filter(([, p]) => p?.kind === 'link' && String(p.source ?? '').startsWith('claude:') && p.path && !fs.existsSync(p.path));
+  if (!stale.length) return;
+  const installed = readJson(path.join(home, '.claude', 'plugins', 'installed_plugins.json'))?.plugins ?? {};
+  let changed = false;
+  for (const [, rec] of stale) {
+    const installs = installed[rec.source.slice('claude:'.length)];
+    const dir = (Array.isArray(installs) ? installs[0] : installs)?.installPath;
+    if (!dir || !fs.existsSync(dir)) continue;
+    const plugin = readPlugin(dir);
+    if (!plugin) continue;
+    rec.path = dir;
+    rec.version = plugin.version;
+    rec.relinkedAt = new Date().toISOString();
+    changed = true;
+  }
+  if (changed) { try { writeRegistry(home, doc); } catch { /* read-only home: the followed path still serves this run */ } }
 }
 
 function writeRegistry(home, doc) {
